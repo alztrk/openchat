@@ -18,6 +18,8 @@ use crate::{
 
 use super::{invalid_request_params, optional_bool, optional_string, required_string};
 
+const MAX_AVAILABLE_SUBAGENT_MODELS: usize = 4096;
+
 /// Validated request settings consumed by durable chat execution.
 pub(super) struct ChatSendParameters<'a> {
     /// Durable conversation whose saved provider route will handle the request.
@@ -133,7 +135,7 @@ fn parse_subagent_models(value: Option<&Value>) -> Result<Vec<SubagentModelOptio
         return Ok(Vec::new());
     };
     let models = value.as_array().ok_or_else(invalid_request_params)?;
-    if models.len() > 256 {
+    if models.len() > MAX_AVAILABLE_SUBAGENT_MODELS {
         return Err(invalid_request_params());
     }
     let mut parsed = Vec::with_capacity(models.len());
@@ -176,16 +178,10 @@ fn parse_subagent_models(value: Option<&Value>) -> Result<Vec<SubagentModelOptio
         let reasoning_levels = match object.get("reasoningLevels") {
             Some(Value::Array(levels)) if levels.len() <= 8 => levels
                 .iter()
-                .map(|value| {
-                    value
-                        .as_str()
-                        .filter(|level| {
-                            matches!(*level, "minimal" | "low" | "medium" | "high" | "xhigh")
-                        })
-                        .map(str::to_owned)
-                        .ok_or_else(invalid_request_params)
-                })
-                .collect::<Result<Vec<_>, _>>()?,
+                .filter_map(Value::as_str)
+                .filter(|level| matches!(*level, "minimal" | "low" | "medium" | "high" | "xhigh"))
+                .map(str::to_owned)
+                .collect(),
             _ => return Err(invalid_request_params()),
         };
         let supports_tools = match object.get("supportsTools") {

@@ -7,20 +7,20 @@ import { useInChatSearchHighlight } from '@/modules/conversations/hooks/useInCha
 import { useVirtualMessageList } from '@/modules/conversations/hooks/useVirtualMessageList';
 import { useChatStore } from '@/modules/conversations/stores/chatStore';
 import { ProviderIcon } from '@/modules/providers/components/ProviderIcon';
+import type { WorkspaceFileSelection } from './ChatFileChangesPanel';
 import { MessageItem } from './MessageItem';
+import { parseToolActivities } from './message/messageData';
 
 export interface MessageListProps {
   assistantModelFallback?: string | null;
   assistantProviderFallback?: string | null;
   showAssistantLoading?: boolean;
-  savedOutputMessageIds?: ReadonlySet<string>;
-  pendingSavedOutputMessageIds?: ReadonlySet<string>;
-  onToggleSavedOutput?: (message: ChatMessage) => void;
   onRetryMessage?: (message: ChatMessage) => void;
   onEditMessage?: (message: ChatMessage) => void;
   onSelectResponseVersion?: (message: ChatMessage, versionIndex: number) => void;
   latestFileChanges?: ChatFileChange[];
   onOpenFileChanges?: () => void;
+  onOpenWorkspaceFile?: (file: WorkspaceFileSelection) => void;
   onOpenConnections?: () => void;
   inChatTargetMessageId?: string | null;
   inChatSearchQuery?: string;
@@ -36,11 +36,9 @@ export function MessageList({
   onEditMessage,
   onRetryMessage,
   onSelectResponseVersion,
-  onToggleSavedOutput,
-  pendingSavedOutputMessageIds,
-  savedOutputMessageIds,
   latestFileChanges,
   onOpenFileChanges,
+  onOpenWorkspaceFile,
   onOpenConnections,
   inChatTargetMessageId = null,
   inChatSearchQuery = '',
@@ -82,6 +80,13 @@ export function MessageList({
   const visibleMessages = useMemo(() => displayRows.map((row) => row.message), [displayRows]);
   const hasStreamingAssistant =
     visibleMessages.at(-1)?.role === 'assistant' && visibleMessages.at(-1)?.status === 'streaming';
+  const latestMessage = visibleMessages.at(-1);
+  const isWaitingForUserAnswer =
+    latestMessage?.role === 'assistant' &&
+    parseToolActivities(latestMessage.toolActivities).some(
+      (activity) => activity.name === 'ask_user' && activity.status === 'waitingForUser',
+    );
+  const shouldShowAssistantLoading = showAssistantLoading && !hasStreamingAssistant && !isWaitingForUserAnswer;
   const virtualList = useVirtualMessageList(visibleMessages, activeConversationId);
 
   const effectiveHighlightQuery = inChatSearchQuery || searchHighlightQuery || '';
@@ -183,7 +188,7 @@ export function MessageList({
     messages.length,
     messages.at(-1)?.content,
     searchTargetMessageId,
-    showAssistantLoading,
+    shouldShowAssistantLoading,
     virtualList.isFollowingLatest,
     virtualList.scrollToBottom,
   ]);
@@ -241,8 +246,6 @@ export function MessageList({
               <MessageItem
                 assistantModelFallback={assistantModelFallback}
                 assistantProviderFallback={assistantProviderFallback}
-                isSavedOutput={savedOutputMessageIds?.has(message.id) ?? false}
-                isSavingSavedOutput={pendingSavedOutputMessageIds?.has(message.id) ?? false}
                 isSearchMatch={
                   message.id === (inChatTargetMessageId ?? searchHighlightMessageId ?? searchTargetMessageId)
                 }
@@ -250,6 +253,7 @@ export function MessageList({
                 latestFileChanges={latestFileChanges}
                 onOpenConnections={onOpenConnections}
                 onOpenFileChanges={onOpenFileChanges}
+                onOpenWorkspaceFile={onOpenWorkspaceFile}
                 onEditMessage={onEditMessage}
                 onRetryMessage={canRetry ? onRetryMessage : undefined}
                 onSelectResponseVersion={(selectedMessage, versionIndex) => {
@@ -257,12 +261,11 @@ export function MessageList({
                 }}
                 responseVersionCount={row?.responseVersionCount}
                 responseVersionIndex={row?.responseVersionIndex}
-                onToggleSavedOutput={onToggleSavedOutput}
               />
             </article>
           );
         })}
-        {showAssistantLoading && !hasStreamingAssistant ? (
+        {shouldShowAssistantLoading ? (
           <div className="min-w-0" style={{ paddingTop: loadingMessageGap(visibleMessages.at(-1) ?? null) }}>
             <AssistantLoadingSkeleton modelLabel={assistantModelFallback} providerId={assistantProviderFallback} />
           </div>

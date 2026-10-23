@@ -19,6 +19,9 @@ use similar::{ChangeTag, TextDiff};
 
 use crate::storage::AppStorage;
 
+#[path = "file_changes/checkpoints.rs"]
+pub(crate) mod checkpoints;
+
 const MANIFEST_VERSION: u8 = 1;
 const LEGACY_FILE_CHANGE_DIRECTORY: &str = "file-changes";
 const SNAPSHOT_DIRECTORY: &str = "snapshots";
@@ -760,6 +763,12 @@ pub(crate) fn delete_conversation_changes(
         .map_err(|_| TrackingError::StorageUnavailable)?;
     connection
         .execute(
+            "DELETE FROM conversation_file_checkpoints WHERE conversation_id = ?1",
+            [conversation_id],
+        )
+        .map_err(|_| TrackingError::StorageUnavailable)?;
+    connection
+        .execute(
             "DELETE FROM file_change_legacy_imports WHERE conversation_id = ?1",
             [conversation_id],
         )
@@ -776,6 +785,9 @@ pub(crate) fn delete_all_changes(storage: &AppStorage) -> Result<(), TrackingErr
         .map_err(|_| TrackingError::StorageUnavailable)?;
     connection
         .execute("DELETE FROM conversation_file_changes", [])
+        .map_err(|_| TrackingError::StorageUnavailable)?;
+    connection
+        .execute("DELETE FROM conversation_file_checkpoints", [])
         .map_err(|_| TrackingError::StorageUnavailable)?;
     connection
         .execute("DELETE FROM file_change_legacy_imports", [])
@@ -1283,6 +1295,10 @@ fn cleanup_pending_snapshot_blobs(storage: &AppStorage) -> Result<(), TrackingEr
                    AND NOT EXISTS (
                     SELECT 1 FROM conversation_file_changes AS changes
                     WHERE changes.baseline_blob_hash = blobs.hash
+                 )
+                   AND NOT EXISTS (
+                    SELECT 1 FROM conversation_file_checkpoint_files AS files
+                    WHERE files.before_blob_hash = blobs.hash OR files.after_blob_hash = blobs.hash
                  )",
             )
             .map_err(|_| TrackingError::StorageUnavailable)?;
@@ -1310,6 +1326,10 @@ fn cleanup_pending_snapshot_blobs(storage: &AppStorage) -> Result<(), TrackingEr
                  AND NOT EXISTS (
                     SELECT 1 FROM conversation_file_changes
                     WHERE baseline_blob_hash = ?1
+                 )
+                 AND NOT EXISTS (
+                    SELECT 1 FROM conversation_file_checkpoint_files
+                    WHERE before_blob_hash = ?1 OR after_blob_hash = ?1
                  )",
                 params![hash, stale_writing_before],
             )

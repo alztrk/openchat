@@ -24,6 +24,7 @@ use crate::{
 /// Saved conversation routing information used to execute a durable chat send.
 pub(super) struct SavedChatRoute {
     pub(super) provider_id: Option<String>,
+    pub(super) project_name: Option<String>,
     pub(super) project_root: Option<String>,
     pub(super) project_id: Option<String>,
     pub(super) stored_api_key_connection_id: Option<String>,
@@ -82,7 +83,7 @@ pub(super) fn load_saved_route(
     })?;
     let route = connection
         .query_row(
-            "SELECT conversations.provider_id, projects.folder_path, projects.id,
+            "SELECT conversations.provider_id, projects.name, projects.folder_path, projects.id,
                     conversations.api_key_connection_id, conversations.model_id,
                     conversations.connection_id, conversations.workspace_id
              FROM conversations
@@ -98,6 +99,7 @@ pub(super) fn load_saved_route(
                     row.get::<_, Option<String>>(4)?,
                     row.get::<_, Option<String>>(5)?,
                     row.get::<_, Option<String>>(6)?,
+                    row.get::<_, Option<String>>(7)?,
                 ))
             },
         )
@@ -106,10 +108,11 @@ pub(super) fn load_saved_route(
             log_chat_storage_failure(storage, "chat.send.route_read", &error);
             storage_unavailable()
         })?
-        .unwrap_or((None, None, None, None, None, None, None));
+        .unwrap_or((None, None, None, None, None, None, None, None));
 
     let (
         provider_id,
+        project_name,
         project_root,
         project_id,
         stored_api_key_connection_id,
@@ -117,11 +120,11 @@ pub(super) fn load_saved_route(
         connection_id,
         workspace_id,
     ) = route;
-
     Ok((
         connection,
         SavedChatRoute {
             provider_id,
+            project_name,
             project_root,
             project_id,
             stored_api_key_connection_id,
@@ -519,11 +522,15 @@ fn load_project_context(
         if state.enabled {
             let state = crate::project_index::sync(&index_path, project_id, Path::new(root))?;
             if state.status == "stale" {
-                return Err(ServiceError::new(
+                let error = ServiceError::new(
                     "project_index_stale",
                     "The project index could not be fully synchronized. Retry sync in project options or disable the index.",
                     true,
-                ));
+                );
+                return Err(match state.error_details {
+                    Some(details) => error.with_details(details),
+                    None => error,
+                });
             }
             let messages = chatgpt_store::conversation_messages(storage, conversation_id).map_err(
                 |error| {
@@ -540,7 +547,12 @@ fn load_project_context(
                 .rev()
                 .find(|message| message.role == "user")
                 .map(|message| {
-                    crate::project_index::search_current(&index_path, project_id, &message.content)
+                    crate::project_index::search_current(
+                        &index_path,
+                        project_id,
+                        Path::new(root),
+                        &message.content,
+                    )
                 })
                 .transpose()?
                 .flatten()

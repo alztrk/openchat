@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::{Value, json};
 
-use crate::tools::{canonical_root, safe_relative_path};
+use crate::tools::{canonical_root, filesystem_error_code, safe_relative_path};
 
 use super::{PreparedToolCall, ToolExecutor, ToolOperation, ToolPermissionMode, tool_error};
 /// Filesystem root class used to enforce the selected tool permission mode.
@@ -45,108 +45,80 @@ impl ToolExecutor {
         directory: bool,
         can_create: bool,
     ) -> Result<(PathBuf, String, PathBuf, ToolPathScope), Value> {
-        if path.starts_with("desktop:") {
+        let requested_path = Path::new(path);
+        if !requested_path.is_absolute() {
             return Err(tool_error(
-                "permission_scope_denied",
-                "The Desktop is outside the folders allowed in Onay İste mode.",
+                "invalid_tool_input",
+                "Use an absolute filesystem path. Relative paths and path aliases are not accepted.",
             ));
         }
-        let (root, relative, scope) = if Path::new(path).is_absolute() {
-            let target = match Path::new(path).canonicalize() {
-                Ok(target) => target,
-                Err(_) if can_create => {
-                    let requested_path = Path::new(path);
-                    let parent = requested_path.parent().ok_or_else(|| {
-                        tool_error("invalid_tool_input", "The file path is invalid.")
-                    })?;
-                    let canonical_parent = parent.canonicalize().map_err(|_| {
-                        tool_error("tool_path_unavailable", "The parent folder is unavailable.")
-                    })?;
-                    let file_name = requested_path.file_name().ok_or_else(|| {
-                        tool_error("invalid_tool_input", "The file path is invalid.")
-                    })?;
-                    canonical_parent.join(file_name)
-                }
-                Err(_) => {
-                    return Err(tool_error(
-                        "tool_path_unavailable",
-                        "The requested path is unavailable.",
-                    ));
-                }
-            };
-            let project_root = self
-                .project_root
-                .as_deref()
-                .and_then(|root| canonical_root(root).ok());
-            let data_root = canonical_root(&self.data_root)
-                .map_err(|error| tool_error(error.code, &error.message))?;
-            if let Some(root) = project_root.filter(|root| target.starts_with(root)) {
-                let relative = target.strip_prefix(&root).map_err(|_| {
-                    tool_error(
-                        "permission_scope_denied",
-                        "The path is outside the allowed folders.",
-                    )
+        let target = match requested_path.canonicalize() {
+            Ok(target) => target,
+            Err(error) if can_create && error.kind() == std::io::ErrorKind::NotFound => {
+                let parent = requested_path
+                    .parent()
+                    .ok_or_else(|| tool_error("invalid_tool_input", "The file path is invalid."))?;
+                let canonical_parent = parent.canonicalize().map_err(|error| {
+                    filesystem_path_error(&error, "resolving the parent folder")
                 })?;
-                (
-                    root,
-                    relative.to_string_lossy().into_owned(),
-                    ToolPathScope::Project,
-                )
-            } else if target.starts_with(&data_root) {
-                let relative = target.strip_prefix(&data_root).map_err(|_| {
-                    tool_error(
-                        "permission_scope_denied",
-                        "The path is outside the allowed folders.",
-                    )
-                })?;
-                (
-                    data_root,
-                    relative.to_string_lossy().into_owned(),
-                    ToolPathScope::OpenChat,
-                )
-            } else {
-                return Err(tool_error(
-                    "permission_scope_denied",
-                    "Onay İste mode only allows the selected project folder and OpenChat application data folder.",
+                let file_name = requested_path
+                    .file_name()
+                    .ok_or_else(|| tool_error("invalid_tool_input", "The file path is invalid."))?;
+                canonical_parent.join(file_name)
+            }
+            Err(error) => {
+                return Err(filesystem_path_error(
+                    &error,
+                    "resolving the requested path",
                 ));
             }
-        } else {
-            let (root, relative, scope) = if let Some(relative) = path.strip_prefix("project:") {
-                let Some(root) = self.project_root.as_deref() else {
-                    return Err(tool_error(
-                        "tool_path_unavailable",
-                        "This conversation has no project folder. Use the openchat:/ root instead.",
-                    ));
-                };
-                (root, trim_root_separator(relative), ToolPathScope::Project)
-            } else if let Some(relative) = path.strip_prefix("openchat:") {
-                (
-                    self.data_root.as_path(),
-                    trim_root_separator(relative),
-                    ToolPathScope::OpenChat,
+        };
+        let data_root = canonical_root(&self.data_root).map_err(service_tool_error)?;
+        let (root, relative, scope) = if let Some(root) =
+            self.project_roots.iter().find_map(|root| {
+                canonical_root(root)
+                    .ok()
+                    .filter(|canonical| target.starts_with(canonical))
+            }) {
+            let relative = target.strip_prefix(&root).map_err(|_| {
+                tool_error(
+                    "permission_scope_denied",
+                    "The path is outside the allowed folders.",
                 )
-            } else if let Some(root) = self.project_root.as_deref() {
-                (root, path, ToolPathScope::Project)
-            } else {
-                (self.data_root.as_path(), path, ToolPathScope::OpenChat)
-            };
-            let root =
-                canonical_root(root).map_err(|error| tool_error(error.code, &error.message))?;
-            let relative = safe_relative_path(relative)
-                .map_err(|error| tool_error(error.code, &error.message))?;
-            (root, relative.to_string_lossy().into_owned(), scope)
+            })?;
+            (
+                root,
+                relative.to_string_lossy().into_owned(),
+                ToolPathScope::Project,
+            )
+        } else if target.starts_with(&data_root) {
+            let relative = target.strip_prefix(&data_root).map_err(|_| {
+                tool_error(
+                    "permission_scope_denied",
+                    "The path is outside the allowed folders.",
+                )
+            })?;
+            (
+                data_root,
+                relative.to_string_lossy().into_owned(),
+                ToolPathScope::OpenChat,
+            )
+        } else {
+            return Err(tool_error(
+                "permission_scope_denied",
+                "The selected permission mode only allows the selected project folder and OpenChat application data folder.",
+            ));
         };
 
-        let root = canonical_root(root).map_err(|error| tool_error(error.code, &error.message))?;
-        let relative_path = safe_relative_path(&relative)
-            .map_err(|error| tool_error(error.code, &error.message))?;
+        let root = canonical_root(root).map_err(service_tool_error)?;
+        let relative_path = safe_relative_path(&relative).map_err(service_tool_error)?;
         let target_path = match root.join(&relative_path).canonicalize() {
             Ok(path) => path,
-            Err(_) if can_create => {
+            Err(error) if can_create && error.kind() == std::io::ErrorKind::NotFound => {
                 let full = root.join(&relative_path);
                 let parent = full.parent().unwrap_or(&root);
-                let canonical_parent = parent.canonicalize().map_err(|_| {
-                    tool_error("tool_path_unavailable", "The parent folder is unavailable.")
+                let canonical_parent = parent.canonicalize().map_err(|error| {
+                    filesystem_path_error(&error, "resolving the parent folder")
                 })?;
                 if !canonical_parent.starts_with(&root) {
                     return Err(tool_error(
@@ -159,10 +131,10 @@ impl ToolExecutor {
                     .ok_or_else(|| tool_error("invalid_tool_input", "The file path is invalid."))?;
                 canonical_parent.join(file_name)
             }
-            Err(_) => {
-                return Err(tool_error(
-                    "tool_path_unavailable",
-                    "The requested path is unavailable.",
+            Err(error) => {
+                return Err(filesystem_path_error(
+                    &error,
+                    "resolving the requested path",
                 ));
             }
         };
@@ -185,34 +157,32 @@ impl ToolExecutor {
         directory: bool,
         can_create: bool,
     ) -> Result<(PathBuf, String, PathBuf, ToolPathScope), Value> {
-        if let Some(relative) = path.strip_prefix("desktop:/") {
-            return resolve_desktop_path(relative, directory);
-        }
         let requested = Path::new(path);
         if !requested.is_absolute() {
             return Err(tool_error(
                 "invalid_tool_input",
-                "Full access mode requires an absolute filesystem path.",
+                "Use an absolute filesystem path. Relative paths and path aliases are not accepted.",
             ));
         }
+        let requested = requested.to_path_buf();
         let target_path = match requested.canonicalize() {
             Ok(target) => target,
-            Err(_) if can_create => {
+            Err(error) if can_create && error.kind() == std::io::ErrorKind::NotFound => {
                 let parent = requested
                     .parent()
                     .ok_or_else(|| tool_error("invalid_tool_input", "The file path is invalid."))?;
-                let canonical_parent = parent.canonicalize().map_err(|_| {
-                    tool_error("tool_path_unavailable", "The parent folder is unavailable.")
+                let canonical_parent = parent.canonicalize().map_err(|error| {
+                    filesystem_path_error(&error, "resolving the parent folder")
                 })?;
                 let file_name = requested
                     .file_name()
                     .ok_or_else(|| tool_error("invalid_tool_input", "The file path is invalid."))?;
                 canonical_parent.join(file_name)
             }
-            Err(_) => {
-                return Err(tool_error(
-                    "tool_path_unavailable",
-                    "The requested path is unavailable.",
+            Err(error) => {
+                return Err(filesystem_path_error(
+                    &error,
+                    "resolving the requested path",
                 ));
             }
         };
@@ -241,7 +211,7 @@ impl ToolExecutor {
                 ));
             };
             (
-                canonical_root(parent).map_err(|error| tool_error(error.code, &error.message))?,
+                canonical_root(parent).map_err(service_tool_error)?,
                 file_name.to_string_lossy().into_owned(),
             )
         };
@@ -249,7 +219,28 @@ impl ToolExecutor {
     }
 }
 
-pub(super) fn qualify_output_paths(output: &mut Value, prepared: &PreparedToolCall) {
+fn filesystem_path_error(error: &std::io::Error, operation: &str) -> Value {
+    let mut output = tool_error(
+        filesystem_error_code(error),
+        "The operating system reported an error while resolving the path.",
+    );
+    output["error"]["details"] = Value::String(format!("{operation}: {error}"));
+    output
+}
+
+fn service_tool_error(error: crate::protocol::ServiceError) -> Value {
+    let mut output = tool_error(error.code, &error.message);
+    if let Some(details) = error.details {
+        output["error"]["details"] = Value::String(details);
+    }
+    output
+}
+
+pub(super) fn qualify_output_paths(
+    output: &mut Value,
+    prepared: &PreparedToolCall,
+    _project_roots: &[PathBuf],
+) {
     if output.get("error").is_some() {
         return;
     }
@@ -258,11 +249,13 @@ pub(super) fn qualify_output_paths(output: &mut Value, prepared: &PreparedToolCa
             output.get_mut("entries").and_then(Value::as_array_mut),
             &prepared.root,
             prepared.scope,
+            _project_roots,
         ),
         ToolOperation::Search { .. } => qualify_path_array(
             output.get_mut("matches").and_then(Value::as_array_mut),
             &prepared.root,
             prepared.scope,
+            _project_roots,
         ),
         ToolOperation::Read { .. }
         | ToolOperation::Write { .. }
@@ -286,14 +279,16 @@ pub(super) fn qualify_output_paths(output: &mut Value, prepared: &PreparedToolCa
         | ToolOperation::GetSubagentResult { .. }
         | ToolOperation::CancelSubagent { .. }
         | ToolOperation::SaveMemory { .. }
-        | ToolOperation::ProjectTool { .. }
-        | ToolOperation::GitStatus
-        | ToolOperation::GitDiff
-        | ToolOperation::GitHistory { .. } => {}
+        | ToolOperation::ProjectTool { .. } => {}
     }
 }
 
-fn qualify_path_array(entries: Option<&mut Vec<Value>>, root: &Path, scope: ToolPathScope) {
+fn qualify_path_array(
+    entries: Option<&mut Vec<Value>>,
+    root: &Path,
+    scope: ToolPathScope,
+    _project_roots: &[PathBuf],
+) {
     if let Some(entries) = entries {
         for entry in entries {
             if let Some(path) = entry.get("path").and_then(Value::as_str).map(str::to_owned) {
@@ -306,63 +301,8 @@ fn qualify_path_array(entries: Option<&mut Vec<Value>>, root: &Path, scope: Tool
 
 fn qualify_path(root: &Path, relative_path: &str, scope: ToolPathScope) -> String {
     match scope {
-        ToolPathScope::Full => root
-            .join(relative_path)
-            .to_string_lossy()
-            .replace('\\', "/"),
-        ToolPathScope::Project => {
-            let relative_path = relative_path.replace('\\', "/");
-            format!("project:/{}", relative_path.trim_start_matches('/'))
-        }
-        ToolPathScope::OpenChat => {
-            let relative_path = relative_path.replace('\\', "/");
-            format!("openchat:/{}", relative_path.trim_start_matches('/'))
+        ToolPathScope::Full | ToolPathScope::Project | ToolPathScope::OpenChat => {
+            root.join(relative_path).to_string_lossy().into_owned()
         }
     }
-}
-
-fn trim_root_separator(path: &str) -> &str {
-    path.trim_start_matches(['/', '\\'])
-}
-
-fn resolve_desktop_path(
-    relative: &str,
-    directory: bool,
-) -> Result<(PathBuf, String, PathBuf, ToolPathScope), Value> {
-    let desktop_path = dirs::desktop_dir().ok_or_else(|| {
-        tool_error(
-            "tool_path_unavailable",
-            "The current user's Desktop folder could not be located.",
-        )
-    })?;
-    let root =
-        canonical_root(desktop_path).map_err(|error| tool_error(error.code, &error.message))?;
-    let relative_path =
-        safe_relative_path(relative).map_err(|error| tool_error(error.code, &error.message))?;
-    let target_path = root.join(relative_path).canonicalize().map_err(|_| {
-        tool_error(
-            "tool_path_unavailable",
-            "The requested Desktop path is unavailable.",
-        )
-    })?;
-    if !target_path.starts_with(&root)
-        || (directory && !target_path.is_dir())
-        || (!directory && !target_path.is_file())
-    {
-        return Err(tool_error(
-            "permission_scope_denied",
-            "The requested path is outside the Desktop folder or has the wrong type.",
-        ));
-    }
-    let relative = target_path
-        .strip_prefix(&root)
-        .map_err(|_| {
-            tool_error(
-                "permission_scope_denied",
-                "The requested path is outside the Desktop folder.",
-            )
-        })?
-        .to_string_lossy()
-        .into_owned();
-    Ok((root, relative, target_path, ToolPathScope::Full))
 }

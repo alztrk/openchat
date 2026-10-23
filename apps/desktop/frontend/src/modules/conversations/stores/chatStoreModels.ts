@@ -90,6 +90,15 @@ export function createRefreshModelsAction(
           (model) => model.key === current.selectedModelKey && !current.hiddenModelKeys.includes(modelRouteKey(model)),
         )
       : undefined;
+    const selectedModelKey =
+      routeModel?.key ??
+      currentSelection?.key ??
+      (!current.activeConversationId && preferredNewChatModel ? preferredNewChatModel.key : null);
+    const errorCode = projectPreferenceInvalid
+      ? 'projectDefaultModelLoadFailed'
+      : current.errorCode === 'modelRequired' && selectedModelKey !== null
+        ? null
+        : current.errorCode;
     const hasUnavailableSources =
       chatGptCatalogResult.status === 'rejected' ||
       chatGptCatalog?.hasUnavailableSources === true ||
@@ -104,11 +113,8 @@ export function createRefreshModelsAction(
       hasConfiguredProvider:
         chatGptCatalog?.hasConfiguredProvider === true || apiKeyCatalog?.hasConfiguredProvider === true,
       chatGptWorkspaceSelectionRequired: chatGptCatalog?.needsChatGptWorkspaceSelection === true,
-      selectedModelKey:
-        routeModel?.key ??
-        currentSelection?.key ??
-        (!current.activeConversationId && preferredNewChatModel ? preferredNewChatModel.key : null),
-      errorCode: projectPreferenceInvalid ? 'projectDefaultModelLoadFailed' : current.errorCode,
+      selectedModelKey,
+      errorCode,
     });
   };
 }

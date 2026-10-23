@@ -18,10 +18,24 @@ export interface GlobalMcpLoadResult {
 }
 
 export class McpStorageClientError extends Error {
-  constructor(readonly code: string) {
-    super('The MCP storage request failed.');
+  constructor(
+    readonly code: string,
+    message: string,
+    readonly details: string | null,
+  ) {
+    super(message);
     this.name = 'McpStorageClientError';
   }
+}
+
+export function mcpStorageErrorDetails(error: unknown): string | null {
+  if (!(error instanceof McpStorageClientError)) return null;
+  const message = error.message.trim();
+  const details = error.details?.trim();
+  const values = [message, details]
+    .filter((value): value is string => typeof value === 'string' && value.length > 0)
+    .filter((value, index, all) => all.indexOf(value) === index);
+  return values.length > 0 ? values.join('\n').slice(0, 2048) : null;
 }
 
 export async function loadGlobalMcpServers(): Promise<GlobalMcpLoadResult> {
@@ -83,21 +97,33 @@ async function invokeMcp<T>(command: string, args?: Record<string, unknown>): Pr
   try {
     return await invoke<T>(command, args);
   } catch (error) {
-    throw new McpStorageClientError(readErrorCode(error));
+    const failure = readError(error);
+    throw new McpStorageClientError(failure.code, failure.message, failure.details);
   }
 }
 
-function readErrorCode(error: unknown): string {
-  if (isObject(error) && typeof error.code === 'string') return error.code;
+function readError(error: unknown): { code: string; message: string; details: string | null } {
+  const fallback = {
+    code: 'mcp_storage_unavailable',
+    message: 'The local MCP storage request failed.',
+    details: null,
+  };
+  if (isObject(error)) {
+    return {
+      code: typeof error.code === 'string' ? error.code : fallback.code,
+      message: typeof error.message === 'string' ? error.message : fallback.message,
+      details: typeof error.details === 'string' ? error.details.slice(0, 2048) : null,
+    };
+  }
   if (typeof error === 'string') {
     try {
       const parsed: unknown = JSON.parse(error);
-      if (isObject(parsed) && typeof parsed.code === 'string') return parsed.code;
+      if (isObject(parsed)) return readError(parsed);
     } catch {
-      return 'mcp_storage_unavailable';
+      return fallback;
     }
   }
-  return 'mcp_storage_unavailable';
+  return fallback;
 }
 
 function isMcpServer(value: unknown): value is McpServerRecord {

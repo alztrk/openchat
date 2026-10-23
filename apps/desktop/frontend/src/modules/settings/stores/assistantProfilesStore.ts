@@ -22,14 +22,11 @@ interface AssistantProfilesState extends AssistantProfilesSnapshot {
   retry(): void;
   saveProfile(profile: AssistantProfile): boolean;
   removeProfile(profileId: string): boolean;
-  selectProfile(profileId: string | null): boolean;
-  getActiveProfile(): AssistantProfile | null;
   clearError(): void;
 }
 
 export const useAssistantProfilesStore = create<AssistantProfilesState>((set, get) => ({
   profiles: [],
-  activeProfileId: null,
   loadState: 'idle',
   errorKey: null,
 
@@ -67,7 +64,7 @@ export const useAssistantProfilesStore = create<AssistantProfilesState>((set, ge
     const profiles = exists
       ? current.profiles.map((item) => (item.id === profile.id ? profile : item))
       : [...current.profiles, profile];
-    return persist({ profiles, activeProfileId: current.activeProfileId }, set);
+    return persist({ profiles }, set);
   },
 
   removeProfile(profileId) {
@@ -75,21 +72,8 @@ export const useAssistantProfilesStore = create<AssistantProfilesState>((set, ge
     const current = get();
     const snapshot = {
       profiles: current.profiles.filter((profile) => profile.id !== profileId),
-      activeProfileId: current.activeProfileId === profileId ? null : current.activeProfileId,
     };
     return persist(snapshot, set);
-  },
-
-  selectProfile(profileId) {
-    if (get().loadState !== 'ready') return false;
-    const current = get();
-    if (profileId !== null && !current.profiles.some((profile) => profile.id === profileId)) return false;
-    return persist({ profiles: current.profiles, activeProfileId: profileId }, set);
-  },
-
-  getActiveProfile() {
-    const current = get();
-    return current.profiles.find((profile) => profile.id === current.activeProfileId) ?? null;
   },
 
   clearError() {

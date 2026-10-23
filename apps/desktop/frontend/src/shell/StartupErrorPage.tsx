@@ -1,5 +1,6 @@
 import { AlertTriangle, Copy, LoaderCircle, Minus, Square, X } from 'lucide-react';
 import { type MouseEvent, useEffect, useLayoutEffect, useState } from 'react';
+import english from '@/localization/locales/en.json';
 import { Button, Tooltip } from '@/design-system';
 import { unifiedStorage } from '@/platform/storage/unifiedStorage';
 import { getCurrentWindow, isTauri } from '@/platform/tauri';
@@ -8,86 +9,40 @@ import { BrandMark } from './BrandMark';
 const supportedLocales = ['de', 'en', 'es', 'fr', 'tr'] as const;
 type StartupLocale = (typeof supportedLocales)[number];
 
-interface StartupErrorCopy {
-  title: string;
-  description: string;
-  retry: string;
-  retrying: string;
-  closeApp: string;
-  minimize: string;
-  maximize: string;
-  restore: string;
-  close: string;
-  technicalDetails: string;
+type StartupErrorCopy = Pick<
+  typeof english,
+  | 'startupErrorTitle'
+  | 'startupErrorDescription'
+  | 'startupErrorDetails'
+  | 'startupErrorRetry'
+  | 'startupErrorRetrying'
+  | 'startupErrorCloseApp'
+  | 'startupErrorMinimize'
+  | 'startupErrorMaximize'
+  | 'startupErrorRestore'
+  | 'startupErrorClose'
+>;
+
+const startupLocaleLoaders: Record<StartupLocale, () => Promise<StartupErrorCopy>> = {
+  de: async () => (await import('@/localization/locales/de.json')).default,
+  en: async () => english,
+  es: async () => (await import('@/localization/locales/es.json')).default,
+  fr: async () => (await import('@/localization/locales/fr.json')).default,
+  tr: async () => (await import('@/localization/locales/tr.json')).default,
+};
+
+function getStartupCopy(): StartupErrorCopy {
+  // English copy is available synchronously if a locale chunk cannot load during startup recovery.
+  return english;
 }
 
-const startupErrorCopy = {
-  de: {
-    title: 'OpenChat konnte nicht gestartet werden',
-    description:
-      'Die Startoberfläche oder eine Sprachdatei konnte nicht geladen werden. Versuche es erneut. Falls das Problem bleibt, schließe OpenChat und starte es später noch einmal.',
-    retry: 'Erneut versuchen',
-    retrying: 'Wird erneut versucht …',
-    closeApp: 'OpenChat schließen',
-    minimize: 'Minimieren',
-    maximize: 'Maximieren',
-    restore: 'Wiederherstellen',
-    close: 'Schließen',
-    technicalDetails: 'Technische Details',
-  },
-  en: {
-    title: 'OpenChat could not start',
-    description:
-      'The startup interface or a language file could not be loaded. Try again. If the problem continues, close OpenChat and start it again later.',
-    retry: 'Try again',
-    retrying: 'Trying again…',
-    closeApp: 'Close OpenChat',
-    minimize: 'Minimize',
-    maximize: 'Maximize',
-    restore: 'Restore',
-    close: 'Close',
-    technicalDetails: 'Technical details',
-  },
-  es: {
-    title: 'No se pudo iniciar OpenChat',
-    description:
-      'No se pudo cargar la interfaz de inicio o un archivo de idioma. Inténtalo de nuevo. Si el problema continúa, cierra OpenChat y vuelve a abrirlo más tarde.',
-    retry: 'Reintentar',
-    retrying: 'Reintentando…',
-    closeApp: 'Cerrar OpenChat',
-    minimize: 'Minimizar',
-    maximize: 'Maximizar',
-    restore: 'Restaurar',
-    close: 'Cerrar',
-    technicalDetails: 'Detalles técnicos',
-  },
-  fr: {
-    title: 'OpenChat n’a pas pu démarrer',
-    description:
-      'L’interface de démarrage ou un fichier de langue n’a pas pu être chargé. Réessayez. Si le problème persiste, fermez OpenChat et relancez-le plus tard.',
-    retry: 'Réessayer',
-    retrying: 'Nouvelle tentative…',
-    closeApp: 'Fermer OpenChat',
-    minimize: 'Réduire',
-    maximize: 'Agrandir',
-    restore: 'Restaurer',
-    close: 'Fermer',
-    technicalDetails: 'Détails techniques',
-  },
-  tr: {
-    title: 'OpenChat başlatılamadı',
-    description:
-      'Başlangıç arayüzü veya bir dil dosyası yüklenemedi. Yeniden deneyin. Sorun sürerse OpenChat’i kapatıp daha sonra tekrar açın.',
-    retry: 'Yeniden dene',
-    retrying: 'Yeniden deneniyor…',
-    closeApp: 'OpenChat’i kapat',
-    minimize: 'Küçült',
-    maximize: 'Büyüt',
-    restore: 'Eski boyuta döndür',
-    close: 'Kapat',
-    technicalDetails: 'Teknik ayrıntılar',
-  },
-} satisfies Record<StartupLocale, StartupErrorCopy>;
+function readStartupErrorDetails(error: unknown): string | null {
+  if (error instanceof Error) {
+    const details = 'details' in error && typeof error.details === 'string' ? error.details : error.message;
+    return details.trim().slice(0, 1000) || null;
+  }
+  return typeof error === 'string' ? error.trim().slice(0, 1000) || null : null;
+}
 
 function findLocale(value: string | null): StartupLocale | null {
   const language = value?.toLowerCase().split(/[-_]/, 1)[0];
@@ -117,12 +72,6 @@ function getStartupTheme(): 'dark' | 'light' | 'system' {
   return 'system';
 }
 
-function getErrorMessage(error: unknown): string | null {
-  if (error instanceof Error && error.message.trim()) return error.message;
-  if (typeof error === 'string' && error.trim()) return error;
-  return null;
-}
-
 function reportWindowActionError(action: string, cause: unknown): void {
   globalThis.reportError(new Error(`OpenChat could not ${action}.`, { cause }));
 }
@@ -134,16 +83,30 @@ export interface StartupErrorPageProps {
 
 export function StartupErrorPage({ error, onRetry }: StartupErrorPageProps) {
   const [locale] = useState(getStartupLocale);
-  const copy = startupErrorCopy[locale];
+  const [copy, setCopy] = useState(getStartupCopy);
   const desktop = isTauri();
   const [isRetrying, setIsRetrying] = useState(false);
   const [currentError, setCurrentError] = useState(error);
+  const errorDetails = readStartupErrorDetails(currentError);
   const [maximized, setMaximized] = useState(false);
   const [systemIsDark, setSystemIsDark] = useState(() => window.matchMedia('(prefers-color-scheme: dark)').matches);
   const [themePreference] = useState(getStartupTheme);
   const isDark = themePreference === 'dark' || (themePreference === 'system' && systemIsDark);
-  const technicalDetails = getErrorMessage(currentError);
 
+  useEffect(() => {
+    if (locale === 'en') return;
+    let active = true;
+    void startupLocaleLoaders[locale]()
+      .then((dictionary) => {
+        if (active) setCopy(dictionary);
+      })
+      .catch((cause: unknown) => {
+        globalThis.reportError(new Error('The startup locale could not be loaded.', { cause }));
+      });
+    return () => {
+      active = false;
+    };
+  }, [locale]);
   useLayoutEffect(() => {
     document.documentElement.classList.toggle('dark', isDark);
     document.documentElement.lang = locale;
@@ -227,9 +190,9 @@ export function StartupErrorPage({ error, onRetry }: StartupErrorPageProps) {
         <div aria-hidden="true" className="startup-error-titlebar__drag-region" />
         {desktop ? (
           <div className="startup-error-titlebar__controls">
-            <Tooltip label={copy.minimize}>
+            <Tooltip label={copy.startupErrorMinimize}>
               <Button
-                aria-label={copy.minimize}
+                aria-label={copy.startupErrorMinimize}
                 className="size-8 rounded-control"
                 onClick={() => runWindowAction(() => getCurrentWindow().minimize(), 'minimize the window')}
                 size="icon"
@@ -238,9 +201,9 @@ export function StartupErrorPage({ error, onRetry }: StartupErrorPageProps) {
                 <Minus aria-hidden="true" size={12} />
               </Button>
             </Tooltip>
-            <Tooltip label={maximized ? copy.restore : copy.maximize}>
+            <Tooltip label={maximized ? copy.startupErrorRestore : copy.startupErrorMaximize}>
               <Button
-                aria-label={maximized ? copy.restore : copy.maximize}
+                aria-label={maximized ? copy.startupErrorRestore : copy.startupErrorMaximize}
                 className="size-8 rounded-control"
                 onClick={() => runWindowAction(() => getCurrentWindow().toggleMaximize(), 'resize the window')}
                 size="icon"
@@ -249,9 +212,9 @@ export function StartupErrorPage({ error, onRetry }: StartupErrorPageProps) {
                 {maximized ? <Copy aria-hidden="true" size={12} /> : <Square aria-hidden="true" size={12} />}
               </Button>
             </Tooltip>
-            <Tooltip label={copy.close}>
+            <Tooltip label={copy.startupErrorClose}>
               <Button
-                aria-label={copy.close}
+                aria-label={copy.startupErrorClose}
                 className="size-8 rounded-control hover:bg-destructive hover:text-white"
                 onClick={() => runWindowAction(() => getCurrentWindow().close(), 'close the window')}
                 size="icon"
@@ -271,29 +234,27 @@ export function StartupErrorPage({ error, onRetry }: StartupErrorPageProps) {
           </div>
           <div className="startup-error-card__copy">
             <h1 className="startup-error-card__title" id="startup-error-title">
-              {copy.title}
+              {copy.startupErrorTitle}
             </h1>
-            <p>{copy.description}</p>
+            <p>{copy.startupErrorDescription}</p>
+            {errorDetails ? (
+              <p className="startup-error-card__diagnostic">
+                <strong>{copy.startupErrorDetails}:</strong> {errorDetails}
+              </p>
+            ) : null}
           </div>
-
-          {technicalDetails ? (
-            <details className="startup-error-details">
-              <summary>{copy.technicalDetails}</summary>
-              <pre>{technicalDetails}</pre>
-            </details>
-          ) : null}
 
           <div className="startup-error-card__actions">
             <Button disabled={isRetrying} onClick={() => void retryStartup()} variant="primary">
               <LoaderCircle aria-hidden="true" className={isRetrying ? 'animate-spin' : ''} size={16} />
-              {isRetrying ? copy.retrying : copy.retry}
+              {isRetrying ? copy.startupErrorRetrying : copy.startupErrorRetry}
             </Button>
             {desktop ? (
               <Button
                 onClick={() => runWindowAction(() => getCurrentWindow().close(), 'close the window')}
                 variant="secondary"
               >
-                {copy.closeApp}
+                {copy.startupErrorCloseApp}
               </Button>
             ) : null}
           </div>

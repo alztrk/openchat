@@ -201,24 +201,23 @@ impl OAuthClient {
             .form(&form)
             .send()
             .await
-            .map_err(|_| network_error())?;
+            .map_err(network_error_with_details)?;
         let status = response.status();
         if !status.is_success() {
-            return Err(
-                if status == StatusCode::UNAUTHORIZED || status == StatusCode::BAD_REQUEST {
-                    ServiceError::new(
-                        "refresh_rejected",
-                        "ChatGPT rejected this connection. Sign in to the account again.",
-                        false,
-                    )
-                } else {
-                    ServiceError::new(
-                        "refresh_failed",
-                        "ChatGPT could not refresh this connection. Try again later.",
-                        status.is_server_error(),
-                    )
-                },
-            );
+            let error = if status == StatusCode::UNAUTHORIZED || status == StatusCode::BAD_REQUEST {
+                ServiceError::new(
+                    "refresh_rejected",
+                    "ChatGPT rejected this connection. Sign in to the account again.",
+                    false,
+                )
+            } else {
+                ServiceError::new(
+                    "refresh_failed",
+                    "ChatGPT could not refresh this connection. Try again later.",
+                    status.is_server_error(),
+                )
+            };
+            return Err(error.with_details(format!("HTTP status {}", status.as_u16())));
         }
         let body = read_token_response_body(response).await?;
         let mut response: TokenResponse = serde_json::from_slice(&body).map_err(|_| {
@@ -471,7 +470,7 @@ impl OAuthClient {
         ];
         let response = match self.http.post(TOKEN_ENDPOINT).form(&form).send().await {
             Ok(response) => response,
-            Err(_) => {
+            Err(error) => {
                 record_oauth_event(
                     storage,
                     "oauth_token_exchange_transport_failed",
@@ -480,7 +479,7 @@ impl OAuthClient {
                     Some("network_unavailable"),
                     None,
                 );
-                return Err(network_error());
+                return Err(network_error_with_details(error));
             }
         };
         let status = response.status();
@@ -497,7 +496,8 @@ impl OAuthClient {
                 "oauth_exchange_rejected",
                 "ChatGPT did not accept the sign-in request. The OAuth client or callback may not be allowed.",
                 false,
-            ));
+            )
+            .with_details(format!("HTTP status {}", status.as_u16())));
         }
         let body = match read_token_response_body(response).await {
             Ok(body) => body,
@@ -808,6 +808,10 @@ fn network_error() -> ServiceError {
     )
 }
 
+fn network_error_with_details(error: reqwest::Error) -> ServiceError {
+    network_error().with_details(error.without_url().to_string())
+}
+
 fn browser_error() -> ServiceError {
     ServiceError::new(
         "browser_unavailable",
@@ -884,7 +888,7 @@ async fn read_token_response_body(
         .map(|length| (length as usize).min(MAX_OAUTH_TOKEN_RESPONSE_BYTES))
         .unwrap_or_default();
     let mut body = Zeroizing::new(Vec::with_capacity(capacity));
-    while let Some(chunk) = response.chunk().await.map_err(|_| network_error())? {
+    while let Some(chunk) = response.chunk().await.map_err(network_error_with_details)? {
         // Bytes may be shared, so zeroize only when the library grants unique mutable ownership.
         if chunk.len() > MAX_OAUTH_TOKEN_RESPONSE_BYTES.saturating_sub(body.len()) {
             if let Ok(mut unique_chunk) = chunk.try_into_mut() {

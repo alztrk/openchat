@@ -21,7 +21,7 @@ use crate::{
 
 use super::{
     CHATGPT_CODEX_BASE, ChatGptService, MAX_STREAM_EVENT_BYTES, StreamRequest, database_error,
-    http_error, invalid_response_error, request_cancelled,
+    http_error, invalid_response_error, network_error_with_details, request_cancelled,
 };
 
 const MAX_COMPACTION_OUTPUT_ITEMS: usize = 1;
@@ -494,7 +494,7 @@ async fn parse_remote_compaction_stream(
         }
         chunk = stream.next() => chunk,
     } {
-        pending.extend_from_slice(&chunk.map_err(|_| super::network_error())?);
+        pending.extend_from_slice(&chunk.map_err(network_error_with_details)?);
         if pending.len() > MAX_STREAM_EVENT_BYTES {
             return Err(invalid_response_error());
         }

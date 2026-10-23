@@ -10,7 +10,7 @@ export interface AgentQuestionOption {
 
 export interface AgentQuestion {
   id: string;
-  kind: 'choice' | 'text';
+  kind: 'choice' | 'multi_choice' | 'text';
   title: string;
   description: string | null;
   options: AgentQuestionOption[];
@@ -19,7 +19,10 @@ export interface AgentQuestion {
   maxLength: number | null;
 }
 
-export type AgentQuestionAnswerValue = { kind: 'choice'; optionId: string } | { kind: 'text'; text: string };
+export type AgentQuestionAnswerValue =
+  | { kind: 'choice'; optionId: string }
+  | { kind: 'multi_choice'; optionIds: string[] }
+  | { kind: 'text'; text: string };
 
 export interface AgentQuestionAnswer {
   questionId: string;
@@ -60,7 +63,7 @@ export function parseAgentQuestionGroup(value: unknown): AgentQuestionGroup {
     !Array.isArray(questions) ||
     questions.length === 0 ||
     questions.length > maximumQuestionCount ||
-    (answers !== undefined && !Array.isArray(answers)) ||
+    (answers !== undefined && !(status === 'pending' && answers === null) && !Array.isArray(answers)) ||
     !isOptionalString(value.assistantMessageId) ||
     !isOptionalString(value.toolCallId) ||
     !isOptionalString(value.toolName) ||
@@ -88,6 +91,15 @@ export function parseAgentQuestionGroup(value: unknown): AgentQuestionGroup {
     }
     if (answerValue.kind === 'choice' && !question.options.some((option) => option.id === answerValue.optionId)) {
       throw new Error('A question answer references an unknown option.');
+    }
+    if (
+      answerValue.kind === 'multi_choice' &&
+      (answerValue.optionIds.length === 0 ||
+        answerValue.optionIds.length > question.options.length ||
+        new Set(answerValue.optionIds).size !== answerValue.optionIds.length ||
+        answerValue.optionIds.some((optionId) => !question.options.some((option) => option.id === optionId)))
+    ) {
+      throw new Error('A multiple-choice answer references invalid options.');
     }
     if (answerValue.kind === 'text' && question.maxLength !== null && answerValue.text.length > question.maxLength) {
       throw new Error('A question answer is too long.');
@@ -126,6 +138,19 @@ export function parseAgentQuestionAnswer(value: unknown): AgentQuestionAnswer {
   if (answer.kind === 'choice' && isIdentifier(answer.optionId)) {
     return { questionId: value.questionId, value: { kind: 'choice', optionId: answer.optionId } };
   }
+  if (
+    answer.kind === 'multi_choice' &&
+    Array.isArray(answer.optionIds) &&
+    answer.optionIds.length > 0 &&
+    answer.optionIds.length <= maximumQuestionOptionCount &&
+    answer.optionIds.every(isIdentifier) &&
+    new Set(answer.optionIds).size === answer.optionIds.length
+  ) {
+    return {
+      questionId: value.questionId,
+      value: { kind: 'multi_choice', optionIds: answer.optionIds },
+    };
+  }
   if (answer.kind === 'text' && typeof answer.text === 'string' && isValidText(answer.text, true)) {
     return { questionId: value.questionId, value: { kind: 'text', text: answer.text } };
   }
@@ -137,7 +162,7 @@ function parseAgentQuestion(value: unknown): AgentQuestion {
   const { id, kind, title, options, required, description, placeholder, maxLength } = value;
   if (
     !isIdentifier(id) ||
-    (kind !== 'choice' && kind !== 'text') ||
+    (kind !== 'choice' && kind !== 'multi_choice' && kind !== 'text') ||
     typeof title !== 'string' ||
     !isValidText(title, false) ||
     !Array.isArray(options) ||
@@ -156,7 +181,7 @@ function parseAgentQuestion(value: unknown): AgentQuestion {
   const parsedOptions = options.map(parseAgentQuestionOption);
   if (
     parsedOptions.length > maximumQuestionOptionCount ||
-    (kind === 'choice' && parsedOptions.length < 2) ||
+    ((kind === 'choice' || kind === 'multi_choice') && parsedOptions.length < 2) ||
     (kind === 'text' && parsedOptions.length !== 0)
   ) {
     throw new Error('A question has invalid options.');

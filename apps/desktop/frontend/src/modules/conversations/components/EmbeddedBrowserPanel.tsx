@@ -108,7 +108,7 @@ export function EmbeddedBrowserPanel({ initialUrl }: EmbeddedBrowserPanelProps) 
               aria-label={t('browserPanelAddressLabel')}
               className="h-8 w-full rounded-control border border-border bg-composer pl-7 pr-2.5 text-xs text-text focus:outline-none"
               onChange={(event) => setAddressInput(event.currentTarget.value)}
-              placeholder="https://"
+              placeholder={t('browserPanelUrlPlaceholder')}
               type="text"
               value={addressInput}
             />

@@ -472,19 +472,19 @@ export function TitleBarSearch({ onSelectConversation }: TitleBarSearchProps) {
 
       {showRecentSearches ? (
         <div
-          aria-label="Recent searches"
+          aria-label={t('recentSearches')}
           className="openchat-dropdown-surface absolute left-0 right-0 top-full z-50 mt-1 flex w-full origin-top flex-col overflow-hidden p-1"
           role="listbox"
         >
           <div className="flex items-center justify-between px-2 py-1.5 text-caption font-medium text-secondary-text">
-            <span>Son Aramalar</span>
+            <span>{t('recentSearches')}</span>
             <button
               className="flex items-center gap-1 text-caption text-secondary-text transition-colors hover:text-destructive"
               onClick={handleClearAllRecent}
               type="button"
             >
               <Trash2 size={11} />
-              <span>Temizle</span>
+              <span>{t('clearRecentSearches')}</span>
             </button>
           </div>
           <div className="flex flex-col gap-0.5">
@@ -504,7 +504,7 @@ export function TitleBarSearch({ onSelectConversation }: TitleBarSearchProps) {
                   <span className="truncate">{term}</span>
                 </div>
                 <button
-                  aria-label="Aramayı sil"
+                  aria-label={t('deleteRecentSearch')}
                   className="opacity-0 group-hover:opacity-100 p-0.5 text-secondary-icon transition-opacity hover:text-text"
                   onClick={(e) => handleDeleteRecentSearch(term, e)}
                   type="button"
@@ -525,14 +525,16 @@ export function TitleBarSearch({ onSelectConversation }: TitleBarSearchProps) {
         >
           {hasActiveFilter ? (
             <div className="flex items-center gap-1.5 border-b border-border/70 bg-surface-raised/40 px-2.5 py-1.5 text-caption text-secondary-text">
-              <span className="font-medium">Filtre:</span>
+              <span className="font-medium">{t('searchFilterLabel')}</span>
               {parsedQuery.roleFilter ? (
                 <span className="rounded-xs bg-accent/15 px-1.5 py-0.2 text-accent font-medium">
-                  {parsedQuery.roleFilter === 'user' ? 'Kullanıcı' : 'Yapay Zeka'}
+                  {t(parsedQuery.roleFilter === 'user' ? 'searchFilterUser' : 'searchFilterAssistant')}
                 </span>
               ) : null}
               {parsedQuery.hasCodeOnly ? (
-                <span className="rounded-xs bg-accent/15 px-1.5 py-0.2 text-accent font-medium">Kod bloğu</span>
+                <span className="rounded-xs bg-accent/15 px-1.5 py-0.2 text-accent font-medium">
+                  {t('searchFilterCode')}
+                </span>
               ) : null}
             </div>
           ) : null}

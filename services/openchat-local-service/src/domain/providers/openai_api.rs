@@ -52,13 +52,13 @@ pub async fn models(
             .timeout(Duration::from_secs(45))
             .redirect(reqwest::redirect::Policy::none())
             .build()
-            .map_err(|_| network_error())?;
+            .map_err(|error| network_error().with_details(error.without_url().to_string()))?;
         let response = client
             .get(MODELS_URL)
             .bearer_auth(api_key)
             .send()
             .await
-            .map_err(|_| network_error())?;
+            .map_err(|error| network_error().with_details(error.without_url().to_string()))?;
         if !response.status().is_success() {
             return Err(http_error(response.status()));
         }
@@ -116,6 +116,65 @@ fn parse_models(value: &Value) -> Result<Vec<Value>, ServiceError> {
 
 pub(crate) fn supports_image_input(model_id: &str) -> bool {
     crate::chatgpt_store::model_supports_images(model_id)
+}
+
+const REASONING_SUMMARY_MODELS: &[&str] = &[
+    "gpt-6-astra",
+    "gpt-6.1-sol",
+    "gpt-6-sol",
+    "gpt-6-luna",
+    "gpt-5.6",
+    "gpt-5.6-sol",
+    "gpt-5.6-terra",
+    "gpt-5.6-luna",
+    "gpt-5.6-cyber",
+    "gpt-5.5",
+    "gpt-5.5-pro",
+    "gpt-5.4",
+    "gpt-5.4-pro",
+    "gpt-5.4-mini",
+    "gpt-5.4-nano",
+    "gpt-5.2",
+    "gpt-5.2-pro",
+    "gpt-5.2-codex",
+    "gpt-5.1",
+    "gpt-5.1-codex",
+    "gpt-5.1-codex-max",
+    "gpt-5.1-codex-mini",
+    "gpt-5",
+    "gpt-5-pro",
+    "gpt-5-mini",
+    "gpt-5-nano",
+    "gpt-5-codex",
+    "gpt-5.3-codex",
+    "o1-pro",
+    "o4-mini",
+    "o3",
+    "o3-pro",
+    "o3-mini",
+    "o3-deep-research",
+    "o4-mini-deep-research",
+    "o1",
+    "o1-mini",
+    "codex-mini-latest",
+    "computer-use-preview",
+];
+
+/// The OpenAI Models API does not include reasoning-summary capabilities.
+/// Keep this list aligned with OpenAI's documented reasoning model families.
+pub(crate) fn supports_reasoning_summary(model_id: &str) -> bool {
+    REASONING_SUMMARY_MODELS.iter().any(|model| {
+        model_id == *model
+            || model_id
+                .strip_prefix(model)
+                .and_then(|suffix| suffix.strip_prefix('-'))
+                .is_some_and(|snapshot| {
+                    !snapshot.is_empty()
+                        && snapshot
+                            .chars()
+                            .all(|character| character.is_ascii_digit() || character == '-')
+                })
+    })
 }
 
 fn load_catalog(
@@ -178,17 +237,20 @@ fn http_error(status: StatusCode) -> ServiceError {
             "authentication_required",
             "OpenAI rejected the API key. Check the connection in Settings.",
             false,
-        ),
+        )
+        .with_details(format!("HTTP status {}", status.as_u16())),
         StatusCode::TOO_MANY_REQUESTS => ServiceError::new(
             "rate_limited",
             "OpenAI reported a usage limit. Try again later.",
             true,
-        ),
+        )
+        .with_details(format!("HTTP status {}", status.as_u16())),
         _ => ServiceError::new(
             "provider_request_failed",
             "OpenAI could not return its model list.",
             status.is_server_error(),
-        ),
+        )
+        .with_details(format!("HTTP status {}", status.as_u16())),
     }
 }
 
@@ -220,7 +282,7 @@ fn storage_error() -> ServiceError {
 mod tests {
     use serde_json::json;
 
-    use super::parse_models;
+    use super::{parse_models, supports_reasoning_summary};
 
     #[test]
     fn openai_model_list_does_not_invent_context_limits() {
@@ -231,5 +293,23 @@ mod tests {
 
         assert_eq!(models.len(), 1);
         assert!(models[0]["contextWindow"].is_null());
+    }
+
+    #[test]
+    fn reasoning_summaries_are_enabled_only_for_documented_openai_models() {
+        for model_id in [
+            "gpt-6-astra",
+            "gpt-5.4-mini-2026-03-17",
+            "gpt-5.5-pro-2026-04-23",
+            "o4-mini",
+            "o3-pro-2025-06-10",
+            "computer-use-preview",
+        ] {
+            assert!(supports_reasoning_summary(model_id), "{model_id}");
+        }
+
+        for model_id in ["gpt-4.1", "gpt-6-astra-custom", "ft:gpt-6-astra:team"] {
+            assert!(!supports_reasoning_summary(model_id), "{model_id}");
+        }
     }
 }

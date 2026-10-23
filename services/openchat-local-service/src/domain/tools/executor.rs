@@ -3,7 +3,6 @@
 //! Execution delegates input validation and each operation to focused modules; permission mode
 //! and project policy are checked before any operation is run.
 
-use super::{MAX_TOOL_CALLS_PER_TURN, MAX_TOOL_ROUNDS};
 use crate::{
     chat_operation::SubagentModelOption,
     chatgpt::{ChatGptService, ImageGenerationAuth, ImageGenerationRequest, ImageQuality},
@@ -30,7 +29,9 @@ use uuid::Uuid;
 mod execution;
 mod paths;
 mod validation;
+#[cfg(test)]
 pub(crate) use execution::execute_model_tool;
+pub(crate) use execution::execute_model_tool_with_workspace_roots;
 use paths::qualify_output_paths;
 pub(crate) use validation::{PreparedToolCall, ToolOperation};
 
@@ -101,15 +102,18 @@ pub(crate) fn parse_tool_permission_rules(
 
     let mut parsed = ToolPermissionRules::with_capacity(rules.len());
     for (name, rule) in rules {
-        if !is_permission_rule_tool(name) {
-            return Err(invalid_tool_permission_rules());
-        }
         let rule = match rule.as_str() {
             Some("ask") => ToolPermissionRule::Ask,
             Some("allow") => ToolPermissionRule::Allow,
             Some("deny") => ToolPermissionRule::Deny,
             _ => return Err(invalid_tool_permission_rules()),
         };
+        if matches!(name.as_str(), "git_status" | "git_diff" | "git_history") {
+            continue;
+        }
+        if !is_permission_rule_tool(name) {
+            return Err(invalid_tool_permission_rules());
+        }
         parsed.insert(name.clone(), rule);
     }
     Ok(parsed)
@@ -131,6 +135,10 @@ fn is_permission_rule_tool(name: &str) -> bool {
             false
         };
     }
+    #[cfg(windows)]
+    if name == "computer_use" {
+        return true;
+    }
     matches!(
         name,
         "list_files"
@@ -141,9 +149,6 @@ fn is_permission_rule_tool(name: &str) -> bool {
             | "get_file_info"
             | "execute_command"
             | "send_terminal_input"
-            | "git_status"
-            | "git_diff"
-            | "git_history"
             | "web_search"
             | "read_url_content"
             | "save_memory"
@@ -330,12 +335,19 @@ impl ToolPermissionMode {
 /// Owns the request-scoped state used to validate and execute model tool calls.
 pub struct ToolExecutor {
     project_root: Option<PathBuf>,
+    project_roots: Vec<PathBuf>,
     data_root: PathBuf,
     permission_mode: ToolPermissionMode,
     turn_state: StdMutex<ToolTurnState>,
     tool_activities: Mutex<Vec<ToolActivity>>,
     allowed_tool_names: HashSet<String>,
     permission_rules: ToolPermissionRules,
+    #[cfg(windows)]
+    computer_use: super::computer_use::ComputerUseSession,
+    #[cfg(windows)]
+    computer_use_approved: StdMutex<bool>,
+    #[cfg(windows)]
+    computer_use_images: Mutex<HashMap<String, String>>,
     chat_service: Option<ChatGptService>,
     subagent_models: Vec<SubagentModelOption>,
     subagent_tool_definitions: Vec<ToolDefinition>,
@@ -347,8 +359,6 @@ pub struct ToolExecutor {
 
 #[derive(Default)]
 struct ToolTurnState {
-    rounds: usize,
-    calls: usize,
     round_sequence: usize,
     current_round_id: Option<String>,
 }
@@ -360,15 +370,18 @@ enum PendingFileChangeCapture {
             Result<Option<crate::file_changes::FileSnapshot>, crate::file_changes::TrackingError>,
     },
     Workspace {
-        before: Result<crate::file_changes::WorkspaceSnapshot, crate::file_changes::TrackingError>,
+        before: Vec<(
+            PathBuf,
+            Result<crate::file_changes::WorkspaceSnapshot, crate::file_changes::TrackingError>,
+        )>,
     },
     None,
 }
 
-pub(crate) fn tool_call_limit_error() -> ServiceError {
+pub(crate) fn tool_response_limit_error() -> ServiceError {
     ServiceError::new(
-        "tool_iteration_limit",
-        "The response reached the file-tool call limit. Start a new request to continue.",
+        "tool_response_limit",
+        "A single model response requested more than the supported number of tool calls.",
         false,
     )
 }
@@ -415,12 +428,19 @@ impl ToolExecutor {
     ) -> Self {
         Self {
             project_root: project_root.map(Path::to_path_buf),
+            project_roots: project_root.map(Path::to_path_buf).into_iter().collect(),
             data_root: data_root.to_path_buf(),
             permission_mode,
             turn_state: StdMutex::new(ToolTurnState::default()),
             tool_activities: Mutex::new(Vec::new()),
             allowed_tool_names: allowed_tool_names.into_iter().collect(),
             permission_rules,
+            #[cfg(windows)]
+            computer_use: super::computer_use::ComputerUseSession::default(),
+            #[cfg(windows)]
+            computer_use_approved: StdMutex::new(false),
+            #[cfg(windows)]
+            computer_use_images: Mutex::new(HashMap::new()),
             chat_service: None,
             subagent_models: Vec::new(),
             subagent_tool_definitions: Vec::new(),
@@ -429,6 +449,11 @@ impl ToolExecutor {
             #[cfg(windows)]
             mcp_registry: None,
         }
+    }
+
+    pub(crate) fn with_workspace_roots(mut self, roots: Vec<PathBuf>) -> Self {
+        self.project_roots = roots;
+        self
     }
 
     pub(crate) fn with_subagent_models(mut self, models: Vec<SubagentModelOption>) -> Self {
@@ -461,6 +486,7 @@ impl ToolExecutor {
                 !matches!(
                     definition.name.as_str(),
                     "delegate_task"
+                        | "computer_use"
                         | "list_subagent_models"
                         | "get_subagent_result"
                         | "cancel_subagent"
@@ -485,6 +511,7 @@ impl ToolExecutor {
             definitions.iter().map(|definition| definition.name.clone()),
             self.permission_rules.clone(),
         )
+        .with_workspace_roots(self.project_roots.clone())
         .with_subagent_tool_definitions(definitions);
         if let Some(service) = self.chat_service.clone() {
             executor = executor.with_chat_service(service);
@@ -500,6 +527,128 @@ impl ToolExecutor {
 
     pub(crate) fn subagent_tool_definitions(&self) -> &[ToolDefinition] {
         &self.subagent_tool_definitions
+    }
+
+    pub(crate) async fn take_computer_use_image(&self, call_id: &str) -> Option<String> {
+        #[cfg(windows)]
+        {
+        self.computer_use_images.lock().await.remove(call_id)
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = call_id;
+            None
+        }
+    }
+
+    #[cfg(windows)]
+    async fn execute_computer_use_call(
+        &self,
+        call: &ToolCall,
+        permissions: &ToolPermissionBroker,
+        context: ToolEventContext<'_>,
+    ) -> Result<ToolResult, ServiceError> {
+        let ToolEventContext {
+            request_id,
+            snapshot,
+            events,
+            cancellation,
+            storage,
+        } = context;
+        let mut activity_call = call.clone();
+        if let Some(arguments) = activity_call.arguments.as_object_mut()
+            && arguments.contains_key("text")
+        {
+            arguments.insert("text".to_owned(), json!("[redacted]"));
+        }
+        let was_approved = *self
+            .computer_use_approved
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if !was_approved {
+            if self.permission_rules.get("computer_use") == Some(&ToolPermissionRule::Deny) {
+                let output = tool_error(
+                    "permission_denied",
+                    "Computer Use is denied by the active tool permission rules.",
+                );
+                self.emit_activity(
+                    storage,
+                    ToolActivity::denied(&activity_call, "desktop".to_owned(), output.clone()),
+                    request_id,
+                    snapshot,
+                    events,
+                )
+                .await?;
+                return Ok(ToolResult { call_id: call.id.clone(), output });
+            }
+            let requires_approval = self.permission_rules.get("computer_use")
+                == Some(&ToolPermissionRule::Ask)
+                || (self.permission_rules.get("computer_use") != Some(&ToolPermissionRule::Allow)
+                    && self.permission_mode != ToolPermissionMode::FullAccess);
+            if requires_approval {
+                self.emit_activity(
+                    storage,
+                    ToolActivity::awaiting_approval(&activity_call, "desktop".to_owned()),
+                    request_id,
+                    snapshot,
+                    events,
+                )
+                .await?;
+                let approved = permissions
+                    .request_approval(
+                    request_id, "computer_use", "desktop",
+                    &call.arguments, events, cancellation,
+                ).await;
+                let approved = match approved {
+                    Ok(approved) => approved,
+                    Err(error) if error.code == "operation_cancelled" => {
+                        let output = tool_error("operation_cancelled", "The request was stopped.");
+                        self.emit_activity(
+                            storage,
+                            ToolActivity::cancelled(&activity_call, "desktop".to_owned(), output),
+                            request_id,
+                            snapshot,
+                            events,
+                        ).await?;
+                        return Err(error);
+                    }
+                    Err(error) => return Err(error),
+                };
+                if !approved {
+                    let output = tool_error("permission_denied", "Computer Use was not approved. Do not retry unless the user asks.");
+                    self.emit_activity(
+                        storage,
+                        ToolActivity::denied(&activity_call, "desktop".to_owned(), output.clone()),
+                        request_id,
+                        snapshot,
+                        events,
+                    ).await?;
+                    return Ok(ToolResult { call_id: call.id.clone(), output });
+                }
+            }
+            *self.computer_use_approved.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = true;
+        }
+        if *cancellation.borrow() {
+            return Err(crate::permissions::operation_cancelled_error());
+        }
+        self.emit_activity(
+            storage,
+            ToolActivity::running(&activity_call, Some("desktop".to_owned())),
+            request_id,
+            snapshot,
+            events,
+        ).await?;
+        let result = self.computer_use.execute(&call.arguments);
+        if let Some(image) = result.image {
+            self.computer_use_images.lock().await.insert(call.id.clone(), image);
+        }
+        let activity = ToolActivity::finished(
+            &activity_call,
+            Some("desktop".to_owned()),
+            result.output.clone(),
+        );
+        self.emit_activity(storage, activity, request_id, snapshot, events).await?;
+        Ok(ToolResult { call_id: call.id.clone(), output: result.output })
     }
 
     #[cfg(windows)]
@@ -567,7 +716,6 @@ impl ToolExecutor {
         if self.permission_mode == ToolPermissionMode::Plan {
             return ToolPermissionRule::Deny;
         }
-
         // Trust Handoff defense: Writing or editing executable hooks or IDE tasks
         // always requires explicit user confirmation regardless of auto-approval mode.
         if let Some(path) = target_path
@@ -608,27 +756,19 @@ impl ToolExecutor {
             })
     }
 
-    pub fn begin_round(&self, calls: &[ToolCall]) -> Result<(), ServiceError> {
+    pub fn begin_round(&self, calls: &[ToolCall]) {
         if calls.is_empty() {
-            return Ok(());
+            return;
         }
         let mut turn_state = self
             .turn_state
             .lock()
-            .map_err(|_| tool_call_limit_error())?;
-        if turn_state.rounds >= MAX_TOOL_ROUNDS
-            || turn_state.calls.saturating_add(calls.len()) > MAX_TOOL_CALLS_PER_TURN
-        {
-            return Err(tool_call_limit_error());
-        }
-        turn_state.rounds += 1;
-        turn_state.calls += calls.len();
-        turn_state.round_sequence += 1;
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        turn_state.round_sequence = turn_state.round_sequence.saturating_add(1);
         turn_state.current_round_id = Some(format!("round-{}", turn_state.round_sequence));
-        Ok(())
     }
 
-    pub(crate) fn reset_turn_limits(&self) {
+    pub(crate) fn reset_turn_state(&self) {
         let mut turn_state = self
             .turn_state
             .lock()
@@ -666,6 +806,22 @@ impl ToolExecutor {
         if self.permission_mode == ToolPermissionMode::Plan {
             return self
                 .deny_plan_mode_tool(call, request_id, snapshot, events, storage)
+                .await;
+        }
+        #[cfg(windows)]
+        if call.name == "computer_use" {
+            return self
+                .execute_computer_use_call(
+                    call,
+                    permissions,
+                    ToolEventContext {
+                        request_id,
+                        snapshot,
+                        events,
+                        cancellation: &mut *cancellation,
+                        storage,
+                    },
+                )
                 .await;
         }
         #[cfg(windows)]
@@ -1055,7 +1211,7 @@ impl ToolExecutor {
             .await?;
             return Err(crate::permissions::operation_cancelled_error());
         }
-        let file_change_capture = capture_file_change_before(&prepared);
+        let file_change_capture = capture_file_change_before(&prepared, &self.project_roots);
         let mut output = match &prepared.operation {
             ToolOperation::SaveMemory { fact } => {
                 save_personal_memory(storage, &snapshot.conversation_id, fact)
@@ -1157,7 +1313,13 @@ impl ToolExecutor {
                 )
             }
             ToolOperation::WebSearch { .. } => {
-                execute_model_tool(&prepared, &snapshot.conversation_id).await
+                execute_model_tool_with_workspace_roots(
+                    &prepared,
+                    &snapshot.conversation_id,
+                    &self.project_roots,
+                    self.permission_mode == ToolPermissionMode::FullAccess,
+                )
+                .await
             }
             #[cfg(windows)]
             ToolOperation::ProjectTool {
@@ -1174,19 +1336,33 @@ impl ToolExecutor {
                         *timeout_seconds,
                         *output_limit_bytes,
                         cancellation,
+                        self.permission_mode == ToolPermissionMode::FullAccess,
                     )
                     .await
                 {
                     Ok(output) => output,
-                    Err(message) => {
-                        json!({"error":{"code":"project_tool_failed","message":message}})
+                    Err(error) => {
+                        let mut output =
+                            json!({"error":{"code":error.code,"message":error.message}});
+                        if let Some(details) = error.details {
+                            output["error"]["details"] = Value::String(details);
+                        }
+                        output
                     }
                 },
                 Err(_) => {
                     json!({"error":{"code":"project_tool_failed","message":"The configured tool input could not be encoded."}})
                 }
             },
-            _ => execute_model_tool(&prepared, &snapshot.conversation_id).await,
+            _ => {
+                execute_model_tool_with_workspace_roots(
+                    &prepared,
+                    &snapshot.conversation_id,
+                    &self.project_roots,
+                    self.permission_mode == ToolPermissionMode::FullAccess,
+                )
+                .await
+            }
         };
         if matches!(
             call.name.as_str(),
@@ -1194,11 +1370,12 @@ impl ToolExecutor {
         ) {
             qualify_citation_source_ids(&mut output, &call.id);
         }
-        qualify_output_paths(&mut output, &prepared);
+        qualify_output_paths(&mut output, &prepared, &self.project_roots);
         redact_tool_output(&mut output);
         let (file_changes, file_changes_error) = finish_file_change_capture(
             storage,
             &snapshot.conversation_id,
+            &call.name,
             &prepared,
             file_change_capture,
         );
@@ -1409,17 +1586,40 @@ impl ToolExecutor {
         };
         let mut output = match result {
             Ok(result) if result.get("isError").and_then(Value::as_bool) == Some(true) => {
-                json!({
+                let details = result
+                    .get("content")
+                    .and_then(Value::as_array)
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|item| {
+                        (item.get("type").and_then(Value::as_str) == Some("text"))
+                            .then(|| item.get("text").and_then(Value::as_str))
+                            .flatten()
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                let mut output = json!({
                     "error": {
                         "code": "mcp_tool_failed",
                         "message": "The MCP server reported a tool error."
                     },
                     "untrusted": true,
                     "result": result
-                })
+                });
+                if !details.is_empty() {
+                    output["error"]["details"] =
+                        Value::String(details.chars().take(1000).collect());
+                }
+                output
             }
             Ok(result) => json!({"untrusted": true, "result": result}),
-            Err(_) => tool_error("mcp_tool_failed", "The MCP tool call failed or timed out."),
+            Err(error) => {
+                let mut output =
+                    tool_error("mcp_tool_failed", "The MCP tool call failed or timed out.");
+                output["error"]["details"] = Value::String(error);
+                output["untrusted"] = Value::Bool(true);
+                output
+            }
         };
         redact_tool_output(&mut output);
         self.emit_activity(
@@ -1773,7 +1973,10 @@ fn qualify_citation_source_ids(output: &mut Value, call_id: &str) {
     }
 }
 
-fn capture_file_change_before(prepared: &PreparedToolCall) -> PendingFileChangeCapture {
+fn capture_file_change_before(
+    prepared: &PreparedToolCall,
+    project_roots: &[PathBuf],
+) -> PendingFileChangeCapture {
     match &prepared.operation {
         ToolOperation::Write { .. } | ToolOperation::Edit { .. } => {
             PendingFileChangeCapture::File {
@@ -1783,9 +1986,26 @@ fn capture_file_change_before(prepared: &PreparedToolCall) -> PendingFileChangeC
         }
         ToolOperation::Bash { .. } | ToolOperation::SendTerminalInput { .. } => {
             PendingFileChangeCapture::Workspace {
-                before: crate::file_changes::capture_workspace(&prepared.root),
+                before: if project_roots.is_empty() {
+                    vec![(
+                        prepared.root.clone(),
+                        crate::file_changes::capture_workspace(&prepared.root),
+                    )]
+                } else {
+                    project_roots
+                        .iter()
+                        .map(|root| (root.clone(), crate::file_changes::capture_workspace(root)))
+                        .collect()
+                },
             }
         }
+        #[cfg(windows)]
+        ToolOperation::ProjectTool { .. } => PendingFileChangeCapture::Workspace {
+            before: vec![(
+                prepared.root.clone(),
+                crate::file_changes::capture_workspace(&prepared.root),
+            )],
+        },
         _ => PendingFileChangeCapture::None,
     }
 }
@@ -1793,10 +2013,11 @@ fn capture_file_change_before(prepared: &PreparedToolCall) -> PendingFileChangeC
 fn finish_file_change_capture(
     storage: &crate::storage::AppStorage,
     conversation_id: &str,
+    tool_name: &str,
     prepared: &PreparedToolCall,
     capture: PendingFileChangeCapture,
 ) -> (Vec<crate::file_changes::FileChangeSummary>, Option<String>) {
-    let deltas = match capture {
+    let grouped_deltas = match capture {
         PendingFileChangeCapture::None => return (Vec::new(), None),
         PendingFileChangeCapture::File { path, before } => {
             let Ok(before) = before else {
@@ -1811,32 +2032,58 @@ fn finish_file_change_capture(
             if before_hash == after_hash {
                 Vec::new()
             } else {
-                vec![crate::file_changes::FileChangeDelta {
-                    path,
-                    before,
-                    after,
-                }]
+                vec![(
+                    prepared.root.clone(),
+                    vec![crate::file_changes::FileChangeDelta {
+                        path,
+                        before,
+                        after,
+                    }],
+                )]
             }
         }
         PendingFileChangeCapture::Workspace { before } => {
-            let Ok(before) = before else {
-                return (
-                    Vec::new(),
-                    Some("workspace_snapshot_unavailable".to_owned()),
-                );
-            };
-            let after = match crate::file_changes::capture_workspace(&prepared.root) {
-                Ok(after) => after,
-                Err(error) => return (Vec::new(), Some(tracking_error_code(error).to_owned())),
-            };
-            match crate::file_changes::workspace_deltas(&before, &after) {
-                Ok(deltas) => deltas,
-                Err(error) => return (Vec::new(), Some(tracking_error_code(error).to_owned())),
+            let mut changes = Vec::new();
+            for (root, before) in before {
+                let Ok(before) = before else {
+                    return (
+                        Vec::new(),
+                        Some("workspace_snapshot_unavailable".to_owned()),
+                    );
+                };
+                let after = match crate::file_changes::capture_workspace(&root) {
+                    Ok(after) => after,
+                    Err(error) => return (Vec::new(), Some(tracking_error_code(error).to_owned())),
+                };
+                let deltas = match crate::file_changes::workspace_deltas(&before, &after) {
+                    Ok(deltas) => deltas,
+                    Err(error) => return (Vec::new(), Some(tracking_error_code(error).to_owned())),
+                };
+                if !deltas.is_empty() {
+                    changes.push((root, deltas));
+                }
             }
+            changes
         }
     };
-    match crate::file_changes::record_deltas(storage, conversation_id, &prepared.root, deltas) {
-        Ok(changes) => (changes, None),
+
+    if grouped_deltas.is_empty() {
+        return (Vec::new(), None);
+    }
+    let mut changes = Vec::new();
+    for (root, deltas) in &grouped_deltas {
+        match crate::file_changes::record_deltas(storage, conversation_id, root, deltas.clone()) {
+            Ok(root_changes) => changes.extend(root_changes),
+            Err(error) => return (Vec::new(), Some(tracking_error_code(error).to_owned())),
+        }
+    }
+    match crate::file_changes::checkpoints::persist_checkpoint(
+        storage,
+        conversation_id,
+        tool_name,
+        &grouped_deltas,
+    ) {
+        Ok(()) => (changes, None),
         Err(error) => (Vec::new(), Some(tracking_error_code(error).to_owned())),
     }
 }

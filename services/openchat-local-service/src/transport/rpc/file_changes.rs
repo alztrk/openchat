@@ -19,6 +19,35 @@ pub(super) fn dispatch(
                 .map_err(file_changes_unavailable)?;
             Ok(json!({"changes": changes}))
         }
+        "chat.file_changes.checkpoints.list" => {
+            let conversation_id = required_string(params, "conversationId")?;
+            let checkpoints = file_changes::checkpoints::list_checkpoints(storage, conversation_id)
+                .map_err(file_changes_unavailable)?;
+            Ok(json!({"checkpoints": checkpoints}))
+        }
+        "chat.file_changes.checkpoints.diff" => {
+            let conversation_id = required_string(params, "conversationId")?;
+            let checkpoint_id = required_string(params, "checkpointId")?;
+            let file_id = required_string(params, "fileId")?;
+            file_changes::checkpoints::read_checkpoint_diff(
+                storage,
+                conversation_id,
+                checkpoint_id,
+                file_id,
+            )
+            .map_err(file_changes_unavailable)
+        }
+        "chat.file_changes.checkpoints.restore" => {
+            let conversation_id = required_string(params, "conversationId")?;
+            let checkpoint_id = required_string(params, "checkpointId")?;
+            let changes = file_changes::checkpoints::restore_checkpoint(
+                storage,
+                conversation_id,
+                checkpoint_id,
+            )
+            .map_err(map_checkpoint_restore_error)?;
+            Ok(json!({"changes": changes}))
+        }
         "chat.file_changes.diff" => {
             let conversation_id = required_string(params, "conversationId")?;
             let change_id = required_string(params, "changeId")?;
@@ -96,6 +125,31 @@ fn map_revert_error(error: file_changes::RevertError) -> ServiceError {
             false,
         ),
         file_changes::RevertError::Unavailable => file_changes_unavailable(()),
+    }
+}
+
+fn map_checkpoint_restore_error(
+    error: file_changes::checkpoints::CheckpointRestoreError,
+) -> ServiceError {
+    match error {
+        file_changes::checkpoints::CheckpointRestoreError::Conflict => ServiceError::new(
+            "file_checkpoint_conflict",
+            "The workspace changed after the recorded checkpoint. No files were restored.",
+            false,
+        ),
+        file_changes::checkpoints::CheckpointRestoreError::NotFound => ServiceError::new(
+            "file_checkpoint_not_found",
+            "The selected checkpoint is no longer available.",
+            false,
+        ),
+        file_changes::checkpoints::CheckpointRestoreError::RollbackFailed => ServiceError::new(
+            "file_checkpoint_rollback_failed",
+            "The checkpoint could not be restored completely. Inspect the current file changes before continuing.",
+            false,
+        ),
+        file_changes::checkpoints::CheckpointRestoreError::Unavailable => {
+            file_changes_unavailable(())
+        }
     }
 }
 

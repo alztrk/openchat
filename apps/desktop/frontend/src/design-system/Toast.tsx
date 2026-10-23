@@ -1,5 +1,6 @@
 import { AlertCircle, CheckCircle2, Info, X } from 'lucide-react';
 import type { HTMLAttributes, ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 
 import { cn } from '@/shared/utils/cn';
 
@@ -60,6 +61,7 @@ export function Toast({
   action,
   ...props
 }: ToastProps) {
+  const { t } = useTranslation();
   const config = variantStyles[variant];
   const Icon = config.icon;
 
@@ -88,7 +90,7 @@ export function Toast({
       ) : null}
       {onClose ? (
         <button
-          aria-label="Close"
+          aria-label={t('toastCloseLabel')}
           className="rounded-control p-1 text-secondary-text hover:bg-hover hover:text-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
           onClick={onClose}
           type="button"

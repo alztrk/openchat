@@ -387,6 +387,7 @@ async fn probe_tools(
     let mut process = tokio::task::spawn_blocking(move || {
         let options = SandboxOptions {
             additional_read_only_paths: &invocation.read_only_paths,
+            additional_workspace_paths: &[],
             base_environment: Some(&base_environment),
             internet_client: true,
             job_limits: Some(SandboxJobLimits {

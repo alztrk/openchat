@@ -158,7 +158,7 @@ export function AttachmentLibraryDialog({
         {nextOffset !== null ? (
           <Button className="justify-self-center" disabled={loading || disabled} onClick={() => void loadMore()} size="small" variant="secondary">
             {loading ? <LoaderCircle aria-hidden="true" className="animate-spin" size={15} /> : null}
-            {loading ? t('attachmentLibraryLoading') : t('outputsLoadMore')}
+            {loading ? t('attachmentLibraryLoading') : t('loadMore')}
           </Button>
         ) : null}
       </div>

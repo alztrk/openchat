@@ -3,15 +3,16 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Button, Card, Dialog, Input, Select, Switch } from '@/design-system';
-import { defaultPreferenceForModel, formatModelRouteKey } from '@/modules/providers/data/modelPreferences';
-import { type ProjectMcpServer, parseProjectMcpCatalog } from '@/modules/projects/data/projectMcp';
-import {
-  type AssistantProfile,
-  type AssistantResponseStyle,
-} from '@/modules/settings/data/assistantProfiles';
-import { useAssistantProfilesStore } from '@/modules/settings/stores/assistantProfilesStore';
 import { useChatStore } from '@/modules/conversations/stores/chatStore';
-import { localServiceClient } from '@/platform/local-service';
+import { type ProjectMcpServer, parseProjectMcpCatalog } from '@/modules/projects/data/projectMcp';
+import type {
+  AssistantProfile,
+  AssistantProfileTemplateId,
+  AssistantResponseStyle,
+} from '@/modules/settings/data/assistantProfiles';
+import { readyAssistantAgentTemplates } from '@/modules/settings/data/readyAssistantAgents';
+import { useAssistantProfilesStore } from '@/modules/settings/stores/assistantProfilesStore';
+import { LocalServiceError, localServiceClient } from '@/platform/local-service';
 
 type ProjectCatalogState = 'idle' | 'loading' | 'ready' | 'error';
 type McpToolsState = 'idle' | 'loading' | 'ready' | 'error';
@@ -24,9 +25,6 @@ const builtInToolNames = [
   'edit_file',
   'execute_command',
   'send_terminal_input',
-  'git_status',
-  'git_diff',
-  'git_history',
   'get_file_info',
   'web_search',
   'read_url_content',
@@ -39,39 +37,37 @@ const builtInToolNames = [
   'cancel_subagent',
   'save_memory',
 ] as const;
+const retiredToolNames = new Set(['git_status', 'git_diff', 'git_history']);
 
 interface ProfileDraft {
   id: string | null;
+  templateId: AssistantProfileTemplateId | null;
   name: string;
   instructions: string;
   responseStyle: AssistantResponseStyle;
-  preferredModelKey: string;
   restrictTools: boolean;
   toolAllowlist: string[];
 }
 
 const emptyDraft: ProfileDraft = {
   id: null,
+  templateId: null,
   name: '',
   instructions: '',
   responseStyle: 'balanced',
-  preferredModelKey: '',
   restrictTools: false,
   toolAllowlist: [],
 };
 
-export function AssistantProfilesSettingsSection() {
+export function AssistantProfilesSettingsSection({ showReadyAgents = false }: { showReadyAgents?: boolean }) {
   const { t } = useTranslation();
   const profiles = useAssistantProfilesStore((state) => state.profiles);
-  const activeProfileId = useAssistantProfilesStore((state) => state.activeProfileId);
   const loadState = useAssistantProfilesStore((state) => state.loadState);
   const errorKey = useAssistantProfilesStore((state) => state.errorKey);
   const initialize = useAssistantProfilesStore((state) => state.initialize);
   const retry = useAssistantProfilesStore((state) => state.retry);
   const saveProfile = useAssistantProfilesStore((state) => state.saveProfile);
   const removeProfile = useAssistantProfilesStore((state) => state.removeProfile);
-  const selectProfile = useAssistantProfilesStore((state) => state.selectProfile);
-  const models = useChatStore((state) => state.models);
   const activeConversationId = useChatStore((state) => state.activeConversationId);
   const pendingProjectId = useChatStore((state) => state.pendingProjectId);
   const conversations = useChatStore((state) => state.conversations);
@@ -83,8 +79,15 @@ export function AssistantProfilesSettingsSection() {
   const projectGenerationRef = useRef(0);
   const [draft, setDraft] = useState<ProfileDraft | null>(null);
   const [pendingRemoval, setPendingRemoval] = useState<AssistantProfile | null>(null);
+  const [viewingReadyTemplate, setViewingReadyTemplate] = useState<
+    (typeof readyAssistantAgentTemplates)[number] | null
+  >(null);
   const [formError, setFormError] = useState<
-    'assistantProfileNameRequired' | 'assistantProfileNameTooLong' | 'assistantProfileInstructionsTooLong' | 'assistantProfileToolLimit' | null
+    | 'assistantProfileNameRequired'
+    | 'assistantProfileNameTooLong'
+    | 'assistantProfileInstructionsTooLong'
+    | 'assistantProfileToolLimit'
+    | null
   >(null);
   const [projectCatalogState, setProjectCatalogState] = useState<ProjectCatalogState>('idle');
   const [projectCatalogAttempt, setProjectCatalogAttempt] = useState(0);
@@ -93,6 +96,7 @@ export function AssistantProfilesSettingsSection() {
   const [mcpToolNames, setMcpToolNames] = useState<string[]>([]);
   const [mcpToolsState, setMcpToolsState] = useState<McpToolsState>('idle');
   const [mcpToolsPartialFailure, setMcpToolsPartialFailure] = useState(false);
+  const [mcpToolsErrorDetails, setMcpToolsErrorDetails] = useState<string | null>(null);
 
   useEffect(() => initialize(), [initialize]);
 
@@ -106,6 +110,7 @@ export function AssistantProfilesSettingsSection() {
       setMcpToolNames([]);
       setMcpToolsState('idle');
       setMcpToolsPartialFailure(false);
+      setMcpToolsErrorDetails(null);
       return;
     }
 
@@ -116,19 +121,22 @@ export function AssistantProfilesSettingsSection() {
     setMcpToolNames([]);
     setMcpToolsState('idle');
     setMcpToolsPartialFailure(false);
+    setMcpToolsErrorDetails(null);
     void Promise.all([
       localServiceClient.call('project.tools.list', { projectId: activeProjectId }),
       localServiceClient.call('project.mcp.catalog.get', { projectId: activeProjectId }),
-    ]).then(([toolsResponse, mcpResponse]) => {
-      if (cancelled) return;
-      const tools = parseProjectToolNames(toolsResponse);
-      const catalog = parseProjectMcpCatalog(mcpResponse);
-      setProjectToolNames(tools);
-      setMcpServers(catalog.servers.filter((server) => server.enabled));
-      setProjectCatalogState('ready');
-    }).catch(() => {
-      if (!cancelled) setProjectCatalogState('error');
-    });
+    ])
+      .then(([toolsResponse, mcpResponse]) => {
+        if (cancelled) return;
+        const tools = parseProjectToolNames(toolsResponse);
+        const catalog = parseProjectMcpCatalog(mcpResponse);
+        setProjectToolNames(tools);
+        setMcpServers(catalog.servers.filter((server) => server.enabled));
+        setProjectCatalogState('ready');
+      })
+      .catch(() => {
+        if (!cancelled) setProjectCatalogState('error');
+      });
     return () => {
       cancelled = true;
       if (projectGenerationRef.current === generation) projectGenerationRef.current += 1;
@@ -136,39 +144,22 @@ export function AssistantProfilesSettingsSection() {
   }, [activeProjectId, projectCatalogAttempt]);
 
   const preservedProfileTools = useMemo(() => {
-    const availableNames = new Set([
-      ...builtInToolNames,
-      ...projectToolNames,
-      ...mcpToolNames,
-    ]);
+    const availableNames = new Set([...builtInToolNames, ...projectToolNames, ...mcpToolNames]);
     return profiles
       .flatMap((profile) => profile.toolAllowlist ?? [])
-      .filter((name) => !availableNames.has(name));
+      .filter((name) => !availableNames.has(name) && !retiredToolNames.has(name));
   }, [mcpToolNames, profiles, projectToolNames]);
-
-  const modelOptions = useMemo(() => {
-    const options = models.map((model) => ({ value: model.key, label: model.displayName }));
-    const editingProfile = draft?.id ? profiles.find((profile) => profile.id === draft.id) : undefined;
-    const storedPreference = editingProfile?.preferredModel;
-    if (storedPreference) {
-      const currentKey = formatModelRouteKey(storedPreference);
-      if (!models.some((model) => formatModelRouteKey(defaultPreferenceForModel(model)) === currentKey)) {
-        options.unshift({ value: currentKey, label: `${storedPreference.displayName} · ${t('assistantProfilePreferredModelUnavailable')}` });
-      }
-    }
-    return [{ value: '', label: t('assistantProfileNoPreferredModel') }, ...options];
-  }, [draft?.id, models, profiles, t]);
 
   const beginEdit = (profile: AssistantProfile) => {
     setFormError(null);
     setDraft({
       id: profile.id,
+      templateId: profile.templateId ?? null,
       name: profile.name,
       instructions: profile.instructions,
       responseStyle: profile.responseStyle,
-      preferredModelKey: profile.preferredModel ? formatModelRouteKey(profile.preferredModel) : '',
       restrictTools: profile.toolAllowlist !== null,
-      toolAllowlist: profile.toolAllowlist ?? [],
+      toolAllowlist: profile.toolAllowlist?.filter((name) => !retiredToolNames.has(name)) ?? [],
     });
   };
 
@@ -188,19 +179,12 @@ export function AssistantProfilesSettingsSection() {
       return;
     }
 
-    const current = draft.id ? profiles.find((profile) => profile.id === draft.id) : undefined;
-    const selectedModel = models.find((model) => model.key === draft.preferredModelKey);
-    const preferredModel = draft.preferredModelKey
-      ? selectedModel
-        ? defaultPreferenceForModel(selectedModel)
-        : (current?.preferredModel ?? null)
-      : null;
     const profile: AssistantProfile = {
       id: draft.id ?? crypto.randomUUID(),
+      ...(draft.templateId ? { templateId: draft.templateId } : {}),
       name,
       instructions: draft.instructions,
       responseStyle: draft.responseStyle,
-      preferredModel,
       toolAllowlist: draft.restrictTools ? [...new Set(draft.toolAllowlist)] : null,
     };
 
@@ -208,6 +192,18 @@ export function AssistantProfilesSettingsSection() {
       setDraft(null);
       setFormError(null);
     }
+  };
+
+  const addReadyAgent = (template: (typeof readyAssistantAgentTemplates)[number]) => {
+    if (loadState !== 'ready') return;
+    saveProfile({
+      id: crypto.randomUUID(),
+      templateId: template.id,
+      name: t(template.nameKey),
+      instructions: template.instructions,
+      responseStyle: 'balanced',
+      toolAllowlist: null,
+    });
   };
 
   const toggleTool = (toolName: string) => {
@@ -234,37 +230,46 @@ export function AssistantProfilesSettingsSection() {
     const generation = projectGenerationRef.current;
     setMcpToolsState('loading');
     setMcpToolsPartialFailure(false);
+    setMcpToolsErrorDetails(null);
     const results = await Promise.allSettled(
       mcpServers.map(async (server) => {
-        const response = await localServiceClient.call(
-          'project.mcp.server.check',
-          { projectId, server },
-          40_000,
-        );
+        const response = await localServiceClient.call('project.mcp.server.check', { projectId, server }, 40_000);
         return parseCheckedMcpToolNames(response, server.id);
       }),
     );
     if (projectGenerationRef.current !== generation || projectId !== activeProjectIdRef.current) return;
-    const names = results.flatMap((result) => result.status === 'fulfilled' ? result.value : []);
+    const names = results.flatMap((result) => (result.status === 'fulfilled' ? result.value : []));
     setMcpToolNames([...new Set(names)].sort((left, right) => left.localeCompare(right)));
     const failed = results.some((result) => result.status === 'rejected');
+    const firstFailure = results.find((result) => result.status === 'rejected');
+    setMcpToolsErrorDetails(
+      firstFailure?.status === 'rejected' ? readServiceErrorDetails(firstFailure.reason) : null,
+    );
     setMcpToolsPartialFailure(failed && names.length > 0);
     setMcpToolsState(failed && names.length === 0 ? 'error' : 'ready');
   };
 
   return (
-    <section aria-labelledby="settings-page-heading" className="grid gap-4">
+    <section aria-label={t('assistantProfiles')} className="grid gap-4">
       <p className="text-sm text-secondary-text">{t('assistantProfilesDescription')}</p>
       {loadState === 'loading' || loadState === 'idle' ? (
-        <p aria-live="polite" className="text-sm text-secondary-text">{t('modelsLoading')}</p>
+        <p aria-live="polite" className="text-sm text-secondary-text">
+          {t('modelsLoading')}
+        </p>
       ) : loadState === 'error' ? (
         <div className="flex flex-wrap items-center justify-between gap-3" role="alert">
           <p className="text-sm text-destructive">{t(errorKey ?? 'assistantProfilesLoadFailed')}</p>
-          <Button onClick={retry} size="small" variant="secondary">{t('retry')}</Button>
+          <Button onClick={retry} size="small" variant="secondary">
+            {t('retry')}
+          </Button>
         </div>
       ) : (
         <>
-          {errorKey ? <p className="text-sm text-destructive" role="alert">{t(errorKey)}</p> : null}
+          {errorKey ? (
+            <p className="text-sm text-destructive" role="alert">
+              {t(errorKey)}
+            </p>
+          ) : null}
           {profiles.length === 0 ? (
             <Card className="flex items-center gap-3 p-4" role="status">
               <Bot aria-hidden="true" className="text-secondary-icon" size={18} />
@@ -280,22 +285,24 @@ export function AssistantProfilesSettingsSection() {
                       {t('assistantProfileStyle', { style: t(responseStyleLabelKey(profile.responseStyle)) })}
                       {profile.toolAllowlist === null
                         ? ` · ${t('assistantProfileToolAccessUsesAppPermissions')}`
-                        : ` · ${t('assistantProfileAllowedToolCount', { count: profile.toolAllowlist.length })}`}
+                        : ` · ${t('assistantProfileAllowedToolCount', { count: profile.toolAllowlist.filter((name) => !retiredToolNames.has(name)).length })}`}
                     </p>
                   </div>
                   <div className="flex flex-wrap gap-1">
                     <Button
-                      aria-pressed={activeProfileId === profile.id}
-                      onClick={() => selectProfile(activeProfileId === profile.id ? null : profile.id)}
-                      size="small"
-                      variant={activeProfileId === profile.id ? 'primary' : 'secondary'}
+                      aria-label={t('assistantProfileEdit')}
+                      onClick={() => beginEdit(profile)}
+                      size="icon"
+                      variant="ghost"
                     >
-                      {activeProfileId === profile.id ? t('assistantProfileDeactivate') : t('assistantProfileActivate')}
-                    </Button>
-                    <Button aria-label={t('assistantProfileEdit')} onClick={() => beginEdit(profile)} size="icon" variant="ghost">
                       <Pencil aria-hidden="true" size={16} />
                     </Button>
-                    <Button aria-label={t('assistantProfileRemove')} onClick={() => setPendingRemoval(profile)} size="icon" variant="ghost">
+                    <Button
+                      aria-label={t('assistantProfileRemove')}
+                      onClick={() => setPendingRemoval(profile)}
+                      size="icon"
+                      variant="ghost"
+                    >
                       <Trash2 aria-hidden="true" size={16} />
                     </Button>
                   </div>
@@ -306,13 +313,15 @@ export function AssistantProfilesSettingsSection() {
 
           {draft ? (
             <Card className="grid gap-4 p-4">
-              <h2 className="text-lg font-semibold">{t(draft.id ? 'assistantProfileEdit' : 'assistantProfileCreate')}</h2>
+              <h2 className="text-lg font-semibold">
+                {t(draft.id ? 'assistantProfileEdit' : 'assistantProfileCreate')}
+              </h2>
               <Input
                 autoFocus
                 label={t('assistantProfileName')}
                 maxLength={64}
                 onChange={(event) => {
-                  setDraft((current) => current ? { ...current, name: event.target.value } : current);
+                  setDraft((current) => (current ? { ...current, name: event.target.value } : current));
                   setFormError(null);
                 }}
                 value={draft.name}
@@ -327,7 +336,7 @@ export function AssistantProfilesSettingsSection() {
                   id="assistant-profile-instructions"
                   maxLength={16 * 1024}
                   onChange={(event) => {
-                    setDraft((current) => current ? { ...current, instructions: event.target.value } : current);
+                    setDraft((current) => (current ? { ...current, instructions: event.target.value } : current));
                     setFormError(null);
                   }}
                   value={draft.instructions}
@@ -340,7 +349,7 @@ export function AssistantProfilesSettingsSection() {
                 label={t('assistantResponseStyle')}
                 onChange={(event) => {
                   const responseStyle = parseResponseStyle(event.target.value);
-                  if (responseStyle) setDraft((current) => current ? { ...current, responseStyle } : current);
+                  if (responseStyle) setDraft((current) => (current ? { ...current, responseStyle } : current));
                 }}
                 options={[
                   { value: 'concise', label: t('assistantResponseStyleConcise') },
@@ -349,20 +358,15 @@ export function AssistantProfilesSettingsSection() {
                 ]}
                 value={draft.responseStyle}
               />
-              <Select
-                label={t('assistantProfilePreferredModel')}
-                onChange={(event) => setDraft((current) => current ? { ...current, preferredModelKey: event.target.value } : current)}
-                options={modelOptions}
-                value={draft.preferredModelKey}
-              />
-              <p className="text-xs text-secondary-text">{t('assistantProfilePreferredModelHelp')}</p>
               <div className="grid gap-2">
                 <label className="flex items-center justify-between gap-3 text-sm font-medium text-text">
                   <span>{t('assistantProfileRestrictTools')}</span>
                   <Switch
                     aria-label={t('assistantProfileRestrictTools')}
                     checked={draft.restrictTools}
-                    onCheckedChange={(checked) => setDraft((current) => current ? { ...current, restrictTools: checked } : current)}
+                    onCheckedChange={(checked) =>
+                      setDraft((current) => (current ? { ...current, restrictTools: checked } : current))
+                    }
                   />
                 </label>
                 <p className="text-xs text-secondary-text">{t('assistantProfileRestrictToolsHelp')}</p>
@@ -381,7 +385,11 @@ export function AssistantProfilesSettingsSection() {
                         />
                         <span>
                           {toolName === 'run_project_task' ? t('assistantProfileProjectTasks') : null}
-                          {toolName === 'run_project_task' ? <code className="ml-1 break-all text-xs">{toolName}</code> : <code className="break-all text-xs">{toolName}</code>}
+                          {toolName === 'run_project_task' ? (
+                            <code className="ml-1 break-all text-xs">{toolName}</code>
+                          ) : (
+                            <code className="break-all text-xs">{toolName}</code>
+                          )}
                         </span>
                       </label>
                     ))}
@@ -436,16 +444,27 @@ export function AssistantProfilesSettingsSection() {
                           size="small"
                           variant="secondary"
                         >
-                          {mcpToolsState === 'loading' ? t('assistantProfileLoadingMcpTools') : t('assistantProfileLoadMcpTools')}
+                          {mcpToolsState === 'loading'
+                            ? t('assistantProfileLoadingMcpTools')
+                            : t('assistantProfileLoadMcpTools')}
                         </Button>
                         {mcpToolsPartialFailure || mcpToolsState === 'error' ? (
-                          <p className="text-xs text-destructive" role="alert">{t('assistantProfileMcpUnavailable')}</p>
+                          <div className="grid gap-1" role="alert">
+                            <p className="text-xs text-destructive">{t('assistantProfileMcpUnavailable')}</p>
+                            {mcpToolsErrorDetails ? (
+                              <p className="break-words text-xs text-secondary-text">
+                                {t('chatErrorDetails')}: {mcpToolsErrorDetails}
+                              </p>
+                            ) : null}
+                          </div>
                         ) : null}
                       </div>
                     ) : null}
                     {preservedProfileTools.length > 0 ? (
                       <>
-                        <p className="text-xs font-medium text-secondary-text">{t('assistantProfileUnavailableTools')}</p>
+                        <p className="text-xs font-medium text-secondary-text">
+                          {t('assistantProfileUnavailableTools')}
+                        </p>
                         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                           {[...new Set(preservedProfileTools)].map((toolName) => (
                             <ProfileToolCheckbox
@@ -465,10 +484,18 @@ export function AssistantProfilesSettingsSection() {
                   ) : null}
                 </fieldset>
               ) : null}
-              {formError ? <p className="text-sm text-destructive" role="alert">{t(formError)}</p> : null}
+              {formError ? (
+                <p className="text-sm text-destructive" role="alert">
+                  {t(formError)}
+                </p>
+              ) : null}
               <div className="flex flex-wrap justify-end gap-2">
-                <Button onClick={() => setDraft(null)} variant="secondary">{t('cancel')}</Button>
-                <Button onClick={saveDraft} variant="primary">{t('save')}</Button>
+                <Button onClick={() => setDraft(null)} variant="secondary">
+                  {t('cancel')}
+                </Button>
+                <Button onClick={saveDraft} variant="primary">
+                  {t('save')}
+                </Button>
               </div>
             </Card>
           ) : (
@@ -488,6 +515,81 @@ export function AssistantProfilesSettingsSection() {
           )}
         </>
       )}
+      {showReadyAgents ? (
+        <div className="grid gap-3 border-t border-border pt-4">
+          <div>
+            <h2 className="text-base font-semibold text-text">{t('assistantReadyAgents')}</h2>
+            <p className="mt-1 text-sm text-secondary-text">{t('assistantReadyAgentsDescription')}</p>
+          </div>
+          {loadState === 'ready' && profiles.length >= 20 ? (
+            <p className="text-sm text-secondary-text" role="status">
+              {t('assistantProfilesLimitReached')}
+            </p>
+          ) : null}
+          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+            {readyAssistantAgentTemplates.map((template) => {
+              const name = t(template.nameKey);
+              const alreadyExists = profiles.some(
+                (profile) =>
+                  profile.templateId === template.id ||
+                  profile.name.toLocaleLowerCase('en-US') === name.toLocaleLowerCase('en-US'),
+              );
+              const buttonLabel = t(alreadyExists ? 'assistantReadyAgentAlreadyExists' : 'assistantReadyAgentAdd');
+              return (
+                <Card className="grid content-start gap-3 p-4" key={template.id}>
+                  <div className="flex min-w-0 items-center gap-2">
+                    <Bot aria-hidden="true" className="shrink-0 text-secondary-icon" size={17} />
+                    <h3 className="min-w-0 truncate font-medium text-text">{name}</h3>
+                  </div>
+                  <p className="text-sm text-secondary-text">{t(template.descriptionKey)}</p>
+                  <div className="flex flex-wrap gap-2">
+                    <Button onClick={() => setViewingReadyTemplate(template)} size="small" variant="secondary">
+                      {t('assistantReadyAgentViewInstructions')}
+                    </Button>
+                    <Button
+                      aria-label={`${buttonLabel}: ${name}`}
+                      disabled={loadState !== 'ready' || profiles.length >= 20 || alreadyExists}
+                      onClick={() => addReadyAgent(template)}
+                      size="small"
+                      variant="secondary"
+                    >
+                      {buttonLabel}
+                    </Button>
+                  </div>
+                </Card>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
+      <Dialog
+        className="w-dialog-wide"
+        onOpenChange={(open) => {
+          if (!open) setViewingReadyTemplate(null);
+        }}
+        open={viewingReadyTemplate !== null}
+        title={
+          viewingReadyTemplate
+            ? t('assistantReadyAgentInstructionsTitle', {
+                agentName: t(viewingReadyTemplate.nameKey),
+              })
+            : t('assistantReadyAgents')
+        }
+      >
+        {viewingReadyTemplate ? (
+          <div className="grid gap-4">
+            <p className="text-sm text-secondary-text">{t('assistantReadyAgentInstructionsSupplement')}</p>
+            <div className="max-h-96 overflow-auto whitespace-pre-wrap break-words rounded-control border border-border bg-composer p-3 text-sm leading-6 text-text">
+              {viewingReadyTemplate.instructions}
+            </div>
+            <div className="flex justify-end">
+              <Button onClick={() => setViewingReadyTemplate(null)} variant="secondary">
+                {t('close')}
+              </Button>
+            </div>
+          </div>
+        ) : null}
+      </Dialog>
       <Dialog
         onOpenChange={(open) => {
           if (!open) setPendingRemoval(null);
@@ -500,7 +602,9 @@ export function AssistantProfilesSettingsSection() {
             {t('assistantProfileRemoveConfirmation', { profileName: pendingRemoval?.name ?? '' })}
           </p>
           <div className="flex justify-end gap-2">
-            <Button onClick={() => setPendingRemoval(null)} variant="secondary">{t('cancel')}</Button>
+            <Button onClick={() => setPendingRemoval(null)} variant="secondary">
+              {t('cancel')}
+            </Button>
             <Button
               onClick={() => {
                 if (pendingRemoval && removeProfile(pendingRemoval.id)) setPendingRemoval(null);
@@ -515,6 +619,12 @@ export function AssistantProfilesSettingsSection() {
       </Dialog>
     </section>
   );
+}
+
+function readServiceErrorDetails(error: unknown): string | null {
+  const value = error instanceof LocalServiceError ? (error.details ?? error.message) : error;
+  const details = value instanceof Error ? value.message : typeof value === 'string' ? value : null;
+  return details?.trim().slice(0, 1000) || null;
 }
 
 function ProfileToolCheckbox({
@@ -569,7 +679,9 @@ function parseCheckedMcpToolNames(value: unknown, serverId: string): string[] {
   const names = value.toolNames;
   if (
     names.length !== value.toolCount ||
-    names.some((name) => name.length > 64 || !name.startsWith(prefix) || !/^[A-Za-z0-9_-]+$/.test(name.slice(prefix.length)))
+    names.some(
+      (name) => name.length > 64 || !name.startsWith(prefix) || !/^[A-Za-z0-9_-]+$/.test(name.slice(prefix.length)),
+    )
   ) {
     throw new Error('The MCP tool list is invalid.');
   }
@@ -585,7 +697,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function responseStyleLabelKey(value: AssistantResponseStyle): 'assistantResponseStyleConcise' | 'assistantResponseStyleBalanced' | 'assistantResponseStyleDetailed' {
+function responseStyleLabelKey(
+  value: AssistantResponseStyle,
+): 'assistantResponseStyleConcise' | 'assistantResponseStyleBalanced' | 'assistantResponseStyleDetailed' {
   if (value === 'concise') return 'assistantResponseStyleConcise';
   if (value === 'balanced') return 'assistantResponseStyleBalanced';
   return 'assistantResponseStyleDetailed';

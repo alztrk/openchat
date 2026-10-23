@@ -1,8 +1,8 @@
 //! Connects to configured MCP servers and exposes bounded, permission-checked tools.
 //!
-//! Stdio servers are launched through the Windows sandbox with restricted environment and
-//! process resources. Remote transports use bounded HTTP framing, per-server approval, and
-//! explicit response, schema, tool-count, and execution-time limits.
+//! Stdio servers use permission-mode-specific isolation with bounded process resources. Remote
+//! transports use bounded HTTP framing, per-server approval, and explicit response, schema,
+//! tool-count, and execution-time limits.
 
 use std::{
     collections::{HashMap, HashSet},
@@ -123,6 +123,7 @@ pub(crate) fn server_permission_rule(
 pub(crate) async fn connect_with_approval(
     configs: Vec<StdioServerConfig>,
     rules: &super::ToolPermissionRules,
+    full_access: bool,
     permission_broker: &ToolPermissionBroker,
     request_id: &Value,
     events: &EventSink,
@@ -161,13 +162,16 @@ pub(crate) async fn connect_with_approval(
         }
     }
 
-    McpRegistry::connect(approved_configs).await.map_err(|_| {
-        ServiceError::new(
-            "mcp_server_unavailable",
-            "An enabled project MCP server could not be started or discovered.",
-            false,
-        )
-    })
+    McpRegistry::connect(approved_configs, full_access)
+        .await
+        .map_err(|error| {
+            ServiceError::new(
+                "mcp_server_unavailable",
+                "An enabled project MCP server could not be started or discovered.",
+                false,
+            )
+            .with_details(error)
+        })
 }
 
 fn server_approval_target(config: &StdioServerConfig) -> String {
@@ -597,7 +601,10 @@ pub(crate) struct McpRegistry {
 
 impl McpRegistry {
     /// Connects the selected servers and validates each returned tool catalog.
-    pub(crate) async fn connect(configs: Vec<StdioServerConfig>) -> Result<Option<Self>, String> {
+    pub(crate) async fn connect(
+        configs: Vec<StdioServerConfig>,
+        full_access: bool,
+    ) -> Result<Option<Self>, String> {
         if configs.len() > MAX_MCP_SERVERS_PER_REQUEST {
             return Err("The configured MCP server count exceeds the supported limit.".to_owned());
         }
@@ -611,7 +618,7 @@ impl McpRegistry {
                     "The configured MCP server identifiers are invalid or duplicated.".to_owned(),
                 );
             }
-            let client = McpClient::connect(&config).await?;
+            let client = McpClient::connect(&config, full_access).await?;
             let tools = client.list_tools().await?;
             let (server_definitions, server_routes) = tool_definitions(&config.id, tools)?;
             if definitions.len().saturating_add(server_definitions.len())
@@ -786,13 +793,16 @@ pub(crate) struct McpClient {
 }
 
 impl McpClient {
-    pub(crate) async fn connect(config: &StdioServerConfig) -> Result<Self, String> {
+    pub(crate) async fn connect(
+        config: &StdioServerConfig,
+        full_access: bool,
+    ) -> Result<Self, String> {
         let service = if let Some(endpoint) = &config.endpoint {
             let client =
                 crate::tools::web_search::url_fetch::pinned_public_http_client(endpoint, None)
                     .await
-                    .map_err(|_| {
-                        "The remote MCP endpoint could not be reached safely.".to_owned()
+                    .map_err(|error| {
+                        format!("The remote MCP endpoint could not be reached safely: {error}")
                     })?;
             let auth_token = if let Some(name) = &config.auth_environment_variable {
                 let reference = crate::credentials::McpCredentialReference::new(
@@ -803,7 +813,9 @@ impl McpClient {
                 .map_err(|_| "The remote MCP credential name is invalid.".to_owned())?;
                 let secret = crate::credentials::CredentialStore
                     .load_mcp_secret(&reference)
-                    .map_err(|_| "The remote MCP credential is unavailable.".to_owned())?;
+                    .map_err(|error| {
+                        format!("The remote MCP credential is unavailable: {error}")
+                    })?;
                 Some(secret)
             } else {
                 None
@@ -821,22 +833,22 @@ impl McpClient {
                         name.clone(),
                     )
                     .map_err(|_| "An MCP environment variable name is invalid.".to_owned())?;
-                    let secret = credentials.load_mcp_secret(&reference).map_err(|_| {
+                    let secret = credentials.load_mcp_secret(&reference).map_err(|error| {
                         format!(
-                            "The MCP credential for environment variable {name} is unavailable."
+                            "The MCP credential for environment variable {name} is unavailable: {error}"
                         )
                     })?;
                     Ok((name.clone(), secret))
                 })
                 .collect::<Result<Vec<_>, String>>()?;
-            let transport = SandboxedStdioTransport::spawn(config, &environment)?;
+            let transport = StdioTransport::spawn(config, &environment, full_access)?;
             timeout(MCP_STARTUP_TIMEOUT, ().serve(transport))
                 .await
                 .map_err(|_| {
                     "The MCP server did not initialize before the startup timeout.".to_owned()
                 })?
-                .map_err(|_| {
-                    "The MCP server could not complete protocol initialization.".to_owned()
+                .map_err(|error| {
+                    format!("The MCP server could not complete protocol initialization: {error}")
                 })?
         };
         Ok(Self { service })
@@ -846,7 +858,7 @@ impl McpClient {
         timeout(MCP_STARTUP_TIMEOUT, self.service.peer().list_all_tools())
             .await
             .map_err(|_| "The MCP server did not return its tools before the timeout.".to_owned())?
-            .map_err(|_| "The MCP server returned an invalid tool list.".to_owned())
+            .map_err(|error| format!("The MCP server could not return its tool list: {error}"))
     }
 
     pub(crate) async fn call_tool(
@@ -872,7 +884,7 @@ impl McpClient {
         )
         .await
         .map_err(|_| "The MCP tool did not finish before its timeout.".to_owned())?
-        .map_err(|_| "The MCP server returned a tool-call error.".to_owned())?;
+        .map_err(|error| format!("The MCP server returned a tool-call error: {error}"))?;
         let result_size = serde_json::to_vec(&result)
             .map_err(|_| "The MCP server returned an invalid tool result.".to_owned())?
             .len();
@@ -901,43 +913,55 @@ async fn start_streamable_http_service(
         .map_err(|_| {
             "The remote MCP server did not initialize before the startup timeout.".to_owned()
         })?
-        .map_err(|_| "The remote MCP server could not complete protocol initialization.".to_owned())
+        .map_err(|error| {
+            format!("The remote MCP server could not complete protocol initialization: {error}")
+        })
 }
 
-struct SandboxedStdioTransport {
+struct StdioTransport {
     transport: AsyncRwTransport<RoleClient, BoundedLineReader<File>, File>,
     process: SandboxedProcess,
     frame_limit_exceeded: Arc<AtomicBool>,
 }
 
-impl SandboxedStdioTransport {
+impl StdioTransport {
     fn spawn(
         config: &StdioServerConfig,
         environment: &[(String, zeroize::Zeroizing<String>)],
+        full_access: bool,
     ) -> Result<Self, String> {
         if let Some(reference) = &config.package {
             crate::connector_packages::verify_installed_package(&config.program, reference)
                 .map_err(|_| "The installed MCP package failed its integrity check.".to_owned())?;
         }
         let package_read_paths = config.package_directory.iter().cloned().collect::<Vec<_>>();
-        let mut process = SandboxedProcess::spawn_program_with_options(
-            &config.program,
-            &config.arguments,
-            &config.working_directory,
-            environment,
-            SandboxOptions {
-                additional_read_only_paths: &package_read_paths,
-                job_limits: Some(SandboxJobLimits {
-                    active_process_limit: MCP_ACTIVE_PROCESS_LIMIT,
-                    process_memory_limit_bytes: MCP_PROCESS_MEMORY_LIMIT_BYTES,
-                    job_memory_limit_bytes: MCP_JOB_MEMORY_LIMIT_BYTES,
-                }),
-                ..SandboxOptions::default()
-            },
-        )
-        .map_err(|_| {
-            "The MCP server could not start inside the Windows AppContainer.".to_owned()
-        })?;
+        let options = SandboxOptions {
+            additional_read_only_paths: &package_read_paths,
+            job_limits: Some(SandboxJobLimits {
+                active_process_limit: MCP_ACTIVE_PROCESS_LIMIT,
+                process_memory_limit_bytes: MCP_PROCESS_MEMORY_LIMIT_BYTES,
+                job_memory_limit_bytes: MCP_JOB_MEMORY_LIMIT_BYTES,
+            }),
+            ..SandboxOptions::default()
+        };
+        let mut process = if full_access {
+            SandboxedProcess::spawn_program_without_sandbox(
+                &config.program,
+                &config.arguments,
+                &config.working_directory,
+                environment,
+                options,
+            )
+        } else {
+            SandboxedProcess::spawn_program_with_options(
+                &config.program,
+                &config.arguments,
+                &config.working_directory,
+                environment,
+                options,
+            )
+        }
+        .map_err(|error| format!("The MCP server could not start: {error}"))?;
         let stdin = process
             .take_stdin()
             .ok_or_else(|| "The MCP server stdin pipe is unavailable.".to_owned())?;
@@ -1007,7 +1031,7 @@ impl<R: AsyncRead + Unpin> AsyncRead for BoundedLineReader<R> {
     }
 }
 
-impl Transport<RoleClient> for SandboxedStdioTransport {
+impl Transport<RoleClient> for StdioTransport {
     type Error = io::Error;
 
     fn send(
@@ -1376,7 +1400,7 @@ mod tests {
         )
         .expect("valid disabled server settings");
 
-        let registry = super::McpRegistry::connect(configs)
+        let registry = super::McpRegistry::connect(configs, false)
             .await
             .expect("disabled servers should not be started");
         assert!(registry.is_none());
@@ -1404,6 +1428,7 @@ mod tests {
             connect_with_approval(
                 configs,
                 &rules,
+                false,
                 &task_broker,
                 &request_id,
                 &events,

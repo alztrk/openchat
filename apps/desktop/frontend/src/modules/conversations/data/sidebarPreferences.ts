@@ -16,10 +16,9 @@ export const SIDEBAR_DEFAULT_WIDTH = 280;
 export const SIDEBAR_MIN_WIDTH = 220;
 export const SIDEBAR_MAX_WIDTH = 420;
 export const SIDEBAR_TRASH_RETENTION_MS = 30 * 86_400_000;
-export const SPLIT_VIEW_DEFAULT_RATIO = 50;
-export const SPLIT_VIEW_MIN_RATIO = 30;
-export const SPLIT_VIEW_MAX_RATIO = 70;
-export const MAX_OPEN_CONVERSATION_TABS = 12;
+export const WORKSPACE_PANEL_DEFAULT_RATIO = 50;
+export const WORKSPACE_PANEL_MIN_RATIO = 30;
+export const WORKSPACE_PANEL_MAX_RATIO = 70;
 
 let activeSidebarDraggingConversationId: string | null = null;
 
@@ -39,7 +38,8 @@ const sidebarManualOrderKey = 'chat.sidebar_manual_order';
 const customFoldersKey = 'chat.custom_sidebar_folders';
 const trashedConversationsKey = 'chat.trashed_conversations';
 const openConversationTabsKey = 'chat.open_conversation_tabs';
-const splitViewRatioKey = 'chat.split_view_ratio';
+// Keep the stored key so the former split-view width preference carries over to the panel layout.
+const workspacePanelRatioKey = 'chat.split_view_ratio';
 
 const supportedSectionSet: ReadonlySet<string> = new Set<SidebarSectionId>([
   'projects',
@@ -202,19 +202,19 @@ export function writeTrashedConversations(trashed: Record<string, number>): void
   unifiedStorage.setItem(trashedConversationsKey, JSON.stringify(trashed));
 }
 
-export function clampSplitViewRatio(ratio: number): number {
-  if (!Number.isFinite(ratio)) return SPLIT_VIEW_DEFAULT_RATIO;
-  return Math.round(Math.min(SPLIT_VIEW_MAX_RATIO, Math.max(SPLIT_VIEW_MIN_RATIO, ratio)));
+export function clampWorkspacePanelRatio(ratio: number): number {
+  if (!Number.isFinite(ratio)) return WORKSPACE_PANEL_DEFAULT_RATIO;
+  return Math.round(Math.min(WORKSPACE_PANEL_MAX_RATIO, Math.max(WORKSPACE_PANEL_MIN_RATIO, ratio)));
 }
 
-export function readSplitViewRatio(): number {
-  const encoded = unifiedStorage.getItem(splitViewRatioKey);
-  if (encoded === null) return SPLIT_VIEW_DEFAULT_RATIO;
-  return clampSplitViewRatio(Number(encoded));
+export function readWorkspacePanelRatio(): number {
+  const encoded = unifiedStorage.getItem(workspacePanelRatioKey);
+  if (encoded === null) return WORKSPACE_PANEL_DEFAULT_RATIO;
+  return clampWorkspacePanelRatio(Number(encoded));
 }
 
-export function writeSplitViewRatio(ratio: number): void {
-  unifiedStorage.setItem(splitViewRatioKey, String(clampSplitViewRatio(ratio)));
+export function writeWorkspacePanelRatio(ratio: number): void {
+  unifiedStorage.setItem(workspacePanelRatioKey, String(clampWorkspacePanelRatio(ratio)));
 }
 
 export function readOpenConversationTabs(): string[] {
@@ -223,32 +223,15 @@ export function readOpenConversationTabs(): string[] {
     if (!encoded) return [];
     const parsed: unknown = JSON.parse(encoded);
     if (!Array.isArray(parsed)) return [];
-    return [...new Set(parsed.filter((id): id is string => typeof id === 'string' && id.length > 0))].slice(
-      0,
-      MAX_OPEN_CONVERSATION_TABS,
-    );
+    return [...new Set(parsed.filter((id): id is string => typeof id === 'string' && id.length > 0))];
   } catch {
     return [];
   }
 }
 
 export function writeOpenConversationTabs(tabIds: readonly string[]): void {
-  const unique = [...new Set(tabIds.filter((id) => typeof id === 'string' && id.length > 0))].slice(
-    0,
-    MAX_OPEN_CONVERSATION_TABS,
-  );
+  const unique = [...new Set(tabIds.filter((id) => typeof id === 'string' && id.length > 0))];
   unifiedStorage.setItem(openConversationTabsKey, JSON.stringify(unique));
-}
-
-export function resolveWorkspaceDropZone(
-  clientX: number,
-  bounds: { left: number; width: number },
-): 'primary' | 'split' {
-  if (!Number.isFinite(clientX) || !Number.isFinite(bounds.width) || bounds.width <= 0) {
-    return 'primary';
-  }
-  const relativeX = (clientX - bounds.left) / bounds.width;
-  return relativeX >= 0.52 ? 'split' : 'primary';
 }
 
 export function sortSidebarConversations<T extends { id: string; title: string; updatedAt: number; createdAt: number }>(

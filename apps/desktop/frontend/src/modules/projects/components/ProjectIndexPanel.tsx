@@ -3,13 +3,14 @@ import { useTranslation } from 'react-i18next';
 
 import { Button, Switch } from '@/design-system';
 import type { ChatProject } from '@/modules/conversations/data/chatStorage';
-import { localServiceClient } from '@/platform/local-service';
+import { LocalServiceError, localServiceClient } from '@/platform/local-service';
 
 interface ProjectIndexState {
   enabled: boolean;
   status: string;
   indexedFiles: number;
   indexedBytes: number;
+  errorDetails: string | null;
 }
 
 interface ProjectIndexPanelProps {
@@ -22,6 +23,7 @@ export function ProjectIndexPanel({ project, onClose }: ProjectIndexPanelProps) 
   const [index, setIndex] = useState<ProjectIndexState | null>(null);
   const [isBusy, setIsBusy] = useState(true);
   const [error, setError] = useState<'projectIndexLoadFailed' | 'projectIndexActionFailed' | null>(null);
+  const [errorDetails, setErrorDetails] = useState<string | null>(null);
 
   useEffect(() => {
     let current = true;
@@ -29,8 +31,11 @@ export function ProjectIndexPanel({ project, onClose }: ProjectIndexPanelProps) 
       .then((loaded) => {
         if (current) setIndex(loaded);
       })
-      .catch(() => {
-        if (current) setError('projectIndexLoadFailed');
+      .catch((cause: unknown) => {
+        if (current) {
+          setError('projectIndexLoadFailed');
+          setErrorDetails(readErrorDetails(cause));
+        }
       })
       .finally(() => {
         if (current) setIsBusy(false);
@@ -43,10 +48,12 @@ export function ProjectIndexPanel({ project, onClose }: ProjectIndexPanelProps) 
   const reload = async () => {
     setIsBusy(true);
     setError(null);
+    setErrorDetails(null);
     try {
       setIndex(await loadIndex(project.id));
-    } catch {
+    } catch (cause: unknown) {
       setError('projectIndexLoadFailed');
+      setErrorDetails(readErrorDetails(cause));
     } finally {
       setIsBusy(false);
     }
@@ -56,11 +63,13 @@ export function ProjectIndexPanel({ project, onClose }: ProjectIndexPanelProps) 
     if (isBusy) return;
     setIsBusy(true);
     setError(null);
+    setErrorDetails(null);
     try {
       const response = await localServiceClient.call(method, { projectId: project.id, ...extra });
       setIndex(parseIndex(response.index));
-    } catch {
+    } catch (cause: unknown) {
       setError('projectIndexActionFailed');
+      setErrorDetails(readErrorDetails(cause));
     } finally {
       setIsBusy(false);
     }
@@ -88,12 +97,27 @@ export function ProjectIndexPanel({ project, onClose }: ProjectIndexPanelProps) 
           <p className="text-sm text-secondary-text">
             {t('projectIndexStatus', { status: index.status, files: index.indexedFiles, bytes: index.indexedBytes })}
           </p>
+          {index.status === 'stale' ? (
+            <div className="grid gap-1 text-sm text-destructive" role="alert">
+              <p>{t('projectIndexStale')}</p>
+              {index.errorDetails ? (
+                <p className="break-words text-xs">
+                  {t('projectIndexCause')}: {index.errorDetails}
+                </p>
+              ) : null}
+            </div>
+          ) : null}
         </div>
       ) : null}
       {error ? (
         <div className="flex items-center justify-between gap-3">
           <p className="text-sm text-destructive" role="alert">
             {t(error)}
+            {errorDetails ? (
+              <span className="mt-1 block break-words text-xs">
+                {t('projectIndexCause')}: {errorDetails}
+              </span>
+            ) : null}
           </p>
           {error === 'projectIndexLoadFailed' ? (
             <Button disabled={isBusy} onClick={() => void reload()} size="small">
@@ -128,7 +152,8 @@ function parseIndex(value: unknown): ProjectIndexState {
     typeof value.enabled !== 'boolean' ||
     typeof value.status !== 'string' ||
     !isCount(value.indexedFiles) ||
-    !isCount(value.indexedBytes)
+    !isCount(value.indexedBytes) ||
+    (value.errorDetails !== null && typeof value.errorDetails !== 'string')
   ) {
     throw new Error('The project index state is invalid.');
   }
@@ -137,7 +162,14 @@ function parseIndex(value: unknown): ProjectIndexState {
     status: value.status,
     indexedFiles: value.indexedFiles,
     indexedBytes: value.indexedBytes,
+    errorDetails: value.errorDetails === null ? null : value.errorDetails.slice(0, 2048),
   };
+}
+
+function readErrorDetails(cause: unknown): string | null {
+  if (cause instanceof LocalServiceError) return cause.details?.trim().slice(0, 2048) || null;
+  if (cause instanceof Error) return cause.message.trim().slice(0, 2048) || null;
+  return null;
 }
 
 function isCount(value: unknown): value is number {

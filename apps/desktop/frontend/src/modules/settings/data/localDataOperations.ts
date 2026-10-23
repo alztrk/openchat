@@ -1,4 +1,4 @@
-import { chatSchemaVersion, LocalServiceError, localServiceClient } from '@/platform/local-service';
+import { getChatSchemaVersion, LocalServiceError, localServiceClient } from '@/platform/local-service';
 import { savePendingArchiveExport as saveArchiveExport } from '@/platform/tauri';
 
 const conversationArchiveTimeoutMs = 30 * 60 * 1000;
@@ -128,6 +128,7 @@ export async function exportProfileArchive(passphrase: string): Promise<ProfileA
 }
 
 export async function prepareProfileRestore(path: string, passphrase: string): Promise<ProfileArchiveResult> {
+  const chatSchemaVersion = await getChatSchemaVersion();
   const value = await localServiceClient.call(
     'profile.archive.prepare_restore',
     {

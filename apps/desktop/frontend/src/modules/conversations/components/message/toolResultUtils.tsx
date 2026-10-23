@@ -62,24 +62,69 @@ export function getRequestedToolPath(activity: ToolActivity): string | null {
   return targetPath || null;
 }
 
-export function formatToolPath(path: string, t: TFunction): string {
-  const normalized = path.replaceAll('\\', '/').trim();
-  const lower = normalized.toLowerCase();
-  const aliases = [
-    { prefix: 'desktop:/', label: t('toolDesktopLocation') },
-    { prefix: 'project:/', label: t('toolProjectLocation') },
-    { prefix: 'openchat:/', label: t('toolOpenChatLocation') },
-  ];
-  for (const alias of aliases) {
-    const root = alias.prefix.slice(0, -1);
-    if (lower === root || lower === alias.prefix) return alias.label;
-    if (lower.startsWith(alias.prefix)) {
-      const suffix = normalized.slice(alias.prefix.length).replace(/^\/+/, '');
-      return suffix ? `${alias.label} /${suffix}` : alias.label;
-    }
-  }
+export function formatToolPath(path: string): string {
   return path;
 }
+
+/**
+ * Translates known tool errors and preserves the backend's redacted message for unknown codes.
+ *
+ * Tool output is also sent to the model. Known codes use localized copy; an unknown code keeps
+ * its actual backend message so the rendered activity does not replace a failure with a generic one.
+ */
+export function translateToolError(output: ToolRecord | null, t: TFunction): string | null {
+  if (!output || !Object.hasOwn(output, 'error')) return null;
+
+  const error = asRecord(output.error);
+  const code = stringValue(error?.code);
+  const translationKey = code ? toolErrorTranslationKeys[code] : undefined;
+  const genericMessage = t('toolOperationFailed');
+  const reportedMessage = stringValue(error?.message)?.trim().slice(0, 500);
+  const message = translationKey
+    ? t(translationKey, { defaultValue: genericMessage })
+    : reportedMessage || genericMessage;
+  const details = stringValue(error?.details)?.trim().slice(0, 1000);
+  return details ? `${message} ${t('toolErrorDetails')}: ${details}` : message;
+}
+
+/** Stable backend tool error codes mapped to UI translation keys. */
+const toolErrorTranslationKeys: Record<string, string> = {
+  command_failed: 'toolErrorCommandFailed',
+  filesystem_already_exists: 'toolErrorFilesystemAlreadyExists',
+  filesystem_file_locked: 'toolErrorFilesystemFileLocked',
+  filesystem_invalid_data: 'toolErrorFilesystemInvalidData',
+  filesystem_invalid_path: 'toolErrorFilesystemInvalidPath',
+  filesystem_io_error: 'toolErrorFilesystemIoError',
+  filesystem_not_found: 'toolErrorFilesystemNotFound',
+  filesystem_permission_denied: 'toolErrorFilesystemPermissionDenied',
+  filesystem_storage_full: 'toolErrorFilesystemStorageFull',
+  image_request_invalid: 'toolErrorImageRequestInvalid',
+  image_storage_unavailable: 'toolErrorImageStorageFailed',
+  invalid_subagent_model: 'subagentsModelUnavailable',
+  invalid_tool_input: 'toolErrorInvalidInput',
+  process_not_found: 'toolErrorProcessNotFound',
+  process_permission_denied: 'toolErrorProcessPermissionDenied',
+  process_start_failed: 'toolErrorProcessStartFailed',
+  local_service_protocol_failed: 'toolErrorProtocolFailed',
+  mcp_tool_failed: 'toolErrorMcpFailed',
+  operation_cancelled: 'toolCancelled',
+  permission_denied: 'toolDenied',
+  permission_scope_denied: 'toolErrorPermissionScopeDenied',
+  project_required: 'toolErrorProjectRequired',
+  project_tool_failed: 'toolErrorProjectToolFailed',
+  project_tool_unavailable: 'toolOperationUnavailable',
+  question_data_invalid: 'toolErrorQuestionInvalid',
+  read_url_failed: 'toolErrorReadUrlFailed',
+  search_failed: 'toolErrorSearchFailed',
+  subagent_storage_unavailable: 'subagentsFailed',
+  subagent_unavailable: 'subagentsFailed',
+  terminal_error: 'toolErrorTerminalFailed',
+  terminal_backend_unavailable: 'toolErrorTerminalBackendUnavailable',
+  terminal_session_limit: 'toolErrorTerminalSessionLimit',
+  tool_activity_storage_failed: 'toolErrorActivitySaveFailed',
+  tool_execution_unavailable: 'toolOperationUnavailable',
+  tool_path_unavailable: 'toolErrorPathUnavailable',
+};
 
 export function isTerminalTool(name: string): boolean {
   return name === 'execute_command' || name === 'bash' || name === 'run_project_task' || name === 'send_terminal_input';

@@ -26,10 +26,13 @@ pub(super) struct ProviderRequestOptions<'a> {
     pub(super) project_index_context: Option<&'a str>,
     pub(super) permission_mode: ToolPermissionMode,
     pub(super) has_project: bool,
+    pub(super) project_name: Option<&'a str>,
+    pub(super) project_root: Option<&'a std::path::Path>,
     pub(super) project_task_ids: &'a [String],
     pub(super) reasoning_effort: Option<&'a str>,
     pub(super) supported_reasoning_levels: &'a [String],
     pub(super) supports_tool_calls: Option<bool>,
+    pub(super) supports_images: bool,
     pub(super) goal_objective: Option<&'a str>,
 }
 
@@ -48,10 +51,13 @@ pub(super) fn build_provider_request(
         project_index_context,
         permission_mode,
         has_project,
+        project_name,
+        project_root,
         project_task_ids,
         reasoning_effort,
         supported_reasoning_levels,
         supports_tool_calls,
+        supports_images,
         goal_objective,
     } = options;
     history::validate_attachments(stored_messages)?;
@@ -108,6 +114,9 @@ pub(super) fn build_provider_request(
     }
 
     let mut tools = tools::definitions_for_request(provider_id, supports_tool_calls);
+    if !supports_images {
+        tools.retain(|tool| tool.name != "computer_use");
+    }
     if cfg!(windows) && has_project && !project_task_ids.is_empty() && !tools.is_empty() {
         tools.push(tools::project_tasks::tool_definition(project_task_ids));
     }
@@ -132,6 +141,8 @@ pub(super) fn build_provider_request(
             project_index_context,
             permission_mode,
             has_project,
+            project_name,
+            project_root,
             tools_available: !tools.is_empty(),
             provider_id,
         });
@@ -620,10 +631,16 @@ pub(super) fn responses_api_body(
         body["tool_choice"] = json!("auto");
         body["parallel_tool_calls"] = json!(true);
     }
+    let mut reasoning = serde_json::Map::new();
     if let Some(reasoning_effort) = request.reasoning_effort.as_deref() {
-        body["reasoning"] = json!({
-            "effort": reasoning_effort,
-        });
+        reasoning.insert("effort".to_owned(), json!(reasoning_effort));
+    }
+    if provider_id == "chatgpt_api" && crate::openai_api::supports_reasoning_summary(&request.model)
+    {
+        reasoning.insert("summary".to_owned(), json!("auto"));
+    }
+    if !reasoning.is_empty() {
+        body["reasoning"] = Value::Object(reasoning);
     }
     body
 }
@@ -737,6 +754,27 @@ mod tests {
 
         assert_eq!(body["reasoning"]["effort"], "high");
         assert_eq!(body["stream"], true);
+    }
+
+    #[test]
+    fn requests_reasoning_summaries_only_for_supported_openai_api_models() {
+        let mut request = request();
+        request.model = "gpt-6-astra".to_owned();
+        request.reasoning_effort = Some("high".to_owned());
+
+        let body = responses_api_body(&request, &[], "chatgpt_api");
+
+        assert_eq!(body["reasoning"]["summary"], "auto");
+        assert_eq!(body["reasoning"]["effort"], "high");
+        assert_eq!(body["store"], false);
+
+        request.model = "gpt-4.1".to_owned();
+        let body = responses_api_body(&request, &[], "chatgpt_api");
+        assert_eq!(body["reasoning"]["effort"], "high");
+        assert!(body["reasoning"].get("summary").is_none());
+
+        let body = responses_api_body(&request, &[], "chatgpt");
+        assert!(body.get("reasoning").is_none());
     }
 
     #[test]

@@ -162,11 +162,18 @@ pub enum RunError {
     /// The process arguments do not match the supported command-line form.
     InvalidArguments,
     /// The application storage could not be opened or initialized.
-    StorageInitialization,
-    /// A service could not be initialized; the value is a stable internal error code.
-    ServiceInitialization(&'static str),
+    StorageInitialization(String),
+    /// A service could not be initialized; the values are its stable code and safe message.
+    ServiceInitialization {
+        /// Stable machine-readable code for the failed initialization step.
+        code: &'static str,
+        /// User-safe summary of the initialization failure.
+        message: String,
+        /// Optional diagnostic detail from the underlying subsystem.
+        details: Option<String>,
+    },
     /// The standard-input/output RPC transport failed.
-    Protocol,
+    Protocol(String),
 }
 
 impl std::fmt::Display for RunError {
@@ -175,13 +182,26 @@ impl std::fmt::Display for RunError {
             Self::InvalidArguments => {
                 formatter.write_str("usage: openchat-local-service [--data-root <absolute-path>]")
             }
-            Self::StorageInitialization => {
-                formatter.write_str("local_storage_initialization_failed")
+            Self::StorageInitialization(details) => {
+                write!(formatter, "local_storage_initialization_failed: {details}")
             }
-            Self::ServiceInitialization(code) => {
-                write!(formatter, "local_service_initialization_failed: {code}")
+            Self::ServiceInitialization {
+                code,
+                message,
+                details,
+            } => {
+                write!(
+                    formatter,
+                    "local_service_initialization_failed: {code}: {message}"
+                )?;
+                if let Some(details) = details {
+                    write!(formatter, " ({details})")?;
+                }
+                Ok(())
             }
-            Self::Protocol => formatter.write_str("local_service_protocol_failed"),
+            Self::Protocol(details) => {
+                write!(formatter, "local_service_protocol_failed: {details}")
+            }
         }
     }
 }
@@ -198,15 +218,18 @@ pub async fn run() -> Result<(), RunError> {
             Some(root) => AppStorage::open_at(root),
             None => AppStorage::open(),
         }
-        .map_err(|_| RunError::StorageInitialization)?,
+        .map_err(|error| RunError::StorageInitialization(error.to_string()))?,
     );
-    let service = Arc::new(
-        ChatGptService::new(Arc::clone(&storage))
-            .map_err(|error| RunError::ServiceInitialization(error.code))?,
-    );
+    let service = Arc::new(ChatGptService::new(Arc::clone(&storage)).map_err(|error| {
+        RunError::ServiceInitialization {
+            code: error.code,
+            message: error.message,
+            details: error.details,
+        }
+    })?);
     run_protocol(storage, service)
         .await
-        .map_err(|_| RunError::Protocol)
+        .map_err(|error| RunError::Protocol(error.to_string()))
 }
 
 fn parse_data_root(

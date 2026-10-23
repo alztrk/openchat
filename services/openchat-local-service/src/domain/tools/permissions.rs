@@ -207,8 +207,8 @@ mod tests {
                 .request_approval(
                     &serde_json::json!("request-1"),
                     "write_file",
-                    "project:/file.txt",
-                    &serde_json::json!({"path":"project:/file.txt"}),
+                    "D:\\projects\\OpenChat\\file.txt",
+                    &serde_json::json!({"path":"D:\\projects\\OpenChat\\file.txt"}),
                     &events,
                     &mut cancellation,
                 )

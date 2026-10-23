@@ -1,4 +1,8 @@
 import type { ChatRoute } from '@/modules/providers/data/routes';
+import {
+  isAssistantAgentSnapshot,
+  type AssistantAgentSnapshot,
+} from '@/modules/settings/data/assistantProfiles';
 import { invoke } from '@/platform/tauri';
 
 import {
@@ -24,6 +28,7 @@ export interface ChatConversation {
   workspaceId: string | null;
   apiKeyConnectionId: string | null;
   projectId: string | null;
+  agent: AssistantAgentSnapshot | null;
   isPinned: boolean;
   isArchived: boolean;
   createdAt: number;
@@ -34,6 +39,7 @@ export interface ChatProject {
   id: string;
   name: string;
   folderPath: string;
+  workspaceRoots: string[];
   createdAt: number;
   updatedAt: number;
 }
@@ -63,52 +69,6 @@ export interface ChatModelFavorite {
   modelId: string;
   displayName: string;
   sourceConnectionId: string | null;
-}
-
-export interface SavedOutputMessageKey {
-  conversationId: string;
-  messageId: string;
-}
-
-export interface SavedOutputSummary {
-  conversationId: string;
-  conversationTitle: string;
-  messageId: string;
-  excerpt: string;
-  createdAtUnixMs: number;
-  selectedVersion: number;
-  versionCount: number;
-}
-
-export interface SavedOutputVersionSummary {
-  versionNumber: number;
-  createdAtUnixMs: number;
-}
-
-export interface SavedOutputVersion extends SavedOutputVersionSummary {
-  content: string;
-}
-
-export interface SavedOutputSearchInput {
-  query: string;
-  providerId: string | null;
-  modelId: string | null;
-  projectId: string | null;
-  isArchived: boolean | null;
-  sortOrder: 'relevance' | 'newest' | 'oldest';
-  fromUnixMs: number | null;
-  throughUnixMs: number | null;
-}
-
-export interface SavedOutputSearchMatch {
-  conversationId: string;
-  conversationTitle: string;
-  isConversationTitleMatch: boolean;
-  messageId: string;
-  role: ChatRole;
-  excerpt: string;
-  createdAtUnixMs: number;
-  projectId: string | null;
 }
 
 export interface ConversationAttachmentSummary {
@@ -155,6 +115,14 @@ export async function listProjects(): Promise<ChatProject[]> {
 /** Persists a project from a one-time native folder selection token. */
 export async function createProject(id: string, name: string, folderSelectionId: string): Promise<void> {
   await invoke('create_project', { input: { id, name, folderSelectionId } });
+}
+
+export async function addProjectWorkspaceRoot(projectId: string, folderSelectionId: string): Promise<void> {
+  await invoke('add_project_workspace_root', { projectId, folderSelectionId });
+}
+
+export async function removeProjectWorkspaceRoot(projectId: string, rootPath: string): Promise<void> {
+  await invoke('remove_project_workspace_root', { projectId, rootPath });
 }
 
 export async function renameConversation(conversationId: string, title: string): Promise<void> {
@@ -284,79 +252,6 @@ export async function setModelFavorite(
   });
 }
 
-export async function listSavedOutputMessageKeys(): Promise<SavedOutputMessageKey[]> {
-  const value: unknown = await invoke('list_saved_output_message_keys');
-  if (!Array.isArray(value) || !value.every(isSavedOutputMessageKey)) {
-    throw new Error('The saved response list is invalid.');
-  }
-  return value;
-}
-
-export async function listSavedOutputs(offset = 0, limit = 30): Promise<SavedOutputSummary[]> {
-  if (!Number.isInteger(offset) || offset < 0 || offset > 100_000 || !Number.isInteger(limit) || limit < 1 || limit > 50) {
-    throw new RangeError('The saved response page is invalid.');
-  }
-  const value: unknown = await invoke('list_saved_outputs', { offset, limit });
-  if (!Array.isArray(value) || value.length > limit || !value.every(isSavedOutputSummary)) {
-    throw new Error('The saved response page is invalid.');
-  }
-  return value;
-}
-
-export async function listSavedOutputVersions(
-  conversationId: string,
-  messageId: string,
-): Promise<SavedOutputVersionSummary[]> {
-  const value: unknown = await invoke('list_saved_output_versions', { conversationId, messageId });
-  if (!Array.isArray(value) || value.length === 0 || value.length > 1_000 || !value.every(isSavedOutputVersionSummary)) {
-    throw new Error('The saved response version list is invalid.');
-  }
-  return value;
-}
-
-export async function getSavedOutputVersion(
-  conversationId: string,
-  messageId: string,
-  versionNumber: number,
-): Promise<SavedOutputVersion> {
-  const value: unknown = await invoke('get_saved_output_version', { conversationId, messageId, versionNumber });
-  if (!isSavedOutputVersion(value)) throw new Error('The saved response version is invalid.');
-  return value;
-}
-
-export async function saveSavedOutputVersion(
-  conversationId: string,
-  messageId: string,
-  content: string,
-): Promise<SavedOutputVersion> {
-  if (content.trim().length === 0 || new TextEncoder().encode(content).byteLength > 2 * 1024 * 1024) {
-    throw new RangeError('The saved response version content is invalid.');
-  }
-  const value: unknown = await invoke('save_saved_output_version', { conversationId, messageId, content });
-  if (!isSavedOutputVersion(value)) throw new Error('The saved response version is invalid.');
-  return value;
-}
-
-export async function selectSavedOutputVersion(
-  conversationId: string,
-  messageId: string,
-  versionNumber: number,
-): Promise<void> {
-  await invoke('select_saved_output_version', { conversationId, messageId, versionNumber });
-}
-
-export async function searchSavedOutputs(input: SavedOutputSearchInput): Promise<SavedOutputSearchMatch[]> {
-  const value: unknown = await invoke('search_saved_outputs', { input });
-  if (!Array.isArray(value) || value.length > 30 || !value.every(isSavedOutputSearchMatch)) {
-    throw new Error('The saved response search results are invalid.');
-  }
-  return value;
-}
-
-export async function setSavedOutput(conversationId: string, messageId: string, isSaved: boolean): Promise<void> {
-  await invoke('set_saved_output', { conversationId, messageId, isSaved });
-}
-
 export async function getConversation(conversationId: string): Promise<ChatConversation | null> {
   const value: unknown = await invoke('get_conversation', { conversationId });
   if (value === null) return null;
@@ -367,7 +262,18 @@ export async function getConversation(conversationId: string): Promise<ChatConve
 }
 
 export async function getMessages(conversationId: string): Promise<ChatMessage[]> {
-  const value: unknown = await invoke('get_messages', { conversationId });
+  let timeoutId: number | undefined;
+  let value: unknown;
+  try {
+    value = await Promise.race([
+      invoke('get_messages', { conversationId }),
+      new Promise<never>((_, reject) => {
+        timeoutId = window.setTimeout(() => reject(new Error('Loading conversation messages timed out.')), 15_000);
+      }),
+    ]);
+  } finally {
+    if (timeoutId !== undefined) window.clearTimeout(timeoutId);
+  }
   if (!Array.isArray(value) || !value.every(isMessage)) {
     throw new Error('The stored message list is invalid.');
   }
@@ -426,6 +332,7 @@ export async function createConversation(
   title: string,
   route: ChatRoute,
   projectId: string | null = null,
+  agent: AssistantAgentSnapshot | null = null,
 ): Promise<void> {
   await invoke('create_conversation', {
     input: {
@@ -437,6 +344,7 @@ export async function createConversation(
       workspaceId: route.workspaceId ?? null,
       apiKeyConnectionId: route.apiKeyConnectionId ?? null,
       projectId,
+      agent,
     },
   });
 }
@@ -473,6 +381,7 @@ export async function createConversationBranchFromUserMessage(
       ...(sourceConversation.apiKeyConnectionId ? { apiKeyConnectionId: sourceConversation.apiKeyConnectionId } : {}),
     },
     sourceConversation.projectId,
+    sourceConversation.agent,
   );
 
   const copiedMessages: ChatMessage[] = [];
@@ -535,6 +444,7 @@ export async function duplicateConversation(
       ...(sourceConversation.apiKeyConnectionId ? { apiKeyConnectionId: sourceConversation.apiKeyConnectionId } : {}),
     },
     sourceConversation.projectId,
+    sourceConversation.agent,
   );
 
   try {
@@ -669,6 +579,7 @@ function isConversation(value: unknown): value is ChatConversation {
     isNullableString(value.workspaceId) &&
     isNullableString(value.apiKeyConnectionId) &&
     isNullableString(value.projectId) &&
+    (value.agent === null || isAssistantAgentSnapshot(value.agent)) &&
     typeof value.isPinned === 'boolean' &&
     typeof value.isArchived === 'boolean' &&
     typeof value.createdAt === 'number' &&
@@ -682,6 +593,8 @@ function isProject(value: unknown): value is ChatProject {
     isString(value.id) &&
     isString(value.name) &&
     isString(value.folderPath) &&
+    Array.isArray(value.workspaceRoots) &&
+    value.workspaceRoots.every(isString) &&
     typeof value.createdAt === 'number' &&
     typeof value.updatedAt === 'number'
   );
@@ -724,65 +637,6 @@ function isModelFavorite(value: unknown): value is ChatModelFavorite {
     isString(value.modelId) &&
     isString(value.displayName) &&
     isNullableString(value.sourceConnectionId)
-  );
-}
-
-function isSavedOutputMessageKey(value: unknown): value is SavedOutputMessageKey {
-  if (!isObject(value)) return false;
-  return isString(value.conversationId) && isString(value.messageId);
-}
-
-function isSavedOutputSummary(value: unknown): value is SavedOutputSummary {
-  return (
-    isObject(value) &&
-    typeof value.conversationId === 'string' &&
-    typeof value.conversationTitle === 'string' &&
-    typeof value.messageId === 'string' &&
-    typeof value.excerpt === 'string' &&
-    typeof value.createdAtUnixMs === 'number' &&
-    Number.isSafeInteger(value.createdAtUnixMs) &&
-    typeof value.selectedVersion === 'number' &&
-    Number.isInteger(value.selectedVersion) &&
-    value.selectedVersion > 0 &&
-    typeof value.versionCount === 'number' &&
-    Number.isInteger(value.versionCount) &&
-    value.versionCount > 0
-  );
-}
-
-function isSavedOutputVersionSummary(value: unknown): value is SavedOutputVersionSummary {
-  return (
-    isObject(value) &&
-    typeof value.versionNumber === 'number' &&
-    Number.isInteger(value.versionNumber) &&
-    value.versionNumber > 0 &&
-    typeof value.createdAtUnixMs === 'number' &&
-    Number.isSafeInteger(value.createdAtUnixMs)
-  );
-}
-
-function isSavedOutputVersion(value: unknown): value is SavedOutputVersion {
-  return isObject(value) && isSavedOutputVersionSummary(value) && typeof value.content === 'string';
-}
-
-function isSavedOutputSearchMatch(value: unknown): value is SavedOutputSearchMatch {
-  return (
-    isObject(value) &&
-    isString(value.conversationId) &&
-    value.conversationId.length > 0 &&
-    isString(value.conversationTitle) &&
-    value.conversationTitle.length > 0 &&
-    typeof value.isConversationTitleMatch === 'boolean' &&
-    isString(value.messageId) &&
-    value.messageId.length > 0 &&
-    (value.role === 'user' || value.role === 'assistant') &&
-    isString(value.excerpt) &&
-    Array.from(value.excerpt).length <= 4096 &&
-    Number.isSafeInteger(value.createdAtUnixMs) &&
-    typeof value.createdAtUnixMs === 'number' &&
-    value.createdAtUnixMs >= 0 &&
-    value.createdAtUnixMs <= 8_640_000_000_000_000 &&
-    isNullableString(value.projectId)
   );
 }
 

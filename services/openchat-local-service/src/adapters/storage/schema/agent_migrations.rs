@@ -973,5 +973,80 @@ pub(super) fn apply_agent_migrations(
         current_version = 33;
     }
 
+    if current_version < 34 && target_version >= 34 {
+        let transaction = connection.unchecked_transaction()?;
+        transaction.execute_batch(
+            "CREATE TABLE conversation_file_checkpoints (
+                id TEXT PRIMARY KEY NOT NULL CHECK (
+                    length(id) = 32 AND id NOT GLOB '*[^0-9a-f]*'
+                ),
+                conversation_id TEXT NOT NULL
+                    REFERENCES conversations(id) ON DELETE CASCADE,
+                sequence INTEGER NOT NULL CHECK (sequence > 0),
+                created_at_unix_ms INTEGER NOT NULL,
+                tool_name TEXT NOT NULL CHECK (length(tool_name) BETWEEN 1 AND 128),
+                UNIQUE (conversation_id, sequence)
+            );
+
+            CREATE INDEX conversation_file_checkpoints_order
+                ON conversation_file_checkpoints (conversation_id, sequence DESC);
+
+            CREATE TABLE conversation_file_checkpoint_files (
+                checkpoint_id TEXT NOT NULL
+                    REFERENCES conversation_file_checkpoints(id) ON DELETE CASCADE,
+                file_id TEXT NOT NULL CHECK (
+                    length(file_id) = 64 AND file_id NOT GLOB '*[^0-9a-f]*'
+                ),
+                root TEXT NOT NULL CHECK (length(root) BETWEEN 1 AND 32768),
+                path TEXT NOT NULL CHECK (length(path) BETWEEN 1 AND 32768),
+                before_exists INTEGER NOT NULL CHECK (before_exists IN (0, 1)),
+                before_hash TEXT CHECK (
+                    before_hash IS NULL OR (
+                        length(before_hash) = 64 AND before_hash NOT GLOB '*[^0-9a-f]*'
+                    )
+                ),
+                before_blob_hash TEXT REFERENCES file_change_blobs(hash),
+                after_exists INTEGER NOT NULL CHECK (after_exists IN (0, 1)),
+                after_hash TEXT CHECK (
+                    after_hash IS NULL OR (
+                        length(after_hash) = 64 AND after_hash NOT GLOB '*[^0-9a-f]*'
+                    )
+                ),
+                after_blob_hash TEXT REFERENCES file_change_blobs(hash),
+                CHECK (before_exists = 1 OR (before_hash IS NULL AND before_blob_hash IS NULL)),
+                CHECK (before_exists = 0 OR before_hash IS NOT NULL),
+                CHECK (after_exists = 1 OR (after_hash IS NULL AND after_blob_hash IS NULL)),
+                CHECK (after_exists = 0 OR after_hash IS NOT NULL),
+                PRIMARY KEY (checkpoint_id, file_id),
+                UNIQUE (checkpoint_id, root, path)
+            );
+
+            CREATE INDEX conversation_file_checkpoint_files_path
+                ON conversation_file_checkpoint_files (checkpoint_id, path);
+
+            CREATE TRIGGER conversation_file_checkpoint_files_blob_delete
+            AFTER DELETE ON conversation_file_checkpoint_files
+            BEGIN
+                UPDATE file_change_blobs SET state = 'pending'
+                 WHERE hash IN (OLD.before_blob_hash, OLD.after_blob_hash)
+                   AND NOT EXISTS (
+                       SELECT 1 FROM conversation_file_changes
+                        WHERE baseline_blob_hash = file_change_blobs.hash
+                   )
+                   AND NOT EXISTS (
+                       SELECT 1 FROM conversation_file_checkpoint_files
+                        WHERE before_blob_hash = file_change_blobs.hash
+                           OR after_blob_hash = file_change_blobs.hash
+                   );
+            END;",
+        )?;
+        transaction.execute(
+            "INSERT INTO openchat_backend_migrations (version, applied_at_unix_ms) VALUES (34, ?1)",
+            [unix_time_millis()?],
+        )?;
+        transaction.commit()?;
+        current_version = 34;
+    }
+
     Ok(current_version)
 }

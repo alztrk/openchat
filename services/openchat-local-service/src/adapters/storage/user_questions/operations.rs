@@ -1377,9 +1377,11 @@ fn validate_question_item(item: &QuestionItem) -> Result<(), UserQuestionError> 
         }
     }
     match item.kind {
-        QuestionKind::Choice if item.options.len() < 2 => Err(UserQuestionError::InvalidInput(
-            "choice questions must provide at least two options".to_owned(),
-        )),
+        QuestionKind::Choice | QuestionKind::MultiChoice if item.options.len() < 2 => {
+            Err(UserQuestionError::InvalidInput(
+                "choice questions must provide at least two options".to_owned(),
+            ))
+        }
         QuestionKind::Text if !item.options.is_empty() => Err(UserQuestionError::InvalidInput(
             "text questions cannot provide choice options".to_owned(),
         )),
@@ -1419,6 +1421,28 @@ fn validate_answers(
                     return Err(UserQuestionError::InvalidInput(
                         "answer references an unknown choice".to_owned(),
                     ));
+                }
+            }
+            (QuestionKind::MultiChoice, QuestionAnswerValue::MultiChoice { option_ids }) => {
+                let mut selected_ids = HashSet::with_capacity(option_ids.len());
+                if option_ids.is_empty() || option_ids.len() > question.options.len() {
+                    return Err(UserQuestionError::InvalidInput(
+                        "a multiple-choice answer must select at least one available option"
+                            .to_owned(),
+                    ));
+                }
+                for option_id in option_ids {
+                    if !selected_ids.insert(option_id.as_str())
+                        || !question
+                            .options
+                            .iter()
+                            .any(|option| option.id == *option_id)
+                    {
+                        return Err(UserQuestionError::InvalidInput(
+                            "a multiple-choice answer contains a duplicate or unknown option"
+                                .to_owned(),
+                        ));
+                    }
                 }
             }
             (QuestionKind::Text, QuestionAnswerValue::Text { text }) => {
@@ -1462,6 +1486,23 @@ fn validate_answers(
             .copied()
             .unwrap_or(usize::MAX)
     });
+    for answer in &mut canonical_answers {
+        let Some(question) = questions
+            .iter()
+            .find(|question| question.id == answer.question_id)
+        else {
+            continue;
+        };
+        if let QuestionAnswerValue::MultiChoice { option_ids } = &mut answer.value {
+            option_ids.sort_by_key(|option_id| {
+                question
+                    .options
+                    .iter()
+                    .position(|option| option.id == *option_id)
+                    .unwrap_or(usize::MAX)
+            });
+        }
+    }
     let json = serde_json::to_vec(&canonical_answers).map_err(|error| {
         UserQuestionError::InvalidInput(format!("answers could not be encoded: {error}"))
     })?;

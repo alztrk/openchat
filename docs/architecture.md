@@ -110,6 +110,8 @@ remain separate Rust processes with their existing storage and RPC boundaries.
 - Run listing, goal pause/stop, pending question responses, and tool approval
   responses are dispatched by
   `services/openchat-local-service/src/transport/rpc/run_control.rs`. Durable
+  `ask_user` questions support single-choice, multi-choice, and free-text
+  answers; multi-choice answers are stored as ordered option ID lists.
   `chat.send` request parsing and validation are handled by
   `services/openchat-local-service/src/transport/rpc/chat_request.rs`; project Skill
   selections are capped before their IDs are copied, and title credentials are
@@ -200,17 +202,20 @@ remain separate Rust processes with their existing storage and RPC boundaries.
   total output over 8 GiB are rejected. This avoids applying archive-provided
   permissions or link targets and bounds decompressed output.
 - Project-scoped MCP stdio processes run through the local service's Windows
-  AppContainer sandbox. The service requests user approval before starting an
+  AppContainer sandbox in approval and safe-operation modes. Full access starts
+  them without AppContainer isolation, under the current Windows account; OS ACLs
+  still apply and the service does not elevate privileges. The service requests user approval before starting an
   enabled server when its project permission is `ask`; only an explicit
   `allow` skips that startup prompt, and `deny` excludes the server. This
-  startup approval is separate from approval for each MCP tool call. A
-  project-scoped process can write only within its selected project root; its
-  stdout is capped at 1 MiB per frame while being read, and its Job Object
+  startup approval is separate from approval for each MCP tool call. In the
+  isolated modes, a project-scoped process can write only within its selected
+  project root; full access uses the current account's filesystem permissions.
+  In both modes, stdout is capped at 1 MiB per frame while being read, and its Job Object
   limits it to 32 active processes, 1 GiB per process, and 2 GiB total memory.
   User-confirmed signed Windows connector packages are pinned by version,
   digest, and catalog-key fingerprint in project configuration. The service
   rechecks the executable digest before launch and grants its package directory
-  read-only access in the AppContainer. The pinned key identifies the signing
+  read-only access in the AppContainer when isolation is enabled. The pinned key identifies the signing
   key but does not verify the publisher's real-world identity.
   Global MCP tool discovery uses the shared Windows AppContainer process sandbox. It
   grants write access only to that server's validated install directory and
@@ -399,6 +404,11 @@ normal-send error, and discarded for a failed retry or when the stream lifecycle
 ends. This bounds text-only-driven renderer message-list updates to at most 20
 per second during a continuous text stream; immediate state events can add
 updates.
+ChatGPT OAuth reasoning summaries continue to use provider-declared summary
+groups. The direct OpenAI API route requests `reasoning.summary: "auto"` only
+for documented reasoning model IDs, and maps summary events into those groups;
+raw reasoning text events are ignored. The renderer displays these groups only
+for ChatGPT OAuth and direct OpenAI API messages.
 For an illustrative 100 text deltas in one second and a foreground timer, that
 reduces full-list publications from 100 to at most 20. At 10,000 existing
 messages, `upsertMessage` previously did a linear ID search and a full array map

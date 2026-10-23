@@ -3,7 +3,11 @@ import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button, Dialog, Input } from '@/design-system';
 import type { McpServerRecord } from '@/modules/model-library/data/mcpCatalog';
-import type { GlobalMcpSecretStatus, GlobalMcpSecretUpdate } from '@/modules/model-library/data/mcpStorage';
+import {
+  mcpStorageErrorDetails,
+  type GlobalMcpSecretStatus,
+  type GlobalMcpSecretUpdate,
+} from '@/modules/model-library/data/mcpStorage';
 
 interface McpEnvModalProps {
   open: boolean;
@@ -30,12 +34,14 @@ export function McpEnvModal({ open, server, busy, loadStatus, onOpenChange, onSa
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [errorCode, setErrorCode] = useState<ModalErrorCode | null>(null);
+  const [errorDetails, setErrorDetails] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open || !server) return;
     let active = true;
     setIsLoading(true);
     setErrorCode(null);
+    setErrorDetails(null);
     setStatuses({});
     setValues({});
     setVisibleNames([]);
@@ -46,9 +52,10 @@ export function McpEnvModal({ open, server, busy, loadStatus, onOpenChange, onSa
         setStatuses(Object.fromEntries(items.map((item) => [item.environmentName, item.isSaved])));
         setIsLoading(false);
       })
-      .catch(() => {
+      .catch((error: unknown) => {
         if (!active) return;
         setErrorCode('mcpCredentialStatusFailed');
+        setErrorDetails(mcpStorageErrorDetails(error));
         setIsLoading(false);
       });
     return () => {
@@ -74,6 +81,7 @@ export function McpEnvModal({ open, server, busy, loadStatus, onOpenChange, onSa
     });
     setIsSaving(true);
     setErrorCode(null);
+    setErrorDetails(null);
     try {
       const succeeded = await save(server.id, updates);
       if (!succeeded) {
@@ -89,6 +97,9 @@ export function McpEnvModal({ open, server, busy, loadStatus, onOpenChange, onSa
       setClearNames([]);
       onSaved();
       handleOpenChange(false);
+    } catch (error) {
+      setErrorCode('mcpCredentialSaveFailed');
+      setErrorDetails(mcpStorageErrorDetails(error));
     } finally {
       setIsSaving(false);
     }
@@ -185,9 +196,14 @@ export function McpEnvModal({ open, server, busy, loadStatus, onOpenChange, onSa
         </div>
       ) : null}
       {errorCode ? (
-        <p className="mt-3 text-sm text-destructive" role="alert">
-          {t(errorCode)}
-        </p>
+        <div className="mt-3 grid gap-1 text-sm text-destructive" role="alert">
+          <p>{t(errorCode)}</p>
+          {errorDetails ? (
+            <p className="break-words whitespace-pre-wrap text-xs text-secondary-text">
+              {t('chatErrorDetails')}: {errorDetails}
+            </p>
+          ) : null}
+        </div>
       ) : null}
       <div className="mt-5 flex flex-wrap justify-end gap-2">
         <Button disabled={isSaving} onClick={() => handleOpenChange(false)}>

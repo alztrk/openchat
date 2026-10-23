@@ -80,11 +80,6 @@ pub(crate) enum ToolOperation {
     SaveMemory {
         fact: String,
     },
-    GitStatus,
-    GitDiff,
-    GitHistory {
-        limit: usize,
-    },
     Info,
 }
 
@@ -98,9 +93,6 @@ impl ToolOperation {
                 | Self::List { .. }
                 | Self::Search { .. }
                 | Self::Read { .. }
-                | Self::GitStatus
-                | Self::GitDiff
-                | Self::GitHistory { .. }
                 | Self::Info
         )
     }
@@ -492,40 +484,6 @@ impl ToolExecutor {
                         url: url.to_owned(),
                         max_chars,
                     },
-                });
-            }
-            "git_status" | "git_diff" | "git_history" => {
-                let root = self
-                    .project_root
-                    .clone()
-                    .unwrap_or_else(|| self.data_root.clone());
-                let operation = match call.name.as_str() {
-                    "git_status" => ToolOperation::GitStatus,
-                    "git_diff" => ToolOperation::GitDiff,
-                    "git_history" => {
-                        let limit = usize_argument(&call.arguments, "limit").unwrap_or(20);
-                        if !(1..=100).contains(&limit) {
-                            return Err(tool_error(
-                                "invalid_tool_input",
-                                "The Git history limit must be between 1 and 100.",
-                            ));
-                        }
-                        ToolOperation::GitHistory { limit }
-                    }
-                    _ => {
-                        return Err(tool_error(
-                            "invalid_tool_input",
-                            "The Git operation is invalid.",
-                        ));
-                    }
-                };
-                return Ok(PreparedToolCall {
-                    root: root.clone(),
-                    relative_path: String::new(),
-                    requested_path: ".".to_owned(),
-                    target_path: root.clone(),
-                    scope: ToolPathScope::Project,
-                    operation,
                 });
             }
             "list_files" | "glob" | "list_directory" => {

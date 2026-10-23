@@ -24,7 +24,7 @@ const MAXIMUM_PROVIDER_ID_BYTES: usize = 64;
 const MAXIMUM_PROVIDER_NAME_BYTES: usize = 320;
 const MAXIMUM_PROVIDER_URL_BYTES: usize = 2048;
 const MAXIMUM_PROVIDER_PROTOCOL_BYTES: usize = 16;
-const MAXIMUM_LOCALE_BYTES: usize = 32;
+const MAXIMUM_DIALOG_COPY_FIELD_BYTES: usize = 1024;
 const COMPATIBLE_PROVIDER_IDS: [&str; 16] = [
     "gemini",
     "groq",
@@ -170,7 +170,51 @@ pub(crate) struct SaveCustomProviderInput {
     protocol: BoundedText<MAXIMUM_PROVIDER_PROTOCOL_BYTES>,
     allow_insecure_http: bool,
     api_key: Option<BoundedText<MAXIMUM_KEY_BYTES>>,
-    locale: BoundedText<MAXIMUM_LOCALE_BYTES>,
+    dialog_copy: HttpProviderDialogCopy,
+}
+
+fn deserialize_dialog_copy_text<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    crate::request_bounds::deserialize_bounded_text::<D, MAXIMUM_DIALOG_COPY_FIELD_BYTES>(
+        deserializer,
+    )
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+/// Localized copy resolved by the renderer for the native HTTP security confirmation.
+struct HttpProviderDialogCopy {
+    #[serde(deserialize_with = "deserialize_dialog_copy_text")]
+    title: String,
+    #[serde(deserialize_with = "deserialize_dialog_copy_text")]
+    intro: String,
+    #[serde(deserialize_with = "deserialize_dialog_copy_text")]
+    warning: String,
+    #[serde(deserialize_with = "deserialize_dialog_copy_text")]
+    allow: String,
+    #[serde(deserialize_with = "deserialize_dialog_copy_text")]
+    cancel: String,
+}
+
+impl HttpProviderDialogCopy {
+    fn validate(&self) -> Result<(), ProviderStorageError> {
+        let fields = [
+            &self.title,
+            &self.intro,
+            &self.warning,
+            &self.allow,
+            &self.cancel,
+        ];
+        if fields
+            .iter()
+            .any(|field| field.is_empty() || field.chars().any(char::is_control))
+        {
+            return Err(ProviderStorageError::invalid());
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -343,21 +387,27 @@ pub async fn save_custom_provider(
     app: AppHandle,
     input: SaveCustomProviderInput,
 ) -> Result<CustomProviderSummary, ProviderStorageError> {
-    let api_key = input
-        .api_key
-        .map(|value| Zeroizing::new(value.into_inner()));
+    let SaveCustomProviderInput {
+        id,
+        name,
+        base_url,
+        protocol,
+        allow_insecure_http,
+        api_key,
+        dialog_copy,
+    } = input;
+    dialog_copy.validate()?;
+    let api_key = api_key.map(|value| Zeroizing::new(value.into_inner()));
     let config = validated_custom_provider(
-        input.id.into_inner(),
-        input.name.into_inner(),
-        input.base_url.into_inner(),
-        input.protocol.into_inner(),
-        Some(input.allow_insecure_http),
+        id.into_inner(),
+        name.into_inner(),
+        base_url.into_inner(),
+        protocol.into_inner(),
+        Some(allow_insecure_http),
     )?;
     if requires_native_http_approval(&config) {
         let _confirmation_guard = HttpProviderConfirmationGuard::acquire()?;
-        if !confirm_insecure_http_provider(app, config.base_url.clone(), input.locale.into_inner())
-            .await?
-        {
+        if !confirm_insecure_http_provider(app, config.base_url.clone(), dialog_copy).await? {
             return Err(ProviderStorageError::http_approval_denied());
         }
     }
@@ -372,9 +422,8 @@ pub async fn save_custom_provider(
 async fn confirm_insecure_http_provider(
     app: AppHandle,
     base_url: String,
-    locale: String,
+    copy: HttpProviderDialogCopy,
 ) -> Result<bool, ProviderStorageError> {
-    let copy = http_provider_dialog_copy(&locale);
     let message = format!("{}\n\n{}\n\n{}", copy.intro, base_url, copy.warning);
     let title = copy.title.to_owned();
     let buttons =
@@ -393,56 +442,6 @@ async fn confirm_insecure_http_provider(
 /// Returns true when persisting an HTTP endpoint must follow native user confirmation.
 fn requires_native_http_approval(config: &CustomProviderConfig) -> bool {
     config.base_url.starts_with("http://") && config.allow_insecure_http == Some(true)
-}
-
-/// Supplies fixed native-dialog copy for the supported application locales.
-fn http_provider_dialog_copy(locale: &str) -> HttpProviderDialogCopy {
-    match locale.split(['-', '_']).next() {
-        Some("tr") => HttpProviderDialogCopy {
-            title: "OpenChat güvenlik onayı",
-            intro: "Bu özel sağlayıcı şifrelenmeyen HTTP kullanıyor:",
-            warning: "Sohbet içeriği ve API anahtarları ağda okunabilir. Yalnızca güvendiğiniz yerel bir sağlayıcıysa devam edin.",
-            allow: "HTTP'ye izin ver",
-            cancel: "Vazgeç",
-        },
-        Some("de") => HttpProviderDialogCopy {
-            title: "OpenChat-Sicherheitsbestätigung",
-            intro: "Dieser benutzerdefinierte Anbieter verwendet unverschlüsseltes HTTP:",
-            warning: "Chat-Inhalte und API-Schlüssel können im Netzwerk sichtbar sein. Fahren Sie nur bei einem vertrauenswürdigen lokalen Anbieter fort.",
-            allow: "HTTP erlauben",
-            cancel: "Abbrechen",
-        },
-        Some("es") => HttpProviderDialogCopy {
-            title: "Confirmación de seguridad de OpenChat",
-            intro: "Este proveedor personalizado usa HTTP sin cifrar:",
-            warning: "El contenido del chat y las claves API pueden verse en la red. Continúa solo si es un proveedor local de confianza.",
-            allow: "Permitir HTTP",
-            cancel: "Cancelar",
-        },
-        Some("fr") => HttpProviderDialogCopy {
-            title: "Confirmation de sécurité OpenChat",
-            intro: "Ce fournisseur personnalisé utilise HTTP sans chiffrement :",
-            warning: "Le contenu des discussions et les clés API peuvent être visibles sur le réseau. Continuez uniquement avec un fournisseur local de confiance.",
-            allow: "Autoriser HTTP",
-            cancel: "Annuler",
-        },
-        _ => HttpProviderDialogCopy {
-            title: "OpenChat security confirmation",
-            intro: "This custom provider uses unencrypted HTTP:",
-            warning: "Chat content and API keys may be visible on the network. Continue only for a trusted local provider.",
-            allow: "Allow HTTP",
-            cancel: "Cancel",
-        },
-    }
-}
-
-/// Static wording used by the operating-system HTTP security confirmation.
-struct HttpProviderDialogCopy {
-    title: &'static str,
-    intro: &'static str,
-    warning: &'static str,
-    allow: &'static str,
-    cancel: &'static str,
 }
 
 /// Updates one provider in a decrypted map after validating that an existing key remains bound
@@ -739,10 +738,10 @@ fn map_storage_error(_: McpStorageError) -> ProviderStorageError {
 #[cfg(test)]
 mod tests {
     use super::{
-        http_provider_dialog_copy, requires_native_http_approval, update_custom_provider_values,
-        BoundedText, CustomProviderConfig, SaveCustomProviderInput, MAXIMUM_KEY_BYTES,
-        MAXIMUM_LOCALE_BYTES, MAXIMUM_PROVIDER_ID_BYTES, MAXIMUM_PROVIDER_NAME_BYTES,
-        MAXIMUM_PROVIDER_PROTOCOL_BYTES, MAXIMUM_PROVIDER_URL_BYTES,
+        requires_native_http_approval, update_custom_provider_values, BoundedText,
+        CustomProviderConfig, HttpProviderDialogCopy, SaveCustomProviderInput,
+        MAXIMUM_DIALOG_COPY_FIELD_BYTES, MAXIMUM_KEY_BYTES, MAXIMUM_PROVIDER_ID_BYTES,
+        MAXIMUM_PROVIDER_NAME_BYTES, MAXIMUM_PROVIDER_PROTOCOL_BYTES, MAXIMUM_PROVIDER_URL_BYTES,
     };
     use crate::mcp_storage::SecretMap;
     use zeroize::Zeroizing;
@@ -789,23 +788,23 @@ mod tests {
         assert_text_boundary::<MAXIMUM_PROVIDER_NAME_BYTES>();
         assert_text_boundary::<MAXIMUM_PROVIDER_PROTOCOL_BYTES>();
         assert_text_boundary::<MAXIMUM_PROVIDER_URL_BYTES>();
-        assert_text_boundary::<MAXIMUM_LOCALE_BYTES>();
+        assert_text_boundary::<MAXIMUM_DIALOG_COPY_FIELD_BYTES>();
     }
 
     #[test]
     fn custom_provider_save_payload_uses_bounded_camel_case_fields() {
         let input = serde_json::from_str::<SaveCustomProviderInput>(
-            r#"{"id":"custom_0123456789abcdef","name":"Provider","baseUrl":"https://provider.example/v1","protocol":"openAi","allowInsecureHttp":false,"apiKey":null,"locale":"tr-TR"}"#,
+            r#"{"id":"custom_0123456789abcdef","name":"Provider","baseUrl":"https://provider.example/v1","protocol":"openAi","allowInsecureHttp":false,"apiKey":null,"dialogCopy":{"title":"Title","intro":"Intro","warning":"Warning","allow":"Allow","cancel":"Cancel"}}"#,
         )
         .expect("bounded provider payload should deserialize");
         assert_eq!(input.base_url.into_inner(), "https://provider.example/v1");
-        assert_eq!(input.locale.into_inner(), "tr-TR");
+        assert_eq!(input.dialog_copy.title, "Title");
 
-        let oversized_locale = format!(
-            r#"{{"id":"custom_0123456789abcdef","name":"Provider","baseUrl":"https://provider.example/v1","protocol":"openAi","allowInsecureHttp":false,"apiKey":null,"locale":"{}"}}"#,
-            "x".repeat(MAXIMUM_LOCALE_BYTES + 1)
+        let oversized_dialog_copy = format!(
+            r#"{{"id":"custom_0123456789abcdef","name":"Provider","baseUrl":"https://provider.example/v1","protocol":"openAi","allowInsecureHttp":false,"apiKey":null,"dialogCopy":{{"title":"{}","intro":"Intro","warning":"Warning","allow":"Allow","cancel":"Cancel"}}}}"#,
+            "x".repeat(MAXIMUM_DIALOG_COPY_FIELD_BYTES + 1)
         );
-        assert!(serde_json::from_str::<SaveCustomProviderInput>(&oversized_locale).is_err());
+        assert!(serde_json::from_str::<SaveCustomProviderInput>(&oversized_dialog_copy).is_err());
     }
 
     #[test]
@@ -931,13 +930,21 @@ mod tests {
     }
 
     #[test]
-    fn http_confirmation_copy_uses_the_application_locale() {
-        assert_eq!(http_provider_dialog_copy("tr-TR").allow, "HTTP'ye izin ver");
-        assert_eq!(http_provider_dialog_copy("de-DE").cancel, "Abbrechen");
-        assert_eq!(
-            http_provider_dialog_copy("unknown").title,
-            "OpenChat security confirmation"
-        );
+    fn http_confirmation_copy_rejects_empty_or_control_text() {
+        let copy = HttpProviderDialogCopy {
+            title: "Title".to_owned(),
+            intro: "Intro".to_owned(),
+            warning: "Warning".to_owned(),
+            allow: "Allow".to_owned(),
+            cancel: "Cancel".to_owned(),
+        };
+        assert!(copy.validate().is_ok());
+
+        let invalid = HttpProviderDialogCopy {
+            title: "Title\n".to_owned(),
+            ..copy
+        };
+        assert!(invalid.validate().is_err());
     }
 
     #[test]

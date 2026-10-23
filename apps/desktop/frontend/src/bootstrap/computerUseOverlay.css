@@ -1,0 +1,99 @@
+html:has(.computer-use-overlay),
+body:has(.computer-use-overlay),
+body:has(.computer-use-overlay) #root {
+  background: transparent !important;
+}
+
+.computer-use-overlay {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  color: white;
+  font-family: var(--app-font-family), sans-serif;
+}
+
+.computer-use-overlay__corner {
+  position: absolute;
+  width: 52px;
+  height: 52px;
+  opacity: 0.78;
+  animation: computer-use-corner-pulse 1.8s ease-in-out infinite alternate;
+}
+
+.computer-use-overlay__corner::before,
+.computer-use-overlay__corner::after {
+  position: absolute;
+  display: block;
+  content: '';
+  border-radius: 2px;
+  background: var(--computer-use-accent, rgb(142 86 59));
+  box-shadow: 0 0 15px color-mix(in srgb, var(--computer-use-accent, rgb(142 86 59)) 58%, transparent);
+}
+
+.computer-use-overlay__corner::before {
+  width: 52px;
+  height: 4px;
+}
+
+.computer-use-overlay__corner::after {
+  width: 4px;
+  height: 52px;
+}
+
+.computer-use-overlay__corner--top-left {
+  top: 0;
+  left: 0;
+}
+
+.computer-use-overlay__corner--top-right {
+  top: 0;
+  right: 0;
+  transform: rotate(90deg);
+  transform-origin: top right;
+}
+
+.computer-use-overlay__corner--bottom-right {
+  right: 0;
+  bottom: 0;
+  transform: rotate(180deg);
+  transform-origin: bottom right;
+}
+
+.computer-use-overlay__corner--bottom-left {
+  bottom: 0;
+  left: 0;
+  transform: rotate(270deg);
+  transform-origin: bottom left;
+}
+
+.computer-use-overlay__banner {
+  position: absolute;
+  top: 18px;
+  left: 50%;
+  max-width: calc(100vw - 48px);
+  padding: 9px 16px;
+  transform: translateX(-50%);
+  border: 1px solid color-mix(in srgb, var(--computer-use-accent, rgb(142 86 59)) 72%, white);
+  border-radius: 999px;
+  background: rgb(24 25 27 / 94%);
+  box-shadow: 0 4px 18px rgb(0 0 0 / 24%);
+  color: white;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 18px;
+  text-align: center;
+  white-space: nowrap;
+}
+
+@keyframes computer-use-corner-pulse {
+  from { opacity: 0.48; }
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .computer-use-overlay__corner {
+    animation: none;
+    opacity: 0.78;
+  }
+}

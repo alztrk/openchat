@@ -1,4 +1,4 @@
-import { ChevronLeft, GitBranch, Hand, NotebookPen, Search, Server, Sparkles, Star } from 'lucide-react';
+import { ChevronLeft, FolderTree, GitBranch, Hand, NotebookPen, Search, Server, Sparkles, Star } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -11,8 +11,9 @@ import { ProjectMcpPanel } from './ProjectMcpPanel';
 import { ProjectSkillsPanel } from './ProjectSkillsPanel';
 import { ProjectToolPermissionsPanel } from './ProjectToolPermissionsPanel';
 import { ProjectWorktreesPanel } from './ProjectWorktreesPanel';
+import { ProjectWorkspaceRootsPanel } from './ProjectWorkspaceRootsPanel';
 
-type ProjectOptionId = 'defaultModel' | 'instructions' | 'skills' | 'index' | 'permissions' | 'mcp' | 'worktrees';
+type ProjectOptionId = 'workspaceRoots' | 'defaultModel' | 'instructions' | 'skills' | 'index' | 'permissions' | 'mcp' | 'worktrees';
 
 interface ProjectOptionsDialogProps {
   project: ChatProject | null;
@@ -30,6 +31,7 @@ export function ProjectOptionsDialog({ project, open, onOpenChange, onUseWorktre
   }, [open]);
 
   const optionLabels: Record<ProjectOptionId, string> = {
+    workspaceRoots: t('projectWorkspaceRootsTitle'),
     defaultModel: t('projectDefaultModelUseCurrent'),
     instructions: t('projectOptionsInstructions'),
     skills: t('projectOptionsSkills'),
@@ -63,6 +65,11 @@ export function ProjectOptionsDialog({ project, open, onOpenChange, onUseWorktre
           {option === null ? (
             <div className="grid gap-1">
               <ProjectOptionButton
+                icon={FolderTree}
+                label={optionLabels.workspaceRoots}
+                onClick={() => setOption('workspaceRoots')}
+              />
+              <ProjectOptionButton
                 icon={Star}
                 label={optionLabels.defaultModel}
                 onClick={() => setOption('defaultModel')}
@@ -87,6 +94,7 @@ export function ProjectOptionsDialog({ project, open, onOpenChange, onUseWorktre
               />
             </div>
           ) : null}
+          {option === 'workspaceRoots' ? <ProjectWorkspaceRootsPanel project={project} /> : null}
           {option === 'defaultModel' ? (
             <ProjectDefaultModelPanel onClose={() => onOpenChange(false)} project={project} />
           ) : null}

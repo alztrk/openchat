@@ -1,13 +1,4 @@
-import {
-  ArrowLeftRight,
-  Clock3,
-  Columns2,
-  Maximize2,
-  MessageSquare,
-  MessageSquarePlus,
-  PanelRight,
-  X,
-} from 'lucide-react';
+import { Clock3, Files, MessageSquare, MessageSquarePlus, PanelRight } from 'lucide-react';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/design-system';
@@ -19,32 +10,22 @@ import { ConversationExportMenu } from './ConversationExportMenu';
 export interface ConversationActionsHeaderProps {
   activeConversationId?: string | null;
   conversations?: ChatConversation[];
-  splitConversationId?: string | null;
   isRightPanelOpen?: boolean;
-  onToggleSplitView?(): void;
   onToggleRightPanel?(): void;
-  isSplitSecondary?: boolean;
-  onCloseSplit?(): void;
-  onSwapWithPrimary?(): void;
-  onPromoteToPrimary?(): void;
+  isPanelConversation?: boolean;
 }
 
 export function ConversationActionsHeader({
   activeConversationId,
   conversations: propConversations,
-  splitConversationId = null,
   isRightPanelOpen = false,
-  onToggleSplitView,
   onToggleRightPanel,
-  isSplitSecondary = false,
-  onCloseSplit,
-  onSwapWithPrimary,
-  onPromoteToPrimary,
+  isPanelConversation = false,
 }: ConversationActionsHeaderProps) {
   const { t } = useTranslation();
   const storeConversations = useChatStore((state) => state.conversations);
   const renameConversation = useChatStore((state) => state.renameConversation);
-  const temporaryChat = useChatStore((state) => state.temporaryChat);
+  const temporaryChat = useChatStore((state) => (isPanelConversation ? null : state.temporaryChat));
   const isSending = useChatStore((state) => state.isSending);
   const sendingConversationId = useChatStore((state) => state.sendingConversationId);
   const compactingConversationId = useChatStore((state) => state.compactingConversationId);
@@ -63,10 +44,6 @@ export function ConversationActionsHeader({
       (sendingConversationId === activeConversation.id ||
         compactingConversationId === activeConversation.id ||
         (isSending && activeConversationId === activeConversation.id)),
-  );
-
-  const canToggleSplitView = Boolean(
-    !temporaryChat && onToggleSplitView && (splitConversationId !== null || conversations.length >= 2),
   );
 
   return (
@@ -93,122 +70,44 @@ export function ConversationActionsHeader({
           </div>
         ) : (
           <div className="flex min-w-0 items-center gap-2 select-none">
-            {isSplitSecondary ? (
-              <>
-                <MessageSquare aria-hidden="true" className="shrink-0 text-secondary-icon" size={16} />
-                <span className="truncate text-sm font-semibold text-text">{t('splitViewEmptyHint')}</span>
-              </>
-            ) : (
-              <>
-                <MessageSquarePlus aria-hidden="true" className="shrink-0 text-secondary-icon" size={16} />
-                <h1 className="truncate text-sm font-semibold text-text">{t('newChat')}</h1>
-              </>
-            )}
+            <MessageSquarePlus aria-hidden="true" className="shrink-0 text-secondary-icon" size={16} />
+            <h1 className="truncate text-sm font-semibold text-text">{t('newChat')}</h1>
           </div>
         )}
       </div>
 
       <div className="flex shrink-0 items-center gap-1">
-        {isSplitSecondary ? (
-          <>
-            {onSwapWithPrimary ? (
-              <Button
-                aria-label={t('swapSplitPanes')}
-                className="size-8 rounded-control text-secondary-icon hover:bg-hover hover:text-text"
-                onClick={onSwapWithPrimary}
-                size="icon"
-                title={t('swapSplitPanes')}
-                variant="ghost"
-              >
-                <ArrowLeftRight aria-hidden="true" size={15} />
-              </Button>
-            ) : null}
-            {onPromoteToPrimary ? (
-              <Button
-                aria-label={t('focusSplitConversation')}
-                className="size-8 rounded-control text-secondary-icon hover:bg-hover hover:text-text"
-                onClick={onPromoteToPrimary}
-                size="icon"
-                title={t('focusSplitConversation')}
-                variant="ghost"
-              >
-                <Maximize2 aria-hidden="true" size={15} />
-              </Button>
-            ) : null}
-            {onToggleRightPanel ? (
-              <Button
-                aria-label={isRightPanelOpen ? t('closeRightPanel') : t('openRightPanel')}
-                aria-pressed={isRightPanelOpen}
-                className={`size-8 rounded-control ${
-                  isRightPanelOpen
-                    ? 'bg-accent/15 text-accent hover:bg-accent/20'
-                    : 'text-secondary-icon hover:bg-hover hover:text-text'
-                }`}
-                onClick={onToggleRightPanel}
-                size="icon"
-                title={isRightPanelOpen ? t('closeRightPanel') : t('openRightPanel')}
-                variant="ghost"
-              >
-                <PanelRight aria-hidden="true" size={15} />
-              </Button>
-            ) : null}
-            {activeConversation ? (
-              <ConversationExportMenu conversation={activeConversation} disabled={isSending} />
-            ) : null}
-            {onCloseSplit ? (
-              <Button
-                aria-label={t('closeSplitView')}
-                className="size-8 rounded-control text-secondary-icon hover:bg-hover hover:text-text"
-                onClick={onCloseSplit}
-                size="icon"
-                title={t('closeSplitView')}
-                variant="ghost"
-              >
-                <X aria-hidden="true" size={15} />
-              </Button>
-            ) : null}
-          </>
-        ) : (
-          <>
-            {canToggleSplitView ? (
-              <Button
-                aria-label={splitConversationId ? t('closeSplitView') : t('splitViewToggle')}
-                aria-pressed={splitConversationId !== null}
-                className={`size-8 rounded-control ${
-                  splitConversationId
-                    ? 'bg-accent/15 text-accent hover:bg-accent/20'
-                    : 'text-secondary-icon hover:bg-hover hover:text-text'
-                }`}
-                onClick={onToggleSplitView}
-                size="icon"
-                title={splitConversationId ? t('closeSplitView') : t('splitViewToggle')}
-                variant="ghost"
-              >
-                <Columns2 aria-hidden="true" size={15} />
-              </Button>
-            ) : null}
-            {onToggleRightPanel ? (
-              <Button
-                aria-label={isRightPanelOpen ? t('closeRightPanel') : t('openRightPanel')}
-                aria-pressed={isRightPanelOpen}
-                className={`size-8 rounded-control ${
-                  isRightPanelOpen
-                    ? 'bg-accent/15 text-accent hover:bg-accent/20'
-                    : 'text-secondary-icon hover:bg-hover hover:text-text'
-                }`}
-                onClick={onToggleRightPanel}
-                size="icon"
-                title={isRightPanelOpen ? t('closeRightPanel') : t('openRightPanel')}
-                variant="ghost"
-              >
-                <PanelRight aria-hidden="true" size={15} />
-              </Button>
-            ) : null}
-            {activeConversation && !temporaryChat ? (
-              <ConversationExportMenu conversation={activeConversation} disabled={isSending} />
-            ) : null}
-          </>
-        )}
+        <Button
+          aria-label={t('attachmentLibraryOpenPicker')}
+          className="size-8 rounded-control text-secondary-icon"
+          disabled
+          size="icon"
+          title={t('attachmentLibraryOpenPicker')}
+          type="button"
+          variant="ghost"
+        >
+          <Files aria-hidden="true" size={15} />
+        </Button>
+        {onToggleRightPanel ? (
+          <Button
+            aria-label={isRightPanelOpen ? t('closeRightPanel') : t('openRightPanel')}
+            aria-pressed={isRightPanelOpen}
+            className={`size-8 rounded-control ${
+              isRightPanelOpen
+                ? 'bg-accent/15 text-accent hover:bg-accent/20'
+                : 'text-secondary-icon hover:bg-hover hover:text-text'
+            }`}
+            onClick={onToggleRightPanel}
+            size="icon"
+            title={isRightPanelOpen ? t('closeRightPanel') : t('openRightPanel')}
+            variant="ghost"
+          >
+            <PanelRight aria-hidden="true" size={15} />
+          </Button>
+        ) : null}
+        {activeConversation && !temporaryChat ? (
+          <ConversationExportMenu conversation={activeConversation} disabled={isActiveConversationAiWorking} />
+        ) : null}
       </div>
     </header>
   );

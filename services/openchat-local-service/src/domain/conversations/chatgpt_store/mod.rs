@@ -90,9 +90,22 @@ pub(crate) fn model_supports_images(model_id: &str) -> bool {
         || normalized.starts_with("gpt-4-turbo")
         || normalized.starts_with("gpt-4-vision")
         || normalized.starts_with("gpt-5")
+        || normalized.starts_with("gpt-6")
         || normalized.starts_with("o1")
         || normalized.starts_with("o3")
         || normalized.starts_with("o4")
+}
+
+#[cfg(test)]
+mod model_capability_tests {
+    use super::model_supports_images;
+
+    #[test]
+    fn gpt_6_models_support_images() {
+        for model_id in ["gpt-6-luna", "gpt-6-sol", "gpt-6.1-sol", "gpt-6-astra"] {
+            assert!(model_supports_images(model_id), "{model_id}");
+        }
+    }
 }
 
 #[derive(Clone, Debug)]

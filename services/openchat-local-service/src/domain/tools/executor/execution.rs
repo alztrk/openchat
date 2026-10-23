@@ -3,6 +3,8 @@
 //! The execution owner conversation is supplied by the trusted RPC stream context rather than
 //! model arguments, and terminal sessions stay scoped to that conversation.
 
+use std::path::PathBuf;
+
 use serde_json::{Value, json};
 
 use crate::{
@@ -20,9 +22,19 @@ use super::{PreparedToolCall, ToolOperation};
 /// Executes a prepared model tool call and scopes interactive terminal access to its conversation.
 ///
 /// The conversation identifier must come from the trusted stream snapshot, never tool arguments.
+#[cfg(test)]
 pub(crate) async fn execute_model_tool(
     prepared: &PreparedToolCall,
     owner_conversation_id: &str,
+) -> Value {
+    execute_model_tool_with_workspace_roots(prepared, owner_conversation_id, &[], false).await
+}
+
+pub(crate) async fn execute_model_tool_with_workspace_roots(
+    prepared: &PreparedToolCall,
+    owner_conversation_id: &str,
+    workspace_roots: &[PathBuf],
+    full_access: bool,
 ) -> Value {
     let result = match &prepared.operation {
         ToolOperation::List { offset, limit } => {
@@ -73,17 +85,26 @@ pub(crate) async fn execute_model_tool(
             let manager = TerminalSessionManager::global();
             if let Some(cmd) = command {
                 match manager
-                    .execute(
+                    .execute_with_workspace_roots(
                         cmd,
                         &prepared.root,
                         owner_conversation_id,
                         *timeout_seconds,
                         *wait_ms,
+                        workspace_roots,
+                        full_access,
                     )
                     .await
                 {
                     Ok(val) => return val,
-                    Err(err) => return json!({"error": {"code": "command_failed", "message": err}}),
+                    Err(error) => {
+                        let mut output =
+                            json!({"error": {"code": error.code, "message": error.message}});
+                        if let Some(details) = error.details {
+                            output["error"]["details"] = Value::String(details);
+                        }
+                        return output;
+                    }
                 }
             } else if let Some(tid) = terminal_id {
                 if action.as_deref() == Some("kill") {
@@ -192,19 +213,8 @@ pub(crate) async fn execute_model_tool(
         ToolOperation::ProjectTool { .. } => {
             return json!({"error": {
                 "code": "project_tool_unavailable",
-                "message": "Configured project tools must run through the approved sandboxed executor."
+                "message": "This configured project tool is not supported by the current executor."
             }});
-        }
-        ToolOperation::GitStatus => {
-            return git_inspection_result(crate::git_inspection::status(&prepared.root).await);
-        }
-        ToolOperation::GitDiff => {
-            return git_inspection_result(crate::git_inspection::diff(&prepared.root).await);
-        }
-        ToolOperation::GitHistory { limit } => {
-            return git_inspection_result(
-                crate::git_inspection::history(&prepared.root, *limit).await,
-            );
         }
         ToolOperation::Info => get_file_info(&prepared.root, &prepared.relative_path),
     };
@@ -215,45 +225,17 @@ pub(crate) async fn execute_model_tool(
     }
 }
 
-fn git_inspection_result(
-    result: Result<Value, crate::git_inspection::GitInspectionError>,
-) -> Value {
-    match result {
-        Ok(value) => value,
-        Err(crate::git_inspection::GitInspectionError::NotRepository) => json!({
-            "error": {
-                "code": "not_git_repository",
-                "message": "The attached project folder is not a Git repository."
-            }
-        }),
-        Err(crate::git_inspection::GitInspectionError::TimedOut) => json!({
-            "error": {
-                "code": "git_operation_timed_out",
-                "message": "The Git inspection command exceeded its time limit."
-            }
-        }),
-        Err(crate::git_inspection::GitInspectionError::InvalidInput) => json!({
-            "error": {
-                "code": "invalid_tool_input",
-                "message": "The Git inspection arguments are invalid."
-            }
-        }),
-        Err(crate::git_inspection::GitInspectionError::Unavailable) => json!({
-            "error": {
-                "code": "git_unavailable",
-                "message": "Git inspection could not be completed. Confirm Git is installed and try again."
-            }
-        }),
-    }
-}
-
 fn service_error(error: ServiceError) -> Value {
-    json!({
+    let mut result = json!({
         "error": {
             "code": error.code,
-            "message": error.message
+            "message": error.message,
         }
-    })
+    });
+    if let Some(details) = error.details {
+        result["error"]["details"] = Value::String(details);
+    }
+    result
 }
 
 #[cfg(test)]

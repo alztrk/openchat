@@ -429,7 +429,7 @@ fn build_client() -> Result<Client, ServiceError> {
         .pool_max_idle_per_host(10)
         .redirect(reqwest::redirect::Policy::none())
         .build()
-        .map_err(|_| network_error())
+        .map_err(network_error_with_details)
 }
 
 fn client() -> Result<Client, ServiceError> {
@@ -516,6 +516,7 @@ fn terminal_result(
 }
 fn http_error(status: StatusCode, provider_id: Option<&str>) -> ServiceError {
     let provider = provider_name(provider_id);
+    let details = format!("HTTP status {}", status.as_u16());
     if provider_id == Some("copilot") {
         match status {
             StatusCode::UNAUTHORIZED => {
@@ -523,14 +524,16 @@ fn http_error(status: StatusCode, provider_id: Option<&str>) -> ServiceError {
                     "authentication_required",
                     "GitHub rejected the Copilot token. Check that it is active and has the Copilot Requests permission.",
                     false,
-                );
+                )
+                .with_details(details);
             }
             StatusCode::FORBIDDEN => {
                 return ServiceError::new(
                     "permission_denied",
                     "GitHub Copilot denied access. Check the account's Copilot license and organization policy.",
                     false,
-                );
+                )
+                .with_details(details);
             }
             _ => {}
         }
@@ -540,17 +543,20 @@ fn http_error(status: StatusCode, provider_id: Option<&str>) -> ServiceError {
             "authentication_required",
             format!("{provider} rejected the request. Check the selected connection."),
             false,
-        ),
+        )
+        .with_details(details),
         StatusCode::TOO_MANY_REQUESTS => ServiceError::new(
             "rate_limited",
             format!("{provider} reported a usage limit. Try again later."),
             true,
-        ),
+        )
+        .with_details(details),
         _ => ServiceError::new(
             "provider_request_failed",
             format!("{provider} could not complete the request."),
             status.is_server_error(),
-        ),
+        )
+        .with_details(details),
     }
 }
 
@@ -576,7 +582,8 @@ pub(super) fn chat_request_http_error(
                 "{provider} rejected a request containing tools. Check the selected model's tool support and the request format."
             ),
             false,
-        );
+        )
+        .with_details(format!("HTTP status {}", status.as_u16()));
     }
 
     http_error(status, provider_id)
@@ -588,6 +595,10 @@ fn network_error() -> ServiceError {
         "The model provider could not be reached. Check the network and try again.",
         true,
     )
+}
+
+fn network_error_with_details(error: reqwest::Error) -> ServiceError {
+    network_error().with_details(error.without_url().to_string())
 }
 fn invalid_response_error() -> ServiceError {
     ServiceError::new(

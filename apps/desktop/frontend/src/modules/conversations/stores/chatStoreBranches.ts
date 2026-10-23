@@ -53,7 +53,7 @@ export function createBranchesActions(set: StoreSet, get: StoreGet) {
         set({ errorCode: 'conversationBranchCreateFailed' });
         return false;
       }
-      set({ errorCode: null, isCreatingMessageBranch: true });
+      set({ errorCode: null, errorMessage: null, isCreatingMessageBranch: true });
       try {
         const branch = await createConversationBranchFromUserMessage(
           sourceConversationId,
@@ -70,6 +70,7 @@ export function createBranchesActions(set: StoreSet, get: StoreGet) {
           ],
           activeConversationId: branch.conversation.id,
           pendingProjectId: null,
+          pendingAgentSnapshot: null,
           messages: branch.messages,
           selectedModelKey: branchModel?.key ?? state.selectedModelKey,
           selectedReasoningEffort: null,
@@ -84,7 +85,7 @@ export function createBranchesActions(set: StoreSet, get: StoreGet) {
           userMessageAlreadySaved: true,
         });
       } catch {
-        set({ errorCode: 'conversationBranchCreateFailed', isCreatingMessageBranch: false });
+        set({ errorCode: 'conversationBranchCreateFailed', errorMessage: null, isCreatingMessageBranch: false });
         return false;
       } finally {
         set({ isCreatingMessageBranch: false });
@@ -98,7 +99,7 @@ export function createBranchesActions(set: StoreSet, get: StoreGet) {
     },
 
     dismissError(): void {
-      set({ errorCode: null });
+      set({ errorCode: null, errorMessage: null });
     },
   };
 }

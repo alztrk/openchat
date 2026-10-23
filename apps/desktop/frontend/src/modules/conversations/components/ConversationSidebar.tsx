@@ -1,6 +1,8 @@
 import {
   Archive,
+  Bot,
   Check,
+  ChevronDown,
   Clock3,
   Folder,
   FolderOpen,
@@ -38,6 +40,11 @@ import {
   DropdownMenuTrigger,
 } from '@/design-system';
 import type { ChatConversation, ChatProject } from '@/modules/conversations/data/chatStorage';
+import {
+  snapshotAssistantProfile,
+  type AssistantAgentSnapshot,
+} from '@/modules/settings/data/assistantProfiles';
+import { useAssistantProfilesStore } from '@/modules/settings/stores/assistantProfilesStore';
 import {
   type CustomSidebarFolder,
   clampSidebarWidth,
@@ -134,6 +141,8 @@ export interface ConversationSidebarProps {
   onCloseMobile?(): void;
   onRequestTemporaryExit(action: () => void | Promise<void>): void;
   onNewChat?(): void;
+  onNewAgentChat?(agent: AssistantAgentSnapshot): void;
+  onManageAgents?(): void;
   onStartTemporaryChat?(): void;
 }
 
@@ -144,6 +153,8 @@ export function ConversationSidebar({
   onCloseMobile,
   onRequestTemporaryExit,
   onNewChat,
+  onNewAgentChat,
+  onManageAgents,
   onStartTemporaryChat,
 }: ConversationSidebarProps) {
   const { t } = useTranslation();
@@ -181,15 +192,21 @@ export function ConversationSidebar({
   const projects = useChatStore((state) => state.projects);
   const projectsStatus = useChatStore((state) => state.projectsStatus);
   const serviceStatus = useChatStore((state) => state.serviceStatus);
+  const serviceErrorMessage = useChatStore((state) => state.errorMessage);
   const activeConversationId = useChatStore((state) => state.activeConversationId);
   const isSending = useChatStore((state) => state.isSending);
   const sendingConversationId = useChatStore((state) => state.sendingConversationId);
   const compactingConversationId = useChatStore((state) => state.compactingConversationId);
   const selectConversation = useChatStore((state) => state.selectConversation);
   const startNewChat = useChatStore((state) => state.startNewChat);
+  const startNewChatWithAgent = useChatStore((state) => state.startNewChatWithAgent);
   const startTemporaryChat = useChatStore((state) => state.startTemporaryChat);
   const temporaryChat = useChatStore((state) => state.temporaryChat);
   const refreshProjects = useChatStore((state) => state.refreshProjects);
+  const agentProfiles = useAssistantProfilesStore((state) => state.profiles);
+  const agentProfilesLoadState = useAssistantProfilesStore((state) => state.loadState);
+  const initializeAgentProfiles = useAssistantProfilesStore((state) => state.initialize);
+  const retryAgentProfiles = useAssistantProfilesStore((state) => state.retry);
 
   const {
     archiveConversation,
@@ -217,6 +234,8 @@ export function ConversationSidebar({
   useEffect(() => {
     if (sidebarPreferences.error) globalThis.reportError(sidebarPreferences.error);
   }, [sidebarPreferences.error]);
+
+  useEffect(() => initializeAgentProfiles(), [initializeAgentProfiles]);
 
   useEffect(() => {
     const section = drawerRef.current;
@@ -490,6 +509,26 @@ export function ConversationSidebar({
     }
   };
 
+  const handleNewChatWithAgent = (agent: (typeof agentProfiles)[number]) => {
+    const snapshot = snapshotAssistantProfile(agent);
+    if (onNewAgentChat) {
+      onNewAgentChat(snapshot);
+      return;
+    }
+    onRequestTemporaryExit(() => {
+      startNewChatWithAgent(snapshot);
+      onCloseMobile?.();
+    });
+  };
+
+  const handleManageAgents = () => {
+    if (onManageAgents) {
+      onManageAgents();
+      return;
+    }
+    onCloseMobile?.();
+  };
+
   const handleStartTemporaryChat = () => {
     if (onStartTemporaryChat) {
       onStartTemporaryChat();
@@ -729,28 +768,87 @@ export function ConversationSidebar({
         role={isDrawer ? 'dialog' : 'complementary'}
         tabIndex={isDrawer ? -1 : undefined}
       >
-        <div className="sticky top-0 z-10 flex shrink-0 items-center gap-1.5 bg-navigation/82 px-3 pt-3 pb-2 backdrop-blur-md">
-          <button
-            aria-label={t('newChat')}
-            className="group flex h-9 min-w-0 flex-1 items-center justify-between gap-2 rounded-button border border-border bg-surface/80 px-3 text-left text-settings-description font-medium text-text shadow-2xs backdrop-blur-sm transition-all duration-quick hover:border-control-border hover:bg-raised/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
-            onClick={handleNewChat}
-            title={t('newChatButtonTitle')}
-            type="button"
-          >
-            <span className="flex min-w-0 items-center gap-2">
-              <SquarePen
+        <div className="sticky top-0 z-10 flex shrink-0 items-center gap-1.5 bg-navigation/80 px-3 pt-3 pb-2 backdrop-blur-md">
+          <div className="flex h-9 min-w-0 flex-1 overflow-hidden rounded-button border border-border bg-surface/80 shadow-2xs backdrop-blur-sm">
+            <button
+              aria-label={t('newChat')}
+              className="group flex h-full min-w-0 flex-1 items-center justify-between gap-2 rounded-none border-0 bg-transparent px-3 text-left text-settings-description font-medium text-text shadow-none transition-colors duration-quick hover:bg-raised/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-focus"
+              onClick={handleNewChat}
+              title={t('newChatButtonTitle')}
+              type="button"
+            >
+              <span className="flex min-w-0 items-center gap-2">
+                <SquarePen
+                  aria-hidden="true"
+                  className="shrink-0 text-secondary-icon transition-colors group-hover:text-text"
+                  size={15}
+                />
+                <span className="truncate">{t('newChat')}</span>
+              </span>
+              <Plus
                 aria-hidden="true"
-                className="shrink-0 text-secondary-icon transition-colors group-hover:text-text"
-                size={15}
+                className="shrink-0 text-secondary-icon/70 transition-colors group-hover:text-text"
+                size={14}
               />
-              <span className="truncate">{t('newChat')}</span>
-            </span>
-            <Plus
-              aria-hidden="true"
-              className="shrink-0 text-secondary-icon/70 transition-colors group-hover:text-text"
-              size={14}
-            />
-          </button>
+            </button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  aria-label={t('newChatWithAgent')}
+                  className="flex h-full w-9 shrink-0 items-center justify-center gap-0.5 rounded-none border-0 border-l border-l-border bg-transparent text-secondary-icon transition-colors duration-quick hover:bg-raised/90 hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-focus data-[state=open]:bg-raised data-[state=open]:text-text disabled:opacity-45"
+                  disabled={isBusy}
+                  title={t('newChatWithAgent')}
+                  type="button"
+                >
+                  <Bot aria-hidden="true" size={15} />
+                  <ChevronDown aria-hidden="true" size={12} />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" aria-label={t('newChatWithAgent')} className="min-w-60">
+                <DropdownMenuLabel>{t('newChatWithAgent')}</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                {agentProfilesLoadState === 'idle' || agentProfilesLoadState === 'loading' ? (
+                  <p aria-live="polite" className="px-2 py-2 text-xs text-secondary-text" role="status">
+                    {t('modelsLoading')}
+                  </p>
+                ) : agentProfilesLoadState === 'error' ? (
+                  <div className="grid gap-1 px-2 py-2" role="alert">
+                    <p className="text-xs text-destructive">{t('assistantProfilesLoadFailed')}</p>
+                    <DropdownMenuItem asChild onSelect={retryAgentProfiles}>
+                      <button type="button">{t('retry')}</button>
+                    </DropdownMenuItem>
+                  </div>
+                ) : agentProfiles.length > 0 ? (
+                  agentProfiles.map((agent) => (
+                    <DropdownMenuItem
+                      asChild
+                      className="w-full min-w-0 gap-2"
+                      disabled={isBusy}
+                      key={agent.id}
+                      onSelect={() => handleNewChatWithAgent(agent)}
+                      textValue={agent.name}
+                    >
+                      <button disabled={isBusy} type="button">
+                        <Bot aria-hidden="true" className="shrink-0 text-secondary-icon" size={15} />
+                        <span className="min-w-0 flex-1 truncate text-left">{agent.name}</span>
+                      </button>
+                    </DropdownMenuItem>
+                  ))
+                ) : (
+                  <p className="px-2 py-2 text-xs text-secondary-text" role="status">
+                    {t('assistantProfilesEmpty')}
+                  </p>
+                )}
+                <DropdownMenuSeparator />
+                <DropdownMenuItem asChild className="w-full min-w-0 gap-2" onSelect={handleManageAgents}>
+                  <button type="button">
+                    <Bot aria-hidden="true" className="shrink-0 text-secondary-icon" size={15} />
+                    <span>{t('assistantProfileManage')}</span>
+                  </button>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
           <button
             aria-label={t('createProject')}
             className="flex size-9 shrink-0 items-center justify-center rounded-button border border-border bg-surface/80 text-secondary-icon shadow-2xs backdrop-blur-sm transition-all duration-quick hover:border-control-border hover:bg-raised/90 hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus disabled:opacity-45"
@@ -857,19 +955,26 @@ export function ConversationSidebar({
               </p>
             ) : null}
             {serviceStatus === 'error' ? (
-              <div className="flex items-center justify-between gap-2 rounded-button border border-border bg-surface px-3 py-2">
-                <p className="text-xs text-destructive" role="alert">
-                  {t('chatHistoryUnavailable')}
-                </p>
-                <Button
-                  aria-label={t('retry')}
-                  className="size-7 rounded-control"
-                  onClick={() => void useChatStore.getState().initialize()}
-                  size="icon"
-                  variant="ghost"
-                >
-                  <RefreshCw aria-hidden="true" size={14} />
-                </Button>
+              <div className="grid gap-1 rounded-button border border-border bg-surface px-3 py-2">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-xs text-destructive" role="alert">
+                    {t('chatHistoryUnavailable')}
+                  </p>
+                  <Button
+                    aria-label={t('retry')}
+                    className="size-7 shrink-0 rounded-control"
+                    onClick={() => void useChatStore.getState().initialize()}
+                    size="icon"
+                    variant="ghost"
+                  >
+                    <RefreshCw aria-hidden="true" size={14} />
+                  </Button>
+                </div>
+                {serviceErrorMessage ? (
+                  <p className="break-words text-xs text-secondary-text">
+                    {t('chatErrorDetails')}: {serviceErrorMessage}
+                  </p>
+                ) : null}
               </div>
             ) : null}
             {serviceStatus === 'idle' || serviceStatus === 'loading' ? (

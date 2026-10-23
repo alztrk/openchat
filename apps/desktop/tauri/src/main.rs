@@ -7,6 +7,7 @@ use tauri::Manager;
 
 mod archive_export;
 mod chat_storage;
+mod computer_use_overlay;
 mod file_ops;
 mod local_data;
 mod local_service;
@@ -27,25 +28,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .manage(local_service::LocalServiceState::default())
         .invoke_handler(tauri::generate_handler![
             archive_export::save_pending_archive_export,
+            chat_storage::get_chat_schema_version,
             chat_storage::prepare_chat_database,
+            computer_use_overlay::set_computer_use_overlay,
             chat_storage::has_completed_assistant_response,
             chat_storage::list_conversations,
             chat_storage::list_projects,
             chat_storage::create_project,
+            chat_storage::add_project_workspace_root,
+            chat_storage::remove_project_workspace_root,
             project_folder::select_project_folder,
             project_folder::discard_project_folder_selection,
             chat_storage::clear_conversation_history,
             chat_storage::list_model_favorites,
             chat_storage::set_model_favorite,
-            chat_storage::list_saved_output_message_keys,
-            chat_storage::list_saved_outputs,
-            chat_storage::search_saved_outputs,
             chat_storage::search_messages,
-            chat_storage::set_saved_output,
-            chat_storage::list_saved_output_versions,
-            chat_storage::get_saved_output_version,
-            chat_storage::save_saved_output_version,
-            chat_storage::select_saved_output_version,
             local_data::export_support_diagnostics,
             notifications::read_windows_notification_status,
             notifications::open_windows_notification_settings,

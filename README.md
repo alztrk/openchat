@@ -20,8 +20,9 @@ Connect to multiple model ecosystems through standard, secure protocols:
 Run development tasks safely through configurable permission boundaries:
 - **Filesystem Operations:** Read, search, write, and patch files with side-by-side diff review and revert capability.
 - **Process Isolation:**
-  - **Windows AppContainer (Default):** Zero-configuration token isolation enforcing strict filesystem and network boundaries.
-  - **WSL2 Container Sandbox (Opt-in):** Kernel-level isolation using `bubblewrap` (`bwrap --unshare-all`) inside WSL2.
+  - **Windows AppContainer (Default):** Isolates local tool processes in approval and safe-operation modes with filesystem and network boundaries.
+  - **WSL2 Container Sandbox (Opt-in):** Uses `bubblewrap` (`bwrap --unshare-all`) for local tool processes in approval and safe-operation modes.
+  - **Full access:** Lets file tools use any absolute path allowed to the current account, and runs terminal commands, configured project tools, and project MCP servers used as chat tools without AppContainer or bubblewrap isolation. It does not elevate the process or bypass Windows ACLs or UAC. Global MCP catalog discovery remains sandboxed.
 - **Trust Handoff Protection:** Sensitive repository paths, including `.git/hooks` and IDE configurations, require explicit confirmation (`Ask`) before modifications.
 - **Live Data Loss Prevention (DLP):** Real-time secret and token masking (`[REDACTED]`) sanitizes terminal outputs, tool calls, and file reads to prevent credentials from entering model context.
 - **Model Context Protocol (MCP):** Connect to local stdio and remote Streamable HTTP MCP servers with granular tool-level permissions.
@@ -81,7 +82,7 @@ npm run tauri:build
 ## Architecture Principles
 
 - **Local-First Design:** Chat transcripts and vector stores reside in local SQLite databases under `%LOCALAPPDATA%\OpenChat`. No telemetry or personal information is transmitted to third parties.
-- **Explicit Authorizations:** Three security tiers (`Ask for approval`, `Approve safe operations`, `Full access`) govern filesystem, network, and execution privileges.
+- **Explicit Authorizations:** `Ask for approval` and `Approve safe operations` retain process isolation. `Full access` disables isolation for agent tool execution and uses the current account's normal OS permissions; it does not grant administrator privileges. The separate global MCP catalog probe remains sandboxed.
 - **Technical Documentation:** Architecture, design, roadmap, and security notes are indexed in [docs/README.md](docs/README.md).
 
 ---

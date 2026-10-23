@@ -5,7 +5,7 @@ use serde::{
     Deserialize, Deserializer, Serialize,
 };
 
-use crate::request_bounds::BoundedText;
+use crate::request_bounds::{BoundedText, BoundedVec};
 
 pub const MINIMUM_SQLITE_VERSION_NUMBER: i32 = 3_051_003;
 pub const MAX_MESSAGE_CHARS: usize = 1_000_000;
@@ -35,11 +35,6 @@ pub const MAXIMUM_MESSAGE_FAILURE_CODE_BYTES: usize = MAXIMUM_SAFE_IDENTIFIER_BY
 pub const MAXIMUM_MARKDOWN_EXPORT_FILE_NAME_BYTES: usize = 255;
 pub const MAXIMUM_MARKDOWN_EXPORT_TITLE_BYTES: usize = 128;
 pub const MAXIMUM_MARKDOWN_EXPORT_CONTENT_BYTES: usize = 20 * 1024 * 1024;
-pub const MAXIMUM_HISTORY_SEARCH_QUERY_BYTES: usize = 512 * 4;
-pub const MAXIMUM_HISTORY_SEARCH_QUERY_CHARS: usize = 512;
-pub const MAXIMUM_HISTORY_SEARCH_RESULTS: usize = 30;
-pub const MAXIMUM_HISTORY_SEARCH_EXCERPT_BYTES: usize = 4096;
-pub const MAXIMUM_HISTORY_SEARCH_TIMESTAMP: i64 = 8_640_000_000_000_000;
 pub const MAXIMUM_SETTING_KEY_BYTES: usize = 128;
 pub const MAXIMUM_SETTING_VALUE_BYTES: usize = 2 * 1024 * 1024;
 pub const MAXIMUM_FACT_ID_BYTES: usize = 128;
@@ -118,10 +113,37 @@ pub struct StoredConversation {
     pub(crate) workspace_id: Option<String>,
     pub(crate) api_key_connection_id: Option<String>,
     pub(crate) project_id: Option<String>,
+    pub(crate) agent: Option<ConversationAgentSnapshot>,
     pub(crate) is_pinned: bool,
     pub(crate) is_archived: bool,
     pub(crate) created_at: i64,
     pub(crate) updated_at: i64,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+/// Agent instructions and tool constraints copied into a conversation when it starts.
+pub struct ConversationAgentSnapshot {
+    #[serde(deserialize_with = "deserialize_safe_identifier")]
+    pub(crate) id: String,
+    #[serde(deserialize_with = "deserialize_assistant_agent_name")]
+    pub(crate) name: String,
+    #[serde(deserialize_with = "deserialize_assistant_agent_instructions")]
+    pub(crate) instructions: String,
+    pub(crate) response_style: AssistantAgentResponseStyle,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_assistant_agent_tools"
+    )]
+    pub(crate) tool_allowlist: Option<Vec<String>>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AssistantAgentResponseStyle {
+    Concise,
+    Balanced,
+    Detailed,
 }
 
 #[derive(Debug, Serialize)]
@@ -131,6 +153,7 @@ pub struct StoredProject {
     pub(crate) id: String,
     pub(crate) name: String,
     pub(crate) folder_path: String,
+    pub(crate) workspace_roots: Vec<String>,
     pub(crate) created_at: i64,
     pub(crate) updated_at: i64,
 }
@@ -167,88 +190,6 @@ pub struct StoredModelFavorite {
     pub(crate) source_connection_id: Option<String>,
 }
 
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-/// Stable message identifiers for outputs saved outside the conversation transcript.
-pub struct SavedOutputMessageKey {
-    pub(crate) conversation_id: String,
-    pub(crate) message_id: String,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-/// Bounded filters for searching saved assistant responses in local history.
-pub struct SavedOutputSearchInput {
-    #[serde(deserialize_with = "deserialize_saved_output_search_query")]
-    pub(crate) query: String,
-    #[serde(default, deserialize_with = "deserialize_optional_safe_identifier")]
-    pub(crate) provider_id: Option<String>,
-    #[serde(default, deserialize_with = "deserialize_optional_model_id")]
-    pub(crate) model_id: Option<String>,
-    #[serde(default, deserialize_with = "deserialize_optional_safe_identifier")]
-    pub(crate) project_id: Option<String>,
-    #[serde(default)]
-    pub(crate) is_archived: Option<bool>,
-    pub(crate) sort_order: SavedOutputSearchSortOrder,
-    #[serde(default)]
-    pub(crate) from_unix_ms: Option<i64>,
-    #[serde(default)]
-    pub(crate) through_unix_ms: Option<i64>,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize)]
-#[serde(rename_all = "lowercase")]
-/// Stable ordering options supported by the saved-output history search.
-pub enum SavedOutputSearchSortOrder {
-    Relevance,
-    Newest,
-    Oldest,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-/// A saved response matching the local history search filters.
-pub struct SavedOutputSearchResult {
-    pub(crate) conversation_id: String,
-    pub(crate) conversation_title: String,
-    pub(crate) is_conversation_title_match: bool,
-    pub(crate) message_id: String,
-    pub(crate) role: String,
-    pub(crate) excerpt: String,
-    pub(crate) created_at_unix_ms: i64,
-    pub(crate) project_id: Option<String>,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-/// A saved response entry for the local response library.
-pub struct SavedOutputSummary {
-    pub(crate) conversation_id: String,
-    pub(crate) conversation_title: String,
-    pub(crate) message_id: String,
-    pub(crate) excerpt: String,
-    pub(crate) created_at_unix_ms: i64,
-    pub(crate) selected_version: u32,
-    pub(crate) version_count: u32,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-/// Metadata for one saved response version.
-pub struct SavedOutputVersionSummary {
-    pub(crate) version_number: u32,
-    pub(crate) created_at_unix_ms: i64,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-/// Saved response version metadata and its selected content.
-pub struct SavedOutputVersion {
-    pub(crate) version_number: u32,
-    pub(crate) created_at_unix_ms: i64,
-    pub(crate) content: String,
-}
-
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 /// Validated routing and project metadata used when starting a conversation.
@@ -269,6 +210,8 @@ pub struct CreateConversationInput {
     pub(crate) api_key_connection_id: Option<String>,
     #[serde(default, deserialize_with = "deserialize_optional_safe_identifier")]
     pub(crate) project_id: Option<String>,
+    #[serde(default)]
+    pub(crate) agent: Option<ConversationAgentSnapshot>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -422,6 +365,39 @@ where
     deserialize_optional_request_text::<D, MAXIMUM_SAFE_IDENTIFIER_BYTES>(deserializer)
 }
 
+/// Deserializes agent names within their UTF-8 and character limits.
+pub(crate) fn deserialize_assistant_agent_name<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let name = deserialize_request_text::<D, { 64 * 4 }>(deserializer)?;
+    if name.trim().is_empty() || name.trim() != name || name.chars().count() > 64 {
+        return Err(de::Error::custom("invalid assistant agent name"));
+    }
+    Ok(name)
+}
+
+/// Deserializes agent instructions within their persisted 16 KiB limit.
+pub(crate) fn deserialize_assistant_agent_instructions<'de, D>(
+    deserializer: D,
+) -> Result<String, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    deserialize_request_text::<D, { 16 * 1024 }>(deserializer)
+}
+
+/// Deserializes a nullable list of at most 32 bounded agent tool names.
+pub(crate) fn deserialize_optional_assistant_agent_tools<'de, D>(
+    deserializer: D,
+) -> Result<Option<Vec<String>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Option::<BoundedVec<BoundedText<64>, 32>>::deserialize(deserializer)
+        .map(|tools| tools.map(|tools| tools.into_strings()))
+}
+
 /// Deserializes route model IDs within their existing 256-byte validation limit.
 pub(crate) fn deserialize_model_id<'de, D>(deserializer: D) -> Result<String, D::Error>
 where
@@ -438,16 +414,6 @@ where
     D: Deserializer<'de>,
 {
     deserialize_optional_request_text::<D, MAXIMUM_ROUTE_MODEL_ID_BYTES>(deserializer)
-}
-
-/// Deserializes saved-output search text within its existing 512-character limit.
-pub(crate) fn deserialize_saved_output_search_query<'de, D>(
-    deserializer: D,
-) -> Result<String, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    deserialize_request_text::<D, MAXIMUM_HISTORY_SEARCH_QUERY_BYTES>(deserializer)
 }
 
 /// Deserializes a new conversation title within the existing 500-character limit.

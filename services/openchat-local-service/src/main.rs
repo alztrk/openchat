@@ -3,7 +3,7 @@
 #[tokio::main]
 async fn main() {
     if let Err(error) = openchat_local_service::run().await {
-        eprintln!("{error}");
+        eprintln!("openchat-local-service-error: {error}");
         std::process::exit(1);
     }
 }

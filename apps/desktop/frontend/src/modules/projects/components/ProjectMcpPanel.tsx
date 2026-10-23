@@ -15,7 +15,7 @@ import {
   saveProjectToolPermissionRules,
 } from '@/modules/projects/data/projectPermissionSettings';
 import type { ProjectToolPermissionRule } from '@/modules/projects/data/projectPreferences';
-import { localServiceClient } from '@/platform/local-service';
+import { LocalServiceError, localServiceClient } from '@/platform/local-service';
 import { ProjectMcpCredentialDialog } from './ProjectMcpCredentialDialog';
 
 interface ProjectMcpPanelProps {
@@ -37,6 +37,10 @@ type McpEditorError =
   | 'projectMcpEndpointRequired'
   | 'projectMcpEnvironmentVariablesInvalid'
   | 'projectMcpSaveFailed';
+interface McpCheckResult {
+  message: string;
+  details: string | null;
+}
 
 export function ProjectMcpPanel({ project, onClose }: ProjectMcpPanelProps) {
   const { t } = useTranslation();
@@ -46,13 +50,14 @@ export function ProjectMcpPanel({ project, onClose }: ProjectMcpPanelProps) {
   const [savedServers, setSavedServers] = useState<ProjectMcpServer[]>([]);
   const [rules, setRules] = useState<Record<string, ProjectToolPermissionRule>>({});
   const [toolNames, setToolNames] = useState<Record<string, string[]>>({});
-  const [checkResults, setCheckResults] = useState<Record<string, string>>({});
+  const [checkResults, setCheckResults] = useState<Record<string, McpCheckResult>>({});
   const [checkingServerId, setCheckingServerId] = useState<string | null>(null);
   const [credentialServer, setCredentialServer] = useState<ProjectMcpServer | null>(null);
   const [editing, setEditing] = useState<{ server: ProjectMcpServer | null; rule: PermissionChoice } | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [errorKey, setErrorKey] = useState<McpError | null>(null);
+  const [errorDetails, setErrorDetails] = useState<string | null>(null);
   const [packageCleanupPending, setPackageCleanupPending] = useState<
     Array<{ id: string; package: NonNullable<ProjectMcpServer['package']> }>
   >([]);
@@ -62,6 +67,7 @@ export function ProjectMcpPanel({ project, onClose }: ProjectMcpPanelProps) {
     const projectId = project.id;
     setIsLoading(true);
     setErrorKey(null);
+    setErrorDetails(null);
     try {
       const [response, savedRules] = await Promise.all([
         localServiceClient.call('project.mcp.catalog.get', { projectId }),
@@ -75,11 +81,12 @@ export function ProjectMcpPanel({ project, onClose }: ProjectMcpPanelProps) {
       setToolNames(deriveToolNamesFromRules(catalog.servers, savedRules));
       setCheckResults({});
       setIsLoading(false);
-    } catch {
+    } catch (error) {
       if (mounted.current && generation === projectGeneration.current) {
         setToolNames({});
         setCheckResults({});
         setErrorKey('projectMcpLoadFailed');
+        setErrorDetails(readErrorDetails(error));
         setIsLoading(false);
       }
     }
@@ -100,6 +107,7 @@ export function ProjectMcpPanel({ project, onClose }: ProjectMcpPanelProps) {
     setToolNames({});
     setCheckResults({});
     setErrorKey(null);
+    setErrorDetails(null);
     setPackageCleanupPending([]);
     void loadCatalog();
     return () => {
@@ -116,6 +124,7 @@ export function ProjectMcpPanel({ project, onClose }: ProjectMcpPanelProps) {
       return next;
     });
     setErrorKey(null);
+    setErrorDetails(null);
   };
 
   const saveCatalog = async () => {
@@ -124,6 +133,7 @@ export function ProjectMcpPanel({ project, onClose }: ProjectMcpPanelProps) {
     const projectId = project.id;
     setIsSaving(true);
     setErrorKey(null);
+    setErrorDetails(null);
     try {
       const catalog = { version: 1, servers };
       await localServiceClient.call('project.mcp.catalog.save', { projectId, catalog });
@@ -141,11 +151,13 @@ export function ProjectMcpPanel({ project, onClose }: ProjectMcpPanelProps) {
         return [{ id: previous.id, package: previous.package }];
       });
       const cleanupFailures: typeof removedPackages = [];
+      let cleanupFailureDetails: string | null = null;
       for (const packageReference of removedPackages) {
         try {
           await removeInstalledMcpPackage(projectId, packageReference.id, packageReference.package);
-        } catch {
+        } catch (error) {
           cleanupFailures.push(packageReference);
+          cleanupFailureDetails ??= readErrorDetails(error);
         }
       }
       if (mounted.current && generation === projectGeneration.current) {
@@ -153,6 +165,7 @@ export function ProjectMcpPanel({ project, onClose }: ProjectMcpPanelProps) {
         setPackageCleanupPending(cleanupFailures);
         if (cleanupFailures.length > 0) {
           setErrorKey('connectorPackageCleanupFailed');
+          setErrorDetails(cleanupFailureDetails);
         } else {
           onClose();
         }
@@ -162,6 +175,7 @@ export function ProjectMcpPanel({ project, onClose }: ProjectMcpPanelProps) {
         setErrorKey(
           error instanceof CredentialCleanupError ? 'projectMcpCredentialUnavailable' : 'projectMcpSaveFailed',
         );
+        setErrorDetails(error instanceof CredentialCleanupError ? error.details : readErrorDetails(error));
       }
     } finally {
       if (mounted.current && generation === projectGeneration.current) setIsSaving(false);
@@ -190,12 +204,18 @@ export function ProjectMcpPanel({ project, onClose }: ProjectMcpPanelProps) {
       const names = [...new Set(rawToolNames)].sort((left, right) => left.localeCompare(right));
       if (mounted.current && generation === projectGeneration.current) {
         setToolNames((current) => ({ ...current, [server.id]: names }));
-        setCheckResults((current) => ({ ...current, [server.id]: t('projectMcpConnected', { count: toolCount }) }));
+        setCheckResults((current) => ({
+          ...current,
+          [server.id]: { message: t('projectMcpConnected', { count: toolCount }), details: null },
+        }));
       }
-    } catch {
+    } catch (error) {
       if (mounted.current && generation === projectGeneration.current) {
         setToolNames((current) => omitKey(current, server.id));
-        setCheckResults((current) => ({ ...current, [server.id]: t('projectMcpCheckFailed') }));
+        setCheckResults((current) => ({
+          ...current,
+          [server.id]: { message: t('projectMcpCheckFailed'), details: readErrorDetails(error) },
+        }));
       }
     } finally {
       if (mounted.current && generation === projectGeneration.current) setCheckingServerId(null);
@@ -230,6 +250,7 @@ export function ProjectMcpPanel({ project, onClose }: ProjectMcpPanelProps) {
     if (permission !== 'inherit') updateRule(`mcp__${server.id}__*`, permission);
     else updateRule(`mcp__${server.id}__*`, 'inherit');
     setErrorKey(null);
+    setErrorDetails(null);
   };
 
   const removeServer = (server: ProjectMcpServer) => {
@@ -255,6 +276,11 @@ export function ProjectMcpPanel({ project, onClose }: ProjectMcpPanelProps) {
           <p className="text-sm text-destructive" role="alert">
             {t(errorKey)}
           </p>
+          {errorDetails ? (
+            <p className="break-words text-xs text-secondary-text">
+              {t('chatErrorDetails')}: {errorDetails}
+            </p>
+          ) : null}
           <Button className="justify-self-start" onClick={() => void loadCatalog()} size="small">
             {t('retry')}
           </Button>
@@ -295,8 +321,13 @@ export function ProjectMcpPanel({ project, onClose }: ProjectMcpPanelProps) {
         />
       ) : null}
       {errorKey && errorKey !== 'projectMcpLoadFailed' ? (
-        <div className="flex flex-wrap items-center gap-3" role="alert">
+        <div className="grid gap-1" role="alert">
           <p className="text-sm text-destructive">{t(errorKey)}</p>
+          {errorDetails ? (
+            <p className="break-words text-xs text-secondary-text">
+              {t('chatErrorDetails')}: {errorDetails}
+            </p>
+          ) : null}
           {packageCleanupPending.length > 0 ? (
             <Button
               disabled={isSaving}
@@ -309,7 +340,10 @@ export function ProjectMcpPanel({ project, onClose }: ProjectMcpPanelProps) {
                     setErrorKey(null);
                     onClose();
                   })
-                  .catch(() => setErrorKey('connectorPackageCleanupFailed'))
+                  .catch((error: unknown) => {
+                    setErrorKey('connectorPackageCleanupFailed');
+                    setErrorDetails(readErrorDetails(error));
+                  })
                   .finally(() => setIsSaving(false));
               }}
               size="small"
@@ -366,7 +400,7 @@ interface ProjectMcpServerRowProps {
   permission: PermissionChoice;
   toolNames: readonly string[];
   toolRules: Readonly<Record<string, ProjectToolPermissionRule>>;
-  checkResult?: string;
+  checkResult?: McpCheckResult;
   checking: boolean;
   disabled: boolean;
   onToggle(enabled: boolean): void;
@@ -474,9 +508,16 @@ function ProjectMcpServerRow({
         />
       ))}
       {checkResult ? (
-        <p aria-live="polite" className="text-xs text-secondary-text">
-          {checkResult}
-        </p>
+        <div aria-live="polite" className="grid gap-1">
+          <p className={`text-xs ${checkResult.details ? 'text-destructive' : 'text-secondary-text'}`}>
+            {checkResult.message}
+          </p>
+          {checkResult.details ? (
+            <p className="break-words text-xs text-secondary-text">
+              {t('chatErrorDetails')}: {checkResult.details}
+            </p>
+          ) : null}
+        </div>
       ) : null}
     </article>
   );
@@ -749,14 +790,25 @@ async function removeStaleCredentials(
           serverId: previous.id,
           environmentName: name,
         });
-      } catch {
-        throw new CredentialCleanupError();
+      } catch (error) {
+        throw new CredentialCleanupError(readErrorDetails(error));
       }
     }
   }
 }
 
-class CredentialCleanupError extends Error {}
+class CredentialCleanupError extends Error {
+  constructor(readonly details: string | null) {
+    super('The stored MCP credential could not be removed.');
+  }
+}
+
+function readErrorDetails(error: unknown): string | null {
+  const value = error instanceof LocalServiceError ? (error.details ?? error.message) : error;
+  if (typeof value !== 'string' && !(value instanceof Error)) return null;
+  const details = typeof value === 'string' ? value : value.message;
+  return details.trim().slice(0, 1000) || null;
+}
 
 function omitKey<T>(value: Record<string, T>, key: string): Record<string, T> {
   const next = { ...value };

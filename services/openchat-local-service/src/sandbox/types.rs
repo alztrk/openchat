@@ -27,6 +27,8 @@ pub(crate) const MIN_JOB_MEMORY_LIMIT_BYTES: u64 = 512 * 1024 * 1024;
 pub struct SandboxOptions<'a> {
     /// Existing runtime directories that the child may read and execute.
     pub additional_read_only_paths: &'a [PathBuf],
+    /// Additional project directories that the child may read and modify.
+    pub additional_workspace_paths: &'a [PathBuf],
     /// Explicit base variables for launchers that must not inherit the host profile.
     pub base_environment: Option<&'a [(String, Zeroizing<String>)]>,
     /// Grants only the Windows `internetClient` capability.

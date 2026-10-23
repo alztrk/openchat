@@ -193,8 +193,8 @@ pub(super) fn append_tool_call_deltas(
             .and_then(Value::as_u64)
             .and_then(|value| usize::try_from(value).ok())
             .ok_or_else(invalid_response_error)?;
-        if !calls.contains_key(&index) && calls.len() >= tools::MAX_TOOL_CALLS_PER_TURN {
-            return Err(tools::tool_call_limit_error());
+        if !calls.contains_key(&index) && calls.len() >= tools::MAX_TOOL_CALLS_PER_RESPONSE {
+            return Err(tools::tool_response_limit_error());
         }
         let call = calls.entry(index).or_default();
         if let Some(id) = delta.get("id").and_then(Value::as_str) {
@@ -241,6 +241,16 @@ pub(super) fn parse_streamed_tool_calls(
 pub(super) enum ResponsesStreamEffect {
     TextDelta(String),
     ReasoningDelta(String),
+    ReasoningSummaryDelta {
+        item_id: String,
+        summary_index: u64,
+        delta: String,
+    },
+    ReasoningSummaryDone {
+        item_id: String,
+        summary_index: u64,
+        text: Option<String>,
+    },
     UsageTokens(i64),
     Completed,
     Failed(String),
@@ -258,10 +268,41 @@ pub(super) fn handle_responses_api_event(
                 return Ok(ResponsesStreamEffect::TextDelta(delta.to_owned()));
             }
         }
-        "response.reasoning_text.delta" | "response.reasoning_summary_text.delta" => {
+        "response.reasoning_text.delta" => {
             if let Some(delta) = value.get("delta").and_then(Value::as_str) {
                 return Ok(ResponsesStreamEffect::ReasoningDelta(delta.to_owned()));
             }
+        }
+        "response.reasoning_summary_text.delta" => {
+            let (item_id, summary_index) = response_reasoning_summary_identity(value)?;
+            let delta = value
+                .get("delta")
+                .and_then(Value::as_str)
+                .ok_or_else(invalid_response_error)?;
+            return Ok(ResponsesStreamEffect::ReasoningSummaryDelta {
+                item_id,
+                summary_index,
+                delta: delta.to_owned(),
+            });
+        }
+        "response.reasoning_summary_text.done" => {
+            let (item_id, summary_index) = response_reasoning_summary_identity(value)?;
+            return Ok(ResponsesStreamEffect::ReasoningSummaryDone {
+                item_id,
+                summary_index,
+                text: value.get("text").and_then(Value::as_str).map(str::to_owned),
+            });
+        }
+        "response.reasoning_summary_part.done" => {
+            let (item_id, summary_index) = response_reasoning_summary_identity(value)?;
+            return Ok(ResponsesStreamEffect::ReasoningSummaryDone {
+                item_id,
+                summary_index,
+                text: value
+                    .pointer("/part/text")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned),
+            });
         }
         "response.output_item.added" => {
             if let Some(item) = value.get("item")
@@ -376,6 +417,19 @@ pub(super) fn handle_responses_api_event(
     Ok(ResponsesStreamEffect::None)
 }
 
+fn response_reasoning_summary_identity(value: &Value) -> Result<(String, u64), ServiceError> {
+    let item_id = value
+        .get("item_id")
+        .and_then(Value::as_str)
+        .filter(|item_id| !item_id.is_empty())
+        .ok_or_else(invalid_response_error)?;
+    let summary_index = value
+        .get("summary_index")
+        .and_then(Value::as_u64)
+        .ok_or_else(invalid_response_error)?;
+    Ok((item_id.to_owned(), summary_index))
+}
+
 fn response_output_index(value: &Value) -> Result<usize, ServiceError> {
     value
         .get("output_index")
@@ -388,8 +442,8 @@ fn response_tool_call(
     calls: &mut BTreeMap<usize, StreamedToolCall>,
     index: usize,
 ) -> Result<&mut StreamedToolCall, ServiceError> {
-    if !calls.contains_key(&index) && calls.len() >= tools::MAX_TOOL_CALLS_PER_TURN {
-        return Err(tools::tool_call_limit_error());
+    if !calls.contains_key(&index) && calls.len() >= tools::MAX_TOOL_CALLS_PER_RESPONSE {
+        return Err(tools::tool_response_limit_error());
     }
     Ok(calls.entry(index).or_default())
 }
@@ -513,11 +567,59 @@ mod tests {
     }
 
     #[test]
+    fn responses_reasoning_summary_events_remain_distinct_from_reasoning_text() {
+        let mut calls = BTreeMap::new();
+
+        let summary = handle_responses_api_event(
+            &json!({
+                "type": "response.reasoning_summary_text.delta",
+                "item_id": "rs_item",
+                "summary_index": 1,
+                "delta": "Checking the request."
+            }),
+            &mut calls,
+        )
+        .expect("valid summary delta");
+        assert!(matches!(
+            summary,
+            ResponsesStreamEffect::ReasoningSummaryDelta {
+                item_id,
+                summary_index: 1,
+                delta
+            } if item_id == "rs_item" && delta == "Checking the request."
+        ));
+
+        let reasoning = handle_responses_api_event(
+            &json!({"type": "response.reasoning_text.delta", "delta": "private text"}),
+            &mut calls,
+        )
+        .expect("valid reasoning delta");
+        assert!(matches!(
+            reasoning,
+            ResponsesStreamEffect::ReasoningDelta(text) if text == "private text"
+        ));
+    }
+
+    #[test]
+    fn responses_reasoning_summary_events_require_stable_group_metadata() {
+        let mut calls = BTreeMap::new();
+        let result = handle_responses_api_event(
+            &json!({
+                "type": "response.reasoning_summary_text.delta",
+                "delta": "summary"
+            }),
+            &mut calls,
+        );
+
+        assert!(result.is_err());
+    }
+
+    #[test]
     fn responses_completed_event_enforces_tool_count_limit() {
-        let mut calls = (0..tools::MAX_TOOL_CALLS_PER_TURN)
+        let mut calls = (0..tools::MAX_TOOL_CALLS_PER_RESPONSE)
             .map(|index| (index, StreamedToolCall::default()))
             .collect::<BTreeMap<_, _>>();
-        let output = (0..=tools::MAX_TOOL_CALLS_PER_TURN)
+        let output = (0..=tools::MAX_TOOL_CALLS_PER_RESPONSE)
             .map(|_| json!({"type": "function_call", "call_id": "call", "name": "search", "arguments": "{}"}))
             .collect::<Vec<_>>();
         let event = json!({"type": "response.completed", "response": {"output": output}});
@@ -526,8 +628,8 @@ mod tests {
 
         assert!(matches!(
             result,
-            Err(error) if error.code == "tool_iteration_limit"
+            Err(error) if error.code == "tool_response_limit"
         ));
-        assert_eq!(calls.len(), tools::MAX_TOOL_CALLS_PER_TURN);
+        assert_eq!(calls.len(), tools::MAX_TOOL_CALLS_PER_RESPONSE);
     }
 }

@@ -44,7 +44,12 @@ import {
   titlePreferenceForModel,
   writeTitleGenerationPreference,
 } from '@/modules/providers/data/titleGenerationPreferences';
-import { LocalServiceError, localServiceClient, type ServiceOperation } from '@/platform/local-service';
+import {
+  LocalServiceError,
+  localServiceClient,
+  localServiceErrorDetails,
+  type ServiceOperation,
+} from '@/platform/local-service';
 import { invoke } from '@/platform/tauri';
 import { ApiKeyProvidersSection } from './ApiKeyProvidersSection';
 import { CopilotOAuthCard } from './CopilotOAuthCard';
@@ -96,6 +101,7 @@ export function ProviderSettingsSection({
   const isMountedRef = useRef(true);
   const oauthOperationRef = useRef<ServiceOperation | null>(null);
   const [errorCode, setErrorCode] = useState<ConnectionErrorCode | null>(null);
+  const [errorDetails, setErrorDetails] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [removeTarget, setRemoveTarget] = useState<ChatGptConnectionPlanState | null>(null);
   const [removingId, setRemovingId] = useState<string | null>(null);
@@ -166,14 +172,16 @@ export function ProviderSettingsSection({
       setLastRequestOutcome(requestRecord);
       setLastRequestReadFailed(requestReadFailed);
       setErrorCode(null);
+      setErrorDetails(null);
       setRequest('idle');
       if (items.some((connection) => connection.authStatus === 'active')) {
         void refreshOAuthPlans();
       }
       return items;
-    } catch {
+    } catch (error) {
       if (!isMountedRef.current) return null;
       setErrorCode('oauthConnectionsLoadFailed');
+      setErrorDetails(localServiceErrorDetails(error));
       setRequest('error');
       return null;
     }
@@ -195,6 +203,7 @@ export function ProviderSettingsSection({
     }
     if (serviceStatus === 'error') {
       setErrorCode('oauthConnectionsLoadFailed');
+      setErrorDetails(null);
       setRequest('error');
     }
   }, [loadConnections, serviceStatus]);
@@ -216,6 +225,7 @@ export function ProviderSettingsSection({
     if (request === 'signingIn') return;
     setRequest('signingIn');
     setErrorCode(null);
+    setErrorDetails(null);
     setNotice(null);
     let operation: ServiceOperation | null = null;
     try {
@@ -237,6 +247,7 @@ export function ProviderSettingsSection({
       if (!isMountedRef.current) return;
       if (!(error instanceof LocalServiceError) || error.code !== 'oauth_cancelled') {
         setErrorCode('oauthSignInFailed');
+        setErrorDetails(localServiceErrorDetails(error));
       }
       setRequest('idle');
     } finally {
@@ -269,13 +280,15 @@ export function ProviderSettingsSection({
     setLastRequestOutcome(null);
     setLastRequestReadFailed(false);
     setErrorCode(null);
+    setErrorDetails(null);
     setNotice(null);
     try {
       await localServiceClient.call('chatgpt.connections.select', { connectionId });
       await loadConnections();
       await refreshModels();
-    } catch {
+    } catch (error) {
       setErrorCode('connectionSelectionFailed');
+      setErrorDetails(localServiceErrorDetails(error));
     }
   };
 
@@ -287,13 +300,15 @@ export function ProviderSettingsSection({
     setLastRequestOutcome(null);
     setLastRequestReadFailed(false);
     setErrorCode(null);
+    setErrorDetails(null);
     setNotice(null);
     try {
       await localServiceClient.call('chatgpt.workspaces.select', { connectionId, workspaceId });
       await loadConnections();
       await refreshModels();
-    } catch {
+    } catch (error) {
       setErrorCode('workspaceSelectionFailed');
+      setErrorDetails(localServiceErrorDetails(error));
     }
   };
 
@@ -302,6 +317,7 @@ export function ProviderSettingsSection({
     if (!target || removingId !== null) return;
     setRemovingId(target.id);
     setErrorCode(null);
+    setErrorDetails(null);
     setNotice(null);
     recordConnectionRemovalDiagnostic('request_started');
 
@@ -339,11 +355,13 @@ export function ProviderSettingsSection({
         },
       });
     } catch (cause) {
+      const removalErrorDetails = localServiceErrorDetails(cause);
       const latestConnections = await loadConnections();
       if (!isMountedRef.current) return;
       if (latestConnections && !latestConnections.some((connection) => connection.id === target.id)) {
         recordConnectionRemovalDiagnostic('ui_succeeded');
         setRemoveTarget(null);
+        setErrorDetails(null);
         setNotice('connectionRemoveSucceeded');
         setRemovingId(null);
         try {
@@ -357,6 +375,7 @@ export function ProviderSettingsSection({
         recordConnectionRemovalDiagnostic('ui_unknown', safeServiceErrorCode(cause));
         globalThis.reportError(new Error('The ChatGPT connection removal state could not be confirmed.', { cause }));
         setErrorCode('connectionRemoveStatusUnknown');
+        if (removalErrorDetails) setErrorDetails(removalErrorDetails);
         setRemovingId(null);
         return;
       }
@@ -364,12 +383,14 @@ export function ProviderSettingsSection({
         recordConnectionRemovalDiagnostic('ui_unknown', safeServiceErrorCode(cause));
         globalThis.reportError(new Error('The ChatGPT connection removal result is still uncertain.', { cause }));
         setErrorCode('connectionRemoveStatusUnknown');
+        if (removalErrorDetails) setErrorDetails(removalErrorDetails);
         setRemovingId(null);
         return;
       }
       recordConnectionRemovalDiagnostic('ui_failed', safeServiceErrorCode(cause));
       globalThis.reportError(new Error('The ChatGPT connection deletion did not complete.', { cause }));
       setErrorCode('connectionRemoveFailed');
+      if (removalErrorDetails) setErrorDetails(removalErrorDetails);
       setRemovingId(null);
       return;
     }
@@ -478,9 +499,16 @@ export function ProviderSettingsSection({
           </div>
         ) : request === 'error' ? (
           <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border px-5 py-4">
-            <p className="text-sm text-secondary-text">
-              {t(errorCode === 'connectionRemoveStatusUnknown' ? errorCode : 'oauthConnectionsLoadFailed')}
-            </p>
+            <div className="grid min-w-0 flex-1 gap-1">
+              <p className="text-sm text-secondary-text">
+                {t(errorCode === 'connectionRemoveStatusUnknown' ? errorCode : 'oauthConnectionsLoadFailed')}
+              </p>
+              {errorDetails ? (
+                <p className="break-words whitespace-pre-wrap text-xs text-secondary-text">
+                  {t('chatErrorDetails')}: {errorDetails}
+                </p>
+              ) : null}
+            </div>
             <Button onClick={() => void loadConnections()} size="small" variant="secondary">
               <RefreshCw aria-hidden="true" size={15} />
               {t('retry')}
@@ -526,9 +554,14 @@ export function ProviderSettingsSection({
 
         {errorCode === 'connectionRemoveStatusUnknown' && request !== 'error' ? (
           <div className="flex flex-wrap items-center justify-between gap-3 px-5 pb-4 pt-1">
-            <p className="text-sm text-destructive" role="alert">
-              {t(errorCode)}
-            </p>
+            <div className="grid min-w-0 flex-1 gap-1" role="alert">
+              <p className="text-sm text-destructive">{t(errorCode)}</p>
+              {errorDetails ? (
+                <p className="break-words whitespace-pre-wrap text-xs text-secondary-text">
+                  {t('chatErrorDetails')}: {errorDetails}
+                </p>
+              ) : null}
+            </div>
             <Button onClick={() => void loadConnections()} size="small" variant="secondary">
               <RefreshCw aria-hidden="true" size={15} />
               {t('retry')}
@@ -537,6 +570,11 @@ export function ProviderSettingsSection({
         ) : errorCode && request !== 'error' ? (
           <p className="px-5 pb-4 pt-1 text-sm text-destructive" role="alert">
             {t(errorCode)}
+            {errorDetails ? (
+              <span className="mt-1 block break-words whitespace-pre-wrap text-xs text-secondary-text">
+                {t('chatErrorDetails')}: {errorDetails}
+              </span>
+            ) : null}
           </p>
         ) : null}
         {notice ? (

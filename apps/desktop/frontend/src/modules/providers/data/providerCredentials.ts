@@ -1,5 +1,24 @@
 /** @file Maps provider credential operations to Tauri and exposes only redacted status to React. */
+import { i18n } from '@/localization/i18n';
 import { invoke } from '@/platform/tauri';
+
+interface NativeHttpProviderDialogCopy {
+  title: string;
+  intro: string;
+  warning: string;
+  allow: string;
+  cancel: string;
+}
+
+function getNativeHttpProviderDialogCopy(): NativeHttpProviderDialogCopy {
+  return {
+    title: i18n.t('nativeProviderHttpTitle'),
+    intro: i18n.t('nativeProviderHttpIntro'),
+    warning: i18n.t('nativeProviderHttpWarning'),
+    allow: i18n.t('nativeProviderHttpAllow'),
+    cancel: i18n.t('nativeProviderHttpCancel'),
+  };
+}
 
 /** Provider identifiers accepted by the native credential commands. */
 export const compatibleProviderIds = [
@@ -189,13 +208,12 @@ export async function saveCustomProvider(
     allowInsecureHttp: boolean;
     apiKey: string;
   },
-  locale: string,
 ): Promise<CustomProviderSummary> {
   const value: unknown = await invoke('save_custom_provider', {
     input: {
       ...input,
       apiKey: input.apiKey.trim().length > 0 ? input.apiKey : null,
-      locale,
+      dialogCopy: getNativeHttpProviderDialogCopy(),
     },
   });
   if (

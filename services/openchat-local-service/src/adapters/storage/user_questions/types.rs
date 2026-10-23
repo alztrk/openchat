@@ -126,6 +126,7 @@ impl QuestionGroupStatus {
 #[serde(rename_all = "snake_case")]
 pub(crate) enum QuestionKind {
     Choice,
+    MultiChoice,
     Text,
 }
 
@@ -160,6 +161,7 @@ pub(crate) struct QuestionItem {
 #[serde(rename_all_fields = "camelCase", deny_unknown_fields)]
 pub(crate) enum QuestionAnswerValue {
     Choice { option_id: String },
+    MultiChoice { option_ids: Vec<String> },
     Text { text: String },
 }
 

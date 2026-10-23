@@ -20,7 +20,6 @@ import {
   NotebookPen,
   Save,
   Search,
-  SlidersHorizontal,
   Terminal,
   Wrench,
 } from 'lucide-react';
@@ -28,6 +27,7 @@ import { useTranslation } from 'react-i18next';
 
 import { formatJsonValue, type ToolActivity, type ToolActivityStatus } from './messageData';
 import { formatToolPath, getRequestedToolPath, ToolActivityResults } from './ToolActivityResults';
+import { isTerminalTool } from './toolResultUtils';
 
 type TranslationKey = keyof typeof import('@/localization/locales/en.json');
 
@@ -73,13 +73,14 @@ const statusKeys: Record<ToolActivityStatus, TranslationKey> = {
 
 interface ToolActivityAccordionProps {
   activity: ToolActivity;
+  onOpenFile?(path: string, content: string): void;
 }
 
-export function ToolActivityAccordion({ activity }: ToolActivityAccordionProps) {
+export function ToolActivityAccordion({ activity, onOpenFile }: ToolActivityAccordionProps) {
   const { t } = useTranslation();
   const statusLabel = t(statusKeys[activity.status]);
   const toolLabel = toolName(activity.name, t);
-  const requestedPath = getRequestedToolPath(activity);
+  const requestedPath = isTerminalTool(activity.name) ? null : getRequestedToolPath(activity);
   const StatusIcon = statusIcon(activity.status);
   const ToolIcon = toolIcon(activity.name);
   const isOpen =
@@ -104,28 +105,13 @@ export function ToolActivityAccordion({ activity }: ToolActivityAccordionProps) 
         </span>
       </summary>
       <div className="grid gap-3 border-t border-border px-3 pb-3 pt-2">
-        {requestedPath ? (
-          <ToolValue label={t('toolPermissionTarget')} value={formatToolPath(requestedPath, t)} />
-        ) : null}
-        <ToolActivityResults activity={activity} />
+        {requestedPath ? <ToolValue label={t('toolPermissionTarget')} value={formatToolPath(requestedPath)} /> : null}
+        <ToolActivityResults activity={activity} onOpenFile={onOpenFile} />
         {activity.fileChangesError ? (
           <p className="text-sm text-destructive" role="alert">
-            {activity.fileChangesError}
+            {t('fileChangesTrackingFailed')}
           </p>
         ) : null}
-        <details className="openchat-native-disclosure rounded-control border border-border bg-background">
-          <summary className="flex cursor-pointer list-none items-center gap-2 px-2 py-2 text-xs font-medium text-secondary-text [&::-webkit-details-marker]:hidden">
-            <SlidersHorizontal aria-hidden="true" size={14} />
-            {t('toolTechnicalDetails')}
-          </summary>
-          <div className="grid gap-3 border-t border-border px-2 pb-2 pt-2">
-            <ToolValue label={t('toolInput')} value={activity.arguments} />
-            {activity.output !== null ? <ToolValue label={t('toolOutput')} value={activity.output} /> : null}
-            {activity.fileChanges.length > 0 ? (
-              <ToolValue label={t('fileChangesTitle')} value={activity.fileChanges} />
-            ) : null}
-          </div>
-        </details>
       </div>
     </details>
   );

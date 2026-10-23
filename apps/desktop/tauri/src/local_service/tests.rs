@@ -11,62 +11,60 @@ use super::types::*;
 #[test]
 fn full_access_mode_changes_require_native_confirmation() {
     for frame in [
-            "{\"id\":1,\"method\":\"tools.permissions.mode.set\",\"params\":{\"mode\":\"full_access\"}}\n",
-            "{\"id\":1,\"method\":\"tools.permissions.mode.get\",\"params\":{\"initialMode\":\"full_access\"}}\n",
-        ] {
-            assert_eq!(
-                renderer_rpc_disposition(frame, 256),
-                Some(RendererRpcDisposition::Confirm(
-                    PermissionDetails::EnableFullAccess
-                ))
-            );
-        }
+        "{\"id\":1,\"method\":\"tools.permissions.mode.set\",\"params\":{\"mode\":\"full_access\"}}\n",
+        "{\"id\":1,\"method\":\"tools.permissions.mode.get\",\"params\":{\"initialMode\":\"full_access\"}}\n",
+    ] {
+        assert_eq!(
+            renderer_rpc_disposition(frame, 256),
+            Some(RendererRpcDisposition::Confirm(
+                PermissionDetails::EnableFullAccess
+            ))
+        );
+    }
 }
 
 #[test]
 fn project_allow_rules_require_native_confirmation_for_save_and_import() {
     for frame in [
-            "{\"id\":1,\"method\":\"project.tool_permissions.set\",\"params\":{\"projectId\":\"project-1\",\"rules\":{\"read_file\":\"allow\"}}}\n",
-            "{\"id\":1,\"method\":\"project.tool_permissions.get\",\"params\":{\"projectId\":\"project-1\",\"initialRules\":{\"read_file\":\"allow\"}}}\n",
-        ] {
-            assert_eq!(
-                renderer_rpc_disposition(frame, 256),
-                Some(RendererRpcDisposition::Confirm(
-                    PermissionDetails::AllowProjectRules {
-                        project_id: "project-1".to_owned(),
-                        allow_rule_count: 1,
-                        rule_names: vec!["read_file".to_owned()],
-                        additional_rule_count: 0,
-                    }
-                ))
-            );
-        }
+        "{\"id\":1,\"method\":\"project.tool_permissions.set\",\"params\":{\"projectId\":\"project-1\",\"rules\":{\"read_file\":\"allow\"}}}\n",
+        "{\"id\":1,\"method\":\"project.tool_permissions.get\",\"params\":{\"projectId\":\"project-1\",\"initialRules\":{\"read_file\":\"allow\"}}}\n",
+    ] {
+        assert_eq!(
+            renderer_rpc_disposition(frame, 256),
+            Some(RendererRpcDisposition::Confirm(
+                PermissionDetails::AllowProjectRules {
+                    project_id: "project-1".to_owned(),
+                    allow_rule_count: 1,
+                    rule_names: vec!["read_file".to_owned()],
+                    additional_rule_count: 0,
+                }
+            ))
+        );
+    }
 }
 
 #[test]
-fn project_confirmation_lists_eight_rules_and_counts_the_rest() {
-    let frame = "{\"id\":1,\"method\":\"project.tool_permissions.set\",\"params\":{\"projectId\":\"project-1\",\"rules\":{\"edit_file\":\"allow\",\"execute_command\":\"allow\",\"get_file_info\":\"allow\",\"git_diff\":\"allow\",\"git_history\":\"allow\",\"git_status\":\"allow\",\"list_files\":\"allow\",\"read_file\":\"allow\",\"search_files\":\"allow\"}}}\n";
+fn project_confirmation_lists_all_rules_without_git_tools() {
+    let frame = "{\"id\":1,\"method\":\"project.tool_permissions.set\",\"params\":{\"projectId\":\"project-1\",\"rules\":{\"edit_file\":\"allow\",\"execute_command\":\"allow\",\"get_file_info\":\"allow\",\"list_files\":\"allow\",\"read_file\":\"allow\",\"search_files\":\"allow\"}}}\n";
 
     assert_eq!(
         renderer_rpc_disposition(frame, 1_024),
         Some(RendererRpcDisposition::Confirm(
             PermissionDetails::AllowProjectRules {
                 project_id: "project-1".to_owned(),
-                allow_rule_count: 9,
+                allow_rule_count: 6,
                 rule_names: vec![
                     "edit_file",
                     "execute_command",
                     "get_file_info",
-                    "git_diff",
-                    "git_history",
-                    "git_status",
                     "list_files",
                     "read_file",
+                    "search_files",
                 ]
                 .into_iter()
                 .map(str::to_owned)
                 .collect(),
-                additional_rule_count: 1,
+                additional_rule_count: 0,
             }
         ))
     );
@@ -75,19 +73,19 @@ fn project_confirmation_lists_eight_rules_and_counts_the_rest() {
 #[test]
 fn restricted_permission_modes_and_unrelated_calls_do_not_need_confirmation() {
     for frame in [
-            "{\"id\":1,\"method\":\"tools.permissions.mode.set\",\"params\":{\"mode\":\"require_approval\"}}\n",
-            "{\"id\":1,\"method\":\"tools.permissions.mode.set\",\"params\":{\"mode\":\"approve_safe_operations\"}}\n",
-            "{\"id\":1,\"method\":\"tools.permissions.mode.get\",\"params\":{}}\n",
-            "{\"id\":1,\"method\":\"project.tool_permissions.set\",\"params\":{\"projectId\":\"project-1\",\"rules\":{\"read_file\":\"ask\",\"write_file\":\"deny\"}}}\n",
-            "{\"id\":1,\"method\":\"project.tool_permissions.get\",\"params\":{\"projectId\":\"project-1\",\"initialRules\":{\"read_file\":\"deny\"}}}\n",
-            "{\"id\":1,\"method\":\"project.tool_permissions.get\",\"params\":{\"projectId\":\"project-1\"}}\n",
-            "{\"id\":1,\"method\":\"chat.send\",\"params\":{}}\n",
-        ] {
-            assert_eq!(
-                renderer_rpc_disposition(frame, 256),
-                Some(RendererRpcDisposition::Forward)
-            );
-        }
+        "{\"id\":1,\"method\":\"tools.permissions.mode.set\",\"params\":{\"mode\":\"require_approval\"}}\n",
+        "{\"id\":1,\"method\":\"tools.permissions.mode.set\",\"params\":{\"mode\":\"approve_safe_operations\"}}\n",
+        "{\"id\":1,\"method\":\"tools.permissions.mode.get\",\"params\":{}}\n",
+        "{\"id\":1,\"method\":\"project.tool_permissions.set\",\"params\":{\"projectId\":\"project-1\",\"rules\":{\"read_file\":\"ask\",\"write_file\":\"deny\"}}}\n",
+        "{\"id\":1,\"method\":\"project.tool_permissions.get\",\"params\":{\"projectId\":\"project-1\",\"initialRules\":{\"read_file\":\"deny\"}}}\n",
+        "{\"id\":1,\"method\":\"project.tool_permissions.get\",\"params\":{\"projectId\":\"project-1\"}}\n",
+        "{\"id\":1,\"method\":\"chat.send\",\"params\":{}}\n",
+    ] {
+        assert_eq!(
+            renderer_rpc_disposition(frame, 256),
+            Some(RendererRpcDisposition::Forward)
+        );
+    }
 }
 
 #[test]
@@ -128,8 +126,8 @@ fn duplicate_project_rule_keys_match_service_last_value_parsing() {
 fn oversized_project_permission_frames_are_rejected_before_rule_parsing() {
     let padding = "x".repeat(super::MAX_PROJECT_PERMISSION_RPC_FRAME_BYTES);
     let frame = format!(
-            "{{\"id\":1,\"method\":\"project.tool_permissions.set\",\"params\":{{\"projectId\":\"project-1\",\"rules\":{{}},\"extra\":\"{padding}\"}}}}\n"
-        );
+        "{{\"id\":1,\"method\":\"project.tool_permissions.set\",\"params\":{{\"projectId\":\"project-1\",\"rules\":{{}},\"extra\":\"{padding}\"}}}}\n"
+    );
 
     assert_eq!(
         renderer_rpc_disposition(&frame, super::MAX_RPC_FRAME_BYTES),
@@ -163,8 +161,8 @@ fn rpc_frame_requires_one_newline_terminated_line_within_the_limit() {
 fn renderer_cannot_submit_permission_decisions() {
     for approved in [true, false] {
         let frame = format!(
-                "{{\"id\":1,\"method\":\"chat.tool.permission.respond\",\"params\":{{\"approved\":{approved}}}}}\n"
-            );
+            "{{\"id\":1,\"method\":\"chat.tool.permission.respond\",\"params\":{{\"approved\":{approved}}}}}\n"
+        );
         assert_eq!(renderer_rpc_disposition(&frame, 256), None);
     }
     let escaped_method = "{\"id\":1,\"method\":\"chat.tool.permission.\\u0072espond\"}\n";

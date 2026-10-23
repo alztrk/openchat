@@ -11,6 +11,7 @@ import {
   saveGlobalMcpSecrets,
   saveGlobalMcpServer,
   setGlobalMcpEnabled,
+  mcpStorageErrorDetails,
 } from '@/modules/model-library/data/mcpStorage';
 
 type McpLoadState = 'idle' | 'loading' | 'ready' | 'error';
@@ -28,6 +29,7 @@ interface McpState {
   invalidConfigCount: number;
   busyServerIds: string[];
   errorCode: McpErrorCode | null;
+  errorDetails: string | null;
   initialize(): Promise<void>;
   install(serverId: string, localizedDescription: string): Promise<boolean>;
   setEnabled(serverId: string, enabled: boolean): Promise<boolean>;
@@ -43,10 +45,11 @@ export const useMcpStore = create<McpState>((set, get) => ({
   invalidConfigCount: 0,
   busyServerIds: [],
   errorCode: null,
+  errorDetails: null,
 
   async initialize() {
     if (get().loadState === 'loading') return;
-    set({ loadState: 'loading', errorCode: null });
+    set({ loadState: 'loading', errorCode: null, errorDetails: null });
     try {
       const loaded = await loadGlobalMcpServers();
       set({
@@ -54,8 +57,8 @@ export const useMcpStore = create<McpState>((set, get) => ({
         invalidConfigCount: loaded.invalidConfigCount,
         loadState: 'ready',
       });
-    } catch {
-      set({ loadState: 'error', errorCode: 'mcpCatalogLoadFailed' });
+    } catch (error) {
+      set({ loadState: 'error', errorCode: 'mcpCatalogLoadFailed', errorDetails: mcpStorageErrorDetails(error) });
     }
   },
 
@@ -63,13 +66,13 @@ export const useMcpStore = create<McpState>((set, get) => ({
     const server = get().servers.find((item) => item.id === serverId);
     if (!server || server.installed || get().busyServerIds.includes(serverId)) return false;
     markBusy(set, serverId, true);
-    set({ errorCode: null });
+    set({ errorCode: null, errorDetails: null });
     try {
       const saved = await saveGlobalMcpServer({ ...server, description: localizedDescription });
       updateServer(set, saved);
       return true;
-    } catch {
-      set({ errorCode: 'mcpConfigActionFailed' });
+    } catch (error) {
+      set({ errorCode: 'mcpConfigActionFailed', errorDetails: mcpStorageErrorDetails(error) });
       return false;
     } finally {
       markBusy(set, serverId, false);
@@ -79,13 +82,13 @@ export const useMcpStore = create<McpState>((set, get) => ({
   async setEnabled(serverId, enabled) {
     if (get().busyServerIds.includes(serverId)) return false;
     markBusy(set, serverId, true);
-    set({ errorCode: null });
+    set({ errorCode: null, errorDetails: null });
     try {
       const updated = await setGlobalMcpEnabled(serverId, enabled);
       updateServer(set, updated);
       return true;
-    } catch {
-      set({ errorCode: 'mcpConfigActionFailed' });
+    } catch (error) {
+      set({ errorCode: 'mcpConfigActionFailed', errorDetails: mcpStorageErrorDetails(error) });
       return false;
     } finally {
       markBusy(set, serverId, false);
@@ -95,7 +98,7 @@ export const useMcpStore = create<McpState>((set, get) => ({
   async remove(serverId) {
     if (get().busyServerIds.includes(serverId)) return false;
     markBusy(set, serverId, true);
-    set({ errorCode: null });
+    set({ errorCode: null, errorDetails: null });
     try {
       await removeGlobalMcpServer(serverId);
       const current = get().servers.find((server) => server.id === serverId);
@@ -113,8 +116,8 @@ export const useMcpStore = create<McpState>((set, get) => ({
         discoveredTools: catalogServer.discoveredTools,
       });
       return true;
-    } catch {
-      set({ errorCode: 'mcpConfigActionFailed' });
+    } catch (error) {
+      set({ errorCode: 'mcpConfigActionFailed', errorDetails: mcpStorageErrorDetails(error) });
       return false;
     } finally {
       markBusy(set, serverId, false);
@@ -124,22 +127,22 @@ export const useMcpStore = create<McpState>((set, get) => ({
   async loadSecretStatus(serverId, environmentNames) {
     try {
       return await getGlobalMcpSecretStatus(serverId, environmentNames);
-    } catch {
-      set({ errorCode: 'mcpCredentialStatusFailed' });
-      throw new Error('The MCP secret status could not be read.');
+    } catch (error) {
+      set({ errorCode: 'mcpCredentialStatusFailed', errorDetails: mcpStorageErrorDetails(error) });
+      throw error;
     }
   },
 
   async saveSecrets(serverId, updates) {
     if (get().busyServerIds.includes(serverId)) return false;
     markBusy(set, serverId, true);
-    set({ errorCode: null });
+    set({ errorCode: null, errorDetails: null });
     try {
       await saveGlobalMcpSecrets(serverId, updates);
       return true;
-    } catch {
-      set({ errorCode: 'mcpCredentialSaveFailed' });
-      return false;
+    } catch (error) {
+      set({ errorCode: 'mcpCredentialSaveFailed', errorDetails: mcpStorageErrorDetails(error) });
+      throw error;
     } finally {
       markBusy(set, serverId, false);
     }
@@ -148,7 +151,7 @@ export const useMcpStore = create<McpState>((set, get) => ({
   async probe(serverId) {
     if (get().busyServerIds.includes(serverId)) return false;
     markBusy(set, serverId, true);
-    set({ errorCode: null });
+    set({ errorCode: null, errorDetails: null });
     try {
       updateServer(set, await probeGlobalMcpServer(serverId));
       return true;
@@ -158,6 +161,7 @@ export const useMcpStore = create<McpState>((set, get) => ({
           error instanceof McpStorageClientError && error.code === 'mcp_required_credentials_missing'
             ? 'mcpRequiredCredentialsMissing'
             : 'mcpDiscoverFailed',
+        errorDetails: mcpStorageErrorDetails(error),
       });
       return false;
     } finally {

@@ -147,7 +147,7 @@ impl CopilotOAuthService {
             .timeout(Duration::from_secs(30))
             .redirect(Policy::none())
             .build()
-            .map_err(|_| network_error())?;
+            .map_err(network_error_with_details)?;
         Ok(Self {
             http,
             credentials: CredentialStore,
@@ -180,7 +180,7 @@ impl CopilotOAuthService {
             ])
             .send()
             .await
-            .map_err(|_| network_error())?;
+            .map_err(network_error_with_details)?;
         if !response.status().is_success() {
             return Err(oauth_http_error(response.status()));
         }
@@ -284,7 +284,7 @@ impl CopilotOAuthService {
                     ("device_code", flow.device_code.as_str()),
                     ("grant_type", "urn:ietf:params:oauth:grant-type:device_code"),
                 ])
-                .send() => result.map_err(|_| network_error())?,
+                .send() => result.map_err(network_error_with_details)?,
         };
         let status = response.status();
         let body = read_oauth_body(response, MAX_OAUTH_RESPONSE_BYTES).await?;
@@ -536,17 +536,17 @@ impl CopilotOAuthService {
             .await;
         let response = match response {
             Ok(response) => response,
-            Err(_) => {
+            Err(error) => {
                 set_auth_status(storage, &connection.id, "reauth_required")?;
-                return Err(network_error());
+                return Err(network_error_with_details(error));
             }
         };
         let status = response.status();
         let body = match read_oauth_body(response, MAX_OAUTH_RESPONSE_BYTES).await {
             Ok(body) => body,
-            Err(_) => {
+            Err(error) => {
                 set_auth_status(storage, &connection.id, "reauth_required")?;
-                return Err(network_error());
+                return Err(error);
             }
         };
         let mut result: TokenResponse = match serde_json::from_slice(body.as_slice()) {
@@ -647,7 +647,7 @@ impl CopilotOAuthService {
             .header("X-GitHub-Api-Version", "2022-11-28")
             .send()
             .await
-            .map_err(|_| network_error())?;
+            .map_err(network_error_with_details)?;
         if !response.status().is_success() {
             return Err(oauth_http_error(response.status()));
         }
@@ -1134,7 +1134,7 @@ async fn read_oauth_body(
         .map(|length| (length as usize).min(maximum_bytes))
         .unwrap_or_default();
     let mut body = Zeroizing::new(Vec::with_capacity(capacity));
-    while let Some(chunk) = response.chunk().await.map_err(|_| network_error())? {
+    while let Some(chunk) = response.chunk().await.map_err(network_error_with_details)? {
         if body.len().saturating_add(chunk.len()) > maximum_bytes {
             return Err(invalid_oauth_response());
         }
@@ -1179,6 +1179,10 @@ fn network_error() -> ServiceError {
     )
 }
 
+fn network_error_with_details(error: reqwest::Error) -> ServiceError {
+    network_error().with_details(error.without_url().to_string())
+}
+
 fn temporary_oauth_error() -> ServiceError {
     ServiceError::new(
         "oauth_service_unavailable",
@@ -1211,6 +1215,7 @@ fn oauth_http_error(status: StatusCode) -> ServiceError {
         )
     };
     ServiceError::new(code, message, retryable)
+        .with_details(format!("HTTP status {}", status.as_u16()))
 }
 
 fn invalid_oauth_response() -> ServiceError {

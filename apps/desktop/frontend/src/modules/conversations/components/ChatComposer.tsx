@@ -1,12 +1,14 @@
-import { ArrowUp, Brain, Files, Paperclip, Square, X } from 'lucide-react';
+import { ArrowUp, Brain, Paperclip, Square, X } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button, Select } from '@/design-system';
+import type { ChatMessage } from '@/modules/conversations/data/chatStorage';
 import { getSidebarDraggingConversationId } from '@/modules/conversations/data/sidebarPreferences';
 import { useChatStreaming } from '@/modules/conversations/hooks/useChatStreaming';
 import { useChatStore } from '@/modules/conversations/stores/chatStore';
 import { ToolPermissionModeSelector } from '@/modules/projects/components/ToolPermissionModeSelector';
 import { modelRouteKey } from '@/modules/providers/data/modelPreferences';
+import { AttachmentLibraryDialog } from './AttachmentLibraryDialog';
 import { ChatSlashCommandMenu } from './ChatSlashCommandMenu';
 import { ChatSlashModelMenu } from './ChatSlashModelMenu';
 import { ComposerFeedbackList, ComposerModelBanner } from './ComposerAlerts';
@@ -20,7 +22,7 @@ import {
 } from './composerUtils';
 import { ModelPicker } from './ModelPicker';
 import { PendingAttachmentGallery } from './PendingAttachmentGallery';
-import { AttachmentLibraryDialog } from './AttachmentLibraryDialog';
+import { UserQuestionPanel } from './UserQuestionPanel';
 import { useComposerState } from './useComposerState';
 
 export interface ChatComposerProps {
@@ -30,6 +32,10 @@ export interface ChatComposerProps {
   isTemporaryChat?: boolean;
   droppedFiles?: { id: number; files: File[] } | null;
   targetConversationId?: string | null;
+  messagesOverride?: readonly ChatMessage[];
+  isLoadingMessagesOverride?: boolean;
+  questionFocusTarget: { conversationId: string; groupId: string } | null;
+  onQuestionFocusHandled(): void;
 }
 
 export function ChatComposer({
@@ -39,6 +45,10 @@ export function ChatComposer({
   onOpenSettings,
   onRequestTemporaryExit,
   targetConversationId,
+  messagesOverride,
+  isLoadingMessagesOverride,
+  questionFocusTarget,
+  onQuestionFocusHandled,
 }: ChatComposerProps) {
   const { t } = useTranslation();
   const formRef = useRef<HTMLFormElement>(null);
@@ -88,6 +98,7 @@ export function ChatComposer({
     selectedModel,
     isSendBlocked,
     isSending,
+    isAnyConversationSending,
     submissionMode,
     ghostTextSuggestion,
   } = useComposerState({
@@ -96,6 +107,8 @@ export function ChatComposer({
     onBeforeSend,
     onRequestTemporaryExit,
     formRef,
+    messagesOverride,
+    isLoadingMessagesOverride,
     targetConversationId,
   });
 
@@ -106,9 +119,10 @@ export function ChatComposer({
   const projectsStatus = useChatStore((state) => state.projectsStatus);
   const pendingProjectId = useChatStore((state) => state.pendingProjectId);
   const hiddenModelKeys = useChatStore((state) => state.hiddenModelKeys);
-  const selectedModelKey = useChatStore((state) => state.selectedModelKey);
-  const activeConversationId = useChatStore((state) => state.activeConversationId);
-  const messages = useChatStore((state) => state.messages);
+  const storeActiveConversationId = useChatStore((state) => state.activeConversationId);
+  const activeConversationId = targetConversationId === undefined ? storeActiveConversationId : targetConversationId;
+  const storeMessages = useChatStore((state) => state.messages);
+  const messages = messagesOverride ?? storeMessages;
   const isUpdatingConversationModel = useChatStore((state) => state.isUpdatingConversationModel);
   const selectedReasoningEffort = useChatStore((state) => state.selectedReasoningEffort);
   const modelStatus = useChatStore((state) => state.modelStatus);
@@ -121,6 +135,7 @@ export function ChatComposer({
   const setPendingProjectId = useChatStore((state) => state.setPendingProjectId);
   const selectReasoningEffort = useChatStore((state) => state.selectReasoningEffort);
   const chatErrorCode = useChatStore((state) => state.errorCode);
+  const chatErrorMessage = useChatStore((state) => state.errorMessage);
   const modelError = useChatStore((state) => state.modelError);
   const modelContextLimits = useChatStore((state) => state.modelContextLimits);
   const { stopResponse } = useChatStreaming();
@@ -132,7 +147,7 @@ export function ChatComposer({
   const contextToolPermissionMode = composerMode === 'plan' ? 'plan' : selectedPermissionMode;
   const isTargetPlaceholder = targetConversationId === null;
   const placeholderHint = isTargetPlaceholder
-    ? t('splitViewEmptyHint')
+    ? t('conversationUnavailable')
     : submissionMode === 'ctrlEnter'
       ? t('composerPlaceholderCtrlEnter')
       : t('composerPlaceholderEnter');
@@ -224,6 +239,12 @@ export function ChatComposer({
           selectedModel={selectedModel}
         />
 
+        <UserQuestionPanel
+          conversationId={activeConversationId}
+          onFocusHandled={onQuestionFocusHandled}
+          questionFocusTarget={questionFocusTarget}
+        />
+
         <form
           className={`composer-surface rounded-composer transition-colors ${
             isComposerDraggingOver ? 'border-accent bg-accent/5 ring-2 ring-accent' : ''
@@ -243,7 +264,12 @@ export function ChatComposer({
             }
             aria-label={t('attachmentChooseFile')}
             className="sr-only"
-            disabled={pickerModels.length === 0 || isSending || isReadingAttachments || isUpdatingConversationModel}
+            disabled={
+              pickerModels.length === 0 ||
+              isAnyConversationSending ||
+              isReadingAttachments ||
+              isUpdatingConversationModel
+            }
             multiple
             onChange={(event) => {
               const files = Array.from(event.currentTarget.files ?? []);
@@ -256,7 +282,7 @@ export function ChatComposer({
           {pendingAttachments.length > 0 ? (
             <PendingAttachmentGallery
               attachments={pendingAttachments}
-              disabled={isSending || isReadingAttachments}
+              disabled={isAnyConversationSending || isReadingAttachments}
               onRemove={removeAttachment}
             />
           ) : null}
@@ -277,7 +303,7 @@ export function ChatComposer({
           <div className="relative">
             {slashModelMenuOpen ? (
               <ChatSlashModelMenu
-                canSelect={!isSending && !isUpdatingConversationModel}
+                canSelect={!isAnyConversationSending && !isUpdatingConversationModel}
                 isLoading={modelStatus === 'loading'}
                 chatGptWorkspaceSelectionRequired={chatGptWorkspaceSelectionRequired}
                 models={slashModelCandidates}
@@ -337,23 +363,15 @@ export function ChatComposer({
             <div className="flex min-w-0 flex-wrap items-center gap-2">
               <Button
                 aria-label={t('attachmentChooseFile')}
-                disabled={isTargetPlaceholder || pickerModels.length === 0 || isSending || isReadingAttachments}
+                disabled={
+                  isTargetPlaceholder || pickerModels.length === 0 || isAnyConversationSending || isReadingAttachments
+                }
                 onClick={() => filePickerRef.current?.click()}
                 size="icon"
                 type="button"
                 variant="ghost"
               >
                 <Paperclip aria-hidden="true" size={18} />
-              </Button>
-              <Button
-                aria-label={t('attachmentLibraryOpenPicker')}
-                disabled={isTargetPlaceholder || pickerModels.length === 0 || isSending || isReadingAttachments}
-                onClick={() => setIsAttachmentLibraryOpen(true)}
-                size="icon"
-                type="button"
-                variant="ghost"
-              >
-                <Files aria-hidden="true" size={18} />
               </Button>
               <ModelPicker
                 canSelectProvider
@@ -370,7 +388,7 @@ export function ChatComposer({
                 modelFavorites={modelFavorites}
                 modelProviders={modelProviders}
                 models={pickerModels}
-                disabled={isSending || isUpdatingConversationModel}
+                disabled={isAnyConversationSending || isUpdatingConversationModel}
                 onOpenChange={(open) => {
                   setModelPickerOpen(open);
                 }}
@@ -378,7 +396,7 @@ export function ChatComposer({
                 onSelect={(model) => {
                   setModelPickerOpen(false);
                   setCommandFeedbackKey(null);
-                  void selectConversationModel(model.key).then((updated) => {
+                  void selectConversationModel(model.key, targetConversationId ?? undefined).then((updated) => {
                     if (!updated) setCommandFeedbackKey('slashCommandModelUnavailable');
                     else setCommandFeedbackKey(null);
                   });
@@ -404,7 +422,7 @@ export function ChatComposer({
                   <Select
                     aria-label={t('reasoning')}
                     className="openchat-dropdown-trigger--subtle min-w-0 max-w-full py-2 pl-2.5 pr-2 text-sm"
-                    disabled={isTargetPlaceholder || isSending || isUpdatingConversationModel}
+                    disabled={isTargetPlaceholder || isAnyConversationSending || isUpdatingConversationModel}
                     label={t('reasoning')}
                     leadingIcon={<Brain aria-hidden="true" size={16} />}
                     onChange={(event) => void selectReasoningEffort(event.currentTarget.value || null)}
@@ -444,9 +462,10 @@ export function ChatComposer({
                 disabled={
                   isTargetPlaceholder ||
                   pickerModels.length === 0 ||
-                  !selectedModelKey ||
+                  !selectedModel?.key ||
                   messageDraft.trim().length === 0 ||
                   isReadingAttachments ||
+                  isAnyConversationSending ||
                   isUpdatingConversationModel ||
                   isSendBlocked
                 }
@@ -462,7 +481,7 @@ export function ChatComposer({
         </form>
 
         <AttachmentLibraryDialog
-          disabled={isTargetPlaceholder || isSending || isReadingAttachments}
+          disabled={isTargetPlaceholder || isAnyConversationSending || isReadingAttachments}
           onOpenChange={setIsAttachmentLibraryOpen}
           onSelect={(item) => addExistingAttachments([item])}
           open={isAttachmentLibraryOpen}
@@ -471,6 +490,7 @@ export function ChatComposer({
         <ComposerFeedbackList
           attachmentErrorKey={attachmentErrorKey}
           chatErrorCode={chatErrorCode}
+          chatErrorMessage={chatErrorMessage}
           commandFeedbackKey={commandFeedbackKey}
           modelError={modelError}
           successFeedback={successFeedback}

@@ -383,6 +383,8 @@ fn strip_workspace_file_changes(database_path: &Path) -> Result<(), ArchiveFailu
     let mut present = 0;
     for table in [
         "conversation_file_changes",
+        "conversation_file_checkpoints",
+        "conversation_file_checkpoint_files",
         "file_change_blobs",
         "file_change_legacy_imports",
     ] {
@@ -399,7 +401,7 @@ fn strip_workspace_file_changes(database_path: &Path) -> Result<(), ArchiveFailu
     if present == 0 {
         return Ok(());
     }
-    if present != 3 {
+    if present != 5 {
         return Err(ArchiveFailure::Storage);
     }
     database
@@ -407,6 +409,7 @@ fn strip_workspace_file_changes(database_path: &Path) -> Result<(), ArchiveFailu
             "PRAGMA foreign_keys = ON;
              BEGIN IMMEDIATE;
              DELETE FROM conversation_file_changes;
+             DELETE FROM conversation_file_checkpoints;
              DELETE FROM file_change_legacy_imports;
              DELETE FROM file_change_blobs;
              COMMIT;",

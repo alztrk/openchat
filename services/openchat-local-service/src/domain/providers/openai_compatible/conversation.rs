@@ -18,7 +18,7 @@ use crate::{
     context_compaction,
     goals::{self, GoalExecution},
     protocol::{EventSink, ServiceError},
-    provider_schema::{ChatStreamEvent, ChatStreamSnapshot, ProviderMessage},
+    provider_schema::{ChatStreamEvent, ChatStreamSnapshot, ProviderMessage, ReasoningSummary},
     response_budget::ProviderResponseBudget,
     storage::{AppStorage, sqlite_error_code},
     tools::{self, ToolExecutor},
@@ -188,6 +188,7 @@ pub(crate) async fn send_temporary_message(
         .then(|| opencode_session_id_for_conversation(conversation_id, created_at));
     let mut content = String::new();
     let mut reasoning_content = String::new();
+    let mut reasoning_summaries = Vec::new();
     let mut output_tokens = None;
     let mut input_tokens = None;
     let started = Instant::now();
@@ -216,6 +217,7 @@ pub(crate) async fn send_temporary_message(
         created_at,
         content: &mut content,
         reasoning_content: &mut reasoning_content,
+        reasoning_summaries: &mut reasoning_summaries,
         output_tokens: &mut output_tokens,
         input_tokens: &mut input_tokens,
         started,
@@ -265,6 +267,8 @@ pub async fn send_message(
         project_skills,
         project_index_context,
         project_root,
+        project_name,
+        workspace_roots,
         data_root,
         storage,
         permission_mode,
@@ -328,6 +332,7 @@ pub async fn send_message(
         crate::tools::mcp::connect_with_approval(
             mcp_configs,
             &tool_permission_rules,
+            permission_mode == crate::tools::ToolPermissionMode::FullAccess,
             permission_broker,
             &request_id,
             &events,
@@ -436,10 +441,13 @@ pub async fn send_message(
             project_index_context: project_index_context.as_deref(),
             permission_mode,
             has_project: project_root.is_some(),
+            project_name,
+            project_root,
             project_task_ids: &project_task_ids,
             reasoning_effort,
             supported_reasoning_levels: &route.reasoning_levels,
             supports_tool_calls: route.supports_tool_calls,
+            supports_images: route.supports_images,
             goal_objective: goal.as_ref().map(|goal| goal.objective.as_str()),
         },
     )?;
@@ -715,6 +723,7 @@ pub async fn send_message(
     };
     let mut content = String::new();
     let mut reasoning_content = String::new();
+    let mut reasoning_summaries = Vec::new();
     let mut output_tokens = None;
     let mut input_tokens = None;
 
@@ -769,6 +778,7 @@ pub async fn send_message(
             .map(|tool| tool.name.to_owned()),
         tool_permission_rules,
     )
+    .with_workspace_roots(workspace_roots)
     .with_chat_service(image_service.as_ref().clone())
     .with_subagent_models(available_subagent_models)
     .with_subagent_tool_definitions(provider_request.tools.clone());
@@ -794,6 +804,7 @@ pub async fn send_message(
         created_at,
         content: &mut content,
         reasoning_content: &mut reasoning_content,
+        reasoning_summaries: &mut reasoning_summaries,
         output_tokens: &mut output_tokens,
         input_tokens: &mut input_tokens,
         started,
@@ -978,6 +989,7 @@ struct StreamConversationContext<'a> {
     created_at: i64,
     content: &'a mut String,
     reasoning_content: &'a mut String,
+    reasoning_summaries: &'a mut Vec<ReasoningSummary>,
     output_tokens: &'a mut Option<i64>,
     input_tokens: &'a mut Option<i64>,
     started: Instant,
@@ -1074,6 +1086,7 @@ async fn stream_conversation(context: StreamConversationContext<'_>) -> Result<(
             created_at: context.created_at,
             content: context.content,
             reasoning_content: context.reasoning_content,
+            reasoning_summaries: context.reasoning_summaries,
             output_tokens: context.output_tokens,
             input_tokens: context.input_tokens,
             started: context.started,
@@ -1140,7 +1153,7 @@ async fn stream_conversation(context: StreamConversationContext<'_>) -> Result<(
                 .is_some_and(|goal| matches!(&goal.decision, goals::GoalDecision::Continue))
             {
                 goals::append_continuation_message(messages);
-                tool_executor.reset_turn_limits();
+                tool_executor.reset_turn_state();
                 operation = "chat";
                 continue;
             }
@@ -1234,7 +1247,7 @@ async fn stream_conversation(context: StreamConversationContext<'_>) -> Result<(
         })
         .await?;
         if !control_calls.is_empty() {
-            tool_executor.reset_turn_limits();
+            tool_executor.reset_turn_state();
         }
         operation = "tool_follow_up";
     }
@@ -1251,6 +1264,7 @@ struct ResponseStreamRequest<'a> {
     created_at: i64,
     content: &'a mut String,
     reasoning_content: &'a mut String,
+    reasoning_summaries: &'a mut Vec<ReasoningSummary>,
     output_tokens: &'a mut Option<i64>,
     input_tokens: &'a mut Option<i64>,
     started: Instant,

@@ -161,6 +161,7 @@ where
 pub struct McpStorageError {
     code: &'static str,
     message: &'static str,
+    details: Option<String>,
 }
 
 impl McpStorageError {
@@ -168,13 +169,7 @@ impl McpStorageError {
         Self {
             code: "mcp_invalid_config",
             message: "The MCP server configuration is invalid.",
-        }
-    }
-
-    pub(crate) fn unavailable() -> Self {
-        Self {
-            code: "mcp_storage_unavailable",
-            message: "The local MCP configuration could not be accessed.",
+            details: None,
         }
     }
 
@@ -182,6 +177,7 @@ impl McpStorageError {
         Self {
             code: "mcp_probe_failed",
             message: "The MCP server could not return its tool list.",
+            details: None,
         }
     }
 
@@ -189,6 +185,24 @@ impl McpStorageError {
         Self {
             code: "mcp_required_credentials_missing",
             message: "Save the required environment values before discovering tools.",
+            details: None,
+        }
+    }
+
+    pub(crate) fn server_not_found() -> Self {
+        Self {
+            code: "mcp_server_not_found",
+            message: "The requested MCP server configuration was not found.",
+            details: None,
+        }
+    }
+
+    pub(crate) fn unavailable_with_details(error: impl std::fmt::Display) -> Self {
+        let details = error.to_string().chars().take(2048).collect::<String>();
+        Self {
+            code: "mcp_storage_unavailable",
+            message: "A local MCP storage operation failed.",
+            details: (!details.is_empty()).then_some(details),
         }
     }
 }
@@ -272,8 +286,9 @@ pub struct GlobalMcpSecretStatus {
 /// Returns a storage error if the MCP configuration directory cannot be read.
 pub fn load_global_mcp_servers() -> Result<GlobalMcpLoadResult, McpStorageError> {
     let root = mcp_directory()?;
-    fs::create_dir_all(&root).map_err(|_| McpStorageError::unavailable())?;
-    let canonical_root = fs::canonicalize(&root).map_err(|_| McpStorageError::unavailable())?;
+    fs::create_dir_all(&root).map_err(McpStorageError::unavailable_with_details)?;
+    let canonical_root =
+        fs::canonicalize(&root).map_err(McpStorageError::unavailable_with_details)?;
 
     // Migrate any legacy *.json files in mcp_directory
     if let Ok(entries) = fs::read_dir(&canonical_root) {
@@ -299,8 +314,9 @@ pub fn load_global_mcp_servers() -> Result<GlobalMcpLoadResult, McpStorageError>
     let mut servers = Vec::new();
     let mut invalid_config_count = 0;
 
-    let settings =
-        crate::chat_storage::get_all_app_settings().map_err(|_| McpStorageError::unavailable())?;
+    let settings = crate::chat_storage::get_all_app_settings().map_err(|error| {
+        McpStorageError::unavailable_with_details(format!("{}: {}", error.code, error.message))
+    })?;
     for (key, json_val) in settings {
         if let Some(server_id) = key.strip_prefix("mcp_server.") {
             let parsed = serde_json::from_str::<GlobalMcpServer>(&json_val);
@@ -339,12 +355,13 @@ pub fn save_global_mcp_server(
 ) -> Result<GlobalMcpServer, McpStorageError> {
     validate_server(&server)?;
     let root = mcp_directory()?;
-    fs::create_dir_all(&root).map_err(|_| McpStorageError::unavailable())?;
-    let canonical_root = fs::canonicalize(&root).map_err(|_| McpStorageError::unavailable())?;
+    fs::create_dir_all(&root).map_err(McpStorageError::unavailable_with_details)?;
+    let canonical_root =
+        fs::canonicalize(&root).map_err(McpStorageError::unavailable_with_details)?;
     let directory = install_directory(&canonical_root, &server.id);
-    fs::create_dir_all(&directory).map_err(|_| McpStorageError::unavailable())?;
+    fs::create_dir_all(&directory).map_err(McpStorageError::unavailable_with_details)?;
     let canonical_directory =
-        fs::canonicalize(&directory).map_err(|_| McpStorageError::unavailable())?;
+        fs::canonicalize(&directory).map_err(McpStorageError::unavailable_with_details)?;
     if !canonical_directory.starts_with(&canonical_root) {
         return Err(McpStorageError::invalid());
     }
@@ -366,7 +383,8 @@ pub fn set_global_mcp_enabled(
 ) -> Result<GlobalMcpServer, McpStorageError> {
     let server_id = server_id.into_inner();
     let root = mcp_directory()?;
-    let canonical_root = fs::canonicalize(&root).map_err(|_| McpStorageError::unavailable())?;
+    let canonical_root =
+        fs::canonicalize(&root).map_err(McpStorageError::unavailable_with_details)?;
     let mut server = read_server_config(&canonical_root, &server_id)?;
     server.enabled = enabled;
     write_server_config(&canonical_root, &server)?;
@@ -387,21 +405,23 @@ pub fn remove_global_mcp_server(
     let server_id = server_id.into_inner();
     validate_server_id(&server_id)?;
     let root = mcp_directory()?;
-    let canonical_root = fs::canonicalize(&root).map_err(|_| McpStorageError::unavailable())?;
+    let canonical_root =
+        fs::canonicalize(&root).map_err(McpStorageError::unavailable_with_details)?;
     let server = read_server_config(&canonical_root, &server_id)?;
     let directory = install_directory(&canonical_root, &server.id);
     match fs::symlink_metadata(&directory) {
         Ok(metadata) if metadata.is_dir() && !metadata.file_type().is_symlink() => {
             let canonical_directory =
-                fs::canonicalize(&directory).map_err(|_| McpStorageError::unavailable())?;
+                fs::canonicalize(&directory).map_err(McpStorageError::unavailable_with_details)?;
             if !canonical_directory.starts_with(&canonical_root) {
                 return Err(McpStorageError::invalid());
             }
-            fs::remove_dir_all(canonical_directory).map_err(|_| McpStorageError::unavailable())?;
+            fs::remove_dir_all(canonical_directory)
+                .map_err(McpStorageError::unavailable_with_details)?;
         }
         Ok(_) => return Err(McpStorageError::invalid()),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-        Err(_) => return Err(McpStorageError::unavailable()),
+        Err(error) => return Err(McpStorageError::unavailable_with_details(error)),
     }
     let key = format!("mcp_server.{}", server.id);
     let _ = crate::chat_storage::delete_app_setting_raw(&key);
@@ -498,7 +518,8 @@ pub fn save_global_mcp_secrets(
 pub(crate) fn require_server(server_id: &str) -> Result<GlobalMcpServer, McpStorageError> {
     validate_server_id(server_id)?;
     let root = mcp_directory()?;
-    let canonical_root = fs::canonicalize(&root).map_err(|_| McpStorageError::unavailable())?;
+    let canonical_root =
+        fs::canonicalize(&root).map_err(McpStorageError::unavailable_with_details)?;
     read_server_config(&canonical_root, server_id)
 }
 
@@ -514,7 +535,7 @@ pub(crate) fn all_environment_names(server: &GlobalMcpServer) -> HashSet<&str> {
 
 /// Reads the shared encrypted secret map and maps backend errors to the MCP contract.
 pub(crate) fn read_secret_map() -> Result<SecretMap, McpStorageError> {
-    SecretMap::read().map_err(|_| McpStorageError::unavailable())
+    SecretMap::read().map_err(McpStorageError::unavailable_with_details)
 }
 
 /// Persists the shared encrypted secret map and maps backend errors to the MCP contract.
@@ -524,12 +545,12 @@ pub(crate) fn write_secret_map(
 ) -> Result<(), McpStorageError> {
     values
         .write(update_lock)
-        .map_err(|_| McpStorageError::unavailable())
+        .map_err(McpStorageError::unavailable_with_details)
 }
 
 /// Acquires the cross-process lock required for read-modify-write secret updates.
 pub(crate) fn lock_secret_map() -> Result<SecretMapUpdateLock, McpStorageError> {
-    SecretMapUpdateLock::acquire().map_err(|_| McpStorageError::unavailable())
+    SecretMapUpdateLock::acquire().map_err(McpStorageError::unavailable_with_details)
 }
 
 /// Enforces persisted server bounds and the executable/environment allowlists.
@@ -632,7 +653,11 @@ pub(crate) fn mcp_directory() -> Result<PathBuf, McpStorageError> {
                     .into_os_string()
             })
         })
-        .ok_or_else(McpStorageError::unavailable)?;
+        .ok_or_else(|| {
+            McpStorageError::unavailable_with_details(
+                "Neither LOCALAPPDATA nor USERPROFILE is configured for this process.",
+            )
+        })?;
     Ok(PathBuf::from(local_app_data).join("OpenChat").join("mcp"))
 }
 
@@ -650,7 +675,10 @@ fn config_path(root: &Path, server_id: &str) -> PathBuf {
 fn read_server_config(root: &Path, server_id: &str) -> Result<GlobalMcpServer, McpStorageError> {
     validate_server_id(server_id)?;
     let key = format!("mcp_server.{server_id}");
-    if let Ok(Some(json_str)) = crate::chat_storage::get_app_setting_raw(&key) {
+    let stored_config = crate::chat_storage::get_app_setting_raw(&key).map_err(|error| {
+        McpStorageError::unavailable_with_details(format!("{}: {}", error.code, error.message))
+    })?;
+    if let Some(json_str) = stored_config {
         let mut server = serde_json::from_str::<GlobalMcpServer>(&json_str)
             .map_err(|_| McpStorageError::invalid())?;
         validate_server(&server)?;
@@ -664,32 +692,37 @@ fn read_server_config(root: &Path, server_id: &str) -> Result<GlobalMcpServer, M
     }
 
     let path = config_path(root, server_id);
-    if path.is_file() {
-        let bytes = read_bounded_config_file(&path)?;
-        let mut server = serde_json::from_slice::<GlobalMcpServer>(&bytes)
-            .map_err(|_| McpStorageError::invalid())?;
-        validate_server(&server)?;
-        if server.id != server_id || !server.installed {
-            return Err(McpStorageError::invalid());
+    match fs::symlink_metadata(&path) {
+        Ok(metadata) if metadata.is_file() => {
+            let bytes = read_bounded_config_file(&path)?;
+            let mut server = serde_json::from_slice::<GlobalMcpServer>(&bytes)
+                .map_err(|_| McpStorageError::invalid())?;
+            validate_server(&server)?;
+            if server.id != server_id || !server.installed {
+                return Err(McpStorageError::invalid());
+            }
+            server.install_dir = install_directory(root, server_id)
+                .to_string_lossy()
+                .into_owned();
+            let _ = write_server_config(root, &server);
+            let _ = fs::remove_file(&path);
+            Ok(server)
         }
-        server.install_dir = install_directory(root, server_id)
-            .to_string_lossy()
-            .into_owned();
-        let _ = write_server_config(root, &server);
-        let _ = fs::remove_file(&path);
-        return Ok(server);
+        Ok(_) => Err(McpStorageError::invalid()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            Err(McpStorageError::server_not_found())
+        }
+        Err(error) => Err(McpStorageError::unavailable_with_details(error)),
     }
-
-    Err(McpStorageError::invalid())
 }
 
 /// Opens one regular config file and reads no more than the configured limit plus one byte.
 fn read_bounded_config_file(path: &Path) -> Result<Vec<u8>, McpStorageError> {
     ensure_regular_file(path)?;
-    let file = fs::File::open(path).map_err(|_| McpStorageError::unavailable())?;
+    let file = fs::File::open(path).map_err(McpStorageError::unavailable_with_details)?;
     let metadata = file
         .metadata()
-        .map_err(|_| McpStorageError::unavailable())?;
+        .map_err(McpStorageError::unavailable_with_details)?;
     if !metadata.is_file() || metadata.len() > MAXIMUM_CONFIG_BYTES {
         return Err(McpStorageError::invalid());
     }
@@ -702,7 +735,7 @@ fn read_bounded_config_bytes(reader: impl Read) -> Result<Vec<u8>, McpStorageErr
     reader
         .take(MAXIMUM_CONFIG_BYTES + 1)
         .read_to_end(&mut bytes)
-        .map_err(|_| McpStorageError::unavailable())?;
+        .map_err(McpStorageError::unavailable_with_details)?;
     if bytes.len() as u64 > MAXIMUM_CONFIG_BYTES {
         return Err(McpStorageError::invalid());
     }
@@ -715,13 +748,14 @@ pub(crate) fn write_server_config(
 ) -> Result<(), McpStorageError> {
     validate_server(server)?;
     let json_str =
-        serde_json::to_string_pretty(server).map_err(|_| McpStorageError::unavailable())?;
+        serde_json::to_string_pretty(server).map_err(McpStorageError::unavailable_with_details)?;
     if json_str.len() as u64 > MAXIMUM_CONFIG_BYTES {
         return Err(McpStorageError::invalid());
     }
     let key = format!("mcp_server.{}", server.id);
-    crate::chat_storage::set_app_setting_raw(&key, &json_str)
-        .map_err(|_| McpStorageError::unavailable())?;
+    crate::chat_storage::set_app_setting_raw(&key, &json_str).map_err(|error| {
+        McpStorageError::unavailable_with_details(format!("{}: {}", error.code, error.message))
+    })?;
     let legacy_path = config_path(root, &server.id);
     let _ = fs::remove_file(legacy_path);
     Ok(())
@@ -732,23 +766,20 @@ fn ensure_regular_file(path: &Path) -> Result<(), McpStorageError> {
     match fs::symlink_metadata(path) {
         Ok(metadata) if metadata.is_file() && !metadata.file_type().is_symlink() => Ok(()),
         Ok(_) => Err(McpStorageError::invalid()),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            Err(McpStorageError::unavailable())
-        }
-        Err(_) => Err(McpStorageError::unavailable()),
+        Err(error) => Err(McpStorageError::unavailable_with_details(error)),
     }
 }
 
 /// Writes bounded config bytes to a unique staging file before replacing the destination.
 #[allow(dead_code)]
 fn write_atomic_bytes(path: &Path, bytes: &[u8]) -> Result<(), McpStorageError> {
-    let parent = path.parent().ok_or_else(McpStorageError::unavailable)?;
-    fs::create_dir_all(parent).map_err(|_| McpStorageError::unavailable())?;
+    let parent = path.parent().ok_or_else(McpStorageError::invalid)?;
+    fs::create_dir_all(parent).map_err(McpStorageError::unavailable_with_details)?;
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map_err(|_| McpStorageError::unavailable())?
+        .map_err(McpStorageError::unavailable_with_details)?
         .as_nanos();
-    let file_name = path.file_name().ok_or_else(McpStorageError::unavailable)?;
+    let file_name = path.file_name().ok_or_else(McpStorageError::invalid)?;
     let staging = parent.join(format!(
         ".{}.{}.{}.tmp",
         file_name.to_string_lossy(),
@@ -763,13 +794,13 @@ fn write_atomic_bytes(path: &Path, bytes: &[u8]) -> Result<(), McpStorageError> 
         file.write_all(bytes)?;
         file.sync_all()
     })();
-    if write_result.is_err() {
+    if let Err(error) = write_result {
         let _ = fs::remove_file(&staging);
-        return Err(McpStorageError::unavailable());
+        return Err(McpStorageError::unavailable_with_details(error));
     }
-    if replace_file_atomically(&staging, path).is_err() {
+    if let Err(error) = replace_file_atomically(&staging, path) {
         let _ = fs::remove_file(&staging);
-        return Err(McpStorageError::unavailable());
+        return Err(McpStorageError::unavailable_with_details(error));
     }
     Ok(())
 }

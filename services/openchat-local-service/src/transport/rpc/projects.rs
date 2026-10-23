@@ -133,16 +133,29 @@ pub(super) async fn dispatch(
             if !config.enabled {
                 return Ok(json!({"status": "disabled", "toolCount": 0, "toolNames": []}));
             }
+            let connection = storage.connect().map_err(|error| {
+                ServiceError::new(
+                    "tool_permission_settings_unavailable",
+                    "Tool permission settings could not be accessed safely.",
+                    true,
+                )
+                .with_details(error.to_string())
+            })?;
+            let permission_mode = tool_permissions::load_mode(&connection)?;
             let server_id = config.id.clone();
-            let registry = tools::mcp::McpRegistry::connect(vec![config])
-                .await
-                .map_err(|_| {
-                    ServiceError::new(
-                        "mcp_server_unavailable",
-                        "The MCP server could not start or provide its tool list.",
-                        true,
-                    )
-                })?;
+            let registry = tools::mcp::McpRegistry::connect(
+                vec![config],
+                permission_mode == tools::ToolPermissionMode::FullAccess,
+            )
+            .await
+            .map_err(|error| {
+                ServiceError::new(
+                    "mcp_server_unavailable",
+                    "The MCP server could not start or provide its tool list.",
+                    true,
+                )
+                .with_details(error)
+            })?;
             let tool_names = registry
                 .as_ref()
                 .map(|registry| registry.tool_names_for_server(&server_id))
@@ -270,6 +283,7 @@ pub(super) async fn dispatch(
                 )
             })?;
             let permission_rules = tool_permissions::load_project_rules(&connection, project_id)?;
+            let permission_mode = tool_permissions::load_mode(&connection)?;
             let task_permission_rule =
                 tools::project_task_permission_rule(&permission_rules, task_id);
             if task_permission_rule == Some(&ToolPermissionRule::Deny) {
@@ -329,15 +343,16 @@ pub(super) async fn dispatch(
                     &task.command,
                     &task_root,
                     task.timeout_seconds,
+                    permission_mode == tools::ToolPermissionMode::FullAccess,
                     cancellation,
                 )
                 .await
-                .map_err(|_| {
-                    ServiceError::new(
-                        "project_task_execution_failed",
-                        "The named task could not run inside the process sandbox.",
-                        true,
-                    )
+                .map_err(|error| {
+                    let mut service_error = ServiceError::new(error.code, error.message, true);
+                    if let Some(details) = error.details {
+                        service_error = service_error.with_details(details);
+                    }
+                    service_error
                 })
         }
         "project.worktrees.remove" => {
@@ -420,6 +435,88 @@ pub(super) fn project_root_for_mcp(
         ));
     }
     Ok(root)
+}
+
+pub(super) fn project_workspace_roots_for_project(
+    storage: &AppStorage,
+    project_id: &str,
+) -> Result<Vec<PathBuf>, ServiceError> {
+    let connection = storage.connect().map_err(|_| {
+        ServiceError::new(
+            "storage_unavailable",
+            "The selected workspace folders could not be loaded.",
+            true,
+        )
+    })?;
+    let mut statement = connection
+        .prepare(
+            "SELECT root_path FROM project_workspace_roots
+             WHERE project_id = ?1 ORDER BY position ASC, root_id ASC",
+        )
+        .map_err(|_| project_roots_unavailable())?;
+    let mut roots = statement
+        .query_map([project_id], |row| row.get::<_, String>(0))
+        .map_err(|_| project_roots_unavailable())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| project_roots_unavailable())?;
+    drop(statement);
+    if roots.is_empty() {
+        roots.push(
+            connection
+                .query_row(
+                    "SELECT folder_path FROM projects WHERE id = ?1",
+                    [project_id],
+                    |row| row.get::<_, String>(0),
+                )
+                .optional()
+                .map_err(|_| project_roots_unavailable())?
+                .ok_or_else(project_roots_unavailable)?,
+        );
+    }
+    if roots.len() > 8 {
+        return Err(project_roots_unavailable());
+    }
+    let mut canonical_roots = Vec::with_capacity(roots.len());
+    for path in roots {
+        let root = std::fs::canonicalize(path).map_err(|_| project_roots_unavailable())?;
+        if !root.is_dir()
+            || canonical_roots
+                .iter()
+                .any(|existing: &PathBuf| paths_overlap(existing, &root))
+        {
+            return Err(project_roots_unavailable());
+        }
+        canonical_roots.push(root);
+    }
+    Ok(canonical_roots)
+}
+
+fn paths_overlap(left: &Path, right: &Path) -> bool {
+    let left = normalized_path(left);
+    let right = normalized_path(right);
+    path_contains(&left, &right) || path_contains(&right, &left)
+}
+
+fn normalized_path(path: &Path) -> String {
+    path.to_string_lossy()
+        .replace('\\', "/")
+        .trim_end_matches('/')
+        .to_lowercase()
+}
+
+fn path_contains(parent: &str, candidate: &str) -> bool {
+    candidate == parent
+        || candidate
+            .strip_prefix(parent)
+            .is_some_and(|suffix| suffix.starts_with('/'))
+}
+
+fn project_roots_unavailable() -> ServiceError {
+    ServiceError::new(
+        "project_workspace_unavailable",
+        "One or more configured workspace folders are unavailable or unsafe.",
+        false,
+    )
 }
 
 pub(super) fn project_tasks_for_project(

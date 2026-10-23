@@ -50,7 +50,7 @@ import {
 import { useModelDownloadStore } from '@/modules/model-library/stores/modelDownloadStore';
 import { LocalEngineIcon } from '@/modules/providers/components/EngineIcon';
 import { useModelDirectoryStore } from '@/modules/settings/stores/modelDirectoryStore';
-import { localServiceClient } from '@/platform/local-service';
+import { localServiceClient, localServiceErrorDetails } from '@/platform/local-service';
 import { ModelReadmeMarkdown } from './ModelReadmeMarkdown';
 
 export function ModelCatalogTab() {
@@ -65,10 +65,12 @@ export function ModelCatalogTab() {
   const [failedPageIndex, setFailedPageIndex] = useState<number | null>(null);
   const [state, setState] = useState<LoadState>('idle');
   const [errorCode, setErrorCode] = useState<SearchErrorCode | null>(null);
+  const [errorDetails, setErrorDetails] = useState<string | null>(null);
   const [selectedModel, setSelectedModel] = useState<HubModel | null>(null);
   const [details, setDetails] = useState<HubDetails | null>(null);
   const [detailsState, setDetailsState] = useState<LoadState>('idle');
   const [detailsErrorCode, setDetailsErrorCode] = useState<SearchErrorCode | null>(null);
+  const [detailsErrorDetails, setDetailsErrorDetails] = useState<string | null>(null);
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
   const [visibleComponentCounts, setVisibleComponentCounts] = useState<Record<string, number>>({});
   const [downloadedComponentKeys, setDownloadedComponentKeys] = useState<Set<string>>(new Set());
@@ -80,6 +82,7 @@ export function ModelCatalogTab() {
   const downloadProgress = useModelDownloadStore((store) => store.progress);
   const progressUnavailable = useModelDownloadStore((store) => store.progressUnavailable);
   const downloadErrorCode = useModelDownloadStore((store) => store.errorCode);
+  const downloadErrorDetails = useModelDownloadStore((store) => store.errorDetails);
   const downloadResult = useModelDownloadStore((store) => store.result);
   const startDownload = useModelDownloadStore((store) => store.start);
   const cancelDownload = useModelDownloadStore((store) => store.cancel);
@@ -91,6 +94,7 @@ export function ModelCatalogTab() {
       const generation = ++searchGeneration.current;
       setState('loading');
       setErrorCode(null);
+      setErrorDetails(null);
       setFailedCursor(null);
       setFailedPageIndex(null);
       setSelectedModel(null);
@@ -145,6 +149,7 @@ export function ModelCatalogTab() {
       } catch (error) {
         if (generation !== searchGeneration.current) return;
         setErrorCode(searchErrorFor(error));
+        setErrorDetails(localServiceErrorDetails(error));
         setFailedCursor(cursor);
         setFailedPageIndex(targetPageIndex);
         setState('error');
@@ -174,6 +179,7 @@ export function ModelCatalogTab() {
     setVisibleComponentCounts({});
     setDetailsState('loading');
     setDetailsErrorCode(null);
+    setDetailsErrorDetails(null);
     const generation = ++detailsGeneration.current;
     try {
       const response = await localServiceClient.call(
@@ -189,6 +195,7 @@ export function ModelCatalogTab() {
     } catch (error) {
       if (generation !== detailsGeneration.current) return;
       setDetailsErrorCode(searchErrorFor(error));
+      setDetailsErrorDetails(localServiceErrorDetails(error));
       setDetailsState('error');
     }
   };
@@ -452,6 +459,7 @@ export function ModelCatalogTab() {
                   icon={<CircleAlert aria-hidden="true" size={22} />}
                   onRetry={retrySearch}
                   role="alert"
+                  details={errorDetails}
                   text={t(errorCode ?? 'modelSearchFailed')}
                 />
               ) : null}
@@ -545,6 +553,7 @@ export function ModelCatalogTab() {
                     icon={<CircleAlert aria-hidden="true" size={24} />}
                     onRetry={() => void openModel(selectedModel)}
                     role="alert"
+                    details={detailsErrorDetails}
                     text={t(detailsErrorCode ?? 'modelSearchFailed')}
                   />
                 ) : null}
@@ -663,6 +672,7 @@ export function ModelCatalogTab() {
                     icon={<CircleAlert aria-hidden="true" size={22} />}
                     onRetry={() => void openModel(selectedModel)}
                     role="alert"
+                    details={detailsErrorDetails}
                     text={t(detailsErrorCode ?? 'modelSearchFailed')}
                   />
                 ) : null}
@@ -821,6 +831,7 @@ export function ModelCatalogTab() {
                         <InlineNotice
                           icon={<CircleAlert aria-hidden="true" size={17} />}
                           text={t(downloadErrorMessageKey(downloadErrorCode))}
+                          details={downloadErrorDetails}
                           tone="error"
                         />
                       ) : null}
@@ -895,10 +906,12 @@ function MetadataItem({ icon, label, value }: MetadataItemProps) {
 interface InlineNoticeProps {
   icon: ReactNode;
   text: string;
+  details?: string | null;
   tone?: 'default' | 'warning' | 'success' | 'error';
 }
 
-function InlineNotice({ icon, text, tone = 'default' }: InlineNoticeProps) {
+function InlineNotice({ details, icon, text, tone = 'default' }: InlineNoticeProps) {
+  const { t } = useTranslation();
   const toneClass =
     tone === 'warning'
       ? 'text-warning'
@@ -908,21 +921,29 @@ function InlineNotice({ icon, text, tone = 'default' }: InlineNoticeProps) {
           ? 'text-destructive'
           : 'text-secondary-text';
   return (
-    <p className={['flex items-start gap-2 text-sm', toneClass].join(' ')} role={tone === 'error' ? 'alert' : 'status'}>
+    <div className={['flex items-start gap-2 text-sm', toneClass].join(' ')} role={tone === 'error' ? 'alert' : 'status'}>
       <span className="mt-0.5 shrink-0">{icon}</span>
-      <span>{text}</span>
-    </p>
+      <span className="grid min-w-0 gap-1">
+        <span>{text}</span>
+        {details ? (
+          <span className="break-words whitespace-pre-wrap text-xs text-secondary-text">
+            {t('chatErrorDetails')}: {details}
+          </span>
+        ) : null}
+      </span>
+    </div>
   );
 }
 
 interface PanelMessageProps {
   icon: ReactNode;
   text: string;
+  details?: string | null;
   onRetry?: () => void;
   role?: 'status' | 'alert';
 }
 
-function PanelMessage({ icon, onRetry, role = 'status', text }: PanelMessageProps) {
+function PanelMessage({ details, icon, onRetry, role = 'status', text }: PanelMessageProps) {
   const { t } = useTranslation();
   return (
     <div
@@ -932,6 +953,11 @@ function PanelMessage({ icon, onRetry, role = 'status', text }: PanelMessageProp
     >
       <span className="text-secondary-icon">{icon}</span>
       <p className="max-w-sm text-sm text-secondary-text">{text}</p>
+      {details ? (
+        <p className="max-w-full break-words whitespace-pre-wrap text-xs text-secondary-text">
+          {t('chatErrorDetails')}: {details}
+        </p>
+      ) : null}
       {onRetry ? (
         <Button onClick={onRetry} size="small" variant="secondary">
           <RefreshCw aria-hidden="true" size={15} />

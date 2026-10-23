@@ -194,6 +194,7 @@ impl ChatGptService {
         let project_instructions = context.project_instructions;
         let project_skills = &context.project_skills;
         let project_root = context.project_root;
+        let project_name = context.project_name;
         let route = chatgpt_store::conversation_route(&self.storage, conversation_id)
             .map_err(database_error)?
             .ok_or_else(|| {
@@ -307,6 +308,7 @@ impl ChatGptService {
         let mcp_registry = tools::mcp::connect_with_approval(
             mcp_configs,
             &context.tool_permission_rules,
+            context.permission_mode == tools::ToolPermissionMode::FullAccess,
             context.permission_broker,
             &context.request_id,
             &context.events,
@@ -315,6 +317,9 @@ impl ChatGptService {
         .await?
         .map(Arc::new);
         let mut tools = tools::definitions_for_chatgpt_model();
+        if !model.supports_images {
+            tools.retain(|tool| tool.name != "computer_use");
+        }
         #[cfg(windows)]
         if let Some(registry) = mcp_registry.as_ref() {
             tools.extend(registry.definitions().iter().cloned());
@@ -341,6 +346,8 @@ impl ChatGptService {
                 project_index_context: context.project_index_context.as_deref(),
                 permission_mode: context.permission_mode,
                 has_project: project_root.is_some(),
+                project_name,
+                project_root,
                 tools_available: !tools.is_empty(),
                 provider_id: "chatgpt",
             });
@@ -1132,7 +1139,7 @@ async fn response_json(response: Response, max_bytes: usize) -> Result<Value, Se
     let mut stream = response.bytes_stream();
     let mut body = Vec::new();
     while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(|_| network_error())?;
+        let chunk = chunk.map_err(network_error_with_details)?;
         if body.len().saturating_add(chunk.len()) > max_bytes {
             return Err(invalid_response_error());
         }
@@ -1178,6 +1185,10 @@ fn network_error() -> ServiceError {
     )
 }
 
+fn network_error_with_details(error: reqwest::Error) -> ServiceError {
+    network_error().with_details(error.without_url().to_string())
+}
+
 /// Builds the shared client without following redirects that could replay sensitive request bodies.
 fn build_http_client() -> Result<Client, ServiceError> {
     Client::builder()
@@ -1190,7 +1201,7 @@ fn build_http_client() -> Result<Client, ServiceError> {
         .pool_max_idle_per_host(10)
         .redirect(reqwest::redirect::Policy::none())
         .build()
-        .map_err(|_| network_error())
+        .map_err(network_error_with_details)
 }
 
 fn apply_image_turn_id_header(

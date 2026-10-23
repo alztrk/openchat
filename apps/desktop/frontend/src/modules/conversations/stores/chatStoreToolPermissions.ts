@@ -1,6 +1,5 @@
 import type { StoreApi } from 'zustand';
 
-import { i18n } from '@/localization/i18n';
 import {
   type JsonObject,
   type LocalServiceClient,
@@ -69,7 +68,7 @@ export function createRespondToToolPermissionAction(
       return;
     set({ isRespondingToToolPermission: true, toolPermissionError: null });
     try {
-      await localServiceClient.respondToPermission(request.id, approved, i18n.resolvedLanguage ?? i18n.language);
+      await localServiceClient.respondToPermission(request.id, approved);
       if (get().pendingToolPermissionRequest?.id === request.id) {
         set({
           pendingToolPermissionRequest: null,

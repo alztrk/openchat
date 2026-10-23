@@ -11,19 +11,20 @@ import {
   WriteResult,
 } from './ToolFileResults';
 import { ToolResultNotice } from './ToolSharedComponents';
-import { asRecord, getRequestedToolPath, isTerminalTool, stringValue } from './toolResultUtils';
+import { asRecord, getRequestedToolPath, isTerminalTool, translateToolError } from './toolResultUtils';
 
 export { formatToolPath, getRequestedToolPath } from './toolResultUtils';
 
 interface ToolActivityResultsProps {
   activity: ToolActivity;
+  onOpenFile?(path: string, content: string): void;
 }
 
-export function ToolActivityResults({ activity }: ToolActivityResultsProps) {
+export function ToolActivityResults({ activity, onOpenFile }: ToolActivityResultsProps) {
   const { i18n, t } = useTranslation();
   const output = asRecord(activity.output);
   const requestedPath = getRequestedToolPath(activity);
-  const errorMessage = stringValue(asRecord(output?.error)?.message) ?? stringValue(output?.error);
+  const errorMessage = translateToolError(output, t);
 
   if (activity.status === 'denied' || activity.status === 'cancelled') {
     return (
@@ -32,6 +33,9 @@ export function ToolActivityResults({ activity }: ToolActivityResultsProps) {
         path={requestedPath}
       />
     );
+  }
+  if (activity.name === 'ask_user' && activity.status === 'waitingForUser') {
+    return <ToolResultNotice message={t('toolQuestionReplyInPanel')} />;
   }
   if (activity.status === 'failed' || errorMessage) {
     if (isTerminalTool(activity.name) && output !== null) {
@@ -64,7 +68,7 @@ export function ToolActivityResults({ activity }: ToolActivityResultsProps) {
       return <SearchResult activity={activity} output={output} />;
     case 'read_file':
     case 'read':
-      return <ReadResult output={output} />;
+      return <ReadResult onOpenFile={onOpenFile} output={output} />;
     case 'get_file_info':
       return <FileInfoResult output={output} locale={i18n.language} />;
     case 'write_file':

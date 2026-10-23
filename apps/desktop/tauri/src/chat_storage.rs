@@ -28,7 +28,6 @@ mod attachments;
 mod maintenance;
 mod markdown_export;
 mod migrations;
-mod saved_outputs;
 mod settings;
 mod types;
 
@@ -36,9 +35,14 @@ pub use attachments::*;
 pub use maintenance::*;
 pub use markdown_export::*;
 pub use migrations::*;
-pub use saved_outputs::*;
 pub use settings::*;
 pub use types::*;
+
+#[tauri::command]
+/// Returns the chat database schema version supported by this application build.
+pub fn get_chat_schema_version() -> i64 {
+    CHAT_SCHEMA_VERSION
+}
 
 #[tauri::command]
 /// Checks the local database, applies supported schema migrations, and returns its location.
@@ -126,7 +130,7 @@ pub fn list_conversations() -> Result<Vec<StoredConversation>, ChatStorageError>
         .prepare(
             "SELECT id, title, title_source, provider_id, model_id, connection_id,
                     workspace_id, api_key_connection_id, project_id,
-                    is_pinned, is_archived, created_at, updated_at
+                    is_pinned, is_archived, created_at, updated_at, agent_json
              FROM conversations
              ORDER BY is_pinned DESC, updated_at DESC, id ASC
             ",
@@ -158,13 +162,29 @@ pub fn list_projects() -> Result<Vec<StoredProject>, ChatStorageError> {
                 id: row.get(0)?,
                 name: row.get(1)?,
                 folder_path: row.get(2)?,
+                workspace_roots: Vec::new(),
                 created_at: row.get(3)?,
                 updated_at: row.get(4)?,
             })
         })
         .map_err(|_| ChatStorageError::unavailable())?;
-    rows.collect::<Result<Vec<_>, _>>()
-        .map_err(|_| ChatStorageError::unavailable())
+    let mut projects = rows
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| ChatStorageError::unavailable())?;
+    for project in &mut projects {
+        let mut roots = connection
+            .prepare(
+                "SELECT root_path FROM project_workspace_roots
+                 WHERE project_id = ?1 ORDER BY position ASC, root_id ASC",
+            )
+            .map_err(|_| ChatStorageError::unavailable())?;
+        project.workspace_roots = roots
+            .query_map([&project.id], |row| row.get::<_, String>(0))
+            .map_err(|_| ChatStorageError::unavailable())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|_| ChatStorageError::unavailable())?;
+    }
+    Ok(projects)
 }
 
 #[tauri::command]
@@ -189,14 +209,124 @@ pub fn create_project(input: CreateProjectInput) -> Result<(), ChatStorageError>
         .ok_or_else(ChatStorageError::invalid_input)?
         .to_owned();
     let now = unix_time_milliseconds()?;
-    let connection = open_database()?;
-    connection
+    let mut connection = open_database()?;
+    let transaction = connection
+        .transaction()
+        .map_err(|_| ChatStorageError::unavailable())?;
+    transaction
         .execute(
             "INSERT INTO projects (id, name, folder_path, created_at, updated_at)
              VALUES (?1, ?2, ?3, ?4, ?4)",
             params![id, name, folder_path, now],
         )
         .map_err(|_| ChatStorageError::unavailable())?;
+    transaction
+        .execute(
+            "INSERT INTO project_workspace_roots
+                (root_id, project_id, root_path, position, created_at)
+             VALUES (lower(hex(randomblob(16))), ?1, ?2, 0, ?3)",
+            params![id, folder_path, now],
+        )
+        .map_err(|_| ChatStorageError::unavailable())?;
+    transaction
+        .commit()
+        .map_err(|_| ChatStorageError::unavailable())
+}
+
+#[tauri::command]
+/// Adds a workspace folder from a validated native picker selection.
+///
+/// # Errors
+/// Returns a validation or storage error if the folder is invalid, duplicated, or the workspace
+/// already contains the supported maximum number of folders.
+pub fn add_project_workspace_root(
+    project_id: BoundedText<128>,
+    folder_selection_id: BoundedText<128>,
+) -> Result<(), ChatStorageError> {
+    let project_id = project_id.into_inner();
+    let folder_path = consume_project_folder_selection(&folder_selection_id.into_inner())
+        .map_err(|_| ChatStorageError::invalid_input())?
+        .to_str()
+        .ok_or_else(ChatStorageError::invalid_input)?
+        .to_owned();
+    if !is_safe_identifier(&project_id) {
+        return Err(ChatStorageError::invalid_input());
+    }
+
+    let mut connection = open_database()?;
+    let transaction = connection
+        .transaction()
+        .map_err(|_| ChatStorageError::unavailable())?;
+    let mut statement = transaction
+        .prepare(
+            "SELECT root_path, position FROM project_workspace_roots
+             WHERE project_id = ?1 ORDER BY position ASC",
+        )
+        .map_err(|_| ChatStorageError::unavailable())?;
+    let roots = statement
+        .query_map([&project_id], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+        })
+        .map_err(|_| ChatStorageError::unavailable())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| ChatStorageError::unavailable())?;
+    drop(statement);
+    if roots.is_empty() {
+        return Err(ChatStorageError::invalid_input());
+    }
+    if roots.len() >= 8
+        || roots
+            .iter()
+            .any(|(path, _)| paths_overlap(Path::new(path), Path::new(&folder_path)))
+    {
+        return Err(ChatStorageError::invalid_input());
+    }
+    let position = roots
+        .iter()
+        .map(|(_, position)| *position)
+        .max()
+        .unwrap_or(0)
+        .checked_add(1)
+        .ok_or_else(ChatStorageError::invalid_input)?;
+    let now = unix_time_milliseconds()?;
+    transaction
+        .execute(
+            "INSERT INTO project_workspace_roots
+                (root_id, project_id, root_path, position, created_at)
+             VALUES (lower(hex(randomblob(16))), ?1, ?2, ?3, ?4)",
+            params![project_id, folder_path, position, now],
+        )
+        .map_err(|_| ChatStorageError::unavailable())?;
+    transaction
+        .commit()
+        .map_err(|_| ChatStorageError::unavailable())
+}
+
+#[tauri::command]
+/// Removes one secondary workspace folder without deleting files from disk.
+///
+/// # Errors
+/// Returns a validation or storage error if the root is unknown or is the primary project folder.
+pub fn remove_project_workspace_root(
+    project_id: BoundedText<128>,
+    root_path: BoundedText<4096>,
+) -> Result<(), ChatStorageError> {
+    let project_id = project_id.into_inner();
+    let root_path = root_path.into_inner();
+    if !is_safe_identifier(&project_id) || root_path.trim().is_empty() {
+        return Err(ChatStorageError::invalid_input());
+    }
+    let connection = open_database()?;
+    let removed = connection
+        .execute(
+            "DELETE FROM project_workspace_roots
+             WHERE project_id = ?1 AND root_path = ?2 AND position > 0",
+            params![project_id, root_path],
+        )
+        .map_err(|_| ChatStorageError::unavailable())?;
+    if removed != 1 {
+        return Err(ChatStorageError::invalid_input());
+    }
     Ok(())
 }
 
@@ -316,7 +446,7 @@ pub fn get_conversation(
         .query_row(
             "SELECT id, title, title_source, provider_id, model_id, connection_id,
                     workspace_id, api_key_connection_id, project_id,
-                    is_pinned, is_archived, created_at, updated_at
+                    is_pinned, is_archived, created_at, updated_at, agent_json
              FROM conversations WHERE id = ?1",
             [conversation_id],
             stored_conversation_from_row,
@@ -328,6 +458,18 @@ pub fn get_conversation(
 pub(crate) fn stored_conversation_from_row(
     row: &rusqlite::Row<'_>,
 ) -> rusqlite::Result<StoredConversation> {
+    let agent_json: Option<String> = row.get(13)?;
+    let agent = agent_json
+        .map(|json| {
+            serde_json::from_str(&json).map_err(|error| {
+                rusqlite::Error::FromSqlConversionFailure(
+                    13,
+                    rusqlite::types::Type::Text,
+                    Box::new(error),
+                )
+            })
+        })
+        .transpose()?;
     Ok(StoredConversation {
         id: row.get(0)?,
         title: row.get(1)?,
@@ -338,6 +480,7 @@ pub(crate) fn stored_conversation_from_row(
         workspace_id: row.get(6)?,
         api_key_connection_id: row.get(7)?,
         project_id: row.get(8)?,
+        agent,
         is_pinned: row.get(9)?,
         is_archived: row.get(10)?,
         created_at: row.get(11)?,
@@ -770,14 +913,20 @@ pub fn search_messages(
 /// Returns a validation or storage error.
 pub fn create_conversation(input: CreateConversationInput) -> Result<(), ChatStorageError> {
     validate_conversation_input(&input)?;
+    let agent_json = input
+        .agent
+        .as_ref()
+        .map(serde_json::to_string)
+        .transpose()
+        .map_err(|_| ChatStorageError::invalid_input())?;
     let connection = open_database()?;
     let now = unix_time_milliseconds()?;
     connection
         .execute(
             "INSERT INTO conversations (
                 id, title, title_source, provider_id, model_id, connection_id,
-                workspace_id, api_key_connection_id, project_id, created_at, updated_at
-             ) VALUES (?1, ?2, 'automatic', ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9)",
+                workspace_id, api_key_connection_id, project_id, agent_json, created_at, updated_at
+             ) VALUES (?1, ?2, 'automatic', ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?10)",
             params![
                 input.id.trim(),
                 input.title.trim(),
@@ -787,6 +936,7 @@ pub fn create_conversation(input: CreateConversationInput) -> Result<(), ChatSto
                 input.workspace_id,
                 input.api_key_connection_id,
                 input.project_id,
+                agent_json,
                 now,
             ],
         )
@@ -1285,6 +1435,10 @@ fn validate_conversation_input(input: &CreateConversationInput) -> Result<(), Ch
             .project_id
             .as_deref()
             .is_some_and(|project_id| !is_safe_identifier(project_id))
+        || input
+            .agent
+            .as_ref()
+            .is_some_and(|agent| !is_valid_conversation_agent(agent))
     {
         return Err(ChatStorageError::invalid_input());
     }
@@ -1333,6 +1487,55 @@ fn validate_conversation_input(input: &CreateConversationInput) -> Result<(), Ch
         return Err(ChatStorageError::invalid_input());
     }
     Ok(())
+}
+
+fn is_valid_conversation_agent(agent: &ConversationAgentSnapshot) -> bool {
+    if !is_safe_identifier(&agent.id)
+        || agent.name.trim().is_empty()
+        || agent.name.trim() != agent.name
+        || agent.name.chars().count() > 64
+        || agent.instructions.len() > 16 * 1024
+        || !matches!(
+            agent.response_style,
+            AssistantAgentResponseStyle::Concise
+                | AssistantAgentResponseStyle::Balanced
+                | AssistantAgentResponseStyle::Detailed
+        )
+    {
+        return false;
+    }
+
+    agent.tool_allowlist.as_ref().is_none_or(|tools| {
+        tools
+            .iter()
+            .enumerate()
+            .all(|(index, tool)| is_valid_agent_tool_name(tool) && !tools[..index].contains(tool))
+    })
+}
+
+fn is_valid_agent_tool_name(value: &str) -> bool {
+    if value.is_empty() || value.len() > 64 {
+        return false;
+    }
+    if let Some(rest) = value.strip_prefix("mcp__") {
+        if let Some((server, tool)) = rest.split_once("__") {
+            return (1..=24).contains(&server.len())
+                && server.bytes().all(|byte| {
+                    byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_'
+                })
+                && !tool.is_empty()
+                && tool
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-');
+        }
+        return false;
+    }
+
+    let mut bytes = value.bytes();
+    bytes.next().is_some_and(|first| first.is_ascii_lowercase())
+        && bytes.all(|byte| {
+            byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_' || byte == b'-'
+        })
 }
 
 fn validate_model_favorite_input(input: &SetModelFavoriteInput) -> Result<(), ChatStorageError> {
@@ -1431,6 +1634,26 @@ pub(crate) fn is_safe_identifier(value: &str) -> bool {
         && value
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-')
+}
+
+fn paths_overlap(left: &Path, right: &Path) -> bool {
+    let left = normalize_path(left);
+    let right = normalize_path(right);
+    path_contains(&left, &right) || path_contains(&right, &left)
+}
+
+fn normalize_path(path: &Path) -> String {
+    path.to_string_lossy()
+        .replace('\\', "/")
+        .trim_end_matches('/')
+        .to_lowercase()
+}
+
+fn path_contains(parent: &str, candidate: &str) -> bool {
+    candidate == parent
+        || candidate
+            .strip_prefix(parent)
+            .is_some_and(|suffix| suffix.starts_with('/'))
 }
 
 fn is_optional_safe_identifier(value: Option<&str>) -> bool {

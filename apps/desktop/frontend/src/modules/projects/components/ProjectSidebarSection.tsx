@@ -160,6 +160,14 @@ export function ProjectSidebarSection({
                         size={15}
                       />
                       <span className="sidebar-project-title min-w-0 flex-1 truncate font-medium">{project.name}</span>
+                      {project.workspaceRoots.length > 1 ? (
+                        <span
+                          className="shrink-0 text-xs text-secondary-text/70"
+                          title={t('projectWorkspaceRootCount', { count: project.workspaceRoots.length })}
+                        >
+                          +{project.workspaceRoots.length - 1}
+                        </span>
+                      ) : null}
                       {projectConversations.length > 0 ? (
                         <span className="shrink-0 text-xs text-secondary-text/70 transition-opacity duration-quick group-focus-within:opacity-0 group-hover:opacity-0">
                           {projectConversations.length}

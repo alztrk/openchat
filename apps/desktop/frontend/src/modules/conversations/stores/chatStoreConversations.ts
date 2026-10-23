@@ -8,7 +8,7 @@ import {
   renameConversation as renameConversationStorage,
 } from '@/modules/conversations/data/chatStorage';
 import { readProjectDefaultModelPreference } from '@/modules/projects/data/projectPreferences';
-import { useAssistantProfilesStore } from '@/modules/settings/stores/assistantProfilesStore';
+import type { AssistantAgentSnapshot } from '@/modules/settings/data/assistantProfiles';
 import {
   type DefaultModelPreference,
   formatModelRouteKey,
@@ -25,6 +25,70 @@ type StoreSet = (partial: Partial<ChatState> | ((state: ChatState) => Partial<Ch
 let messageLoadGeneration = 0;
 
 export function createConversationsActions(set: StoreSet, get: StoreGet) {
+  const beginNewChat = (
+    projectId: string | null,
+    agent: AssistantAgentSnapshot | null,
+    preserveSelectedModel: boolean,
+  ): void => {
+    messageLoadGeneration++;
+    const current = get();
+    if (current.temporaryChat) {
+      set({ errorCode: current.isSending ? 'temporaryChatStopBeforeLeaving' : 'temporaryChatExitRequired' });
+      return;
+    }
+    let projectPreference: DefaultModelPreference | null = null;
+    let projectPreferenceInvalid = false;
+    if (projectId !== null) {
+      try {
+        projectPreference = readProjectDefaultModelPreference(projectId);
+      } catch {
+        projectPreferenceInvalid = true;
+      }
+    }
+    let lastSelectedPreference: DefaultModelPreference | null = null;
+    try {
+      lastSelectedPreference = readLastSelectedModelPreference();
+    } catch (cause) {
+      globalThis.reportError(new Error('The last selected model preference could not be read.', { cause }));
+    }
+    const preservedModel = preserveSelectedModel
+      ? current.models.find(
+          (model) =>
+            model.key === current.selectedModelKey &&
+            !current.hiddenModelKeys.includes(modelRouteKey(model)),
+        )
+      : undefined;
+    const defaultPreference = projectPreferenceInvalid
+      ? null
+      : (projectPreference ?? lastSelectedPreference ?? current.defaultModel);
+    const defaultModel = defaultPreference
+      ? current.models.find(
+          (model) =>
+            modelRouteKey(model) === formatModelRouteKey(defaultPreference) &&
+            !current.hiddenModelKeys.includes(modelRouteKey(model)),
+        )
+      : undefined;
+    set({
+      activeConversationId: null,
+      temporaryChat: null,
+      selectedReasoningEffort: null,
+      activeGoal: null,
+      goalStatus: 'ready',
+      isChangingGoal: false,
+      pendingProjectId: projectId,
+      pendingAgentSnapshot: agent,
+      messages: [],
+      personalMemoryExcludedForNewConversation: false,
+      searchTargetMessageId: null,
+      searchHighlightMessageId: null,
+      searchHighlightQuery: null,
+      isLoadingMessages: false,
+      selectedModelKey: preservedModel?.key ?? defaultModel?.key ?? null,
+      errorCode: projectPreferenceInvalid ? 'projectDefaultModelLoadFailed' : null,
+      errorMessage: null,
+    });
+  };
+
   return {
     async refreshConversations(): Promise<void> {
       const conversations = await listConversations();
@@ -47,11 +111,9 @@ export function createConversationsActions(set: StoreSet, get: StoreGet) {
           searchHighlightQuery: null,
           isLoadingMessages: false,
         });
-        await get().refreshSavedOutputMessageKeys();
         return;
       }
       set({ conversations });
-      await get().refreshSavedOutputMessageKeys();
     },
 
     async renameConversation(conversationId: string, title: string): Promise<void> {
@@ -113,6 +175,7 @@ export function createConversationsActions(set: StoreSet, get: StoreGet) {
         goalStatus: 'ready',
         isChangingGoal: false,
         pendingProjectId: null,
+        pendingAgentSnapshot: null,
         messages: [],
         personalMemoryExcludedForNewConversation: false,
         searchTargetMessageId: null,
@@ -120,6 +183,7 @@ export function createConversationsActions(set: StoreSet, get: StoreGet) {
         searchHighlightQuery: null,
         isLoadingMessages: false,
         errorCode: null,
+        errorMessage: null,
       });
     },
 
@@ -172,9 +236,11 @@ export function createConversationsActions(set: StoreSet, get: StoreGet) {
         goalStatus: 'loading',
         isChangingGoal: false,
         pendingProjectId: null,
+        pendingAgentSnapshot: null,
         messages: [],
         isLoadingMessages: true,
         errorCode: null,
+        errorMessage: null,
         searchTargetMessageId: targetMessageId,
         searchHighlightMessageId: null,
         searchHighlightQuery: targetQuery,
@@ -192,6 +258,7 @@ export function createConversationsActions(set: StoreSet, get: StoreGet) {
               goalStatus: 'ready',
               searchTargetMessageId: null,
               errorCode: targetMessageId ? 'searchMessageUnavailable' : 'messageHistoryLoadFailed',
+              errorMessage: null,
             });
             return;
           }
@@ -206,6 +273,7 @@ export function createConversationsActions(set: StoreSet, get: StoreGet) {
             goalStatus: 'ready',
             searchTargetMessageId: null,
             errorCode: targetMessageId ? 'searchMessageUnavailable' : 'messageHistoryLoadFailed',
+            errorMessage: null,
           });
           return;
         }
@@ -225,6 +293,7 @@ export function createConversationsActions(set: StoreSet, get: StoreGet) {
           isLoadingMessages: false,
           searchTargetMessageId: targetWasFound ? targetMessageId : null,
           errorCode: targetWasFound ? null : 'searchMessageUnavailable',
+          errorMessage: null,
         });
         void get().refreshActiveGoal(id);
       } catch {
@@ -234,6 +303,7 @@ export function createConversationsActions(set: StoreSet, get: StoreGet) {
           goalStatus: 'ready',
           searchTargetMessageId: null,
           errorCode: targetMessageId ? 'searchMessageUnavailable' : 'messageHistoryLoadFailed',
+          errorMessage: null,
         });
       }
     },
@@ -251,6 +321,7 @@ export function createConversationsActions(set: StoreSet, get: StoreGet) {
         searchHighlightMessageId: found ? targetMessageId : null,
         searchHighlightQuery: found ? get().searchHighlightQuery : null,
         errorCode: found ? null : 'searchMessageUnavailable',
+        errorMessage: null,
       });
     },
 
@@ -262,57 +333,11 @@ export function createConversationsActions(set: StoreSet, get: StoreGet) {
     },
 
     startNewChat(projectId: string | null = null): void {
-      messageLoadGeneration++;
-      const current = get();
-      if (current.temporaryChat) {
-        set({ errorCode: current.isSending ? 'temporaryChatStopBeforeLeaving' : 'temporaryChatExitRequired' });
-        return;
-      }
-      let projectPreference: DefaultModelPreference | null = null;
-      let projectPreferenceInvalid = false;
-      if (projectId !== null) {
-        try {
-          projectPreference = readProjectDefaultModelPreference(projectId);
-        } catch {
-          projectPreferenceInvalid = true;
-        }
-      }
-      let lastSelectedPreference: DefaultModelPreference | null = null;
-      try {
-        lastSelectedPreference = readLastSelectedModelPreference();
-      } catch (cause) {
-        globalThis.reportError(new Error('The last selected model preference could not be read.', { cause }));
-      }
-      const profilesStore = useAssistantProfilesStore.getState();
-      if (profilesStore.loadState !== 'ready') profilesStore.initialize();
-      const profilePreference = useAssistantProfilesStore.getState().getActiveProfile()?.preferredModel ?? null;
-      const defaultPreference = projectPreferenceInvalid
-        ? null
-        : (projectPreference ?? profilePreference ?? lastSelectedPreference ?? current.defaultModel);
-      const defaultModel = defaultPreference
-        ? current.models.find(
-            (model) =>
-              modelRouteKey(model) === formatModelRouteKey(defaultPreference) &&
-              !current.hiddenModelKeys.includes(modelRouteKey(model)),
-          )
-        : undefined;
-      set({
-        activeConversationId: null,
-        temporaryChat: null,
-        selectedReasoningEffort: null,
-        activeGoal: null,
-        goalStatus: 'ready',
-        isChangingGoal: false,
-        pendingProjectId: projectId,
-        messages: [],
-        personalMemoryExcludedForNewConversation: false,
-        searchTargetMessageId: null,
-        searchHighlightMessageId: null,
-        searchHighlightQuery: null,
-        isLoadingMessages: false,
-        selectedModelKey: defaultModel?.key ?? null,
-        errorCode: projectPreferenceInvalid ? 'projectDefaultModelLoadFailed' : null,
-      });
+      beginNewChat(projectId, null, false);
+    },
+
+    startNewChatWithAgent(agent: AssistantAgentSnapshot): void {
+      beginNewChat(null, agent, true);
     },
   };
 }

@@ -35,6 +35,115 @@ pub(super) struct StreamedTurn {
     pub(super) provider_request_usage: Option<ProviderRequestUsage>,
 }
 
+async fn send_reasoning_summaries(
+    request: &ResponseStreamRequest<'_>,
+    summaries: Vec<ReasoningSummary>,
+) -> Result<(), ServiceError> {
+    request
+        .events
+        .send(
+            &ChatStreamEvent::ReasoningSummariesUpdated {
+                snapshot: ChatStreamSnapshot::new(
+                    request.conversation_id,
+                    request.message_id,
+                    request.content,
+                    request.created_at,
+                ),
+                summaries,
+            }
+            .into_rpc(request.request_id.clone()),
+        )
+        .await
+        .map_err(|_| protocol_error())
+}
+
+async fn update_reasoning_summary(
+    request: &mut ResponseStreamRequest<'_>,
+    item_id: &str,
+    summary_index: u64,
+    text: Option<&str>,
+    append_text: bool,
+    is_complete: bool,
+) -> Result<(), ServiceError> {
+    let summary_id = format!(
+        "reasoning_{}_{}:{}",
+        request.message_id, item_id, summary_index
+    );
+    let elapsed_microseconds =
+        i64::try_from(request.started.elapsed().as_micros()).unwrap_or(i64::MAX);
+    let summaries = {
+        let summaries = &mut *request.reasoning_summaries;
+        let position = match summaries
+            .iter()
+            .position(|summary| summary.id == summary_id)
+        {
+            Some(position) => position,
+            None => {
+                summaries.push(ReasoningSummary {
+                    id: summary_id,
+                    content: String::new(),
+                    elapsed_microseconds,
+                    is_complete: false,
+                });
+                summaries.len().saturating_sub(1)
+            }
+        };
+        let Some(summary) = summaries.get_mut(position) else {
+            return Err(invalid_response_error());
+        };
+        if let Some(text) = text {
+            if append_text {
+                summary.content.push_str(text);
+            } else {
+                summary.content = text.to_owned();
+            }
+        }
+        summary.elapsed_microseconds = elapsed_microseconds;
+        summary.is_complete |= is_complete;
+        summaries.clone()
+    };
+    send_reasoning_summaries(request, summaries).await
+}
+
+async fn finish_reasoning_summaries(
+    request: &mut ResponseStreamRequest<'_>,
+) -> Result<(), ServiceError> {
+    if request.route.provider_id.as_deref() != Some("chatgpt_api") {
+        return Ok(());
+    }
+    let elapsed_microseconds =
+        i64::try_from(request.started.elapsed().as_micros()).unwrap_or(i64::MAX);
+    let summaries = {
+        let summaries = &mut *request.reasoning_summaries;
+        let mut changed = false;
+        for summary in summaries.iter_mut().filter(|summary| !summary.is_complete) {
+            summary.is_complete = true;
+            summary.elapsed_microseconds = elapsed_microseconds;
+            changed = true;
+        }
+        changed.then(|| summaries.clone())
+    };
+    if let Some(summaries) = summaries {
+        send_reasoning_summaries(request, summaries).await?;
+    }
+    Ok(())
+}
+
+async fn append_legacy_reasoning(
+    request: &mut ResponseStreamRequest<'_>,
+    reasoning: &str,
+) -> Result<(), ServiceError> {
+    request.reasoning_content.push_str(reasoning);
+    let summary = ReasoningSummary {
+        id: format!("reasoning_{}", request.message_id),
+        content: request.reasoning_content.clone(),
+        elapsed_microseconds: i64::try_from(request.started.elapsed().as_micros())
+            .unwrap_or(i64::MAX),
+        is_complete: false,
+    };
+    send_reasoning_summaries(request, vec![summary]).await
+}
+
 fn request_contains_tool_payload(body: &Value) -> bool {
     let has_tool_definitions = body
         .get("tools")
@@ -79,7 +188,7 @@ pub(super) async fn receive(
 }
 
 async fn receive_with_client(
-    request: ResponseStreamRequest<'_>,
+    mut request: ResponseStreamRequest<'_>,
     client: &reqwest::Client,
 ) -> Result<StreamedTurn, ServiceError> {
     let mut provider_request = client.post(request.route.chat_url.as_str());
@@ -134,10 +243,12 @@ async fn receive_with_client(
             let _ = changed;
             return Err(cancelled_error());
         }
-        response = provider_request
+            response = provider_request
             .header(ACCEPT, "text/event-stream")
             .json(request.body)
-            .send() => response.map_err(|_| connection_error(request.route))?,
+            .send() => response.map_err(|error| {
+                connection_error(request.route, error.without_url().to_string())
+            })?,
     };
     if !response.status().is_success() {
         let status = response.status();
@@ -153,7 +264,9 @@ async fn receive_with_client(
             ));
         }
         if is_local_runtime(request.route.provider_id.as_deref()) {
-            return Err(local_inference_error());
+            return Err(
+                local_inference_error().with_details(format!("HTTP status {}", status.as_u16()))
+            );
         }
         return Err(chat_request_http_error(
             status,
@@ -194,7 +307,9 @@ async fn receive_with_client(
             chunk = stream.next() => chunk,
         };
         if let Some(chunk) = chunk {
-            let chunk = chunk.map_err(|_| connection_error(request.route))?;
+            let chunk = chunk.map_err(|error| {
+                connection_error(request.route, error.without_url().to_string())
+            })?;
             request.response_budget.consume(chunk.len())?;
             pending.extend_from_slice(&chunk);
             if pending.len() > MAX_EVENT_BYTES {
@@ -264,10 +379,10 @@ async fn receive_with_client(
                                 .and_then(Value::as_u64)
                                 .and_then(|index| usize::try_from(index).ok())
                                 .ok_or_else(invalid_response_error)?;
-                            if tool_calls.len() >= crate::tools::MAX_TOOL_CALLS_PER_TURN
+                            if tool_calls.len() >= crate::tools::MAX_TOOL_CALLS_PER_RESPONSE
                                 && !tool_calls.contains_key(&index)
                             {
-                                return Err(crate::tools::tool_call_limit_error());
+                                return Err(crate::tools::tool_response_limit_error());
                             }
                             let call = tool_calls.entry(index).or_default();
                             call.id = block
@@ -412,36 +527,55 @@ async fn receive_with_client(
                             .map_err(|_| protocol_error())?;
                     }
                     ResponsesStreamEffect::ReasoningDelta(reasoning) => {
-                        request.reasoning_content.push_str(&reasoning);
-                        let summary = ReasoningSummary {
-                            id: format!("reasoning_{}", request.message_id),
-                            content: request.reasoning_content.clone(),
-                            elapsed_microseconds: request.started.elapsed().as_micros() as i64,
-                            is_complete: false,
-                        };
-                        let _ = request
-                            .events
-                            .send(
-                                &ChatStreamEvent::ReasoningSummariesUpdated {
-                                    snapshot: ChatStreamSnapshot::new(
-                                        request.conversation_id,
-                                        request.message_id,
-                                        request.content,
-                                        request.created_at,
-                                    ),
-                                    summaries: vec![summary],
-                                }
-                                .into_rpc(request.request_id.clone()),
+                        if request.route.provider_id.as_deref() != Some("chatgpt_api") {
+                            append_legacy_reasoning(&mut request, &reasoning).await?;
+                        }
+                    }
+                    ResponsesStreamEffect::ReasoningSummaryDelta {
+                        item_id,
+                        summary_index,
+                        delta,
+                    } => {
+                        if request.route.provider_id.as_deref() == Some("chatgpt_api") {
+                            update_reasoning_summary(
+                                &mut request,
+                                &item_id,
+                                summary_index,
+                                Some(&delta),
+                                true,
+                                false,
                             )
-                            .await;
+                            .await?;
+                        } else {
+                            append_legacy_reasoning(&mut request, &delta).await?;
+                        }
+                    }
+                    ResponsesStreamEffect::ReasoningSummaryDone {
+                        item_id,
+                        summary_index,
+                        text,
+                    } => {
+                        if request.route.provider_id.as_deref() == Some("chatgpt_api") {
+                            update_reasoning_summary(
+                                &mut request,
+                                &item_id,
+                                summary_index,
+                                text.as_deref(),
+                                false,
+                                true,
+                            )
+                            .await?;
+                        }
                     }
                     ResponsesStreamEffect::UsageTokens(tokens) => {
                         *request.output_tokens =
                             Some(request.output_tokens.unwrap_or(0).saturating_add(tokens));
                         saw_done = true;
+                        finish_reasoning_summaries(&mut request).await?;
                     }
                     ResponsesStreamEffect::Completed => {
                         saw_done = true;
+                        finish_reasoning_summaries(&mut request).await?;
                     }
                     ResponsesStreamEffect::Failed(msg) => {
                         return Err(ServiceError::new("model_response_failed", msg, false));
@@ -841,15 +975,16 @@ fn append_provider_citation_anchors(
     }
 }
 
-fn connection_error(route: &super::super::route::ChatRoute) -> ServiceError {
+fn connection_error(route: &super::super::route::ChatRoute, details: String) -> ServiceError {
     if is_local_runtime(route.provider_id.as_deref()) {
         ServiceError::new(
             "local_engine_runtime_unavailable",
             "The local inference server stopped responding. Restart the model and try again.",
             true,
         )
+        .with_details(details)
     } else {
-        network_error()
+        network_error().with_details(details)
     }
 }
 
@@ -1016,6 +1151,7 @@ mod tests {
         result: Result<StreamedTurn, ServiceError>,
         content: String,
         reasoning: String,
+        reasoning_summaries: Vec<crate::provider_schema::ReasoningSummary>,
         input_tokens: Option<i64>,
         output_tokens: Option<i64>,
         request: Vec<u8>,
@@ -1043,8 +1179,42 @@ mod tests {
         uses_responses_api: bool,
         response_budget: &mut ProviderResponseBudget,
     ) -> FixtureOutcome {
+        run_fixture_with_provider_budget(
+            "gemini",
+            status,
+            response_body,
+            uses_responses_api,
+            response_budget,
+        )
+        .await
+    }
+
+    async fn run_fixture_for_provider(
+        provider_id: &str,
+        status: u16,
+        response_body: Vec<u8>,
+        uses_responses_api: bool,
+    ) -> FixtureOutcome {
+        let mut response_budget = ProviderResponseBudget::default();
+        run_fixture_with_provider_budget(
+            provider_id,
+            status,
+            response_body,
+            uses_responses_api,
+            &mut response_budget,
+        )
+        .await
+    }
+
+    async fn run_fixture_with_provider_budget(
+        provider_id: &str,
+        status: u16,
+        response_body: Vec<u8>,
+        uses_responses_api: bool,
+        response_budget: &mut ProviderResponseBudget,
+    ) -> FixtureOutcome {
         let (url, server) = spawn_fixture_server(status, response_body).await;
-        let mut route = route("gemini");
+        let mut route = route(provider_id);
         route.chat_url = url;
         route.is_free = false;
         route.uses_responses_api = uses_responses_api;
@@ -1080,6 +1250,7 @@ mod tests {
         let (_cancel_sender, mut cancellation) = watch::channel(false);
         let mut content = String::new();
         let mut reasoning = String::new();
+        let mut reasoning_summaries = Vec::new();
         let mut output_tokens = None;
         let mut input_tokens = None;
         let request_id = json!("fixture-request");
@@ -1096,6 +1267,7 @@ mod tests {
                 created_at: 1,
                 content: &mut content,
                 reasoning_content: &mut reasoning,
+                reasoning_summaries: &mut reasoning_summaries,
                 output_tokens: &mut output_tokens,
                 input_tokens: &mut input_tokens,
                 started: Instant::now(),
@@ -1114,11 +1286,83 @@ mod tests {
             result,
             content,
             reasoning,
+            reasoning_summaries,
             input_tokens,
             output_tokens,
             request,
             events: emitted_events,
         }
+    }
+
+    #[tokio::test]
+    async fn openai_api_surfaces_summary_groups_and_ignores_reasoning_text() {
+        let mut response = Vec::new();
+        response.extend(sse_event(
+            json!({"type": "response.reasoning_text.delta", "delta": "private reasoning"}),
+            false,
+        ));
+        response.extend(sse_event(
+            json!({
+                "type": "response.reasoning_summary_text.delta",
+                "item_id": "rs_item",
+                "summary_index": 0,
+                "delta": "First summary"
+            }),
+            false,
+        ));
+        response.extend(sse_event(
+            json!({
+                "type": "response.reasoning_summary_text.delta",
+                "item_id": "rs_item",
+                "summary_index": 1,
+                "delta": "Second summary"
+            }),
+            false,
+        ));
+        response.extend(sse_event(
+            json!({
+                "type": "response.reasoning_summary_text.done",
+                "item_id": "rs_item",
+                "summary_index": 0,
+                "text": "First summary"
+            }),
+            false,
+        ));
+        response.extend(sse_event(
+            json!({
+                "type": "response.reasoning_summary_part.done",
+                "item_id": "rs_item",
+                "summary_index": 1,
+                "part": {"type": "summary_text", "text": "Second summary"}
+            }),
+            false,
+        ));
+        response.extend(sse_event(
+            json!({"type": "response.output_text.delta", "delta": "Final answer"}),
+            false,
+        ));
+        response.extend(sse_event(
+            json!({
+                "type": "response.completed",
+                "response": {"output": [], "usage": {"output_tokens": 1}}
+            }),
+            true,
+        ));
+
+        let outcome = run_fixture_for_provider("chatgpt_api", 200, response, true).await;
+
+        assert!(outcome.result.is_ok());
+        assert_eq!(outcome.content, "Final answer");
+        assert!(outcome.reasoning.is_empty());
+        assert_eq!(outcome.reasoning_summaries.len(), 2);
+        assert_eq!(outcome.reasoning_summaries[0].content, "First summary");
+        assert_eq!(outcome.reasoning_summaries[1].content, "Second summary");
+        assert!(
+            outcome
+                .reasoning_summaries
+                .iter()
+                .all(|summary| summary.is_complete)
+        );
     }
 
     async fn receive_for_test(
@@ -1567,11 +1811,11 @@ mod tests {
     #[test]
     fn identifies_local_runtime_disconnects_separately_from_provider_network_errors() {
         assert_eq!(
-            connection_error(&route("llama_cpp")).code,
+            connection_error(&route("llama_cpp"), "connection reset".to_owned()).code,
             "local_engine_runtime_unavailable"
         );
         assert_eq!(
-            connection_error(&route("opencode")).code,
+            connection_error(&route("opencode"), "connection reset".to_owned()).code,
             "network_unavailable"
         );
     }
@@ -1876,6 +2120,7 @@ mod tests {
         let body = json!({"model": "test-model", "messages": []});
         let mut content = String::new();
         let mut reasoning = String::new();
+        let mut reasoning_summaries = Vec::new();
         let mut output_tokens = None;
         let mut input_tokens = None;
         let request_id = json!("fixture-request");
@@ -1893,6 +2138,7 @@ mod tests {
                 created_at: 1,
                 content: &mut content,
                 reasoning_content: &mut reasoning,
+                reasoning_summaries: &mut reasoning_summaries,
                 output_tokens: &mut output_tokens,
                 input_tokens: &mut input_tokens,
                 started: Instant::now(),
@@ -1968,6 +2214,7 @@ mod tests {
         let body = json!({"model": "test-model", "messages": []});
         let mut content = String::new();
         let mut reasoning = String::new();
+        let mut reasoning_summaries = Vec::new();
         let mut output_tokens = None;
         let mut input_tokens = None;
         let request_id = json!("fixture-request");
@@ -1985,6 +2232,7 @@ mod tests {
                 created_at: 1,
                 content: &mut content,
                 reasoning_content: &mut reasoning,
+                reasoning_summaries: &mut reasoning_summaries,
                 output_tokens: &mut output_tokens,
                 input_tokens: &mut input_tokens,
                 started: Instant::now(),
@@ -2028,6 +2276,7 @@ mod tests {
         let body = json!({"model": "test-model", "messages": []});
         let mut content = String::new();
         let mut reasoning = String::new();
+        let mut reasoning_summaries = Vec::new();
         let mut output_tokens = None;
         let mut input_tokens = None;
         let request_id = json!("fixture-request");
@@ -2045,6 +2294,7 @@ mod tests {
                 created_at: 1,
                 content: &mut content,
                 reasoning_content: &mut reasoning,
+                reasoning_summaries: &mut reasoning_summaries,
                 output_tokens: &mut output_tokens,
                 input_tokens: &mut input_tokens,
                 started: Instant::now(),

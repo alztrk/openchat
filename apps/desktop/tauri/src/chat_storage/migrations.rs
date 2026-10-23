@@ -2,7 +2,7 @@
 
 use rusqlite::Connection;
 
-pub const CHAT_SCHEMA_VERSION: i64 = 20;
+pub const CHAT_SCHEMA_VERSION: i64 = 22;
 
 /// Applies forward schema migrations to the chat database up to `CHAT_SCHEMA_VERSION`.
 ///
@@ -292,6 +292,30 @@ pub fn migrate_chat_schema(connection: &mut Connection) -> rusqlite::Result<()> 
                 ON messages(conversation_id, created_at ASC, id ASC);",
         )?;
         transaction.pragma_update(None, "user_version", 20)?;
+    }
+    if version < 21 {
+        transaction.execute_batch(
+            "CREATE TABLE IF NOT EXISTS project_workspace_roots (
+                root_id TEXT PRIMARY KEY NOT NULL,
+                project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                root_path TEXT NOT NULL,
+                position INTEGER NOT NULL CHECK (position >= 0),
+                created_at INTEGER NOT NULL,
+                UNIQUE (project_id, position)
+             );
+             CREATE INDEX IF NOT EXISTS idx_project_workspace_roots_project
+                ON project_workspace_roots(project_id, position);
+             INSERT OR IGNORE INTO project_workspace_roots
+                (root_id, project_id, root_path, position, created_at)
+             SELECT lower(hex(randomblob(16))), id, folder_path, 0, created_at
+             FROM projects;",
+        )?;
+        transaction.pragma_update(None, "user_version", 21)?;
+        version = 21;
+    }
+    if version < 22 {
+        add_column(&transaction, "conversations", "agent_json", "TEXT")?;
+        transaction.pragma_update(None, "user_version", 22)?;
     }
     transaction.commit()
 }

@@ -160,7 +160,7 @@ export function ApiKeyProvidersSection({
   onChanged,
   onChatGptApiKeyFormToggle,
 }: ApiKeyProvidersSectionProps) {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const chatGptApiAddRoute: CredentialRoute = {
     kind: 'chatgpt',
     connectionId: 'new',
@@ -413,7 +413,7 @@ export function ApiKeyProvidersSection({
     setCustomDialogError(null);
     setFeedback(null);
     try {
-      await saveCustomProviderRecord(draft, i18n.resolvedLanguage ?? i18n.language);
+      await saveCustomProviderRecord(draft);
       setEditingCustomProvider(null);
       clearRequestOutcome(key, { providerId: draft.id, connectionId: draft.id, workspaceId: null });
       await reloadStatus();

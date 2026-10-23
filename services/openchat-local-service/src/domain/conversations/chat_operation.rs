@@ -3,7 +3,7 @@
 //! These types pass resolved conversation, model, provider, permission, and
 //! cancellation state between RPC orchestration and provider execution.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 use tokio::sync::watch;
@@ -71,6 +71,10 @@ pub struct ChatSendContext<'a> {
     pub project_index_context: Option<String>,
     /// Canonical project root used to scope project tools, if any.
     pub project_root: Option<&'a Path>,
+    /// Display name of the attached project, when available.
+    pub project_name: Option<&'a str>,
+    /// Additional canonical roots selected for this project's workspace.
+    pub workspace_roots: Vec<PathBuf>,
     /// Application data root used by local conversation and tool storage.
     pub data_root: &'a Path,
     /// Local storage adapter used by this operation.

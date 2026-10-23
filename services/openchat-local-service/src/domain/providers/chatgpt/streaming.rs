@@ -18,8 +18,8 @@ use super::response_parser::{
 };
 use super::{
     CHATGPT_CODEX_BASE, ChatGptService, MAX_STREAM_EVENT_BYTES, StreamRequest,
-    TemporaryResponseContext, database_error, http_error, invalid_response_error, network_error,
-    now_unix_millis, protocol_error,
+    TemporaryResponseContext, database_error, http_error, invalid_response_error,
+    network_error_with_details, now_unix_millis, protocol_error,
 };
 use crate::{
     chat_operation::ChatSendContext,
@@ -65,6 +65,7 @@ impl ChatGptService {
             project_skills,
             project_index_context,
             project_root,
+            workspace_roots,
             data_root,
             storage,
             permission_mode,
@@ -154,6 +155,7 @@ impl ChatGptService {
             response_tool_names(&payload),
             tool_permission_rules,
         )
+        .with_workspace_roots(workspace_roots)
         .with_chat_service(self.as_ref().clone())
         .with_subagent_models(available_subagent_models)
         .with_subagent_tool_definitions(tool_definitions);
@@ -389,7 +391,7 @@ impl ChatGptService {
                 let Some(chunk) = next else { break };
                 let chunk = match chunk {
                     Ok(chunk) => chunk,
-                    Err(_) => {
+                    Err(error) => {
                         self.record_chatgpt_event(
                             "request_failed",
                             "responses",
@@ -407,7 +409,7 @@ impl ChatGptService {
                             output_tokens,
                             elapsed: Some(started.elapsed()),
                         })?;
-                        return Err(network_error());
+                        return Err(network_error_with_details(error));
                     }
                 };
                 if let Err(error) = response_budget.consume(chunk.len()) {
@@ -653,7 +655,7 @@ impl ChatGptService {
                     return Err(invalid_response_error());
                 };
                 input.push(goals::responses_continuation_input());
-                tool_executor.reset_turn_limits();
+                tool_executor.reset_turn_state();
                 operation = "chat";
                 continue 'model_turn;
             }
@@ -661,18 +663,7 @@ impl ChatGptService {
                 && goal.is_none()
                 && goals::split_control_calls(&tool_calls).1.is_empty()
             {
-                if let Err(error) = tool_executor.begin_round(&tool_calls) {
-                    self.persist_terminal_message(AssistantMessageWrite {
-                        conversation_id,
-                        message_id: &message_id,
-                        content: &content,
-                        status: "failed",
-                        created_at_unix_ms: created_at,
-                        output_tokens,
-                        elapsed: Some(started.elapsed()),
-                    })?;
-                    return Err(error);
-                }
+                tool_executor.begin_round(&tool_calls);
                 let mut results = Vec::with_capacity(tool_calls.len());
                 for call in &tool_calls {
                     let snapshot =
@@ -836,18 +827,7 @@ impl ChatGptService {
                     })?;
                     return Err(error);
                 }
-                if let Err(error) = tool_executor.begin_round(&regular_calls) {
-                    self.persist_terminal_message(AssistantMessageWrite {
-                        conversation_id,
-                        message_id: &message_id,
-                        content: &content,
-                        status: "failed",
-                        created_at_unix_ms: created_at,
-                        output_tokens,
-                        elapsed: Some(started.elapsed()),
-                    })?;
-                    return Err(error);
-                }
+                tool_executor.begin_round(&regular_calls);
                 let starting_goal = goal.is_none()
                     && control_calls
                         .iter()
@@ -1034,9 +1014,19 @@ impl ChatGptService {
                         "call_id": call.id,
                         "output": output
                     }));
+                    if let Some(image_url) = tool_executor.take_computer_use_image(&call.id).await {
+                        input.push(json!({
+                            "type": "message",
+                            "role": "user",
+                            "content": [{
+                                "type": "input_image",
+                                "image_url": image_url
+                            }]
+                        }));
+                    }
                 }
                 if !control_calls.is_empty() {
-                    tool_executor.reset_turn_limits();
+                    tool_executor.reset_turn_state();
                 }
                 operation = "tool_follow_up";
                 continue 'model_turn;
@@ -1324,7 +1314,7 @@ impl ChatGptService {
                 chunk = body_stream.next() => chunk,
             };
             let Some(chunk) = chunk else { break };
-            let chunk = chunk.map_err(|_| network_error())?;
+            let chunk = chunk.map_err(network_error_with_details)?;
             response_budget.consume(chunk.len())?;
             pending_bytes.extend_from_slice(&chunk);
             if pending_bytes.len() > MAX_STREAM_EVENT_BYTES {

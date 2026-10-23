@@ -9,11 +9,16 @@ import { findInChatMatches, type InChatFilterType } from '@/modules/conversation
 import { getSidebarDraggingConversationId } from '@/modules/conversations/data/sidebarPreferences';
 import { useChatSession } from '@/modules/conversations/hooks/useChatSession';
 import { useChatStore } from '@/modules/conversations/stores/chatStore';
-import { upsertMessage } from '@/modules/conversations/stores/chatStoreUtils';
+import { isSameRoute, upsertMessage } from '@/modules/conversations/stores/chatStoreUtils';
 import { modelRouteKey } from '@/modules/providers/data/modelPreferences';
 import { isObject } from '@/shared/utils/json';
 import { ChatComposer } from './ChatComposer';
-import { ChatFileChangesPanel, type RightWorkspaceTab } from './ChatFileChangesPanel';
+import {
+  ChatFileChangesPanel,
+  type RightWorkspaceTab,
+  type WorkspaceFileRequest,
+  type WorkspaceFileSelection,
+} from './ChatFileChangesPanel';
 import { ConversationEmptyState } from './ConversationEmptyState';
 import { EditMessageBranchDialog } from './EditMessageBranchDialog';
 import { GoalStatusBar } from './GoalStatusBar';
@@ -21,7 +26,6 @@ import { InChatSearchBar } from './InChatSearchBar';
 import { MessageList } from './MessageList';
 import { parseToolActivities } from './message/messageData';
 import { ToolPermissionCard } from './ToolPermissionCard';
-import { UserQuestionPanel } from './UserQuestionPanel';
 
 function isChatMessage(value: unknown): value is ChatMessage {
   return isObject(value) && typeof value.id === 'string' && typeof value.conversationId === 'string';
@@ -51,6 +55,7 @@ export interface ConversationPaneProps {
   isRightPanelOpen?: boolean;
   onToggleRightPanel?(): void;
   onOpenRightPanel?(tab?: RightWorkspaceTab): void;
+  onOpenWorkspaceFile?(file: WorkspaceFileSelection): void;
   hideInternalRightPanel?: boolean;
 }
 
@@ -68,6 +73,7 @@ export function ConversationPane({
   isRightPanelOpen: propIsRightPanelOpen,
   onToggleRightPanel: propOnToggleRightPanel,
   onOpenRightPanel,
+  onOpenWorkspaceFile,
   hideInternalRightPanel = false,
 }: ConversationPaneProps) {
   const { t } = useTranslation();
@@ -79,6 +85,8 @@ export function ConversationPane({
   const [disclosureRequest, setDisclosureRequest] = useState<{ providerId: string; providerName: string } | null>(null);
   const [isFileChangesPanelOpen, setIsFileChangesPanelOpen] = useState(false);
   const [rightPanelTab, setRightPanelTab] = useState<RightWorkspaceTab>('changes');
+  const [workspaceFileRequest, setWorkspaceFileRequest] = useState<WorkspaceFileRequest | null>(null);
+  const workspaceFileRequestId = useRef(0);
   const [fileChangesState, setFileChangesState] = useState<{
     conversationId: string | null;
     changes: ChatFileChange[];
@@ -105,29 +113,37 @@ export function ConversationPane({
   const conversations = useChatStore((state) => state.conversations);
   const chatGptWorkspaceSelectionRequired = useChatStore((state) => state.chatGptWorkspaceSelectionRequired);
 
-  const isSplitSecondary = propConversationId !== undefined;
-  const isPlaceholder = propConversationId === '__empty__' || (isSplitSecondary && !propConversationId);
+  const isConversationOverride = propConversationId !== undefined;
+  const isPlaceholder = isConversationOverride && !propConversationId;
   const resolvedTargetId = isPlaceholder ? null : (propConversationId ?? storeActiveConversationId);
   const isStoreActive = resolvedTargetId !== null && resolvedTargetId === storeActiveConversationId;
 
   const [secondaryMessages, setSecondaryMessages] = useState<ChatMessage[]>([]);
   const [secondaryLoading, setSecondaryLoading] = useState(false);
+  const [secondaryLoadError, setSecondaryLoadError] = useState(false);
+  const [secondaryLoadRevision, setSecondaryLoadRevision] = useState(0);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: The revision increments on retry to reload this conversation's history.
   useEffect(() => {
-    if (!isSplitSecondary || isStoreActive) return;
+    if (!isConversationOverride || isStoreActive) return;
     if (!resolvedTargetId) {
       setSecondaryMessages([]);
       setSecondaryLoading(false);
+      setSecondaryLoadError(false);
       return;
     }
     let current = true;
     setSecondaryLoading(true);
+    setSecondaryLoadError(false);
     void getMessages(resolvedTargetId)
       .then((items) => {
         if (current) setSecondaryMessages(items);
       })
       .catch((error) => {
-        globalThis.reportError(new Error('Failed to load split conversation messages.', { cause: error }));
+        if (current) {
+          setSecondaryLoadError(true);
+          globalThis.reportError(new Error('Failed to load panel conversation messages.', { cause: error }));
+        }
       })
       .finally(() => {
         if (current) setSecondaryLoading(false);
@@ -145,18 +161,18 @@ export function ConversationPane({
       current = false;
       window.removeEventListener('openchat-message-stream', onStream);
     };
-  }, [isSplitSecondary, isStoreActive, resolvedTargetId]);
+  }, [isConversationOverride, isStoreActive, resolvedTargetId, secondaryLoadRevision]);
 
-  const activeConversationId = isSplitSecondary ? resolvedTargetId : storeActiveConversationId;
+  const activeConversationId = isConversationOverride ? resolvedTargetId : storeActiveConversationId;
   const activeConversation = useMemo(() => {
-    if (isSplitSecondary) {
+    if (isConversationOverride) {
       return resolvedTargetId ? (conversations.find((c) => c.id === resolvedTargetId) ?? null) : null;
     }
     return storeActiveConversation;
-  }, [conversations, isSplitSecondary, resolvedTargetId, storeActiveConversation]);
+  }, [conversations, isConversationOverride, resolvedTargetId, storeActiveConversation]);
 
-  const messages = isSplitSecondary && !isStoreActive ? secondaryMessages : storeMessages;
-  const isLoadingMessages = isSplitSecondary && !isStoreActive ? secondaryLoading : storeIsLoadingMessages;
+  const messages = isConversationOverride && !isStoreActive ? secondaryMessages : storeMessages;
+  const isLoadingMessages = isConversationOverride && !isStoreActive ? secondaryLoading : storeIsLoadingMessages;
   const models = useChatStore((state) => state.models);
   const modelStatus = useChatStore((state) => state.modelStatus);
   const modelError = useChatStore((state) => state.modelError);
@@ -168,13 +184,8 @@ export function ConversationPane({
   const activeGoal = useChatStore((state) => state.activeGoal);
   const goalStatus = useChatStore((state) => state.goalStatus);
   const refreshActiveGoal = useChatStore((state) => state.refreshActiveGoal);
-  const temporaryChat = useChatStore((state) => state.temporaryChat);
+  const temporaryChat = useChatStore((state) => (isConversationOverride ? null : state.temporaryChat));
   const discloseTemporaryProvider = useChatStore((state) => state.discloseTemporaryProvider);
-  const savedOutputMessageKeys = useChatStore((state) => state.savedOutputMessageKeys);
-  const pendingSavedOutputMessageIds = useChatStore((state) => state.pendingSavedOutputMessageIds);
-  const savedOutputError = useChatStore((state) => state.savedOutputError);
-  const refreshSavedOutputMessageKeys = useChatStore((state) => state.refreshSavedOutputMessageKeys);
-  const toggleSavedOutput = useChatStore((state) => state.toggleSavedOutput);
   const retryMessage = useChatStore((state) => state.retryMessage);
   const branchFromUserMessage = useChatStore((state) => state.branchFromUserMessage);
   const isCreatingBranch = useChatStore((state) => state.isCreatingMessageBranch);
@@ -185,11 +196,16 @@ export function ConversationPane({
   const searchHighlightQuery = useChatStore((state) => state.searchHighlightQuery);
   const searchMatchIndex = useChatStore((state) => state.searchMatchIndex);
   const searchMatchCount = useChatStore((state) => state.searchMatchCount);
+  const selectConversation = useChatStore((state) => state.selectConversation);
   const nextSearchMatch = useChatStore((state) => state.nextSearchMatch);
   const prevSearchMatch = useChatStore((state) => state.prevSearchMatch);
   const clearSearchHighlight = useChatStore((state) => state.clearSearchHighlight);
   const isTemporaryChat = temporaryChat !== null;
-  const isSending = useChatStore((state) => state.isSending);
+  const isSendingInStore = useChatStore((state) => state.isSending);
+  const sendingConversationId = useChatStore((state) => state.sendingConversationId);
+  const isSending = isConversationOverride
+    ? isSendingInStore && sendingConversationId === activeConversationId
+    : isSendingInStore;
   const isEmptyConversation = messages.length === 0 && !isLoadingMessages && !isSending;
   const centerEmptyConversation =
     isEmptyConversation && !isLargeText && paneSize.width >= 640 && paneSize.height >= 640;
@@ -198,13 +214,7 @@ export function ConversationPane({
   useEffect(() => {
     if (errorCode === 'messageHistoryLoadFailed') {
       setHistoryErrorToastVisible(true);
-      const timer = window.setTimeout(() => {
-        setHistoryErrorToastVisible(false);
-        if (useChatStore.getState().errorCode === 'messageHistoryLoadFailed') {
-          useChatStore.setState({ errorCode: null });
-        }
-      }, 5000);
-      return () => window.clearTimeout(timer);
+      return;
     }
     setHistoryErrorToastVisible(false);
   }, [errorCode]);
@@ -261,8 +271,13 @@ export function ConversationPane({
     return models.filter((model) => !hiddenSet.has(modelRouteKey(model)));
   }, [models, hiddenModelKeys]);
   const selectedModel = useMemo(
-    () => visibleModels.find((model) => model.key === selectedModelKey) ?? null,
-    [visibleModels, selectedModelKey],
+    () =>
+      isConversationOverride
+        ? activeConversation
+          ? (models.find((model) => isSameRoute(model, activeConversation)) ?? null)
+          : null
+        : (visibleModels.find((model) => model.key === selectedModelKey) ?? null),
+    [activeConversation, isConversationOverride, models, selectedModelKey, visibleModels],
   );
   const assistantModelFallback =
     selectedModel?.displayName ?? activeConversation?.modelId ?? temporaryChat?.route?.displayName ?? null;
@@ -278,19 +293,10 @@ export function ConversationPane({
     temporaryProviderModel?.sourceLabel ??
     temporaryProviderModel?.providerId ??
     '';
-  const savedMessageIds = useMemo(() => {
-    const set = new Set<string>();
-    for (const key of savedOutputMessageKeys) {
-      if (key.conversationId === activeConversationId) {
-        set.add(key.messageId);
-      }
-    }
-    return set;
-  }, [savedOutputMessageKeys, activeConversationId]);
-
   // biome-ignore lint/correctness/useExhaustiveDependencies: Switching conversations resets transient editor, search, and file-change panel state.
   useEffect(() => {
     setIsFileChangesPanelOpen(false);
+    setWorkspaceFileRequest(null);
     setEditingMessage(null);
     setIsSearchOpen(false);
     setSearchQuery('');
@@ -338,6 +344,19 @@ export function ConversationPane({
       disclosureResolver.current = null;
     },
     [],
+  );
+
+  const openWorkspaceFile = useCallback(
+    (file: WorkspaceFileSelection) => {
+      if (onOpenWorkspaceFile) {
+        onOpenWorkspaceFile(file);
+        return;
+      }
+      setRightPanelTab('changes');
+      setWorkspaceFileRequest({ ...file, requestId: ++workspaceFileRequestId.current });
+      setIsFileChangesPanelOpen(true);
+    },
+    [onOpenWorkspaceFile],
   );
 
   const askBeforeTemporarySend = (providerId: string, providerName: string) => {
@@ -510,6 +529,11 @@ export function ConversationPane({
       {historyErrorToastVisible ? (
         <div className="fixed top-14 right-6 z-50 max-w-md shadow-lg">
           <Toast
+            action={
+              !isConversationOverride && activeConversationId
+                ? { label: t('retry'), onClick: () => void selectConversation(activeConversationId) }
+                : undefined
+            }
             message={t('messageHistoryLoadFailed')}
             onClose={handleDismissHistoryErrorToast}
             variant="destructive"
@@ -558,7 +582,7 @@ export function ConversationPane({
                   </span>
                   <div className="flex items-center gap-0.5">
                     <button
-                      aria-label="Önceki eşleşme"
+                      aria-label={t('inChatPreviousMatch')}
                       className="rounded-full p-1 text-secondary-icon transition-colors hover:bg-hover hover:text-text disabled:opacity-40"
                       disabled={searchMatchCount <= 1}
                       onClick={prevSearchMatch}
@@ -567,7 +591,7 @@ export function ConversationPane({
                       <ChevronUp size={14} />
                     </button>
                     <button
-                      aria-label="Sonraki eşleşme"
+                      aria-label={t('inChatNextMatch')}
                       className="rounded-full p-1 text-secondary-icon transition-colors hover:bg-hover hover:text-text disabled:opacity-40"
                       disabled={searchMatchCount <= 1}
                       onClick={nextSearchMatch}
@@ -576,7 +600,7 @@ export function ConversationPane({
                       <ChevronDown size={14} />
                     </button>
                     <button
-                      aria-label="Aramayı kapat"
+                      aria-label={t('inChatCloseSearch')}
                       className="ml-1 rounded-full p-1 text-secondary-icon transition-colors hover:bg-hover hover:text-text"
                       onClick={clearSearchHighlight}
                       type="button"
@@ -608,7 +632,14 @@ export function ConversationPane({
               {isPlaceholder ? (
                 <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center text-secondary-text">
                   <MessageSquare aria-hidden="true" className="opacity-45" size={32} />
-                  <p className="text-sm font-medium text-text">{t('splitViewEmptyHint')}</p>
+                  <p className="text-sm font-medium text-text">{t('conversationUnavailable')}</p>
+                </div>
+              ) : isConversationOverride && !isStoreActive && secondaryLoadError ? (
+                <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center" role="alert">
+                  <p className="text-sm text-destructive">{t('messageHistoryLoadFailed')}</p>
+                  <Button onClick={() => setSecondaryLoadRevision((revision) => revision + 1)} size="small">
+                    {t('retry')}
+                  </Button>
                 </div>
               ) : messages.length > 0 || isLoadingMessages || isSending ? (
                 <MessageList
@@ -617,9 +648,9 @@ export function ConversationPane({
                   conversationIdOverride={activeConversationId ?? undefined}
                   inChatSearchQuery={isSearchOpen ? searchQuery : ''}
                   inChatTargetMessageId={isSearchOpen ? (activeMatch?.messageId ?? null) : null}
-                  isLoadingMessagesOverride={isSplitSecondary && !isStoreActive ? secondaryLoading : undefined}
+                  isLoadingMessagesOverride={isConversationOverride && !isStoreActive ? secondaryLoading : undefined}
                   latestFileChanges={latestFileChanges}
-                  messagesOverride={isSplitSecondary && !isStoreActive ? secondaryMessages : undefined}
+                  messagesOverride={isConversationOverride && !isStoreActive ? secondaryMessages : undefined}
                   onEditMessage={!isTemporaryChat ? (message) => setEditingMessage(message) : undefined}
                   onOpenConnections={onOpenSettings}
                   onOpenFileChanges={
@@ -634,12 +665,8 @@ export function ConversationPane({
                         }
                       : undefined
                   }
+                  onOpenWorkspaceFile={openWorkspaceFile}
                   onRetryMessage={!isTemporaryChat ? (message) => void retryMessage(message.id) : undefined}
-                  onToggleSavedOutput={
-                    activeConversationId ? (message) => void toggleSavedOutput(message.id) : undefined
-                  }
-                  pendingSavedOutputMessageIds={new Set(pendingSavedOutputMessageIds)}
-                  savedOutputMessageIds={savedMessageIds}
                   showAssistantLoading={isSending}
                 />
               ) : (
@@ -660,17 +687,6 @@ export function ConversationPane({
                 <p className="shrink-0 px-6 py-3 text-sm text-destructive" role="alert">
                   {t(errorCode)}
                 </p>
-              ) : null}
-              {savedOutputError ? (
-                <div
-                  className="mx-auto flex w-full max-w-conversation items-center justify-between gap-3 px-4 py-2 text-sm text-destructive"
-                  role="alert"
-                >
-                  <p>{t('outputSaveFailed')}</p>
-                  <Button className="shrink-0" onClick={() => void refreshSavedOutputMessageKeys()} size="small">
-                    {t('retry')}
-                  </Button>
-                </div>
               ) : null}
             </div>
           </div>
@@ -724,11 +740,6 @@ export function ConversationPane({
                 </Button>
               </div>
             ) : null}
-            <UserQuestionPanel
-              conversationId={activeConversationId}
-              onFocusHandled={onQuestionFocusHandled}
-              questionFocusTarget={questionFocusTarget}
-            />
             {pendingToolPermissionRequest?.conversationId === activeConversationId ? (
               <ToolPermissionCard
                 errorKey={toolPermissionError}
@@ -767,11 +778,15 @@ export function ConversationPane({
             {activeGoal?.conversationId === activeConversationId ? <GoalStatusBar goal={activeGoal} /> : null}
             <ChatComposer
               droppedFiles={droppedFiles}
+              isLoadingMessagesOverride={isLoadingMessages}
               isTemporaryChat={temporaryChat !== null}
+              messagesOverride={messages}
               onBeforeSend={askBeforeTemporarySend}
               onOpenSettings={onOpenSettings}
+              onQuestionFocusHandled={onQuestionFocusHandled}
               onRequestTemporaryExit={onRequestTemporaryExit}
-              targetConversationId={isPlaceholder ? null : isSplitSecondary ? activeConversationId : undefined}
+              questionFocusTarget={questionFocusTarget}
+              targetConversationId={isPlaceholder ? null : isConversationOverride ? activeConversationId : undefined}
             />
             {temporaryChat ? (
               <div className="temporary-chat-notice-width mx-auto mb-2 flex max-w-composer flex-wrap items-start gap-3 rounded-card border border-border bg-raised px-3 py-2.5">
@@ -832,9 +847,9 @@ export function ConversationPane({
           <ChatFileChangesPanel
             conversationId={activeConversationId}
             initialTab={rightPanelTab}
+            fileRequest={workspaceFileRequest}
             key={activeConversationId ?? 'workspace-panel'}
             onChangesUpdated={updateConversationFileChanges}
-            onClose={() => setIsFileChangesPanelOpen(false)}
             refreshRevision={latestToolActivitiesJson}
           />
         </div>

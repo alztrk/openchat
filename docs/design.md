@@ -37,8 +37,8 @@ parallel control or an unreviewed style value.
 
 OpenChat is a desktop AI workspace for conversation, projects, model discovery,
 and settings. Chat is the primary workflow. Projects group related
-conversations, saved responses stay available inside chats, and model
-discovery stays separate from day-to-day conversation controls.
+conversations, and model discovery stays separate from day-to-day conversation
+controls.
 
 Use OpenChat's neutral surfaces and restrained copper accent to establish a
 clear hierarchy. Design for the task and its real content states, not for
@@ -204,6 +204,12 @@ labels concise and avoid artificial letter spacing. The user-controlled
 response font setting changes conversation content; interface labels use
 Source Sans 3. Use the configured font-size tokens so text scaling remains
 available to users.
+
+All app-authored text shown to users, including empty and error states, tool
+descriptions, native permission dialogs, and accessible names, must come from
+the localization catalogs. Keep protocol identifiers, provider-supplied text,
+and diagnostic logs outside UI copy; map application errors to stable codes and
+localized messages before rendering them.
 
 ## Dimensions and surfaces
 

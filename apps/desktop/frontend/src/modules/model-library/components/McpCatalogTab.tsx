@@ -2,7 +2,12 @@ import { LoaderCircle, Search, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button, Input } from '@/design-system';
-import type { McpCategory, McpCategoryKey, McpServerRecord } from '@/modules/model-library/data/mcpCatalog';
+import {
+  formatMcpToolLabel,
+  type McpCategory,
+  type McpCategoryKey,
+  type McpServerRecord,
+} from '@/modules/model-library/data/mcpCatalog';
 import { useMcpStore } from '@/modules/model-library/stores/mcpStore';
 import { McpCard } from './McpCard';
 import { McpEnvModal } from './McpEnvModal';
@@ -25,6 +30,7 @@ export function McpCatalogTab() {
   const invalidConfigCount = useMcpStore((state) => state.invalidConfigCount);
   const busyServerIds = useMcpStore((state) => state.busyServerIds);
   const errorCode = useMcpStore((state) => state.errorCode);
+  const errorDetails = useMcpStore((state) => state.errorDetails);
   const initialize = useMcpStore((state) => state.initialize);
   const install = useMcpStore((state) => state.install);
   const setEnabled = useMcpStore((state) => state.setEnabled);
@@ -64,7 +70,8 @@ export function McpCatalogTab() {
       if (!matchesCategory) return false;
       if (!normalizedQuery) return true;
       const description = server.descriptionKey ? t(server.descriptionKey) : server.description;
-      return [server.name, description, server.category, ...server.discoveredTools].some((value) =>
+      const localizedTools = server.discoveredTools.map((tool) => formatMcpToolLabel(server.id, tool, t));
+      return [server.name, description, server.category, ...localizedTools].some((value) =>
         value.toLocaleLowerCase(i18n.language).includes(normalizedQuery),
       );
     });
@@ -157,6 +164,11 @@ export function McpCatalogTab() {
         {loadState === 'error' ? (
           <div className="rounded-card border border-destructive/40 bg-surface p-5" role="alert">
             <p className="text-sm text-destructive">{t(errorCode ?? 'mcpCatalogLoadFailed')}</p>
+            {errorDetails ? (
+              <p className="mt-2 break-words whitespace-pre-wrap text-xs text-secondary-text">
+                {t('chatErrorDetails')}: {errorDetails}
+              </p>
+            ) : null}
             <Button className="mt-3" onClick={() => void initialize()} size="small">
               {t('retry')}
             </Button>
@@ -179,9 +191,14 @@ export function McpCatalogTab() {
           </p>
         ) : null}
         {loadState === 'ready' && errorCode && errorCode !== 'mcpCatalogLoadFailed' ? (
-          <p className="text-sm text-destructive" role="alert">
-            {t(errorCode)}
-          </p>
+          <div className="grid gap-1 text-sm text-destructive" role="alert">
+            <p>{t(errorCode)}</p>
+            {errorDetails ? (
+              <p className="break-words whitespace-pre-wrap text-xs text-secondary-text">
+                {t('chatErrorDetails')}: {errorDetails}
+              </p>
+            ) : null}
+          </div>
         ) : null}
         {loadState === 'ready' && visibleServers.length === 0 ? (
           <p className="p-8 text-center text-secondary-text">

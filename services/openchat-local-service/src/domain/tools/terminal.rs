@@ -4,7 +4,8 @@
 //! conversation that created it so one conversation cannot control another's process.
 use std::{
     collections::HashMap,
-    path::Path,
+    io,
+    path::{Path, PathBuf},
     process::ExitStatus,
     sync::{Arc, OnceLock},
     time::{Duration, Instant},
@@ -41,13 +42,61 @@ const MAX_BUFFER_BYTES: usize = 128 * 1024;
 const MAX_ACTIVE_TERMINAL_SESSIONS: usize = 16;
 const INTERNAL_TERMINAL_OWNER: &str = "openchat-internal";
 
+#[derive(Debug)]
+pub(crate) struct ToolRuntimeError {
+    pub(crate) code: &'static str,
+    pub(crate) message: String,
+    pub(crate) details: Option<String>,
+}
+
+impl ToolRuntimeError {
+    fn new(code: &'static str, message: impl Into<String>) -> Self {
+        Self {
+            code,
+            message: message.into(),
+            details: None,
+        }
+    }
+
+    fn process_start(error: io::Error, operation: &str) -> Self {
+        let code = match error.kind() {
+            io::ErrorKind::NotFound => "process_not_found",
+            io::ErrorKind::PermissionDenied => "process_permission_denied",
+            _ => "process_start_failed",
+        };
+        let details = error.raw_os_error().map_or_else(
+            || error.to_string(),
+            |code| format!("OS error {code}: {error}"),
+        );
+        Self::new(
+            code,
+            format!("The operating system could not start the {operation} process."),
+        )
+        .with_details(details)
+    }
+
+    fn with_details(mut self, details: impl Into<String>) -> Self {
+        self.details = Some(details.into());
+        self
+    }
+}
+
+impl From<String> for ToolRuntimeError {
+    fn from(message: String) -> Self {
+        Self::new("terminal_error", "The terminal operation failed.").with_details(message)
+    }
+}
+
 #[cfg(windows)]
-fn command_sandbox_options() -> Result<SandboxOptions<'static>, String> {
+fn command_sandbox_options<'a>(
+    workspace_roots: &'a [PathBuf],
+) -> Result<SandboxOptions<'a>, String> {
     let job_limits = SandboxJobLimits::for_current_host().map_err(|_| {
         "Windows could not determine safe resource limits for this command.".to_owned()
     })?;
 
     Ok(SandboxOptions {
+        additional_workspace_paths: workspace_roots,
         job_limits: Some(job_limits),
         ..SandboxOptions::default()
     })
@@ -55,6 +104,12 @@ fn command_sandbox_options() -> Result<SandboxOptions<'static>, String> {
 
 fn terminal_session_unavailable() -> String {
     "Terminal session was not found or is not available to this conversation.".to_owned()
+}
+
+fn same_path(left: &Path, right: &Path) -> bool {
+    left.to_string_lossy()
+        .replace('\\', "/")
+        .eq_ignore_ascii_case(&right.to_string_lossy().replace('\\', "/"))
 }
 
 /// A running command process with bounded, asynchronously captured output.
@@ -86,7 +141,7 @@ fn build_shell_command(command_str: &str) -> Command {
 
 #[cfg(windows)]
 enum TerminalChild {
-    Sandboxed(SandboxedProcess),
+    Managed(SandboxedProcess),
     Process(tokio::process::Child),
 }
 
@@ -95,7 +150,7 @@ type TerminalOutputReader = Box<dyn tokio::io::AsyncRead + Send + Unpin>;
 
 enum TerminalStdin {
     #[cfg(windows)]
-    Sandboxed(tokio::fs::File),
+    Managed(tokio::fs::File),
     Child(tokio::process::ChildStdin),
 }
 
@@ -105,8 +160,8 @@ impl TerminalSession {
         #[cfg(windows)]
         {
             match &mut *child {
-                TerminalChild::Sandboxed(sandboxed) => sandboxed.try_wait().map_err(|error| {
-                    format!("Could not check the sandboxed command process status: {error}")
+                TerminalChild::Managed(managed) => managed.try_wait().map_err(|error| {
+                    format!("Could not check the command process status: {error}")
                 }),
                 TerminalChild::Process(proc) => proc.try_wait().map_err(|error| {
                     format!("Could not check the command process status: {error}")
@@ -134,7 +189,7 @@ impl TerminalSession {
             .ok_or_else(|| "Terminal stdin is closed or unavailable.".to_owned())?;
         match stdin {
             #[cfg(windows)]
-            TerminalStdin::Sandboxed(f) => {
+            TerminalStdin::Managed(f) => {
                 f.write_all(input.as_bytes())
                     .await
                     .map_err(|e| format!("Failed to write to terminal stdin: {e}"))?;
@@ -161,16 +216,18 @@ impl TerminalSession {
         #[cfg(windows)]
         {
             match &mut *child {
-                TerminalChild::Sandboxed(sandboxed) => {
-                    sandboxed.start_kill().map_err(|error| {
-                        format!("Could not stop the sandboxed command process: {error}")
+                TerminalChild::Managed(managed) => {
+                    managed
+                        .start_kill()
+                        .map_err(|error| format!("Could not stop the command process: {error}"))?;
+                    managed.wait_for_job_exit().map_err(|error| {
+                        format!("Could not stop the command process tree: {error}")
                     })?;
-                    sandboxed.wait_for_job_exit().map_err(|error| {
-                        format!("Could not stop the sandboxed command process tree: {error}")
-                    })?;
-                    return sandboxed.wait().await.map(|_| ()).map_err(|error| {
-                        format!("Could not stop the sandboxed command process: {error}")
-                    });
+                    return managed
+                        .wait()
+                        .await
+                        .map(|_| ())
+                        .map_err(|error| format!("Could not stop the command process: {error}"));
                 }
                 TerminalChild::Process(proc) => {
                     if let Err(error) = proc.start_kill() {
@@ -347,6 +404,7 @@ impl TerminalSessionManager {
     ///
     /// The owner identifier is supplied by trusted execution context, not tool arguments.
     /// The returned session ID is random and required for later operations in that conversation.
+    #[cfg(test)]
     pub async fn create_session(
         &self,
         command_str: &str,
@@ -354,29 +412,36 @@ impl TerminalSessionManager {
         owner_conversation_id: &str,
         timeout_seconds: Option<u64>,
     ) -> Result<Arc<TerminalSession>, String> {
-        self.create_session_with_idle_timeout(
+        self.create_session_with_workspace_roots(
             command_str,
             workdir,
             owner_conversation_id,
             timeout_seconds,
+            &[],
+            false,
             Some(Duration::from_secs(120)),
         )
         .await
+        .map_err(|error| error.message)
     }
 
-    async fn create_session_with_idle_timeout(
+    async fn create_session_with_workspace_roots(
         &self,
         command_str: &str,
         workdir: &Path,
         owner_conversation_id: &str,
         timeout_seconds: Option<u64>,
+        workspace_roots: &[PathBuf],
+        full_access: bool,
         idle_timeout: Option<Duration>,
-    ) -> Result<Arc<TerminalSession>, String> {
+    ) -> Result<Arc<TerminalSession>, ToolRuntimeError> {
         let session_slot = Arc::clone(&self.session_slots)
             .try_acquire_owned()
             .map_err(|_| {
-                "The maximum number of active terminal sessions has been reached. Stop an existing session before starting another."
-                    .to_owned()
+                ToolRuntimeError::new(
+                    "terminal_session_limit",
+                    "The maximum number of active terminal sessions has been reached. Stop an existing session before starting another.",
+                )
             })?;
         let id = format!("term_{}", Uuid::new_v4().simple());
 
@@ -395,40 +460,75 @@ impl TerminalSessionManager {
             let active_backend = *self.backend.lock().await;
             if active_backend == SandboxBackend::Wsl2 {
                 if !crate::sandbox::SandboxPolicy::is_wsl2_available() {
-                    return Err("WSL2 is not available or not installed on this host.".to_owned());
+                    return Err(ToolRuntimeError::new(
+                        "terminal_backend_unavailable",
+                        "WSL2 is not available or not installed on this host.",
+                    ));
                 }
                 let win_path = workdir.to_string_lossy().replace('\\', "/");
+                let escaped_workdir = win_path.replace('\'', "'\\''");
                 let mut cmd = tokio::process::Command::new("wsl.exe");
+                let additional_binds = workspace_roots
+                    .iter()
+                    .filter(|root| !same_path(root, workdir))
+                    .map(|root| {
+                        let path = root.to_string_lossy().replace('\\', "/");
+                        let escaped_path = path.replace('\'', "'\\''");
+                        format!(
+                            " --bind \"$(wslpath -u '{escaped_path}')\" \"$(wslpath -u '{escaped_path}')\""
+                        )
+                    })
+                    .collect::<String>();
                 // Escape single quotes safely for POSIX shell
                 let escaped_command = command_str.replace('\'', "'\\''");
-                let script = format!(
-                    r#"WORKDIR="$(wslpath -u '{win_path}')" && bwrap --ro-bind /usr /usr --ro-bind /lib /lib --ro-bind-try /lib64 /lib64 --ro-bind /bin /bin --ro-bind /sbin /sbin --proc /proc --dev /dev --bind "$WORKDIR" "$WORKDIR" --chdir "$WORKDIR" --unshare-all -- sh -c '{}'"#,
-                    escaped_command
-                );
+                let script = if full_access {
+                    format!(
+                        r#"WORKDIR="$(wslpath -u '{escaped_workdir}')" && cd "$WORKDIR" && sh -c '{escaped_command}'"#
+                    )
+                } else {
+                    format!(
+                        r#"WORKDIR="$(wslpath -u '{escaped_workdir}')" && bwrap --ro-bind /usr /usr --ro-bind /lib /lib --ro-bind-try /lib64 /lib64 --ro-bind /bin /bin --ro-bind /sbin /sbin --proc /proc --dev /dev --bind "$WORKDIR" "$WORKDIR"{additional_binds} --chdir "$WORKDIR" --unshare-all -- sh -c '{escaped_command}'"#
+                    )
+                };
                 cmd.args(["-e", "sh", "-c", &script])
                     .stdin(std::process::Stdio::piped())
                     .stdout(std::process::Stdio::piped())
                     .stderr(std::process::Stdio::piped());
-                let mut proc = cmd.spawn().map_err(|err| {
-                    format!("Failed to spawn sandboxed command via WSL2 container: {err}")
-                })?;
+                let mut proc = cmd
+                    .spawn()
+                    .map_err(|error| ToolRuntimeError::process_start(error, "WSL2 command"))?;
                 let stdin = proc.stdin.take().map(TerminalStdin::Child);
                 let stdout: Option<Box<dyn tokio::io::AsyncRead + Send + Unpin>> =
                     proc.stdout.take().map(|s| Box::new(s) as _);
                 let stderr: Option<Box<dyn tokio::io::AsyncRead + Send + Unpin>> =
                     proc.stderr.take().map(|s| Box::new(s) as _);
                 (TerminalChild::Process(proc), stdin, stdout, stderr)
+            } else if full_access {
+                let options = command_sandbox_options(&[])?;
+                let mut child =
+                    SandboxedProcess::spawn_without_sandbox(command_str, workdir, options)
+                        .map_err(|error| ToolRuntimeError::process_start(error, "command"))?;
+                let stdin = child.take_stdin().map(TerminalStdin::Managed);
+                let stdout: Option<Box<dyn tokio::io::AsyncRead + Send + Unpin>> =
+                    child.take_stdout().map(|stream| Box::new(stream) as _);
+                let stderr: Option<Box<dyn tokio::io::AsyncRead + Send + Unpin>> =
+                    child.take_stderr().map(|stream| Box::new(stream) as _);
+                (TerminalChild::Managed(child), stdin, stdout, stderr)
             } else {
-                let options = command_sandbox_options()?;
-                let mut child = SandboxedProcess::spawn_with_options(command_str, workdir, options).map_err(|_| {
-                    "The command could not start inside the Windows AppContainer sandbox. Check the project folder and Windows security settings.".to_owned()
-                })?;
-                let stdin = child.take_stdin().map(TerminalStdin::Sandboxed);
+                let additional_roots = workspace_roots
+                    .iter()
+                    .filter(|root| !same_path(root, workdir))
+                    .cloned()
+                    .collect::<Vec<_>>();
+                let options = command_sandbox_options(&additional_roots)?;
+                let mut child = SandboxedProcess::spawn_with_options(command_str, workdir, options)
+                    .map_err(|error| ToolRuntimeError::process_start(error, "sandboxed command"))?;
+                let stdin = child.take_stdin().map(TerminalStdin::Managed);
                 let stdout: Option<Box<dyn tokio::io::AsyncRead + Send + Unpin>> =
                     child.take_stdout().map(|s| Box::new(s) as _);
                 let stderr: Option<Box<dyn tokio::io::AsyncRead + Send + Unpin>> =
                     child.take_stderr().map(|s| Box::new(s) as _);
-                (TerminalChild::Sandboxed(child), stdin, stdout, stderr)
+                (TerminalChild::Managed(child), stdin, stdout, stderr)
             }
         };
 
@@ -546,6 +646,7 @@ impl TerminalSessionManager {
     }
 
     /// Runs a command and returns its completed output or an owner-bound terminal ID.
+    #[cfg(test)]
     pub async fn execute(
         &self,
         command_str: &str,
@@ -554,11 +655,43 @@ impl TerminalSessionManager {
         timeout_seconds: Option<u64>,
         wait_ms: Option<u64>,
     ) -> Result<Value, String> {
+        self.execute_with_workspace_roots(
+            command_str,
+            workdir,
+            owner_conversation_id,
+            timeout_seconds,
+            wait_ms,
+            &[],
+            false,
+        )
+        .await
+        .map_err(|error| error.message)
+    }
+
+    /// Runs a command with write access to the explicitly configured project roots.
+    pub async fn execute_with_workspace_roots(
+        &self,
+        command_str: &str,
+        workdir: &Path,
+        owner_conversation_id: &str,
+        timeout_seconds: Option<u64>,
+        wait_ms: Option<u64>,
+        workspace_roots: &[PathBuf],
+        full_access: bool,
+    ) -> Result<Value, ToolRuntimeError> {
         let wait_duration =
             Duration::from_millis(wait_ms.unwrap_or(DEFAULT_WAIT_MS).clamp(100, MAX_WAIT_MS));
 
         let session = self
-            .create_session(command_str, workdir, owner_conversation_id, timeout_seconds)
+            .create_session_with_workspace_roots(
+                command_str,
+                workdir,
+                owner_conversation_id,
+                timeout_seconds,
+                workspace_roots,
+                full_access,
+                Some(Duration::from_secs(120)),
+            )
             .await?;
         let (output, _offset, truncated) = session.wait_for_output(0, wait_duration).await?;
         let status = session.process_status().await?;
@@ -594,10 +727,14 @@ impl TerminalSessionManager {
         command_str: &str,
         workdir: &Path,
         timeout_seconds: u64,
+        full_access: bool,
         cancellation: &mut tokio::sync::watch::Receiver<bool>,
-    ) -> Result<Value, String> {
+    ) -> Result<Value, ToolRuntimeError> {
         if !(5..=MAX_TIMEOUT_SECONDS).contains(&timeout_seconds) {
-            return Err("The named task timeout is outside the supported range.".to_owned());
+            return Err(ToolRuntimeError::new(
+                "project_task_invalid_timeout",
+                "The named task timeout is outside the supported range.",
+            ));
         }
         if *cancellation.borrow() {
             return Ok(
@@ -606,11 +743,13 @@ impl TerminalSessionManager {
         }
 
         let session = self
-            .create_session_with_idle_timeout(
+            .create_session_with_workspace_roots(
                 command_str,
                 workdir,
                 INTERNAL_TERMINAL_OWNER,
                 Some(timeout_seconds),
+                &[],
+                full_access,
                 None,
             )
             .await?;
@@ -648,7 +787,7 @@ impl TerminalSessionManager {
                         Err(error) => {
                             session.kill().await?;
                             self.remove_session(&session.id).await;
-                            return Err(error);
+                            return Err(ToolRuntimeError::from(error));
                         }
                     }
 
@@ -677,12 +816,16 @@ impl TerminalSessionManager {
         timeout_seconds: u64,
         output_limit_bytes: usize,
         cancellation: &mut tokio::sync::watch::Receiver<bool>,
-    ) -> Result<Value, String> {
+        full_access: bool,
+    ) -> Result<Value, ToolRuntimeError> {
         if !(5..=MAX_TIMEOUT_SECONDS).contains(&timeout_seconds)
             || !(1..=MAX_BUFFER_BYTES).contains(&output_limit_bytes)
             || input.len() > 16 * 1024
         {
-            return Err("The configured project tool is outside its execution limits.".to_owned());
+            return Err(ToolRuntimeError::new(
+                "project_tool_failed",
+                "The configured project tool is outside its execution limits.",
+            ));
         }
         if *cancellation.borrow() {
             return Ok(
@@ -690,13 +833,13 @@ impl TerminalSessionManager {
             );
         }
 
-        let options = command_sandbox_options()?;
-        let mut process =
+        let options = command_sandbox_options(&[])?;
+        let mut process = if full_access {
+            SandboxedProcess::spawn_program_without_sandbox(program, &[], workdir, &[], options)
+        } else {
             SandboxedProcess::spawn_program_with_options(program, &[], workdir, &[], options)
-                .map_err(|_| {
-                    "The configured tool could not start inside the Windows AppContainer."
-                        .to_owned()
-                })?;
+        }
+        .map_err(|error| ToolRuntimeError::process_start(error, "configured project tool"))?;
         let capture = Arc::new(Mutex::new(ProjectToolOutput::new(output_limit_bytes)));
         let stdout = process
             .take_stdout()

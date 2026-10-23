@@ -1,19 +1,29 @@
-import { Blocks, BookmarkCheck, Cpu, Files } from 'lucide-react';
+import { Blocks, Cpu, MessageSquareText, UsersRound } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Button } from '@/design-system';
 import { McpCatalogTab } from './McpCatalogTab';
 import { ModelCatalogTab } from './ModelCatalogTab';
-import { SavedResponsesTab } from './SavedResponsesTab';
-import { AttachmentLibraryTab } from './AttachmentLibraryTab';
+import { PromptTemplatesTab } from './PromptTemplatesTab';
+import { AssistantProfilesSettingsSection } from '@/modules/settings/components/AssistantProfilesSettingsSection';
 
-type LibraryPageTab = 'models' | 'mcp' | 'outputs' | 'files';
+type LibraryPageTab = 'models' | 'mcp' | 'agents' | 'prompts';
 
-export function LibraryPage() {
+interface LibraryPageProps {
+  initialTab?: 'models' | 'agents';
+  initialTabRequestId?: number;
+  onUsePrompt(prompt: string): void;
+}
+
+export function LibraryPage({
+  initialTab = 'models',
+  initialTabRequestId = 0,
+  onUsePrompt,
+}: LibraryPageProps) {
   const { t } = useTranslation();
-  const [page, setPage] = useState<LibraryPageTab>('models');
-  const [visitedPages, setVisitedPages] = useState<ReadonlySet<LibraryPageTab>>(() => new Set(['models']));
+  const [page, setPage] = useState<LibraryPageTab>(initialTab);
+  const [visitedPages, setVisitedPages] = useState<ReadonlySet<LibraryPageTab>>(() => new Set([initialTab]));
   const headingRef = useRef<HTMLHeadingElement>(null);
 
   const selectPage = (nextPage: LibraryPageTab) => {
@@ -24,6 +34,11 @@ export function LibraryPage() {
   useEffect(() => {
     headingRef.current?.focus({ preventScroll: true });
   }, []);
+
+  useEffect(() => {
+    setPage(initialTab);
+    setVisitedPages((current) => (current.has(initialTab) ? current : new Set([...current, initialTab])));
+  }, [initialTab, initialTabRequestId]);
 
   return (
     <div className="library-workspace flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background">
@@ -50,24 +65,6 @@ export function LibraryPage() {
             {t('libraryTabModels')}
           </Button>
           <Button
-            aria-current={page === 'outputs' ? 'page' : undefined}
-            className={page === 'outputs' ? 'library-page-nav-item is-active' : 'library-page-nav-item'}
-            onClick={() => selectPage('outputs')}
-            variant="ghost"
-          >
-            <BookmarkCheck aria-hidden="true" size={16} />
-            {t('outputs')}
-          </Button>
-          <Button
-            aria-current={page === 'files' ? 'page' : undefined}
-            className={page === 'files' ? 'library-page-nav-item is-active' : 'library-page-nav-item'}
-            onClick={() => selectPage('files')}
-            variant="ghost"
-          >
-            <Files aria-hidden="true" size={16} />
-            {t('attachmentLibraryTitle')}
-          </Button>
-          <Button
             aria-current={page === 'mcp' ? 'page' : undefined}
             className={page === 'mcp' ? 'library-page-nav-item is-active' : 'library-page-nav-item'}
             onClick={() => selectPage('mcp')}
@@ -75,6 +72,24 @@ export function LibraryPage() {
           >
             <Blocks aria-hidden="true" size={16} />
             {t('libraryTabMcp')}
+          </Button>
+          <Button
+            aria-current={page === 'agents' ? 'page' : undefined}
+            className={page === 'agents' ? 'library-page-nav-item is-active' : 'library-page-nav-item'}
+            onClick={() => selectPage('agents')}
+            variant="ghost"
+          >
+            <UsersRound aria-hidden="true" size={16} />
+            {t('libraryTabAgents')}
+          </Button>
+          <Button
+            aria-current={page === 'prompts' ? 'page' : undefined}
+            className={page === 'prompts' ? 'library-page-nav-item is-active' : 'library-page-nav-item'}
+            onClick={() => selectPage('prompts')}
+            variant="ghost"
+          >
+            <MessageSquareText aria-hidden="true" size={16} />
+            {t('libraryTabPrompts')}
           </Button>
         </nav>
       </header>
@@ -95,20 +110,22 @@ export function LibraryPage() {
           <McpCatalogTab />
         </div>
       ) : null}
-      {visitedPages.has('outputs') ? (
+      {visitedPages.has('agents') ? (
         <div
-          aria-hidden={page !== 'outputs'}
-          className={page === 'outputs' ? 'library-page-panel min-h-0 min-w-0 flex-1 overflow-y-auto' : 'hidden'}
+          aria-hidden={page !== 'agents'}
+          className={page === 'agents' ? 'library-page-panel min-h-0 min-w-0 flex-1 overflow-y-auto' : 'hidden'}
         >
-          <SavedResponsesTab />
+          <div className="mx-auto w-full max-w-5xl p-5 sm:p-8">
+            <AssistantProfilesSettingsSection showReadyAgents />
+          </div>
         </div>
       ) : null}
-      {visitedPages.has('files') ? (
+      {visitedPages.has('prompts') ? (
         <div
-          aria-hidden={page !== 'files'}
-          className={page === 'files' ? 'library-page-panel min-h-0 min-w-0 flex-1 overflow-y-auto' : 'hidden'}
+          aria-hidden={page !== 'prompts'}
+          className={page === 'prompts' ? 'library-page-panel min-h-0 min-w-0 flex-1 overflow-y-auto' : 'hidden'}
         >
-          <AttachmentLibraryTab />
+          <PromptTemplatesTab onUsePrompt={onUsePrompt} />
         </div>
       ) : null}
     </div>

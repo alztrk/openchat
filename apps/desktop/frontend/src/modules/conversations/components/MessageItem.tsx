@@ -1,17 +1,4 @@
-import {
-  BookmarkCheck,
-  BookmarkPlus,
-  Brain,
-  Check,
-  ChevronLeft,
-  ChevronRight,
-  CircleAlert,
-  Copy,
-  GitBranch,
-  Link,
-  LoaderCircle,
-  RefreshCw,
-} from 'lucide-react';
+import { Brain, Check, ChevronLeft, ChevronRight, CircleAlert, Copy, GitBranch, Link, RefreshCw } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button, Dialog } from '@/design-system';
@@ -19,6 +6,7 @@ import type { ChatFileChange } from '@/modules/conversations/data/chatFileChange
 import type { ChatMessage } from '@/modules/conversations/data/chatStorage';
 import { ProviderIcon } from '@/modules/providers/components/ProviderIcon';
 import { parsePersonalMemoryFactIds, readPersonalMemoryFacts } from '@/modules/settings/data/personalMemory';
+import type { WorkspaceFileSelection } from './ChatFileChangesPanel';
 import { MessageAttachments } from './MessageAttachments';
 import { CitationSources } from './message/CitationSources';
 import { FileChangesSummaryCard } from './message/FileChangesSummaryCard';
@@ -38,9 +26,6 @@ export interface MessageItemProps {
   assistantModelFallback?: string | null;
   assistantProviderFallback?: string | null;
   isSearchMatch?: boolean;
-  isSavedOutput?: boolean;
-  isSavingSavedOutput?: boolean;
-  onToggleSavedOutput?: (message: ChatMessage) => void;
   onRetryMessage?: (message: ChatMessage) => void;
   onEditMessage?: (message: ChatMessage) => void;
   onSelectResponseVersion?: (message: ChatMessage, versionIndex: number) => void;
@@ -48,6 +33,7 @@ export interface MessageItemProps {
   responseVersionCount?: number;
   latestFileChanges?: ChatFileChange[];
   onOpenFileChanges?: () => void;
+  onOpenWorkspaceFile?: (file: WorkspaceFileSelection) => void;
   onOpenConnections?: () => void;
 }
 
@@ -55,17 +41,15 @@ export function MessageItem({
   isSearchMatch = false,
   assistantModelFallback = null,
   assistantProviderFallback = null,
-  isSavedOutput = false,
-  isSavingSavedOutput = false,
   message,
   onEditMessage,
   onRetryMessage,
   onSelectResponseVersion,
-  onToggleSavedOutput,
   responseVersionCount,
   responseVersionIndex,
   latestFileChanges = [],
   onOpenFileChanges,
+  onOpenWorkspaceFile,
   onOpenConnections,
 }: MessageItemProps) {
   const { i18n, t } = useTranslation();
@@ -78,11 +62,10 @@ export function MessageItem({
   const isUser = message.role === 'user';
   const personalMemoryFactIds = parsePersonalMemoryFactIds(message.personalMemoryFactIds) ?? [];
   const citationSources = isUser ? [] : parseCitationSources(message.citationSources);
-  const reasoningSummaries = isUser ? [] : parseReasoningSummaries(message.reasoningSummaries);
+  const showReasoningSummaries = message.providerId === 'chatgpt' || message.providerId === 'chatgpt_api';
+  const reasoningSummaries = isUser || !showReasoningSummaries ? [] : parseReasoningSummaries(message.reasoningSummaries);
   const toolActivities = isUser ? [] : parseToolActivities(message.toolActivities);
   const canRetry = !isUser && onRetryMessage !== undefined && message.status !== 'streaming';
-  const canSaveOutput =
-    !isUser && onToggleSavedOutput !== undefined && message.status === 'completed' && message.content.trim().length > 0;
   const hasResponseVersions =
     !isUser &&
     onSelectResponseVersion !== undefined &&
@@ -165,7 +148,11 @@ export function MessageItem({
         {!isUser && toolActivities.length > 0 ? (
           <div className="mt-2 grid gap-2">
             {toolActivities.map((activity) => (
-              <ToolActivityAccordion activity={activity} key={activity.callId} />
+              <ToolActivityAccordion
+                activity={activity}
+                key={activity.callId}
+                onOpenFile={(path, content) => onOpenWorkspaceFile?.({ path, content })}
+              />
             ))}
           </div>
         ) : null}
@@ -250,24 +237,6 @@ export function MessageItem({
               <GitBranch aria-hidden="true" size={16} />
             </Button>
           ) : null}
-          {canSaveOutput ? (
-            <Button
-              aria-label={t(isSavedOutput ? 'removeSavedResponse' : 'saveResponse')}
-              className={`size-8 opacity-70 group-hover:opacity-100 ${isSavedOutput ? 'text-accent-icon' : ''}`}
-              disabled={isSavingSavedOutput}
-              onClick={() => onToggleSavedOutput?.(message)}
-              size="icon"
-              variant="ghost"
-            >
-              {isSavingSavedOutput ? (
-                <LoaderCircle aria-hidden="true" className="animate-spin" size={16} />
-              ) : isSavedOutput ? (
-                <BookmarkCheck aria-hidden="true" size={16} />
-              ) : (
-                <BookmarkPlus aria-hidden="true" size={16} />
-              )}
-            </Button>
-          ) : null}
           {!isUser && personalMemoryFactIds.length > 0 ? (
             <Button
               aria-label={t('personalMemoryResponseLabel', { count: personalMemoryFactIds.length })}
@@ -290,6 +259,7 @@ export function MessageItem({
             activities={toolActivities}
             latestChanges={latestFileChanges}
             onViewChanges={onOpenFileChanges}
+            onOpenFile={(change) => onOpenWorkspaceFile?.({ path: change.path, changeId: change.id })}
           />
         ) : null}
         {citationSources.length > 0 && message.content.trim().length === 0 ? (
@@ -473,6 +443,7 @@ const failureKeys: Partial<Record<string, TranslationKey>> = {
   provider_request_failed: 'providerRequestFailed',
   invalid_provider_response: 'providerRequestFailed',
   response_too_large: 'providerResponseTooLarge',
+  tool_response_limit: 'toolResponseLimit',
   message_save_failed: 'messageSaveFailed',
   attachment_save_failed: 'attachmentSaveFailed',
 };

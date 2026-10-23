@@ -254,16 +254,7 @@ export function ContextUsageIndicator({
       details: [],
     },
   ];
-  const filledCellCount = usageFraction === null ? 0 : Math.ceil(Math.min(1, usageFraction) * 100);
-  const fullCellCount = usageFraction === null ? 0 : Math.floor(Math.min(1, usageFraction) * 100);
-  const partialCellFill = usageFraction === null ? 0 : Math.min(1, usageFraction) * 100 - fullCellCount;
-  const categoryCellCounts = allocateUsageCells(
-    categories.map((category) => category.tokens),
-    filledCellCount,
-  );
-  const filledCellColors = categories.flatMap((category, categoryIndex) =>
-    Array.from({ length: categoryCellCounts[categoryIndex] ?? 0 }, () => category.color),
-  );
+  const usageCellBackgrounds = createUsageCellBackgrounds(categories, usageFraction);
   const ringColor =
     percent !== null && percent >= 90
       ? 'rgb(var(--destructive))'
@@ -344,19 +335,11 @@ export function ContextUsageIndicator({
           {contextWindow !== null && contextWindow > 0 ? (
             <div aria-hidden="true" className="context-usage-grid">
               {contextUsageSegments.map((segment) => {
-                const { index } = segment;
-                const color = filledCellColors[index];
-                const fill = index < fullCellCount ? 1 : index === fullCellCount ? partialCellFill : 0;
                 return (
                   <span
                     className="context-usage-cell"
                     key={segment.id}
-                    style={{
-                      background:
-                        color && fill > 0
-                          ? `linear-gradient(90deg, ${color} ${fill * 100}%, transparent ${fill * 100}%)`
-                          : undefined,
-                    }}
+                    style={{ backgroundImage: usageCellBackgrounds[segment.index] }}
                   />
                 );
               })}
@@ -427,21 +410,38 @@ export function ContextUsageIndicator({
   );
 }
 
-function allocateUsageCells(weights: readonly number[], total: number): number[] {
-  const weightTotal = weights.reduce((sum, weight) => sum + weight, 0);
-  if (weights.length === 0 || total <= 0 || weightTotal <= 0) return weights.map(() => 0);
+function createUsageCellBackgrounds(
+  categories: readonly UsageCategory[],
+  usageFraction: number | null,
+): Array<string | undefined> {
+  const usagePercent = usageFraction === null ? 0 : Math.min(100, Math.max(0, usageFraction * 100));
+  const categoryTokenTotal = categories.reduce((sum, category) => sum + category.tokens, 0);
+  if (usagePercent === 0 || categoryTokenTotal === 0) return contextUsageSegments.map(() => undefined);
 
-  const shares = weights.map((weight) => (weight / weightTotal) * total);
-  const allocated = shares.map(Math.floor);
-  let remainder = total - allocated.reduce((sum, count) => sum + count, 0);
-  const order = shares
-    .map((share, index) => ({ index, fraction: share - (allocated[index] ?? 0) }))
-    .sort((left, right) => right.fraction - left.fraction);
-  for (const item of order) {
-    if (remainder === 0) break;
-    if ((weights[item.index] ?? 0) === 0) continue;
-    allocated[item.index] = (allocated[item.index] ?? 0) + 1;
-    remainder -= 1;
-  }
-  return allocated;
+  let cumulativeTokens = 0;
+  const categoryRanges = categories.flatMap((category) => {
+    if (category.tokens <= 0) return [];
+    const start = (cumulativeTokens / categoryTokenTotal) * usagePercent;
+    cumulativeTokens += category.tokens;
+    const end = (cumulativeTokens / categoryTokenTotal) * usagePercent;
+    return [{ start, end, color: category.color }];
+  });
+
+  return contextUsageSegments.map(({ index }) => {
+    const cellEnd = index + 1;
+    const stops: string[] = [];
+    for (const range of categoryRanges) {
+      const start = Math.max(index, range.start);
+      const end = Math.min(cellEnd, range.end);
+      if (end <= start) continue;
+      const startPercent = (start - index) * 100;
+      const endPercent = (end - index) * 100;
+      stops.push(`${range.color} ${startPercent}%`, `${range.color} ${endPercent}%`);
+    }
+    if (stops.length === 0) return undefined;
+
+    const fillEnd = Math.min(100, Math.max(0, (usagePercent - index) * 100));
+    if (fillEnd < 100) stops.push(`transparent ${fillEnd}%`, `transparent 100%`);
+    return `linear-gradient(90deg, ${stops.join(', ')})`;
+  });
 }

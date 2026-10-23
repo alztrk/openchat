@@ -1,4 +1,4 @@
-import { MessagesSquare, Send } from 'lucide-react';
+import { Check, ChevronLeft, ChevronRight, MessagesSquare, Send, X } from 'lucide-react';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button, Card } from '@/design-system';
@@ -18,7 +18,8 @@ interface UserQuestionPanelProps {
   onFocusHandled(): void;
 }
 
-type AnswerValues = Record<string, string>;
+type QuestionAnswerInput = string | string[];
+type AnswerValues = Record<string, QuestionAnswerInput>;
 
 export function UserQuestionPanel({ conversationId, questionFocusTarget, onFocusHandled }: UserQuestionPanelProps) {
   const { t } = useTranslation();
@@ -27,20 +28,25 @@ export function UserQuestionPanel({ conversationId, questionFocusTarget, onFocus
   const [busyGroupId, setBusyGroupId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [answers, setAnswers] = useState<AnswerValues>({});
+  const [collapsedGroupIds, setCollapsedGroupIds] = useState<string[]>([]);
   const [loadedConversationId, setLoadedConversationId] = useState<string | null>(null);
   const [focusTarget, setFocusTarget] = useState<{ conversationId: string; groupId: string } | null>(null);
   const loadGeneration = useRef(0);
   const previousConversationId = useRef(conversationId);
   const sendMessage = useChatStore((state) => state.sendMessage);
+  const isSending = useChatStore((state) => state.isSending);
+  const stopResponse = useChatStore((state) => state.stopResponse);
   const setPendingQuestionSendBlock = useChatStore((state) => state.setPendingQuestionSendBlock);
   const blocksNormalSend =
-    conversationId !== null && (loadState !== 'idle' || loadedConversationId !== conversationId || groups.length > 0);
+    conversationId !== null &&
+    (loadState === 'loading' || loadedConversationId !== conversationId || groups.length > 0);
 
   useEffect(() => {
     if (previousConversationId.current === conversationId) return;
     previousConversationId.current = conversationId;
     loadGeneration.current += 1;
     setAnswers({});
+    setCollapsedGroupIds([]);
     setGroups([]);
     setLoadState('idle');
     setBusyGroupId(null);
@@ -71,8 +77,10 @@ export function UserQuestionPanel({ conversationId, questionFocusTarget, onFocus
       setGroups(loaded);
       setLoadedConversationId(conversationId);
       setLoadState('idle');
-    } catch {
+      setErrorMessage(null);
+    } catch (error) {
       if (generation !== loadGeneration.current) return;
+      globalThis.reportError(new Error('Loading pending user questions failed.', { cause: error }));
       setLoadState('error');
       setLoadedConversationId(conversationId);
       setErrorMessage(t('userQuestionLoadFailed'));
@@ -97,10 +105,17 @@ export function UserQuestionPanel({ conversationId, questionFocusTarget, onFocus
       try {
         const group = parseAgentQuestionGroup(event.detail);
         if (group.conversationId !== conversationId) return;
+        // A delivered question is authoritative; invalidate any older list request that could
+        // otherwise replace it with stale data or overwrite the panel with a load error.
+        loadGeneration.current += 1;
         setGroups((current) => [group, ...current.filter((item) => item.id !== group.id)]);
+        setLoadedConversationId(conversationId);
         setLoadState('idle');
         setErrorMessage(null);
-      } catch {
+      } catch (error) {
+        setLoadState('error');
+        setLoadedConversationId(conversationId);
+        globalThis.reportError(new Error('A delivered user question could not be displayed.', { cause: error }));
         setErrorMessage(t('userQuestionLoadFailed'));
       }
     };
@@ -116,7 +131,7 @@ export function UserQuestionPanel({ conversationId, questionFocusTarget, onFocus
       const card = document.getElementById(`openchat-question-${focusTarget.groupId}`);
       if (!card) return;
       card.scrollIntoView({ block: 'center', behavior: 'smooth' });
-      card.querySelector<HTMLElement>('input, textarea, button')?.focus();
+      card.querySelector<HTMLElement>('[data-question-answer]')?.focus();
       setFocusTarget(null);
       onFocusHandled();
       return;
@@ -128,11 +143,11 @@ export function UserQuestionPanel({ conversationId, questionFocusTarget, onFocus
     }
   }, [conversationId, focusTarget, groups, loadState, loadedConversationId, onFocusHandled, t]);
 
-  const submit = async (group: AgentQuestionGroup) => {
+  const submit = async (group: AgentQuestionGroup, answerValues: AnswerValues = answers) => {
     setBusyGroupId(group.id);
     setErrorMessage(null);
     try {
-      const submittedAnswers = group.isAnswered ? group.savedAnswers : collectAnswers(group, answers);
+      const submittedAnswers = group.isAnswered ? group.savedAnswers : collectAnswers(group, answerValues);
       if (!submittedAnswers) {
         setErrorMessage(t('userQuestionRequiredValidation'));
         return;
@@ -171,8 +186,6 @@ export function UserQuestionPanel({ conversationId, questionFocusTarget, onFocus
       }
       if (useChatStore.getState().activeConversationId !== group.conversationId) return;
       setGroups((current) => current.map((item) => (item.id === group.id ? updatedGroup : item)));
-      if (result.idempotent) return;
-
       await persistQuestionToolAnswer(updatedGroup, submittedAnswers);
       const resumed = await sendMessage('', [], updatedGroup.runId, updatedGroup.assistantMessageId ?? undefined);
       if (!resumed) {
@@ -196,38 +209,61 @@ export function UserQuestionPanel({ conversationId, questionFocusTarget, onFocus
   if (loadState === 'idle' && groups.length === 0 && !errorMessage) return null;
 
   return (
-    <section
-      aria-label={t('userQuestionTitle')}
-      className="mx-auto grid max-h-72 w-full max-w-composer gap-2 overflow-y-auto px-4 sm:px-8"
-    >
+    <section aria-label={t('userQuestionTitle')} className="composer-question-panel mx-auto grid max-w-composer gap-2">
       {loadState === 'loading' ? (
-        <p className="py-2 text-sm text-secondary-text">{t('messageHistoryLoading')}</p>
+        <p aria-live="polite" className="py-2 text-sm text-secondary-text">
+          {t('userQuestionLoading')}
+        </p>
       ) : null}
       {errorMessage ? (
         <Card className="flex flex-wrap items-center justify-between gap-3 px-3 py-2" role="alert">
           <p className="text-sm text-destructive">{errorMessage}</p>
-          {loadState === 'error' ? (
-            <Button onClick={() => void load()} size="small">
-              {t('retry')}
-            </Button>
-          ) : null}
+          <div className="flex flex-wrap gap-2">
+            {loadState === 'error' && isSending ? (
+              <Button onClick={() => void stopResponse()} size="small" variant="secondary">
+                {t('userQuestionStopWaiting')}
+              </Button>
+            ) : null}
+            {loadState === 'error' ? (
+              <Button onClick={() => void load()} size="small">
+                {t('retry')}
+              </Button>
+            ) : null}
+          </div>
         </Card>
       ) : null}
-      {groups.map((group) => (
-        <QuestionCard
-          answers={answers}
-          busy={busyGroupId === group.id}
-          group={group}
-          key={group.id}
-          onAnswerChange={(questionId, answer) =>
-            setAnswers((current) => ({
-              ...current,
-              [answerKey(group.id, questionId)]: answer,
-            }))
-          }
-          onSubmit={() => void submit(group)}
-        />
-      ))}
+      {groups.map((group) =>
+        collapsedGroupIds.includes(group.id) ? (
+          <Card className="flex items-center justify-between gap-3 px-3 py-2" key={group.id}>
+            <span className="flex min-w-0 items-center gap-2 text-sm font-medium text-text">
+              <MessagesSquare aria-hidden="true" className="shrink-0 text-accent-icon" size={16} />
+              <span className="truncate">{group.questions[0]?.title ?? t('userQuestionTitle')}</span>
+            </span>
+            <Button
+              className="shrink-0"
+              onClick={() => setCollapsedGroupIds((current) => current.filter((id) => id !== group.id))}
+              size="small"
+            >
+              {t('userQuestionShow')}
+            </Button>
+          </Card>
+        ) : (
+          <QuestionCard
+            answers={answers}
+            busy={busyGroupId === group.id}
+            group={group}
+            key={`${group.id}:${group.revision}`}
+            onAnswerChange={(questionId, answer) =>
+              setAnswers((current) => ({
+                ...current,
+                [answerKey(group.id, questionId)]: answer,
+              }))
+            }
+            onCollapse={() => setCollapsedGroupIds((current) => [...current, group.id])}
+            onSubmit={(answerValues) => void submit(group, answerValues)}
+          />
+        ),
+      )}
     </section>
   );
 }
@@ -236,78 +272,183 @@ interface QuestionCardProps {
   group: AgentQuestionGroup;
   answers: AnswerValues;
   busy: boolean;
-  onAnswerChange(questionId: string, answer: string): void;
-  onSubmit(): void;
+  onAnswerChange(questionId: string, answer: QuestionAnswerInput): void;
+  onCollapse(): void;
+  onSubmit(answerValues?: AnswerValues): void;
 }
 
-function QuestionCard({ group, answers, busy, onAnswerChange, onSubmit }: QuestionCardProps) {
+function QuestionCard({ group, answers, busy, onAnswerChange, onCollapse, onSubmit }: QuestionCardProps) {
   const { t } = useTranslation();
+  const [pageIndex, setPageIndex] = useState(0);
   const isBusy = busy;
+  const currentPageIndex = Math.min(pageIndex, group.questions.length - 1);
+  const question = group.questions[currentPageIndex];
+  if (!question) return null;
+  const isFirstPage = currentPageIndex === 0;
+  const isLastPage = currentPageIndex === group.questions.length - 1;
+  const value = answers[answerKey(group.id, question.id)] ?? savedAnswer(group, question.id);
+  const singleValue = typeof value === 'string' ? value : '';
+  const selectedOptionIds = Array.isArray(value) ? value : [];
+  const answersComplete = group.isAnswered || collectAnswers(group, answers) !== null;
+
+  const skipCurrentQuestion = () => {
+    const emptyAnswer: QuestionAnswerInput = question.kind === 'multi_choice' ? [] : '';
+    const nextAnswers = { ...answers, [answerKey(group.id, question.id)]: emptyAnswer };
+    onAnswerChange(question.id, emptyAnswer);
+    if (isLastPage) {
+      onSubmit(nextAnswers);
+      return;
+    }
+    setPageIndex(currentPageIndex + 1);
+  };
+
   return (
-    <Card className="p-3" id={`openchat-question-${group.id}`}>
-      <div className="flex items-center gap-2 text-sm font-semibold text-text">
-        <MessagesSquare aria-hidden="true" className="text-accent-icon" size={18} />
-        {t(isBusy ? 'userQuestionResuming' : group.isAnswered ? 'userQuestionSaved' : 'userQuestionTitle')}
-      </div>
-      <div className="mt-3 grid gap-4">
-        {group.questions.map((question) => {
-          const value = answers[answerKey(group.id, question.id)] ?? savedAnswer(group, question.id);
-          return (
-            <fieldset className="min-w-0" disabled={isBusy || group.isAnswered} key={question.id}>
-              <legend className="text-sm font-semibold text-text">
-                {question.title}
-                {question.required ? (
-                  <span className="ml-2 text-xs font-normal text-secondary-text">{t('userQuestionRequiredLabel')}</span>
-                ) : null}
-              </legend>
-              {question.description ? <p className="mt-1 text-sm text-secondary-text">{question.description}</p> : null}
-              {question.kind === 'choice' ? (
-                <div className="mt-2 grid gap-1">
-                  {question.options.map((option) => (
-                    <label
-                      className="flex min-h-10 cursor-pointer items-center gap-3 rounded-control px-2 text-sm text-text hover:bg-hover"
-                      key={option.id}
-                    >
-                      <input
-                        checked={value === option.id}
-                        className="size-4 accent-accent"
-                        name={`question-${group.id}-${question.id}`}
-                        onChange={() => onAnswerChange(question.id, option.id)}
-                        type="radio"
-                        value={option.id}
-                      />
-                      <span className="break-words">{option.label}</span>
-                    </label>
-                  ))}
-                </div>
-              ) : (
-                <textarea
-                  aria-label={question.title}
-                  className="mt-2 min-h-20 w-full resize-y rounded-control border border-border bg-raised px-3 py-2 text-sm text-text outline-none focus-visible:ring-2 focus-visible:ring-focus disabled:opacity-60"
-                  maxLength={question.maxLength ?? undefined}
-                  onChange={(event) => onAnswerChange(question.id, event.currentTarget.value)}
-                  placeholder={question.placeholder ?? undefined}
-                  rows={3}
-                  value={value}
-                />
-              )}
-            </fieldset>
-          );
-        })}
-      </div>
-      <div className="mt-3 flex justify-end">
-        <Button disabled={isBusy} onClick={onSubmit} size="small" variant="primary">
-          {isBusy ? (
-            t('userQuestionResuming')
-          ) : group.isAnswered ? (
-            t('userQuestionContinue')
-          ) : (
-            <>
-              <Send aria-hidden="true" size={15} />
-              {t('userQuestionSubmit')}
-            </>
-          )}
+    <Card className="rounded-b-none px-3 py-1.5" id={`openchat-question-${group.id}`}>
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-2 text-sm font-semibold text-text">
+          <MessagesSquare aria-hidden="true" className="shrink-0 text-accent-icon" size={18} />
+          <span className="min-w-0 break-words">{question.title}</span>
+        </div>
+        <Button
+          aria-label={t('userQuestionClose')}
+          className="size-8 shrink-0"
+          onClick={onCollapse}
+          size="icon"
+          variant="ghost"
+        >
+          <X aria-hidden="true" size={16} />
         </Button>
+      </div>
+      {question.description ? <p className="mt-1 text-sm text-secondary-text">{question.description}</p> : null}
+      <fieldset aria-label={question.title} className="mt-1 min-w-0" disabled={isBusy || group.isAnswered}>
+        {question.kind === 'choice' ? (
+          <div aria-label={question.title} className="user-question-options grid gap-0.5" role="radiogroup">
+            {question.options.map((option, index) => (
+              <label
+                className={`flex min-h-9 cursor-pointer items-center gap-3 rounded-control px-2 text-base font-medium text-text transition-colors hover:bg-hover focus-within:ring-2 focus-within:ring-focus ${singleValue === option.id ? 'bg-selected' : ''}`}
+                key={option.id}
+              >
+                <input
+                  aria-label={option.label}
+                  checked={singleValue === option.id}
+                  className="sr-only"
+                  data-question-answer
+                  name={`question-${group.id}-${question.id}`}
+                  onChange={() => onAnswerChange(question.id, option.id)}
+                  type="radio"
+                  value={option.id}
+                />
+                <span
+                  aria-hidden="true"
+                  className="flex size-6 shrink-0 items-center justify-center rounded-control border border-border bg-raised text-sm text-secondary-text"
+                >
+                  {index + 1}
+                </span>
+                <span className="break-words">{option.label}</span>
+              </label>
+            ))}
+          </div>
+        ) : question.kind === 'multi_choice' ? (
+          <div className="user-question-options grid gap-0.5">
+            {question.options.map((option) => {
+              const isSelected = selectedOptionIds.includes(option.id);
+              return (
+                <label
+                  className={`flex min-h-9 cursor-pointer items-center gap-3 rounded-control px-2 text-base font-medium text-text transition-colors hover:bg-hover focus-within:ring-2 focus-within:ring-focus ${isSelected ? 'bg-selected' : ''}`}
+                  key={option.id}
+                >
+                  <input
+                    aria-label={option.label}
+                    checked={isSelected}
+                    className="sr-only"
+                    data-question-answer
+                    name={`question-${group.id}-${question.id}`}
+                    onChange={(event) => {
+                      const nextOptionIds = event.currentTarget.checked
+                        ? [...selectedOptionIds, option.id]
+                        : selectedOptionIds.filter((optionId) => optionId !== option.id);
+                      onAnswerChange(question.id, nextOptionIds);
+                    }}
+                    type="checkbox"
+                    value={option.id}
+                  />
+                  <span
+                    aria-hidden="true"
+                    className={`flex size-5 shrink-0 items-center justify-center rounded-control border ${isSelected ? 'border-accent bg-accent text-accent-foreground' : 'border-border bg-raised text-transparent'}`}
+                  >
+                    <Check aria-hidden="true" size={13} strokeWidth={3} />
+                  </span>
+                  <span className="break-words">{option.label}</span>
+                </label>
+              );
+            })}
+          </div>
+        ) : (
+          <textarea
+            aria-label={question.title}
+            className="min-h-10 w-full resize-y rounded-control border border-border bg-raised px-3 py-2 text-base text-text outline-none focus-visible:ring-2 focus-visible:ring-focus disabled:opacity-60"
+            data-question-answer
+            maxLength={question.maxLength ?? undefined}
+            onChange={(event) => onAnswerChange(question.id, event.currentTarget.value)}
+            placeholder={question.placeholder ?? undefined}
+            rows={1}
+            value={singleValue}
+          />
+        )}
+      </fieldset>
+      <div className="mt-2 flex items-center justify-between gap-2">
+        {group.questions.length > 1 ? (
+          <div className="flex min-w-0 items-center gap-2">
+            {!isFirstPage ? (
+              <Button
+                aria-label={t('previousPage')}
+                disabled={isBusy}
+                onClick={() => setPageIndex(currentPageIndex - 1)}
+                size="small"
+                variant="secondary"
+              >
+                <ChevronLeft aria-hidden="true" size={15} />
+                {t('previousPage')}
+              </Button>
+            ) : null}
+            <span aria-live="polite" className="text-xs text-secondary-text">
+              {t('userQuestionPageIndicator', { current: currentPageIndex + 1, total: group.questions.length })}
+            </span>
+          </div>
+        ) : (
+          <span />
+        )}
+        <div className="flex shrink-0 items-center justify-end gap-2">
+          {!group.isAnswered && !question.required ? (
+            <Button disabled={isBusy} onClick={skipCurrentQuestion} size="small" variant="ghost">
+              {t('userQuestionSkip')}
+            </Button>
+          ) : null}
+          {!isLastPage ? (
+            <Button disabled={isBusy} onClick={() => setPageIndex(currentPageIndex + 1)} size="small">
+              {t('nextPage')}
+              <ChevronRight aria-hidden="true" size={15} />
+            </Button>
+          ) : (
+            <Button
+              disabled={isBusy || (!group.isAnswered && !answersComplete)}
+              onClick={() => onSubmit(answers)}
+              size="small"
+              variant="primary"
+            >
+              {isBusy ? (
+                t('userQuestionResuming')
+              ) : group.isAnswered ? (
+                t('userQuestionContinue')
+              ) : (
+                <>
+                  <Send aria-hidden="true" size={15} />
+                  {t('userQuestionSubmit')}
+                </>
+              )}
+            </Button>
+          )}
+        </div>
       </div>
     </Card>
   );
@@ -316,7 +457,25 @@ function QuestionCard({ group, answers, busy, onAnswerChange, onSubmit }: Questi
 function collectAnswers(group: AgentQuestionGroup, values: AnswerValues): AgentQuestionAnswer[] | null {
   const collected: AgentQuestionAnswer[] = [];
   for (const question of group.questions) {
-    const value = values[answerKey(group.id, question.id)]?.trim() ?? '';
+    const rawValue = values[answerKey(group.id, question.id)] ?? savedAnswer(group, question.id);
+    if (question.kind === 'multi_choice') {
+      const selectedIds = Array.isArray(rawValue) ? rawValue : [];
+      const selectedIdSet = new Set(selectedIds);
+      if (
+        selectedIdSet.size !== selectedIds.length ||
+        selectedIds.some((optionId) => !question.options.some((option) => option.id === optionId))
+      ) {
+        return null;
+      }
+      if (selectedIds.length === 0) {
+        if (question.required) return null;
+        continue;
+      }
+      const optionIds = question.options.filter((option) => selectedIdSet.has(option.id)).map((option) => option.id);
+      collected.push({ questionId: question.id, value: { kind: 'multi_choice', optionIds } });
+      continue;
+    }
+    const value = typeof rawValue === 'string' ? rawValue.trim() : '';
     if (!value && question.required) return null;
     if (!value) continue;
     if (question.kind === 'choice') {
@@ -373,10 +532,12 @@ async function persistQuestionToolAnswer(group: AgentQuestionGroup, answers: Age
   useChatStore.getState().updateMessage(updatedMessage);
 }
 
-function savedAnswer(group: AgentQuestionGroup, questionId: string): string {
+function savedAnswer(group: AgentQuestionGroup, questionId: string): QuestionAnswerInput {
   const answer = group.savedAnswers.find((item) => item.questionId === questionId)?.value;
   if (!answer) return '';
-  return answer.kind === 'choice' ? answer.optionId : answer.text;
+  if (answer.kind === 'choice') return answer.optionId;
+  if (answer.kind === 'multi_choice') return answer.optionIds;
+  return answer.text;
 }
 
 function answerKey(groupId: string, questionId: string): string {

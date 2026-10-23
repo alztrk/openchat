@@ -55,7 +55,7 @@ type WorktreeErrorKey =
   | 'toolPermissionSettingsLoadFailed';
 
 export function ProjectWorktreesPanel({ project, onClose, onUseWorktree }: ProjectWorktreesPanelProps) {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const mounted = useRef(false);
   const operationRef = useRef<ServiceOperation | null>(null);
   const [worktrees, setWorktrees] = useState<Worktree[]>([]);
@@ -74,10 +74,20 @@ export function ProjectWorktreesPanel({ project, onClose, onUseWorktree }: Proje
   const [permissionsFailed, setPermissionsFailed] = useState(false);
   const [detail, setDetail] = useState<DetailDialog | null>(null);
   const [errorKey, setErrorKey] = useState<WorktreeErrorKey | null>(null);
+  const [errorDetails, setErrorDetails] = useState<string | null>(null);
+
+  const clearError = useCallback(() => {
+    setErrorKey(null);
+    setErrorDetails(null);
+  }, []);
+  const setWorktreeError = useCallback((key: WorktreeErrorKey, error?: unknown) => {
+    setErrorKey(key);
+    setErrorDetails(error === undefined ? null : readErrorDetails(error));
+  }, []);
 
   const refreshWorktrees = useCallback(async () => {
     setIsLoading(true);
-    setErrorKey(null);
+    clearError();
     try {
       const response = await localServiceClient.call('project.worktrees.list', {
         projectId: project.id,
@@ -93,11 +103,11 @@ export function ProjectWorktreesPanel({ project, onClose, onUseWorktree }: Proje
       }
     } catch (error) {
       if (mounted.current) {
-        setErrorKey(worktreeErrorKey(error, 'projectWorktreeLoadFailed'));
+        setWorktreeError(worktreeErrorKey(error, 'projectWorktreeLoadFailed'), error);
         setIsLoading(false);
       }
     }
-  }, [project.id]);
+  }, [clearError, project.id, setWorktreeError]);
 
   useEffect(() => {
     mounted.current = true;
@@ -126,14 +136,14 @@ export function ProjectWorktreesPanel({ project, onClose, onUseWorktree }: Proje
   const createWorktree = async () => {
     if (isCreating || isLoading || removingId !== null || runningId !== null) return;
     setIsCreating(true);
-    setErrorKey(null);
+    clearError();
     try {
       const response = await localServiceClient.call('project.worktrees.create', { projectId: project.id }, 50_000);
       const worktree = parseWorktree(response);
       await refreshWorktrees();
       await activateWorktree(worktree);
     } catch (error) {
-      if (mounted.current) setErrorKey(worktreeErrorKey(error, 'projectWorktreeCreateFailed'));
+      if (mounted.current) setWorktreeError(worktreeErrorKey(error, 'projectWorktreeCreateFailed'), error);
     } finally {
       if (mounted.current) setIsCreating(false);
     }
@@ -142,12 +152,12 @@ export function ProjectWorktreesPanel({ project, onClose, onUseWorktree }: Proje
   const activateWorktree = async (worktree: Worktree) => {
     if (isUsing || removingId !== null || runningId !== null) return;
     setIsUsing(true);
-    setErrorKey(null);
+    clearError();
     try {
       await onUseWorktree(worktree.path, worktree.branch);
       onClose();
-    } catch {
-      if (mounted.current) setErrorKey('projectWorktreeOperationFailed');
+    } catch (error) {
+      if (mounted.current) setWorktreeError('projectWorktreeOperationFailed', error);
     } finally {
       if (mounted.current) setIsUsing(false);
     }
@@ -156,7 +166,7 @@ export function ProjectWorktreesPanel({ project, onClose, onUseWorktree }: Proje
   const reviewWorktree = async (worktree: Worktree) => {
     if (checkingId || runningId !== null || removingId !== null) return;
     setCheckingId(worktree.id);
-    setErrorKey(null);
+    clearError();
     try {
       const response = await localServiceClient.call('project.worktrees.review', {
         projectId: project.id,
@@ -178,7 +188,7 @@ export function ProjectWorktreesPanel({ project, onClose, onUseWorktree }: Proje
         },
       });
     } catch (error) {
-      if (mounted.current) setErrorKey(worktreeErrorKey(error, 'projectWorktreeCheckFailed'));
+      if (mounted.current) setWorktreeError(worktreeErrorKey(error, 'projectWorktreeCheckFailed'), error);
     } finally {
       if (mounted.current) setCheckingId(null);
     }
@@ -188,7 +198,7 @@ export function ProjectWorktreesPanel({ project, onClose, onUseWorktree }: Proje
     if (taskWorktreeId === worktree.id || runningId !== null || removingId !== null) return;
     setTaskWorktreeId(worktree.id);
     setTasks([]);
-    setErrorKey(null);
+    clearError();
     try {
       const response = await localServiceClient.call('project.worktrees.tasks', {
         projectId: project.id,
@@ -198,22 +208,22 @@ export function ProjectWorktreesPanel({ project, onClose, onUseWorktree }: Proje
       const taskList = response.tasks.map(parseProjectTask);
       if (mounted.current) {
         setTasks(taskList);
-        if (taskList.length === 0) setErrorKey('projectWorktreeTaskEmpty');
+        if (taskList.length === 0) setWorktreeError('projectWorktreeTaskEmpty');
       }
     } catch (error) {
-      if (mounted.current) setErrorKey(worktreeErrorKey(error, 'projectWorktreeTaskLoadFailed'));
+      if (mounted.current) setWorktreeError(worktreeErrorKey(error, 'projectWorktreeTaskLoadFailed'), error);
       if (mounted.current) setTaskWorktreeId(null);
     }
   };
 
   const confirmTask = (worktree: Worktree, task: ProjectTask) => {
     if (permissionsFailed || permissionMode === null) {
-      setErrorKey('toolPermissionSettingsLoadFailed');
+      setWorktreeError('toolPermissionSettingsLoadFailed');
       return;
     }
     const rule = permissionRules[`run_project_task__${task.id}`] ?? permissionRules.run_project_task;
     if (rule === 'deny') {
-      setErrorKey('projectWorktreeTaskDenied');
+      setWorktreeError('projectWorktreeTaskDenied');
       return;
     }
     setDetail({ kind: 'task', worktree, task });
@@ -225,16 +235,16 @@ export function ProjectWorktreesPanel({ project, onClose, onUseWorktree }: Proje
     setDetail(null);
     setRunningId(worktree.id);
     setIsCancelling(false);
-    setErrorKey(null);
+    clearError();
     let activeOperation: ServiceOperation | null = null;
     let approvalResponseFailed = false;
     let approvalPayloadMismatch = false;
     let permissionEventHandled = false;
 
     /** Cancels the pending task if its approval response cannot reach the service. */
-    const stopAfterApprovalFailure = () => {
+    const stopAfterApprovalFailure = (error?: unknown) => {
       approvalResponseFailed = true;
-      if (mounted.current) setErrorKey('projectWorktreeOperationFailed');
+      if (mounted.current) setWorktreeError('projectWorktreeOperationFailed', error);
       const operation = activeOperation ?? operationRef.current;
       if (operation) {
         void operation.cancel().catch((cause: unknown) => {
@@ -276,10 +286,10 @@ export function ProjectWorktreesPanel({ project, onClose, onUseWorktree }: Proje
 
           approvalPayloadMismatch = !matchesConfirmedTask;
           void localServiceClient
-            .respondToPermission(approvalRequestId, matchesConfirmedTask, i18n.resolvedLanguage ?? i18n.language)
+            .respondToPermission(approvalRequestId, matchesConfirmedTask)
             .catch((cause: unknown) => {
               globalThis.reportError(new Error('The project task approval could not be delivered.', { cause }));
-              stopAfterApprovalFailure();
+              stopAfterApprovalFailure(cause);
             });
         },
       );
@@ -316,7 +326,10 @@ export function ProjectWorktreesPanel({ project, onClose, onUseWorktree }: Proje
         setDetail({ kind: 'result', task, status, output: result.output, truncated: result.truncated });
     } catch (error) {
       if (mounted.current) {
-        setErrorKey(approvalPayloadMismatch ? 'projectWorktreeTaskLoadFailed' : taskErrorKey(error, isCancelling));
+        setWorktreeError(
+          approvalPayloadMismatch ? 'projectWorktreeTaskLoadFailed' : taskErrorKey(error, isCancelling),
+          error,
+        );
       }
     } finally {
       operationRef.current = null;
@@ -333,16 +346,16 @@ export function ProjectWorktreesPanel({ project, onClose, onUseWorktree }: Proje
     setIsCancelling(true);
     try {
       const cancelled = await operation.cancel();
-      if (!cancelled && mounted.current) setErrorKey('projectWorktreeOperationFailed');
-    } catch {
-      if (mounted.current) setErrorKey('projectWorktreeOperationFailed');
+      if (!cancelled && mounted.current) setWorktreeError('projectWorktreeOperationFailed');
+    } catch (error) {
+      if (mounted.current) setWorktreeError('projectWorktreeOperationFailed', error);
     }
   };
 
   const removeWorktree = async (worktree: Worktree) => {
     setDetail(null);
     setRemovingId(worktree.id);
-    setErrorKey(null);
+    clearError();
     try {
       await localServiceClient.call(
         'project.worktrees.remove',
@@ -351,7 +364,7 @@ export function ProjectWorktreesPanel({ project, onClose, onUseWorktree }: Proje
       );
       await refreshWorktrees();
     } catch (error) {
-      if (mounted.current) setErrorKey(worktreeErrorKey(error));
+      if (mounted.current) setWorktreeError(worktreeErrorKey(error), error);
     } finally {
       if (mounted.current) setRemovingId(null);
     }
@@ -373,9 +386,14 @@ export function ProjectWorktreesPanel({ project, onClose, onUseWorktree }: Proje
     <div className="grid gap-3">
       <p className="text-sm text-secondary-text">{t('projectWorktreesDescription')}</p>
       {errorKey ? (
-        <p className="text-sm text-destructive" role="alert">
-          {t(errorKey)}
-        </p>
+        <div className="grid gap-1" role="alert">
+          <p className="text-sm text-destructive">{t(errorKey)}</p>
+          {errorDetails ? (
+            <p className="break-words text-xs text-secondary-text">
+              {t('chatErrorDetails')}: {errorDetails}
+            </p>
+          ) : null}
+        </div>
       ) : null}
       {isLoading ? (
         <p aria-live="polite" className="py-8 text-center text-sm text-secondary-text">
@@ -640,6 +658,13 @@ function taskErrorKey(error: unknown, cancelling: boolean): WorktreeErrorKey {
   if (error.code === 'project_task_execution_failed') return 'projectWorktreeTaskRunFailed';
   if (error.code === 'permission_denied') return 'projectWorktreeTaskDenied';
   return 'projectWorktreeOperationFailed';
+}
+
+function readErrorDetails(error: unknown): string | null {
+  const value = error instanceof LocalServiceError ? (error.details ?? error.message) : error;
+  if (typeof value !== 'string' && !(value instanceof Error)) return null;
+  const details = typeof value === 'string' ? value : value.message;
+  return details.trim().slice(0, 1000) || null;
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {

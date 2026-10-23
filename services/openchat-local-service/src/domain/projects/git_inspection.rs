@@ -1,6 +1,6 @@
 //! Runs bounded, read-only Git inspection commands for a project directory.
 //!
-//! Status, diff, and history responses have explicit byte and record limits.
+//! Status and diff responses have explicit byte limits.
 //! Git output is parsed as data and never used to construct another command.
 
 use std::{path::Path, process::Stdio, time::Duration};
@@ -15,9 +15,7 @@ use tokio::{
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(5);
 const MAX_STATUS_BYTES: usize = 8 * 1024;
 const MAX_DIFF_BYTES: usize = 8 * 1024;
-const MAX_HISTORY_BYTES: usize = 8 * 1024;
 const MAX_CHANGED_FILES: usize = 200;
-const MAX_HISTORY_ENTRIES: usize = 100;
 
 #[derive(Debug)]
 /// Failure categories returned by bounded Git inspection.
@@ -25,7 +23,6 @@ pub(crate) enum GitInspectionError {
     NotRepository,
     Unavailable,
     TimedOut,
-    InvalidInput,
 }
 
 /// Returns branch metadata and a bounded list of changed files.
@@ -89,34 +86,6 @@ pub(crate) async fn diff(root: &Path) -> Result<Value, GitInspectionError> {
         "unstagedTruncated": unstaged.truncated,
         "staged": String::from_utf8_lossy(&staged.stdout),
         "stagedTruncated": staged.truncated,
-    }))
-}
-
-/// Returns recent commit metadata after validating the requested entry limit.
-pub(crate) async fn history(
-    root: &Path,
-    requested_limit: usize,
-) -> Result<Value, GitInspectionError> {
-    if !(1..=MAX_HISTORY_ENTRIES).contains(&requested_limit) {
-        return Err(GitInspectionError::InvalidInput);
-    }
-    let limit = requested_limit.to_string();
-    let output = run_git(
-        root,
-        &[
-            "log",
-            "--no-color",
-            "--format=%H%x1f%ct%x1f%s%x00",
-            "-n",
-            &limit,
-        ],
-        MAX_HISTORY_BYTES,
-    )
-    .await?;
-    let entries = parse_history(&output.stdout);
-    Ok(json!({
-        "entries": entries,
-        "truncated": output.truncated,
     }))
 }
 
@@ -360,29 +329,9 @@ fn split_status_record(record: &[u8], field_count: usize) -> Option<(String, &[u
     Some((String::from_utf8_lossy(status).into_owned(), path))
 }
 
-fn parse_history(bytes: &[u8]) -> Vec<Value> {
-    bytes
-        .split(|byte| *byte == 0)
-        .filter(|record| !record.is_empty())
-        .filter_map(|record| {
-            let mut fields = record.splitn(3, |byte| *byte == 0x1f);
-            let id = String::from_utf8_lossy(fields.next()?).into_owned();
-            let timestamp = String::from_utf8_lossy(fields.next()?)
-                .parse::<i64>()
-                .ok()?;
-            let subject = String::from_utf8_lossy(fields.next()?).into_owned();
-            Some(json!({
-                "id": id,
-                "timestampUnixSeconds": timestamp,
-                "subject": subject,
-            }))
-        })
-        .collect()
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{Stdio, diff, history, parse_status, status, wait_for_git_process};
+    use super::{Stdio, diff, parse_status, status, wait_for_git_process};
     use std::{path::PathBuf, process::Command, time::Duration};
 
     struct TestRepository(PathBuf);
@@ -487,15 +436,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn rejects_history_limits_outside_the_supported_range() {
-        let error = history(std::path::Path::new("."), 0)
-            .await
-            .expect_err("zero is not a valid history limit");
-        assert!(matches!(error, super::GitInspectionError::InvalidInput));
-    }
-
-    #[tokio::test]
-    async fn inspects_real_repository_status_diff_and_history() {
+    async fn inspects_real_repository_status_and_diff() {
         let repository = TestRepository::new();
         std::fs::write(repository.0.join("source.txt"), "initial\n")
             .expect("write initial test file");
@@ -526,8 +467,5 @@ mod tests {
 
         let diff = diff(&repository.0).await.expect("read Git diff");
         assert!(diff["unstaged"].as_str().unwrap_or("").contains("changed"));
-
-        let history = history(&repository.0, 5).await.expect("read Git history");
-        assert_eq!(history["entries"][0]["subject"], "Add initial test file");
     }
 }

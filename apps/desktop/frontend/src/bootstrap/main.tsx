@@ -12,6 +12,11 @@ if (!rootElement) {
 const reactRoot = ReactDOM.createRoot(rootElement);
 
 async function startApplication(): Promise<void> {
+  if (new URLSearchParams(location.search).get('computerUseOverlay') === '1') {
+    const { ComputerUseOverlay } = await import('./ComputerUseOverlay');
+    reactRoot.render(<ComputerUseOverlay />);
+    return;
+  }
   const appImportPromise = import('./App');
   await unifiedStorage.initialize();
   const [{ App }, { i18n, i18nReady }] = await Promise.all([appImportPromise, import('../localization/i18n')]);

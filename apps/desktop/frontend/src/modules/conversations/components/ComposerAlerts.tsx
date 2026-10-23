@@ -38,6 +38,7 @@ export interface ComposerFeedbackListProps {
   commandFeedbackKey: ChatCommandFeedbackKey | null;
   successFeedback: boolean;
   chatErrorCode: ChatErrorCode | null;
+  chatErrorMessage: string | null;
   modelError: boolean;
 }
 
@@ -46,6 +47,7 @@ export function ComposerFeedbackList({
   commandFeedbackKey,
   successFeedback,
   chatErrorCode,
+  chatErrorMessage,
   modelError,
 }: ComposerFeedbackListProps) {
   const { t } = useTranslation();
@@ -66,9 +68,14 @@ export function ComposerFeedbackList({
         </p>
       ) : null}
       {chatErrorCode && chatErrorCode !== 'searchMessageUnavailable' && chatErrorCode !== 'messageHistoryLoadFailed' ? (
-        <p className="mt-2 text-sm text-destructive" role="alert">
-          {t(chatErrorCode)}
-        </p>
+        <div className="mt-2 text-sm text-destructive" role="alert">
+          <p>{t(chatErrorCode)}</p>
+          {chatErrorMessage ? (
+            <p className="mt-1 whitespace-pre-wrap break-words text-xs">
+              {t('chatErrorDetails')}: {chatErrorMessage}
+            </p>
+          ) : null}
+        </div>
       ) : null}
       {modelError ? (
         <p className="mt-2 text-sm text-warning" role="status">

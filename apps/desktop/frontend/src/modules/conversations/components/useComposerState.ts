@@ -11,16 +11,25 @@ import {
   validateAttachmentSelection,
 } from '@/modules/conversations/data/chatAttachments';
 import { readChatGptFastMode, writeChatGptFastMode } from '@/modules/conversations/data/chatGptFastMode';
-import type { ChatModelFavorite, ConversationAttachmentSummary } from '@/modules/conversations/data/chatStorage';
+import type {
+  ChatMessage,
+  ChatModelFavorite,
+  ConversationAttachmentSummary,
+} from '@/modules/conversations/data/chatStorage';
 import { readMessageAttachment, renameConversation } from '@/modules/conversations/data/chatStorage';
 import {
   shouldInsertNewlineFromKeyboard,
   shouldSendFromKeyboard,
   useComposerPreferencesStore,
 } from '@/modules/conversations/data/composerPreferences';
+import {
+  readConversationComposerDraft,
+  writeConversationComposerDraft,
+} from '@/modules/conversations/data/conversationComposerDrafts';
+import { clearPendingComposerDraft, readPendingComposerDraft } from '@/modules/conversations/data/pendingComposerDraft';
 import { useChatStreaming } from '@/modules/conversations/hooks/useChatStreaming';
 import { useChatStore } from '@/modules/conversations/stores/chatStore';
-import { favoriteSourceConnection } from '@/modules/conversations/stores/chatStoreUtils';
+import { favoriteSourceConnection, isSameRoute } from '@/modules/conversations/stores/chatStoreUtils';
 import type { ToolPermissionMode } from '@/modules/projects/data/projectPreferences';
 import type { ChatModel } from '@/modules/providers/data/chatModels';
 import { modelRouteKey } from '@/modules/providers/data/modelPreferences';
@@ -44,6 +53,8 @@ export interface UseComposerStateOptions {
   formRef: RefObject<HTMLFormElement | null>;
   droppedFiles?: { id: number; files: File[] } | null;
   targetConversationId?: string | null;
+  messagesOverride?: readonly ChatMessage[];
+  isLoadingMessagesOverride?: boolean;
 }
 
 export function useComposerState({
@@ -53,6 +64,8 @@ export function useComposerState({
   formRef,
   droppedFiles,
   targetConversationId,
+  messagesOverride,
+  isLoadingMessagesOverride,
 }: UseComposerStateOptions) {
   const { t } = useTranslation();
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -60,7 +73,17 @@ export function useComposerState({
   const isReadingAttachmentsRef = useRef(false);
   const pendingAttachmentsRef = useRef<PendingChatAttachment[]>([]);
   const [pendingAttachments, setPendingAttachments] = useState<PendingChatAttachment[]>([]);
-  const [messageDraft, setMessageDraft] = useState('');
+  const [messageDraft, setMessageDraft] = useState(() =>
+    targetConversationId
+      ? (readConversationComposerDraft(targetConversationId) ?? '')
+      : (readPendingComposerDraft() ?? ''),
+  );
+  useEffect(() => {
+    if (!targetConversationId && messageDraft.length > 0) clearPendingComposerDraft(messageDraft);
+  }, [messageDraft, targetConversationId]);
+  useEffect(() => {
+    if (targetConversationId) writeConversationComposerDraft(targetConversationId, messageDraft);
+  }, [messageDraft, targetConversationId]);
   const [composerMode, setComposerMode] = useState<'normal' | 'plan' | 'goal'>('normal');
   const [selectedPermissionMode, setSelectedPermissionMode] = useState<ToolPermissionMode | null>(null);
   const [slashCommandIndex, setSlashCommandIndex] = useState(0);
@@ -82,15 +105,26 @@ export function useComposerState({
   const submissionMode = useComposerPreferencesStore((state) => state.submissionMode);
   const keyboardShortcuts = useKeyboardShortcutsStore((state) => state.bindings);
   const models = useChatStore((state) => state.models);
+  const conversations = useChatStore((state) => state.conversations);
   const hiddenModelKeys = useChatStore((state) => state.hiddenModelKeys);
-  const selectedModelKey = useChatStore((state) => state.selectedModelKey);
-  const activeConversationId = useChatStore((state) => state.activeConversationId);
+  const storeSelectedModelKey = useChatStore((state) => state.selectedModelKey);
+  const storeActiveConversationId = useChatStore((state) => state.activeConversationId);
+  const activeConversationId = targetConversationId === undefined ? storeActiveConversationId : targetConversationId;
+  const activeConversation = conversations.find((conversation) => conversation.id === activeConversationId);
+  const selectedModelKey =
+    targetConversationId === undefined
+      ? storeSelectedModelKey
+      : activeConversation
+        ? (models.find((model) => isSameRoute(model, activeConversation))?.key ?? null)
+        : null;
   const temporaryChat = useChatStore((state) => state.temporaryChat);
   const pendingQuestionSendBlock = useChatStore((state) => state.pendingQuestionSendBlock);
   const compactingConversationId = useChatStore((state) => state.compactingConversationId);
   const isCreatingMessageBranch = useChatStore((state) => state.isCreatingMessageBranch);
-  const messages = useChatStore((state) => state.messages);
-  const isLoadingMessages = useChatStore((state) => state.isLoadingMessages);
+  const storeMessages = useChatStore((state) => state.messages);
+  const messages = messagesOverride ?? storeMessages;
+  const storeIsLoadingMessages = useChatStore((state) => state.isLoadingMessages);
+  const isLoadingMessages = isLoadingMessagesOverride ?? storeIsLoadingMessages;
   const isUpdatingConversationModel = useChatStore((state) => state.isUpdatingConversationModel);
   const modelStatus = useChatStore((state) => state.modelStatus);
   const selectConversationModel = useChatStore((state) => state.selectConversationModel);
@@ -101,7 +135,13 @@ export function useComposerState({
   const selectReasoningEffort = useChatStore((state) => state.selectReasoningEffort);
   const startNewChat = useChatStore((state) => state.startNewChat);
   const refreshConversations = useChatStore((state) => state.refreshConversations);
-  const { isSending, sendMessage, stopResponse } = useChatStreaming();
+  const { isSending: isAnyConversationSending, sendMessage, stopResponse } = useChatStreaming();
+  const sendingConversationId = useChatStore((state) => state.sendingConversationId);
+  const isSending =
+    isAnyConversationSending &&
+    (targetConversationId === undefined
+      ? sendingConversationId === storeActiveConversationId || sendingConversationId === temporaryChat?.id
+      : targetConversationId !== null && sendingConversationId === targetConversationId);
   const modelContextLimits = useChatStore((state) => state.modelContextLimits);
 
   const selectableModels = models.filter((model) => !hiddenModelKeys.includes(modelRouteKey(model)));
@@ -140,9 +180,7 @@ export function useComposerState({
   const ghostTextContext = useMemo(() => getGhostTextContext(messages), [messages]);
   const ghostTextModel =
     ghostTextModelKey === 'auto' ? selectedModel : models.find((model) => model.key === ghostTextModelKey);
-  const ghostTextConversationId = isTemporaryChat
-    ? (temporaryChat?.id ?? null)
-    : (targetConversationId ?? activeConversationId);
+  const ghostTextConversationId = isTemporaryChat ? (temporaryChat?.id ?? null) : activeConversationId;
   const ghostTextRequestKey =
     ghostTextContext && ghostTextModel && ghostTextConversationId
       ? JSON.stringify([ghostTextConversationId, ghostTextContext.assistantMessageId, ghostTextModel.key])
@@ -163,7 +201,7 @@ export function useComposerState({
       targetConversationId === null ||
       isLoadingMessages ||
       messageDraft.length > 0 ||
-      isSending ||
+      isAnyConversationSending ||
       slashCommands.length > 0 ||
       generatedGhostText?.requestKey === ghostTextRequestKey ||
       lastGhostTextRequestKeyRef.current === ghostTextRequestKey
@@ -251,7 +289,7 @@ export function useComposerState({
     ghostTextRequestKey,
     ghostTextConversationId,
     isLoadingMessages,
-    isSending,
+    isAnyConversationSending,
     messageDraft.length,
     slashCommands.length,
     targetConversationId,
@@ -262,14 +300,21 @@ export function useComposerState({
       !ghostTextEnabled ||
       ghostTextDismissed ||
       messageDraft.length > 0 ||
-      isSending ||
+      isAnyConversationSending ||
       !ghostTextRequestKey ||
       generatedGhostText?.requestKey !== ghostTextRequestKey
     ) {
       return null;
     }
     return generatedGhostText.text;
-  }, [ghostTextEnabled, ghostTextDismissed, generatedGhostText, ghostTextRequestKey, messageDraft.length, isSending]);
+  }, [
+    ghostTextEnabled,
+    ghostTextDismissed,
+    generatedGhostText,
+    ghostTextRequestKey,
+    messageDraft.length,
+    isAnyConversationSending,
+  ]);
 
   useEffect(() => {
     pendingAttachmentsRef.current = pendingAttachments;
@@ -389,6 +434,9 @@ export function useComposerState({
     setAttachmentErrorKey(null);
   };
 
+  const selectModelForCurrentConversation = (key: string) =>
+    selectConversationModel(key, targetConversationId ?? undefined);
+
   const sendContent = async (
     content: string,
     mode: 'normal' | 'plan' | 'goal',
@@ -409,7 +457,11 @@ export function useComposerState({
     const currentReasoningEffort = useChatStore.getState().selectedReasoningEffort;
     const options = {
       ...(mode === 'normal' ? {} : { mode }),
-      ...(currentReasoningEffort ? { reasoningEffort: currentReasoningEffort } : {}),
+      ...(currentReasoningEffort &&
+      selectedModel?.supportsReasoning &&
+      selectedModel.reasoningLevels.includes(currentReasoningEffort)
+        ? { reasoningEffort: currentReasoningEffort }
+        : {}),
       ...(!isTemporaryChat && isChatGptRoute && fastModeEnabled ? { fastMode: true } : {}),
       ...(targetConversationId ? { conversationId: targetConversationId } : {}),
       onUserMessageCommitted: (conversationId: string) => {
@@ -422,7 +474,10 @@ export function useComposerState({
       },
     };
     const saved = await sendMessage(content, attachments, undefined, undefined, options);
-    if (!saved) return false;
+    if (!saved) {
+      if (targetConversationId) setCommandFeedbackKey('chatRequestFailed');
+      return false;
+    }
     if (clearAttachmentsOnSuccess) clearPendingAttachments();
     setComposerMode('normal');
     setCommandFeedbackKey(null);
@@ -462,7 +517,7 @@ export function useComposerState({
           setCommandFeedbackKey('slashCommandSummarizeNoMessages');
           return;
         }
-        if (isSending || isUpdatingConversationModel || isSendBlocked || !selectedModelKey) {
+        if (isAnyConversationSending || isUpdatingConversationModel || isSendBlocked || !selectedModelKey) {
           setCommandFeedbackKey('slashCommandSummarizeUnavailable');
           return;
         }
@@ -501,7 +556,7 @@ export function useComposerState({
           setCommandFeedbackKey('slashCommandModelNameRequired');
           return;
         }
-        if (isSending || isUpdatingConversationModel || modelStatus === 'loading') {
+        if (isAnyConversationSending || isUpdatingConversationModel || modelStatus === 'loading') {
           setCommandFeedbackKey('slashCommandModelUnavailable');
           return;
         }
@@ -524,7 +579,7 @@ export function useComposerState({
           setCommandFeedbackKey('slashCommandModelNoMatch');
           return;
         }
-        const changed = await selectConversationModel(selectedModel.key);
+        const changed = await selectModelForCurrentConversation(selectedModel.key);
         if (!changed) {
           const code = useChatStore.getState().errorCode;
           setCommandFeedbackKey(
@@ -544,7 +599,7 @@ export function useComposerState({
           setCommandFeedbackKey('slashCommandCompactNoConversation');
           return;
         }
-        if (isSending || isUpdatingConversationModel || isSendBlocked) {
+        if (isAnyConversationSending || isUpdatingConversationModel || isSendBlocked) {
           setCommandFeedbackKey('slashCommandCompactBusy');
           return;
         }
@@ -571,13 +626,13 @@ export function useComposerState({
         }
         try {
           const result = await localServiceClient.call('chat.memory.compact', { conversationId, contextWindow });
-          if (useChatStore.getState().activeConversationId !== conversationId) return;
+          if (!targetConversationId && useChatStore.getState().activeConversationId !== conversationId) return;
           setCommandFeedbackKey(
             result.compacted === true ? 'slashCommandCompactSuccess' : 'slashCommandCompactNothing',
           );
           clearDraft();
         } catch {
-          if (useChatStore.getState().activeConversationId === conversationId) {
+          if (targetConversationId || useChatStore.getState().activeConversationId === conversationId) {
             setCommandFeedbackKey('slashCommandCompactFailed');
           }
         } finally {
@@ -655,9 +710,9 @@ export function useComposerState({
   };
 
   const selectSlashModel = async (model: ChatModel) => {
-    if (isSending || isUpdatingConversationModel) return;
+    if (isAnyConversationSending || isUpdatingConversationModel) return;
     setSlashModelMenuOpen(false);
-    const changed = await selectConversationModel(model.key);
+    const changed = await selectModelForCurrentConversation(model.key);
     if (!changed) {
       setCommandFeedbackKey('slashCommandModelUnavailable');
       return;
@@ -668,7 +723,6 @@ export function useComposerState({
   const appendAttachments = (attachments: PendingChatAttachment[]) => {
     const existingAttachments = pendingAttachmentsRef.current;
     validateAttachmentSelection(existingAttachments, attachments);
-    const selectedModel = models.find((model) => model.key === selectedModelKey);
     if (attachments.some((attachment) => attachment.kind === 'image') && selectedModel?.supportsImages !== true) {
       setAttachmentErrorKey('modelDoesNotSupportImages');
       return false;
@@ -725,15 +779,17 @@ export function useComposerState({
         name: item.fileName,
         mimeType: item.mimeType,
         sizeBytes: item.sizeBytes,
-        kind: item.mimeType.startsWith('image/') ? 'image' as const : 'text' as const,
+        kind: item.mimeType.startsWith('image/') ? ('image' as const) : ('text' as const),
       }));
       validateAttachmentSelection(existingAttachments, metadata);
-      const attachments = await Promise.all(items.map(async (item, index) => {
-        const bytes = await readMessageAttachment(item.conversationId, item.messageId, item.attachmentId);
-        const itemMetadata = metadata[index];
-        if (!itemMetadata) throw new ChatAttachmentInputError('attachmentReadFailed');
-        return restoreStoredAttachment(itemMetadata, bytes);
-      }));
+      const attachments = await Promise.all(
+        items.map(async (item, index) => {
+          const bytes = await readMessageAttachment(item.conversationId, item.messageId, item.attachmentId);
+          const itemMetadata = metadata[index];
+          if (!itemMetadata) throw new ChatAttachmentInputError('attachmentReadFailed');
+          return restoreStoredAttachment(itemMetadata, bytes);
+        }),
+      );
       if (!isMountedRef.current) return false;
       return appendAttachments(attachments);
     } catch (error) {
@@ -782,6 +838,7 @@ export function useComposerState({
     event.preventDefault();
     if (!inputRef.current || isReadingAttachments || isUpdatingConversationModel) return;
 
+    if (isAnyConversationSending && !isSending) return;
     if (isSending) {
       if (!messageDraft.trim() && pendingAttachments.length === 0) {
         void stopResponse();
@@ -939,12 +996,16 @@ export function useComposerState({
 
   const selectFavoriteModel = async (favorite: ChatModelFavorite): Promise<boolean> => {
     const initialState = useChatStore.getState();
-    const targetConversationId = initialState.activeConversationId;
-    const targetTemporaryChatId = initialState.temporaryChat?.id ?? null;
+    const selectionConversationId =
+      targetConversationId === undefined ? initialState.activeConversationId : targetConversationId;
+    const targetTemporaryChatId = targetConversationId === undefined ? (initialState.temporaryChat?.id ?? null) : null;
     const isTargetStillActive = () => {
       const current = useChatStore.getState();
+      if (targetConversationId !== undefined && selectionConversationId !== null) {
+        return current.conversations.some((conversation) => conversation.id === selectionConversationId);
+      }
       return (
-        current.activeConversationId === targetConversationId &&
+        current.activeConversationId === selectionConversationId &&
         (current.temporaryChat?.id ?? null) === targetTemporaryChatId
       );
     };
@@ -973,7 +1034,7 @@ export function useComposerState({
       setCommandFeedbackKey('slashCommandModelUnavailable');
       return false;
     }
-    const updated = await selectConversationModel(model.key);
+    const updated = await selectConversationModel(model.key, selectionConversationId ?? undefined);
     setCommandFeedbackKey(updated ? null : 'slashCommandModelUnavailable');
     return updated;
   };
@@ -1028,6 +1089,7 @@ export function useComposerState({
     selectedModel,
     isSendBlocked,
     isSending,
+    isAnyConversationSending,
     submissionMode,
     ghostTextSuggestion,
   };

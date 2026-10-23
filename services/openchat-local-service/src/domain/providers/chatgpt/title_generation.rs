@@ -11,7 +11,7 @@ use uuid::Uuid;
 
 use super::{
     CHATGPT_CODEX_BASE, ChatGptService, MAX_STREAM_EVENT_BYTES, connection_unavailable,
-    database_error, http_error, invalid_response_error, network_error, truncate_chars,
+    database_error, http_error, invalid_response_error, network_error_with_details, truncate_chars,
 };
 use crate::{
     chat_operation::TitleGenerationModel,
@@ -406,7 +406,7 @@ impl ChatGptService {
         let mut usage = UsageData::default();
         let mut completed = false;
         while let Some(chunk) = stream.next().await {
-            let chunk = chunk.map_err(|_| network_error())?;
+            let chunk = chunk.map_err(network_error_with_details)?;
             if let Err(error) = response_budget.consume(chunk.len()) {
                 self.record_chatgpt_event(
                     "request_failed",

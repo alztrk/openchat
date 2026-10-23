@@ -21,6 +21,7 @@ import {
   safeTimestamp,
   stringValue,
   type ToolRecord,
+  translateToolError,
 } from './toolResultUtils';
 
 export function TerminalResult({ activity, output }: { activity: ToolActivity; output: ToolRecord }) {
@@ -37,7 +38,7 @@ export function TerminalResult({ activity, output }: { activity: ToolActivity; o
   // Keep the ANSI control-sequence matcher explicit; this strips terminal styling from displayed output.
   // biome-ignore lint/suspicious/noControlCharactersInRegex: The escape character identifies ANSI CSI sequences.
   const cleanOutput = rawOutput.replace(/\u001b\[[0-9;]*[a-zA-Z]/g, '').trim();
-  const errorMessage = stringValue(asRecord(output.error)?.message) ?? stringValue(output.error);
+  const errorMessage = translateToolError(output, t);
   const running = output.is_running === true || activity.status === 'running';
   const waitingForInput = output.waiting_for_input === true || (running && output.waiting_for_input !== false);
   const terminated = output.status === 'terminated' || output.is_killed === true;
@@ -279,7 +280,7 @@ export function GitResult({
                 key={file.path}
               >
                 <span className="min-w-0 flex-1 truncate font-code text-xs text-text" title={file.path}>
-                  {formatToolPath(file.path, t)}
+                  {formatToolPath(file.path)}
                 </span>
                 <span className="text-xs text-secondary-text">{file.status}</span>
                 {file.staged ? <MetaChip label={t('toolGitStaged')} /> : null}

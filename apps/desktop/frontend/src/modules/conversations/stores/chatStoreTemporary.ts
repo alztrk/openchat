@@ -65,11 +65,13 @@ export function createTemporaryChatActions(
         goalStatus: 'ready',
         isChangingGoal: false,
         pendingProjectId: null,
+        pendingAgentSnapshot: null,
         messages: [],
         isLoadingMessages: false,
         searchTargetMessageId: null,
         searchHighlightMessageId: null,
         errorCode: null,
+        errorMessage: null,
       });
       return true;
     },
@@ -100,6 +102,7 @@ export function createTemporaryChatActions(
         searchTargetMessageId: null,
         searchHighlightMessageId: null,
         errorCode: null,
+        errorMessage: null,
       });
     },
     setPendingAttachmentCount(count) {
@@ -172,6 +175,7 @@ export function createTemporarySendMessageAction(
           error instanceof LocalServiceError && error.code === 'provider_credentials_missing'
             ? 'providerCredentialMissing'
             : 'chatRequestFailed',
+        errorMessage: readTemporaryChatErrorDetails(error),
       });
       return false;
     }
@@ -215,6 +219,7 @@ export function createTemporarySendMessageAction(
       messages: [...current.messages, userMessage],
       isSending: true,
       errorCode: null,
+      errorMessage: null,
     }));
     options?.onUserMessageCommitted?.(session.id);
 
@@ -256,6 +261,9 @@ export function createTemporarySendMessageAction(
         ...(selectedModel.connectionId ? { connectionId: selectedModel.connectionId } : {}),
         ...(selectedModel.workspaceId ? { workspaceId: selectedModel.workspaceId } : {}),
       };
+      window.dispatchEvent(
+        new CustomEvent('openchat-chat-request-started', { detail: { conversationId: session.id } }),
+      );
       operation = await localServiceClient.startOperation('chat.temporary.send', parameters, (event) => {
         const message = applyStreamEvent(event, assistantMessage, {
           conversationId: session.id,
@@ -344,10 +352,14 @@ export function createTemporarySendMessageAction(
         set((current) => ({
           messages: upsertMessage(current.messages, failureMessage),
           errorCode: failureCode === 'provider_credentials_missing' ? 'providerCredentialMissing' : 'chatRequestFailed',
+          errorMessage: readTemporaryChatErrorDetails(error),
         }));
       }
       return false;
     } finally {
+      window.dispatchEvent(
+        new CustomEvent('openchat-chat-request-finished', { detail: { conversationId: session.id } }),
+      );
       streamUi.dispose();
       if (get().temporaryChat?.id === session.id) {
         set({ isSending: false, activeOperation: null });
@@ -356,6 +368,18 @@ export function createTemporarySendMessageAction(
       }
     }
   };
+}
+
+function readTemporaryChatErrorDetails(error: unknown): string | null {
+  const value =
+    error instanceof LocalServiceError
+      ? (error.details ?? error.message)
+      : error instanceof Error
+        ? error.message
+        : typeof error === 'string'
+          ? error
+          : null;
+  return value?.trim().slice(0, 1000) || null;
 }
 
 export function createSaveTemporaryChatAction(
@@ -401,6 +425,7 @@ export function createSaveTemporaryChatAction(
       }
       set({
         errorCode: rollbackFailed ? 'temporaryChatSaveCleanupFailed' : 'temporaryChatSaveFailed',
+        errorMessage: null,
       });
       return false;
     }

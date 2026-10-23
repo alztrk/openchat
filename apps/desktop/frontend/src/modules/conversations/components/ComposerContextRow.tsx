@@ -17,15 +17,13 @@ import { useChatStore } from '@/modules/conversations/stores/chatStore';
 import { CreateProjectDialog } from '@/modules/projects/components/CreateProjectDialog';
 import type { ToolPermissionMode } from '@/modules/projects/data/projectPreferences';
 import type { ChatModel } from '@/modules/providers/data/chatModels';
-import { formatModelRouteKey, modelRouteKey } from '@/modules/providers/data/modelPreferences';
-import { useAssistantProfilesStore } from '@/modules/settings/stores/assistantProfilesStore';
 import { ContextUsageIndicator } from './ContextUsageIndicator';
 
 export interface ComposerContextRowProps {
   isTemporaryChat: boolean;
   activeConversationId: string | null;
   isSending: boolean;
-  projects: Array<{ id: string; name: string }>;
+  projects: Array<{ id: string; name: string; workspaceRoots: string[] }>;
   projectsStatus: 'idle' | 'loading' | 'ready' | 'error';
   contextProjectId: string | null;
   onSelectProject(projectId: string | null): void;
@@ -33,7 +31,7 @@ export interface ComposerContextRowProps {
   contextToolPermissionMode: ToolPermissionMode | 'plan' | null;
   contextWindow: number | null;
   messageDraft: string;
-  messages: ChatMessage[];
+  messages: readonly ChatMessage[];
   pendingAttachments: PendingChatAttachment[];
 }
 
@@ -56,15 +54,15 @@ export function ComposerContextRow({
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
   const [projectSearch, setProjectSearch] = useState('');
   const [createProjectOpen, setCreateProjectOpen] = useState(false);
-  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const projectSearchContainerRef = useRef<HTMLDivElement>(null);
   const { createProject } = useConversationSidebarActions();
-  const profiles = useAssistantProfilesStore((state) => state.profiles);
-  const activeProfileId = useAssistantProfilesStore((state) => state.activeProfileId);
-  const initializeProfiles = useAssistantProfilesStore((state) => state.initialize);
-  const selectProfile = useAssistantProfilesStore((state) => state.selectProfile);
-  const activeProfile = profiles.find((profile) => profile.id === activeProfileId) ?? null;
-  const selectModel = useChatStore((state) => state.selectModel);
+  const activeAgent = useChatStore((state) => {
+    if (isTemporaryChat) return null;
+    if (activeConversationId !== null) {
+      return state.conversations.find((conversation) => conversation.id === activeConversationId)?.agent ?? null;
+    }
+    return state.pendingAgentSnapshot;
+  });
   const selectedProject = projects.find((project) => project.id === contextProjectId);
   const filteredProjects = useMemo(() => {
     const query = projectSearch.trim().toLocaleLowerCase(i18n.resolvedLanguage ?? i18n.language);
@@ -84,20 +82,6 @@ export function ComposerContextRow({
     });
     return () => window.cancelAnimationFrame(frame);
   }, [projectMenuOpen]);
-
-  useEffect(() => initializeProfiles(), [initializeProfiles]);
-
-  const chooseProfile = (profileId: string | null) => {
-    if (!selectProfile(profileId)) return;
-    if (activeConversationId !== null || contextProjectId !== null || profileId === null) return;
-    const profile = profiles.find((item) => item.id === profileId);
-    if (!profile?.preferredModel) return;
-    const preferredModelPreference = profile.preferredModel;
-    const preferredModel = useChatStore
-      .getState()
-      .models.find((model) => modelRouteKey(model) === formatModelRouteKey(preferredModelPreference));
-    if (preferredModel) selectModel(preferredModel.key);
-  };
 
   return (
     <div className="composer-context-row flex min-w-0 items-center justify-between gap-3">
@@ -121,6 +105,14 @@ export function ComposerContextRow({
               <span className="min-w-0 flex-1 truncate text-left">
                 {selectedProject?.name ?? t('noProjectSelected')}
               </span>
+              {selectedProject && selectedProject.workspaceRoots.length > 1 ? (
+                <span
+                  className="shrink-0 text-secondary-text"
+                  title={t('projectWorkspaceRootCount', { count: selectedProject.workspaceRoots.length })}
+                >
+                  +{selectedProject.workspaceRoots.length - 1}
+                </span>
+              ) : null}
               <ChevronDown aria-hidden="true" className="shrink-0 text-secondary-icon" size={14} />
             </Button>
           </DropdownMenuTrigger>
@@ -157,6 +149,14 @@ export function ComposerContextRow({
                       <button aria-current={isSelected ? 'true' : undefined} type="button">
                         <Folder aria-hidden="true" className="shrink-0 text-secondary-icon" size={14} />
                         <span className="min-w-0 flex-1 truncate">{project.name}</span>
+                        {project.workspaceRoots.length > 1 ? (
+                          <span
+                            className="shrink-0 text-secondary-text"
+                            title={t('projectWorkspaceRootCount', { count: project.workspaceRoots.length })}
+                          >
+                            +{project.workspaceRoots.length - 1}
+                          </span>
+                        ) : null}
                         {isSelected ? <Check aria-hidden="true" className="shrink-0 text-accent" size={14} /> : null}
                       </button>
                     </DropdownMenuItem>
@@ -196,53 +196,15 @@ export function ComposerContextRow({
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-        <DropdownMenu onOpenChange={setProfileMenuOpen} open={profileMenuOpen}>
-          <DropdownMenuTrigger asChild>
-            <Button
-              aria-label={t('assistantProfiles')}
-              className="openchat-dropdown-trigger openchat-dropdown-trigger--subtle openchat-dropdown-trigger--compact max-w-52 min-w-0 justify-start text-xs"
-              disabled={isTemporaryChat || isSending}
-              title={activeProfile?.name ?? t('assistantProfiles')}
-              variant="ghost"
-            >
-              <Bot aria-hidden="true" className="shrink-0 text-secondary-icon" size={15} />
-              <span className="min-w-0 truncate text-left">{activeProfile?.name ?? t('assistantProfileDeactivate')}</span>
-              <ChevronDown aria-hidden="true" className="shrink-0 text-secondary-icon" size={14} />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="min-w-56 p-1.5" side="top" sideOffset={8}>
-            <DropdownMenuItem
-              asChild
-              className={`w-full min-h-8 gap-2 px-2 py-1 text-left text-xs ${activeProfileId === null ? 'bg-selected text-text' : ''}`}
-              onSelect={() => chooseProfile(null)}
-              textValue={t('assistantProfileDeactivate')}
-            >
-              <button aria-current={activeProfileId === null ? 'true' : undefined} type="button">
-                <Bot aria-hidden="true" className="shrink-0 text-secondary-icon" size={14} />
-                <span className="min-w-0 flex-1 truncate">{t('assistantProfileDeactivate')}</span>
-                {activeProfileId === null ? <Check aria-hidden="true" className="shrink-0 text-accent" size={14} /> : null}
-              </button>
-            </DropdownMenuItem>
-            {profiles.map((profile) => {
-              const isSelected = profile.id === activeProfileId;
-              return (
-                <DropdownMenuItem
-                  asChild
-                  className={`w-full min-h-8 gap-2 px-2 py-1 text-left text-xs ${isSelected ? 'bg-selected text-text' : ''}`}
-                  key={profile.id}
-                  onSelect={() => chooseProfile(profile.id)}
-                  textValue={profile.name}
-                >
-                  <button aria-current={isSelected ? 'true' : undefined} type="button">
-                    <Bot aria-hidden="true" className="shrink-0 text-secondary-icon" size={14} />
-                    <span className="min-w-0 flex-1 truncate">{profile.name}</span>
-                    {isSelected ? <Check aria-hidden="true" className="shrink-0 text-accent" size={14} /> : null}
-                  </button>
-                </DropdownMenuItem>
-              );
-            })}
-          </DropdownMenuContent>
-        </DropdownMenu>
+        {activeAgent ? (
+          <span
+            className="flex min-w-0 max-w-52 items-center gap-1.5 rounded-control bg-raised/70 px-2 py-1 text-xs text-secondary-text"
+            title={activeAgent.name}
+          >
+            <Bot aria-hidden="true" className="shrink-0 text-secondary-icon" size={14} />
+            <span className="truncate">{activeAgent.name}</span>
+          </span>
+        ) : null}
       </div>
       {selectedModel && contextToolPermissionMode !== null ? (
         <ContextUsageIndicator

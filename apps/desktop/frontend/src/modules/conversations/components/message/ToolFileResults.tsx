@@ -1,6 +1,7 @@
 import { Check, File, FileText, Folder, FolderOpen, Search } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-
+import { Button } from '@/design-system';
+import { detectFileLanguage, highlightFileLines } from './FileSyntaxHighlight';
 import type { ToolActivity } from './messageData';
 import { PathHeading, PreviewBlock, ResultFootnote, ToolResultNotice } from './ToolSharedComponents';
 import {
@@ -48,7 +49,7 @@ export function FileListingResult({
           <>
             <FolderOpen aria-hidden="true" className="shrink-0" size={15} />
             <span className="min-w-0 flex-1 truncate" title={location}>
-              {formatToolPath(location, t)}
+              {formatToolPath(location)}
             </span>
           </>
         ) : (
@@ -120,7 +121,7 @@ export function SearchResult({ activity, output }: { activity: ToolActivity; out
               <div className="flex min-w-0 items-center gap-2 text-xs text-secondary-text">
                 <File aria-hidden="true" className="shrink-0" size={14} />
                 <span className="min-w-0 flex-1 truncate" title={match.path}>
-                  {formatToolPath(match.path, t)}
+                  {formatToolPath(match.path)}
                 </span>
                 <span className="shrink-0 rounded-control bg-composer px-1.5 py-0.5">{match.line}</span>
               </div>
@@ -140,7 +141,13 @@ export function SearchResult({ activity, output }: { activity: ToolActivity; out
   );
 }
 
-export function ReadResult({ output }: { output: ToolRecord }) {
+export function ReadResult({
+  output,
+  onOpenFile,
+}: {
+  output: ToolRecord;
+  onOpenFile?: (path: string, content: string) => void;
+}) {
   const { t } = useTranslation();
   const path = stringValue(output.path);
   if (!path || !Array.isArray(output.lines)) return <ToolResultNotice message={t('toolOperationUnavailable')} />;
@@ -150,22 +157,40 @@ export function ReadResult({ output }: { output: ToolRecord }) {
     return item && number !== null && number > 0 && typeof item.text === 'string' ? [{ number, text: item.text }] : [];
   });
   if (lines.length !== output.lines.length) return <ToolResultNotice message={t('toolOperationUnavailable')} />;
+  const language = detectFileLanguage(path);
+  const highlightedLines = highlightFileLines(
+    language,
+    lines.map((line) => line.text || ' '),
+  );
   return (
     <div className="grid gap-2 pb-2">
       <p className="flex min-w-0 items-center gap-2 text-xs text-secondary-text">
         <FileText aria-hidden="true" size={15} />
-        <span className="truncate" title={path}>
-          {formatToolPath(path, t)}
-        </span>
+        {onOpenFile ? (
+          <Button
+            aria-label={t('workspaceFileContent', { name: path })}
+            className="min-w-0 justify-start truncate px-0 text-xs hover:text-accent"
+            onClick={() => onOpenFile(path, lines.map((line) => line.text).join('\n'))}
+            size="small"
+            title={path}
+            variant="ghost"
+          >
+            {formatToolPath(path)}
+          </Button>
+        ) : (
+          <span className="truncate" title={path}>
+            {formatToolPath(path)}
+          </span>
+        )}
       </p>
       {lines.length === 0 ? (
         <ToolResultNotice message={t('toolReadNoLines')} />
       ) : (
         <ol className="max-h-64 overflow-auto rounded-control border border-border bg-surface py-1">
-          {lines.map((line) => (
+          {lines.map((line, index) => (
             <li className="grid grid-cols-tool-lines gap-2 px-2.5 py-0.5 font-code text-xs leading-5" key={line.number}>
               <span className="text-right text-secondary-text">{line.number}</span>
-              <span className="whitespace-pre-wrap break-words text-text">{line.text || ' '}</span>
+              <span className="whitespace-pre-wrap break-words text-text">{highlightedLines[index]}</span>
             </li>
           ))}
         </ol>
@@ -195,7 +220,7 @@ export function FileInfoResult({ output, locale }: { output: ToolRecord; locale:
             {pathName(path)}
           </p>
           <p className="mt-0.5 break-all text-xs text-secondary-text" title={path}>
-            {formatToolPath(path, t)}
+            {formatToolPath(path)}
           </p>
         </div>
       </div>

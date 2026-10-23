@@ -25,19 +25,13 @@ import {
   setPersonalMemoryExcludedForConversation,
 } from '@/modules/settings/data/personalMemory';
 import { readSharedInstructions } from '@/modules/settings/data/sharedInstructions';
-import { useAssistantProfilesStore } from '@/modules/settings/stores/assistantProfilesStore';
 import { type LocalServiceClient, LocalServiceError } from '@/platform/local-service';
 import { getAudioContext, playAssistantResponseAudio } from '@/shared/utils/audioFeedback';
 import type { ChatState } from './chatStore';
 import { refreshConversationListAfterResponse } from './chatStorePostResponse';
 import { loadTitleGenerationRequest } from './chatStoreTitleGeneration';
 import { handleToolPermissionEvent } from './chatStoreToolPermissions';
-import {
-  applyStreamEvent,
-  numberOrNull,
-  titleFromMessage,
-  upsertMessage,
-} from './chatStoreUtils';
+import { applyStreamEvent, isSameRoute, numberOrNull, titleFromMessage, upsertMessage } from './chatStoreUtils';
 import { createStreamMessagePublisher } from './streamMessagePublisher';
 
 const STREAM_PERSISTENCE_CHECKPOINT_BYTES = 256 * 1024;
@@ -62,8 +56,8 @@ export function createSendMessageAction(
       conversationCreated
         ? get().activeConversationId === conversationId
         : get().activeConversationId === state.activeConversationId;
-    const setRequestError = (errorCode: ChatState['errorCode']) => {
-      if (isRequestConversationActive()) set({ errorCode });
+    const setRequestError = (errorCode: ChatState['errorCode'], errorMessage: string | null = null) => {
+      if (isRequestConversationActive()) set({ errorCode, errorMessage });
     };
     const targetConvId = conversationId;
     const pendingQuestionBlocksSend =
@@ -117,7 +111,9 @@ export function createSendMessageAction(
         return false;
       }
     }
-    const selectedModel = state.models.find((model) => model.key === state.selectedModelKey);
+    const selectedModel = options?.conversationId
+      ? state.models.find((model) => targetConversation && isSameRoute(model, targetConversation))
+      : state.models.find((model) => model.key === state.selectedModelKey);
     if (!selectedModel) {
       set({ errorCode: 'modelRequired' });
       return false;
@@ -131,7 +127,7 @@ export function createSendMessageAction(
       return false;
     }
 
-    set({ isSending: true, sendingConversationId: conversationId, errorCode: null });
+    set({ isSending: true, sendingConversationId: conversationId, errorCode: null, errorMessage: null });
     if (goalObjective && conversationId !== null) {
       try {
         const response = await localServiceClient.call('chat.goal.active', {
@@ -196,9 +192,16 @@ export function createSendMessageAction(
       if (!conversationId && !resumeRunId) {
         conversationId = crypto.randomUUID().replaceAll('-', '');
         const conversationTitle = titleFromMessage(content, attachments[0]?.name);
+        const agentSnapshot = state.temporaryChat === null ? state.pendingAgentSnapshot : null;
         sendStage = 'conversationCreation';
         try {
-          await createConversation(conversationId, conversationTitle, selectedModel, state.pendingProjectId);
+          await createConversation(
+            conversationId,
+            conversationTitle,
+            selectedModel,
+            state.pendingProjectId,
+            agentSnapshot,
+          );
         } catch (cause) {
           globalThis.reportError(new Error('The new conversation could not be persisted.', { cause }));
           throw cause;
@@ -215,6 +218,7 @@ export function createSendMessageAction(
           workspaceId: selectedModel.workspaceId ?? null,
           apiKeyConnectionId: selectedModel.apiKeyConnectionId ?? null,
           projectId: state.pendingProjectId,
+          agent: agentSnapshot,
           isPinned: false,
           isArchived: false,
           createdAt: now,
@@ -226,6 +230,7 @@ export function createSendMessageAction(
             activeConversationId: shouldActivate ? conversationId : current.activeConversationId,
             sendingConversationId: conversationId,
             pendingProjectId: shouldActivate ? null : current.pendingProjectId,
+            pendingAgentSnapshot: shouldActivate ? null : current.pendingAgentSnapshot,
             conversations: [conversation, ...current.conversations],
             messages: shouldActivate ? [] : current.messages,
             personalMemoryExcludedForNewConversation: shouldActivate
@@ -245,7 +250,10 @@ export function createSendMessageAction(
           if (excludePersonalMemory) {
             setPersonalMemoryExcludedForConversation(targetConversationId, true);
           }
-          const personalMemory = await personalMemoryContextForConversation(targetConversationId, excludePersonalMemory);
+          const personalMemory = await personalMemoryContextForConversation(
+            targetConversationId,
+            excludePersonalMemory,
+          );
           personalMemoryContext = personalMemory.context;
           personalMemoryFactIds = personalMemory.factIds;
         } catch {
@@ -296,14 +304,17 @@ export function createSendMessageAction(
 
       let unpersistedTextBytes = 0;
       const sharedInstructions = readSharedInstructions();
-      const assistantProfile = state.temporaryChat === null
-        ? useAssistantProfilesStore.getState().getActiveProfile()
-        : null;
+      const storedConversation = get().conversations.find((item) => item.id === targetConversationId);
+      const assistantProfile = state.temporaryChat === null ? (storedConversation?.agent ?? null) : null;
       const profileInstructions = assistantProfile
         ? [
+            `Selected assistant agent: ${assistantProfile.name}.`,
+            'The following agent instructions supplement OpenChat’s built-in assistant, tool, safety, and permission instructions. They do not replace or weaken those instructions.',
             `Response style: ${assistantProfile.responseStyle}.`,
             assistantProfile.instructions.trim(),
-          ].filter(Boolean).join('\n\n')
+          ]
+            .filter(Boolean)
+            .join('\n\n')
         : null;
       const customInstructions = [sharedInstructions?.trim(), profileInstructions, personalMemoryContext]
         .filter((value): value is string => Boolean(value))
@@ -311,6 +322,9 @@ export function createSendMessageAction(
       const contextLimit = state.modelContextLimits[modelRouteKey(selectedModel)];
       const titleGeneration = await loadTitleGenerationRequest(state.models);
       sendStage = 'requestExecution';
+      window.dispatchEvent(
+        new CustomEvent('openchat-chat-request-started', { detail: { conversationId: targetConversationId } }),
+      );
       const operation = await localServiceClient.startOperation(
         'chat.send',
         {
@@ -489,17 +503,19 @@ export function createSendMessageAction(
           : sendStage === 'conversationCreation'
             ? 'conversationCreateFailed'
             : !userMessageSaved && sendStage === 'userMessagePersistence'
-            ? 'messageSaveFailed'
-            : error instanceof LocalServiceError && error.code === 'message_save_failed'
               ? 'messageSaveFailed'
-              : error instanceof LocalServiceError && error.code === 'invalid_request_params'
-                ? 'modelRequired'
-                : error instanceof LocalServiceError && error.code === 'provider_credentials_missing'
-                  ? 'providerCredentialMissing'
-                  : error instanceof LocalServiceError && error.code === 'connection_unavailable'
-                    ? 'providerConnectionUnavailable'
-                  : 'chatRequestFailed';
-      setRequestError(code);
+              : error instanceof LocalServiceError && error.code === 'message_save_failed'
+                ? 'messageSaveFailed'
+                : error instanceof LocalServiceError && error.code === 'invalid_request_params'
+                  ? 'chatRequestFailed'
+                  : error instanceof LocalServiceError && error.code === 'provider_credentials_missing'
+                    ? 'providerCredentialMissing'
+                    : error instanceof LocalServiceError && error.code === 'connection_unavailable'
+                      ? 'providerConnectionUnavailable'
+                      : 'chatRequestFailed';
+      const errorMessage =
+        error instanceof LocalServiceError ? (error.details ?? error.message).trim().slice(0, 1000) || null : null;
+      setRequestError(code, errorMessage);
       await persistenceQueue;
       const streamedMessage = assistantMessage.current;
       if (streamedMessage) {
@@ -528,6 +544,9 @@ export function createSendMessageAction(
       }
       return userMessageSaved;
     } finally {
+      window.dispatchEvent(
+        new CustomEvent('openchat-chat-request-finished', { detail: { conversationId } }),
+      );
       streamUi.dispose();
       if (requestOutcome !== null) {
         try {

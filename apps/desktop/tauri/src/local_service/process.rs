@@ -6,7 +6,7 @@ use serde_json::{json, Value};
 use tauri::AppHandle;
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
 
-use super::dialogs::permission_dialog_copy;
+use super::dialogs::PermissionDialogCopy;
 use super::types::*;
 
 pub(crate) fn observe_service_output(
@@ -212,9 +212,8 @@ pub(crate) fn deliver_permission_response(
 pub(crate) async fn confirm_permission_with_os(
     app: AppHandle,
     details: &PermissionDetails,
-    locale: &str,
+    copy: &PermissionDialogCopy,
 ) -> Result<bool, String> {
-    let copy = permission_dialog_copy(locale);
     let (message, buttons, allowed_if_confirmed) = match details {
         PermissionDetails::EnableFullAccess => (
             format!("{}\n\n{}", copy.full_access_intro, copy.full_access_warning),

@@ -17,8 +17,8 @@ use crate::{
 
 use super::route::ChatRoute;
 use super::{
-    cancelled_error, client, copilot, http_error, invalid_response_error, network_error,
-    opencode_free_tier_restricted, storage_error,
+    cancelled_error, client, copilot, http_error, invalid_response_error,
+    network_error_with_details, opencode_free_tier_restricted, storage_error,
 };
 
 const MAX_COMPACTION_RESPONSE_BYTES: usize = 1024 * 1024;
@@ -321,7 +321,7 @@ async fn summarize_transcript_with_storage(
             }
             return Err(cancelled_error());
         }
-        response = request.json(&body).send() => response.map_err(|_| network_error())?,
+        response = request.json(&body).send() => response.map_err(network_error_with_details)?,
     };
     if !response.status().is_success() {
         let status = response.status();
@@ -351,7 +351,7 @@ async fn summarize_transcript_with_storage(
         let Some(chunk) = chunk else {
             break;
         };
-        let chunk = chunk.map_err(|_| network_error())?;
+        let chunk = chunk.map_err(network_error_with_details)?;
         if bytes.len().saturating_add(chunk.len()) > MAX_COMPACTION_RESPONSE_BYTES {
             return Err(invalid_response_error());
         }

@@ -11,10 +11,52 @@ const requestTimeoutMs = 15_000;
 const maximumMessageBytes = 24 * 1024 * 1024;
 const maximumActiveOperations = 64;
 const maximumActiveRequestBytes = 64 * 1024 * 1024;
-export const chatSchemaVersion = 20;
-
 /** JSON object accepted or returned by the local sidecar RPC boundary. */
 export type JsonObject = Record<string, unknown>;
+
+/** Copy rendered by the active frontend locale for native tool-permission dialogs. */
+export interface NativePermissionDialogCopy {
+  title: string;
+  intro: string;
+  fullAccessIntro: string;
+  fullAccessWarning: string;
+  projectAllowIntro: string;
+  projectAllowWarning: string;
+  projectAllowMore: string;
+  toolLabel: string;
+  targetLabel: string;
+  argumentsLabel: string;
+  warning: string;
+  allowOnce: string;
+  enableFullAccess: string;
+  saveProjectAllow: string;
+  deny: string;
+  tooLarge: string;
+  close: string;
+}
+
+/** Resolves native permission copy through the same i18next resources as the renderer UI. */
+export function getNativePermissionDialogCopy(): NativePermissionDialogCopy {
+  return {
+    title: i18n.t('nativePermissionTitle'),
+    intro: i18n.t('nativePermissionIntro'),
+    fullAccessIntro: i18n.t('nativePermissionFullAccessIntro'),
+    fullAccessWarning: i18n.t('nativePermissionFullAccessWarning'),
+    projectAllowIntro: i18n.t('nativePermissionProjectAllowIntro'),
+    projectAllowWarning: i18n.t('nativePermissionProjectAllowWarning'),
+    projectAllowMore: i18n.t('nativePermissionProjectAllowMore'),
+    toolLabel: i18n.t('nativePermissionToolLabel'),
+    targetLabel: i18n.t('nativePermissionTargetLabel'),
+    argumentsLabel: i18n.t('nativePermissionArgumentsLabel'),
+    warning: i18n.t('nativePermissionWarning'),
+    allowOnce: i18n.t('nativePermissionAllowOnce'),
+    enableFullAccess: i18n.t('nativePermissionEnableFullAccess'),
+    saveProjectAllow: i18n.t('nativePermissionSaveProjectAllow'),
+    deny: i18n.t('nativePermissionDeny'),
+    tooLarge: i18n.t('nativePermissionTooLarge'),
+    close: i18n.t('nativePermissionClose'),
+  };
+}
 
 /** Progress or state event emitted while a sidecar operation is running. */
 export interface ServiceEvent {
@@ -28,10 +70,23 @@ export class LocalServiceError extends Error {
     readonly code: string,
     message: string,
     readonly retryable = false,
+    readonly details: string | null = null,
   ) {
     super(message);
     this.name = 'LocalServiceError';
   }
+}
+
+/** Returns the sidecar's safe diagnostic text without exposing arbitrary rejected values. */
+export function localServiceErrorDetails(error: unknown): string | null {
+  if (!(error instanceof LocalServiceError)) return null;
+  const message = error.message.trim();
+  const details = error.details?.trim();
+  const diagnostic = [message, details]
+    .filter((value): value is string => typeof value === 'string' && value.length > 0)
+    .filter((value, index, values) => values.indexOf(value) === index);
+  if (diagnostic.length === 0) return null;
+  return diagnostic.join('\n').slice(0, 2048);
 }
 
 /** Resolver and optional event callback retained until one RPC request completes. */
@@ -56,18 +111,29 @@ export interface ServiceDatabaseHealth {
   schema_version: number;
 }
 
+/** Reads the schema version compiled into the native host and validates the IPC response. */
+export async function getChatSchemaVersion(): Promise<number> {
+  const value: unknown = await invoke('get_chat_schema_version');
+  if (!isChatSchemaVersion(value)) {
+    throw new LocalServiceError(
+      'invalid_chat_schema_version',
+      'The native host returned an invalid chat database schema version.',
+    );
+  }
+  return value;
+}
+
 /** Database location and schema version confirmed by the Tauri host. */
 interface PreparedDatabase {
   databasePath: string;
   schemaVersion: number;
 }
 
-/** Native event emitted for one line or termination of the owned service process. */
-interface NativeServiceEvent {
-  type: 'output' | 'stopped';
-  generation: number;
-  line?: string;
-}
+/** Native events emitted for one line, safe startup failure, or termination of the owned service process. */
+type NativeServiceEvent =
+  | { type: 'output'; generation: number; line: string }
+  | { type: 'failure'; generation: number; details: string }
+  | { type: 'stopped'; generation: number };
 
 /**
  * Manages startup, serialized sidecar writes, RPC response matching, and operation cancellation.
@@ -76,6 +142,9 @@ interface NativeServiceEvent {
 export class LocalServiceClient {
   private processGeneration: number | undefined;
   private earlyStoppedGeneration: number | undefined;
+  private earlyProcessFailures = new Map<number, string>();
+  private processFailure: { generation: number; details: string } | undefined;
+  private lastProcessFailure: LocalServiceError | null = null;
   private processEventListener: Promise<void> | undefined;
   private nextRequestId = 0;
   private pending = new Map<number, PendingOperation>();
@@ -129,7 +198,7 @@ export class LocalServiceClient {
   }
 
   /** Routes permission answers through the native host, which requires OS consent to allow a call. */
-  async respondToPermission(approvalRequestId: string, approved: boolean, locale: string): Promise<boolean> {
+  async respondToPermission(approvalRequestId: string, approved: boolean): Promise<boolean> {
     await this.initialize();
     const generation = this.processGeneration;
     if (generation === undefined) {
@@ -139,7 +208,7 @@ export class LocalServiceClient {
       generation,
       approvalRequestId,
       approved,
-      locale,
+      permissionCopy: getNativePermissionDialogCopy(),
     });
     if (typeof result !== 'boolean') {
       throw new LocalServiceError(
@@ -234,6 +303,8 @@ export class LocalServiceClient {
       throw new LocalServiceError('invalid_storage_path', 'The local service did not provide a valid database path.');
     }
 
+    const chatSchemaVersion = await getChatSchemaVersion();
+
     const preparation = await this.callRaw('system.database.prepare', { chatSchemaVersion }, requestTimeoutMs);
     if (preparation.status !== 'ready') {
       throw new LocalServiceError(
@@ -284,11 +355,19 @@ export class LocalServiceClient {
   /** Starts one sidecar process and ignores late lifecycle events from a replaced process. */
   private async spawnProcess(): Promise<void> {
     await this.listenForProcessEvents();
+    this.lastProcessFailure = null;
+    this.processFailure = undefined;
+    this.earlyProcessFailures.clear();
     let generation: number;
     try {
       generation = await invoke<number>('start_local_service');
-    } catch {
-      throw new LocalServiceError('service_start_failed', 'The local service could not be started.', true);
+    } catch (error) {
+      throw new LocalServiceError(
+        'service_start_failed',
+        'The local service could not be started.',
+        true,
+        readErrorDetails(error),
+      );
     }
     if (!Number.isSafeInteger(generation) || generation <= 0) {
       throw new LocalServiceError(
@@ -297,9 +376,13 @@ export class LocalServiceClient {
       );
     }
     this.processGeneration = generation;
+    const earlyFailureDetails = this.earlyProcessFailures.get(generation);
+    this.processFailure = earlyFailureDetails ? { generation, details: earlyFailureDetails } : undefined;
+    this.earlyProcessFailures.delete(generation);
     if (this.earlyStoppedGeneration === generation) {
       this.earlyStoppedGeneration = undefined;
-      this.markProcessStopped(generation);
+      const details = this.processFailure?.details ?? null;
+      this.markProcessStopped(generation, details);
     } else {
       this.earlyStoppedGeneration = undefined;
     }
@@ -319,8 +402,19 @@ export class LocalServiceClient {
         }
         return;
       }
+      if (event.payload.type === 'failure') {
+        const failure = { generation: event.payload.generation, details: event.payload.details };
+        if (event.payload.generation === this.processGeneration) {
+          this.processFailure = failure;
+        } else if (this.processGeneration === undefined && this.processStartup) {
+          this.earlyProcessFailures.set(failure.generation, failure.details);
+        }
+        return;
+      }
       if (event.payload.generation === this.processGeneration) {
-        this.markProcessStopped(event.payload.generation);
+        const details =
+          this.processFailure?.generation === event.payload.generation ? this.processFailure.details : null;
+        this.markProcessStopped(event.payload.generation, details);
       } else if (this.processGeneration === undefined && this.processStartup) {
         this.earlyStoppedGeneration = event.payload.generation;
       }
@@ -335,12 +429,19 @@ export class LocalServiceClient {
   }
 
   /** Drops pending work and invalidates the client when its current native process stops. */
-  private markProcessStopped(generation: number): void {
+  private markProcessStopped(generation: number, details: string | null = null): void {
     if (this.processGeneration !== generation) return;
     this.processGeneration = undefined;
     this.initialized = false;
     this.writeQueue = Promise.resolve();
-    this.failPending(new LocalServiceError('service_unavailable', 'The local service stopped unexpectedly.', true));
+    this.processFailure = undefined;
+    this.lastProcessFailure = new LocalServiceError(
+      'service_unavailable',
+      'The local service stopped unexpectedly.',
+      true,
+      details,
+    );
+    this.failPending(this.lastProcessFailure);
   }
 
   /** Sends one request, bounds its wait, and optionally requests cancellation on timeout. */
@@ -384,7 +485,10 @@ export class LocalServiceClient {
   ): { id: number; result: Promise<JsonObject>; sent: Promise<void> } {
     const generation = this.processGeneration;
     if (generation === undefined) {
-      throw new LocalServiceError('service_unavailable', 'The local service is not running.', true);
+      throw (
+        this.lastProcessFailure ??
+        new LocalServiceError('service_unavailable', 'The local service is not running.', true)
+      );
     }
 
     const id = ++this.nextRequestId;
@@ -429,10 +533,10 @@ export class LocalServiceClient {
         await invoke('write_local_service', {
           generation,
           line: payload,
-          locale: i18n.resolvedLanguage ?? i18n.language,
+          permissionCopy: getNativePermissionDialogCopy(),
         });
-      } catch {
-        throw new LocalServiceError('service_unavailable', 'The local service connection was interrupted.', true);
+      } catch (error) {
+        throw nativeWriteError(error);
       } finally {
         const current = this.pending.get(id);
         if (current) {
@@ -444,14 +548,13 @@ export class LocalServiceClient {
     });
     // Recover the serial queue; the request's `sent` promise below carries this write failure.
     this.writeQueue = write.catch(() => undefined);
-    const sent = write.catch(() => {
+    const sent = write.catch((error: unknown) => {
+      const failure = error instanceof LocalServiceError ? error : nativeWriteError(error);
       const pending = this.removePending(id);
       if (pending) {
-        pending.reject(
-          new LocalServiceError('service_unavailable', 'The local service connection was interrupted.', true),
-        );
+        pending.reject(failure);
       }
-      throw new LocalServiceError('service_unavailable', 'The local service connection was interrupted.', true);
+      throw failure;
     });
     // callRaw observes `result`, not `sent`; the write failure has already been routed to `result`.
     void sent.catch(() => undefined);
@@ -532,7 +635,9 @@ export class LocalServiceClient {
       const code = typeof response.error.code === 'string' ? response.error.code : 'service_error';
       const message =
         typeof response.error.message === 'string' ? response.error.message : 'The local service request failed.';
-      pending.reject(new LocalServiceError(code, message, response.error.retryable === true));
+      const details =
+        typeof response.error.details === 'string' ? response.error.details.trim().slice(0, 1000) || null : null;
+      pending.reject(new LocalServiceError(code, message, response.error.retryable === true, details));
       return;
     }
     if (!isJsonObject(response.result)) {
@@ -577,12 +682,27 @@ function isJsonObject(value: unknown): value is JsonObject {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+function readErrorDetails(error: unknown): string | null {
+  const detail = error instanceof Error ? error.message : typeof error === 'string' ? error : null;
+  return detail?.trim().slice(0, 1000) || null;
+}
+
+function nativeWriteError(error: unknown): LocalServiceError {
+  return new LocalServiceError(
+    'native_bridge_failed',
+    'The desktop host could not forward the request to the local service.',
+    false,
+    readErrorDetails(error),
+  );
+}
+
 /** Validates the shape of the native process event before routing it to the RPC client. */
 function isNativeServiceEvent(value: unknown): value is NativeServiceEvent {
   if (!isJsonObject(value) || typeof value.generation !== 'number' || !Number.isSafeInteger(value.generation)) {
     return false;
   }
   if (value.type === 'output') return typeof value.line === 'string';
+  if (value.type === 'failure') return typeof value.details === 'string' && value.details.length <= 2048;
   return value.type === 'stopped';
 }
 
@@ -591,9 +711,12 @@ function isPreparedDatabase(value: unknown): value is PreparedDatabase {
   return (
     isJsonObject(value) &&
     typeof value.databasePath === 'string' &&
-    typeof value.schemaVersion === 'number' &&
-    Number.isSafeInteger(value.schemaVersion)
+    isChatSchemaVersion(value.schemaVersion)
   );
+}
+
+function isChatSchemaVersion(value: unknown): value is number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 1 && value <= 100;
 }
 
 /** Normalizes Windows path separators and case before comparing the two storage authorities. */

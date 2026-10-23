@@ -17,7 +17,8 @@ use crate::{
 };
 
 use super::{
-    cancelled_error, client, http_error, invalid_response_error, network_error, storage_error,
+    cancelled_error, client, http_error, invalid_response_error, network_error_with_details,
+    storage_error,
 };
 pub(crate) const MODELS_URL: &str = "https://opencode.ai/zen/v1/models";
 const MODELS_DEV_URL: &str = "https://models.opencode.ai/api.json";
@@ -206,7 +207,7 @@ async fn fetch_model_metadata(client: &Client) -> Result<Value, ServiceError> {
         .timeout(MODEL_METADATA_TIMEOUT)
         .send()
         .await
-        .map_err(|_| network_error())?;
+        .map_err(network_error_with_details)?;
     if !response.status().is_success() {
         return Err(invalid_response_error());
     }
@@ -481,7 +482,7 @@ pub async fn models(
     }
     let fetch = async {
         let provider_fetch = async {
-            let response = request.send().await.map_err(|_| network_error())?;
+            let response = request.send().await.map_err(network_error_with_details)?;
             if !response.status().is_success() {
                 return Err(http_error(response.status(), Some("opencode")));
             }

@@ -2,7 +2,7 @@ import { Blocks, Download, Info, KeyRound, LoaderCircle, RefreshCw, Trash2 } fro
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button, Card, Dialog, Switch } from '@/design-system';
-import type { McpServerRecord } from '@/modules/model-library/data/mcpCatalog';
+import { formatMcpToolLabel, type McpServerRecord } from '@/modules/model-library/data/mcpCatalog';
 
 interface McpCardProps {
   server: McpServerRecord;
@@ -106,7 +106,7 @@ export function McpCard({
                   className="max-w-full break-words rounded-control border border-border bg-composer px-2 py-1 font-mono text-xs text-text"
                   key={`${server.id}-${tool}`}
                 >
-                  {tool}
+                  {formatMcpToolLabel(server.id, tool, t)}
                 </li>
               ))}
             </ul>

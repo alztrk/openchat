@@ -3,7 +3,6 @@ import {
   Archive,
   ArchiveRestore,
   Check,
-  Columns2,
   Copy,
   Download,
   Folder,
@@ -11,6 +10,7 @@ import {
   FolderMinus,
   MessageCircle,
   MoreHorizontal,
+  PanelRight,
   Pencil,
   Pin,
   PinOff,
@@ -720,12 +720,12 @@ export function ConversationSidebarRow({
                     <>
                       <MenuAction
                         disabled={disabled}
-                        icon={Columns2}
-                        label={t('openInSplitView')}
+                        icon={PanelRight}
+                        label={t('openInWorkspacePanel')}
                         onClick={() =>
                           runAction(() => {
                             window.dispatchEvent(
-                              new CustomEvent('openchat-open-split-conversation', {
+                              new CustomEvent('openchat-open-panel-conversation', {
                                 detail: { conversationId: conversation.id },
                               }),
                             );

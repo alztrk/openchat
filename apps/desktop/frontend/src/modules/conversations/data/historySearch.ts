@@ -1,12 +1,12 @@
 import { type JsonObject, LocalServiceError, localServiceClient } from '@/platform/local-service';
 import { unifiedStorage } from '@/platform/storage/unifiedStorage';
-import { type ChatProject, listProjects, searchSavedOutputs } from './chatStorage';
+import { listProjects } from './chatStorage';
 
 const savedSearchesKey = 'openchat.savedHistorySearches';
 const maximumSavedSearches = 20;
 const maximumTimestamp = 8_640_000_000_000_000;
 
-export type HistoryResultType = 'all' | 'chats' | 'projects' | 'savedResponses' | 'messages' | 'conversations';
+export type HistoryResultType = 'all' | 'chats' | 'projects' | 'messages' | 'conversations';
 export type HistorySortOrder = 'relevance' | 'newest' | 'oldest';
 
 export interface HistorySearchFilters {
@@ -24,7 +24,7 @@ export interface HistorySearchFilterOptions {
 }
 
 export interface HistorySearchResult {
-  kind: 'conversation' | 'message' | 'project' | 'savedOutput';
+  kind: 'conversation' | 'message' | 'project';
   conversationId: string;
   conversationTitle: string;
   isConversationTitleMatch: boolean;
@@ -99,7 +99,7 @@ export async function searchHistory(
   const nativeResults = isLocalOnlyResultType(filters.resultType)
     ? []
     : await searchNativeHistory(normalizedQuery, filters, fromUnixMs, throughUnixMs);
-  const localResults = await searchLocalLibrary(normalizedQuery, filters, fromUnixMs, throughUnixMs);
+  const localResults = await searchLocalLibrary(normalizedQuery, filters);
   const seenMessageKeys = new Set(
     nativeResults
       .filter((result) => result.messageId !== null)
@@ -148,29 +148,11 @@ async function searchNativeHistory(
 async function searchLocalLibrary(
   query: string,
   filters: HistorySearchFilters,
-  fromUnixMs: number | null,
-  throughUnixMs: number | null,
 ): Promise<HistorySearchResult[]> {
   const normalizedQuery = query.toLocaleLowerCase('en-US');
   const includeProjects =
     filters.resultType === 'all' || filters.resultType === 'projects' || filters.resultType === 'conversations';
-  const includeSavedOutputs =
-    filters.resultType === 'all' || filters.resultType === 'savedResponses' || filters.resultType === 'messages';
-  const [projects, savedOutputs] = await Promise.all([
-    includeProjects ? listProjects() : Promise.resolve<ChatProject[]>([]),
-    includeSavedOutputs
-      ? searchSavedOutputs({
-          query,
-          providerId: filters.providerId,
-          modelId: filters.modelId,
-          projectId: filters.projectId,
-          isArchived: filters.isArchived,
-          sortOrder: filters.sortOrder,
-          fromUnixMs,
-          throughUnixMs,
-        })
-      : Promise.resolve([]),
-  ]);
+  const projects = includeProjects ? await listProjects() : [];
   const results: HistorySearchResult[] = [];
   if (includeProjects) {
     for (const project of projects) {
@@ -195,7 +177,7 @@ async function searchLocalLibrary(
       });
     }
   }
-  return [...results, ...savedOutputs.map((savedOutput) => ({ kind: 'savedOutput' as const, ...savedOutput }))];
+  return results;
 }
 
 export function loadSavedHistorySearches(): SavedHistorySearch[] {
@@ -247,7 +229,7 @@ function parseStringOptions(value: unknown[], maximumLength: number): string[] {
 }
 
 function isLocalOnlyResultType(resultType: HistoryResultType): boolean {
-  return resultType === 'projects' || resultType === 'savedResponses';
+  return resultType === 'projects';
 }
 
 function nativeResultType(resultType: HistoryResultType): 'all' | 'messages' | 'conversations' {
@@ -256,7 +238,6 @@ function nativeResultType(resultType: HistoryResultType): 'all' | 'messages' | '
     case 'all':
       return 'all';
     case 'messages':
-    case 'savedResponses':
       return 'messages';
     case 'conversations':
     case 'projects':
@@ -331,7 +312,9 @@ function parseSavedHistorySearch(value: unknown): SavedHistorySearch {
 }
 
 function parseHistorySearchFilters(value: JsonObject): HistorySearchFilters {
-  const resultType = value.resultType ?? 'all';
+  const storedResultType = value.resultType ?? 'all';
+  // Keep saved searches created before saved responses were removed usable as message searches.
+  const resultType = storedResultType === 'savedResponses' ? 'messages' : storedResultType;
   const sortOrder = value.sortOrder ?? 'relevance';
   if (
     !isOptionalString(value.providerId, 256) ||
@@ -341,7 +324,6 @@ function parseHistorySearchFilters(value: JsonObject): HistorySearchFilters {
     (resultType !== 'all' &&
       resultType !== 'chats' &&
       resultType !== 'projects' &&
-      resultType !== 'savedResponses' &&
       resultType !== 'messages' &&
       resultType !== 'conversations') ||
     (sortOrder !== 'relevance' && sortOrder !== 'newest' && sortOrder !== 'oldest')

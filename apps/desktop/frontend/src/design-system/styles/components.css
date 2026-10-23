@@ -476,6 +476,48 @@ html[data-motion-input='keyboard'] .openchat-dialog {
   box-shadow: none;
 }
 
+.tool-code-token-comment,
+.tool-code-token-prolog,
+.tool-code-token-doctype,
+.tool-code-token-cdata {
+  color: rgb(var(--secondary-text));
+}
+
+.tool-code-token-keyword,
+.tool-code-token-operator,
+.tool-code-token-important {
+  color: rgb(var(--accent));
+}
+
+.tool-code-token-string,
+.tool-code-token-char,
+.tool-code-token-attr-value,
+.tool-code-token-inserted {
+  color: rgb(var(--success));
+}
+
+.tool-code-token-number,
+.tool-code-token-boolean,
+.tool-code-token-constant,
+.tool-code-token-symbol,
+.tool-code-token-builtin {
+  color: rgb(var(--info));
+}
+
+.tool-code-token-function,
+.tool-code-token-class-name,
+.tool-code-token-selector,
+.tool-code-token-property {
+  color: rgb(var(--warning));
+}
+
+.tool-code-token-tag,
+.tool-code-token-deleted,
+.tool-code-token-regex,
+.tool-code-token-attr-name {
+  color: rgb(var(--destructive));
+}
+
 @media (prefers-reduced-motion: reduce) {
   .openchat-select-content,
   .openchat-dropdown-menu {

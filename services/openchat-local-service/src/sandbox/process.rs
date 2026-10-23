@@ -5,6 +5,7 @@ use std::{
     fs, io,
     mem::size_of,
     os::windows::{
+        ffi::OsStrExt,
         io::{AsRawHandle, FromRawHandle, IntoRawHandle, OwnedHandle},
         process::ExitStatusExt,
     },
@@ -46,14 +47,14 @@ use super::{
 
 pub(crate) const WAIT_INTERVAL: Duration = Duration::from_millis(25);
 
-/// Owns an AppContainer process, its pipes, and its kill-on-close job object.
+/// Owns a managed process, its pipes, and its kill-on-close job object.
 pub struct SandboxedProcess {
     process: OwnedHandle,
     pub(crate) job: OwnedHandle,
     stdin: Option<File>,
     stdout: Option<File>,
     stderr: Option<File>,
-    _sandbox: AppContainerSandbox,
+    _sandbox: Option<AppContainerSandbox>,
 }
 
 impl SandboxedProcess {
@@ -69,10 +70,32 @@ impl SandboxedProcess {
         options: SandboxOptions<'_>,
     ) -> io::Result<Self> {
         validate_win32_string(OsStr::new(command))?;
-        let sandbox = AppContainerSandbox::create(workdir, options.additional_read_only_paths)?;
+        let sandbox = AppContainerSandbox::create(
+            workdir,
+            options.additional_workspace_paths,
+            options.additional_read_only_paths,
+        )?;
         let workdir = sandbox.working_directory.clone();
         let (application, arguments) = shell_invocation(command, &workdir);
-        Self::spawn_in_sandbox(sandbox, application, arguments, workdir, &[], options)
+        Self::spawn_process(Some(sandbox), application, arguments, workdir, &[], options)
+    }
+
+    /// Starts a PowerShell command with the current user's normal filesystem and network access.
+    pub fn spawn_without_sandbox(
+        command: &str,
+        workdir: &Path,
+        options: SandboxOptions<'_>,
+    ) -> io::Result<Self> {
+        validate_win32_string(OsStr::new(command))?;
+        let (application, arguments) = shell_invocation(command, workdir);
+        Self::spawn_process(
+            None,
+            application,
+            arguments,
+            workdir.to_path_buf(),
+            &[],
+            options,
+        )
     }
 
     /// Starts a program with workspace-only write access and no network capability.
@@ -119,10 +142,14 @@ impl SandboxedProcess {
                 "The sandboxed program is unavailable.",
             ));
         }
-        let sandbox = AppContainerSandbox::create(workdir, options.additional_read_only_paths)?;
+        let sandbox = AppContainerSandbox::create(
+            workdir,
+            options.additional_workspace_paths,
+            options.additional_read_only_paths,
+        )?;
         let working_directory = sandbox.working_directory.clone();
-        Self::spawn_in_sandbox(
-            sandbox,
+        Self::spawn_process(
+            Some(sandbox),
             program,
             arguments.to_vec(),
             working_directory,
@@ -131,8 +158,37 @@ impl SandboxedProcess {
         )
     }
 
-    fn spawn_in_sandbox(
-        sandbox: AppContainerSandbox,
+    /// Starts a program with the current user's normal filesystem and network access.
+    pub fn spawn_program_without_sandbox(
+        program: &Path,
+        arguments: &[std::ffi::OsString],
+        workdir: &Path,
+        additional_environment: &[(String, Zeroizing<String>)],
+        options: SandboxOptions<'_>,
+    ) -> io::Result<Self> {
+        validate_win32_string(program.as_os_str())?;
+        for argument in arguments {
+            validate_win32_string(argument.as_os_str())?;
+        }
+        let program = fs::canonicalize(program)?;
+        if !program.is_file() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "The configured program is not a file.",
+            ));
+        }
+        Self::spawn_process(
+            None,
+            program,
+            arguments.to_vec(),
+            workdir.to_path_buf(),
+            additional_environment,
+            options,
+        )
+    }
+
+    fn spawn_process(
+        sandbox: Option<AppContainerSandbox>,
         application: PathBuf,
         arguments: Vec<std::ffi::OsString>,
         workdir: PathBuf,
@@ -170,16 +226,19 @@ impl SandboxedProcess {
             child_stdout_write.as_raw_handle() as HANDLE,
             child_stderr_write.as_raw_handle() as HANDLE,
         ];
-        let capability_sids = options
-            .internet_client
-            .then(DerivedCapabilitySids::internet_client)
-            .transpose()?;
+        let capability_sids = if sandbox.is_some() && options.internet_client {
+            Some(DerivedCapabilitySids::internet_client()?)
+        } else {
+            None
+        };
         let mut internet_client = capability_sids.as_ref().map(|sids| SID_AND_ATTRIBUTES {
             Sid: sids.capability_sid(),
             Attributes: SE_GROUP_ENABLED as u32,
         });
         let mut security_capabilities = SECURITY_CAPABILITIES {
-            AppContainerSid: sandbox.sid as PSID,
+            AppContainerSid: sandbox
+                .as_ref()
+                .map_or(null_mut(), |sandbox| sandbox.sid as PSID),
             Capabilities: internet_client.as_mut().map_or(null_mut(), |capability| {
                 capability as *mut SID_AND_ATTRIBUTES
             }),
@@ -189,8 +248,9 @@ impl SandboxedProcess {
 
         let mut attribute_size = 0usize;
         // SAFETY: The null probe asks Windows for the required size; the output integer is writable.
+        let attribute_count = if sandbox.is_some() { 2 } else { 1 };
         unsafe {
-            InitializeProcThreadAttributeList(null_mut(), 2, 0, &mut attribute_size);
+            InitializeProcThreadAttributeList(null_mut(), attribute_count, 0, &mut attribute_size);
         }
         if attribute_size == 0 {
             return Err(last_os_error());
@@ -199,22 +259,29 @@ impl SandboxedProcess {
         let attribute_list = attribute_storage.as_mut_ptr().cast::<c_void>();
         // SAFETY: `attribute_storage` is sized from the Windows probe and aligned as usize storage.
         unsafe {
-            if InitializeProcThreadAttributeList(attribute_list, 2, 0, &mut attribute_size) == 0 {
+            if InitializeProcThreadAttributeList(
+                attribute_list,
+                attribute_count,
+                0,
+                &mut attribute_size,
+            ) == 0
+            {
                 return Err(last_os_error());
             }
         }
         let _attribute_list = AttributeList(attribute_list);
         // SAFETY: The attribute list and all referenced values remain initialized and live through both updates.
         unsafe {
-            if UpdateProcThreadAttribute(
-                attribute_list,
-                0,
-                PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES as usize,
-                (&mut security_capabilities as *mut SECURITY_CAPABILITIES).cast(),
-                size_of::<SECURITY_CAPABILITIES>(),
-                null_mut(),
-                null_mut(),
-            ) == 0
+            if sandbox.is_some()
+                && UpdateProcThreadAttribute(
+                    attribute_list,
+                    0,
+                    PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES as usize,
+                    (&mut security_capabilities as *mut SECURITY_CAPABILITIES).cast(),
+                    size_of::<SECURITY_CAPABILITIES>(),
+                    null_mut(),
+                    null_mut(),
+                ) == 0
             {
                 return Err(last_os_error());
             }
@@ -243,11 +310,14 @@ impl SandboxedProcess {
         let application_wide = wide(application.as_os_str());
         let mut command_line = wide_command_line(&application, &arguments);
         let workdir_wide = wide(workdir.as_os_str());
-        let mut environment = Zeroizing::new(sandbox.environment_block(
-            &workdir,
-            additional_environment,
-            options.base_environment,
-        )?);
+        let mut environment = match sandbox.as_ref() {
+            Some(sandbox) => Some(Zeroizing::new(sandbox.environment_block(
+                &workdir,
+                additional_environment,
+                options.base_environment,
+            )?)),
+            None => Some(inherited_environment_block(additional_environment)?),
+        };
         // SAFETY: All Win32 strings are NUL-terminated; startup, environment, and output structures stay live and writable for the call.
         let created = unsafe {
             CreateProcessW(
@@ -260,7 +330,9 @@ impl SandboxedProcess {
                     | CREATE_SUSPENDED
                     | CREATE_UNICODE_ENVIRONMENT
                     | CREATE_NO_WINDOW,
-                environment.as_mut_ptr().cast(),
+                environment
+                    .as_mut()
+                    .map_or(null_mut(), |environment| environment.as_mut_ptr().cast()),
                 workdir_wide.as_ptr(),
                 (&startup as *const STARTUPINFOEXW).cast::<STARTUPINFOW>(),
                 &mut process_information,
@@ -377,7 +449,7 @@ impl SandboxedProcess {
         }
     }
 
-    /// Terminates every process assigned to the sandbox job.
+    /// Terminates every process assigned to the managed job.
     pub fn start_kill(&self) -> io::Result<()> {
         // SAFETY: `self.job` is an owned, live job handle.
         if unsafe { TerminateJobObject(self.job.as_raw_handle() as HANDLE, 1) } == 0 {
@@ -400,18 +472,18 @@ impl SandboxedProcess {
         }
     }
 
-    /// Waits up to five seconds for the process tree to leave its job object.
+    /// Waits up to five seconds for the managed process tree to leave its job object.
     pub fn wait_for_job_exit(&self) -> io::Result<()> {
         // SAFETY: `self.job` is an owned, live job handle.
         match unsafe { WaitForSingleObject(self.job.as_raw_handle() as HANDLE, 5_000) } {
             WAIT_OBJECT_0 => Ok(()),
             WAIT_TIMEOUT => Err(io::Error::new(
                 io::ErrorKind::TimedOut,
-                "The AppContainer process tree did not stop in time.",
+                "The managed process tree did not stop in time.",
             )),
             WAIT_FAILED => Err(last_os_error()),
             _ => Err(io::Error::other(
-                "The AppContainer process tree returned an unknown wait result.",
+                "The managed process tree returned an unknown wait result.",
             )),
         }
     }
@@ -421,10 +493,10 @@ impl Drop for SandboxedProcess {
     fn drop(&mut self) {
         // SAFETY: `self.job` remains owned and live throughout this destructor.
         if unsafe { TerminateJobObject(self.job.as_raw_handle() as HANDLE, 1) } == 0 {
-            eprintln!("app_container_process_tree_termination_failed");
+            eprintln!("managed_process_tree_termination_failed");
         }
         if self.wait_for_job_exit().is_err() {
-            eprintln!("app_container_process_tree_cleanup_failed");
+            eprintln!("managed_process_tree_cleanup_failed");
         }
     }
 }
@@ -505,4 +577,44 @@ pub(crate) fn powershell_command(command: &str, working_directory: &Path) -> Str
     format!(
         "$ErrorActionPreference = 'Stop'; [System.Environment]::CurrentDirectory = '{working_directory}'; Set-Location -LiteralPath '{working_directory}'; {command}"
     )
+}
+
+fn inherited_environment_block(
+    additional_environment: &[(String, Zeroizing<String>)],
+) -> io::Result<Zeroizing<Vec<u16>>> {
+    let mut variables = std::env::vars_os().collect::<Vec<_>>();
+    for (name, value) in additional_environment {
+        if name.is_empty() || name.contains('=') || name.contains('\0') || value.contains('\0') {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "Process environment variables contain an invalid name or value.",
+            ));
+        }
+        if let Some((_, existing_value)) = variables
+            .iter_mut()
+            .find(|(key, _)| key.to_string_lossy().eq_ignore_ascii_case(name))
+        {
+            *existing_value = value.as_str().into();
+        } else {
+            variables.push((name.into(), value.as_str().into()));
+        }
+    }
+    variables.sort_unstable_by(|(left, _), (right, _)| {
+        left.to_string_lossy()
+            .to_lowercase()
+            .cmp(&right.to_string_lossy().to_lowercase())
+    });
+
+    let mut block = Zeroizing::new(Vec::new());
+    for (name, value) in variables {
+        block.extend(name.encode_wide());
+        block.push(b'=' as u16);
+        block.extend(value.encode_wide());
+        block.push(0);
+    }
+    block.push(0);
+    if block.len() == 1 {
+        block.push(0);
+    }
+    Ok(block)
 }

@@ -61,6 +61,7 @@ impl AppContainerSandbox {
     /// traversal fails. Any ACLs already granted are revoked during cleanup.
     pub(crate) fn create(
         working_directory: &Path,
+        additional_workspace_paths: &[PathBuf],
         additional_read_only_paths: &[PathBuf],
     ) -> io::Result<Self> {
         let acl_working_directory = fs::canonicalize(working_directory)?;
@@ -163,6 +164,22 @@ impl AppContainerSandbox {
         if let Err(error) = sandbox.grant_working_directory(acl_working_directory) {
             sandbox.cleanup();
             return Err(error);
+        }
+        for path in additional_workspace_paths {
+            let canonical_path = match fs::canonicalize(path) {
+                Ok(path) => path,
+                Err(error) => {
+                    sandbox.cleanup();
+                    return Err(error);
+                }
+            };
+            if shell_path(&canonical_path) == sandbox.working_directory {
+                continue;
+            }
+            if let Err(error) = sandbox.grant_working_directory(canonical_path) {
+                sandbox.cleanup();
+                return Err(error);
+            }
         }
         for path in additional_read_only_paths {
             if let Err(error) = sandbox.grant_read_only_path(path) {

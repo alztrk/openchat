@@ -20,7 +20,9 @@ use crate::{
     storage::{AppStorage, CopilotCatalogFilterSummary},
 };
 
-use super::{cancelled_error, http_error, invalid_response_error, network_error, storage_error};
+use super::{
+    cancelled_error, http_error, invalid_response_error, network_error_with_details, storage_error,
+};
 
 const PROVIDER_ID: &str = "copilot";
 const USER_URL: &str = "https://api.github.com/copilot_internal/user";
@@ -301,7 +303,7 @@ pub(super) fn client() -> Result<Client, ServiceError> {
         .pool_max_idle_per_host(10)
         .redirect(Policy::none())
         .build()
-        .map_err(|_| network_error())?;
+        .map_err(network_error_with_details)?;
     Ok(CLIENT.get_or_init(|| client).clone())
 }
 
@@ -316,7 +318,7 @@ fn catalog_client() -> Result<Client, ServiceError> {
         .pool_max_idle_per_host(5)
         .redirect(Policy::none())
         .build()
-        .map_err(|_| network_error())
+        .map_err(network_error_with_details)
 }
 
 async fn fetch_models(
@@ -348,8 +350,8 @@ async fn fetch_models(
     )
     .send()
     .await
-    .map_err(|_| {
-        let error = network_error();
+    .map_err(|cause| {
+        let error = network_error_with_details(cause);
         log_catalog_failure(storage, "model_http", error.code);
         error
     })?;
@@ -455,7 +457,7 @@ async fn fetch_user_with_client(
     )
     .send()
     .await
-    .map_err(|_| network_error())?;
+    .map_err(network_error_with_details)?;
     if !response.status().is_success() {
         return Err(http_error(response.status(), Some(PROVIDER_ID)));
     }
@@ -590,7 +592,7 @@ async fn read_json_response(
         .map(|length| (length as usize).min(maximum_bytes))
         .unwrap_or_default();
     let mut body = Vec::with_capacity(capacity);
-    while let Some(chunk) = response.chunk().await.map_err(|_| network_error())? {
+    while let Some(chunk) = response.chunk().await.map_err(network_error_with_details)? {
         if body.len().saturating_add(chunk.len()) > maximum_bytes {
             return Err(invalid_response_error());
         }

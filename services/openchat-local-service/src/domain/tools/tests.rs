@@ -1543,6 +1543,7 @@ async fn completed_project_tool_terminates_descendants_before_waiting_for_pipe_e
             30,
             1024,
             &mut cancellation,
+            false,
         ),
     )
     .await;

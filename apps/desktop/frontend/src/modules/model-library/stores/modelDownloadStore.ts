@@ -1,6 +1,11 @@
 import { create } from 'zustand';
 
-import { type JsonObject, LocalServiceError, localServiceClient } from '@/platform/local-service';
+import {
+  type JsonObject,
+  LocalServiceError,
+  localServiceClient,
+  localServiceErrorDetails,
+} from '@/platform/local-service';
 
 export type ModelDownloadStatus =
   | 'idle'
@@ -43,6 +48,7 @@ interface ModelDownloadState {
   progress: ModelDownloadProgress | null;
   progressUnavailable: boolean;
   errorCode: string | null;
+  errorDetails: string | null;
   result: ModelDownloadResult | null;
   start(request: ModelDownloadRequest): Promise<void>;
   cancel(): Promise<void>;
@@ -58,6 +64,7 @@ export const useModelDownloadStore = create<ModelDownloadState>((set, get) => ({
   progress: null,
   progressUnavailable: false,
   errorCode: null,
+  errorDetails: null,
   result: null,
   start: async (request) => {
     if (isActive(get().status)) return;
@@ -71,6 +78,7 @@ export const useModelDownloadStore = create<ModelDownloadState>((set, get) => ({
       progress: null,
       progressUnavailable: false,
       errorCode: null,
+      errorDetails: null,
       result: null,
     });
 
@@ -113,6 +121,7 @@ export const useModelDownloadStore = create<ModelDownloadState>((set, get) => ({
       set({
         status: errorCode === 'operation_cancelled' ? 'cancelled' : 'failed',
         errorCode,
+        errorDetails: localServiceErrorDetails(error),
       });
     } finally {
       if (generation === operationGeneration) cancelOperation = null;

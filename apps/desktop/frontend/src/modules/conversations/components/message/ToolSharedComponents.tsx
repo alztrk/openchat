@@ -6,12 +6,11 @@ import { Button } from '@/design-system';
 import { formatToolPath, preview, safeAttributionNodes } from './toolResultUtils';
 
 export function PathHeading({ path }: { path: string }) {
-  const { t } = useTranslation();
   return (
     <p className="flex min-w-0 items-center gap-2 text-xs text-secondary-text">
       <File aria-hidden="true" className="shrink-0" size={14} />
       <span className="truncate" title={path}>
-        {formatToolPath(path, t)}
+        {formatToolPath(path)}
       </span>
     </p>
   );
@@ -119,7 +118,6 @@ export function ToolResultNotice({
   isError?: boolean;
   isWorking?: boolean;
 }) {
-  const { t } = useTranslation();
   const Icon = isWorking ? LoaderCircle : isError ? CircleAlert : AlertCircle;
   return (
     <div
@@ -137,7 +135,7 @@ export function ToolResultNotice({
         </span>
         {path ? (
           <p className="mt-1 break-all font-code text-secondary-text" title={path}>
-            {formatToolPath(path, t)}
+            {formatToolPath(path)}
           </p>
         ) : null}
       </div>

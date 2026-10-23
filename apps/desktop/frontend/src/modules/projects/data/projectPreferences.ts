@@ -17,9 +17,6 @@ const projectToolRuleNames = new Set([
   'get_file_info',
   'execute_command',
   'send_terminal_input',
-  'git_status',
-  'git_diff',
-  'git_history',
   'web_search',
   'read_url_content',
   'delegate_task',
@@ -83,7 +80,9 @@ export function parseProjectToolPermissionRules(value: unknown): Record<string, 
   }
   const rules: Record<string, ProjectToolPermissionRule> = {};
   for (const [name, rule] of Object.entries(value)) {
-    if (!isProjectToolRuleName(name) || !isPermissionRule(rule)) {
+    if (!isPermissionRule(rule)) throw new Error('The saved project tool permission rules are invalid.');
+    if (name === 'git_status' || name === 'git_diff' || name === 'git_history') continue;
+    if (!isProjectToolRuleName(name)) {
       throw new Error('The saved project tool permission rules are invalid.');
     }
     rules[name] = rule;

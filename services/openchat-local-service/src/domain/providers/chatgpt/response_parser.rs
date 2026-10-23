@@ -250,32 +250,38 @@ pub(super) fn http_error(status: StatusCode) -> ServiceError {
             "authentication_required",
             "ChatGPT needs you to sign in to this account again.",
             false,
-        ),
+        )
+        .with_details(format!("HTTP status {}", status.as_u16())),
         StatusCode::FORBIDDEN => ServiceError::new(
             "permission_denied",
             "This ChatGPT account or workspace does not allow the requested operation.",
             false,
-        ),
+        )
+        .with_details(format!("HTTP status {}", status.as_u16())),
         StatusCode::TOO_MANY_REQUESTS => ServiceError::new(
             "rate_limited",
             "ChatGPT has reached a usage limit for this account. Wait for its reset or choose another account.",
             false,
-        ),
+        )
+        .with_details(format!("HTTP status {}", status.as_u16())),
         StatusCode::NOT_FOUND => ServiceError::new(
             "provider_endpoint_unavailable",
             "The ChatGPT endpoint is unavailable or has changed.",
             false,
-        ),
+        )
+        .with_details(format!("HTTP status {}", status.as_u16())),
         status if status.is_server_error() => ServiceError::new(
             "provider_unavailable",
             "ChatGPT is temporarily unavailable. Try again later.",
             true,
-        ),
+        )
+        .with_details(format!("HTTP status {}", status.as_u16())),
         _ => ServiceError::new(
             "provider_request_failed",
             "ChatGPT rejected the request. Check the account and model selection.",
             false,
-        ),
+        )
+        .with_details(format!("HTTP status {}", status.as_u16())),
     }
 }
 

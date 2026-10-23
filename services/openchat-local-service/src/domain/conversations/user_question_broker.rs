@@ -224,10 +224,33 @@ impl UserQuestionBroker {
         storage: &AppStorage,
         conversation_id: &str,
     ) -> Result<Vec<Value>, ServiceError> {
-        let connection = storage.connect().map_err(|_| unavailable_error())?;
+        let connection = storage.connect().map_err(|error| {
+            let _ = storage.log_rpc_failure(
+                "chat.questions.list",
+                crate::storage::sqlite_error_code(&error),
+            );
+            unavailable_error()
+        })?;
         user_questions::list_recoverable_question_groups(&connection, conversation_id)
             .map(|groups| groups.iter().map(pending_group_value).collect())
-            .map_err(storage_error)
+            .map_err(|error| {
+                let code = match &error {
+                    user_questions::UserQuestionError::Database(error) => {
+                        crate::storage::sqlite_error_code(error)
+                    }
+                    user_questions::UserQuestionError::CorruptStoredData(_) => {
+                        "question_storage_corrupt"
+                    }
+                    user_questions::UserQuestionError::NotFound(_) => "question_not_found",
+                    user_questions::UserQuestionError::Conflict(_) => "question_conflict",
+                    user_questions::UserQuestionError::StaleRevision { .. } => {
+                        "question_revision_stale"
+                    }
+                    user_questions::UserQuestionError::InvalidInput(_) => "question_data_invalid",
+                };
+                let _ = storage.log_rpc_failure("chat.questions.list", code);
+                storage_error(error)
+            })
     }
 
     pub(crate) async fn resume_run(
@@ -757,7 +780,8 @@ pub(crate) fn pending_group_value(group: &user_questions::PendingQuestionGroup) 
         "toolCallId": checkpoint.and_then(|value| value.get("toolCallId")).and_then(Value::as_str),
         "toolName": checkpoint.and_then(|value| value.get("toolName")).and_then(Value::as_str),
         "toolArguments": checkpoint.and_then(|value| value.get("toolArguments")),
-        "answers": group.answers,
+        // Pending groups have no answer yet; keep the RPC shape array-valued for the renderer.
+        "answers": group.answers.as_deref().unwrap_or(&[]),
         "questions": group.questions.iter().map(|question| json!({
             "id": question.id,
             "kind": question.kind,

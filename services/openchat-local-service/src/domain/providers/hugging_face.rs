@@ -183,7 +183,10 @@ pub(crate) async fn search(
     if let Some(cursor) = cursor {
         request = request.query(&[("cursor", cursor)]);
     }
-    let response = request.send().await.map_err(|_| hub_network_error())?;
+    let response = request
+        .send()
+        .await
+        .map_err(hub_network_error_with_details)?;
     if !response.status().is_success() {
         return Err(http_status_error(response.status()));
     }
@@ -372,7 +375,7 @@ fn client() -> Result<Client, ServiceError> {
         .timeout(Duration::from_secs(45))
         .redirect(hugging_face_redirect_policy())
         .build()
-        .map_err(|_| hub_network_error())
+        .map_err(hub_network_error_with_details)
 }
 
 fn download_client() -> Result<Client, ServiceError> {
@@ -381,7 +384,7 @@ fn download_client() -> Result<Client, ServiceError> {
         .connect_timeout(Duration::from_secs(15))
         .redirect(hugging_face_redirect_policy())
         .build()
-        .map_err(|_| hub_network_error())
+        .map_err(hub_network_error_with_details)
 }
 
 /// Restricts Hub redirects to HTTPS endpoints owned by Hugging Face.
@@ -422,7 +425,7 @@ async fn response_json(response: Response) -> Result<Value, ServiceError> {
     let mut stream = response.bytes_stream();
     let mut bytes = Vec::new();
     while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(|_| hub_network_error())?;
+        let chunk = chunk.map_err(hub_network_error_with_details)?;
         if bytes.len().saturating_add(chunk.len()) > MAX_API_RESPONSE_BYTES {
             return Err(invalid_hub_response_error());
         }
@@ -522,7 +525,7 @@ async fn fetch_readme(details: &ModelDetails, file: &HubFile) -> Result<ModelRea
         .get(url)
         .send()
         .await
-        .map_err(|_| hub_network_error())?;
+        .map_err(hub_network_error_with_details)?;
     if response.status() == StatusCode::NOT_FOUND {
         return Ok(ModelReadme::Missing);
     }
@@ -539,7 +542,7 @@ async fn fetch_readme(details: &ModelDetails, file: &HubFile) -> Result<ModelRea
     let mut stream = response.bytes_stream();
     let mut bytes = Vec::new();
     while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(|_| hub_network_error())?;
+        let chunk = chunk.map_err(hub_network_error_with_details)?;
         if bytes.len().saturating_add(chunk.len()) > MAX_MODEL_README_BYTES {
             return Ok(ModelReadme::TooLarge);
         }
@@ -595,7 +598,7 @@ async fn fetch_details(repo_id: &str, format: ModelFormat) -> Result<ModelDetail
         .query(&[("blobs", "true")])
         .send()
         .await
-        .map_err(|_| hub_network_error())?;
+        .map_err(hub_network_error_with_details)?;
     let value = response_json(response).await?;
     let object = value.as_object().ok_or_else(invalid_hub_response_error)?;
     if object.get("id").and_then(Value::as_str) != Some(repo_id) {
@@ -831,7 +834,7 @@ async fn download_file(
     }
     let response = tokio::select! {
         _ = cancellation.changed() => return Err(cancelled_error()),
-        response = request.send() => response.map_err(|_| hub_network_error())?,
+        response = request.send() => response.map_err(hub_network_error_with_details)?,
     };
 
     if response.status() == StatusCode::RANGE_NOT_SATISFIABLE
@@ -867,7 +870,7 @@ async fn download_file(
         let Some(chunk) = next_chunk else {
             break;
         };
-        let chunk = chunk.map_err(|_| hub_network_error())?;
+        let chunk = chunk.map_err(hub_network_error_with_details)?;
         current_bytes = current_bytes
             .checked_add(chunk.len() as u64)
             .ok_or_else(download_size_error)?;
@@ -964,7 +967,13 @@ async fn send_progress(
             data,
         ))
         .await
-        .map_err(|_| hub_network_error())
+        .map_err(|_| {
+            ServiceError::new(
+                "protocol_unavailable",
+                "The local service could not deliver the model download progress update.",
+                true,
+            )
+        })
 }
 
 async fn register_downloaded_model(
@@ -1084,10 +1093,10 @@ fn safe_join(root: &Path, relative: &str) -> Result<PathBuf, ServiceError> {
 }
 
 fn api_model_url(repo_id: &str) -> Result<Url, ServiceError> {
-    let mut url = Url::parse(HUB_BASE).map_err(|_| hub_network_error())?;
+    let mut url = Url::parse(HUB_BASE).map_err(|_| invalid_hub_response_error())?;
     let (owner, name) = repo_id.split_once('/').ok_or_else(invalid_request_error)?;
     url.path_segments_mut()
-        .map_err(|_| hub_network_error())?
+        .map_err(|_| invalid_hub_response_error())?
         .extend(["api", "models", owner, name]);
     Ok(url)
 }
@@ -1097,8 +1106,10 @@ fn download_url(repo_id: &str, revision: &str, file_path: &str) -> Result<Url, S
         return Err(invalid_request_error());
     }
     let (owner, name) = repo_id.split_once('/').ok_or_else(invalid_request_error)?;
-    let mut url = Url::parse(HUB_BASE).map_err(|_| hub_network_error())?;
-    let mut segments = url.path_segments_mut().map_err(|_| hub_network_error())?;
+    let mut url = Url::parse(HUB_BASE).map_err(|_| invalid_hub_response_error())?;
+    let mut segments = url
+        .path_segments_mut()
+        .map_err(|_| invalid_hub_response_error())?;
     segments.extend([owner, name, "resolve", revision]);
     for segment in file_path.split('/') {
         segments.push(segment);
@@ -1333,6 +1344,10 @@ fn hub_network_error() -> ServiceError {
         "Hugging Face could not be reached. Check the connection and try again.",
         true,
     )
+}
+
+fn hub_network_error_with_details(error: reqwest::Error) -> ServiceError {
+    hub_network_error().with_details(error.without_url().to_string())
 }
 
 fn hub_access_denied_error() -> ServiceError {

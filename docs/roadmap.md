@@ -32,7 +32,7 @@ additional local-provider connections (priority 12) are later work.
 - Shared provider request, tool, and stream event types across ChatGPT, OpenCode, Anthropic, and all compatible cloud and local providers, plus local shared instructions.
 - Embedded release catalogs and a verified, cancellable installer for llama.cpp on Windows x64. Settings supports one llama.cpp model folder and bounded discovery of unregistered GGUF files, with explicit confirmation before registration. The managed llama.cpp path starts selected GGUF models on demand, waits for health readiness, streams chat through the shared route, and stops individual processes on cancellation or service shutdown. Manual Windows CPU and NVIDIA CUDA checks used real GGUF files; CUDA verification reported the RTX 3060, generated a text answer, and handled an attached PNG with its matching vision projector. These were manual runtime checks, not automated release tests. CUDA offload is recommended only when the detected driver meets the pinned catalog floor. llama.cpp is the only OpenChat-managed local inference engine. Runtime diagnostics record bounded, safe lifecycle fields. GGUF-declared and runtime-active context windows, projector pairing, and reported image and tool-template capabilities are implemented.
 - Local workspace tools for file listing, search, reading, metadata, writing, and editing, plus web search, URL reading, and terminal command/session tools. Tool calls, arguments, progress, and results are stored with assistant messages and shown in the conversation UI.
-- Global `Ask for approval`, `Approve safe operations`, and `Full access` settings govern built-in tool approvals. Filesystem calls use canonical path checks. Sensitive configuration files (`.git/hooks`, IDE configs) strictly require explicit user approval (`Ask`). On Windows, terminal sessions run in a temporary AppContainer by default, with optional WSL2 container execution (`bwrap --unshare-all`) for full kernel-level workspace isolation; non-Windows terminal execution uses process isolation.
+- Global `Ask for approval`, `Approve safe operations`, and `Full access` settings govern built-in tool approvals. Filesystem calls use canonical path checks. Sensitive configuration files (`.git/hooks`, IDE configs) strictly require explicit user approval (`Ask`). On Windows, terminal, configured project-tool, project-task, and chat-scoped project MCP processes use a temporary AppContainer in approval and safe-operation modes. Full access runs those chat tools without AppContainer or WSL `bwrap`, under the current operating-system account; it does not elevate privileges or bypass OS ACLs and UAC. Global MCP catalog discovery remains sandboxed. Non-Windows terminal execution uses process isolation.
 - Real-time secret and credential redaction (DLP shield) scrubbed across terminal command output, MCP tool executions, and file reads to prevent live credentials from leaking into agent contexts or session streams.
 - ChatGPT OAuth quota snapshots are stored per connection and workspace. Provider-reported input usage informs compaction where available, but there is no normalized per-request usage, cost, or prompt-cache ledger across providers; the context meter can use estimates.
 - Conversation history, project grouping, model favorites, rename/delete/pin actions, retry, and Markdown export. Tool activity is included in Markdown exports.
@@ -149,7 +149,7 @@ These bullets describe code present in the repository. They do not mean that eve
 
 ### 1. Add a first-party tool runtime and safer coding-agent workflows
 
-**Status: implemented for the supported Windows target.** Built-in file, terminal, web, and read-only Git tools have centralized schemas, local Rust executors, validated arguments, bounded operations, and persisted activity. Windows terminal sessions use a temporary AppContainer; file changes have review and conditional revert support. Per-project `Ask`, `Allow`, and `Deny` rules now override the global permission mode for supported built-in tools. Child agents inherit the request's applicable tool grants and permission rules; item 26 documents child-specific exclusions and limits. The first-party `run_project_task` executor is advertised only on Windows when an attached project's validated task catalog contains entries; its schema is restricted to declared task IDs, the catalog is read with a 64 KiB plus one byte cap only when the tool can be offered, so an inactive task tool does not block ordinary chat; execution uses the same approval, timeout, output, cancellation, activity, and Windows sandbox path as terminal commands. Windows project options manage local stdio and remote Streamable HTTP MCP catalogs, validate and atomically replace settings, disable saving after load errors, and check an enabled server on demand, including unsaved edits. Remote MCP connections require HTTPS, reject private or reserved destinations after DNS resolution, pin resolved addresses, disable redirects, and send optional bearer credentials from Windows Credential Manager. MCP server and discovered per-tool `Ask`, `Allow`, and `Deny` overrides are stored locally per project, outside the repository catalog; server `Deny` takes precedence. Client and service permission limits accommodate the maximum configured set of eight servers with up to 128 tools each. During chat, discovered MCP tools use namespaced provider schemas, per-call approval unless local settings allow or deny them, persisted activity, and untrusted-result handling. MCP environment-variable names stay in the project catalog while their secret values are scoped to project, server, and variable in Windows Credential Manager; stdio secrets enter only the sandboxed child environment and remote credentials are sent only as HTTPS bearer authorization. Remote MCP JSON success/error bodies are incrementally capped at 64 KiB, SSE events are bounded before parsing, and transport headers cannot override reserved protocol headers. Versioned project-scoped first-party executors are available on Windows through `.openchat/tools.json`, with schema validation, per-tool permissions, AppContainer execution, bounded input/output, timeout, cancellation, and persisted activity. Project instructions, reusable project Skills, profile settings, bounded child runs, and plan-mode restrictions are implemented. Non-Windows process isolation remains future platform work because Windows is the only supported desktop target.
+**Status: implemented for the supported Windows target.** Built-in file, terminal, web, and read-only Git tools have centralized schemas, local Rust executors, validated arguments, bounded operations, and persisted activity. Windows terminal sessions use a temporary AppContainer in approval and safe-operation modes; Full access starts chat tool processes without that sandbox while retaining the current account's OS permissions. File changes have review and conditional revert support. Per-project `Ask`, `Allow`, and `Deny` rules now override the global permission mode for supported built-in tools. Child agents inherit the request's applicable tool grants and permission rules; item 26 documents child-specific exclusions and limits. The first-party `run_project_task` executor is advertised only on Windows when an attached project's validated task catalog contains entries; its schema is restricted to declared task IDs, the catalog is read with a 64 KiB plus one byte cap only when the tool can be offered, so an inactive task tool does not block ordinary chat; execution uses the same approval, timeout, output, cancellation, activity, and permission-mode-aware process execution as terminal commands. Windows project options manage local stdio and remote Streamable HTTP MCP catalogs, validate and atomically replace settings, disable saving after load errors, and check an enabled server on demand, including unsaved edits. Remote MCP connections require HTTPS, reject private or reserved destinations after DNS resolution, pin resolved addresses, disable redirects, and send optional bearer credentials from Windows Credential Manager. MCP server and discovered per-tool `Ask`, `Allow`, and `Deny` overrides are stored locally per project, outside the repository catalog; server `Deny` takes precedence. Client and service permission limits accommodate the maximum configured set of eight servers with up to 128 tools each. During chat, discovered MCP tools use namespaced provider schemas, per-call approval unless local settings allow or deny them, persisted activity, and untrusted-result handling. MCP environment-variable names stay in the project catalog while their secret values are scoped to project, server, and variable in Windows Credential Manager; stdio secrets enter only the child environment in restricted modes and inherit the current account environment in Full access; remote credentials are sent only as HTTPS bearer authorization. Remote MCP JSON success/error bodies are incrementally capped at 64 KiB, SSE events are bounded before parsing, and transport headers cannot override reserved protocol headers. Versioned project-scoped first-party executors are available on Windows through `.openchat/tools.json`, with schema validation, per-tool permissions, permission-mode-aware execution, bounded input/output, timeout, cancellation, and persisted activity. Project instructions, reusable project Skills, profile settings, bounded child runs, and plan-mode restrictions are implemented. Non-Windows process isolation remains future platform work because Windows is the only supported desktop target.
 
 - Keep LSP diagnostics and navigation as a separate code-intelligence capability. Non-Windows process isolation, browser/computer control, and other desktop-platform executors require separate platform support and security validation before being enabled.
 
@@ -181,7 +181,7 @@ These bullets describe code present in the repository. They do not mean that eve
 
 ### 4. Add usage tracking and cost visibility
 
-**Status: partially implemented in source; provider-coverage audit remains.** The local request ledger and statistics views calculate one estimated cost locally from normalized token counts and matching models.dev rates. The UI labels it as an estimate, shows the number of priced requests, and leaves unmatched or missing values unavailable. Provider-reported cost is not presented as a second user-facing amount. Usage mapping captures Anthropic's reported thinking-token breakdown from the final `message_delta`, along with its input/output and cache counts. Finish mapping provider-specific token, latency, throughput, retry, and tool-outcome fields where responses support them; keep estimates separate from provider plan quotas.
+**Status: implemented in source; provider-coverage audit remains.** The local request ledger and statistics views calculate one estimated cost locally from normalized token counts and matching models.dev rates. The UI labels it as an estimate, shows the number of priced requests, and leaves unmatched or missing values unavailable. Provider-reported cost is not presented as a second user-facing amount. Usage mapping captures Anthropic's reported thinking-token breakdown from the final `message_delta`, along with its input/output and cache counts. Finish mapping provider-specific token, latency, throughput, retry, and tool-outcome fields where responses support them; keep estimates separate from provider plan quotas.
 
 - Store per-request provider-reported input, output, reasoning, cache-read, and cache-write counts when available, plus cost when known, first-token latency, total latency, throughput, retries, and tool outcomes. Normalize provider fields while retaining their source and avoiding double-counting cache tokens in total input.
 - Attribute usage to connection/account, workspace, conversation, project, model, run, and subagent. Show plan quotas and API usage limits only when the provider supplies them; include freshness and reset information when available.
@@ -427,7 +427,7 @@ and provider outages each show the failed step and a usable next action.
 
 ### 20. Add private conversations and user-controlled memory
 
-**Status: partially implemented in source, P1.** The temporary-chat retention
+**Status: implemented in source, P1.** The temporary-chat retention
 contract is documented, randomly generated `tmp_` IDs are rejected by durable
 conversation creation, message saving, and the normal chat-send RPC, and an
 in-memory session model validates transcript bounds, immutable save snapshots,
@@ -496,64 +496,17 @@ provider and tool boundaries are explicit in the temporary-chat flow.
 project indexes, or exports unless explicitly saved; personal memory is off by
 default and every remembered item and source can be reviewed or removed.
 
-### 21. Add reusable assistant profiles and an editable response workspace
+### 21. Remove the saved-response collection
 
-**Status: implemented in source, P1; provider and native UI validation remain.** Assistant profiles can be
-created, edited, activated, deactivated, and removed in settings. Their name,
-bounded instructions, and concise/balanced/detailed response style persist in
-local preferences. The active profile's style and instructions are included in
-new standard chat requests alongside shared and project-specific instructions;
-the active profile is shown in the conversation header before sending. Temporary
-chats do not apply profiles, and the settings explain this boundary. Profiles
-can save a preferred model from the currently selected available model. That
-preference applies to new chats after project-specific defaults and retains its
-reasoning effort where supported. Existing conversations keep their saved
-model. Explicit per-profile tool allowlists and the editable response workspace
-are implemented: profiles can restrict built-in tool groups; the service
-validates the allowlist, filters advertised tools, and limits the executor. The
-profile limit takes precedence over global and project tool grants. When a
-project is active, the profile editor lists configured project tools from the
-validated project catalog. Enabled MCP servers can be checked on user request
-and their discovered tool names can be selected individually. The project task
-runner is a single allowlisted tool; its task choices still come from the
-validated project task catalog at request time. The service advertises only
-entries present in the applicable validated catalogs. During chat, only MCP
-servers containing an allowed tool are connected. An absent allowlist preserves
-existing behavior, while an empty list disables tools. Profile selections are
-capped at 32 without silently dropping excess selections.
-Before sending, the conversation header now shows whether the active profile
-sets a tool limit, disables tools, or inherits the app and project permissions.
-The accessible label and tooltip clarify that app and project permissions can
-further limit a profile's selected tools.
-The Saved responses page now opens a side workspace where users can edit a
-working copy, preview safe Markdown (including fenced code blocks), save
-numbered versions, switch the selected version, and export that version as
-Markdown. The source editor is labeled as Markdown and uses a code font.
-Edited versions remain linked to their source conversation and
-message; the original transcript is unchanged. Schema 16 backfills existing
-saved responses as version 1. Source editing now supports syntax highlighting
-and language selection for Markdown, Dart, Go, JavaScript, TypeScript, Python,
-Rust, JSON, YAML, HTML/XML, CSS, and SQL. Language selection only changes local
-editor presentation; it does not alter the saved text or execute code. Profile
-creation and removal restore the previous profile list if updating the active
-profile fails.
+**Status: implemented in source.** The message save control, Library page,
+response editing workspace, history-search support, and Tauri response commands
+have been removed. Existing saved-response database tables and migrations stay
+in place so stored data is not discarded. Conversation deletion and history
+clearing continue to remove related legacy rows.
 
-- Add personal assistant profiles that combine a name, instructions, response
-  style, preferred model, and explicitly enabled tools. Keep project-specific
-  instructions and Skills available as narrower project context.
-- Keep assistant profiles distinct from recipes in priority 6: profiles shape
-  an ongoing assistant, while recipes launch a bounded, repeatable task.
-- Add a side workspace for substantial documents, plans, and code. Support
-  focused edits, version selection, and export without replacing the source
-  conversation or saved-output collection.
-- Show the active profile, model, and tool access before a request is sent.
-  The profile's tool scope is shown in the conversation header, and the
-  selected model remains visible in the composer. App and project permissions
-  may further reduce the profile's tool allowlist.
-
-**Exit criteria:** users can create, edit, select, and remove a profile; a
-workspace output retains its link to the generating conversation and selected
-version; unsupported editing or export formats fail explicitly.
+**Exit criteria:** no active UI or callable application command can save,
+search, or edit saved responses; existing database records remain intact until
+their conversation is deleted or history is cleared.
 
 ### 22. Expand library search and reusable file access
 
@@ -563,7 +516,7 @@ allowlist of app/runtime, history-storage, service-health, and database schema
 fields; the preview and saved JSON are identical. Chat content, credentials,
 and filesystem paths are excluded, including path fields returned by the
 service health RPC. Cross-surface search now combines conversation history
-with project/workspace names, saved responses, and attachment names. Results
+with project/workspace names and attachment names. Results
 show their type; source conversations and messages can be opened directly.
 The composer also offers a reusable library of conversation attachments. It
 loads recent messages in bounded batches, can continue to older conversation
@@ -572,8 +525,9 @@ selected. Result-type filters are implemented. Project results open the
 latest related conversation or start a new conversation in that project.
 Workspace results open the workspace organizer and select the matching
 workspace; conversations created there retain that workspace assignment. The
-dedicated file-library surface lists saved attachments in bounded pages,
-filters available and missing files, and opens each file's source message.
+Library no longer has a dedicated conversation-files tab. The composer
+still lets users browse available files from other conversations and attach a
+copy to the current message.
 Attachment-content indexing is optional, local, bounded, and removable without
 deleting source files. Turning it off persists the opt-out before deleting the
 derived index; if cleanup fails, the remaining count and retry action stay
@@ -588,8 +542,8 @@ unrelated content into chat history results.
   workspace in the workspace organizer.
 - Expand the reusable conversation-attachment picker beyond its bounded recent
   list. Implemented with on-demand message-page loading and explicit retry on
-  page failure. The separate file-library surface distinguishes conversation
-  attachments from project-indexed content and opens source messages.
+  page failure. The picker remains in the composer; the Library conversation-
+  files tab has been removed.
 - Make attachment-content indexing a separate opt-in control, consistent with
   priority 9; report which file types are indexed and provide a clear way to
   remove derived indexes without deleting original files.
@@ -797,14 +751,15 @@ Hosted sharing remains out of scope under the current product decision.
 
 ### 35. Add native computer use automation for desktop apps, mouse, and keyboard
 
-**Status: planned, P2.** Equip the agent with system-level computer use capabilities to perceive screens and interact with native desktop applications.
+**Status: in progress, P2.** Equip the agent with system-level computer use capabilities to perceive screens and interact with native desktop applications. The first implementation is Windows-only and exposes Computer Use as a model tool; the assistant can inspect the full virtual desktop or enumerate displays and target one display.
 
-- Implement the perception-action loop (`screenshot` -> `reasoning` -> `mouse_move` / `click` / `type` / `keypress` / `scroll`) modeled after Claude and Codex computer use specifications.
-- Provide OS-level mouse and keyboard input simulation (via native Win32 SendInput APIs on Windows and virtual input servers on other platforms).
-- Implement an explicit emergency abort shortcut (e.g. `Esc` or moving mouse to screen corner) that instantly disengages agent input control.
-- Enforce granular user permission gates before initiating computer use sessions, keeping sensitive applications (passwords, banking, system settings) bounded.
+- Implement the perception-action loop (`screenshot` -> `reasoning` -> mouse and keyboard actions) with latest-frame coordinate validation and transient image handoff to vision-capable providers.
+- Use Win32 screen capture and `SendInput` on Windows. UAC prompts, the lock screen, and other secure desktops are outside the feature boundary.
+- Show a click-through, primary-color indicator on each display, with an active-control banner on the primary display. Two physical Esc presses stop the current Computer Use session; injected Esc key events do not trigger the stop listener.
+- Keep Computer Use callable only through the model tool contract, apply the active tool permission policy, and keep screenshots and typed text out of persisted tool activity.
+- Give the assistant explicit guidance to treat visible desktop content as untrusted, refresh screenshots after screen-changing actions, verify outcomes, and stop when the user revokes control.
 
-**Exit criteria:** the agent accurately translates visual desktop state into targeted mouse and keyboard actions; input coordinates scale reliably across multi-monitor display resolutions; and emergency abort immediately revokes control.
+**Remaining exit criteria:** run Windows end-to-end checks against real desktop applications and multi-monitor setups, including the indicator, double-Esc abort, coordinate mapping, provider image handoff, input, and failure cleanup. Linux and macOS support are deferred.
 
 ### 36. Add smart ghost-text suggestions with one-key auto-completion
 
@@ -900,13 +855,13 @@ Hosted sharing remains out of scope under the current product decision.
 
 ### 47. Add custom agents and prompt template library
 
-**Status: planned, P1.** Enable users to build, save, and share personalized AI agents and reusable prompt templates within an integrated Library tab.
+**Status: implemented in source.** The Library includes an Agents tab with four ready-made agents: Debugger, UI/UX & Visual Designer, Researcher, and Security Reviewer. Their detailed instructions are fixed in English and visible before adding an agent. The instructions supplement OpenChat's built-in assistant, tool, safety, and permission instructions. Agents can be edited as local profiles with instructions, response style, and optional tool allowlists. Previously saved Coding assistant and Writing editor profiles remain readable as personal profiles; they are no longer offered as ready-made agents. Profile temperature controls and profile import/export are deferred.
 
-- Provide a dedicated Library view where users can create custom AI agents configured with custom system instructions, default provider/model routes, temperature, and specific tool permissions.
-- Support a reusable prompt template catalog with dynamic parameter placeholders (e.g. `{{code}}`, `{{topic}}`, `{{language}}`) that expand directly into the composer.
-- Allow users to invoke custom agents directly from the sidebar or via composer shortcuts (e.g. `@AgentName`), maintaining agent configuration local in SQLite with export/import capability.
+- Add ready-made agents or create, edit, select, and remove personal agents from the Library and new-chat menu. Agent instructions, response style, and optional tool allowlists stay on this device.
+- Save up to 50 reusable prompt templates with up to 16 named parameters each; fill parameters and add the expanded prompt to the composer without sending it automatically.
+- Keep prompt templates and profile data on the device with no external service dependency.
 
-**Exit criteria:** custom agents retain their tailored instructions and model bindings across sessions; prompt templates expand correctly into the composer; and the agent catalog operates entirely locally without external dependencies.
+**Exit criteria:** met for the implemented profile and prompt-template workflows. Temperature settings, profile import/export, and `@AgentName` shortcuts remain deferred.
 
 ### 48. Add hashline edits and drift-resilient file modification engine
 
@@ -939,15 +894,16 @@ Hosted sharing remains out of scope under the current product decision.
 
 **Exit criteria:** met for the shared design-system controls and stylesheet structure. New and remaining feature-specific controls continue to use the shared primitives where their interaction model fits.
 
-### 51. Add shadow git checkpoints and instant timeline rollback
+### 51. Add internal agent checkpoints for workspace recovery
 
-**Status: planned, P1.** Eliminate fear of catastrophic AI code corruption by maintaining an automatic, isolated shadow Git history for every agent turn.
+**Status: partially implemented in source with bounded snapshots, P1.** Tracked file writes, terminal operations, and supported project tools automatically record exact before-and-after file states in the existing content-addressed snapshot store. Checkpoint data and controls are internal and must not be shown in the UI. A conflict-safe restore primitive exists, but the agent runtime does not yet choose or invoke checkpoint recovery itself.
 
-- Maintain an internal shadow Git repository (completely decoupled from the user's primary `.git` working tree) that captures full snapshots before and after every file modification or terminal execution.
-- Provide an interactive timeline in the conversation and side panel where users can review exact snapshot diffs and roll back to any past state with a single click.
-- Ensure rollback operations restore files cleanly without truncating active conversation context, allowing the user to redirect the agent from any prior checkpoint.
+- Keep the existing bounded, content-addressed file snapshots as the recovery source; do not create a second Git database for the same files.
+- Bound history to 2,000 checkpoints, 5,000 changed files in one checkpoint, 50,000 changed-file records, and 512 MiB of referenced snapshot content per conversation. File contents larger than the existing 16 MiB per-file or 128 MiB workspace-capture limits remain hash-tracked but cannot be restored from a checkpoint.
+- Checkpoint history begins with this version; older conversations keep their existing file-change records but do not gain historical before-and-after states retroactively.
+- If a current file no longer matches the recorded workspace head, preserve it and stop the restore. Recovery decisions and failures stay inside the agent runtime; do not add checkpoint history, status, or controls to the UI.
 
-**Exit criteria:** shadow checkpoints capture file states without polluting the user's git history; rollbacks restore workspace state instantaneously; and checkpoint diffs remain accessible across turns.
+**Exit criteria:** not yet met. The agent runtime must use the bounded snapshots for safe recovery without exposing checkpoint data or controls in the UI.
 
 ### 52. Implement prompt prefix freezing and deterministic cache optimization
 
@@ -993,13 +949,13 @@ Hosted sharing remains out of scope under the current product decision.
 
 ### 56. Add multi-root workspace support
 
-**Status: planned, P2.** Allow users and agents to operate across multiple related project folders simultaneously within a single session.
+**Status: implemented in source, P2.** A project can keep up to eight non-overlapping workspace roots in SQLite. The first root remains primary; additional roots can be attached or detached without changing project conversations.
 
-- Extend project configuration to accept multiple workspace root directories (e.g., frontend + backend in monorepos or adjacent microservice repositories).
-- Update file tools (`read_file`, `search_files`, `write_file`) and terminal path boundaries to validate relative and canonical paths against all active roots in the workspace.
-- Provide clear multi-folder indicators in the sidebar and file pickers, enabling users to add or detach folders dynamically without resetting conversation history.
+- Add and remove secondary folders from project options; display the additional-folder count in the sidebar, composer project selector, and project picker.
+- Resolve project-scoped file tools against all configured roots, capture their file changes, and grant terminal processes write access only to those roots in the Windows AppContainer or WSL2 sandbox.
+- Reject unavailable, overlapping, or out-of-scope roots and keep the primary root attached.
 
-**Exit criteria:** agents navigate and edit files across distinct roots seamlessly; path boundary validation prevents access outside the declared roots; and multi-root configurations persist cleanly in SQLite project storage.
+**Exit criteria:** met for persisted root selection, file and terminal access boundaries, sidebar indicators, and dynamic add/remove. Windows runtime permission behavior still requires a local build and manual confirmation.
 
 
 
@@ -1010,7 +966,7 @@ Hosted sharing remains out of scope under the current product decision.
 ## Explicit boundaries
 
 - No centralized account, message, or credential service; OpenChat remains local-first and self-hostable in its app model.
-- Windows terminal execution defaults to AppContainer process sandboxing with opt-in WSL2 container (`bwrap`) isolation; non-Windows terminal execution uses process isolation.
+- Windows terminal execution uses AppContainer or WSL2 `bwrap` isolation in approval and safe-operation modes; Full access disables those sandboxes for chat tool execution while retaining current-account OS permissions and process resource limits. Non-Windows terminal execution uses process isolation.
 - No automatic use of ChatGPT reset credits.
 - No additional OpenCode wire protocols until the shared provider contract is complete.
 - GitHub Copilot is an explicit experimental exception requested by Alican: use the Copilot CLI public OAuth client ID with Device Flow, keep per-account OAuth tokens in Windows Credential Manager, and call Copilot's private user/model/inference endpoints directly. Multiple GitHub accounts can be connected; the selected account supplies Copilot chat, model catalog, and usage requests. Do not ask for a PAT or import gh credentials. The account settings show only plan, access SKU, and recognized quota fields returned by the private user endpoint; no allowance or remaining balance is inferred. GitHub does not document third-party reuse of the CLI OAuth client or a stable external contract for these endpoints, so this display remains best-effort and may change.

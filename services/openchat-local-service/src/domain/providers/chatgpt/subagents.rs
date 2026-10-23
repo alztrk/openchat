@@ -46,15 +46,8 @@ const CHILD_MAX_OUTPUT_TOKENS: usize = 2048;
 const CHILD_MAX_EVENT_BYTES: usize = 64 * 1024;
 const CHILD_TIMEOUT: Duration = Duration::from_secs(180);
 #[cfg(test)]
-const CHILD_PROJECT_TOOL_NAMES: &[&str] = &[
-    "list_files",
-    "search_files",
-    "read_file",
-    "get_file_info",
-    "git_status",
-    "git_diff",
-    "git_history",
-];
+const CHILD_PROJECT_TOOL_NAMES: &[&str] =
+    &["list_files", "search_files", "read_file", "get_file_info"];
 #[cfg(all(test, windows))]
 const CHILD_PLATFORM_TOOL_NAMES: &[&str] = &["run_project_task"];
 #[cfg(all(test, not(windows)))]
@@ -1451,7 +1444,7 @@ async fn run_child_requests(
         if tool_call_count > CHILD_MAX_TOOL_CALLS || round + 1 >= CHILD_MAX_ROUNDS {
             return Err(subagent_limit_error());
         }
-        tool_executor.begin_round(&calls)?;
+        tool_executor.begin_round(&calls);
         if responses_api {
             let input = payload
                 .get_mut("input")
@@ -2591,9 +2584,6 @@ mod tests {
             "search_files",
             "read_file",
             "get_file_info",
-            "git_status",
-            "git_diff",
-            "git_history",
             "web_search",
             "read_url_content",
         ] {

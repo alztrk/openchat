@@ -637,6 +637,8 @@ pub struct ServiceError {
     pub code: &'static str,
     pub message: String,
     pub retryable: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub details: Option<String>,
 }
 
 impl ServiceError {
@@ -646,6 +648,13 @@ impl ServiceError {
             code,
             message: message.into(),
             retryable,
+            details: None,
         }
+    }
+
+    /// Adds a safe diagnostic detail from the failing subsystem without changing the stable code.
+    pub fn with_details(mut self, details: impl Into<String>) -> Self {
+        self.details = Some(details.into());
+        self
     }
 }

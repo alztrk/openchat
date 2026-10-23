@@ -193,22 +193,24 @@ pub(crate) async fn dispatch(context: RpcDispatchContext<'_>) -> Result<Value, S
                 })?;
             let backup_created = storage
                 .prepare_chat_schema_migration(chat_schema_version)
-                .map_err(|_| {
+                .map_err(|error| {
                     ServiceError::new(
                         "database_prepare_failed",
                         "The local database could not be safely prepared for an update.",
                         false,
                     )
+                    .with_details(error.to_string())
                 })?;
             Ok(json!({"status": "ready", "backupCreated": backup_created}))
         }
         "system.initialize" => {
-            let schema_version = storage.initialize_backend_schema().map_err(|_| {
+            let schema_version = storage.initialize_backend_schema().map_err(|error| {
                 ServiceError::new(
                     "storage_initialization_failed",
                     "Local conversation storage could not be initialized.",
                     false,
                 )
+                .with_details(error.to_string())
             })?;
             service.schedule_pending_credential_cleanup();
             usage_statistics::mark_interrupted_requests(storage).map_err(|_| {
@@ -324,8 +326,40 @@ pub(crate) async fn dispatch(context: RpcDispatchContext<'_>) -> Result<Value, S
                 goal_execution,
                 profile_tool_allowlist,
             } = prepared_run;
+            let workspace_roots = route
+                .project_id
+                .as_deref()
+                .map(|project_id| {
+                    projects::project_workspace_roots_for_project(storage, project_id)
+                })
+                .transpose()?
+                .unwrap_or_default();
+            let mut project_instructions = project_instructions;
+            if workspace_roots.len() > 1 {
+                let root_list = workspace_roots
+                    .iter()
+                    .enumerate()
+                    .map(|(index, root)| {
+                        let role = if index == 0 { "primary" } else { "additional" };
+                        format!("- {role}: {}", root.display())
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                let workspace_note = format!(
+                    "Workspace roots for project-scoped tools:\n{root_list}\nUse relative paths in the primary root. Use absolute paths when a filesystem tool needs to target an additional root. Terminal commands start in the primary root; restricted terminal sandboxes also receive access to the listed additional roots."
+                );
+                project_instructions = Some(match project_instructions {
+                    Some(mut existing) => {
+                        existing.push_str("\n\n");
+                        existing.push_str(&workspace_note);
+                        existing
+                    }
+                    None => workspace_note,
+                });
+            }
             let chat_execution::SavedChatRoute {
                 provider_id,
+                project_name,
                 project_root,
                 project_id,
                 stored_api_key_connection_id,
@@ -412,6 +446,8 @@ pub(crate) async fn dispatch(context: RpcDispatchContext<'_>) -> Result<Value, S
                 project_skills,
                 project_index_context,
                 project_root: project_root.as_deref().map(Path::new),
+                project_name: project_name.as_deref(),
+                workspace_roots,
                 data_root: storage.root(),
                 storage,
                 permission_mode,

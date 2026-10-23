@@ -1,122 +1,90 @@
-//! Localized confirmation copy and dialog helpers for permission changes.
+//! Renderer-supplied copy used by native permission confirmation dialogs.
 
-pub(crate) fn permission_dialog_copy(locale: &str) -> PermissionDialogCopy {
-    match locale.split(['-', '_']).next() {
-        Some("tr") => PermissionDialogCopy {
-            title: "OpenChat izin isteği",
-            intro: "OpenChat tek bir araç çağrısı için izin istiyor.",
-            full_access_intro: "Araç izin modu tam erişim olarak değiştirilecek.",
-            full_access_warning: "Bu mod dosya araçlarına tüm konumlarda erişim verir ve web ile terminal işlemlerini ek onay olmadan çalıştırır.",
-            project_allow_intro: "{project} projesinde şu araçlar için ek onay istemeyen kurallar etkinleştirilecek: {rules}{more} (toplam {count}).",
-            project_allow_warning: "Eşleşen araç çağrıları ayrı bir onay istemeden çalışabilir. Bu projeyi tanıyor ve bu izinleri istiyorsanız devam edin.",
-            project_allow_more: ", ayrıca {count} kural daha",
-            tool_label: "Araç",
-            target_label: "Hedef",
-            arguments_label: "İşlem ayrıntıları",
-            warning: "Yalnızca beklediğiniz işlemle eşleşiyorsa izin verin.",
-            allow_once: "Bir kez izin ver",
-            enable_full_access: "Tam erişimi etkinleştir",
-            save_project_allow: "İzin kurallarını kaydet",
-            deny: "Reddet",
-            too_large: "İstek güvenli biçimde incelenemeyecek kadar büyük. İstek reddedilecek.",
-            close: "Kapat",
-        },
-        Some("de") => PermissionDialogCopy {
-            title: "OpenChat-Berechtigungsanfrage",
-            intro: "OpenChat möchte einen Werkzeugaufruf ausführen.",
-            full_access_intro: "Der Werkzeugberechtigungsmodus wird auf Vollzugriff gesetzt.",
-            full_access_warning: "In diesem Modus können Dateifunktionen auf alle Speicherorte zugreifen und Web- sowie Terminalaktionen ohne weitere Bestätigung ausführen.",
-            project_allow_intro: "Für das Projekt {project} werden Regeln aktiviert, die für diese Werkzeuge keine zusätzliche Bestätigung verlangen: {rules}{more} (insgesamt {count}).",
-            project_allow_warning: "Passende Werkzeugaufrufe können ohne separate Bestätigung ausgeführt werden. Fahren Sie nur fort, wenn Sie das Projekt kennen und diese Berechtigungen beabsichtigen.",
-            project_allow_more: ", außerdem {count} weitere",
-            tool_label: "Werkzeug",
-            target_label: "Ziel",
-            arguments_label: "Details",
-            warning: "Erlaube den Aufruf nur, wenn diese Angaben der erwarteten Aktion entsprechen.",
-            allow_once: "Einmal erlauben",
-            enable_full_access: "Vollzugriff aktivieren",
-            save_project_allow: "Erlaubnisregeln speichern",
-            deny: "Ablehnen",
-            too_large: "Die Anfrage ist zu groß, um sie sicher zu prüfen. Sie wird abgelehnt.",
-            close: "Schließen",
-        },
-        Some("es") => PermissionDialogCopy {
-            title: "Solicitud de permiso de OpenChat",
-            intro: "OpenChat solicita permiso para ejecutar una herramienta.",
-            full_access_intro: "El modo de permisos de herramientas cambiará a acceso completo.",
-            full_access_warning: "Este modo permite que las herramientas de archivos accedan a cualquier ubicación y que la Web y el terminal funcionen sin más confirmaciones.",
-            project_allow_intro: "El proyecto {project} activará reglas que no piden confirmación adicional para estas herramientas: {rules}{more} (total: {count}).",
-            project_allow_warning: "Las llamadas coincidentes pueden ejecutarse sin otra confirmación. Continúa solo si reconoces este proyecto y deseas estos permisos.",
-            project_allow_more: " y {count} más",
-            tool_label: "Herramienta",
-            target_label: "Destino",
-            arguments_label: "Detalles",
-            warning: "Permite la llamada solo si estos datos coinciden con la acción esperada.",
-            allow_once: "Permitir una vez",
-            enable_full_access: "Activar acceso completo",
-            save_project_allow: "Guardar reglas permitidas",
-            deny: "Denegar",
-            too_large: "La solicitud es demasiado grande para revisarla con seguridad. Se denegará.",
-            close: "Cerrar",
-        },
-        Some("fr") => PermissionDialogCopy {
-            title: "Demande d’autorisation OpenChat",
-            intro: "OpenChat demande l’autorisation d’exécuter un outil.",
-            full_access_intro: "Le mode d’autorisation des outils passera en accès complet.",
-            full_access_warning: "Ce mode permet aux outils de fichiers d’accéder à tous les emplacements et au Web et au terminal de fonctionner sans confirmation supplémentaire.",
-            project_allow_intro: "Le projet {project} activera des règles qui ne demandent pas de confirmation supplémentaire pour ces outils : {rules}{more} (total : {count}).",
-            project_allow_warning: "Les appels correspondants pourront s’exécuter sans autre confirmation. Continuez uniquement si vous reconnaissez ce projet et souhaitez ces autorisations.",
-            project_allow_more: " et {count} de plus",
-            tool_label: "Outil",
-            target_label: "Cible",
-            arguments_label: "Détails",
-            warning: "N’autorisez l’appel que si ces informations correspondent à l’action attendue.",
-            allow_once: "Autoriser une fois",
-            enable_full_access: "Activer l’accès complet",
-            save_project_allow: "Enregistrer les règles d’autorisation",
-            deny: "Refuser",
-            too_large: "La demande est trop volumineuse pour être vérifiée en toute sécurité. Elle sera refusée.",
-            close: "Fermer",
-        },
-        _ => PermissionDialogCopy {
-            title: "OpenChat permission request",
-            intro: "OpenChat requests permission to run one tool call.",
-            full_access_intro: "The tool permission mode will change to full access.",
-            full_access_warning: "This mode lets file tools access any location and lets web and terminal operations run without further confirmation.",
-            project_allow_intro: "Project {project} will enable rules that skip per-call approval for these tools: {rules}{more} (total: {count}).",
-            project_allow_warning: "Matching tool calls may run without separate approval. Continue only if you recognize this project and intend to grant these permissions.",
-            project_allow_more: ", plus {count} more",
-            tool_label: "Tool",
-            target_label: "Target",
-            arguments_label: "Arguments",
-            warning: "Allow this call only if these details match the action you expect.",
-            allow_once: "Allow once",
-            enable_full_access: "Enable full access",
-            save_project_allow: "Save allow rules",
-            deny: "Deny",
-            too_large: "The request is too large to review safely. It will be denied.",
-            close: "Close",
-        },
-    }
+use serde::Deserialize;
+
+use crate::request_bounds::deserialize_bounded_text;
+
+const MAXIMUM_DIALOG_COPY_FIELD_BYTES: usize = 1024;
+
+fn deserialize_dialog_copy_text<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    deserialize_bounded_text::<D, MAXIMUM_DIALOG_COPY_FIELD_BYTES>(deserializer)
 }
 
-/// Static text used by the native permission confirmation.
+/// Localized copy resolved by the renderer's active i18next language.
+///
+/// Native code deliberately does not own translations. The renderer passes the copy for each
+/// confirmation request so a language change is reflected immediately and all user-facing text
+/// continues to come from the same locale resources as the rest of the application.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub(crate) struct PermissionDialogCopy {
-    pub(crate) title: &'static str,
-    pub(crate) intro: &'static str,
-    pub(crate) full_access_intro: &'static str,
-    pub(crate) full_access_warning: &'static str,
-    pub(crate) project_allow_intro: &'static str,
-    pub(crate) project_allow_warning: &'static str,
-    pub(crate) project_allow_more: &'static str,
-    pub(crate) tool_label: &'static str,
-    pub(crate) target_label: &'static str,
-    pub(crate) arguments_label: &'static str,
-    pub(crate) warning: &'static str,
-    pub(crate) allow_once: &'static str,
-    pub(crate) enable_full_access: &'static str,
-    pub(crate) save_project_allow: &'static str,
-    pub(crate) deny: &'static str,
-    pub(crate) too_large: &'static str,
-    pub(crate) close: &'static str,
+    #[serde(deserialize_with = "deserialize_dialog_copy_text")]
+    pub(crate) title: String,
+    #[serde(deserialize_with = "deserialize_dialog_copy_text")]
+    pub(crate) intro: String,
+    #[serde(deserialize_with = "deserialize_dialog_copy_text")]
+    pub(crate) full_access_intro: String,
+    #[serde(deserialize_with = "deserialize_dialog_copy_text")]
+    pub(crate) full_access_warning: String,
+    #[serde(deserialize_with = "deserialize_dialog_copy_text")]
+    pub(crate) project_allow_intro: String,
+    #[serde(deserialize_with = "deserialize_dialog_copy_text")]
+    pub(crate) project_allow_warning: String,
+    #[serde(deserialize_with = "deserialize_dialog_copy_text")]
+    pub(crate) project_allow_more: String,
+    #[serde(deserialize_with = "deserialize_dialog_copy_text")]
+    pub(crate) tool_label: String,
+    #[serde(deserialize_with = "deserialize_dialog_copy_text")]
+    pub(crate) target_label: String,
+    #[serde(deserialize_with = "deserialize_dialog_copy_text")]
+    pub(crate) arguments_label: String,
+    #[serde(deserialize_with = "deserialize_dialog_copy_text")]
+    pub(crate) warning: String,
+    #[serde(deserialize_with = "deserialize_dialog_copy_text")]
+    pub(crate) allow_once: String,
+    #[serde(deserialize_with = "deserialize_dialog_copy_text")]
+    pub(crate) enable_full_access: String,
+    #[serde(deserialize_with = "deserialize_dialog_copy_text")]
+    pub(crate) save_project_allow: String,
+    #[serde(deserialize_with = "deserialize_dialog_copy_text")]
+    pub(crate) deny: String,
+    #[serde(deserialize_with = "deserialize_dialog_copy_text")]
+    pub(crate) too_large: String,
+    #[serde(deserialize_with = "deserialize_dialog_copy_text")]
+    pub(crate) close: String,
+}
+
+impl PermissionDialogCopy {
+    /// Rejects empty or control-character-only text before it reaches an OS dialog.
+    pub(crate) fn validate(&self) -> Result<(), &'static str> {
+        let fields = [
+            &self.title,
+            &self.intro,
+            &self.full_access_intro,
+            &self.full_access_warning,
+            &self.project_allow_intro,
+            &self.project_allow_warning,
+            &self.project_allow_more,
+            &self.tool_label,
+            &self.target_label,
+            &self.arguments_label,
+            &self.warning,
+            &self.allow_once,
+            &self.enable_full_access,
+            &self.save_project_allow,
+            &self.deny,
+            &self.too_large,
+            &self.close,
+        ];
+        if fields
+            .iter()
+            .any(|field| field.is_empty() || field.chars().any(char::is_control))
+        {
+            return Err("native_permission_copy_invalid");
+        }
+        Ok(())
+    }
 }

@@ -251,7 +251,7 @@ pub(super) async fn dispatch(
                 })?;
                 tool_permissions::load_mode(&connection)?
             };
-            let project_root = match (conversation_id, project_id) {
+            let (project_name, project_root) = match (conversation_id, project_id) {
                 (Some(conversation_id), _) => {
                     let connection = storage.connect().map_err(|_| {
                         ServiceError::new(
@@ -262,12 +262,17 @@ pub(super) async fn dispatch(
                     })?;
                     connection
                         .query_row(
-                            "SELECT projects.folder_path
+                            "SELECT projects.name, projects.folder_path
                              FROM conversations
                              INNER JOIN projects ON projects.id = conversations.project_id
                              WHERE conversations.id = ?1",
                             [conversation_id],
-                            |row| row.get::<_, Option<String>>(0),
+                            |row| {
+                                Ok((
+                                    row.get::<_, Option<String>>(0)?,
+                                    row.get::<_, Option<String>>(1)?,
+                                ))
+                            },
                         )
                         .optional()
                         .map_err(|_| {
@@ -277,8 +282,7 @@ pub(super) async fn dispatch(
                                 true,
                             )
                         })?
-                        .flatten()
-                        .filter(|path| !path.trim().is_empty())
+                        .unwrap_or((None, None))
                 }
                 (None, Some(project_id)) => {
                     let connection = storage.connect().map_err(|_| {
@@ -290,9 +294,14 @@ pub(super) async fn dispatch(
                     })?;
                     connection
                         .query_row(
-                            "SELECT folder_path FROM projects WHERE id = ?1",
+                            "SELECT name, folder_path FROM projects WHERE id = ?1",
                             [project_id],
-                            |row| row.get::<_, Option<String>>(0),
+                            |row| {
+                                Ok((
+                                    row.get::<_, Option<String>>(0)?,
+                                    row.get::<_, Option<String>>(1)?,
+                                ))
+                            },
                         )
                         .optional()
                         .map_err(|_| {
@@ -302,11 +311,11 @@ pub(super) async fn dispatch(
                                 true,
                             )
                         })?
-                        .flatten()
-                        .filter(|path| !path.trim().is_empty())
+                        .unwrap_or((None, None))
                 }
-                (None, None) => None,
+                (None, None) => (None, None),
             };
+            let project_root = project_root.filter(|path| !path.trim().is_empty());
             let project_context_unavailable = project_id.is_some() && project_root.is_none();
             let project_instructions = if permission_mode == ToolPermissionMode::Plan {
                 None
@@ -362,6 +371,8 @@ pub(super) async fn dispatch(
                     project_index_context: None,
                     permission_mode,
                     has_project,
+                    project_name: project_name.as_deref(),
+                    project_root: project_root.as_deref().map(Path::new),
                     tools_available: !available_tools.is_empty(),
                     provider_id,
                 });

@@ -9,7 +9,6 @@ import {
   listConversations,
   listModelFavorites,
   listProjects,
-  type SavedOutputMessageKey,
   setConversationRoute,
   setModelFavorite,
 } from '@/modules/conversations/data/chatStorage';
@@ -32,12 +31,12 @@ import {
   writeLastSelectedModelPreference,
   writeModelContextLimit,
 } from '@/modules/providers/data/modelPreferences';
+import type { AssistantAgentSnapshot } from '@/modules/settings/data/assistantProfiles';
 import { LocalServiceError, localServiceClient, type ServiceOperation } from '@/platform/local-service';
 import { createBranchesActions } from './chatStoreBranches';
 import { createConversationsActions } from './chatStoreConversations';
 import { createGoalsActions } from './chatStoreGoals';
 import { createRefreshModelsAction } from './chatStoreModels';
-import { createRefreshSavedOutputMessageKeys, createToggleSavedOutputAction } from './chatStoreSavedOutputs';
 import { createSendMessageAction } from './chatStoreSend';
 import type { TemporaryChatSession } from './chatStoreTemporary';
 import { createTemporaryChatActions } from './chatStoreTemporary';
@@ -120,6 +119,7 @@ export interface ChatState {
   goalStatus: ServiceStatus;
   isChangingGoal: boolean;
   pendingProjectId: string | null;
+  pendingAgentSnapshot: AssistantAgentSnapshot | null;
   messages: ChatMessage[];
   searchTargetMessageId: string | null;
   searchHighlightMessageId: string | null;
@@ -129,9 +129,6 @@ export interface ChatState {
   models: ChatModel[];
   modelProviders: ChatModelProvider[];
   modelFavorites: ChatModelFavorite[];
-  savedOutputMessageKeys: SavedOutputMessageKey[];
-  pendingSavedOutputMessageIds: string[];
-  savedOutputError: boolean;
   pendingAttachmentCount: number;
   pendingToolPermissionRequest: ChatToolPermissionRequest | null;
   isRespondingToToolPermission: boolean;
@@ -154,11 +151,11 @@ export interface ChatState {
   activeOperation: ServiceOperation | null;
   modelError: boolean;
   errorCode: ChatErrorCode | null;
+  errorMessage: string | null;
   initialize(): Promise<void>;
   refreshConversations(): Promise<void>;
   renameConversation(conversationId: string, title: string): Promise<void>;
   applyTitleUpdate(conversationId: string, title: string): void;
-  refreshSavedOutputMessageKeys(): Promise<void>;
   refreshProjects(): Promise<void>;
   clearConversationHistory(): Promise<void>;
   refreshModels(forceRefresh?: boolean): Promise<void>;
@@ -176,7 +173,6 @@ export interface ChatState {
   finishConversationCompaction(conversationId: string): void;
   toggleFavoriteModel(model: ChatModel): Promise<boolean>;
   removeModelFavorite(favorite: ChatModelFavorite): Promise<boolean>;
-  toggleSavedOutput(messageId: string): Promise<boolean>;
   respondToToolPermission(approved: boolean): Promise<void>;
   startTemporaryChat(): boolean;
   discloseTemporaryProvider(providerId: string): void;
@@ -184,7 +180,7 @@ export interface ChatState {
   discardTemporaryChat(): void;
   setPendingAttachmentCount(count: number): void;
   selectModel(key: string | null): void;
-  selectConversationModel(key: string): Promise<boolean>;
+  selectConversationModel(key: string, conversationId?: string): Promise<boolean>;
   selectReasoningEffort(effort: string | null): void;
   selectConversation(id: string, targetMessageId?: string | null, targetQuery?: string | null): Promise<void>;
   refreshActiveGoal(conversationId: string): Promise<void>;
@@ -194,6 +190,7 @@ export interface ChatState {
   clearSearchTarget(found: boolean): void;
   setPendingProjectId(projectId: string | null): void;
   startNewChat(projectId?: string | null): void;
+  startNewChatWithAgent(agent: AssistantAgentSnapshot): void;
   sendMessage(
     content: string,
     attachments?: readonly PendingChatAttachment[],
@@ -231,6 +228,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   goalStatus: 'idle',
   isChangingGoal: false,
   pendingProjectId: null,
+  pendingAgentSnapshot: null,
   messages: [],
   searchTargetMessageId: null,
   searchHighlightMessageId: null,
@@ -240,9 +238,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
   models: [],
   modelProviders: [],
   modelFavorites: [],
-  savedOutputMessageKeys: [],
-  pendingSavedOutputMessageIds: [],
-  savedOutputError: false,
   pendingAttachmentCount: 0,
   pendingToolPermissionRequest: null,
   isRespondingToToolPermission: false,
@@ -265,10 +260,17 @@ export const useChatStore = create<ChatState>((set, get) => ({
   activeOperation: null,
   modelError: false,
   errorCode: null,
+  errorMessage: null,
 
   async initialize() {
     if (get().serviceStatus === 'loading' || get().serviceStatus === 'ready') return;
-    set({ serviceStatus: 'loading', storageInitializationErrorCode: null, projectsStatus: 'loading', errorCode: null });
+    set({
+      serviceStatus: 'loading',
+      storageInitializationErrorCode: null,
+      projectsStatus: 'loading',
+      errorCode: null,
+      errorMessage: null,
+    });
     try {
       const storagePromise = Promise.allSettled([
         listConversations(),
@@ -304,19 +306,26 @@ export const useChatStore = create<ChatState>((set, get) => ({
         storageInitializationErrorCode: null,
         ...mapModelPreferences(preferences),
       });
-      await Promise.all([get().refreshModelFavorites(), get().refreshSavedOutputMessageKeys(), get().refreshModels()]);
+      await Promise.all([get().refreshModelFavorites(), get().refreshModels()]);
     } catch (error) {
       set({
         serviceStatus: 'error',
         storageInitializationErrorCode: error instanceof LocalServiceError ? error.code : null,
         projectsStatus: 'error',
         errorCode: 'messageHistoryLoadFailed',
+        errorMessage:
+          error instanceof LocalServiceError
+            ? (error.details ?? error.message).trim().slice(0, 1000) || null
+            : error instanceof Error
+              ? error.message.trim().slice(0, 1000) || null
+              : typeof error === 'string'
+                ? error.trim().slice(0, 1000) || null
+                : null,
       });
     }
   },
 
   ...createConversationsActions(set, get),
-  refreshSavedOutputMessageKeys: createRefreshSavedOutputMessageKeys(set),
   refreshModels: createRefreshModelsAction(set, get, localServiceClient),
 
   selectModel(key) {
@@ -346,16 +355,17 @@ export const useChatStore = create<ChatState>((set, get) => ({
         : {}),
       selectedReasoningEffort: current.selectedModelKey === key ? current.selectedReasoningEffort : null,
       errorCode: null,
+      errorMessage: null,
     });
   },
 
-  async selectConversationModel(key) {
+  async selectConversationModel(key, targetConversationId) {
     const current = get();
     const model = current.models.find(
       (item) => item.key === key && !current.hiddenModelKeys.includes(modelRouteKey(item)),
     );
     if (!model) return false;
-    const conversationId = current.activeConversationId;
+    const conversationId = targetConversationId ?? current.activeConversationId;
     if (!conversationId) {
       get().selectModel(key);
       return get().selectedModelKey === key;
@@ -368,7 +378,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       set({ errorCode: 'messageHistoryLoadFailed' });
       return false;
     }
-    set({ isUpdatingConversationModel: true, errorCode: null });
+    set({ isUpdatingConversationModel: true, errorCode: null, errorMessage: null });
     try {
       await setConversationRoute(conversationId, model);
       const latest = get();
@@ -607,7 +617,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
   },
 
-  toggleSavedOutput: createToggleSavedOutputAction(set, get),
   respondToToolPermission: createRespondToToolPermissionAction(set, get, localServiceClient),
   ...createTemporaryChatActions(set, get),
   ...createGoalsActions(set, get),

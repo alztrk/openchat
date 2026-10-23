@@ -9,9 +9,15 @@ export interface FileChangesSummaryCardProps {
   activities: ToolActivity[];
   latestChanges: ChatFileChange[];
   onViewChanges?: () => void;
+  onOpenFile?: (change: ChatFileChange) => void;
 }
 
-export function FileChangesSummaryCard({ activities, latestChanges, onViewChanges }: FileChangesSummaryCardProps) {
+export function FileChangesSummaryCard({
+  activities,
+  latestChanges,
+  onViewChanges,
+  onOpenFile,
+}: FileChangesSummaryCardProps) {
   const { t } = useTranslation();
   const latestById = new Map(latestChanges.map((change) => [change.id, change]));
   const changesById = new Map<string, ChatFileChange>();
@@ -64,9 +70,22 @@ export function FileChangesSummaryCard({ activities, latestChanges, onViewChange
           {activeChanges.slice(0, 3).map((change) => (
             <li className="flex min-w-0 items-center gap-2 px-3 py-2 text-xs" key={change.id}>
               <FileKindIcon kind={change.kind} />
-              <span className="min-w-0 flex-1 truncate text-text" title={change.path}>
-                {change.path}
-              </span>
+              {onOpenFile ? (
+                <Button
+                  aria-label={t('workspaceFileContent', { name: change.path })}
+                  className="min-w-0 flex-1 justify-start truncate px-0 text-left text-xs text-text hover:text-accent"
+                  onClick={() => onOpenFile(change)}
+                  size="small"
+                  title={change.path}
+                  variant="ghost"
+                >
+                  {change.path}
+                </Button>
+              ) : (
+                <span className="min-w-0 flex-1 truncate text-text" title={change.path}>
+                  {change.path}
+                </span>
+              )}
               {change.addedLines !== null ? (
                 <span className="shrink-0 font-semibold text-success">+{change.addedLines}</span>
               ) : null}

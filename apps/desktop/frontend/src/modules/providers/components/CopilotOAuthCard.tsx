@@ -40,8 +40,14 @@ type CardError =
   | 'copilotOAuthCancelFailed'
   | 'copilotOAuthDisconnectFailed'
   | 'copilotOAuthRefreshRequired'
-  | 'copilotOAuthSelectionFailed'
-  | { message: string };
+  | 'copilotOAuthSelectionFailed';
+
+const copilotErrorKeys: Record<string, CardError> = {
+  oauth_access_denied: 'copilotOAuthDenied',
+  oauth_authorization_rejected: 'copilotOAuthDenied',
+  oauth_flow_expired: 'copilotOAuthExpired',
+  oauth_refresh_unavailable: 'copilotOAuthRefreshRequired',
+};
 
 export function CopilotOAuthCard({ serviceReady, onChanged }: CopilotOAuthCardProps) {
   const { t } = useTranslation();
@@ -210,7 +216,7 @@ export function CopilotOAuthCard({ serviceReady, onChanged }: CopilotOAuthCardPr
       setFlow({ ...next, retryAfterSeconds: next.intervalSeconds });
     } catch (cause) {
       if (generation === flowGenerationRef.current && isMountedRef.current) {
-        setError(cause instanceof LocalServiceError ? { message: cause.message } : 'copilotOAuthStartFailed');
+        setError(copilotErrorKey(cause, 'copilotOAuthStartFailed'));
       }
     } finally {
       if (generation === flowGenerationRef.current && isMountedRef.current) setWorking(false);
@@ -456,7 +462,7 @@ export function CopilotOAuthCard({ serviceReady, onChanged }: CopilotOAuthCardPr
 
       {error ? (
         <p className="border-t border-border px-5 py-3 text-sm text-destructive" role="alert">
-          {typeof error === 'string' ? t(error) : error.message}
+          {t(error)}
         </p>
       ) : null}
       {notice ? (
@@ -502,4 +508,9 @@ export function CopilotOAuthCard({ serviceReady, onChanged }: CopilotOAuthCardPr
 function errorCode(error: unknown): string | null {
   if (error instanceof LocalServiceError) return error.code;
   return null;
+}
+
+function copilotErrorKey(error: unknown, fallback: CardError): CardError {
+  if (!(error instanceof LocalServiceError)) return fallback;
+  return copilotErrorKeys[error.code] ?? fallback;
 }

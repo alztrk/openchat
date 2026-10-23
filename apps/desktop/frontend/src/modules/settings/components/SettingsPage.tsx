@@ -1,5 +1,4 @@
 import {
-  Bot,
   Bell,
   Brain,
   ChartBarIncreasing,
@@ -45,8 +44,6 @@ const loadNotifications = () =>
   }));
 const loadShortcuts = () =>
   import('./ShortcutsSection').then((module) => ({ default: module.ShortcutsSection }));
-const loadAssistantProfiles = () =>
-  import('./AssistantProfilesSettingsSection').then((module) => ({ default: module.AssistantProfilesSettingsSection }));
 
 const GeneralSettingsSection = lazy(loadGeneralSettings);
 const ProviderSettingsSection = lazy(loadProviderSettings);
@@ -60,7 +57,6 @@ const LocalDataSettingsSection = lazy(loadLocalData);
 const PersonalMemorySettingsSection = lazy(loadPersonalMemory);
 const NotificationSettingsSection = lazy(loadNotifications);
 const ShortcutsSection = lazy(loadShortcuts);
-const AssistantProfilesSettingsSection = lazy(loadAssistantProfiles);
 
 import type { AppearancePreferences } from '@/modules/settings/data/appearancePreferences';
 import '@/modules/settings/settings.css';
@@ -71,7 +67,6 @@ type SettingsSection =
   | 'models'
   | 'appearance'
   | 'sharedInstructions'
-  | 'assistantProfiles'
   | 'shortcuts'
   | 'usageQuotas'
   | 'statistics'
@@ -87,7 +82,6 @@ const sectionTitleKeys: Record<SettingsSection, TranslationKey> = {
   models: 'models',
   appearance: 'appearance',
   sharedInstructions: 'sharedInstructions',
-  assistantProfiles: 'assistantProfiles',
   shortcuts: 'keyboardShortcuts',
   usageQuotas: 'usageQuotas',
   statistics: 'statistics',
@@ -103,7 +97,6 @@ const sectionDescriptionKeys: Record<SettingsSection, TranslationKey> = {
   models: 'settingsModelPreferencesDescription',
   appearance: 'settingsAppearanceDescription',
   sharedInstructions: 'settingsSharedInstructionsDescription',
-  assistantProfiles: 'settingsAssistantProfilesDescription',
   shortcuts: 'keyboardShortcutsDescription',
   usageQuotas: 'settingsUsageQuotasDescription',
   statistics: 'settingsStatisticsDescription',
@@ -143,7 +136,6 @@ export function SettingsPage({
       loadPersonalMemory(),
       loadNotifications(),
       loadShortcuts(),
-      loadAssistantProfiles(),
     ]);
   }, []);
   const [section, setSection] = useState<SettingsSection>('connections');
@@ -180,12 +172,6 @@ export function SettingsPage({
                 icon={<NotebookPen aria-hidden="true" size={18} />}
                 label={t('sharedInstructions')}
                 onClick={() => navigateToSection('sharedInstructions')}
-              />
-              <SettingsNavigationButton
-                active={section === 'assistantProfiles'}
-                icon={<Bot aria-hidden="true" size={18} />}
-                label={t('assistantProfiles')}
-                onClick={() => navigateToSection('assistantProfiles')}
               />
               <SettingsNavigationButton
                 active={section === 'shortcuts'}
@@ -325,13 +311,6 @@ export function SettingsPage({
               visited={visitedSections.has('shortcuts')}
             >
               <ShortcutsSection />
-            </SettingsSectionPage>
-            <SettingsSectionPage
-              active={section === 'assistantProfiles'}
-              fallback={t('settingsSectionLoading')}
-              visited={visitedSections.has('assistantProfiles')}
-            >
-              <AssistantProfilesSettingsSection />
             </SettingsSectionPage>
             <SettingsSectionPage
               active={section === 'usageQuotas'}

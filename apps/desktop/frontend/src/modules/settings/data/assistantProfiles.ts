@@ -1,5 +1,5 @@
 import { unifiedStorage } from '@/platform/storage/unifiedStorage';
-import type { DefaultModelPreference } from '@/modules/providers/data/modelPreferences';
+import type { ReadyAssistantAgentTemplateId } from './readyAssistantAgents';
 
 const storageKey = 'assistant.profiles.v1';
 const maximumProfiles = 20;
@@ -8,30 +8,33 @@ const maximumInstructionBytes = 16 * 1024;
 const maximumAllowedTools = 32;
 
 export type AssistantResponseStyle = 'concise' | 'balanced' | 'detailed';
+export type AssistantProfileTemplateId = ReadyAssistantAgentTemplateId | 'coding' | 'editor';
 
-export interface AssistantProfile {
+export interface AssistantAgentSnapshot {
   id: string;
   name: string;
   instructions: string;
   responseStyle: AssistantResponseStyle;
-  preferredModel: DefaultModelPreference | null;
   toolAllowlist: string[] | null;
+}
+
+export interface AssistantProfile extends AssistantAgentSnapshot {
+  templateId?: AssistantProfileTemplateId;
 }
 
 export interface AssistantProfilesSnapshot {
   profiles: AssistantProfile[];
-  activeProfileId: string | null;
 }
 
 export function readAssistantProfiles(): AssistantProfilesSnapshot {
   const encoded = unifiedStorage.getItem(storageKey);
-  if (encoded === null) return { profiles: [], activeProfileId: null };
+  if (encoded === null) return { profiles: [] };
   return parseAssistantProfiles(JSON.parse(encoded));
 }
 
 export function writeAssistantProfiles(snapshot: AssistantProfilesSnapshot): void {
   const parsed = parseAssistantProfiles(snapshot);
-  if (parsed.profiles.length === 0 && parsed.activeProfileId === null) {
+  if (parsed.profiles.length === 0) {
     unifiedStorage.removeItem(storageKey);
     return;
   }
@@ -51,16 +54,47 @@ export function parseAssistantProfiles(value: unknown): AssistantProfilesSnapsho
     ids.add(profile.id);
     names.add(normalizedName);
   }
-  const activeProfileId = value.activeProfileId;
-  if (activeProfileId !== null && (typeof activeProfileId !== 'string' || !ids.has(activeProfileId))) {
-    throw new Error('The active assistant profile is invalid.');
-  }
-  return { profiles, activeProfileId };
+  return { profiles };
 }
 
 export function parseAssistantProfile(value: unknown): AssistantProfile {
-  if (!isRecord(value)) throw new Error('An assistant profile is invalid.');
-  const { id, name, instructions, responseStyle } = value;
+  if (!isAssistantAgentSnapshot(value)) throw new Error('An assistant profile is invalid.');
+  const profile: AssistantProfile = {
+    id: value.id,
+    name: value.name,
+    instructions: value.instructions,
+    responseStyle: value.responseStyle,
+    toolAllowlist: value.toolAllowlist === null ? null : [...value.toolAllowlist],
+  };
+  if ('templateId' in value) {
+    if (
+      value.templateId !== 'researcher' &&
+      value.templateId !== 'debugger' &&
+      value.templateId !== 'visual-designer' &&
+      value.templateId !== 'security-reviewer' &&
+      value.templateId !== 'coding' &&
+      value.templateId !== 'editor'
+    ) {
+      throw new Error('An assistant profile template is invalid.');
+    }
+    profile.templateId = value.templateId;
+  }
+  return profile;
+}
+
+export function snapshotAssistantProfile(profile: AssistantProfile): AssistantAgentSnapshot {
+  return {
+    id: profile.id,
+    name: profile.name,
+    instructions: profile.instructions,
+    responseStyle: profile.responseStyle,
+    toolAllowlist: profile.toolAllowlist === null ? null : [...profile.toolAllowlist],
+  };
+}
+
+export function isAssistantAgentSnapshot(value: unknown): value is AssistantAgentSnapshot {
+  if (!isRecord(value)) return false;
+  const { id, name, instructions, responseStyle, toolAllowlist } = value;
   if (
     typeof id !== 'string' ||
     !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id) ||
@@ -70,49 +104,24 @@ export function parseAssistantProfile(value: unknown): AssistantProfile {
     name.length > maximumNameLength ||
     typeof instructions !== 'string' ||
     new TextEncoder().encode(instructions).byteLength > maximumInstructionBytes ||
-    (responseStyle !== 'concise' && responseStyle !== 'balanced' && responseStyle !== 'detailed')
+    (responseStyle !== 'concise' && responseStyle !== 'balanced' && responseStyle !== 'detailed') ||
+    !(toolAllowlist === null || isToolAllowlist(toolAllowlist))
   ) {
-    throw new Error('An assistant profile is invalid.');
+    return false;
   }
-
-  const preferredModel = value.preferredModel === null ? null : parsePreferredModel(value.preferredModel);
-  const toolAllowlist = value.toolAllowlist === null ? null : parseToolAllowlist(value.toolAllowlist);
-  return { id, name, instructions, responseStyle, preferredModel, toolAllowlist };
+  return true;
 }
 
-function parsePreferredModel(value: unknown): DefaultModelPreference {
-  if (!isRecord(value)) throw new Error('The assistant profile model is invalid.');
-  const { providerId, modelId, displayName, connectionId, workspaceId, apiKeyConnectionId } = value;
-  if (
-    typeof providerId !== 'string' ||
-    !/^[a-z][a-z0-9_-]{0,63}$/.test(providerId) ||
-    typeof modelId !== 'string' ||
-    modelId.trim() !== modelId ||
-    modelId.length === 0 ||
-    modelId.length > 256 ||
-    typeof displayName !== 'string' ||
-    displayName.trim() !== displayName ||
-    displayName.length === 0 ||
-    displayName.length > 256 ||
-    !isOptionalIdentifier(connectionId) ||
-    !isOptionalIdentifier(workspaceId) ||
-    !isOptionalIdentifier(apiKeyConnectionId)
-  ) {
-    throw new Error('The assistant profile model is invalid.');
-  }
-  return { providerId, modelId, displayName, connectionId, workspaceId, apiKeyConnectionId };
-}
-
-function parseToolAllowlist(value: unknown): string[] {
+function isToolAllowlist(value: unknown): value is string[] {
   if (
     !isStringArray(value) ||
     value.length > maximumAllowedTools ||
     !value.every(isValidProfileToolName) ||
     new Set(value).size !== value.length
   ) {
-    throw new Error('The assistant profile tool list is invalid.');
+    return false;
   }
-  return value;
+  return true;
 }
 
 function isStringArray(value: unknown): value is string[] {
@@ -122,10 +131,6 @@ function isStringArray(value: unknown): value is string[] {
 function isValidProfileToolName(name: string): boolean {
   if (/^[a-z][a-z0-9_-]{0,63}$/.test(name)) return true;
   return name.length <= 64 && /^mcp__[a-z0-9_]{1,24}__[A-Za-z0-9_-]+$/.test(name);
-}
-
-function isOptionalIdentifier(value: unknown): value is string | null {
-  return value === null || (typeof value === 'string' && /^[a-zA-Z0-9_-]{1,128}$/.test(value));
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
