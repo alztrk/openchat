@@ -260,11 +260,7 @@ async fn summarize_transcript_with_storage(
     let mut request = request_client.post(route.chat_url.as_str());
     if route.is_opencode {
         let session_id = session_id.ok_or_else(invalid_response_error)?;
-        request = request
-            .header("User-Agent", "opencode/1.18.30")
-            .header("x-opencode-client", "cli")
-            .header("x-opencode-session", session_id)
-            .header("x-opencode-project", "global");
+        request = request.header("x-opencode-session", session_id);
     }
     if route.is_copilot {
         let Some(api_key) = api_key else {
@@ -274,8 +270,6 @@ async fn summarize_transcript_with_storage(
             copilot::authorize_inference(request, api_key, copilot::RequestIntent::Background);
     } else if let Some(local_api_key) = route.local_api_key.as_deref() {
         request = request.bearer_auth(local_api_key.as_str());
-    } else if route.is_free {
-        request = request.bearer_auth("public");
     } else if let Some(api_key) = api_key {
         request = request.bearer_auth(api_key);
     }
@@ -741,7 +735,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn opencode_summary_batches_large_history_and_keeps_client_identity() {
+    async fn opencode_summary_batches_large_history_without_client_spoofing() {
         let context_window = 2048;
         let max_output_tokens = max_summary_tokens(context_window);
         let summary_byte_limit = usize::try_from(max_output_tokens)
@@ -847,10 +841,9 @@ mod tests {
         assert_eq!(summary, format!("summary-{}", expected_batches - 1));
         for (index, request) in requests.iter().enumerate() {
             let lower_request = request.to_ascii_lowercase();
-            assert!(lower_request.contains("user-agent: opencode/1.18.30"));
-            assert!(lower_request.contains("x-opencode-client: cli"));
             assert!(lower_request.contains("x-opencode-session: session-test"));
-            assert!(lower_request.contains("x-opencode-project: global"));
+            assert!(!lower_request.contains("x-opencode-client:"));
+            assert!(!lower_request.contains("x-opencode-project:"));
             assert!(lower_request.contains("authorization: bearer test-opencode-key"));
             let body = request.split("\r\n\r\n").nth(1).expect("request body");
             let body: Value = serde_json::from_str(body).expect("JSON request body");

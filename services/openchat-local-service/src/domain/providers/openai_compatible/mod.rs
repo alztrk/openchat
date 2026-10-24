@@ -234,8 +234,8 @@ pub(crate) fn context_usage_tool_definitions(
         supports_tool_calls,
     ))
 }
-const CHAT_URL: &str = "https://opencode.ai/zen/v1/chat/completions";
-const RESPONSES_URL: &str = "https://opencode.ai/zen/v1/responses";
+const CHAT_URL: &str = "https://opencode.ai/inference/openai/v1/chat/completions";
+const RESPONSES_URL: &str = "https://opencode.ai/inference/openai/v1/responses";
 const OPENAI_RESPONSES_URL: &str = "https://api.openai.com/v1/responses";
 const MAX_EVENT_BYTES: usize = 1024 * 1024;
 const MAX_PROVIDER_ERROR_BYTES: usize = 16 * 1024;
@@ -587,6 +587,22 @@ pub(super) fn chat_request_http_error(
     }
 
     http_error(status, provider_id)
+}
+
+pub(super) fn chat_request_http_error_with_retry_after(
+    status: StatusCode,
+    provider_id: Option<&str>,
+    request_includes_tools: bool,
+    retry_after_seconds: Option<u64>,
+) -> ServiceError {
+    let mut error = chat_request_http_error(status, provider_id, request_includes_tools);
+    if status == StatusCode::TOO_MANY_REQUESTS
+        && provider_id == Some("copilot")
+        && let Some(seconds) = retry_after_seconds
+    {
+        error.details = Some(format!("HTTP status 429; retry-after-seconds={seconds}"));
+    }
+    error
 }
 
 fn network_error() -> ServiceError {
@@ -1175,11 +1191,7 @@ mod tests {
         });
         let response = client
             .post(super::CHAT_URL)
-            .header("User-Agent", "opencode/1.18.30")
-            .header("x-opencode-client", "cli")
             .header("x-opencode-session", session_id)
-            .header("x-opencode-project", "global")
-            .bearer_auth("public")
             .header(ACCEPT, "text/event-stream")
             .json(&body)
             .send()
@@ -1203,11 +1215,7 @@ mod tests {
         let session_id = super::opencode_session_id();
         let response = client
             .get(super::models::MODELS_URL)
-            .header("User-Agent", "opencode/1.18.30")
-            .header("x-opencode-client", "cli")
             .header("x-opencode-session", session_id)
-            .header("x-opencode-project", "global")
-            .bearer_auth("public")
             .send()
             .await
             .expect("fetch models");
@@ -1406,11 +1414,7 @@ mod tests {
 
         let response = client
             .post(super::RESPONSES_URL)
-            .header("User-Agent", "opencode/1.18.30")
-            .header("x-opencode-client", "cli")
             .header("x-opencode-session", session_id)
-            .header("x-opencode-project", "global")
-            .bearer_auth("public")
             .header(ACCEPT, "text/event-stream")
             .json(&body)
             .send()

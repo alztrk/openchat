@@ -1,15 +1,14 @@
 import type { TFunction } from 'i18next';
-import { Bot, ChevronDown, LoaderCircle, LogIn, LogOut, Search, Star, Text } from 'lucide-react';
+import { Bot, ChevronDown, LoaderCircle, LogIn, LogOut, RefreshCw, Search, Star, Text } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button } from '@/design-system';
+import { Button, Tooltip } from '@/design-system';
 import type { ChatModelFavorite } from '@/modules/conversations/data/chatStorage';
 import { favoriteSourceConnection } from '@/modules/conversations/stores/chatStoreUtils';
 import { ProviderIcon } from '@/modules/providers/components/ProviderIcon';
 import type { ChatModel, ChatModelProvider } from '@/modules/providers/data/chatModels';
 import { modelRouteKey } from '@/modules/providers/data/modelPreferences';
-import { useOAuthRateLimits, rateLimitForModel } from '@/modules/providers/data/oauthRateLimits';
 import {
   type CachedModelPricing,
   isModelPricingCacheFresh,
@@ -19,6 +18,13 @@ import {
   readModelPricingCache,
   writeModelPricingCache,
 } from '@/modules/providers/data/modelPricing';
+import {
+  clearOAuthRateLimit,
+  type OAuthRateLimitState,
+  rateLimitForModel,
+  refreshOAuthRateLimits,
+  useOAuthRateLimits,
+} from '@/modules/providers/data/oauthRateLimits';
 import { localServiceClient } from '@/platform/local-service';
 import { useTransitionPresence } from '@/shared/hooks/useTransitionPresence';
 import { FastModeControl } from './FastModeControl';
@@ -78,7 +84,7 @@ export function ModelPicker({
   query,
   selectedModel,
 }: ModelPickerProps) {
-  const { t } = useTranslation();
+  const { i18n, t } = useTranslation();
   const rateLimits = useOAuthRateLimits();
   const [selectedProviderId, setSelectedProviderId] = useState(() =>
     providerFamily(selectedModel?.providerId ?? 'opencode'),
@@ -97,6 +103,10 @@ export function ModelPicker({
       isMounted.current = false;
     };
   }, []);
+  useEffect(() => {
+    if (!isOpen) return;
+    void refreshOAuthRateLimits(models);
+  }, [isOpen, models]);
   useEffect(() => {
     if (!isOpen) return;
     const closeOnOutsidePointer = (event: PointerEvent) => {
@@ -361,6 +371,7 @@ export function ModelPicker({
                           isSelected={favoriteIsSelected}
                           key={selectionKey}
                           model={model}
+                          onRecheck={() => clearOAuthRateLimit(model)}
                           onSelect={() => {
                             setSelectedProviderId(providerFamily(model.providerId));
                             onSelect(model);
@@ -368,7 +379,13 @@ export function ModelPicker({
                           }}
                           onRemoveFavorite={() => onRemoveFavorite(favorite)}
                           pricingLoad={pricingByModelKey[model.key]}
-                          disabledReason={rateLimitForModel(model, rateLimits)?.reason ?? null}
+                          rateLimitState={rateLimitForModel(model, rateLimits)}
+                          disabledReason={rateLimitDescription(
+                            rateLimitForModel(model, rateLimits),
+                            providerNameForModel(model, t),
+                            t,
+                            i18n.language,
+                          )}
                         />
                       ) : (
                         <div
@@ -429,13 +446,20 @@ export function ModelPicker({
                           isSelected={model.key === selectedModel?.key}
                           key={model.key}
                           model={model}
+                          onRecheck={() => clearOAuthRateLimit(model)}
                           onSelect={() => {
                             onSelect(model);
                             rootRef.current?.querySelector<HTMLButtonElement>(':scope > button')?.focus();
                           }}
                           onRemoveFavorite={() => onToggleFavorite(model)}
                           pricingLoad={pricingByModelKey[model.key]}
-                          disabledReason={rateLimitForModel(model, rateLimits)?.reason ?? null}
+                          rateLimitState={rateLimitForModel(model, rateLimits)}
+                          disabledReason={rateLimitDescription(
+                            rateLimitForModel(model, rateLimits),
+                            providerNameForModel(model, t),
+                            t,
+                            i18n.language,
+                          )}
                         />
                       );
                     })}
@@ -463,12 +487,24 @@ interface ModelOptionProps {
   isSelected: boolean;
   isFavorite: boolean;
   pricingLoad: PricingLoadState | undefined;
+  rateLimitState: OAuthRateLimitState | null;
   disabledReason: string | null;
+  onRecheck(): void;
   onSelect(): void;
   onRemoveFavorite(): void;
 }
 
-function ModelOption({ disabledReason, isFavorite, isSelected, model, onRemoveFavorite, onSelect, pricingLoad }: ModelOptionProps) {
+function ModelOption({
+  disabledReason,
+  isFavorite,
+  isSelected,
+  model,
+  onRecheck,
+  onRemoveFavorite,
+  onSelect,
+  pricingLoad,
+  rateLimitState,
+}: ModelOptionProps) {
   const { i18n, t } = useTranslation();
   const pricing = pricingLoad?.snapshot?.model?.pricing;
   const inputPrice = pricing ? `$${formatPriceAmount(pricing.input, i18n.language)}` : '—';
@@ -478,63 +514,81 @@ function ModelOption({ disabledReason, isFavorite, isSelected, model, onRemoveFa
   const isPricingLoading = model.providerId !== 'llama_cpp' && pricingLoad?.snapshot === null;
   return (
     <div className="flex min-w-0 items-center gap-1 rounded-control hover:bg-hover">
-      <button
-        aria-pressed={isSelected}
-        className="flex min-h-14 min-w-0 flex-1 items-center gap-2.5 rounded-control px-2 text-left text-sm text-text disabled:opacity-50"
-        disabled={disabledReason !== null}
-        title={disabledReason ?? undefined}
-        onClick={onSelect}
-        type="button"
-      >
-        <ProviderIcon className="shrink-0" providerId={model.providerId} size={17} />
-        <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <span className="block truncate">{model.displayName}</span>
-          <span
-            className="inline-flex min-w-0 items-center gap-1.5 truncate text-xs text-secondary-text"
-            role={isPricingLoading ? 'status' : undefined}
-            title={pricing ? t('modelDetailsPricingSource') : undefined}
+      <Tooltip label={disabledReason ?? ''}>
+        <span className="block min-w-0 flex-1" tabIndex={disabledReason ? 0 : undefined}>
+          <button
+            aria-pressed={isSelected}
+            className="flex min-h-14 min-w-0 w-full items-center gap-2.5 rounded-control px-2 text-left text-sm text-text disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={disabledReason !== null}
+            onClick={onSelect}
+            type="button"
           >
-            {isPricingLoading ? (
-              <>
-                <span className="inline-flex items-center gap-0.5">
-                  <LogIn aria-hidden="true" className="text-secondary-icon" size={12} />
-                  <span
-                    aria-hidden="true"
-                    className="h-3 w-8 animate-pulse rounded bg-selected motion-reduce:animate-none"
-                  />
+            <ProviderIcon className="shrink-0" providerId={model.providerId} size={17} />
+            <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+              <span className="block truncate">{model.displayName}</span>
+              <span
+                className="inline-flex min-w-0 items-center gap-1.5 truncate text-xs text-secondary-text"
+                role={isPricingLoading ? 'status' : undefined}
+                title={pricing ? t('modelDetailsPricingSource') : undefined}
+              >
+                {isPricingLoading ? (
+                  <>
+                    <span className="inline-flex items-center gap-0.5">
+                      <LogIn aria-hidden="true" className="text-secondary-icon" size={12} />
+                      <span
+                        aria-hidden="true"
+                        className="h-3 w-8 animate-pulse rounded bg-selected motion-reduce:animate-none"
+                      />
+                    </span>
+                    <span aria-hidden="true">/</span>
+                    <span className="inline-flex items-center gap-0.5">
+                      <LogOut aria-hidden="true" className="text-secondary-icon" size={12} />
+                      <span
+                        aria-hidden="true"
+                        className="h-3 w-8 animate-pulse rounded bg-selected motion-reduce:animate-none"
+                      />
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <span className="inline-flex items-center gap-0.5">
+                      <LogIn aria-hidden="true" className="text-secondary-icon" size={12} />
+                      {inputPrice}
+                    </span>
+                    <span aria-hidden="true">/</span>
+                    <span className="inline-flex items-center gap-0.5">
+                      <LogOut aria-hidden="true" className="text-secondary-icon" size={12} />
+                      {outputPrice}
+                    </span>
+                  </>
+                )}
+                <span aria-hidden="true" className="opacity-50">
+                  ·
                 </span>
-                <span aria-hidden="true">/</span>
                 <span className="inline-flex items-center gap-0.5">
-                  <LogOut aria-hidden="true" className="text-secondary-icon" size={12} />
-                  <span
-                    aria-hidden="true"
-                    className="h-3 w-8 animate-pulse rounded bg-selected motion-reduce:animate-none"
-                  />
+                  <Text aria-hidden="true" className="text-secondary-icon" size={12} />
+                  {contextLabel}
                 </span>
-              </>
-            ) : (
-              <>
-                <span className="inline-flex items-center gap-0.5">
-                  <LogIn aria-hidden="true" className="text-secondary-icon" size={12} />
-                  {inputPrice}
-                </span>
-                <span aria-hidden="true">/</span>
-                <span className="inline-flex items-center gap-0.5">
-                  <LogOut aria-hidden="true" className="text-secondary-icon" size={12} />
-                  {outputPrice}
-                </span>
-              </>
-            )}
-            <span aria-hidden="true" className="opacity-50">
-              ·
+              </span>
             </span>
-            <span className="inline-flex items-center gap-0.5">
-              <Text aria-hidden="true" className="text-secondary-icon" size={12} />
-              {contextLabel}
-            </span>
-          </span>
+          </button>
         </span>
-      </button>
+      </Tooltip>
+      {disabledReason &&
+      rateLimitState?.reason === 'temporarilyRateLimited' &&
+      rateLimitState.resetAtUnixMs === null ? (
+        <Tooltip label={t('oauthModelRateLimitRetry')}>
+          <Button
+            aria-label={t('oauthModelRateLimitRetry')}
+            className="size-8 shrink-0"
+            onClick={onRecheck}
+            size="icon"
+            variant="ghost"
+          >
+            <RefreshCw aria-hidden="true" size={15} />
+          </Button>
+        </Tooltip>
+      ) : null}
       <Button
         aria-label={t(isFavorite ? 'removeModelFavorite' : 'addModelFavorite')}
         className="size-8 shrink-0"
@@ -546,6 +600,25 @@ function ModelOption({ disabledReason, isFavorite, isSelected, model, onRemoveFa
       </Button>
     </div>
   );
+}
+
+function rateLimitDescription(
+  state: OAuthRateLimitState | null,
+  provider: string,
+  t: TFunction,
+  locale: string,
+): string | null {
+  if (!state) return null;
+  const resetAt =
+    state.resetAtUnixMs === null
+      ? null
+      : new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short' }).format(state.resetAtUnixMs);
+  if (state.reason === 'quotaExceeded') {
+    return resetAt ? t('oauthModelQuotaExceededAt', { provider, time: resetAt }) : t('oauthModelQuotaExceeded');
+  }
+  return resetAt
+    ? t('oauthModelTemporarilyLimitedAt', { provider, time: resetAt })
+    : t('oauthModelTemporarilyLimited', { provider });
 }
 
 interface ProviderOption {

@@ -1,8 +1,5 @@
 import type { ChatRoute } from '@/modules/providers/data/routes';
-import {
-  isAssistantAgentSnapshot,
-  type AssistantAgentSnapshot,
-} from '@/modules/settings/data/assistantProfiles';
+import { type AssistantAgentSnapshot, isAssistantAgentSnapshot } from '@/modules/settings/data/assistantProfiles';
 import { invoke } from '@/platform/tauri';
 
 import {

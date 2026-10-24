@@ -93,7 +93,7 @@ export function ConversationTitleEditor({ isAiWorking = false, onSave, title }: 
     return (
       <Button
         aria-label={t('renameConversation')}
-        className="min-w-0 flex-1 justify-start gap-2 px-2 text-left"
+        className="min-w-0 max-w-xl w-full flex-1 justify-start gap-2 px-2 text-left"
         id={titleButtonId}
         onClick={() => {
           setValue(title);
@@ -105,6 +105,7 @@ export function ConversationTitleEditor({ isAiWorking = false, onSave, title }: 
       >
         <span
           className={`min-w-0 flex-1 truncate text-base font-semibold ${isAiWorking ? 'openchat-title-shimmer' : 'text-text'}`}
+          title={title}
         >
           {title}
         </span>

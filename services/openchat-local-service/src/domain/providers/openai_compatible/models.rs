@@ -529,12 +529,12 @@ pub async fn models(
     }
 }
 
-pub(super) fn is_supported_free_chat_model(id: &str) -> bool {
-    SUPPORTED_FREE_CHAT_MODELS.contains(&id)
-}
-
 pub(super) fn is_supported_paid_chat_model(id: &str) -> bool {
     SUPPORTED_PAID_CHAT_MODELS.contains(&id)
+}
+
+pub(super) fn is_supported_free_chat_model(id: &str) -> bool {
+    SUPPORTED_FREE_CHAT_MODELS.contains(&id)
 }
 
 #[cfg(test)]

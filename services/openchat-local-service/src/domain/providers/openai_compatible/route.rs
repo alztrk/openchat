@@ -14,9 +14,8 @@ use crate::{
 use super::{
     CHAT_URL, OPENAI_RESPONSES_URL, RESPONSES_URL, api_compatible_provider,
     authentication_required_error, log_send_storage_failure, model_error,
-    models::{is_supported_free_chat_model, is_supported_paid_chat_model},
-    openai_authentication_required_error, provider_authentication_required_error, route_error,
-    storage_error,
+    models::is_supported_paid_chat_model, openai_authentication_required_error,
+    provider_authentication_required_error, route_error, storage_error,
 };
 
 #[derive(Clone)]
@@ -192,11 +191,9 @@ async fn resolve_chat_route_for_model(
             if requested_api_key_connection_id.is_some() {
                 return Err(route_error());
             }
-            if !is_supported_free_chat_model(&model_id) && !is_supported_paid_chat_model(&model_id)
-            {
+            if !is_supported_paid_chat_model(&model_id) {
                 return Err(model_error());
             }
-            let is_free = is_supported_free_chat_model(&model_id);
             let uses_responses_api = super::models::is_responses_api_model(storage, &model_id)?;
             let supports_tool_calls = super::models::supports_tool_calls(storage, &model_id)?;
             let limits = super::models::context_limits(storage, &model_id)?;
@@ -209,7 +206,7 @@ async fn resolve_chat_route_for_model(
             ResolvedProviderRoute {
                 provider_model_id: model_id.clone(),
                 chat_url,
-                is_free,
+                is_free: false,
                 uses_responses_api,
                 limits,
                 supports_images,

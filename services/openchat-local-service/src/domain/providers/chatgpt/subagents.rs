@@ -727,7 +727,7 @@ pub(crate) async fn resolve_child_run_route(
                 protocol,
                 reasoning_effort,
                 api_key,
-                format!("https://opencode.ai/zen/v1{suffix}"),
+                format!("https://opencode.ai/inference/openai/v1{suffix}"),
             )
         }
         provider_id if provider_id.starts_with("custom_") => {

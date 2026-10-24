@@ -18,7 +18,7 @@ use crate::{
 };
 
 use super::super::{
-    MAX_EVENT_BYTES, cancelled_error, chat_request_http_error, client, copilot,
+    MAX_EVENT_BYTES, cancelled_error, chat_request_http_error_with_retry_after, client, copilot,
     invalid_response_error, network_error, opencode_free_tier_restricted, protocol_error,
     stream::{
         ProviderRequestUsage, ResponsesStreamEffect, SseLine, StreamedToolCall,
@@ -205,15 +205,9 @@ async fn receive_with_client(
         );
     } else if request.route.is_opencode {
         if let Some(session_id) = request.session_id {
-            provider_request = provider_request
-                .header("User-Agent", "opencode/1.18.30")
-                .header("x-opencode-client", "cli")
-                .header("x-opencode-session", session_id)
-                .header("x-opencode-project", "global");
+            provider_request = provider_request.header("x-opencode-session", session_id);
         }
-        if request.route.is_free {
-            provider_request = provider_request.bearer_auth("public");
-        } else if let Some(api_key) = request.api_key {
+        if let Some(api_key) = request.api_key {
             provider_request = provider_request.bearer_auth(api_key);
         }
     } else if request.route.is_anthropic()
@@ -250,6 +244,12 @@ async fn receive_with_client(
                 connection_error(request.route, error.without_url().to_string())
             })?,
     };
+    let retry_after_seconds = response
+        .headers()
+        .get(reqwest::header::RETRY_AFTER)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.parse::<u64>().ok())
+        .filter(|seconds| (1..=86_400).contains(seconds));
     if !response.status().is_success() {
         let status = response.status();
         if request.route.is_opencode
@@ -268,10 +268,11 @@ async fn receive_with_client(
                 local_inference_error().with_details(format!("HTTP status {}", status.as_u16()))
             );
         }
-        return Err(chat_request_http_error(
+        return Err(chat_request_http_error_with_retry_after(
             status,
             request.route.provider_id.as_deref(),
             request_contains_tool_payload(request.body),
+            retry_after_seconds,
         ));
     }
 

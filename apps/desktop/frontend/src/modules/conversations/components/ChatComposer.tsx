@@ -8,6 +8,7 @@ import { useChatStreaming } from '@/modules/conversations/hooks/useChatStreaming
 import { useChatStore } from '@/modules/conversations/stores/chatStore';
 import { ToolPermissionModeSelector } from '@/modules/projects/components/ToolPermissionModeSelector';
 import { modelRouteKey } from '@/modules/providers/data/modelPreferences';
+import { rateLimitForModel, useOAuthRateLimits } from '@/modules/providers/data/oauthRateLimits';
 import { AttachmentLibraryDialog } from './AttachmentLibraryDialog';
 import { ChatSlashCommandMenu } from './ChatSlashCommandMenu';
 import { ChatSlashModelMenu } from './ChatSlashModelMenu';
@@ -111,6 +112,8 @@ export function ChatComposer({
     isLoadingMessagesOverride,
     targetConversationId,
   });
+  const oauthRateLimits = useOAuthRateLimits();
+  const selectedModelRateLimited = selectedModel ? rateLimitForModel(selectedModel, oauthRateLimits) !== null : false;
 
   const models = useChatStore((state) => state.models);
   const modelProviders = useChatStore((state) => state.modelProviders);
@@ -467,7 +470,8 @@ export function ChatComposer({
                   isReadingAttachments ||
                   isAnyConversationSending ||
                   isUpdatingConversationModel ||
-                  isSendBlocked
+                  isSendBlocked ||
+                  selectedModelRateLimited
                 }
                 size="icon"
                 title={isSending ? t('composerSteerResponse') : sendTooltip}

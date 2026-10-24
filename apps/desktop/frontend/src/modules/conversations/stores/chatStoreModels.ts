@@ -8,6 +8,7 @@ import {
   modelRouteKey,
   readLastSelectedModelPreference,
 } from '@/modules/providers/data/modelPreferences';
+import { refreshOAuthRateLimits } from '@/modules/providers/data/oauthRateLimits';
 import type { LocalServiceClient } from '@/platform/local-service';
 import type { ChatState } from './chatStore';
 import { isSameRoute } from './chatStoreUtils';
@@ -116,5 +117,6 @@ export function createRefreshModelsAction(
       selectedModelKey,
       errorCode,
     });
+    void refreshOAuthRateLimits(models);
   };
 }

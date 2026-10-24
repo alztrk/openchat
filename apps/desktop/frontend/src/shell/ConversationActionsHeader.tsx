@@ -45,7 +45,7 @@ export function ConversationActionsHeader({
   );
 
   return (
-    <header className="app-content-divider flex h-12 shrink-0 items-center justify-between gap-3 border-b bg-navigation/80 px-2 sm:px-3 backdrop-blur-md">
+    <header className="app-content-divider flex h-12 shrink-0 items-center justify-between gap-2 border-b bg-navigation/80 px-2 backdrop-blur-md sm:gap-3 sm:px-3">
       <div className="flex min-w-0 flex-1 items-center gap-2">
         {temporaryChat ? (
           <div className="flex min-w-0 items-center gap-2">
@@ -55,9 +55,9 @@ export function ConversationActionsHeader({
             </h1>
           </div>
         ) : activeConversation ? (
-          <div className="flex min-w-0 flex-1 items-center gap-1.5">
+          <div className="flex min-w-0 max-w-full flex-1 items-center gap-1.5">
             <MessageSquare aria-hidden="true" className="shrink-0 text-secondary-icon" size={16} />
-            <div className="min-w-0 flex-1 [&_button]:min-h-8 [&_button]:px-1 [&_input]:!text-sm [&_input]:!font-medium [&_span]:!text-sm [&_span]:!font-medium">
+            <div className="min-w-0 max-w-full flex-1 [&_button]:min-h-8 [&_button]:px-1 [&_input]:!text-sm [&_input]:!font-medium [&_span]:!text-sm [&_span]:!font-medium">
               <ConversationTitleEditor
                 isAiWorking={isActiveConversationAiWorking}
                 key={activeConversation.id}

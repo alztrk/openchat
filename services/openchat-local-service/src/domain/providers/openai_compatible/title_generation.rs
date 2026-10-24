@@ -132,9 +132,7 @@ async fn resolve_target(
             })
         }
         "opencode" => {
-            if !super::models::is_supported_free_chat_model(&target.model_id)
-                && !super::models::is_supported_paid_chat_model(&target.model_id)
-            {
+            if !super::models::is_supported_paid_chat_model(&target.model_id) {
                 return Err(());
             }
             let responses_api =
@@ -144,7 +142,7 @@ async fn resolve_target(
                 url: if responses_api {
                     RESPONSES_URL
                 } else {
-                    "https://opencode.ai/zen/v1/chat/completions"
+                    "https://opencode.ai/inference/openai/v1/chat/completions"
                 }
                 .to_owned(),
                 api_key,
