@@ -10,9 +10,11 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 use std::{
+    collections::VecDeque,
     fs::{self, File, OpenOptions},
     io::{Read, Seek, SeekFrom, Write},
     path::Path,
+    time::{Duration, Instant},
 };
 
 use base64::{Engine as _, engine::general_purpose::STANDARD};
@@ -32,11 +34,14 @@ use super::{
     remote_connection::{RemoteStorageConnection, RemoteStorageError},
 };
 
-const MAX_BROKER_OPERATIONS: u64 = 64;
+const MAX_BROKER_OPERATIONS: usize = 64;
+const REMOTE_DATABASE_QUEUE_WAIT_TIMEOUT: Duration = Duration::from_secs(5);
 static BROKER_OPERATION_QUEUE: RemoteDatabaseQueue = RemoteDatabaseQueue {
     state: Mutex::new(RemoteQueueState {
         next_ticket: 0,
-        serving_ticket: 0,
+        waiting_tickets: VecDeque::new(),
+        active_ticket: None,
+        active_since: None,
     }),
     ready: Condvar::new(),
 };
@@ -56,7 +61,9 @@ struct RemoteDatabaseQueue {
 
 struct RemoteQueueState {
     next_ticket: u64,
-    serving_ticket: u64,
+    waiting_tickets: VecDeque<u64>,
+    active_ticket: Option<u64>,
+    active_since: Option<Instant>,
 }
 
 struct RemoteDatabaseLease {
@@ -444,7 +451,9 @@ fn acquire_remote_database_lease() -> Result<Arc<RemoteDatabaseLease>> {
         .state
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
-    if state.next_ticket.wrapping_sub(state.serving_ticket) >= MAX_BROKER_OPERATIONS {
+    let active_operation_count =
+        state.waiting_tickets.len() + state.active_ticket.is_some() as usize;
+    if active_operation_count >= MAX_BROKER_OPERATIONS {
         return Err(rusqlite::Error::SqliteFailure(
             ffi::Error::new(ffi::SQLITE_BUSY),
             Some("database operation queue is full".to_owned()),
@@ -453,16 +462,50 @@ fn acquire_remote_database_lease() -> Result<Arc<RemoteDatabaseLease>> {
 
     let ticket = state.next_ticket;
     state.next_ticket = state.next_ticket.wrapping_add(1);
-    while state.serving_ticket != ticket {
-        state = BROKER_OPERATION_QUEUE
+    state.waiting_tickets.push_back(ticket);
+    let waiting_since = Instant::now();
+
+    loop {
+        if state.active_ticket.is_none() && state.waiting_tickets.front() == Some(&ticket) {
+            let _ = state.waiting_tickets.pop_front();
+            state.active_ticket = Some(ticket);
+            state.active_since = Some(Instant::now());
+            return Ok(Arc::new(RemoteDatabaseLease {
+                queue: &BROKER_OPERATION_QUEUE,
+                ticket,
+            }));
+        }
+
+        let remaining = REMOTE_DATABASE_QUEUE_WAIT_TIMEOUT.saturating_sub(waiting_since.elapsed());
+        if remaining.is_zero() {
+            state
+                .waiting_tickets
+                .retain(|queued_ticket| *queued_ticket != ticket);
+            let active_ticket = state.active_ticket;
+            let queue_head_ticket = state.waiting_tickets.front().copied();
+            let active_lease_ms = state
+                .active_since
+                .map(|active_since| active_since.elapsed().as_millis())
+                .unwrap_or_default();
+            let wait_ms = waiting_since.elapsed().as_millis();
+            let queue_depth = state.waiting_tickets.len() + state.active_ticket.is_some() as usize;
+            BROKER_OPERATION_QUEUE.ready.notify_all();
+            drop(state);
+            eprintln!(
+                "storage_database_queue_wait_timed_out ticket={ticket} active_ticket={active_ticket:?} queue_head_ticket={queue_head_ticket:?} queue_depth={queue_depth} wait_ms={wait_ms} active_lease_ms={active_lease_ms}"
+            );
+            return Err(rusqlite::Error::SqliteFailure(
+                ffi::Error::new(ffi::SQLITE_BUSY),
+                Some("database operation queue wait timed out".to_owned()),
+            ));
+        }
+
+        let (next_state, _) = BROKER_OPERATION_QUEUE
             .ready
-            .wait(state)
+            .wait_timeout(state, remaining)
             .unwrap_or_else(|poisoned| poisoned.into_inner());
+        state = next_state;
     }
-    Ok(Arc::new(RemoteDatabaseLease {
-        queue: &BROKER_OPERATION_QUEUE,
-        ticket,
-    }))
 }
 
 impl Drop for RemoteDatabaseLease {
@@ -472,8 +515,9 @@ impl Drop for RemoteDatabaseLease {
             .state
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        if state.serving_ticket == self.ticket {
-            state.serving_ticket = state.serving_ticket.wrapping_add(1);
+        if state.active_ticket == Some(self.ticket) {
+            state.active_ticket = None;
+            state.active_since = None;
         }
         self.queue.ready.notify_all();
     }
