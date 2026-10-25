@@ -202,6 +202,7 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
   const customResolutionValid = size !== 'custom' || isValidImageSize(customWidth, customHeight);
   const selectedDesignImage = selectedImage?.image.source === 'design' ? selectedImage.image.image : null;
   const generationInProgress = generationStarting || activeOperation !== null;
+  const generationPlaceholderCount = Number(count);
 
   const loadTargets = useCallback(async () => {
     setTargetsLoading(true);
@@ -1577,23 +1578,27 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
             <>
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
                 {generationInProgress ? (
-                  <div
-                    aria-label={t('designGenerationInProgress')}
-                    className="design-image-tile relative grid aspect-square min-w-0 place-items-center overflow-hidden rounded-control border border-border bg-raised"
-                    role="status"
-                  >
-                    <span className="openchat-skeleton absolute inset-0 bg-selected" />
-                    <span aria-hidden="true" className="relative z-10 grid justify-items-center gap-3 text-accent">
-                      <LoaderCircle className="openchat-ai-ring-spinner" size={28} />
-                      <span className="text-sm font-medium">{t('designGenerationInProgress')}</span>
+                  <>
+                    <span className="sr-only" role="status">
+                      {t('designGenerationInProgress')}
                     </span>
-                    <span
-                      aria-hidden="true"
-                      className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 to-transparent px-3 pb-2 pt-8 text-xs font-medium text-white"
-                    >
-                      {t('designGenerationInProgressHint')}
-                    </span>
-                  </div>
+                    {Array.from({ length: generationPlaceholderCount }, (_, index) => index + 1).map((slot) => (
+                      <div
+                        aria-hidden="true"
+                        className="design-image-tile relative grid aspect-square min-w-0 place-items-center overflow-hidden rounded-control border border-border bg-raised"
+                        key={`generation-placeholder-${slot}`}
+                      >
+                        <span className="openchat-skeleton absolute inset-0 bg-selected" />
+                        <span className="relative z-10 grid justify-items-center gap-3 text-accent">
+                          <LoaderCircle className="openchat-ai-ring-spinner" size={28} />
+                          <span className="text-sm font-medium">{t('designGenerationInProgress')}</span>
+                        </span>
+                        <span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 to-transparent px-3 pb-2 pt-8 text-xs font-medium text-white">
+                          {t('designGenerationInProgressHint')}
+                        </span>
+                      </div>
+                    ))}
+                  </>
                 ) : null}
                 {gallery.map((entry) => (
                   <ImageTile
