@@ -170,14 +170,8 @@ export function StatisticsSettingsSection({ onOpenConversation }: StatisticsSett
   const dateRangeInvalid = !parseDateInput(fromDate) || !parseDateInput(toDate) || fromDate > toDate;
 
   return (
-    <section aria-labelledby="settings-statistics-heading" className="grid gap-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 className="text-xl font-semibold leading-7" id="settings-statistics-heading">
-            {t('statistics')}
-          </h2>
-          <p className="mt-1 max-w-3xl text-sm text-secondary-text">{t('statisticsDescription')}</p>
-        </div>
+    <section aria-labelledby="settings-page-heading" className="grid gap-5">
+      <div className="flex justify-end">
         <div className="flex flex-wrap items-center gap-2">
           <details className="statistics-filter-menu relative">
             <summary

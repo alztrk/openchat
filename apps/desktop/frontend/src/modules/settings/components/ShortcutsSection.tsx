@@ -63,10 +63,7 @@ export function ShortcutsSection() {
 
   if (loadState === 'error') {
     return (
-      <section aria-labelledby="keyboard-shortcuts-heading" className="grid gap-4">
-        <h2 className="text-xl font-semibold leading-7" id="keyboard-shortcuts-heading">
-          {t('keyboardShortcuts')}
-        </h2>
+      <section aria-labelledby="settings-page-heading" className="grid gap-4">
         <p className="text-sm text-destructive" role="alert">
           {t(errorCode ?? 'keyboardShortcutLoadFailed')}
         </p>
@@ -83,13 +80,7 @@ export function ShortcutsSection() {
   }
 
   return (
-    <section aria-labelledby="keyboard-shortcuts-heading" className="grid gap-5">
-      <div>
-        <h2 className="text-xl font-semibold leading-7" id="keyboard-shortcuts-heading">
-          {t('keyboardShortcuts')}
-        </h2>
-        <p className="mt-1 text-sm text-secondary-text">{t('keyboardShortcutsDescription')}</p>
-      </div>
+    <section aria-labelledby="settings-page-heading" className="grid gap-5">
       {errorCode ? (
         <p className="text-sm text-destructive" role="alert">
           {t(errorCode)}

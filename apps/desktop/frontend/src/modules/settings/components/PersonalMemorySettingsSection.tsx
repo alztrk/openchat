@@ -90,8 +90,6 @@ export function PersonalMemorySettingsSection() {
       <div className="flex items-start gap-3">
         <Brain aria-hidden="true" className="mt-0.5 shrink-0 text-accent" size={19} />
         <div className="grid gap-1">
-          <h3 className="font-semibold">{t('personalMemoryTitle')}</h3>
-          <p className="text-sm text-secondary-text">{t('personalMemoryDescription')}</p>
           <p className="text-sm text-secondary-text">{t('personalMemoryPrivacyNotice')}</p>
         </div>
       </div>

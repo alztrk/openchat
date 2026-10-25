@@ -1,8 +1,10 @@
 import { Eye, EyeOff, LoaderCircle, RefreshCw, Star, StarOff } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { type ReactNode, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button, Card, Dialog, Input } from '@/design-system';
+import { Button, Card, Dialog, Input, Select, Switch } from '@/design-system';
+import { providerNameForModel } from '@/modules/conversations/components/composerUtils';
+import { useComposerPreferencesStore } from '@/modules/conversations/data/composerPreferences';
 import { useChatStore } from '@/modules/conversations/stores/chatStore';
 import { ProviderIcon } from '@/modules/providers/components/ProviderIcon';
 import type { ChatModel } from '@/modules/providers/data/chatModels';
@@ -46,6 +48,10 @@ const providerTranslationKeys: Record<string, TranslationKey> = {
 export function ModelsSettingsSection() {
   const { t } = useTranslation();
   const models = useChatStore((state) => state.models);
+  const ghostTextEnabled = useComposerPreferencesStore((state) => state.ghostTextEnabled);
+  const setGhostTextEnabled = useComposerPreferencesStore((state) => state.setGhostTextEnabled);
+  const ghostTextModelKey = useComposerPreferencesStore((state) => state.ghostTextModelKey);
+  const setGhostTextModelKey = useComposerPreferencesStore((state) => state.setGhostTextModelKey);
   const modelStatus = useChatStore((state) => state.modelStatus);
   const modelError = useChatStore((state) => state.modelError);
   const modelFavorites = useChatStore((state) => state.modelFavorites);
@@ -73,6 +79,18 @@ export function ModelsSettingsSection() {
   const [feedbackKey, setFeedbackKey] = useState<FeedbackKey | null>(null);
   const [feedbackModelName, setFeedbackModelName] = useState('');
   const [busyFavoriteKeys, setBusyFavoriteKeys] = useState<Set<string>>(() => new Set());
+  const [composerSaveFailed, setComposerSaveFailed] = useState(false);
+
+  const ghostModelOptions = useMemo(() => {
+    const options = [{ value: 'auto', label: t('composerGhostTextModelAuto') }];
+    for (const model of models) {
+      options.push({
+        value: model.key,
+        label: `${providerNameForModel(model, (key) => t(key))}: ${model.displayName}`,
+      });
+    }
+    return options;
+  }, [models, t]);
 
   const groups = useMemo(() => {
     const search = query.trim().toLocaleLowerCase();
@@ -158,9 +176,51 @@ export function ModelsSettingsSection() {
     saveContextLimit(value);
   };
 
+  const changeGhostTextEnabled = (enabled: boolean) => {
+    try {
+      setGhostTextEnabled(enabled);
+      setComposerSaveFailed(false);
+    } catch {
+      setComposerSaveFailed(true);
+    }
+  };
+
+  const changeGhostTextModel = (modelKey: string) => {
+    try {
+      setGhostTextModelKey(modelKey);
+      setComposerSaveFailed(false);
+    } catch {
+      setComposerSaveFailed(true);
+    }
+  };
+
   return (
     <section aria-labelledby="settings-page-heading" className="grid gap-6">
-      <p className="max-w-3xl text-sm text-secondary-text">{t('modelsDescription')}</p>
+      <Card className="grid gap-4 p-4">
+        <ModelSettingRow description={t('composerGhostTextEnabledDescription')} label={t('composerGhostTextEnabled')}>
+          <Switch
+            aria-label={t('composerGhostTextEnabled')}
+            checked={ghostTextEnabled}
+            onCheckedChange={changeGhostTextEnabled}
+          />
+        </ModelSettingRow>
+        {ghostTextEnabled ? (
+          <ModelSettingRow description={t('composerGhostTextModelDescription')} label={t('composerGhostTextModel')}>
+            <Select
+              label={t('composerGhostTextModel')}
+              onChange={(event) => changeGhostTextModel(event.target.value)}
+              options={ghostModelOptions}
+              value={ghostTextModelKey}
+              visuallyHiddenLabel
+            />
+          </ModelSettingRow>
+        ) : null}
+        {composerSaveFailed ? (
+          <p className="text-sm text-destructive" role="alert">
+            {t('composerPreferenceSaveFailed')}
+          </p>
+        ) : null}
+      </Card>
 
       {defaultModelPreferenceInvalid ? (
         <PreferenceNotice
@@ -416,6 +476,28 @@ export function ModelsSettingsSection() {
         </div>
       </Dialog>
     </section>
+  );
+}
+
+function ModelSettingRow({
+  children,
+  description,
+  label,
+}: {
+  children: ReactNode;
+  description: string;
+  label: string;
+}) {
+  return (
+    <div className="@container">
+      <div className="appearance-setting-row">
+        <div>
+          <h3 className="font-medium">{label}</h3>
+          <p className="mt-1 text-sm text-secondary-text">{description}</p>
+        </div>
+        <div className="min-w-0">{children}</div>
+      </div>
+    </div>
   );
 }
 

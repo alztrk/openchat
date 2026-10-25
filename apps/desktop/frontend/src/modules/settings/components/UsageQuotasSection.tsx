@@ -261,14 +261,8 @@ export function UsageQuotasSection({ onNavigateToConnections }: UsageQuotasSecti
   };
 
   return (
-    <section aria-labelledby="usage-quotas-heading" className="grid gap-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 className="text-xl font-semibold leading-7" id="usage-quotas-heading">
-            {t('usageQuotas')}
-          </h2>
-          <p className="mt-1 text-sm text-secondary-text">{t('usageQuotasDescription')}</p>
-        </div>
+    <section aria-labelledby="settings-page-heading" className="grid gap-6">
+      <div className="flex justify-end">
         <Button
           disabled={isRefreshingAll || loadState === 'loading'}
           onClick={() => {

@@ -119,9 +119,6 @@ export function SharedInstructionsSection() {
 
   return (
     <section aria-labelledby="settings-page-heading" className="grid gap-3.5">
-      <p className="text-settings-description text-secondary-text" id="shared-instructions-description">
-        {t('sharedInstructionsDescription')}
-      </p>
       {loadState === 'loading' ? (
         <progress aria-label={t('sharedInstructionsLoading')} className="h-1 w-full accent-accent" max={100} />
       ) : loadState === 'error' ? (
