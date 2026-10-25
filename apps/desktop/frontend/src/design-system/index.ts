@@ -2,6 +2,7 @@
 export { Badge, type BadgeProps, type BadgeSize, type BadgeVariant } from './Badge';
 export { Button, type ButtonProps } from './Button';
 export { Card } from './Card';
+export { ColorPicker } from './ColorPicker';
 export { DatePicker, type DatePickerProps } from './DatePicker';
 export { Dialog, type DialogProps } from './Dialog';
 export {

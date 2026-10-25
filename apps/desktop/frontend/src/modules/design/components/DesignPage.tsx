@@ -29,7 +29,7 @@ import {
 } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button, DatePicker, Dialog, Select } from '@/design-system';
+import { Button, ColorPicker, DatePicker, Dialog, Select } from '@/design-system';
 import type { ConversationAttachmentSummary } from '@/modules/conversations/data/chatStorage';
 import { listConversationAttachments, readMessageAttachment } from '@/modules/conversations/data/chatStorage';
 import {
@@ -131,7 +131,10 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
   const [size, setSize] = useState('1024x1024');
   const [quality, setQuality] = useState<ImageQuality>('auto');
   const [background, setBackground] = useState<ImageBackground>('auto');
-  const [backgroundDescription, setBackgroundDescription] = useState('');
+  const [customBackgroundMode, setCustomBackgroundMode] = useState<'none' | 'solid' | 'gradient'>('none');
+  const [backgroundColor, setBackgroundColor] = useState('#E8DCCB');
+  const [gradientEndColor, setGradientEndColor] = useState('#8FA7C7');
+  const [gradientAngle, setGradientAngle] = useState(135);
   const [moderation, setModeration] = useState<ImageModeration>('auto');
   const [outputFormat, setOutputFormat] = useState<ImageOutputFormat>('png');
   const [outputCompression, setOutputCompression] = useState(90);
@@ -204,10 +207,16 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
   const selectedDesignImage = selectedImage?.image.source === 'design' ? selectedImage.image.image : null;
   const generationInProgress = generationStarting || activeOperation !== null;
   const generationPlaceholderCount = Number(count);
-  const trimmedBackgroundDescription = backgroundDescription.trim();
-  const backgroundPromptInstruction = trimmedBackgroundDescription
-    ? t('designCustomBackgroundPromptInstruction', { description: trimmedBackgroundDescription })
-    : '';
+  const backgroundPromptInstruction =
+    customBackgroundMode === 'solid'
+      ? t('designSolidBackgroundPromptInstruction', { color: backgroundColor })
+      : customBackgroundMode === 'gradient'
+        ? t('designGradientBackgroundPromptInstruction', {
+            angle: gradientAngle,
+            endColor: gradientEndColor,
+            startColor: backgroundColor,
+          })
+        : '';
   const generationPrompt = backgroundPromptInstruction
     ? `${prompt.trim()}\n\n${backgroundPromptInstruction}`
     : prompt.trim();
@@ -609,7 +618,6 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
 
   const reusePrompt = (value: string) => {
     setPrompt(value);
-    setBackgroundDescription('');
     setSelectedImage(null);
     promptRef.current?.focus();
   };
@@ -1179,31 +1187,76 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
                 {
                   value: 'transparent',
                   label: t('designBackgroundTransparent'),
-                  disabled: trimmedBackgroundDescription.length > 0,
+                  disabled: customBackgroundMode !== 'none',
                 },
               ]}
               value={background}
             />
-            <label className="grid gap-2 text-sm font-medium text-text" htmlFor="design-background-description">
-              {t('designCustomBackground')}
-              <textarea
-                aria-describedby="design-background-description-hint"
-                className="min-h-20 w-full resize-y rounded-control border border-control-border bg-surface px-3 py-2 text-sm font-normal leading-relaxed text-text outline-none placeholder:text-secondary-text focus-visible:ring-2 focus-visible:ring-focus disabled:cursor-not-allowed disabled:opacity-50"
-                disabled={activeOperation !== null || generationStarting}
-                id="design-background-description"
-                maxLength={500}
-                onChange={(event) => {
-                  const value = event.target.value;
-                  setBackgroundDescription(value);
-                  if (value.trim().length > 0 && background !== 'opaque') setBackground('opaque');
-                }}
-                placeholder={t('designCustomBackgroundPlaceholder')}
-                value={backgroundDescription}
-              />
-              <span className="text-xs font-normal text-secondary-text" id="design-background-description-hint">
-                {t('designCustomBackgroundHint')}
-              </span>
-            </label>
+            <Select
+              disabled={activeOperation !== null || generationStarting}
+              label={t('designCustomBackground')}
+              onChange={(event) => {
+                const value = event.target.value;
+                if (value !== 'none' && value !== 'solid' && value !== 'gradient') return;
+                setCustomBackgroundMode(value);
+                if (value !== 'none') {
+                  setBackground('opaque');
+                  if (outputFormat === 'jpeg' && background === 'transparent') setOutputFormat('png');
+                }
+              }}
+              options={[
+                { value: 'none', label: t('designCustomBackgroundNone') },
+                { value: 'solid', label: t('designCustomBackgroundSolid') },
+                { value: 'gradient', label: t('designCustomBackgroundGradient') },
+              ]}
+              value={customBackgroundMode}
+            />
+            {customBackgroundMode === 'solid' ? (
+              <div className="grid gap-2">
+                <ColorPicker
+                  disabled={activeOperation !== null || generationStarting}
+                  label={t('designBackgroundColor')}
+                  onChange={setBackgroundColor}
+                  value={backgroundColor}
+                />
+                <p className="text-xs text-secondary-text">{t('designCustomBackgroundColorHint')}</p>
+              </div>
+            ) : null}
+            {customBackgroundMode === 'gradient' ? (
+              <div className="grid gap-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <ColorPicker
+                    disabled={activeOperation !== null || generationStarting}
+                    label={t('designGradientStartColor')}
+                    onChange={setBackgroundColor}
+                    value={backgroundColor}
+                  />
+                  <ColorPicker
+                    disabled={activeOperation !== null || generationStarting}
+                    label={t('designGradientEndColor')}
+                    onChange={setGradientEndColor}
+                    value={gradientEndColor}
+                  />
+                </div>
+                <label className="grid gap-2 text-sm font-medium text-text" htmlFor="design-gradient-angle">
+                  <span className="flex items-center justify-between gap-3">
+                    {t('designGradientAngle')}
+                    <span className="font-mono text-xs font-normal text-secondary-text">{gradientAngle}°</span>
+                  </span>
+                  <input
+                    className="w-full accent-accent"
+                    disabled={activeOperation !== null || generationStarting}
+                    id="design-gradient-angle"
+                    max={360}
+                    min={0}
+                    onChange={(event) => setGradientAngle(Number(event.target.value))}
+                    type="range"
+                    value={gradientAngle}
+                  />
+                </label>
+                <p className="text-xs text-secondary-text">{t('designCustomBackgroundGradientHint')}</p>
+              </div>
+            ) : null}
             {generationPromptTooLong ? (
               <p className="text-sm text-destructive" role="alert">
                 {t('designPromptCombinedTooLong')}
