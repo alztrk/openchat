@@ -2375,6 +2375,8 @@
   "designQuotaRequestLimited": "ChatGPT isteği kota veya geçici hız sınırı nedeniyle reddetti. Hesap durumunu kontrol edip yeniden deneyin.",
   "designGenerate": "Görsel üret",
   "designGenerationStarting": "Başlatılıyor…",
+  "designGenerationInProgress": "Görsel oluşturuluyor",
+  "designGenerationInProgressHint": "Hazır olduğunda kütüphanenizde görünecek.",
   "designCancelGeneration": "Üretimi iptal et",
   "designCancelFailed": "Üretim iptal edilemedi.",
   "designGenerationComplete": "{count} görsel oluşturuldu.",

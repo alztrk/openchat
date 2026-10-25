@@ -2375,6 +2375,8 @@
   "designQuotaRequestLimited": "ChatGPT hat die Anfrage wegen eines Kontingents oder einer vorübergehenden Ratenbegrenzung abgelehnt. Prüfe den Kontostatus und versuche es erneut.",
   "designGenerate": "Bild erstellen",
   "designGenerationStarting": "Wird gestartet…",
+  "designGenerationInProgress": "Bild wird erstellt",
+  "designGenerationInProgressHint": "Sobald es fertig ist, erscheint es in deiner Bibliothek.",
   "designCancelGeneration": "Generierung abbrechen",
   "designCancelFailed": "Die Generierung konnte nicht abgebrochen werden.",
   "designGenerationComplete": "{count} Bilder erstellt.",

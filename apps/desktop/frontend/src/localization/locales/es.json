@@ -2375,6 +2375,8 @@
   "designQuotaRequestLimited": "ChatGPT rechazó la solicitud por una cuota o un límite temporal de peticiones. Comprueba el estado de la cuenta e inténtalo de nuevo.",
   "designGenerate": "Generar imagen",
   "designGenerationStarting": "Iniciando…",
+  "designGenerationInProgress": "Creando la imagen",
+  "designGenerationInProgressHint": "Aparecerá en tu biblioteca cuando esté lista.",
   "designCancelGeneration": "Cancelar generación",
   "designCancelFailed": "No se pudo cancelar la generación.",
   "designGenerationComplete": "Se crearon {count} imágenes.",

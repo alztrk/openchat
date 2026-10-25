@@ -169,6 +169,7 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
   const activeSizeOptions = supportsFlexibleSize ? [...sizeOptions, customSizeOption] : standardSizeOptions;
   const customResolutionValid = size !== 'custom' || isValidImageSize(customWidth, customHeight);
   const selectedDesignImage = selectedImage?.image.source === 'design' ? selectedImage.image.image : null;
+  const generationInProgress = generationStarting || activeOperation !== null;
 
   const loadTargets = useCallback(async () => {
     setTargetsLoading(true);
@@ -1369,6 +1370,36 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
         ) : null}
 
         <div aria-live="polite" className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-7" ref={galleryScrollRef}>
+          {generationInProgress ? (
+            <section
+              aria-atomic="true"
+              aria-live="polite"
+              className="mb-5 flex min-w-0 items-center gap-3 rounded-control border border-border bg-raised p-3 sm:gap-4 sm:p-4"
+              role="status"
+            >
+              <span
+                aria-hidden="true"
+                className="relative grid size-12 shrink-0 place-items-center overflow-hidden rounded-control border border-border bg-surface text-accent sm:size-14"
+              >
+                <span className="openchat-skeleton absolute inset-0 bg-selected" />
+                <Image className="relative z-10" size={21} />
+                <span className="absolute -right-1 -top-1 z-20 grid size-5 place-items-center rounded-full bg-surface text-accent">
+                  <LoaderCircle className="openchat-ai-ring-spinner size-3.5" />
+                </span>
+                <Sparkles aria-hidden="true" className="absolute bottom-1 right-1 z-10" size={12} />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-semibold text-text">{t('designGenerationInProgress')}</span>
+                <span className="mt-0.5 block text-sm text-secondary-text">{t('designGenerationInProgressHint')}</span>
+              </span>
+              <span
+                aria-hidden="true"
+                className="hidden h-1.5 w-20 shrink-0 overflow-hidden rounded-full bg-selected sm:block"
+              >
+                <span className="block h-full w-1/3 animate-pulse rounded-full bg-accent motion-reduce:animate-none" />
+              </span>
+            </section>
+          ) : null}
           {galleryError !== 'none' ? (
             <div className="mx-auto grid max-w-lg gap-3 py-12 text-center" role="alert">
               <p className="text-sm text-destructive">
@@ -1390,7 +1421,7 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
               {t('designLibraryLoading')}
             </p>
           ) : null}
-          {gallery.length === 0 && !galleryLoading && galleryError === 'none' ? (
+          {gallery.length === 0 && !galleryLoading && galleryError === 'none' && !generationInProgress ? (
             <div className="mx-auto grid max-w-lg justify-items-center gap-3 py-20 text-center">
               <span className="flex size-12 items-center justify-center rounded-full bg-raised text-secondary-icon">
                 <Images aria-hidden="true" size={22} />

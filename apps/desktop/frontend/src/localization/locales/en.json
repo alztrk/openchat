@@ -2375,6 +2375,8 @@
   "designQuotaRequestLimited": "ChatGPT declined the request due to a quota or temporary rate limit. Check the account status and try again.",
   "designGenerate": "Generate image",
   "designGenerationStarting": "Starting…",
+  "designGenerationInProgress": "Creating your image",
+  "designGenerationInProgressHint": "It will appear in your library when it is ready.",
   "designCancelGeneration": "Cancel generation",
   "designCancelFailed": "The generation could not be cancelled.",
   "designGenerationComplete": "Created {count, plural, one {# image} other {# images}}.",
