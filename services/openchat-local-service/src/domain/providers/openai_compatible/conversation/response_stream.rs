@@ -635,38 +635,47 @@ async fn receive_with_client(
                 }
             }
             append_visible_text(&mut request, &mut round_content, &visible_delta).await?;
-            let reasoning = mistral_delta
-                .as_ref()
-                .and_then(|delta| (!delta.reasoning.is_empty()).then_some(delta.reasoning.as_str()))
-                .or_else(|| {
-                    value
-                        .pointer("/choices/0/delta/reasoning_content")
-                        .or_else(|| value.pointer("/choices/0/delta/reasoning"))
-                        .and_then(Value::as_str)
-                });
-            if let Some(reasoning) = reasoning {
-                request.reasoning_content.push_str(reasoning);
-                let summary = ReasoningSummary {
-                    id: format!("reasoning_{}", request.message_id),
-                    content: request.reasoning_content.clone(),
-                    elapsed_microseconds: request.started.elapsed().as_micros() as i64,
-                    is_complete: false,
-                };
-                let _ = request
-                    .events
-                    .send(
-                        &ChatStreamEvent::ReasoningSummariesUpdated {
-                            snapshot: ChatStreamSnapshot::new(
-                                request.conversation_id,
-                                request.message_id,
-                                request.content,
-                                request.created_at,
-                            ),
-                            summaries: vec![summary],
-                        }
-                        .into_rpc(request.request_id.clone()),
-                    )
-                    .await;
+            let is_custom_provider = request
+                .route
+                .provider_id
+                .as_deref()
+                .is_some_and(|provider_id| provider_id.starts_with("custom_"));
+            if !is_custom_provider {
+                let reasoning = mistral_delta
+                    .as_ref()
+                    .and_then(|delta| {
+                        (!delta.reasoning.is_empty()).then_some(delta.reasoning.as_str())
+                    })
+                    .or_else(|| {
+                        value
+                            .pointer("/choices/0/delta/reasoning_content")
+                            .or_else(|| value.pointer("/choices/0/delta/reasoning"))
+                            .and_then(Value::as_str)
+                    });
+                if let Some(reasoning) = reasoning {
+                    request.reasoning_content.push_str(reasoning);
+                    let summary = ReasoningSummary {
+                        id: format!("reasoning_{}", request.message_id),
+                        content: request.reasoning_content.clone(),
+                        elapsed_microseconds: request.started.elapsed().as_micros() as i64,
+                        is_complete: false,
+                    };
+                    let _ = request
+                        .events
+                        .send(
+                            &ChatStreamEvent::ReasoningSummariesUpdated {
+                                snapshot: ChatStreamSnapshot::new(
+                                    request.conversation_id,
+                                    request.message_id,
+                                    request.content,
+                                    request.created_at,
+                                ),
+                                summaries: vec![summary],
+                            }
+                            .into_rpc(request.request_id.clone()),
+                        )
+                        .await;
+                }
             }
             update_chat_completion_usage(&value, request.input_tokens, request.output_tokens);
             update_provider_request_usage(
