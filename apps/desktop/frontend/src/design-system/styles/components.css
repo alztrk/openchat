@@ -12,6 +12,11 @@
   max-height: 48dvh;
 }
 
+.design-control-panel .openchat-button {
+  min-width: 0;
+  max-width: 100%;
+}
+
 .design-library-filter {
   position: relative;
 }
@@ -108,9 +113,14 @@
 
 @media (min-width: 1024px) {
   .design-control-panel {
-    flex-basis: var(--spacing-design-sidebar);
+    flex-basis: var(--design-control-panel-width, var(--spacing-design-sidebar));
     max-height: none;
   }
+}
+
+.design-workspace[data-resizing='true'] {
+  cursor: col-resize;
+  user-select: none;
 }
 
 @media (max-width: 640px) {

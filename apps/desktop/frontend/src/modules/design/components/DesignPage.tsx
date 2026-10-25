@@ -18,12 +18,28 @@ import {
   UserRound,
   WandSparkles,
 } from 'lucide-react';
-import { type ChangeEvent, useCallback, useEffect, useRef, useState } from 'react';
+import {
+  type ChangeEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Button, DatePicker, Dialog, Select } from '@/design-system';
 import type { ConversationAttachmentSummary } from '@/modules/conversations/data/chatStorage';
 import { listConversationAttachments, readMessageAttachment } from '@/modules/conversations/data/chatStorage';
+import {
+  clampDesignPanelWidth,
+  DESIGN_PANEL_DEFAULT_WIDTH,
+  DESIGN_PANEL_MAX_WIDTH,
+  DESIGN_PANEL_MIN_WIDTH,
+  readDesignPanelWidth,
+  writeDesignPanelWidth,
+} from '@/modules/design/data/designPreferences';
 import {
   clearImageLibrary,
   type DesignImageRecord,
@@ -104,6 +120,8 @@ const customSizeOption = { value: 'custom', labelKey: 'designResolutionCustom' }
 
 export function DesignPage({ onOpenSettings }: DesignPageProps) {
   const { t } = useTranslation();
+  const [controlPanelWidth, setControlPanelWidth] = useState(readDesignPanelWidth);
+  const [isResizingControlPanel, setIsResizingControlPanel] = useState(false);
   const [targets, setTargets] = useState<DesignImageTarget[]>([]);
   const [targetsLoading, setTargetsLoading] = useState(true);
   const [targetsError, setTargetsError] = useState<'none' | 'partial' | 'failed'>('none');
@@ -156,6 +174,10 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
   const [galleryError, setGalleryError] = useState<'none' | 'partial' | 'all'>('none');
   const [selectedImage, setSelectedImage] = useState<{ image: GalleryImage; src: string } | null>(null);
   const promptRef = useRef<HTMLTextAreaElement>(null);
+  const controlPanelRef = useRef<HTMLElement>(null);
+  const controlPanelResizerRef = useRef<HTMLDivElement>(null);
+  const controlPanelWidthRef = useRef(controlPanelWidth);
+  const controlPanelResizeStartRef = useRef<{ pointerX: number; width: number } | null>(null);
   const galleryScrollRef = useRef<HTMLDivElement>(null);
   const activeOperationRef = useRef<DesignServiceOperation | null>(null);
   const galleryRequestRef = useRef(0);
@@ -390,6 +412,41 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
     };
   }, []);
 
+  useEffect(() => {
+    controlPanelRef.current?.style.setProperty('--design-control-panel-width', `${controlPanelWidth}px`);
+  }, [controlPanelWidth]);
+
+  useEffect(() => {
+    if (!isResizingControlPanel) return;
+    const handlePointerMove = (event: PointerEvent) => {
+      const start = controlPanelResizeStartRef.current;
+      if (!start) return;
+      const width = clampDesignPanelWidth(start.width + event.clientX - start.pointerX);
+      controlPanelWidthRef.current = width;
+      controlPanelRef.current?.style.setProperty('--design-control-panel-width', `${width}px`);
+      controlPanelResizerRef.current?.setAttribute('aria-valuenow', String(width));
+    };
+    const finishResize = () => {
+      const width = controlPanelWidthRef.current;
+      setControlPanelWidth(width);
+      writeDesignPanelWidth(width);
+      controlPanelResizeStartRef.current = null;
+      setIsResizingControlPanel(false);
+    };
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', finishResize);
+    window.addEventListener('pointercancel', finishResize);
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', finishResize);
+      window.removeEventListener('pointercancel', finishResize);
+      if (controlPanelResizeStartRef.current !== null) {
+        writeDesignPanelWidth(controlPanelWidthRef.current);
+        controlPanelResizeStartRef.current = null;
+      }
+    };
+  }, [isResizingControlPanel]);
+
   const updateTarget = (event: { target: { value: string } }) => {
     const nextTarget = targets.find((target) => target.key === event.target.value) ?? null;
     setTargetKey(event.target.value);
@@ -401,6 +458,34 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
       setModeration('auto');
       setQuality((current) => (current === 'xhigh' || current === 'max' ? 'auto' : current));
     }
+  };
+
+  const updateControlPanelWidth = (width: number) => {
+    const nextWidth = clampDesignPanelWidth(width);
+    controlPanelWidthRef.current = nextWidth;
+    setControlPanelWidth(nextWidth);
+    writeDesignPanelWidth(nextWidth);
+  };
+
+  const handleControlPanelResizePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    controlPanelResizeStartRef.current = {
+      pointerX: event.clientX,
+      width: controlPanelWidthRef.current,
+    };
+    setIsResizingControlPanel(true);
+  };
+
+  const handleControlPanelResizeKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    let nextWidth: number | null = null;
+    if (event.key === 'ArrowLeft') nextWidth = controlPanelWidthRef.current - 12;
+    if (event.key === 'ArrowRight') nextWidth = controlPanelWidthRef.current + 12;
+    if (event.key === 'Home') nextWidth = DESIGN_PANEL_MIN_WIDTH;
+    if (event.key === 'End') nextWidth = DESIGN_PANEL_MAX_WIDTH;
+    if (nextWidth === null) return;
+    event.preventDefault();
+    updateControlPanelWidth(nextWidth);
   };
 
   const updateProvider = (event: { target: { value: string } }) => {
@@ -781,10 +866,15 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
   ].filter(Boolean).length;
 
   return (
-    <div className="design-workspace flex h-full min-h-0 min-w-0 flex-col overflow-hidden lg:flex-row">
+    <div
+      className="design-workspace flex h-full min-h-0 min-w-0 flex-col overflow-hidden lg:flex-row"
+      data-resizing={isResizingControlPanel ? 'true' : undefined}
+    >
       <aside
         aria-label={t('designSettings')}
-        className="design-control-panel flex min-h-0 shrink-0 flex-col gap-5 overflow-y-auto border-b border-border bg-navigation px-4 py-4 lg:border-b-0 lg:border-r lg:px-5 lg:py-6"
+        className="design-control-panel relative flex min-h-0 shrink-0 flex-col gap-5 overflow-y-auto border-b border-border bg-navigation px-4 py-4 lg:border-b-0 lg:border-r lg:px-5 lg:py-6"
+        data-resizing={isResizingControlPanel ? 'true' : undefined}
+        ref={controlPanelRef}
       >
         <div className="flex items-center gap-3">
           <span className="flex size-10 shrink-0 items-center justify-center rounded-control bg-selected text-accent">
@@ -806,9 +896,9 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
             <p className="text-sm text-destructive">
               {t(targetsError === 'partial' ? 'designConnectionsPartialFailed' : 'designConnectionsFailed')}
             </p>
-            <Button onClick={() => void loadTargets()} size="small" variant="secondary">
+            <Button className="w-full min-w-0" onClick={() => void loadTargets()} size="small" variant="secondary">
               <RefreshCw aria-hidden="true" size={15} />
-              {t('retry')}
+              <span className="min-w-0 truncate">{t('retry')}</span>
             </Button>
           </div>
         ) : null}
@@ -883,12 +973,13 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
                     </button>
                     <Button
                       aria-label={t('designDeleteTemplate', { name: template.name })}
+                      className="min-w-0"
                       disabled={libraryActionBusy}
                       onClick={() => void deleteTemplate(template.id)}
                       size="small"
                       variant="ghost"
                     >
-                      {t('designDeleteAction')}
+                      <span className="min-w-0 truncate">{t('designDeleteAction')}</span>
                     </Button>
                   </div>
                 ))}
@@ -907,12 +998,13 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
                 />
               </label>
               <Button
+                className="w-full min-w-0"
                 disabled={libraryActionBusy || !templateName.trim() || !prompt.trim()}
                 onClick={() => void saveCurrentTemplate()}
                 size="small"
                 variant="secondary"
               >
-                {t('designSaveTemplate')}
+                <span className="min-w-0 truncate">{t('designSaveTemplate')}</span>
               </Button>
             </section>
 
@@ -935,12 +1027,13 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
                 />
               </label>
               <Button
+                className="w-full min-w-0"
                 disabled={libraryActionBusy || !collectionName.trim()}
                 onClick={() => void createCollection()}
                 size="small"
                 variant="secondary"
               >
-                {t('designCreateCollection')}
+                <span className="min-w-0 truncate">{t('designCreateCollection')}</span>
               </Button>
               {collections.length > 0 ? (
                 <>
@@ -951,12 +1044,13 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
                     value={selectedCollection}
                   />
                   <Button
+                    className="w-full min-w-0"
                     disabled={libraryActionBusy}
                     onClick={() => void deleteSelectedCollection()}
                     size="small"
                     variant="ghost"
                   >
-                    {t('designDeleteCollection')}
+                    <span className="min-w-0 truncate">{t('designDeleteCollection')}</span>
                   </Button>
                 </>
               ) : null}
@@ -1132,12 +1226,12 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
             ) : null}
             <div className="mt-auto grid gap-2 pt-2">
               {activeOperation ? (
-                <Button className="w-full" onClick={() => void handleCancel()} variant="secondary">
-                  {t('designCancelGeneration')}
+                <Button className="w-full min-w-0" onClick={() => void handleCancel()} variant="secondary">
+                  <span className="min-w-0 truncate">{t('designCancelGeneration')}</span>
                 </Button>
               ) : (
                 <Button
-                  className="w-full"
+                  className="w-full min-w-0"
                   disabled={!canGenerate}
                   onClick={() => void handleGenerate()}
                   variant="primary"
@@ -1147,7 +1241,9 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
                   ) : (
                     <Sparkles aria-hidden="true" size={17} />
                   )}
-                  {generationStarting ? t('designGenerationStarting') : t('designGenerate')}
+                  <span className="min-w-0 truncate">
+                    {generationStarting ? t('designGenerationStarting') : t('designGenerate')}
+                  </span>
                 </Button>
               )}
             </div>
@@ -1155,12 +1251,36 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
         ) : !targetsLoading && targetsError === 'none' ? (
           <div className="grid gap-3 rounded-control border border-border bg-raised p-4">
             <p className="text-sm text-secondary-text">{t('designNoProvider')}</p>
-            <Button onClick={onOpenSettings} variant="secondary">
+            <Button className="w-full min-w-0" onClick={onOpenSettings} variant="secondary">
               <Settings2 aria-hidden="true" size={16} />
-              {t('designOpenSettings')}
+              <span className="min-w-0 truncate">{t('designOpenSettings')}</span>
             </Button>
           </div>
         ) : null}
+        {/* biome-ignore lint/a11y/useSemanticElements: Custom interactive resize separator for the design settings panel. */}
+        <div
+          aria-label={t('resizeSidebar')}
+          aria-orientation="vertical"
+          aria-valuemax={DESIGN_PANEL_MAX_WIDTH}
+          aria-valuemin={DESIGN_PANEL_MIN_WIDTH}
+          aria-valuenow={controlPanelWidth}
+          className={`group/design-resizer absolute inset-y-0 right-0 z-20 hidden w-1.5 cursor-col-resize select-none focus-visible:outline-none lg:block`}
+          onDoubleClick={() => updateControlPanelWidth(DESIGN_PANEL_DEFAULT_WIDTH)}
+          onKeyDown={handleControlPanelResizeKeyDown}
+          onPointerDown={handleControlPanelResizePointerDown}
+          ref={controlPanelResizerRef}
+          role="separator"
+          tabIndex={0}
+          title={t('resizeSidebar')}
+        >
+          <span
+            className={`pointer-events-none absolute inset-y-0 right-0 w-0.5 transition-colors duration-quick ${
+              isResizingControlPanel
+                ? 'bg-accent'
+                : 'bg-transparent group-hover/design-resizer:bg-accent/50 group-focus-visible/design-resizer:bg-accent'
+            }`}
+          />
+        </div>
       </aside>
 
       <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background">
@@ -1895,8 +2015,7 @@ function isGalleryProviderFilter(value: string): value is 'all' | 'oauth' | 'api
 function imageGenerationAccountLabel(target: DesignImageTarget, t: TFunction): string {
   const accountLabel =
     target.accountLabel ?? t(target.kind === 'api_key' ? 'designAccountApiKey' : 'designAccountDefault');
-  const workspaceLabel =
-    target.workspaceId === null ? null : (target.workspaceLabel ?? t('designWorkspaceDefault'));
+  const workspaceLabel = target.workspaceId === null ? null : (target.workspaceLabel ?? t('designWorkspaceDefault'));
   return workspaceLabel ? `${accountLabel} · ${workspaceLabel}` : accountLabel;
 }
 
