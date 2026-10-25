@@ -1370,41 +1370,21 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
         ) : null}
 
         <div aria-live="polite" className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-7" ref={galleryScrollRef}>
-          {generationInProgress ? (
-            <section
-              aria-atomic="true"
-              aria-live="polite"
-              className="mb-5 flex min-w-0 items-center gap-3 rounded-control border border-border bg-raised p-3 sm:gap-4 sm:p-4"
+          {galleryError !== 'none' && gallery.length > 0 ? (
+            <div
+              className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-control border border-border bg-raised px-3 py-2"
               role="status"
             >
-              <span
-                aria-hidden="true"
-                className="relative grid size-12 shrink-0 place-items-center overflow-hidden rounded-control border border-border bg-surface text-accent sm:size-14"
-              >
-                <span className="openchat-skeleton absolute inset-0 bg-selected" />
-                <Image className="relative z-10" size={21} />
-                <span className="absolute -right-1 -top-1 z-20 grid size-5 place-items-center rounded-full bg-surface text-accent">
-                  <LoaderCircle className="openchat-ai-ring-spinner size-3.5" />
-                </span>
-                <Sparkles aria-hidden="true" className="absolute bottom-1 right-1 z-10" size={12} />
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="block text-sm font-semibold text-text">{t('designGenerationInProgress')}</span>
-                <span className="mt-0.5 block text-sm text-secondary-text">{t('designGenerationInProgressHint')}</span>
-              </span>
-              <span
-                aria-hidden="true"
-                className="hidden h-1.5 w-20 shrink-0 overflow-hidden rounded-full bg-selected sm:block"
-              >
-                <span className="block h-full w-1/3 animate-pulse rounded-full bg-accent motion-reduce:animate-none" />
-              </span>
-            </section>
+              <p className="text-sm text-secondary-text">{t('designLibraryPartialFailed')}</p>
+              <Button onClick={() => void loadGalleryPage({ design: 0, chat: 0 }, false)} size="small" variant="ghost">
+                <RefreshCw aria-hidden="true" size={14} />
+                {t('retry')}
+              </Button>
+            </div>
           ) : null}
-          {galleryError !== 'none' ? (
+          {galleryError !== 'none' && gallery.length === 0 ? (
             <div className="mx-auto grid max-w-lg gap-3 py-12 text-center" role="alert">
-              <p className="text-sm text-destructive">
-                {t(galleryError === 'all' ? 'designLibraryFailed' : 'designLibraryPartialFailed')}
-              </p>
+              <p className="text-sm text-destructive">{t('designLibraryFailed')}</p>
               <Button
                 className="justify-self-center"
                 onClick={() => void loadGalleryPage({ design: 0, chat: 0 }, false)}
@@ -1415,7 +1395,7 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
               </Button>
             </div>
           ) : null}
-          {gallery.length === 0 && galleryLoading ? (
+          {gallery.length === 0 && galleryLoading && !generationInProgress ? (
             <p className="flex items-center justify-center gap-2 py-20 text-sm text-secondary-text" role="status">
               <LoaderCircle aria-hidden="true" className="animate-spin" size={17} />
               {t('designLibraryLoading')}
@@ -1433,9 +1413,28 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
             </div>
           ) : null}
 
-          {gallery.length > 0 ? (
+          {gallery.length > 0 || generationInProgress ? (
             <>
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
+                {generationInProgress ? (
+                  <div
+                    aria-label={t('designGenerationInProgress')}
+                    className="design-image-tile relative grid aspect-square min-w-0 place-items-center overflow-hidden rounded-control border border-border bg-raised"
+                    role="status"
+                  >
+                    <span className="openchat-skeleton absolute inset-0 bg-selected" />
+                    <span aria-hidden="true" className="relative z-10 grid justify-items-center gap-3 text-accent">
+                      <LoaderCircle className="openchat-ai-ring-spinner" size={28} />
+                      <span className="text-sm font-medium">{t('designGenerationInProgress')}</span>
+                    </span>
+                    <span
+                      aria-hidden="true"
+                      className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 to-transparent px-3 pb-2 pt-8 text-xs font-medium text-white"
+                    >
+                      {t('designGenerationInProgressHint')}
+                    </span>
+                  </div>
+                ) : null}
                 {gallery.map((entry) => (
                   <ImageTile
                     entry={entry}
