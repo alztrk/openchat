@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button, Card, Input, SegmentedControl, Select } from '@/design-system';
+import { Button, Card, DatePicker, SegmentedControl, Select } from '@/design-system';
 import { localServiceClient } from '@/platform/local-service';
 import { BreakdownCard, MetricCard, TrendChart } from './StatisticsCharts';
 import type { LoadState, StatisticsRequest, StatisticsSnapshot } from './statisticsData';
@@ -193,23 +193,19 @@ export function StatisticsSettingsSection({ onOpenConversation }: StatisticsSett
             <div className="openchat-dropdown-surface statistics-filter-popover absolute right-0 top-full z-20 mt-2 grid w-statistics-filter gap-4 p-4">
               <fieldset className="grid gap-3 sm:grid-cols-2">
                 <legend className="text-sm font-semibold">{t('statisticsDateRange')}</legend>
-                <Input
-                  aria-label={t('statisticsDateFrom')}
+                <DatePicker
                   disabled={isExporting}
                   label={t('statisticsDateFrom')}
                   max={toDate}
-                  onChange={(event) => setFromDate(event.target.value)}
-                  type="date"
+                  onChange={setFromDate}
                   value={fromDate}
                 />
-                <Input
-                  aria-label={t('statisticsDateTo')}
+                <DatePicker
                   disabled={isExporting}
                   label={t('statisticsDateTo')}
                   max={today}
                   min={fromDate}
-                  onChange={(event) => setToDate(event.target.value)}
-                  type="date"
+                  onChange={setToDate}
                   value={toDate}
                 />
               </fieldset>

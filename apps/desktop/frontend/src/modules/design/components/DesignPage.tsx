@@ -3,7 +3,7 @@ import { ArrowDownToLine, Images, LoaderCircle, RefreshCw, Settings2, Sparkles, 
 import { type ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button, Dialog, Select } from '@/design-system';
+import { Button, DatePicker, Dialog, Select } from '@/design-system';
 import type { ConversationAttachmentSummary } from '@/modules/conversations/data/chatStorage';
 import { listConversationAttachments, readMessageAttachment } from '@/modules/conversations/data/chatStorage';
 import {
@@ -1191,26 +1191,8 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
               />
               {t('designFavoritesOnly')}
             </label>
-            <label className="grid gap-1 text-xs font-medium text-secondary-text" htmlFor="design-date-from">
-              {t('designDateFrom')}
-              <input
-                className="min-h-10 rounded-control border border-control-border bg-surface px-3 text-sm text-text outline-none focus-visible:ring-2 focus-visible:ring-focus"
-                id="design-date-from"
-                onChange={(event) => setDateFrom(event.target.value)}
-                type="date"
-                value={dateFrom}
-              />
-            </label>
-            <label className="grid gap-1 text-xs font-medium text-secondary-text" htmlFor="design-date-to">
-              {t('designDateTo')}
-              <input
-                className="min-h-10 rounded-control border border-control-border bg-surface px-3 text-sm text-text outline-none focus-visible:ring-2 focus-visible:ring-focus"
-                id="design-date-to"
-                onChange={(event) => setDateTo(event.target.value)}
-                type="date"
-                value={dateTo}
-              />
-            </label>
+            <DatePicker label={t('designDateFrom')} onChange={setDateFrom} value={dateFrom} />
+            <DatePicker label={t('designDateTo')} onChange={setDateTo} value={dateTo} />
             <Button
               className="self-end"
               onClick={() => {
