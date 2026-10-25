@@ -62,8 +62,13 @@ export function MessageItem({
   const isUser = message.role === 'user';
   const personalMemoryFactIds = parsePersonalMemoryFactIds(message.personalMemoryFactIds) ?? [];
   const citationSources = isUser ? [] : parseCitationSources(message.citationSources);
-  const showReasoningSummaries = message.providerId === 'chatgpt' || message.providerId === 'chatgpt_api';
-  const reasoningSummaries = isUser || !showReasoningSummaries ? [] : parseReasoningSummaries(message.reasoningSummaries);
+  const parsedReasoningSummaries = isUser ? [] : parseReasoningSummaries(message.reasoningSummaries);
+  const reasoningSummaries =
+    message.providerId?.startsWith('custom_') === true
+      ? parsedReasoningSummaries.filter((summary) => summary.id === `reasoning_${message.id}`)
+      : message.providerId === 'chatgpt' || message.providerId === 'chatgpt_api'
+        ? parsedReasoningSummaries
+        : [];
   const toolActivities = isUser ? [] : parseToolActivities(message.toolActivities);
   const canRetry = !isUser && onRetryMessage !== undefined && message.status !== 'streaming';
   const hasResponseVersions =

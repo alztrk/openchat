@@ -1,8 +1,8 @@
 import { unifiedStorage } from '@/platform/storage/unifiedStorage';
 
 const sharedInstructionsStorageKey = 'chat.shared_instructions';
-export const maximumSharedInstructionsCharacters = 4096;
-export const maximumCustomInstructionsBytes = 16 * 1024;
+export const maximumSharedInstructionsCharacters = 20_000;
+export const maximumCustomInstructionsBytes = 80 * 1024;
 
 export class SharedInstructionsStorageError extends Error {
   constructor(readonly code: 'too_many_characters' | 'too_many_bytes') {

@@ -455,7 +455,7 @@
   "sharedInstructionsSaveFailed": "Gemeinsame Anweisungen konnten nicht gespeichert werden.",
   "sharedInstructionsSaved": "Gemeinsame Anweisungen gespeichert.",
   "sharedInstructionsLoading": "Gemeinsame Anweisungen werden geladen …",
-  "sharedInstructionsTooLong": "Gemeinsame Anweisungen dürfen höchstens 4096 Zeichen enthalten.",
+  "sharedInstructionsTooLong": "Gemeinsame Anweisungen dürfen höchstens 20.000 Zeichen enthalten.",
   "sharedInstructionsTooLongBytes": "Die gemeinsamen Anweisungen sind zu groß, um sie mit einer Chat-Anfrage zu senden.",
   "chatGptProvider": "ChatGPT",
   "openCodeProvider": "OpenCode",

@@ -455,7 +455,7 @@
   "sharedInstructionsSaveFailed": "Ortak talimatlar kaydedilemedi.",
   "sharedInstructionsSaved": "Ortak talimatlar kaydedildi.",
   "sharedInstructionsLoading": "Ortak talimatlar yükleniyor...",
-  "sharedInstructionsTooLong": "Ortak talimatlar 4096 karakteri aşamaz.",
+  "sharedInstructionsTooLong": "Ortak talimatlar 20.000 karakteri aşamaz.",
   "sharedInstructionsTooLongBytes": "Ortak talimatlar sohbet isteğiyle gönderilemeyecek kadar büyük.",
   "chatGptProvider": "ChatGPT",
   "openCodeProvider": "OpenCode",

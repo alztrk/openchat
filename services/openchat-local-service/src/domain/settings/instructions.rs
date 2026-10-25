@@ -8,7 +8,8 @@ use std::sync::LazyLock;
 
 use crate::tools::ToolPermissionMode;
 
-pub const MAX_CUSTOM_INSTRUCTIONS_BYTES: usize = 16 * 1024;
+pub const MAX_CUSTOM_INSTRUCTIONS_CHARACTERS: usize = 20_000;
+pub const MAX_CUSTOM_INSTRUCTIONS_BYTES: usize = 80 * 1024;
 
 const BASE_INSTRUCTIONS: &str = r#"You are the assistant in OpenChat. Understand what the user is trying to accomplish and answer their latest request accurately, in the language they used unless they ask for another language. Adapt your tone, detail, and format to the request and the user's apparent familiarity with the subject. Be clear and useful without adding unrelated background or repeating the question. Organize longer answers with headings, steps, or examples when that makes them easier to follow; keep simple answers brief. Explain unfamiliar terms when useful.
 
@@ -233,8 +234,13 @@ pub fn shared_instructions(input: SharedInstructionInput<'_>) -> String {
 }
 
 pub fn validate_custom_instructions(value: Option<&str>) -> Result<(), &'static str> {
+    if value.is_some_and(|instructions| {
+        instructions.encode_utf16().count() > MAX_CUSTOM_INSTRUCTIONS_CHARACTERS
+    }) {
+        return Err("Shared instructions exceed the 20,000 character limit.");
+    }
     if value.is_some_and(|instructions| instructions.len() > MAX_CUSTOM_INSTRUCTIONS_BYTES) {
-        return Err("Shared instructions exceed the 16 KiB limit.");
+        return Err("Shared instructions exceed the 80 KiB limit.");
     }
     Ok(())
 }

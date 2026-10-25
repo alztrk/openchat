@@ -1105,7 +1105,7 @@ mod tests {
             method: "chat.send".to_owned(),
             params: json!({
                 "conversationId": "conversation",
-                "customInstructions": "x".repeat(16 * 1024 + 1),
+                "customInstructions": "x".repeat(20_001),
             }),
         };
         let (_cancel_sender, cancellation) = watch::channel(false);

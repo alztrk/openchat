@@ -61,6 +61,18 @@ async fn append_visible_text(
         .map_err(|_| protocol_error())
 }
 
+async fn append_think_output(
+    request: &mut ResponseStreamRequest<'_>,
+    round_content: &mut String,
+    output: super::think_tag_filter::ThinkTagOutput,
+) -> Result<(), ServiceError> {
+    append_visible_text(request, round_content, &output.visible).await?;
+    if !output.reasoning.is_empty() {
+        append_legacy_reasoning(request, &output.reasoning).await?;
+    }
+    Ok(())
+}
+
 async fn send_reasoning_summaries(
     request: &ResponseStreamRequest<'_>,
     summaries: Vec<ReasoningSummary>,
@@ -450,8 +462,8 @@ async fn receive_with_client(
                                     .and_then(|delta| delta.get("text"))
                                     .and_then(Value::as_str)
                                 {
-                                    let text = think_filter.push(text);
-                                    append_visible_text(&mut request, &mut round_content, &text)
+                                    let output = think_filter.push(text);
+                                    append_think_output(&mut request, &mut round_content, output)
                                         .await?;
                                 }
                             }
@@ -540,11 +552,18 @@ async fn receive_with_client(
                 }
                 match handle_responses_api_event(&value, &mut tool_calls)? {
                     ResponsesStreamEffect::TextDelta(text) => {
-                        let text = think_filter.push(&text);
-                        append_visible_text(&mut request, &mut round_content, &text).await?;
+                        let output = think_filter.push(&text);
+                        append_think_output(&mut request, &mut round_content, output).await?;
                     }
                     ResponsesStreamEffect::ReasoningDelta(reasoning) => {
-                        if request.route.provider_id.as_deref() != Some("chatgpt_api") {
+                        let is_custom_provider = request
+                            .route
+                            .provider_id
+                            .as_deref()
+                            .is_some_and(|provider_id| provider_id.starts_with("custom_"));
+                        if request.route.provider_id.as_deref() != Some("chatgpt_api")
+                            && !is_custom_provider
+                        {
                             append_legacy_reasoning(&mut request, &reasoning).await?;
                         }
                     }
@@ -623,7 +642,11 @@ async fn receive_with_client(
                         .flatten()
                         .and_then(Value::as_str)
                 });
-            let mut visible_delta = think_filter.push(text.unwrap_or_default());
+            let output = think_filter.push(text.unwrap_or_default());
+            let mut visible_delta = output.visible;
+            if !output.reasoning.is_empty() {
+                append_legacy_reasoning(&mut request, &output.reasoning).await?;
+            }
             if let Some(delta) = mistral_delta.as_ref() {
                 for reference_id in &delta.reference_ids {
                     let Some(source_id) = mistral_reference_sources.get(*reference_id) else {
@@ -692,8 +715,8 @@ async fn receive_with_client(
         }
     }
 
-    let trailing_text = think_filter.finish();
-    append_visible_text(&mut request, &mut round_content, &trailing_text).await?;
+    let trailing_output = think_filter.finish();
+    append_think_output(&mut request, &mut round_content, trailing_output).await?;
 
     if !request.reasoning_content.is_empty() {
         let summary = ReasoningSummary {

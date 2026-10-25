@@ -455,7 +455,7 @@
   "sharedInstructionsSaveFailed": "Shared instructions could not be saved.",
   "sharedInstructionsSaved": "Shared instructions saved.",
   "sharedInstructionsLoading": "Loading shared instructions...",
-  "sharedInstructionsTooLong": "Shared instructions cannot exceed 4096 characters.",
+  "sharedInstructionsTooLong": "Shared instructions cannot exceed 20,000 characters.",
   "sharedInstructionsTooLongBytes": "Shared instructions are too large to send with a chat request.",
   "chatGptProvider": "ChatGPT",
   "openCodeProvider": "OpenCode",
