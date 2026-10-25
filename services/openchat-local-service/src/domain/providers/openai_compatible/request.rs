@@ -260,10 +260,12 @@ pub(super) fn chat_completion_body(
         // unparsed thinking stream from entering the user-facing content field.
         body["chat_template_kwargs"] = json!({"enable_thinking": false});
     }
-    if matches!(
-        provider_id,
-        "chatgpt_api" | "opencode" | "gemini" | "groq" | "mistral" | "openrouter"
-    ) {
+    if provider_id.starts_with("custom_")
+        || matches!(
+            provider_id,
+            "chatgpt_api" | "opencode" | "gemini" | "groq" | "mistral" | "openrouter"
+        )
+    {
         body["stream_options"] = json!({"include_usage": true});
     }
     if provider_id == "openrouter" {
