@@ -54,7 +54,7 @@ import {
   readSidebarSortMode,
   readSidebarViewMode,
   readSidebarWidth,
-  readTrashedConversations,
+  readLegacyHiddenConversationIds,
   SIDEBAR_DEFAULT_WIDTH,
   SIDEBAR_MAX_WIDTH,
   SIDEBAR_MIN_WIDTH,
@@ -68,7 +68,6 @@ import {
   writeSidebarSortMode,
   writeSidebarViewMode,
   writeSidebarWidth,
-  writeTrashedConversations,
 } from '@/modules/conversations/data/sidebarPreferences';
 import { useConversationSidebarActions } from '@/modules/conversations/hooks/useConversationSidebarActions';
 import { useChatStore } from '@/modules/conversations/stores/chatStore';
@@ -180,7 +179,7 @@ export function ConversationSidebar({
   const [newFolderName, setNewFolderName] = useState('');
   const [editingFolderId, setEditingFolderId] = useState<string | null>(null);
   const [editingFolderName, setEditingFolderName] = useState('');
-  const [trashedMap, setTrashedMap] = useState<Record<string, number>>(readTrashedConversations);
+  const [legacyHiddenConversationIds] = useState(readLegacyHiddenConversationIds);
   const [isChatsDropTarget, setIsChatsDropTarget] = useState(false);
   const [visibleChatLimit, setVisibleChatLimit] = useState(SIDEBAR_PAGE_SIZE);
 
@@ -215,7 +214,6 @@ export function ConversationSidebar({
     exportConversation,
     feedback,
     isBusy,
-    isConversationBusy,
     moveConversation,
     saveTitle,
     showFeedback,
@@ -224,8 +222,7 @@ export function ConversationSidebar({
 
   const isConversationAiWorking = useCallback(
     (conversationId: string) =>
-      sendingConversationId === conversationId ||
-      compactingConversationId === conversationId,
+      sendingConversationId === conversationId || compactingConversationId === conversationId,
     [compactingConversationId, sendingConversationId],
   );
 
@@ -262,26 +259,18 @@ export function ConversationSidebar({
     return map;
   }, [customFolders]);
 
-  const nonTrashedConversations = useMemo(
-    () => conversations.filter((conversation) => trashedMap[conversation.id] === undefined),
-    [conversations, trashedMap],
-  );
-
-  const trashedConversations = useMemo(
-    () =>
-      conversations
-        .filter((conversation) => trashedMap[conversation.id] !== undefined)
-        .sort((a, b) => (trashedMap[b.id] ?? 0) - (trashedMap[a.id] ?? 0)),
-    [conversations, trashedMap],
+  const visibleConversations = useMemo(
+    () => conversations.filter((conversation) => !legacyHiddenConversationIds.has(conversation.id)),
+    [conversations, legacyHiddenConversationIds],
   );
 
   const activeConversations = useMemo(
-    () => nonTrashedConversations.filter((conversation) => !conversation.isArchived),
-    [nonTrashedConversations],
+    () => visibleConversations.filter((conversation) => !conversation.isArchived),
+    [visibleConversations],
   );
   const archivedConversations = useMemo(
-    () => nonTrashedConversations.filter((conversation) => conversation.isArchived),
-    [nonTrashedConversations],
+    () => visibleConversations.filter((conversation) => conversation.isArchived),
+    [visibleConversations],
   );
   const pinnedConversations = useMemo(
     () =>
@@ -329,37 +318,9 @@ export function ConversationSidebar({
     [sortMode, visibleChats],
   );
 
-  const handleMoveToTrash = (conversation: ChatConversation) => {
-    if (isConversationBusy(conversation.id)) {
-      showFeedback('stopResponseBeforeDelete');
-      return;
-    }
-    const nextTrash = { ...trashedMap, [conversation.id]: Date.now() };
-    setTrashedMap(nextTrash);
-    writeTrashedConversations(nextTrash);
-    if (activeConversationId === conversation.id) {
-      startNewChat();
-    }
-    showFeedback('conversationMovedToTrash', true);
-  };
-
-  const handleRestoreFromTrash = (conversation: ChatConversation) => {
-    const nextTrash = { ...trashedMap };
-    delete nextTrash[conversation.id];
-    setTrashedMap(nextTrash);
-    writeTrashedConversations(nextTrash);
-    showFeedback('conversationRestoredFromTrash', true);
-  };
-
   const confirmPermanentDelete = async () => {
     if (!deleteTarget) return;
     if (await deleteConversation(deleteTarget)) {
-      if (trashedMap[deleteTarget.id] !== undefined) {
-        const nextTrash = { ...trashedMap };
-        delete nextTrash[deleteTarget.id];
-        setTrashedMap(nextTrash);
-        writeTrashedConversations(nextTrash);
-      }
       setDeleteTarget(null);
     }
   };
@@ -624,7 +585,6 @@ export function ConversationSidebar({
     rows: readonly ChatConversation[],
     options: {
       archived: boolean;
-      trashed?: boolean;
       currentProjectId: string | null;
       currentFolderId?: string | null;
       allowMove: boolean;
@@ -643,7 +603,7 @@ export function ConversationSidebar({
         isAiWorking={isConversationAiWorking(conversation.id)}
         key={conversation.id}
         onArchive={() => void archiveConversation(conversation)}
-        onDelete={() => (options.trashed ? setDeleteTarget(conversation) : handleMoveToTrash(conversation))}
+        onDelete={() => setDeleteTarget(conversation)}
         onDuplicate={() => handleDuplicateConversation(conversation)}
         onExport={(format) => void exportConversation(conversation, format)}
         onInlineRename={(title) => saveTitle(conversation.id, title)}
@@ -658,11 +618,9 @@ export function ConversationSidebar({
         }}
         onRename={() => setEditTarget({ conversation, mode: 'rename' })}
         onReorderConversation={handleReorderConversation}
-        onRestoreFromTrash={options.trashed ? () => handleRestoreFromTrash(conversation) : undefined}
         onSelect={() => requestSelectConversation(conversation.id)}
         onTogglePinned={() => void togglePinned(conversation)}
         projects={projects}
-        trashed={options.trashed}
         viewMode={viewMode}
       />
     ));
@@ -751,8 +709,6 @@ export function ConversationSidebar({
   const showChats = (sectionFilter === 'all' || sectionFilter === 'chats') && sectionIsVisible(visibleChats, true);
   const showArchived =
     (sectionFilter === 'all' || sectionFilter === 'chats') && sectionIsVisible(visibleArchived, false);
-  const showTrash =
-    (sectionFilter === 'all' || sectionFilter === 'chats') && sectionIsVisible(trashedConversations, false);
 
   return (
     <>
@@ -1014,7 +970,7 @@ export function ConversationSidebar({
                         onCloseMobile?.();
                       })
                     }
-                    onDelete={(conversation) => handleMoveToTrash(conversation)}
+                    onDelete={(conversation) => setDeleteTarget(conversation)}
                     onDropConversationToProject={dropConversationToProject}
                     onDuplicate={handleDuplicateConversation}
                     onExport={(conversation, format) => void exportConversation(conversation, format)}
@@ -1309,22 +1265,6 @@ export function ConversationSidebar({
                   >
                     {renderRows(visibleArchived, {
                       archived: true,
-                      currentProjectId: null,
-                      allowMove: false,
-                    })}
-                  </ConversationSidebarSection>
-                ) : null}
-
-                {showTrash ? (
-                  <ConversationSidebarSection
-                    collapsed={collapsedSections.has('trash')}
-                    icon={Trash2}
-                    onToggle={() => toggleSection('trash')}
-                    title={t('recentlyDeletedChats')}
-                  >
-                    {renderRows(trashedConversations, {
-                      archived: false,
-                      trashed: true,
                       currentProjectId: null,
                       allowMove: false,
                     })}

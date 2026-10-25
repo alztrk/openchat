@@ -143,11 +143,6 @@ export function useConversationSidebarActions() {
         showFeedback(historyUnavailable ? 'chatHistoryUnavailable' : 'conversationDeleteFailed');
         return false;
       }
-      try {
-        await localServiceClient.call('chat.file_changes.delete', { conversationId: conversation.id });
-      } catch {
-        cleanupFailed = true;
-      }
       let historyUnavailable = false;
       try {
         await refreshConversations();
@@ -162,6 +157,13 @@ export function useConversationSidebarActions() {
             : 'conversationDeleted',
         !historyUnavailable && !cleanupFailed,
       );
+      void localServiceClient.call('chat.file_changes.delete', { conversationId: conversation.id }).catch(() => {
+        setFeedback((current) =>
+          current?.key === 'conversationDeleted'
+            ? { key: 'conversationDeletedFileChangesCleanupFailed', success: false }
+            : current,
+        );
+      });
       return true;
     } finally {
       endAction();

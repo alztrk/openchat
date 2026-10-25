@@ -1,7 +1,7 @@
 import { unifiedStorage } from '@/platform/storage/unifiedStorage';
 import { isObject } from '@/shared/utils/json';
 
-export type SidebarSectionId = 'projects' | 'folders' | 'pinned' | 'chats' | 'archived' | 'trash';
+export type SidebarSectionId = 'projects' | 'folders' | 'pinned' | 'chats' | 'archived';
 export type SidebarSortMode = 'updatedAt' | 'createdAt' | 'alphabetical' | 'manual';
 export type SidebarViewMode = 'compact' | 'detailed';
 
@@ -15,7 +15,6 @@ export interface CustomSidebarFolder {
 export const SIDEBAR_DEFAULT_WIDTH = 280;
 export const SIDEBAR_MIN_WIDTH = 220;
 export const SIDEBAR_MAX_WIDTH = 420;
-export const SIDEBAR_TRASH_RETENTION_MS = 30 * 86_400_000;
 export const WORKSPACE_PANEL_DEFAULT_RATIO = 50;
 export const WORKSPACE_PANEL_MIN_RATIO = 30;
 export const WORKSPACE_PANEL_MAX_RATIO = 70;
@@ -36,7 +35,7 @@ const sidebarSortModeKey = 'chat.sidebar_sort_mode';
 const sidebarViewModeKey = 'chat.sidebar_view_mode';
 const sidebarManualOrderKey = 'chat.sidebar_manual_order';
 const customFoldersKey = 'chat.custom_sidebar_folders';
-const trashedConversationsKey = 'chat.trashed_conversations';
+const legacyTrashedConversationsKey = 'chat.trashed_conversations';
 const openConversationTabsKey = 'chat.open_conversation_tabs';
 // Keep the stored key so the former split-view width preference carries over to the panel layout.
 const workspacePanelRatioKey = 'chat.split_view_ratio';
@@ -47,7 +46,6 @@ const supportedSectionSet: ReadonlySet<string> = new Set<SidebarSectionId>([
   'pinned',
   'chats',
   'archived',
-  'trash',
 ]);
 
 export interface SidebarPreferencesReadResult {
@@ -64,7 +62,8 @@ export function readCollapsedSidebarSections(): SidebarPreferencesReadResult {
       throw new Error('The stored sidebar section preferences are invalid.');
     }
     const sections = values.filter(isSidebarSectionId);
-    if (sections.length !== values.length) {
+    const legacyTrashSections = values.filter((section) => section === 'trash');
+    if (sections.length + legacyTrashSections.length !== values.length) {
       throw new Error('The stored sidebar section preferences are invalid.');
     }
     return { collapsedSections: new Set(sections), error: null };
@@ -172,34 +171,20 @@ export function writeCustomSidebarFolders(folders: readonly CustomSidebarFolder[
   unifiedStorage.setItem(customFoldersKey, JSON.stringify(folders));
 }
 
-export function readTrashedConversations(now = Date.now()): Record<string, number> {
+export function readLegacyHiddenConversationIds(): ReadonlySet<string> {
   try {
-    const encoded = unifiedStorage.getItem(trashedConversationsKey);
-    if (!encoded) return {};
+    const encoded = unifiedStorage.getItem(legacyTrashedConversationsKey);
+    if (!encoded) return new Set();
     const parsed: unknown = JSON.parse(encoded);
-    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return {};
-    const activeTrash: Record<string, number> = {};
-    let pruned = false;
-    for (const [id, deletedAt] of Object.entries(parsed)) {
-      if (typeof deletedAt === 'number' && Number.isFinite(deletedAt)) {
-        if (now - deletedAt <= SIDEBAR_TRASH_RETENTION_MS) {
-          activeTrash[id] = deletedAt;
-        } else {
-          pruned = true;
-        }
-      }
-    }
-    if (pruned) {
-      writeTrashedConversations(activeTrash);
-    }
-    return activeTrash;
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return new Set();
+    return new Set(
+      Object.entries(parsed)
+        .filter(([, deletedAt]) => typeof deletedAt === 'number' && Number.isFinite(deletedAt))
+        .map(([id]) => id),
+    );
   } catch {
-    return {};
+    return new Set();
   }
-}
-
-export function writeTrashedConversations(trashed: Record<string, number>): void {
-  unifiedStorage.setItem(trashedConversationsKey, JSON.stringify(trashed));
 }
 
 export function clampWorkspacePanelRatio(ratio: number): number {

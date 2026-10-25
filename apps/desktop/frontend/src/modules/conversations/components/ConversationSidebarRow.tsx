@@ -14,7 +14,6 @@ import {
   Pencil,
   Pin,
   PinOff,
-  RotateCcw,
   Trash2,
   X,
 } from 'lucide-react';
@@ -50,7 +49,6 @@ export interface ConversationSidebarRowProps {
   customFolders?: readonly CustomSidebarFolder[];
   active: boolean;
   archived: boolean;
-  trashed?: boolean;
   isAiWorking?: boolean;
   viewMode?: SidebarViewMode;
   currentProjectId: string | null;
@@ -65,7 +63,6 @@ export interface ConversationSidebarRowProps {
   onExport(format?: ExportFormat): void;
   onArchive(): void;
   onDelete(): void;
-  onRestoreFromTrash?(): void;
   onMoveToProject(projectId: string): void;
   onMoveToChats(): void;
   onMoveToFolder?(folderId: string | null): void;
@@ -78,7 +75,6 @@ export function ConversationSidebarRow({
   customFolders = [],
   active,
   archived,
-  trashed = false,
   isAiWorking = false,
   viewMode = 'compact',
   currentProjectId,
@@ -93,7 +89,6 @@ export function ConversationSidebarRow({
   onExport,
   onArchive,
   onDelete,
-  onRestoreFromTrash,
   onMoveToProject,
   onMoveToChats,
   onMoveToFolder,
@@ -179,14 +174,14 @@ export function ConversationSidebarRow({
   }, [isEditingTitle]);
 
   const startInlineRename = useCallback(() => {
-    if (disabled || trashed) return;
+    if (disabled) return;
     if (!onInlineRename) {
       onRename();
       return;
     }
     setDraftTitle(conversation.title);
     setIsEditingTitle(true);
-  }, [conversation.title, disabled, onInlineRename, onRename, trashed]);
+  }, [conversation.title, disabled, onInlineRename, onRename]);
 
   const cancelInlineRename = useCallback(() => {
     if (isSavingTitle) return;
@@ -387,7 +382,7 @@ export function ConversationSidebarRow({
 
   const handleRowKeyDown = (event: KeyboardEvent<HTMLElement>) => {
     if (disabled || isEditingTitle) return;
-    if (event.key === 'F2' && !trashed) {
+    if (event.key === 'F2') {
       event.preventDefault();
       event.stopPropagation();
       startInlineRename();
@@ -406,7 +401,7 @@ export function ConversationSidebarRow({
   };
 
   const handleDragOverRow = (event: DragEvent<HTMLLIElement>) => {
-    if (!onReorderConversation || disabled || trashed || archived) return;
+    if (!onReorderConversation || disabled || archived) return;
     if (!event.dataTransfer.types.includes('application/x-openchat-conversation')) return;
     event.preventDefault();
     event.dataTransfer.dropEffect = 'move';
@@ -414,7 +409,7 @@ export function ConversationSidebarRow({
   };
 
   const handleDropRow = (event: DragEvent<HTMLLIElement>) => {
-    if (!onReorderConversation || disabled || trashed || archived) return;
+    if (!onReorderConversation || disabled || archived) return;
     const draggedId = event.dataTransfer.getData('application/x-openchat-conversation');
     if (!draggedId || draggedId === conversation.id) {
       setIsReorderDropTarget(false);
@@ -426,7 +421,7 @@ export function ConversationSidebarRow({
     onReorderConversation(draggedId, conversation.id);
   };
 
-  const canDrag = !disabled && !archived && !trashed && !isEditingTitle;
+  const canDrag = !disabled && !archived && !isEditingTitle;
 
   const handleStartDrag = (event: DragEvent<HTMLElement>) => {
     event.stopPropagation();
@@ -532,10 +527,10 @@ export function ConversationSidebarRow({
                 : 'font-normal text-text/80 group-hover:text-text group-focus-within:text-text'
             } ${
               menuOpen
-                ? archived || trashed
+                ? archived
                   ? 'pr-16'
                   : 'pr-22'
-                : archived || trashed
+                : archived
                   ? 'group-hover:pr-16 group-focus-within:pr-16'
                   : 'group-hover:pr-22 group-focus-within:pr-22'
             }`}
@@ -591,35 +586,6 @@ export function ConversationSidebarRow({
             onMouseDown={(event) => event.stopPropagation()}
             onPointerDown={(event) => event.stopPropagation()}
           >
-            {trashed ? (
-              <>
-                {onRestoreFromTrash ? (
-                  <Button
-                    aria-label={t('restoreConversation')}
-                    className="size-7 shrink-0 rounded-control text-secondary-icon hover:bg-surface/80 hover:text-text"
-                    disabled={disabled}
-                    onClick={onRestoreFromTrash}
-                    size="icon"
-                    title={t('restoreConversation')}
-                    variant="ghost"
-                  >
-                    <RotateCcw aria-hidden="true" size={13.5} />
-                  </Button>
-                ) : null}
-                <Button
-                  aria-label={t('deleteConversationPermanently')}
-                  className="size-7 shrink-0 rounded-control text-destructive/80 hover:bg-surface/80 hover:text-destructive"
-                  disabled={disabled}
-                  onClick={onDelete}
-                  size="icon"
-                  title={t('deleteConversationPermanently')}
-                  variant="ghost"
-                >
-                  <Trash2 aria-hidden="true" size={13.5} />
-                </Button>
-              </>
-            ) : (
-              <>
                 {!archived ? (
                   <Button
                     aria-label={conversation.isPinned ? t('unpinConversation') : t('pinConversation')}
@@ -670,8 +636,6 @@ export function ConversationSidebarRow({
                 >
                   <MoreHorizontal aria-hidden="true" size={14} />
                 </Button>
-              </>
-            )}
           </div>
         </>
       )}
@@ -696,26 +660,6 @@ export function ConversationSidebarRow({
                 visibility: menuPosition === null ? 'hidden' : 'visible',
               }}
             >
-              {trashed ? (
-                <>
-                  {onRestoreFromTrash ? (
-                    <MenuAction
-                      disabled={disabled}
-                      icon={RotateCcw}
-                      label={t('restoreConversation')}
-                      onClick={() => runAction(onRestoreFromTrash)}
-                    />
-                  ) : null}
-                  <MenuAction
-                    destructive
-                    disabled={disabled}
-                    icon={Trash2}
-                    label={t('deleteConversationPermanently')}
-                    onClick={() => runAction(onDelete)}
-                  />
-                </>
-              ) : (
-                <>
                   {!archived ? (
                     <>
                       <MenuAction
@@ -879,8 +823,6 @@ export function ConversationSidebarRow({
                     label={t('deleteConversation')}
                     onClick={() => runAction(onDelete)}
                   />
-                </>
-              )}
             </div>,
             document.body,
           )
