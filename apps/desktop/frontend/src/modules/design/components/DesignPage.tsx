@@ -73,7 +73,10 @@ type DesignServiceOperation = Omit<ServiceOperation, 'result'> & { result: Promi
 
 const galleryPageSize = 30;
 const modelOptions = {
-  oauth: [{ value: 'chatgpt-image-latest', labelKey: 'designModelChatGpt' }],
+  oauth: [
+    { value: 'gpt-image-2', labelKey: 'designModelTwo' },
+    { value: 'chatgpt-image-latest', labelKey: 'designModelChatGpt' },
+  ],
   api_key: [
     { value: 'gpt-image-2.5-flare', labelKey: 'designModelFast' },
     { value: 'gpt-image-2.5-sunburst', labelKey: 'designModelDetailed' },
@@ -767,7 +770,7 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
     <div className="design-workspace flex h-full min-h-0 min-w-0 flex-col overflow-hidden lg:flex-row">
       <aside
         aria-label={t('designSettings')}
-        className="design-control-panel flex min-h-0 shrink-0 flex-col gap-5 overflow-y-auto border-b border-border bg-surface px-4 py-4 lg:border-b-0 lg:border-r lg:px-5 lg:py-6"
+        className="design-control-panel flex min-h-0 shrink-0 flex-col gap-5 overflow-y-auto border-b border-border bg-navigation px-4 py-4 lg:border-b-0 lg:border-r lg:px-5 lg:py-6"
       >
         <div className="flex items-center gap-3">
           <span className="flex size-10 shrink-0 items-center justify-center rounded-control bg-selected text-accent">
@@ -1128,7 +1131,7 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
         ) : null}
       </aside>
 
-      <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+      <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background">
         <header className="grid gap-4 border-b border-border px-5 py-4 sm:px-7">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
