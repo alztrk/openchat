@@ -179,7 +179,6 @@ export function ConversationPane({
   const hiddenModelKeys = useChatStore((state) => state.hiddenModelKeys);
   const selectedModelKey = useChatStore((state) => state.selectedModelKey);
   const hasConfiguredProvider = useChatStore((state) => state.hasConfiguredProvider);
-  const hasCompletedAssistantResponse = useChatStore((state) => state.hasCompletedAssistantResponse);
   const refreshModels = useChatStore((state) => state.refreshModels);
   const activeGoal = useChatStore((state) => state.activeGoal);
   const goalStatus = useChatStore((state) => state.goalStatus);
@@ -680,7 +679,6 @@ export function ConversationPane({
                   onOpenConnections={onOpenSettings}
                   onRetryModels={() => void refreshModels(true)}
                   selectedModel={selectedModel !== undefined}
-                  showSetupSteps={hasCompletedAssistantResponse === false}
                 />
               )}
               {errorCode === 'searchMessageUnavailable' ? (

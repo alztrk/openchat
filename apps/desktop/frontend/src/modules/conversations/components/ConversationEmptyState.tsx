@@ -1,4 +1,4 @@
-import { Check, Link2, LoaderCircle, RefreshCw } from 'lucide-react';
+import { Link2, LoaderCircle, RefreshCw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/design-system';
 import { BrandMark } from '@/shell/BrandMark';
@@ -13,15 +13,7 @@ interface ConversationEmptyStateProps {
   onOpenConnections(): void;
   onRetryModels(): void;
   selectedModel: boolean;
-  showSetupSteps: boolean;
 }
-
-const setupSteps = [
-  { id: 'connections', labelKey: 'connections' },
-  { id: 'verification', labelKey: 'providerCatalogVerification' },
-  { id: 'model', labelKey: 'modelSelection' },
-  { id: 'send', labelKey: 'send' },
-] as const;
 
 export function ConversationEmptyState({
   hasAvailableModels,
@@ -33,7 +25,6 @@ export function ConversationEmptyState({
   onOpenConnections,
   onRetryModels,
   selectedModel,
-  showSetupSteps,
 }: ConversationEmptyStateProps) {
   const { t } = useTranslation();
   const workspaceSelectionRequired = chatGptWorkspaceSelectionRequired && !hasAvailableModels;
@@ -63,15 +54,6 @@ export function ConversationEmptyState({
         : selectedModel
           ? t('emptyChatWelcomeBody')
           : t('emptyChatSelectModelBody');
-  const activeSetupStep = modelCatalogStale
-    ? 1
-    : selectedModel
-      ? 3
-      : hasAvailableModels
-        ? 2
-        : hasConfiguredProvider
-          ? 1
-          : 0;
   const showConnections = !isLoading && !hasAvailableModels;
   const showRetry = !isLoading && (modelCatalogFailed || modelCatalogStale);
 
@@ -102,7 +84,6 @@ export function ConversationEmptyState({
             {t('providerVerificationStaleCatalog')}
           </p>
         ) : null}
-        {showSetupSteps && !isLoading ? <SetupSteps activeStep={activeSetupStep} /> : null}
         {showConnections || showRetry ? (
           <div className="conversation-empty-state__actions flex flex-wrap justify-center gap-2">
             {showConnections ? (
@@ -121,34 +102,5 @@ export function ConversationEmptyState({
         ) : null}
       </div>
     </div>
-  );
-}
-
-function SetupSteps({ activeStep }: { activeStep: number }) {
-  const { t } = useTranslation();
-
-  return (
-    <ol className="conversation-empty-state__setup-steps mx-auto mt-6 flex max-w-setup-steps flex-wrap justify-center gap-x-6 gap-y-2">
-      {setupSteps.map((step, index) => {
-        const isCompleted = index < activeStep;
-        const isCurrent = index === activeStep;
-        return (
-          <li
-            aria-current={isCurrent ? 'step' : undefined}
-            className={`flex min-w-0 items-center gap-2 text-body ${isCurrent ? 'font-semibold text-text' : 'text-secondary-text'}`}
-            key={step.id}
-          >
-            <span
-              className={`flex size-6 shrink-0 items-center justify-center rounded-full border ${isCurrent ? 'border-accent bg-accent text-accent-foreground' : isCompleted ? 'border-accent bg-accent text-accent-foreground' : 'border-border bg-surface text-secondary-text'}`}
-            >
-              {isCompleted ? <Check aria-hidden="true" size={14} /> : index + 1}
-            </span>
-            <span>{t(step.labelKey)}</span>
-            {isCompleted ? <span className="sr-only">{t('setupStepCompleted')}</span> : null}
-            {isCurrent ? <span className="sr-only">{t('setupStepCurrent')}</span> : null}
-          </li>
-        );
-      })}
-    </ol>
   );
 }
