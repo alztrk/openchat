@@ -2365,8 +2365,6 @@
   "designBackgroundAuto": "Automatisch",
   "designBackgroundOpaque": "Undurchsichtig",
   "designBackgroundTransparent": "Transparent",
-  "designCustomBackground": "Benutzerdefinierter Hintergrund",
-  "designCustomBackgroundNone": "Keiner",
   "designCustomBackgroundSolid": "Einfarbig",
   "designCustomBackgroundGradient": "Verlauf",
   "designBackgroundColor": "Hintergrundfarbe",

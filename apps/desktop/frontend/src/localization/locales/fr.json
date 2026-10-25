@@ -2365,8 +2365,6 @@
   "designBackgroundAuto": "Automatique",
   "designBackgroundOpaque": "Opaque",
   "designBackgroundTransparent": "Transparent",
-  "designCustomBackground": "Arrière-plan personnalisé",
-  "designCustomBackgroundNone": "Aucun",
   "designCustomBackgroundSolid": "Couleur unie",
   "designCustomBackgroundGradient": "Dégradé",
   "designBackgroundColor": "Couleur d’arrière-plan",

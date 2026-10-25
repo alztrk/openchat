@@ -207,6 +207,7 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
   const selectedDesignImage = selectedImage?.image.source === 'design' ? selectedImage.image.image : null;
   const generationInProgress = generationStarting || activeOperation !== null;
   const generationPlaceholderCount = Number(count);
+  const selectedBackgroundMode = customBackgroundMode === 'none' ? background : customBackgroundMode;
   const backgroundPromptInstruction =
     customBackgroundMode === 'solid'
       ? t('designSolidBackgroundPromptInstruction', { color: backgroundColor })
@@ -1177,9 +1178,16 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
               label={t('designBackground')}
               onChange={(event) => {
                 const value = event.target.value;
-                if (!isImageBackground(value)) return;
-                setBackground(value);
-                if (value === 'transparent' && outputFormat === 'jpeg') setOutputFormat('png');
+                if (isImageBackground(value)) {
+                  setCustomBackgroundMode('none');
+                  setBackground(value);
+                  if (value === 'transparent' && outputFormat === 'jpeg') setOutputFormat('png');
+                  return;
+                }
+                if (value !== 'solid' && value !== 'gradient') return;
+                setCustomBackgroundMode(value);
+                setBackground('opaque');
+                if (outputFormat === 'jpeg' && background === 'transparent') setOutputFormat('png');
               }}
               options={[
                 { value: 'auto', label: t('designBackgroundAuto') },
@@ -1187,29 +1195,11 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
                 {
                   value: 'transparent',
                   label: t('designBackgroundTransparent'),
-                  disabled: customBackgroundMode !== 'none',
                 },
-              ]}
-              value={background}
-            />
-            <Select
-              disabled={activeOperation !== null || generationStarting}
-              label={t('designCustomBackground')}
-              onChange={(event) => {
-                const value = event.target.value;
-                if (value !== 'none' && value !== 'solid' && value !== 'gradient') return;
-                setCustomBackgroundMode(value);
-                if (value !== 'none') {
-                  setBackground('opaque');
-                  if (outputFormat === 'jpeg' && background === 'transparent') setOutputFormat('png');
-                }
-              }}
-              options={[
-                { value: 'none', label: t('designCustomBackgroundNone') },
                 { value: 'solid', label: t('designCustomBackgroundSolid') },
                 { value: 'gradient', label: t('designCustomBackgroundGradient') },
               ]}
-              value={customBackgroundMode}
+              value={selectedBackgroundMode}
             />
             {customBackgroundMode === 'solid' ? (
               <div className="grid gap-2">

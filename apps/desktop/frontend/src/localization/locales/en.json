@@ -2365,8 +2365,6 @@
   "designBackgroundAuto": "Automatic",
   "designBackgroundOpaque": "Opaque",
   "designBackgroundTransparent": "Transparent",
-  "designCustomBackground": "Custom background",
-  "designCustomBackgroundNone": "None",
   "designCustomBackgroundSolid": "Solid color",
   "designCustomBackgroundGradient": "Gradient",
   "designBackgroundColor": "Background color",

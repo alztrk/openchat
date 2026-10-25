@@ -2365,8 +2365,6 @@
   "designBackgroundAuto": "Automático",
   "designBackgroundOpaque": "Opaco",
   "designBackgroundTransparent": "Transparente",
-  "designCustomBackground": "Fondo personalizado",
-  "designCustomBackgroundNone": "Ninguno",
   "designCustomBackgroundSolid": "Color sólido",
   "designCustomBackgroundGradient": "Degradado",
   "designBackgroundColor": "Color de fondo",
