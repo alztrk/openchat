@@ -2,15 +2,23 @@ import type { TFunction } from 'i18next';
 import {
   ArrowDownToLine,
   ChevronDown,
+  FileText,
   Filter,
+  FolderOpen,
+  Image,
   Images,
   LoaderCircle,
+  MessageSquareText,
+  PanelsTopLeft,
   RefreshCw,
+  Scaling,
   Settings2,
+  SlidersHorizontal,
   Sparkles,
+  UserRound,
   WandSparkles,
 } from 'lucide-react';
-import { type ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type ChangeEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Button, DatePicker, Dialog, Select } from '@/design-system';
@@ -112,7 +120,6 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
   const [customWidth, setCustomWidth] = useState('1536');
   const [customHeight, setCustomHeight] = useState('1024');
   const [accountQuota, setAccountQuota] = useState<ChatGptAccountQuotaStatus | null>(null);
-  const [accountQuotaLoading, setAccountQuotaLoading] = useState(false);
   const [generationStarting, setGenerationStarting] = useState(false);
   const [activeOperation, setActiveOperation] = useState<DesignServiceOperation | null>(null);
   const [generationError, setGenerationError] = useState<string | null>(null);
@@ -146,7 +153,7 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
   const [cursor, setCursor] = useState<ImagePageCursor>({ design: 0, chat: 0 });
   const [hasMore, setHasMore] = useState(false);
   const [galleryLoading, setGalleryLoading] = useState(true);
-  const [galleryError, setGalleryError] = useState(false);
+  const [galleryError, setGalleryError] = useState<'none' | 'partial' | 'all'>('none');
   const [selectedImage, setSelectedImage] = useState<{ image: GalleryImage; src: string } | null>(null);
   const promptRef = useRef<HTMLTextAreaElement>(null);
   const galleryScrollRef = useRef<HTMLDivElement>(null);
@@ -187,13 +194,13 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
       if (dateFrom && dateTo && dateFrom > dateTo) {
         setGallery([]);
         setGalleryLoading(false);
-        setGalleryError(false);
+        setGalleryError('none');
         setCursor({ design: 0, chat: 0 });
         setHasMore(false);
         return;
       }
       setGalleryLoading(true);
-      setGalleryError(false);
+      setGalleryError('none');
       try {
         const createdAfter = dateFrom ? new Date(`${dateFrom}T00:00:00`).getTime() : null;
         const createdBefore = dateTo ? new Date(`${dateTo}T23:59:59.999`).getTime() : null;
@@ -208,13 +215,16 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
           tag: tagFilter.trim() || null,
           collectionId: collectionFilter || null,
         } as const;
-        const [designPage, chatPage] = await Promise.all([
-          nextCursor.design === null || sourceFilter === 'chat'
-            ? Promise.resolve({ items: [], nextOffset: null })
-            : listDesignImages(nextCursor.design, galleryPageSize, filters),
-          nextCursor.chat === null || sourceFilter === 'design'
-            ? Promise.resolve({ items: [], nextOffset: null })
-            : listConversationAttachments(nextCursor.chat, galleryPageSize, query, 'available', {
+        const designOffset = nextCursor.design;
+        const chatOffset = nextCursor.chat;
+        const shouldLoadDesign = designOffset !== null && sourceFilter !== 'chat';
+        const shouldLoadChat = chatOffset !== null && sourceFilter !== 'design';
+        const [designResult, chatResult] = await Promise.allSettled([
+          shouldLoadDesign
+            ? listDesignImages(designOffset, galleryPageSize, filters)
+            : Promise.resolve({ items: [], nextOffset: null }),
+          shouldLoadChat
+            ? listConversationAttachments(chatOffset, galleryPageSize, query, 'available', {
                 generatedImagesOnly: true,
                 sort,
                 createdAfter: filters.createdAfter,
@@ -224,9 +234,14 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
                 favoritesOnly,
                 tag: filters.tag,
                 collectionId: filters.collectionId,
-              }),
+              })
+            : Promise.resolve({ items: [], nextOffset: null }),
         ]);
         if (requestId !== galleryRequestRef.current) return;
+        const designFailed = shouldLoadDesign && designResult.status === 'rejected';
+        const chatFailed = shouldLoadChat && chatResult.status === 'rejected';
+        const designPage = designResult.status === 'fulfilled' ? designResult.value : { items: [], nextOffset: null };
+        const chatPage = chatResult.status === 'fulfilled' ? chatResult.value : { items: [], nextOffset: null };
         const designImages: GalleryImage[] = designPage.items.map((image) => ({
           source: 'design',
           key: `design:${image.id}`,
@@ -245,11 +260,26 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
           sort === 'oldest' ? left.createdAt - right.createdAt : right.createdAt - left.createdAt,
         );
         setGallery((current) => (append ? mergeUniqueImages(current, merged, sort) : merged));
-        const next = { design: designPage.nextOffset, chat: chatPage.nextOffset };
+        const next = {
+          design: designFailed ? designOffset : designPage.nextOffset,
+          chat: chatFailed ? chatOffset : chatPage.nextOffset,
+        };
         setCursor(next);
         setHasMore(next.design !== null || next.chat !== null);
+        const failedCount = Number(designFailed) + Number(chatFailed);
+        const requestedCount = Number(shouldLoadDesign) + Number(shouldLoadChat);
+        setGalleryError(failedCount === 0 ? 'none' : failedCount === requestedCount && !append ? 'all' : 'partial');
+        if (designFailed && designResult.status === 'rejected') {
+          reportGalleryLoadFailure('Design', designResult.reason);
+        }
+        if (chatFailed && chatResult.status === 'rejected') {
+          reportGalleryLoadFailure('chat', chatResult.reason);
+        }
       } catch {
-        if (requestId === galleryRequestRef.current) setGalleryError(true);
+        if (requestId === galleryRequestRef.current) {
+          setGalleryError(append ? 'partial' : 'all');
+          globalThis.reportError(new Error('The image library request could not be completed.'));
+        }
       } finally {
         if (requestId === galleryRequestRef.current) setGalleryLoading(false);
       }
@@ -317,7 +347,6 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
   useEffect(() => {
     if (selectedTarget?.kind !== 'oauth') {
       setAccountQuota(selectedTarget ? { state: 'not_applicable', usedPercent: null, resetAtUnixMs: null } : null);
-      setAccountQuotaLoading(false);
       return;
     }
     if (selectedTarget.workspaceId === null) {
@@ -327,19 +356,13 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
         resetAtUnixMs: null,
         reason: 'workspace_unavailable',
       });
-      setAccountQuotaLoading(false);
       return;
     }
     let current = true;
-    setAccountQuotaLoading(true);
     setAccountQuota(null);
-    void refreshChatGptAccountQuota(selectedTarget.connectionId, selectedTarget.workspaceId)
-      .then((status) => {
-        if (current) setAccountQuota(status);
-      })
-      .finally(() => {
-        if (current) setAccountQuotaLoading(false);
-      });
+    void refreshChatGptAccountQuota(selectedTarget.connectionId, selectedTarget.workspaceId).then((status) => {
+      if (current) setAccountQuota(status);
+    });
     return () => {
       current = false;
     };
@@ -355,11 +378,6 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
       if (operation) void operation.cancel();
     };
   }, []);
-
-  const quotaMessage = useMemo(
-    () => getQuotaMessage(accountQuota, accountQuotaLoading, t),
-    [accountQuota, accountQuotaLoading, t],
-  );
 
   const updateTarget = (event: { target: { value: string } }) => {
     const nextTarget = targets.find((target) => target.key === event.target.value) ?? null;
@@ -783,6 +801,7 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
           <>
             <Select
               disabled={activeOperation !== null || generationStarting}
+              leadingIcon={<UserRound aria-hidden="true" size={16} />}
               label={t('designProvider')}
               onChange={updateTarget}
               options={targets.map((target) => ({ value: target.key, label: target.label }))}
@@ -790,7 +809,10 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
             />
 
             <label className="grid gap-2 text-sm font-medium text-text" htmlFor="design-prompt">
-              {t('designPrompt')}
+              <span className="inline-flex items-center gap-2">
+                <MessageSquareText aria-hidden="true" className="text-secondary-icon" size={16} />
+                {t('designPrompt')}
+              </span>
               <textarea
                 aria-describedby="design-prompt-hint"
                 className="min-h-32 w-full resize-y rounded-control border border-control-border bg-surface px-3 py-2 text-sm font-normal leading-relaxed text-text outline-none placeholder:text-secondary-text focus-visible:ring-2 focus-visible:ring-focus disabled:cursor-not-allowed disabled:opacity-50"
@@ -810,7 +832,10 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
               aria-label={t('designPromptTemplates')}
               className="grid gap-2 rounded-control border border-border p-3"
             >
-              <h2 className="text-sm font-semibold text-text">{t('designPromptTemplates')}</h2>
+              <h2 className="flex items-center gap-2 text-sm font-semibold text-text">
+                <FileText aria-hidden="true" className="text-secondary-icon" size={16} />
+                {t('designPromptTemplates')}
+              </h2>
               <div className="grid gap-1">
                 {templates.map((template) => (
                   <div className="flex min-w-0 items-center gap-1" key={template.id}>
@@ -860,7 +885,10 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
               aria-label={t('designCollections')}
               className="grid gap-2 rounded-control border border-border p-3"
             >
-              <h2 className="text-sm font-semibold text-text">{t('designCollections')}</h2>
+              <h2 className="flex items-center gap-2 text-sm font-semibold text-text">
+                <FolderOpen aria-hidden="true" className="text-secondary-icon" size={16} />
+                {t('designCollections')}
+              </h2>
               <label className="grid gap-1.5 text-xs font-medium text-secondary-text" htmlFor="design-collection-name">
                 {t('designCollectionName')}
                 <input
@@ -899,8 +927,13 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
               ) : null}
             </section>
 
+            <h2 className="flex items-center gap-2 border-t border-border pt-4 text-sm font-semibold text-text">
+              <SlidersHorizontal aria-hidden="true" className="text-secondary-icon" size={16} />
+              {t('designImageSettings')}
+            </h2>
             <Select
               disabled={!selectedTarget || activeOperation !== null || generationStarting}
+              leadingIcon={<Image aria-hidden="true" size={16} />}
               label={t('designImageModel')}
               onChange={(event) => {
                 const nextModel = event.target.value;
@@ -919,6 +952,7 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
             />
             <Select
               disabled={activeOperation !== null || generationStarting}
+              leadingIcon={<Scaling aria-hidden="true" size={16} />}
               label={t('designResolution')}
               onChange={(event) => setSize(event.target.value)}
               options={activeSizeOptions.map((option) => ({ value: option.value, label: t(option.labelKey) }))}
@@ -967,6 +1001,7 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
             ) : null}
             <Select
               disabled={activeOperation !== null || generationStarting}
+              leadingIcon={<Sparkles aria-hidden="true" size={16} />}
               label={t('designQuality')}
               onChange={(event) => {
                 if (isImageQuality(event.target.value)) setQuality(event.target.value);
@@ -978,6 +1013,7 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
             />
             <Select
               disabled={activeOperation !== null || generationStarting}
+              leadingIcon={<PanelsTopLeft aria-hidden="true" size={16} />}
               label={t('designBackground')}
               onChange={(event) => {
                 const value = event.target.value;
@@ -1049,40 +1085,6 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
                 />
               </>
             ) : null}
-
-            {selectedTarget?.kind === 'oauth' ? (
-              <div
-                aria-live="polite"
-                className="flex min-w-0 items-start gap-2 border-t border-border pt-3 text-xs text-secondary-text"
-                role="status"
-              >
-                <div className="min-w-0 flex-1">
-                  <p className="font-medium text-text">{t('designQuotaTitle')}</p>
-                  <p className="mt-0.5">{quotaMessage}</p>
-                </div>
-                <Button
-                  aria-label={t('designRefreshQuota')}
-                  className="shrink-0"
-                  disabled={accountQuotaLoading}
-                  onClick={() => {
-                    if (selectedTarget.workspaceId === null) return;
-                    setAccountQuotaLoading(true);
-                    void refreshChatGptAccountQuota(selectedTarget.connectionId, selectedTarget.workspaceId)
-                      .then(setAccountQuota)
-                      .finally(() => setAccountQuotaLoading(false));
-                  }}
-                  size="small"
-                  variant="ghost"
-                >
-                  {accountQuotaLoading ? (
-                    <LoaderCircle aria-hidden="true" className="animate-spin" size={14} />
-                  ) : (
-                    <RefreshCw aria-hidden="true" size={14} />
-                  )}
-                </Button>
-              </div>
-            ) : null}
-
             {generationError ? (
               <p className="text-sm text-destructive" role="alert">
                 {generationError}
@@ -1367,9 +1369,11 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
         ) : null}
 
         <div aria-live="polite" className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-7" ref={galleryScrollRef}>
-          {galleryError ? (
+          {galleryError !== 'none' ? (
             <div className="mx-auto grid max-w-lg gap-3 py-12 text-center" role="alert">
-              <p className="text-sm text-destructive">{t('designLibraryFailed')}</p>
+              <p className="text-sm text-destructive">
+                {t(galleryError === 'all' ? 'designLibraryFailed' : 'designLibraryPartialFailed')}
+              </p>
               <Button
                 className="justify-self-center"
                 onClick={() => void loadGalleryPage({ design: 0, chat: 0 }, false)}
@@ -1386,7 +1390,7 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
               {t('designLibraryLoading')}
             </p>
           ) : null}
-          {gallery.length === 0 && !galleryLoading && !galleryError ? (
+          {gallery.length === 0 && !galleryLoading && galleryError === 'none' ? (
             <div className="mx-auto grid max-w-lg justify-items-center gap-3 py-20 text-center">
               <span className="flex size-12 items-center justify-center rounded-full bg-raised text-secondary-icon">
                 <Images aria-hidden="true" size={22} />
@@ -1907,22 +1911,7 @@ function formatImageSize(sizeBytes: number): string {
   return `${new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 }).format(mebibytes)} MiB`;
 }
 
-function getQuotaMessage(quota: ChatGptAccountQuotaStatus | null, loading: boolean, t: TFunction): string {
-  if (loading) return t('designQuotaChecking');
-  if (!quota) return t('designQuotaUnknown');
-  if (quota.state === 'not_applicable') return t('designApiQuotaHint');
-  if (quota.state === 'unavailable') return t('designQuotaUnavailable');
-  if (quota.state === 'unknown') return t('designQuotaUnknown');
-  if (quota.state === 'exhausted') {
-    return quota.resetAtUnixMs !== null
-      ? t('designQuotaExhaustedUntil', {
-          time: new Intl.DateTimeFormat(undefined, { dateStyle: 'short', timeStyle: 'short' }).format(
-            quota.resetAtUnixMs,
-          ),
-        })
-      : t('designQuotaExhausted');
-  }
-  return quota.usedPercent !== null
-    ? t('designQuotaUsed', { percent: Math.round(quota.usedPercent) })
-    : t('designQuotaAvailable');
+function reportGalleryLoadFailure(source: 'Design' | 'chat', error: unknown): void {
+  const code = error instanceof LocalServiceError ? error.code : 'request_failed';
+  globalThis.reportError(new Error(`${source} image library request failed (${code}).`));
 }
