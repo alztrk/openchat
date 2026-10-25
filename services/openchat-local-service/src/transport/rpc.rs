@@ -37,6 +37,8 @@ mod chat_request;
 mod connector_catalog;
 #[path = "rpc/conversations.rs"]
 mod conversations;
+#[path = "rpc/design_images.rs"]
+mod design_images;
 #[path = "rpc/file_changes.rs"]
 mod file_changes;
 #[path = "rpc/internal_secrets.rs"]
@@ -108,6 +110,13 @@ pub(crate) async fn dispatch(context: RpcDispatchContext<'_>) -> Result<Value, S
     }
     if method.starts_with("chat.file_changes.") {
         return file_changes::dispatch(&method, &request.params, storage);
+    }
+    if method.starts_with("design.images.")
+        || method.starts_with("design.generations.")
+        || method.starts_with("design.collections.")
+        || method.starts_with("design.templates.")
+    {
+        return design_images::dispatch(&method, &request.params, storage);
     }
     if method.starts_with("statistics.") || method.starts_with("models.pricing.") {
         return statistics::dispatch(&method, &request.params, storage, &mut cancellation).await;

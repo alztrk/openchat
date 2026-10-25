@@ -7,6 +7,39 @@
   gap: 4px;
 }
 
+.design-control-panel {
+  flex-basis: auto;
+  max-height: 48dvh;
+}
+
+.design-image-preview {
+  max-height: min(68dvh, 64rem);
+}
+
+.design-compare-image {
+  max-height: 65vh;
+}
+
+@media (hover: hover) and (prefers-reduced-motion: no-preference) {
+  .design-image-tile:hover img,
+  .design-image-tile:focus-visible img {
+    transform: scale(1.02);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .design-image-tile img {
+    transition: none;
+  }
+}
+
+@media (min-width: 1024px) {
+  .design-control-panel {
+    flex-basis: var(--spacing-design-sidebar);
+    max-height: none;
+  }
+}
+
 .openchat-tabs-list[data-variant='default'] {
   width: fit-content;
   align-items: center;

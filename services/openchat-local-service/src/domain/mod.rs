@@ -34,6 +34,7 @@ pub(crate) mod history;
 pub(crate) mod http_headers;
 #[path = "providers/hugging_face.rs"]
 pub(crate) mod hugging_face;
+pub(crate) mod image_library;
 #[path = "settings/instructions.rs"]
 pub(crate) mod instructions;
 #[path = "local_engines/mod.rs"]

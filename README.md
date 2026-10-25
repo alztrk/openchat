@@ -16,6 +16,11 @@ Connect to multiple model ecosystems through standard, secure protocols:
 - **Local Inference:** Built-in runtime management for `llama.cpp` supporting CPU and NVIDIA CUDA GPU acceleration, enabling offline GGUF model execution without external services.
 - **Credential Storage:** Keys and tokens are kept in the operating system credential store (Windows Credential Manager / DPAPI). Credentials are never exposed to UI renderers or written to diagnostic logs.
 
+### Image Design Workspace
+- **ChatGPT Image Generation:** Create images in the Design workspace with a ChatGPT OAuth account or an OpenAI API key. The chat `generate_image` tool uses the same generation service.
+- **Image Library:** Browse images generated in Design and chat from one local library. Search and filter results, compare variants, reuse prompts, save prompt templates, and organize images with favorites, tags, and collections.
+- **Generation Controls:** Configure supported model options such as dimensions, quality, background treatment, and API output format. OAuth quota information is shown only when ChatGPT reports an image-specific limit.
+
 ### Workspace Tools and Sandboxing
 Run development tasks safely through configurable permission boundaries:
 - **Filesystem Operations:** Read, search, write, and patch files with side-by-side diff review and revert capability.

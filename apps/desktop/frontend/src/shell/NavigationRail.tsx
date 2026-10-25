@@ -1,11 +1,11 @@
-import { Library, MessageCircle, Moon, Settings, Sun } from 'lucide-react';
+import { Library, MessageCircle, Moon, Settings, Sun, WandSparkles } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Button } from '@/design-system';
 import { Tooltip } from '@/design-system/Tooltip';
 
-export type AppSurface = 'chats' | 'models' | 'settings';
+export type AppSurface = 'chats' | 'design' | 'models' | 'settings';
 
 export interface NavigationRailProps {
   activeSurface: AppSurface;
@@ -34,6 +34,12 @@ export function NavigationRail({ activeSurface, isDark, onNavigate, onToggleThem
           icon={<Library aria-hidden="true" size={20} />}
           label={t('modelLibrary')}
           onClick={() => onNavigate('models')}
+        />
+        <RailButton
+          active={activeSurface === 'design'}
+          icon={<WandSparkles aria-hidden="true" size={20} />}
+          label={t('design')}
+          onClick={() => onNavigate('design')}
         />
       </div>
       <div className="mt-auto flex flex-col gap-2">

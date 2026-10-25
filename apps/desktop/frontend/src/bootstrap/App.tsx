@@ -61,6 +61,9 @@ import { TitleBar } from '@/shell/TitleBar';
 const LibraryPage = lazy(() =>
   import('@/modules/model-library/components/LibraryPage').then((module) => ({ default: module.LibraryPage })),
 );
+const DesignPage = lazy(() =>
+  import('@/modules/design/components/DesignPage').then((module) => ({ default: module.DesignPage })),
+);
 const SettingsPage = lazy(() =>
   import('@/modules/settings/components/SettingsPage').then((module) => ({ default: module.SettingsPage })),
 );
@@ -698,6 +701,7 @@ export function App() {
 
   const heading = {
     chats: t('chats'),
+    design: t('design'),
     models: t('modelLibrary'),
     settings: t('settings'),
   }[activeSurface];
@@ -1166,6 +1170,18 @@ export function App() {
                     navigateSurface('chats');
                   }}
                 />
+              </Suspense>
+            </div>
+          ) : activeSurface === 'design' ? (
+            <div className="min-w-0 flex-1 overflow-hidden bg-surface">
+              <Suspense
+                fallback={
+                  <p aria-live="polite" className="px-6 py-8 text-sm text-secondary-text">
+                    {t('designLoading')}
+                  </p>
+                }
+              >
+                <DesignPage onOpenSettings={() => navigate('settings')} />
               </Suspense>
             </div>
           ) : (

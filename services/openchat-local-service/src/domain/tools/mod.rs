@@ -805,6 +805,8 @@ fn chatgpt_model_tool_definitions() -> Vec<ToolDefinition> {
                     .and_then(Value::as_object_mut)
             {
                 properties.remove("count");
+                properties.remove("output_format");
+                properties.remove("output_compression");
             }
             tool
         })
@@ -840,7 +842,32 @@ fn chatgpt_api_tool_definitions() -> Vec<ToolDefinition> {
             json!({
                 "type": "string",
                 "enum": ["low", "medium", "high", "xhigh", "max", "auto"],
-                "description": "The selected image provider validates supported quality levels."
+                "description": "GPT Image 2.5 Flare and Sunburst support xhigh and max. Earlier models support up to high."
+            }),
+        );
+        properties.insert(
+            "output_format".to_owned(),
+            json!({
+                "type": "string",
+                "enum": ["png", "jpeg", "webp"],
+                "description": "Output image format. Transparent backgrounds require PNG or WebP."
+            }),
+        );
+        properties.insert(
+            "output_compression".to_owned(),
+            json!({
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 100,
+                "description": "Optional compression level for JPEG or WebP output."
+            }),
+        );
+        properties.insert(
+            "moderation".to_owned(),
+            json!({
+                "type": "string",
+                "enum": ["auto", "low"],
+                "description": "Content moderation level for the API request."
             }),
         );
     }
@@ -1131,7 +1158,7 @@ pub fn definitions() -> Vec<ToolDefinition> {
                     },
                     "size": {
                         "type": "string",
-                        "description": "Optional size such as auto, 1024x1024, 1536x1024, or 1024x1536."
+                        "description": "Optional size such as auto, 1024x1024, 1536x1024, or 1024x1536. Custom dimensions are supported by GPT Image 2 and 2.5 models."
                     },
                     "quality": {
                         "type": "string",

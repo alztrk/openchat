@@ -6,7 +6,7 @@
 use rusqlite::Connection;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-pub(super) const SCHEMA_VERSION: i64 = 36;
+pub(super) const SCHEMA_VERSION: i64 = 38;
 pub(super) const INITIAL_SCHEMA_VERSION: i64 = 2;
 pub mod chat_migrations;
 

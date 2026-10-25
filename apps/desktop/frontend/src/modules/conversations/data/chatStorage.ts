@@ -80,6 +80,24 @@ export interface ConversationAttachmentSummary {
   sizeBytes: number;
   createdAt: number;
   isAvailable: boolean;
+  generationId: string | null;
+  prompt: string | null;
+  model: string | null;
+  providerRoute: 'oauth' | 'api_key' | 'unknown' | null;
+  isFavorite: boolean;
+  tags: string[];
+}
+
+export interface ConversationAttachmentFilters {
+  generatedImagesOnly?: boolean;
+  sort?: 'newest' | 'oldest';
+  createdAfter?: number | null;
+  createdBefore?: number | null;
+  modelId?: string | null;
+  providerRoute?: 'oauth' | 'api_key' | null;
+  favoritesOnly?: boolean;
+  tag?: string | null;
+  collectionId?: string | null;
 }
 
 export interface ConversationAttachmentPage {
@@ -574,12 +592,14 @@ export async function listConversationAttachments(
   limit: number,
   query: string,
   availability: 'all' | 'available' | 'missing',
+  filters: ConversationAttachmentFilters = {},
 ): Promise<ConversationAttachmentPage> {
   const value: unknown = await localServiceClient.call('storage.chat.attachments.list', {
     offset,
     limit,
     query: query.trim() || null,
     availability,
+    ...filters,
   });
   if (
     !isObject(value) ||
@@ -738,7 +758,17 @@ function isConversationAttachmentSummary(value: unknown): value is ConversationA
     Number.isSafeInteger(value.createdAt) &&
     typeof value.createdAt === 'number' &&
     value.createdAt >= 0 &&
-    typeof value.isAvailable === 'boolean'
+    typeof value.isAvailable === 'boolean' &&
+    (value.generationId === null || typeof value.generationId === 'string') &&
+    (value.prompt === null || typeof value.prompt === 'string') &&
+    (value.model === null || typeof value.model === 'string') &&
+    (value.providerRoute === null ||
+      value.providerRoute === 'oauth' ||
+      value.providerRoute === 'api_key' ||
+      value.providerRoute === 'unknown') &&
+    typeof value.isFavorite === 'boolean' &&
+    Array.isArray(value.tags) &&
+    value.tags.every((tag) => typeof tag === 'string')
   );
 }
 

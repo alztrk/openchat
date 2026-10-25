@@ -29,6 +29,12 @@ const MAX_IMAGE_RESPONSE_BYTES: usize = 48 * 1024 * 1024;
 const MAX_BASE64_IMAGE_CHARS: usize = MAX_IMAGE_BYTES.div_ceil(3) * 4 + 4;
 const MAX_GENERATED_IMAGE_COUNT: u8 = 3;
 
+#[derive(Clone, Copy)]
+enum ImageRequestRoute {
+    ApiKey,
+    ChatGptOAuth,
+}
+
 /// Background treatment supported by the image generation API.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -95,11 +101,30 @@ pub enum ImageOutputFormat {
 }
 
 impl ImageOutputFormat {
-    fn as_str(self) -> &'static str {
+    pub(crate) fn as_str(self) -> &'static str {
         match self {
             Self::Png => "png",
             Self::Webp => "webp",
             Self::Jpeg => "jpeg",
+        }
+    }
+}
+
+/// Content-moderation level for GPT Image API requests.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ImageModeration {
+    /// Uses the provider's default moderation level.
+    Auto,
+    /// Requests the provider's less restrictive moderation level.
+    Low,
+}
+
+impl ImageModeration {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::Low => "low",
         }
     }
 }
@@ -117,8 +142,12 @@ pub struct ImageGenerationRequest {
     pub quality: Option<ImageQuality>,
     /// Optional output background treatment.
     pub background: Option<ImageBackground>,
+    /// Optional API content-moderation level.
+    pub moderation: Option<ImageModeration>,
     /// Optional output file encoding.
     pub output_format: Option<ImageOutputFormat>,
+    /// Optional output compression level for lossy API formats.
+    pub output_compression: Option<u8>,
     /// Number of images requested, bounded by this provider integration.
     pub count: u8,
 }
@@ -174,23 +203,148 @@ pub struct ImageGenerationResult {
     pub outputs: Vec<ImageOutput>,
 }
 
+/// State reported for an OAuth image-generation quota.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ImageQuotaState {
+    /// The provider reports an image quota with remaining capacity.
+    Available,
+    /// The provider reports that the image quota is exhausted.
+    Exhausted,
+    /// The provider does not expose an image-specific quota.
+    Unknown,
+    /// The provider quota endpoint could not be refreshed.
+    Unavailable,
+    /// OAuth image quotas do not apply to API-key authentication.
+    NotApplicable,
+}
+
+/// Safe, image-specific quota information reported by ChatGPT OAuth.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImageQuotaStatus {
+    /// Current image quota state.
+    pub state: ImageQuotaState,
+    /// Percentage used in the most informative active image bucket.
+    pub used_percent: Option<f64>,
+    /// Provider reset time in Unix milliseconds, when reported.
+    pub reset_at_unix_ms: Option<i64>,
+    /// Safe machine-readable reason when the quota is unknown or unavailable.
+    pub reason: Option<String>,
+}
+
+/// Generated image outputs together with the OAuth quota snapshot used before generation.
+pub struct ImageGenerationWithQuotaResult {
+    /// Validated image response.
+    pub result: ImageGenerationResult,
+    /// Image quota information for the authentication route.
+    pub quota: ImageQuotaStatus,
+}
+
 impl ImageGenerationRequest {
     fn validate(&self) -> Result<(), ServiceError> {
         validate_prompt(&self.prompt)?;
         validate_model(&self.model)?;
         validate_size(self.size.as_deref())?;
         validate_count(self.count)?;
+        if matches!(self.quality, Some(ImageQuality::XHigh | ImageQuality::Max))
+            && !supports_extended_quality(&self.model)
+        {
+            return Err(invalid_image_request("quality"));
+        }
+        if self
+            .size
+            .as_deref()
+            .is_some_and(|size| !is_standard_size(size))
+            && !supports_custom_size(&self.model)
+        {
+            return Err(invalid_image_request("size"));
+        }
+        if self.output_compression.is_some_and(|value| value > 100)
+            || (self.output_compression.is_some()
+                && !matches!(
+                    self.output_format,
+                    Some(ImageOutputFormat::Jpeg | ImageOutputFormat::Webp)
+                ))
+            || (self.background == Some(ImageBackground::Transparent)
+                && self.output_format == Some(ImageOutputFormat::Jpeg))
+        {
+            return Err(invalid_image_request("output_compression"));
+        }
         Ok(())
     }
 }
 
 impl ChatGptService {
+    /// Reads only the image-specific buckets from the ChatGPT usage endpoint.
+    ///
+    /// Generic Codex and chat usage buckets are never treated as image quota.
+    pub async fn image_generation_quota(
+        &self,
+        connection_id: &str,
+        workspace_id: &str,
+        cancellation: &mut watch::Receiver<bool>,
+    ) -> Result<ImageQuotaStatus, ServiceError> {
+        match self.usage(connection_id, workspace_id, cancellation).await {
+            Ok(snapshot) => Ok(image_quota_status(&snapshot)),
+            Err(error) if *cancellation.borrow() || error.code == "request_cancelled" => Err(error),
+            Err(error) if error.retryable => Ok(ImageQuotaStatus {
+                state: ImageQuotaState::Unavailable,
+                used_percent: None,
+                reset_at_unix_ms: None,
+                reason: Some(error.code.to_owned()),
+            }),
+            Err(error) => Err(error),
+        }
+    }
+
+    /// Checks the OAuth image quota and generates through the shared image service.
+    ///
+    /// API-key authentication skips the OAuth quota check because OpenAI applies its
+    /// API image limits when the generation request is submitted.
+    pub async fn generate_image_with_quota(
+        &self,
+        request: &ImageGenerationRequest,
+        auth: ImageGenerationAuth<'_>,
+        turn_id: Option<&str>,
+        cancellation: &mut watch::Receiver<bool>,
+    ) -> Result<ImageGenerationWithQuotaResult, ServiceError> {
+        request.validate()?;
+        let quota = match auth {
+            ImageGenerationAuth::ApiKey(_) => ImageQuotaStatus {
+                state: ImageQuotaState::NotApplicable,
+                used_percent: None,
+                reset_at_unix_ms: None,
+                reason: None,
+            },
+            ImageGenerationAuth::ChatGptOAuth {
+                connection_id,
+                workspace_id,
+            } => {
+                validate_codex_image_request(request)?;
+                self.image_generation_quota(connection_id, workspace_id, cancellation)
+                    .await?
+            }
+        };
+        if quota.state == ImageQuotaState::Exhausted {
+            return Err(ServiceError::new(
+                "image_rate_limited",
+                "ChatGPT reports that the selected account has reached its image-generation limit.",
+                true,
+            ));
+        }
+        let result = self
+            .generate_image(request, auth, turn_id, cancellation)
+            .await?;
+        Ok(ImageGenerationWithQuotaResult { result, quota })
+    }
+
     /// Sends an image-generation request and returns validated image bytes.
     ///
     /// The request is validated before network access. Cancellation, rejected
     /// provider responses, oversized payloads, and invalid image signatures are
     /// returned as service errors; this method does not persist the outputs.
-    pub async fn generate_image(
+    async fn generate_image(
         &self,
         request: &ImageGenerationRequest,
         auth: ImageGenerationAuth<'_>,
@@ -204,7 +358,7 @@ impl ChatGptService {
                 self.request_public_json(
                     public_endpoint("images/generations"),
                     api_key,
-                    generation_body(request, true, true),
+                    generation_body(request, true, true, true, true),
                     cancellation,
                 )
                 .await?
@@ -213,12 +367,12 @@ impl ChatGptService {
                 connection_id,
                 workspace_id,
             } => {
-                validate_codex_quality(request.quality)?;
+                validate_codex_image_request(request)?;
                 self.request_codex_json(
                     codex_endpoint("images/generations"),
                     connection_id,
                     workspace_id,
-                    generation_body(request, false, false),
+                    generation_body(request, false, false, false, false),
                     turn_id,
                     cancellation,
                 )
@@ -240,7 +394,7 @@ impl ChatGptService {
             cancellation,
         )
         .await?;
-        response_json_bounded(response, cancellation).await
+        response_json_bounded(response, cancellation, ImageRequestRoute::ApiKey).await
     }
 
     async fn request_codex_json(
@@ -271,7 +425,76 @@ impl ChatGptService {
             cancellation,
         )
         .await?;
-        response_json_bounded(response, cancellation).await
+        response_json_bounded(response, cancellation, ImageRequestRoute::ChatGptOAuth).await
+    }
+}
+
+fn image_quota_status(snapshot: &Value) -> ImageQuotaStatus {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()
+        .and_then(|duration| i64::try_from(duration.as_millis()).ok())
+        .unwrap_or(i64::MAX);
+    let image_buckets = snapshot
+        .get("buckets")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|bucket| {
+            bucket
+                .get("limitId")
+                .and_then(Value::as_str)
+                .is_some_and(|id| id.to_ascii_lowercase().contains("image"))
+        })
+        .collect::<Vec<_>>();
+    if image_buckets.is_empty() {
+        return ImageQuotaStatus {
+            state: ImageQuotaState::Unknown,
+            used_percent: None,
+            reset_at_unix_ms: None,
+            reason: Some("image_quota_not_reported".to_owned()),
+        };
+    }
+    let exhausted = image_buckets.iter().any(|bucket| {
+        let used = bucket.get("usedPercent").and_then(Value::as_f64);
+        let reset = bucket.get("resetAtUnixMs").and_then(Value::as_i64);
+        used.is_some_and(|value| value >= 100.0) && reset.is_none_or(|value| value > now)
+    });
+    let status_bucket = image_buckets
+        .iter()
+        .filter(|bucket| {
+            let used = bucket.get("usedPercent").and_then(Value::as_f64);
+            let reset = bucket.get("resetAtUnixMs").and_then(Value::as_i64);
+            used.is_some_and(|value| !(value >= 100.0 && reset.is_some_and(|time| time <= now)))
+        })
+        .max_by(|left, right| {
+            left.get("usedPercent")
+                .and_then(Value::as_f64)
+                .unwrap_or_default()
+                .total_cmp(
+                    &right
+                        .get("usedPercent")
+                        .and_then(Value::as_f64)
+                        .unwrap_or_default(),
+                )
+        });
+    let Some(status_bucket) = status_bucket else {
+        return ImageQuotaStatus {
+            state: ImageQuotaState::Unknown,
+            used_percent: None,
+            reset_at_unix_ms: None,
+            reason: Some("image_quota_incomplete".to_owned()),
+        };
+    };
+    ImageQuotaStatus {
+        state: if exhausted {
+            ImageQuotaState::Exhausted
+        } else {
+            ImageQuotaState::Available
+        },
+        used_percent: status_bucket.get("usedPercent").and_then(Value::as_f64),
+        reset_at_unix_ms: status_bucket.get("resetAtUnixMs").and_then(Value::as_i64),
+        reason: None,
     }
 }
 
@@ -287,6 +510,8 @@ fn generation_body(
     request: &ImageGenerationRequest,
     include_output_format: bool,
     include_count: bool,
+    include_compression: bool,
+    include_moderation: bool,
 ) -> Value {
     let mut body = json!({
         "model": &request.model,
@@ -303,6 +528,12 @@ fn generation_body(
     );
     if include_output_format && let Some(output_format) = request.output_format {
         body["output_format"] = Value::String(output_format.as_str().to_owned());
+    }
+    if include_compression && let Some(output_compression) = request.output_compression {
+        body["output_compression"] = json!(output_compression);
+    }
+    if include_moderation && let Some(moderation) = request.moderation {
+        body["moderation"] = Value::String(moderation.as_str().to_owned());
     }
     body
 }
@@ -364,10 +595,11 @@ async fn send_with_cancellation(
 async fn response_json_bounded(
     response: Response,
     cancellation: &mut watch::Receiver<bool>,
+    route: ImageRequestRoute,
 ) -> Result<(Value, Option<String>), ServiceError> {
     let status = response.status();
     if !status.is_success() {
-        return Err(provider_status_error(status));
+        return Err(provider_status_error_for_route(status, route));
     }
     let image_request_id = image_request_id_from_headers(response.headers());
     if response
@@ -596,6 +828,36 @@ fn validate_codex_quality(quality: Option<ImageQuality>) -> Result<(), ServiceEr
     Ok(())
 }
 
+fn validate_codex_image_request(request: &ImageGenerationRequest) -> Result<(), ServiceError> {
+    validate_codex_quality(request.quality)?;
+    if request.count != 1
+        || request.output_format.is_some()
+        || request.output_compression.is_some()
+        || request.moderation.is_some()
+    {
+        return Err(invalid_image_request("unsupported_oauth_option"));
+    }
+    Ok(())
+}
+
+fn supports_extended_quality(model: &str) -> bool {
+    matches!(
+        model,
+        "gpt-image-2.5-flare"
+            | "gpt-image-2.5-flare-2026-09-08"
+            | "gpt-image-2.5-sunburst"
+            | "gpt-image-2.5-sunburst-2026-09-08"
+    )
+}
+
+fn supports_custom_size(model: &str) -> bool {
+    matches!(model, "gpt-image-2" | "gpt-image-2-2026-04-21") || supports_extended_quality(model)
+}
+
+fn is_standard_size(size: &str) -> bool {
+    matches!(size, "auto" | "1024x1024" | "1024x1536" | "1536x1024")
+}
+
 fn image_mime_for_signature(bytes: &[u8]) -> Option<&'static str> {
     if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
         Some("image/png")
@@ -656,7 +918,12 @@ fn image_request_cancelled() -> ServiceError {
     )
 }
 
+#[cfg(test)]
 fn provider_status_error(status: StatusCode) -> ServiceError {
+    provider_status_error_for_route(status, ImageRequestRoute::ChatGptOAuth)
+}
+
+fn provider_status_error_for_route(status: StatusCode, route: ImageRequestRoute) -> ServiceError {
     match status {
         StatusCode::UNAUTHORIZED => ServiceError::new(
             "image_auth_rejected",
@@ -668,11 +935,18 @@ fn provider_status_error(status: StatusCode) -> ServiceError {
             "The selected account does not have access to image generation.",
             false,
         ),
-        StatusCode::TOO_MANY_REQUESTS => ServiceError::new(
-            "image_rate_limited",
-            "The image provider rate limit was reached. Try again later.",
-            true,
-        ),
+        StatusCode::TOO_MANY_REQUESTS => match route {
+            ImageRequestRoute::ApiKey => ServiceError::new(
+                "image_api_rate_limited",
+                "The OpenAI API rate limit was reached. Check API usage limits and try again later.",
+                true,
+            ),
+            ImageRequestRoute::ChatGptOAuth => ServiceError::new(
+                "image_rate_limited",
+                "The ChatGPT image-generation limit was reached. Try again after it resets.",
+                true,
+            ),
+        },
         status if status.is_server_error() => ServiceError::new(
             "image_provider_unavailable",
             "The image provider is temporarily unavailable.",
@@ -701,7 +975,9 @@ mod tests {
             size: Some("1024x1024".to_owned()),
             quality: Some(ImageQuality::High),
             background: Some(ImageBackground::Auto),
+            moderation: None,
             output_format: Some(ImageOutputFormat::Png),
+            output_compression: None,
             count: 2,
         }
     }
@@ -724,7 +1000,7 @@ mod tests {
 
     #[test]
     fn api_key_body_has_public_only_fields() {
-        let value = generation_body(&generation_request(), true, true);
+        let value = generation_body(&generation_request(), true, true, true, true);
         assert_eq!(value["output_format"], "png");
         assert_eq!(value["n"], 2);
         assert_eq!(value["quality"], "high");
@@ -733,14 +1009,14 @@ mod tests {
         xhigh_request.model = "configured-image-model-with-extended-quality".to_owned();
         xhigh_request.quality = Some(ImageQuality::XHigh);
         assert_eq!(
-            generation_body(&xhigh_request, true, true)["quality"],
+            generation_body(&xhigh_request, true, true, true, true)["quality"],
             "xhigh"
         );
     }
 
     #[test]
     fn codex_body_does_not_receive_public_output_format() {
-        let value = generation_body(&generation_request(), false, false);
+        let value = generation_body(&generation_request(), false, false, false, false);
         assert!(value.get("output_format").is_none());
         assert!(value.get("n").is_none());
         assert_eq!(value["background"], "auto");
@@ -851,7 +1127,6 @@ mod tests {
         assert!(validate_codex_quality(None).is_ok());
     }
 
-    #[test]
     #[test]
     fn generated_image_count_respects_attachment_store_limit() {
         assert!(validate_count(1).is_ok());
@@ -983,14 +1258,21 @@ mod tests {
         let response = client
             .post(format!("http://{address}/v1/images/generations"))
             .bearer_auth("test-api-key")
-            .json(&generation_body(&generation_request(), true, true))
+            .json(&generation_body(
+                &generation_request(),
+                true,
+                true,
+                true,
+                true,
+            ))
             .send()
             .await
             .expect("mock image request should succeed");
         let (_cancellation_sender, mut cancellation) = watch::channel(false);
-        let (value, request_id) = response_json_bounded(response, &mut cancellation)
-            .await
-            .expect("mock image JSON should be accepted");
+        let (value, request_id) =
+            response_json_bounded(response, &mut cancellation, ImageRequestRoute::ApiKey)
+                .await
+                .expect("mock image JSON should be accepted");
         assert_eq!(request_id.as_deref(), Some("mock-image-1"));
         let result = parse_provider_response(value, request_id).expect("mock image should decode");
         assert_eq!(result.outputs.len(), 1);

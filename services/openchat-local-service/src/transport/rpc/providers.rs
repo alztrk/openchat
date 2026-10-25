@@ -2,12 +2,20 @@
 
 use std::sync::Arc;
 
-use serde_json::Value;
+use serde::Deserialize;
+use serde_json::{Value, json};
 use tokio::sync::watch;
 
 use crate::{
-    chatgpt::ChatGptService, openai_api, openai_compatible, protocol::ServiceError,
-    provider_credentials::ProviderCredentials, service::OperationGate, storage::AppStorage,
+    chatgpt::{
+        ChatGptService, ImageBackground, ImageGenerationAuth, ImageGenerationRequest,
+        ImageModeration, ImageOutputFormat, ImageQuality,
+    },
+    image_library, openai_api, openai_compatible,
+    protocol::ServiceError,
+    provider_credentials::ProviderCredentials,
+    service::OperationGate,
+    storage::AppStorage,
 };
 
 use super::{bounded_route_id, optional_string, required_string, take_optional_api_key};
@@ -98,6 +106,17 @@ pub(super) async fn dispatch(
                 .usage(connection_id, workspace_id, cancellation)
                 .await
         }
+        "chatgpt.images.quota.get" => {
+            let connection_id = required_string(params, "connectionId")?;
+            let workspace_id = required_string(params, "workspaceId")?;
+            let quota = service
+                .image_generation_quota(connection_id, workspace_id, cancellation)
+                .await?;
+            Ok(json!(quota))
+        }
+        "chatgpt.images.generate" => {
+            generate_design_image(params, storage, service, cancellation).await
+        }
         "chatgpt.reset_credits.consume" => {
             let connection_id = required_string(params, "connectionId")?;
             let workspace_id = required_string(params, "workspaceId")?;
@@ -176,6 +195,162 @@ pub(super) async fn dispatch(
             false,
         )),
     }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct DesignImageRequest {
+    prompt: String,
+    model: String,
+    size: Option<String>,
+    quality: Option<ImageQuality>,
+    background: Option<ImageBackground>,
+    moderation: Option<ImageModeration>,
+    output_format: Option<ImageOutputFormat>,
+    output_compression: Option<u8>,
+    #[serde(default = "one_image")]
+    count: u8,
+    auth: DesignImageAuth,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, tag = "kind", rename_all = "snake_case")]
+enum DesignImageAuth {
+    OAuth {
+        connection_id: String,
+        workspace_id: String,
+    },
+    ApiKey {
+        connection_id: String,
+    },
+}
+
+fn one_image() -> u8 {
+    1
+}
+
+async fn generate_design_image(
+    params: &mut Value,
+    storage: &AppStorage,
+    service: &ChatGptService,
+    cancellation: &mut watch::Receiver<bool>,
+) -> Result<Value, ServiceError> {
+    let input = serde_json::from_value::<DesignImageRequest>(params.clone())
+        .map_err(|_| invalid_image_request())?;
+    *params = Value::Null;
+    let request = ImageGenerationRequest {
+        prompt: input.prompt,
+        model: input.model,
+        size: input.size,
+        quality: input.quality,
+        background: input.background,
+        moderation: input.moderation,
+        output_format: input.output_format,
+        output_compression: input.output_compression,
+        count: input.count,
+    };
+
+    let api_key = match &input.auth {
+        DesignImageAuth::ApiKey { connection_id } => {
+            let credentials = ProviderCredentials::load(storage)?;
+            Some(credentials.required_api_key("chatgpt_api", Some(connection_id))?)
+        }
+        DesignImageAuth::OAuth { .. } => None,
+    };
+    let (provider_route, connection_id, workspace_id) = match &input.auth {
+        DesignImageAuth::OAuth {
+            connection_id,
+            workspace_id,
+        } => (
+            "oauth",
+            Some(connection_id.as_str()),
+            Some(workspace_id.as_str()),
+        ),
+        DesignImageAuth::ApiKey { connection_id } => {
+            ("api_key", Some(connection_id.as_str()), None)
+        }
+    };
+    let generation_id = image_library::begin_generation(
+        storage,
+        &request,
+        "design",
+        provider_route,
+        connection_id,
+        workspace_id,
+        None,
+        None,
+    )?;
+
+    let generated_result = match input.auth {
+        DesignImageAuth::OAuth {
+            connection_id,
+            workspace_id,
+        } => {
+            service
+                .generate_image_with_quota(
+                    &request,
+                    ImageGenerationAuth::ChatGptOAuth {
+                        connection_id: &connection_id,
+                        workspace_id: &workspace_id,
+                    },
+                    None,
+                    cancellation,
+                )
+                .await
+        }
+        DesignImageAuth::ApiKey { .. } => match api_key.as_deref() {
+            Some(api_key) => {
+                service
+                    .generate_image_with_quota(
+                        &request,
+                        ImageGenerationAuth::ApiKey(api_key.as_str()),
+                        None,
+                        cancellation,
+                    )
+                    .await
+            }
+            None => Err(invalid_image_request()),
+        },
+    };
+    let generated = match generated_result {
+        Ok(generated) => generated,
+        Err(error) => {
+            let status = if matches!(error.code, "request_cancelled" | "operation_cancelled") {
+                "cancelled"
+            } else {
+                "failed"
+            };
+            image_library::finish_generation(storage, &generation_id, status, Some(error.code))?;
+            return Err(error);
+        }
+    };
+
+    let images = match image_library::save_generation(
+        storage,
+        &generation_id,
+        provider_route,
+        &request,
+        &generated.result,
+    ) {
+        Ok(images) => images,
+        Err(error) => {
+            image_library::finish_generation(storage, &generation_id, "failed", Some(error.code))?;
+            return Err(error);
+        }
+    };
+    Ok(json!({
+        "images": images,
+        "quota": generated.quota,
+        "generationId": generation_id,
+    }))
+}
+
+fn invalid_image_request() -> ServiceError {
+    ServiceError::new(
+        "image_request_invalid",
+        "The Design image request is invalid. Check the prompt and selected options.",
+        false,
+    )
 }
 
 #[cfg(test)]

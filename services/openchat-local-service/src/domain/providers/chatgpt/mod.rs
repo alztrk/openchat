@@ -40,8 +40,9 @@ mod response_parser;
 mod streaming;
 pub(crate) mod subagents;
 mod title_generation;
-pub(super) use self::images::{
-    ImageBackground, ImageGenerationAuth, ImageGenerationRequest, ImageQuality,
+pub(crate) use self::images::{
+    ImageBackground, ImageGenerationAuth, ImageGenerationRequest, ImageGenerationResult,
+    ImageModeration, ImageOutputFormat, ImageQuality,
 };
 use self::response_parser::{
     ensure_success, http_error, parse_models, parse_reset_credits, parse_usage, responses_tool,
@@ -122,6 +123,7 @@ impl ChatGptService {
     }
 
     pub fn new(storage: Arc<AppStorage>) -> Result<Self, ServiceError> {
+        crate::image_library::recover_incomplete_generations(&storage)?;
         let http = build_http_client()?;
         Ok(Self {
             storage,

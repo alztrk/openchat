@@ -5,7 +5,10 @@
 
 use crate::{
     chat_operation::SubagentModelOption,
-    chatgpt::{ChatGptService, ImageGenerationAuth, ImageGenerationRequest, ImageQuality},
+    chatgpt::{
+        ChatGptService, ImageGenerationAuth, ImageGenerationRequest, ImageOutputFormat,
+        ImageQuality,
+    },
     permissions::ToolPermissionBroker,
     protocol::{EventSink, ServiceError},
     provider_schema::{
@@ -1750,66 +1753,40 @@ impl ToolExecutor {
             return Err(crate::permissions::operation_cancelled_error());
         }
 
-        let result = match image_generation {
+        let run_result = match image_generation {
             ImageGenerationContext::ChatGptOAuth {
-                service,
                 connection_id,
                 workspace_id,
-                turn_id,
                 ..
-            } => {
-                service
-                    .generate_image(
-                        &request,
-                        ImageGenerationAuth::ChatGptOAuth {
-                            connection_id,
-                            workspace_id,
-                        },
-                        *turn_id,
-                        cancellation,
-                    )
-                    .await
-            }
-            ImageGenerationContext::ApiKey {
-                service, api_key, ..
-            } => {
-                service
-                    .generate_image(
-                        &request,
-                        ImageGenerationAuth::ApiKey(api_key),
-                        None,
-                        cancellation,
-                    )
-                    .await
-            }
-            ImageGenerationContext::CompatibleApiKey { .. } => Err(ServiceError::new(
+            } => crate::image_library::begin_generation(
+                storage,
+                &request,
+                "chat",
+                "oauth",
+                Some(connection_id),
+                Some(workspace_id),
+                Some(&snapshot.conversation_id),
+                Some(&snapshot.message_id),
+            ),
+            ImageGenerationContext::ApiKey { .. } => crate::image_library::begin_generation(
+                storage,
+                &request,
+                "chat",
+                "api_key",
+                None,
+                None,
+                Some(&snapshot.conversation_id),
+                Some(&snapshot.message_id),
+            ),
+            ImageGenerationContext::CompatibleApiKey { .. }
+            | ImageGenerationContext::LocalEndpoint { .. } => Err(ServiceError::new(
                 "image_generation_unavailable",
                 "Image generation is unavailable for this provider route.",
                 false,
             )),
-            ImageGenerationContext::LocalEndpoint { .. } => Err(ServiceError::new(
-                "image_generation_unavailable",
-                "Image generation is unavailable for this local route.",
-                false,
-            )),
         };
-        let result = match result {
-            Ok(result) => result,
-            Err(error) if is_image_cancellation(&error) => {
-                self.emit_activity(
-                    storage,
-                    ToolActivity::cancelled(
-                        call,
-                        String::new(),
-                        tool_error(error.code, &error.message),
-                    ),
-                    request_id,
-                    snapshot,
-                    events,
-                )
-                .await?;
-                return Err(error);
-            }
+        let generation_id = match run_result {
+            Ok(id) => id,
             Err(error) => {
                 let output = tool_error(error.code, &error.message);
                 self.emit_activity(
@@ -1827,7 +1804,100 @@ impl ToolExecutor {
             }
         };
 
+        let result = match image_generation {
+            ImageGenerationContext::ChatGptOAuth {
+                service,
+                connection_id,
+                workspace_id,
+                turn_id,
+                ..
+            } => {
+                service
+                    .generate_image_with_quota(
+                        &request,
+                        ImageGenerationAuth::ChatGptOAuth {
+                            connection_id,
+                            workspace_id,
+                        },
+                        *turn_id,
+                        cancellation,
+                    )
+                    .await
+            }
+            ImageGenerationContext::ApiKey {
+                service, api_key, ..
+            } => {
+                service
+                    .generate_image_with_quota(
+                        &request,
+                        ImageGenerationAuth::ApiKey(api_key),
+                        None,
+                        cancellation,
+                    )
+                    .await
+            }
+            ImageGenerationContext::CompatibleApiKey { .. }
+            | ImageGenerationContext::LocalEndpoint { .. } => Err(ServiceError::new(
+                "image_generation_unavailable",
+                "Image generation is unavailable for this provider route.",
+                false,
+            )),
+        };
+        let generated = match result {
+            Ok(result) => result,
+            Err(error) if is_image_cancellation(&error) => {
+                crate::image_library::finish_generation(
+                    storage,
+                    &generation_id,
+                    "cancelled",
+                    Some(error.code),
+                )?;
+                self.emit_activity(
+                    storage,
+                    ToolActivity::cancelled(
+                        call,
+                        String::new(),
+                        tool_error(error.code, &error.message),
+                    ),
+                    request_id,
+                    snapshot,
+                    events,
+                )
+                .await?;
+                return Err(error);
+            }
+            Err(error) => {
+                crate::image_library::finish_generation(
+                    storage,
+                    &generation_id,
+                    "failed",
+                    Some(error.code),
+                )?;
+                let output = tool_error(error.code, &error.message);
+                self.emit_activity(
+                    storage,
+                    ToolActivity::finished(call, None, output.clone()),
+                    request_id,
+                    snapshot,
+                    events,
+                )
+                .await?;
+                return Ok(ToolResult {
+                    call_id: call.id.clone(),
+                    output,
+                });
+            }
+        };
+
+        let result = generated.result;
+
         if *cancellation.borrow() {
+            crate::image_library::finish_generation(
+                storage,
+                &generation_id,
+                "cancelled",
+                Some("operation_cancelled"),
+            )?;
             let output = tool_error("operation_cancelled", "The request was stopped.");
             self.emit_activity(
                 storage,
@@ -1854,6 +1924,12 @@ impl ToolExecutor {
         ) {
             Ok(attachments) => attachments,
             Err(error) => {
+                crate::image_library::finish_generation(
+                    storage,
+                    &generation_id,
+                    "failed",
+                    Some(error.code),
+                )?;
                 let output = tool_error(error.code, &error.message);
                 self.emit_activity(
                     storage,
@@ -1869,6 +1945,40 @@ impl ToolExecutor {
                 });
             }
         };
+        if let Err(error) =
+            crate::image_library::complete_chat_generation(storage, &generation_id, &attachments)
+        {
+            let cleanup_result = crate::attachments::delete_generated_images(
+                storage.root(),
+                &snapshot.conversation_id,
+                &snapshot.message_id,
+                &attachments,
+            );
+            let status_result = crate::image_library::finish_generation(
+                storage,
+                &generation_id,
+                "failed",
+                Some(error.code),
+            );
+            let error = match (cleanup_result, status_result) {
+                (Err(cleanup_error), _) => cleanup_error,
+                (_, Err(status_error)) => status_error,
+                (Ok(()), Ok(())) => error,
+            };
+            let output = tool_error(error.code, &error.message);
+            self.emit_activity(
+                storage,
+                ToolActivity::finished(call, None, output.clone()),
+                request_id,
+                snapshot,
+                events,
+            )
+            .await?;
+            return Ok(ToolResult {
+                call_id: call.id.clone(),
+                output,
+            });
+        }
         if crate::attachments::append_assistant_attachments(
             storage,
             &snapshot.conversation_id,
@@ -1883,8 +1993,15 @@ impl ToolExecutor {
                 &snapshot.message_id,
                 &attachments,
             );
+            let revert_result = crate::image_library::revert_chat_generation(
+                storage,
+                &generation_id,
+                "image_storage_persistence_failed",
+            );
             let error = if cleanup_result.is_err() {
                 image_storage_cleanup_error()
+            } else if revert_result.is_err() {
+                image_storage_persistence_error()
             } else {
                 image_storage_persistence_error()
             };
@@ -1905,6 +2022,7 @@ impl ToolExecutor {
 
         let mut output = json!({
             "attachments": attachments,
+            "generationId": generation_id,
             "created": metadata.created_unix_seconds,
             "generation": {
                 "background": metadata.background,
@@ -2579,6 +2697,9 @@ struct GenerateImageArguments {
     size: Option<String>,
     quality: Option<String>,
     background: Option<String>,
+    moderation: Option<String>,
+    output_format: Option<String>,
+    output_compression: Option<u8>,
     count: Option<u8>,
 }
 
@@ -2602,13 +2723,28 @@ fn parse_image_request(arguments: &Value) -> Result<ImageGenerationRequest, Serv
         Some("auto") => Some(crate::chatgpt::ImageBackground::Auto),
         Some(_) => return Err(image_request_invalid()),
     };
+    let moderation = match arguments.moderation.as_deref() {
+        None => None,
+        Some("auto") => Some(crate::chatgpt::ImageModeration::Auto),
+        Some("low") => Some(crate::chatgpt::ImageModeration::Low),
+        Some(_) => return Err(image_request_invalid()),
+    };
+    let output_format = match arguments.output_format.as_deref() {
+        None => None,
+        Some("png") => Some(ImageOutputFormat::Png),
+        Some("jpeg") => Some(ImageOutputFormat::Jpeg),
+        Some("webp") => Some(ImageOutputFormat::Webp),
+        Some(_) => return Err(image_request_invalid()),
+    };
     Ok(ImageGenerationRequest {
         prompt: arguments.prompt,
         model: arguments.model,
         size: arguments.size,
         quality,
         background,
-        output_format: None,
+        moderation,
+        output_format,
+        output_compression: arguments.output_compression,
         count: arguments.count.unwrap_or(1),
     })
 }

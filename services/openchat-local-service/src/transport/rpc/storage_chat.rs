@@ -932,6 +932,57 @@ fn list_conversation_attachments(
         return Err(invalid_request_params());
     }
 
+    let generated_only = optional_bool(input, "generatedImagesOnly", false)?;
+    let sort = match input.get("sort") {
+        None | Some(Value::Null) => "newest",
+        Some(Value::String(value)) if matches!(value.as_str(), "newest" | "oldest") => {
+            value.as_str()
+        }
+        _ => return Err(invalid_request_params()),
+    };
+    let created_after = optional_timestamp(input, "createdAfter")?;
+    let created_before = optional_timestamp(input, "createdBefore")?;
+    if created_after
+        .zip(created_before)
+        .is_some_and(|(after, before)| after > before)
+    {
+        return Err(invalid_request_params());
+    }
+    let model_id = optional_filter_string(input, "modelId", 128)?;
+    if model_id.as_deref().is_some_and(|value| {
+        !value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || b"._:-/".contains(&byte))
+    }) {
+        return Err(invalid_request_params());
+    }
+    let provider_route = match optional_filter_string(input, "providerRoute", 16)?.as_deref() {
+        None => None,
+        Some("oauth") => Some("oauth".to_owned()),
+        Some("api_key") => Some("api_key".to_owned()),
+        Some(_) => return Err(invalid_request_params()),
+    };
+    let favorites_only = optional_bool(input, "favoritesOnly", false)?;
+    let tag = optional_filter_string(input, "tag", 48)?.map(|tag| tag.to_lowercase());
+    let collection_id = optional_filter_string(input, "collectionId", 32)?;
+    if collection_id
+        .as_deref()
+        .is_some_and(|value| !is_safe_attachment_id(value))
+    {
+        return Err(invalid_request_params());
+    }
+    let filters = AttachmentLibraryFilters {
+        generated_only,
+        sort,
+        created_after,
+        created_before,
+        model_id: model_id.as_deref(),
+        provider_route: provider_route.as_deref(),
+        favorites_only,
+        tag: tag.as_deref(),
+        collection_id: collection_id.as_deref(),
+    };
+
     let connection = storage.connect().map_err(storage_error)?;
     let index_enabled = attachment_text_index_enabled(&connection)?;
     let mut cursor = offset;
@@ -943,8 +994,13 @@ fn list_conversation_attachments(
     while items.len() <= limit && scanned < MAX_ATTACHMENT_SCAN as u64 {
         let batch_limit =
             ATTACHMENT_LIBRARY_BATCH_SIZE.min((MAX_ATTACHMENT_SCAN as u64).saturating_sub(scanned));
-        let batch =
-            query_attachment_library_batch(&connection, cursor, batch_limit, index_enabled)?;
+        let batch = query_attachment_library_batch(
+            &connection,
+            cursor,
+            batch_limit,
+            index_enabled,
+            &filters,
+        )?;
         if batch.is_empty() {
             reached_end = true;
             break;
@@ -971,6 +1027,14 @@ fn list_conversation_attachments(
                 && !summary.file_name.to_lowercase().contains(&query)
                 && !summary.conversation_title.to_lowercase().contains(&query)
                 && !candidate.indexed_content.to_lowercase().contains(&query)
+                && !summary
+                    .generation_prompt
+                    .as_deref()
+                    .is_some_and(|value| value.to_lowercase().contains(&query))
+                && !summary
+                    .generation_model
+                    .as_deref()
+                    .is_some_and(|value| value.to_lowercase().contains(&query))
             {
                 continue;
             }
@@ -989,6 +1053,12 @@ fn list_conversation_attachments(
                 "sizeBytes": summary.size_bytes,
                 "createdAt": summary.created_at,
                 "isAvailable": available,
+                "generationId": summary.generation_id,
+                "prompt": summary.generation_prompt,
+                "model": summary.generation_model,
+                "providerRoute": summary.generation_provider_route,
+                "isFavorite": summary.is_favorite,
+                "tags": summary.tags,
             }));
         }
         if found_extra_at.is_some() {
@@ -1029,6 +1099,24 @@ struct AttachmentLibrarySummary {
     mime_type: String,
     size_bytes: usize,
     created_at: i64,
+    generation_id: Option<String>,
+    generation_prompt: Option<String>,
+    generation_model: Option<String>,
+    generation_provider_route: Option<String>,
+    is_favorite: bool,
+    tags: Vec<String>,
+}
+
+struct AttachmentLibraryFilters<'a> {
+    generated_only: bool,
+    sort: &'a str,
+    created_after: Option<i64>,
+    created_before: Option<i64>,
+    model_id: Option<&'a str>,
+    provider_route: Option<&'a str>,
+    favorites_only: bool,
+    tag: Option<&'a str>,
+    collection_id: Option<&'a str>,
 }
 
 fn query_attachment_library_batch(
@@ -1036,6 +1124,7 @@ fn query_attachment_library_batch(
     offset: u64,
     limit: u64,
     index_enabled: bool,
+    filters: &AttachmentLibraryFilters<'_>,
 ) -> Result<Vec<AttachmentLibraryCandidate>, ServiceError> {
     let mut statement = connection
         .prepare(
@@ -1045,6 +1134,8 @@ fn query_attachment_library_batch(
                     json_extract(attachment.value, '$.mimeType'),
                     json_extract(attachment.value, '$.sizeBytes'),
                     json_extract(attachment.value, '$.kind'),
+                    generation.id, generation.prompt, generation.model_id, generation.provider_route,
+                    COALESCE(annotation.is_favorite, 0), COALESCE(annotation.tags_json, '[]'),
                     CASE WHEN ?2 = 1 THEN COALESCE((
                         SELECT indexed.content FROM attachment_text_index indexed
                         WHERE indexed.conversation_id = m.conversation_id
@@ -1058,8 +1149,41 @@ fn query_attachment_library_batch(
                      THEN json_extract(substr(m.content, length(?1) + 1), '$.attachments')
                      ELSE '[]' END
              ) AS attachment
+             LEFT JOIN image_generation_outputs generated_output
+               ON generated_output.conversation_id = c.id
+              AND generated_output.message_id = m.id
+              AND generated_output.attachment_id = json_extract(attachment.value, '$.id')
+             LEFT JOIN image_generation_runs generation
+               ON generation.id = generated_output.generation_id
+             LEFT JOIN image_library_annotations annotation
+               ON annotation.source_kind = 'chat'
+              AND annotation.source_key = c.id || ':' || m.id || ':' || json_extract(attachment.value, '$.id')
              WHERE substr(m.content, 1, length(?1)) = ?1
-             ORDER BY COALESCE(m.created_at, 0) DESC, m.conversation_id ASC, m.id ASC,
+               AND (?5 = 0 OR (m.role = 'assistant' AND lower(json_extract(attachment.value, '$.name')) IN
+                    ('generated-image.png', 'generated-image.jpeg', 'generated-image.webp')))
+               AND (?5 = 0 OR NOT EXISTS (
+                    SELECT 1 FROM image_library_hidden_chat_images hidden
+                    WHERE hidden.conversation_id = c.id AND hidden.message_id = m.id
+                      AND hidden.attachment_id = json_extract(attachment.value, '$.id')
+               ))
+               AND (?7 IS NULL OR COALESCE(m.created_at, c.updated_at) >= ?7)
+               AND (?8 IS NULL OR COALESCE(m.created_at, c.updated_at) <= ?8)
+               AND (?9 IS NULL OR generation.model_id = ?9)
+               AND (?10 IS NULL OR generation.provider_route = ?10)
+               AND (?11 = 0 OR COALESCE(annotation.is_favorite, 0) = 1)
+               AND (?12 IS NULL OR EXISTS (
+                    SELECT 1 FROM json_each(COALESCE(annotation.tags_json, '[]')) tag
+                    WHERE lower(tag.value) = lower(?12)
+               ))
+               AND (?13 IS NULL OR EXISTS (
+                    SELECT 1 FROM image_collection_items collection_item
+                    WHERE collection_item.collection_id = ?13
+                      AND collection_item.source_kind = 'chat'
+                      AND collection_item.source_key = c.id || ':' || m.id || ':' || json_extract(attachment.value, '$.id')
+               ))
+             ORDER BY CASE WHEN ?6 = 'oldest' THEN COALESCE(m.created_at, c.updated_at) END ASC,
+                      CASE WHEN ?6 = 'newest' THEN COALESCE(m.created_at, c.updated_at) END DESC,
+                      m.conversation_id ASC, m.id ASC,
                       json_extract(attachment.value, '$.id') ASC
              LIMIT ?3 OFFSET ?4",
         )
@@ -1070,7 +1194,16 @@ fn query_attachment_library_batch(
                 MESSAGE_CONTENT_PREFIX,
                 index_enabled,
                 limit as i64,
-                offset as i64
+                offset as i64,
+                filters.generated_only,
+                filters.sort,
+                filters.created_after,
+                filters.created_before,
+                filters.model_id,
+                filters.provider_route,
+                filters.favorites_only,
+                filters.tag,
+                filters.collection_id,
             ],
             |row| {
                 let summary = (|| -> rusqlite::Result<Option<AttachmentLibrarySummary>> {
@@ -1111,6 +1244,15 @@ fn query_attachment_library_batch(
                     if validate_attachment_metadata(&metadata).is_err() {
                         return Ok(None);
                     }
+                    let tags_json = row.get::<_, String>(15)?;
+                    let tags =
+                        serde_json::from_str::<Vec<String>>(&tags_json).map_err(|error| {
+                            rusqlite::Error::FromSqlConversionFailure(
+                                15,
+                                rusqlite::types::Type::Text,
+                                Box::new(error),
+                            )
+                        })?;
                     Ok(Some(AttachmentLibrarySummary {
                         conversation_id,
                         conversation_title,
@@ -1121,11 +1263,17 @@ fn query_attachment_library_batch(
                         mime_type,
                         size_bytes,
                         created_at: row.get(4)?,
+                        generation_id: row.get(10)?,
+                        generation_prompt: row.get(11)?,
+                        generation_model: row.get(12)?,
+                        generation_provider_route: row.get(13)?,
+                        is_favorite: row.get::<_, i64>(14)? != 0,
+                        tags,
                     }))
                 })()?;
                 Ok(AttachmentLibraryCandidate {
                     summary,
-                    indexed_content: row.get(10)?,
+                    indexed_content: row.get(16)?,
                 })
             },
         )
@@ -1802,6 +1950,40 @@ fn optional_nonnegative_i64(
             .ok_or_else(invalid_request_params),
         _ => Err(invalid_request_params()),
     }
+}
+
+fn optional_bool(
+    object: &Map<String, Value>,
+    name: &str,
+    default: bool,
+) -> Result<bool, ServiceError> {
+    match object.get(name) {
+        None => Ok(default),
+        Some(Value::Bool(value)) => Ok(*value),
+        _ => Err(invalid_request_params()),
+    }
+}
+
+fn optional_timestamp(
+    object: &Map<String, Value>,
+    name: &str,
+) -> Result<Option<i64>, ServiceError> {
+    optional_nonnegative_i64(object, name)
+}
+
+fn optional_filter_string<'a>(
+    object: &'a Map<String, Value>,
+    name: &str,
+    max_bytes: usize,
+) -> Result<Option<String>, ServiceError> {
+    let Some(value) = optional_bounded_string(object, name, max_bytes, true)? else {
+        return Ok(None);
+    };
+    Ok(Some(value.to_owned()))
+}
+
+fn is_safe_attachment_id(value: &str) -> bool {
+    value.len() == 32 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
 fn optional_nonnegative_f64(

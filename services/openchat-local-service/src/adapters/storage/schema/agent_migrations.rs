@@ -1105,5 +1105,156 @@ pub(super) fn apply_agent_migrations(
         current_version = 36;
     }
 
+    if current_version < 37 && target_version >= 37 {
+        let transaction = connection.unchecked_transaction()?;
+        transaction.execute_batch(
+            "CREATE TABLE generated_images (
+                id TEXT PRIMARY KEY NOT NULL CHECK (
+                    length(id) = 32 AND id NOT GLOB '*[^0-9a-f]*'
+                ),
+                prompt TEXT NOT NULL CHECK (length(prompt) BETWEEN 1 AND 40000),
+                model_id TEXT NOT NULL CHECK (length(model_id) BETWEEN 1 AND 128),
+                size TEXT,
+                quality TEXT CHECK (
+                    quality IS NULL OR quality IN ('low', 'medium', 'high', 'xhigh', 'max', 'auto')
+                ),
+                background TEXT CHECK (
+                    background IS NULL OR background IN ('transparent', 'opaque', 'auto')
+                ),
+                moderation TEXT CHECK (
+                    moderation IS NULL OR moderation IN ('auto', 'low')
+                ),
+                output_format TEXT NOT NULL CHECK (output_format IN ('png', 'jpeg', 'webp')),
+                output_compression INTEGER CHECK (
+                    output_compression IS NULL OR (
+                        output_compression BETWEEN 0 AND 100
+                        AND output_format IN ('jpeg', 'webp')
+                    )
+                ),
+                mime_type TEXT NOT NULL CHECK (mime_type IN ('image/png', 'image/jpeg', 'image/webp')),
+                size_bytes INTEGER NOT NULL CHECK (size_bytes BETWEEN 1 AND 33554432),
+                created_at_unix_ms INTEGER NOT NULL
+            );
+            CREATE INDEX generated_images_created
+                ON generated_images (created_at_unix_ms DESC, id ASC);",
+        )?;
+        transaction.execute(
+            "INSERT INTO openchat_backend_migrations (version, applied_at_unix_ms) VALUES (37, ?1)",
+            [unix_time_millis()?],
+        )?;
+        transaction.commit()?;
+        current_version = 37;
+    }
+
+    if current_version < 38 && target_version >= 38 {
+        let transaction = connection.unchecked_transaction()?;
+        transaction.execute_batch(
+            "ALTER TABLE generated_images
+                ADD COLUMN generation_id TEXT NOT NULL DEFAULT '';
+            UPDATE generated_images SET generation_id = id WHERE generation_id = '';
+            CREATE INDEX generated_images_generation
+                ON generated_images (generation_id, created_at_unix_ms DESC, id ASC);
+
+            CREATE TABLE image_generation_runs (
+                id TEXT PRIMARY KEY NOT NULL CHECK (
+                    length(id) = 32 AND id NOT GLOB '*[^0-9a-f]*'
+                ),
+                source_kind TEXT NOT NULL CHECK (source_kind IN ('design', 'chat')),
+                provider_route TEXT NOT NULL CHECK (
+                    provider_route IN ('oauth', 'api_key', 'unknown')
+                ),
+                connection_id TEXT,
+                workspace_id TEXT,
+                conversation_id TEXT,
+                message_id TEXT,
+                prompt TEXT NOT NULL CHECK (length(prompt) BETWEEN 1 AND 40000),
+                model_id TEXT NOT NULL CHECK (length(model_id) BETWEEN 1 AND 128),
+                size TEXT,
+                quality TEXT,
+                background TEXT,
+                moderation TEXT,
+                output_format TEXT,
+                output_compression INTEGER,
+                requested_count INTEGER NOT NULL CHECK (requested_count BETWEEN 1 AND 3),
+                image_count INTEGER NOT NULL DEFAULT 0 CHECK (image_count BETWEEN 0 AND 3),
+                status TEXT NOT NULL CHECK (
+                    status IN ('preparing', 'generating', 'completed', 'cancelled', 'failed')
+                ),
+                error_code TEXT,
+                created_at_unix_ms INTEGER NOT NULL,
+                updated_at_unix_ms INTEGER NOT NULL
+            );
+            CREATE INDEX image_generation_runs_created
+                ON image_generation_runs (created_at_unix_ms DESC, id ASC);
+            CREATE INDEX image_generation_runs_status
+                ON image_generation_runs (status, created_at_unix_ms DESC, id ASC);
+
+            CREATE TABLE image_generation_outputs (
+                generation_id TEXT NOT NULL REFERENCES image_generation_runs(id) ON DELETE CASCADE,
+                conversation_id TEXT NOT NULL,
+                message_id TEXT NOT NULL,
+                attachment_id TEXT NOT NULL,
+                PRIMARY KEY (conversation_id, message_id, attachment_id)
+            );
+            CREATE INDEX image_generation_outputs_generation
+                ON image_generation_outputs (generation_id, conversation_id, message_id);
+
+            CREATE TABLE image_library_annotations (
+                source_kind TEXT NOT NULL CHECK (source_kind IN ('design', 'chat')),
+                source_key TEXT NOT NULL CHECK (length(source_key) BETWEEN 1 AND 1024),
+                is_favorite INTEGER NOT NULL DEFAULT 0 CHECK (is_favorite IN (0, 1)),
+                tags_json TEXT NOT NULL DEFAULT '[]',
+                PRIMARY KEY (source_kind, source_key)
+            );
+            CREATE INDEX image_library_annotations_favorites
+                ON image_library_annotations (is_favorite, source_kind, source_key);
+
+            CREATE TABLE image_library_hidden_chat_images (
+                conversation_id TEXT NOT NULL,
+                message_id TEXT NOT NULL,
+                attachment_id TEXT NOT NULL,
+                PRIMARY KEY (conversation_id, message_id, attachment_id)
+            );
+
+            CREATE TABLE image_collections (
+                id TEXT PRIMARY KEY NOT NULL CHECK (
+                    length(id) = 32 AND id NOT GLOB '*[^0-9a-f]*'
+                ),
+                name TEXT NOT NULL CHECK (length(name) BETWEEN 1 AND 80),
+                created_at_unix_ms INTEGER NOT NULL,
+                updated_at_unix_ms INTEGER NOT NULL
+            );
+            CREATE UNIQUE INDEX image_collections_name
+                ON image_collections (name COLLATE NOCASE);
+
+            CREATE TABLE image_collection_items (
+                collection_id TEXT NOT NULL REFERENCES image_collections(id) ON DELETE CASCADE,
+                source_kind TEXT NOT NULL CHECK (source_kind IN ('design', 'chat')),
+                source_key TEXT NOT NULL CHECK (length(source_key) BETWEEN 1 AND 1024),
+                PRIMARY KEY (collection_id, source_kind, source_key)
+            );
+            CREATE INDEX image_collection_items_source
+                ON image_collection_items (source_kind, source_key, collection_id);
+
+            CREATE TABLE image_prompt_templates (
+                id TEXT PRIMARY KEY NOT NULL CHECK (
+                    length(id) = 32 AND id NOT GLOB '*[^0-9a-f]*'
+                ),
+                name TEXT NOT NULL CHECK (length(name) BETWEEN 1 AND 80),
+                prompt TEXT NOT NULL CHECK (length(prompt) BETWEEN 1 AND 10000),
+                created_at_unix_ms INTEGER NOT NULL,
+                updated_at_unix_ms INTEGER NOT NULL
+            );
+            CREATE INDEX image_prompt_templates_updated
+                ON image_prompt_templates (updated_at_unix_ms DESC, id ASC);",
+        )?;
+        transaction.execute(
+            "INSERT INTO openchat_backend_migrations (version, applied_at_unix_ms) VALUES (38, ?1)",
+            [unix_time_millis()?],
+        )?;
+        transaction.commit()?;
+        current_version = 38;
+    }
+
     Ok(current_version)
 }
