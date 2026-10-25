@@ -203,42 +203,42 @@ pub struct ImageGenerationResult {
     pub outputs: Vec<ImageOutput>,
 }
 
-/// State reported for an OAuth image-generation quota.
+/// State reported for the selected ChatGPT account's normal usage quota.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub enum ImageQuotaState {
-    /// The provider reports an image quota with remaining capacity.
+pub enum ChatGptAccountQuotaState {
+    /// The account has ordinary usage available.
     Available,
-    /// The provider reports that the image quota is exhausted.
+    /// The account's ordinary usage is exhausted.
     Exhausted,
-    /// The provider does not expose an image-specific quota.
+    /// The provider did not report enough account usage data to determine state.
     Unknown,
-    /// The provider quota endpoint could not be refreshed.
+    /// The account usage endpoint could not be refreshed.
     Unavailable,
-    /// OAuth image quotas do not apply to API-key authentication.
+    /// ChatGPT account quotas do not apply to API-key authentication.
     NotApplicable,
 }
 
-/// Safe, image-specific quota information reported by ChatGPT OAuth.
+/// Safe account usage information reported by ChatGPT OAuth.
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ImageQuotaStatus {
-    /// Current image quota state.
-    pub state: ImageQuotaState,
-    /// Percentage used in the most informative active image bucket.
+pub struct ChatGptAccountQuotaStatus {
+    /// Current account quota state.
+    pub state: ChatGptAccountQuotaState,
+    /// Highest usage percentage reported for an account bucket.
     pub used_percent: Option<f64>,
     /// Provider reset time in Unix milliseconds, when reported.
     pub reset_at_unix_ms: Option<i64>,
-    /// Safe machine-readable reason when the quota is unknown or unavailable.
+    /// Safe machine-readable reason when account status is unknown or unavailable.
     pub reason: Option<String>,
 }
 
-/// Generated image outputs together with the OAuth quota snapshot used before generation.
-pub struct ImageGenerationWithQuotaResult {
+/// Generated image outputs together with the account quota snapshot used before generation.
+pub struct ImageGenerationWithAccountQuotaResult {
     /// Validated image response.
     pub result: ImageGenerationResult,
-    /// Image quota information for the authentication route.
-    pub quota: ImageQuotaStatus,
+    /// ChatGPT account quota information for the authentication route.
+    pub account_quota: ChatGptAccountQuotaStatus,
 }
 
 impl ImageGenerationRequest {
@@ -276,20 +276,18 @@ impl ImageGenerationRequest {
 }
 
 impl ChatGptService {
-    /// Reads only the image-specific buckets from the ChatGPT usage endpoint.
-    ///
-    /// Generic Codex and chat usage buckets are never treated as image quota.
-    pub async fn image_generation_quota(
+    /// Reads the normal account quota from the selected ChatGPT usage endpoint.
+    pub async fn chatgpt_account_quota(
         &self,
         connection_id: &str,
         workspace_id: &str,
         cancellation: &mut watch::Receiver<bool>,
-    ) -> Result<ImageQuotaStatus, ServiceError> {
+    ) -> Result<ChatGptAccountQuotaStatus, ServiceError> {
         match self.usage(connection_id, workspace_id, cancellation).await {
-            Ok(snapshot) => Ok(image_quota_status(&snapshot)),
+            Ok(snapshot) => Ok(chatgpt_account_quota_status(&snapshot)),
             Err(error) if *cancellation.borrow() || error.code == "request_cancelled" => Err(error),
-            Err(error) if error.retryable => Ok(ImageQuotaStatus {
-                state: ImageQuotaState::Unavailable,
+            Err(error) if error.retryable => Ok(ChatGptAccountQuotaStatus {
+                state: ChatGptAccountQuotaState::Unavailable,
                 used_percent: None,
                 reset_at_unix_ms: None,
                 reason: Some(error.code.to_owned()),
@@ -298,21 +296,21 @@ impl ChatGptService {
         }
     }
 
-    /// Checks the OAuth image quota and generates through the shared image service.
+    /// Checks the ChatGPT account quota and generates through the shared image service.
     ///
-    /// API-key authentication skips the OAuth quota check because OpenAI applies its
-    /// API image limits when the generation request is submitted.
-    pub async fn generate_image_with_quota(
+    /// API-key authentication skips this check because OpenAI applies API limits when
+    /// the generation request is submitted.
+    pub async fn generate_image_with_account_quota(
         &self,
         request: &ImageGenerationRequest,
         auth: ImageGenerationAuth<'_>,
         turn_id: Option<&str>,
         cancellation: &mut watch::Receiver<bool>,
-    ) -> Result<ImageGenerationWithQuotaResult, ServiceError> {
+    ) -> Result<ImageGenerationWithAccountQuotaResult, ServiceError> {
         request.validate()?;
-        let quota = match auth {
-            ImageGenerationAuth::ApiKey(_) => ImageQuotaStatus {
-                state: ImageQuotaState::NotApplicable,
+        let account_quota = match auth {
+            ImageGenerationAuth::ApiKey(_) => ChatGptAccountQuotaStatus {
+                state: ChatGptAccountQuotaState::NotApplicable,
                 used_percent: None,
                 reset_at_unix_ms: None,
                 reason: None,
@@ -322,21 +320,24 @@ impl ChatGptService {
                 workspace_id,
             } => {
                 validate_codex_image_request(request)?;
-                self.image_generation_quota(connection_id, workspace_id, cancellation)
+                self.chatgpt_account_quota(connection_id, workspace_id, cancellation)
                     .await?
             }
         };
-        if quota.state == ImageQuotaState::Exhausted {
+        if account_quota.state == ChatGptAccountQuotaState::Exhausted {
             return Err(ServiceError::new(
                 "image_rate_limited",
-                "ChatGPT reports that the selected account has reached its image-generation limit.",
+                "ChatGPT reports that the selected account's ordinary usage limit has been reached.",
                 true,
             ));
         }
         let result = self
             .generate_image(request, auth, turn_id, cancellation)
             .await?;
-        Ok(ImageGenerationWithQuotaResult { result, quota })
+        Ok(ImageGenerationWithAccountQuotaResult {
+            result,
+            account_quota,
+        })
     }
 
     /// Sends an image-generation request and returns validated image bytes.
@@ -429,13 +430,13 @@ impl ChatGptService {
     }
 }
 
-fn image_quota_status(snapshot: &Value) -> ImageQuotaStatus {
+fn chatgpt_account_quota_status(snapshot: &Value) -> ChatGptAccountQuotaStatus {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .ok()
         .and_then(|duration| i64::try_from(duration.as_millis()).ok())
         .unwrap_or(i64::MAX);
-    let image_buckets = snapshot
+    let buckets = snapshot
         .get("buckets")
         .and_then(Value::as_array)
         .into_iter()
@@ -444,57 +445,58 @@ fn image_quota_status(snapshot: &Value) -> ImageQuotaStatus {
             bucket
                 .get("limitId")
                 .and_then(Value::as_str)
-                .is_some_and(|id| id.to_ascii_lowercase().contains("image"))
+                .is_some_and(|id| id.starts_with("codex:"))
+                && bucket
+                    .get("resetAtUnixMs")
+                    .and_then(Value::as_i64)
+                    .is_none_or(|reset_at| reset_at > now)
         })
         .collect::<Vec<_>>();
-    if image_buckets.is_empty() {
-        return ImageQuotaStatus {
-            state: ImageQuotaState::Unknown,
-            used_percent: None,
-            reset_at_unix_ms: None,
-            reason: Some("image_quota_not_reported".to_owned()),
-        };
-    }
-    let exhausted = image_buckets.iter().any(|bucket| {
-        let used = bucket.get("usedPercent").and_then(Value::as_f64);
-        let reset = bucket.get("resetAtUnixMs").and_then(Value::as_i64);
-        used.is_some_and(|value| value >= 100.0) && reset.is_none_or(|value| value > now)
-    });
-    let status_bucket = image_buckets
+    let exhausted_buckets = buckets
         .iter()
         .filter(|bucket| {
-            let used = bucket.get("usedPercent").and_then(Value::as_f64);
-            let reset = bucket.get("resetAtUnixMs").and_then(Value::as_i64);
-            used.is_some_and(|value| !(value >= 100.0 && reset.is_some_and(|time| time <= now)))
-        })
-        .max_by(|left, right| {
-            left.get("usedPercent")
+            bucket
+                .get("usedPercent")
                 .and_then(Value::as_f64)
-                .unwrap_or_default()
-                .total_cmp(
-                    &right
-                        .get("usedPercent")
-                        .and_then(Value::as_f64)
-                        .unwrap_or_default(),
-                )
+                .is_some_and(|used| used >= 100.0)
+        })
+        .collect::<Vec<_>>();
+    let ordinary_usage_allowed = snapshot
+        .get("ordinaryUsageAllowed")
+        .and_then(Value::as_bool);
+    let exhausted = ordinary_usage_allowed == Some(false) || !exhausted_buckets.is_empty();
+    let used_percent = buckets
+        .iter()
+        .filter_map(|bucket| bucket.get("usedPercent").and_then(Value::as_f64))
+        .max_by(f64::total_cmp);
+    let has_usage = used_percent.is_some();
+    let reset_at_unix_ms = exhausted_buckets
+        .iter()
+        .filter_map(|bucket| bucket.get("resetAtUnixMs").and_then(Value::as_i64))
+        .max()
+        .or_else(|| {
+            if ordinary_usage_allowed == Some(false) {
+                buckets
+                    .iter()
+                    .filter_map(|bucket| bucket.get("resetAtUnixMs").and_then(Value::as_i64))
+                    .max()
+            } else {
+                None
+            }
         });
-    let Some(status_bucket) = status_bucket else {
-        return ImageQuotaStatus {
-            state: ImageQuotaState::Unknown,
-            used_percent: None,
-            reset_at_unix_ms: None,
-            reason: Some("image_quota_incomplete".to_owned()),
-        };
+    let state = if exhausted {
+        ChatGptAccountQuotaState::Exhausted
+    } else if ordinary_usage_allowed == Some(true) || has_usage {
+        ChatGptAccountQuotaState::Available
+    } else {
+        ChatGptAccountQuotaState::Unknown
     };
-    ImageQuotaStatus {
-        state: if exhausted {
-            ImageQuotaState::Exhausted
-        } else {
-            ImageQuotaState::Available
-        },
-        used_percent: status_bucket.get("usedPercent").and_then(Value::as_f64),
-        reset_at_unix_ms: status_bucket.get("resetAtUnixMs").and_then(Value::as_i64),
-        reason: None,
+    ChatGptAccountQuotaStatus {
+        state,
+        used_percent,
+        reset_at_unix_ms,
+        reason: (state == ChatGptAccountQuotaState::Unknown)
+            .then(|| "account_quota_not_reported".to_owned()),
     }
 }
 
@@ -1023,34 +1025,28 @@ mod tests {
     }
 
     #[test]
-    fn image_quota_uses_only_image_specific_buckets() {
-        let status = image_quota_status(&json!({
-            "buckets": [
-                {
-                    "limitId": "codex:primary",
-                    "usedPercent": 100.0,
-                    "resetAtUnixMs": i64::MAX
-                },
-                {
-                    "limitId": "image_generation:primary",
-                    "usedPercent": 42.5,
-                    "resetAtUnixMs": i64::MAX
-                }
-            ]
+    fn account_quota_uses_the_chatgpt_account_usage_buckets() {
+        let status = chatgpt_account_quota_status(&json!({
+            "ordinaryUsageAllowed": false,
+            "buckets": [{
+                "limitId": "codex:primary",
+                "usedPercent": 100.0,
+                "resetAtUnixMs": i64::MAX
+            }]
         }));
 
-        assert_eq!(status.state, ImageQuotaState::Available);
-        assert_eq!(status.used_percent, Some(42.5));
+        assert_eq!(status.state, ChatGptAccountQuotaState::Exhausted);
+        assert_eq!(status.used_percent, Some(100.0));
         assert_eq!(status.reset_at_unix_ms, Some(i64::MAX));
     }
 
     #[test]
-    fn image_quota_reads_the_image_bucket_from_oauth_usage_payload() {
+    fn account_quota_reads_the_normal_primary_bucket_from_oauth_usage_payload() {
         let snapshot = super::super::response_parser::parse_usage(
             &json!({
                 "rate_limit": {
                     "primary_window": {
-                        "used_percent": 100.0,
+                        "used_percent": 42.5,
                         "reset_at": 4_102_444_800_i64
                     }
                 },
@@ -1058,7 +1054,7 @@ mod tests {
                     "limit_name": "image_generation",
                     "rate_limit": {
                         "primary_window": {
-                            "used_percent": 42.5,
+                            "used_percent": 100.0,
                             "reset_at": 4_102_444_800_i64
                         }
                     }
@@ -1073,50 +1069,57 @@ mod tests {
         .expect("OAuth usage response should parse");
         let buckets = serde_json::to_value(snapshot.buckets)
             .expect("usage buckets should serialize for quota evaluation");
+        let snapshot = json!({
+            "ordinaryUsageAllowed": snapshot.ordinary_usage_allowed,
+            "buckets": buckets,
+        });
 
-        let status = image_quota_status(&json!({"buckets": buckets}));
+        let status = chatgpt_account_quota_status(&snapshot);
 
-        assert_eq!(status.state, ImageQuotaState::Available);
+        assert_eq!(status.state, ChatGptAccountQuotaState::Available);
         assert_eq!(status.used_percent, Some(42.5));
         assert_eq!(status.reset_at_unix_ms, Some(4_102_444_800_000));
     }
 
     #[test]
-    fn image_quota_reports_active_exhaustion_and_ignores_expired_windows() {
-        let exhausted = image_quota_status(&json!({
+    fn account_quota_reports_exhaustion_and_ignores_expired_windows() {
+        let exhausted = chatgpt_account_quota_status(&json!({
+            "ordinaryUsageAllowed": true,
             "buckets": [{
-                "limitId": "image_generation:primary",
+                "limitId": "codex:primary",
                 "usedPercent": 100.0,
                 "resetAtUnixMs": i64::MAX
             }]
         }));
-        assert_eq!(exhausted.state, ImageQuotaState::Exhausted);
+        assert_eq!(exhausted.state, ChatGptAccountQuotaState::Exhausted);
         assert_eq!(exhausted.used_percent, Some(100.0));
 
-        let expired = image_quota_status(&json!({
+        let expired = chatgpt_account_quota_status(&json!({
+            "ordinaryUsageAllowed": true,
             "buckets": [{
-                "limitId": "image_generation:primary",
+                "limitId": "codex:primary",
                 "usedPercent": 100.0,
-                "resetAtUnixMs": 0
+                "resetAtUnixMs": 1
             }]
         }));
-        assert_eq!(expired.state, ImageQuotaState::Unknown);
-        assert_eq!(expired.reason.as_deref(), Some("image_quota_incomplete"));
+        assert_eq!(expired.state, ChatGptAccountQuotaState::Available);
+        assert_eq!(expired.used_percent, None);
+        assert_eq!(expired.reason, None);
     }
 
     #[test]
-    fn image_quota_is_unknown_when_the_provider_reports_no_image_limit() {
-        let status = image_quota_status(&json!({
+    fn account_quota_is_unknown_when_usage_is_not_reported() {
+        let status = chatgpt_account_quota_status(&json!({
             "buckets": [{
                 "limitId": "codex:secondary",
-                "usedPercent": 10.0,
-                "resetAtUnixMs": i64::MAX
+                "usedPercent": null,
+                "resetAtUnixMs": null
             }]
         }));
 
-        assert_eq!(status.state, ImageQuotaState::Unknown);
+        assert_eq!(status.state, ChatGptAccountQuotaState::Unknown);
         assert_eq!(status.used_percent, None);
-        assert_eq!(status.reason.as_deref(), Some("image_quota_not_reported"));
+        assert_eq!(status.reason.as_deref(), Some("account_quota_not_reported"));
     }
 
     #[test]

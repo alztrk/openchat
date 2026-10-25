@@ -19,7 +19,7 @@ Connect to multiple model ecosystems through standard, secure protocols:
 ### Image Design Workspace
 - **ChatGPT Image Generation:** Create images in the Design workspace with a ChatGPT OAuth account or an OpenAI API key. The chat `generate_image` tool uses the same generation service.
 - **Image Library:** Browse images generated in Design and chat from one local library. Search and filter results, compare variants, reuse prompts, save prompt templates, and organize images with favorites, tags, and collections.
-- **Generation Controls:** Configure supported model options such as dimensions, quality, background treatment, and API output format. OAuth quota information is shown only when ChatGPT reports an image-specific limit.
+- **Generation Controls:** Configure supported model options such as dimensions, quality, background treatment, and API output format. ChatGPT OAuth image generation uses the account's normal ChatGPT quota; there is no separate image quota. OpenAI API limits apply to API-key generation requests.
 
 ### Workspace Tools and Sandboxing
 Run development tasks safely through configurable permission boundaries:

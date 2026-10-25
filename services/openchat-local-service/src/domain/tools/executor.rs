@@ -1813,7 +1813,7 @@ impl ToolExecutor {
                 ..
             } => {
                 service
-                    .generate_image_with_quota(
+                    .generate_image_with_account_quota(
                         &request,
                         ImageGenerationAuth::ChatGptOAuth {
                             connection_id,
@@ -1828,7 +1828,7 @@ impl ToolExecutor {
                 service, api_key, ..
             } => {
                 service
-                    .generate_image_with_quota(
+                    .generate_image_with_account_quota(
                         &request,
                         ImageGenerationAuth::ApiKey(api_key),
                         None,

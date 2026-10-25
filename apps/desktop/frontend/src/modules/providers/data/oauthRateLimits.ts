@@ -11,6 +11,15 @@ export interface OAuthRateLimitState {
   resetAtUnixMs: number | null;
 }
 
+export type ChatGptAccountQuotaState = 'available' | 'exhausted' | 'unknown' | 'unavailable' | 'not_applicable';
+
+export interface ChatGptAccountQuotaStatus {
+  state: ChatGptAccountQuotaState;
+  usedPercent: number | null;
+  resetAtUnixMs: number | null;
+  reason?: string;
+}
+
 const states = new Map<string, OAuthRateLimitState>();
 const listeners = new Set<() => void>();
 const resetTimers = new Map<string, number>();
@@ -29,6 +38,23 @@ export function rateLimitForModel(
     return null;
   }
   return state ?? null;
+}
+
+export async function refreshChatGptAccountQuota(
+  connectionId: string,
+  workspaceId: string,
+): Promise<ChatGptAccountQuotaStatus> {
+  try {
+    const snapshot = await localServiceClient.call('chatgpt.usage.get', { connectionId, workspaceId });
+    return accountQuotaFromUsage(snapshot);
+  } catch (error) {
+    return {
+      state: 'unavailable',
+      usedPercent: null,
+      resetAtUnixMs: null,
+      reason: error instanceof LocalServiceError ? error.code : 'usage_refresh_failed',
+    };
+  }
 }
 
 export async function recordOAuthRateLimit(
@@ -209,10 +235,7 @@ function parseChatGptUsage(value: Record<string, unknown>): {
   const buckets = Array.isArray(value.buckets) ? value.buckets : [];
   const exhaustedBuckets = buckets.filter(
     (bucket): bucket is Record<string, unknown> =>
-      typeof bucket === 'object' &&
-      bucket !== null &&
-      typeof bucket.usedPercent === 'number' &&
-      bucket.usedPercent >= 100,
+      isRecord(bucket) && typeof bucket.usedPercent === 'number' && bucket.usedPercent >= 100,
   );
   const exhausted = value.ordinaryUsageAllowed === false || exhaustedBuckets.length > 0;
   return {
@@ -225,6 +248,49 @@ function parseChatGptUsage(value: Record<string, unknown>): {
       ),
     ),
   };
+}
+
+function accountQuotaFromUsage(value: unknown): ChatGptAccountQuotaStatus {
+  if (!isRecord(value)) {
+    return { state: 'unknown', usedPercent: null, resetAtUnixMs: null, reason: 'usage_snapshot_invalid' };
+  }
+  const now = Date.now();
+  const accountBuckets = (Array.isArray(value.buckets) ? value.buckets : [])
+    .filter(isRecord)
+    .filter(
+      (bucket) =>
+        typeof bucket.limitId === 'string' &&
+        bucket.limitId.startsWith('codex:') &&
+        (typeof bucket.resetAtUnixMs !== 'number' || bucket.resetAtUnixMs > now),
+    );
+  const usage = parseChatGptUsage({ ...value, buckets: accountBuckets });
+  const usedPercent = accountBuckets.reduce<number | null>((highest, bucket) => {
+    if (typeof bucket.usedPercent !== 'number' || !Number.isFinite(bucket.usedPercent)) return highest;
+    return highest === null ? bucket.usedPercent : Math.max(highest, bucket.usedPercent);
+  }, null);
+  const available = value.ordinaryUsageAllowed === true || usedPercent !== null;
+  const resetAtUnixMs =
+    usage.resetAtUnixMs ??
+    (value.ordinaryUsageAllowed === false
+      ? latestReset(
+          accountBuckets.map((bucket) =>
+            typeof bucket.resetAtUnixMs === 'number' && Number.isSafeInteger(bucket.resetAtUnixMs)
+              ? bucket.resetAtUnixMs
+              : null,
+          ),
+        )
+      : null);
+  const state = usage.exhausted ? 'exhausted' : available ? 'available' : 'unknown';
+  return {
+    state,
+    usedPercent,
+    resetAtUnixMs,
+    ...(state === 'unknown' ? { reason: 'account_quota_not_reported' } : {}),
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function latestReset(values: readonly (number | null)[]): number | null {

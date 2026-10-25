@@ -1,5 +1,15 @@
 import type { TFunction } from 'i18next';
-import { ArrowDownToLine, Images, LoaderCircle, RefreshCw, Settings2, Sparkles, WandSparkles } from 'lucide-react';
+import {
+  ArrowDownToLine,
+  ChevronDown,
+  Filter,
+  Images,
+  LoaderCircle,
+  RefreshCw,
+  Settings2,
+  Sparkles,
+  WandSparkles,
+} from 'lucide-react';
 import { type ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -23,20 +33,19 @@ import {
   type ImageOutputFormat,
   type ImagePromptTemplate,
   type ImageQuality,
-  type ImageQuotaStatus,
   listDesignImages,
   listImageCollections,
   listImageGenerationRuns,
   listImagePromptTemplates,
   loadDesignImageTargets,
   readDesignImage,
-  refreshImageQuota,
   removeImageFromLibrary,
   saveImageAnnotation,
   saveImageCollection,
   saveImagePromptTemplate,
   setImageCollectionItem,
 } from '@/modules/design/data/imageGeneration';
+import { type ChatGptAccountQuotaStatus, refreshChatGptAccountQuota } from '@/modules/providers/data/oauthRateLimits';
 import { LocalServiceError, type ServiceOperation } from '@/platform/local-service/LocalServiceClient';
 
 type GalleryImage =
@@ -102,8 +111,8 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
   const [count, setCount] = useState('1');
   const [customWidth, setCustomWidth] = useState('1536');
   const [customHeight, setCustomHeight] = useState('1024');
-  const [quota, setQuota] = useState<ImageQuotaStatus | null>(null);
-  const [quotaLoading, setQuotaLoading] = useState(false);
+  const [accountQuota, setAccountQuota] = useState<ChatGptAccountQuotaStatus | null>(null);
+  const [accountQuotaLoading, setAccountQuotaLoading] = useState(false);
   const [generationStarting, setGenerationStarting] = useState(false);
   const [activeOperation, setActiveOperation] = useState<DesignServiceOperation | null>(null);
   const [generationError, setGenerationError] = useState<string | null>(null);
@@ -307,18 +316,29 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
 
   useEffect(() => {
     if (selectedTarget?.kind !== 'oauth') {
-      setQuota(selectedTarget ? { state: 'not_applicable' } : null);
+      setAccountQuota(selectedTarget ? { state: 'not_applicable', usedPercent: null, resetAtUnixMs: null } : null);
+      setAccountQuotaLoading(false);
+      return;
+    }
+    if (selectedTarget.workspaceId === null) {
+      setAccountQuota({
+        state: 'unavailable',
+        usedPercent: null,
+        resetAtUnixMs: null,
+        reason: 'workspace_unavailable',
+      });
+      setAccountQuotaLoading(false);
       return;
     }
     let current = true;
-    setQuotaLoading(true);
-    setQuota(null);
-    void refreshImageQuota(selectedTarget)
+    setAccountQuotaLoading(true);
+    setAccountQuota(null);
+    void refreshChatGptAccountQuota(selectedTarget.connectionId, selectedTarget.workspaceId)
       .then((status) => {
-        if (current) setQuota(status);
+        if (current) setAccountQuota(status);
       })
       .finally(() => {
-        if (current) setQuotaLoading(false);
+        if (current) setAccountQuotaLoading(false);
       });
     return () => {
       current = false;
@@ -336,12 +356,15 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
     };
   }, []);
 
-  const quotaMessage = useMemo(() => getQuotaMessage(quota, quotaLoading, t), [quota, quotaLoading, t]);
+  const quotaMessage = useMemo(
+    () => getQuotaMessage(accountQuota, accountQuotaLoading, t),
+    [accountQuota, accountQuotaLoading, t],
+  );
 
   const updateTarget = (event: { target: { value: string } }) => {
     const nextTarget = targets.find((target) => target.key === event.target.value) ?? null;
     setTargetKey(event.target.value);
-    setQuota(null);
+    setAccountQuota(null);
     if (nextTarget?.kind === 'oauth') {
       setSize('1024x1024');
       setOutputFormat('png');
@@ -375,11 +398,11 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
       const result = await nextOperation.result;
       if (!mountedRef.current) return;
       setGenerationStatus(t('designGenerationComplete', { count: result.images.length }));
-      if (options.target.kind === 'oauth') setQuota(result.quota);
+      if (options.target.kind === 'oauth') setAccountQuota(result.accountQuota);
       await loadGalleryPage({ design: 0, chat: 0 }, false);
-      if (options.target.kind === 'oauth') {
-        void refreshImageQuota(options.target).then((status) => {
-          if (mountedRef.current) setQuota(status);
+      if (options.target.kind === 'oauth' && options.target.workspaceId !== null) {
+        void refreshChatGptAccountQuota(options.target.connectionId, options.target.workspaceId).then((status) => {
+          if (mountedRef.current) setAccountQuota(status);
         });
       }
     } catch (error) {
@@ -392,8 +415,15 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
         error.code === 'image_rate_limited' &&
         options.target.kind === 'oauth'
       ) {
-        setQuota({ state: 'exhausted' });
-        setGenerationError(t('designQuotaExhausted'));
+        const refreshedQuota =
+          options.target.workspaceId === null
+            ? null
+            : await refreshChatGptAccountQuota(options.target.connectionId, options.target.workspaceId);
+        if (!mountedRef.current) return;
+        if (refreshedQuota) setAccountQuota(refreshedQuota);
+        setGenerationError(
+          refreshedQuota?.state === 'exhausted' ? t('designQuotaExhausted') : t('designQuotaRequestLimited'),
+        );
       } else if (error instanceof LocalServiceError && error.code === 'image_api_rate_limited') {
         setGenerationError(t('designApiRateLimited'));
       } else {
@@ -411,7 +441,7 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
 
   const handleGenerate = async () => {
     if (!selectedTarget || !selectedModel || generationStarting || activeOperation !== null) return;
-    if (selectedTarget.kind === 'oauth' && quota?.state === 'exhausted') return;
+    if (selectedTarget.kind === 'oauth' && accountQuota?.state === 'exhausted') return;
     await runGeneration({
       prompt: prompt.trim(),
       model: selectedModel.value,
@@ -640,8 +670,11 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
       return;
     }
     if (target.kind === 'oauth') {
-      const latestQuota = await refreshImageQuota(target);
-      setQuota(latestQuota);
+      const latestQuota =
+        target.workspaceId === null
+          ? { state: 'unavailable' as const, usedPercent: null, resetAtUnixMs: null }
+          : await refreshChatGptAccountQuota(target.connectionId, target.workspaceId);
+      setAccountQuota(latestQuota);
       if (latestQuota.state === 'exhausted') {
         setGenerationError(t('designQuotaExhausted'));
         return;
@@ -698,7 +731,19 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
     !generationStarting &&
     activeOperation === null &&
     customResolutionValid &&
-    !(selectedTarget.kind === 'oauth' && quota?.state === 'exhausted');
+    !(selectedTarget.kind === 'oauth' && accountQuota?.state === 'exhausted');
+  const activeFilterCount = [
+    queryDraft.trim() !== '',
+    sourceFilter !== 'all',
+    sort !== 'newest',
+    providerFilter !== 'all',
+    modelFilter !== '',
+    tagFilter !== '',
+    collectionFilter !== '',
+    favoritesOnly,
+    dateFrom !== '',
+    dateTo !== '',
+  ].filter(Boolean).length;
 
   return (
     <div className="design-workspace flex h-full min-h-0 min-w-0 flex-col overflow-hidden lg:flex-row">
@@ -1005,31 +1050,38 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
               </>
             ) : null}
 
-            <div
-              aria-live="polite"
-              className="rounded-control border border-border bg-raised px-3 py-2.5 text-sm text-secondary-text"
-              role="status"
-            >
-              <p className="font-medium text-text">{t('designQuotaTitle')}</p>
-              <p className="mt-1">{quotaMessage}</p>
-              {selectedTarget?.kind === 'oauth' ? (
+            {selectedTarget?.kind === 'oauth' ? (
+              <div
+                aria-live="polite"
+                className="flex min-w-0 items-start gap-2 border-t border-border pt-3 text-xs text-secondary-text"
+                role="status"
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="font-medium text-text">{t('designQuotaTitle')}</p>
+                  <p className="mt-0.5">{quotaMessage}</p>
+                </div>
                 <Button
-                  className="mt-2 min-h-9 px-2 text-xs"
-                  disabled={quotaLoading}
+                  aria-label={t('designRefreshQuota')}
+                  className="shrink-0"
+                  disabled={accountQuotaLoading}
                   onClick={() => {
-                    setQuotaLoading(true);
-                    void refreshImageQuota(selectedTarget)
-                      .then(setQuota)
-                      .finally(() => setQuotaLoading(false));
+                    if (selectedTarget.workspaceId === null) return;
+                    setAccountQuotaLoading(true);
+                    void refreshChatGptAccountQuota(selectedTarget.connectionId, selectedTarget.workspaceId)
+                      .then(setAccountQuota)
+                      .finally(() => setAccountQuotaLoading(false));
                   }}
                   size="small"
                   variant="ghost"
                 >
-                  {quotaLoading ? <LoaderCircle aria-hidden="true" className="animate-spin" size={14} /> : null}
-                  {t('designRefreshQuota')}
+                  {accountQuotaLoading ? (
+                    <LoaderCircle aria-hidden="true" className="animate-spin" size={14} />
+                  ) : (
+                    <RefreshCw aria-hidden="true" size={14} />
+                  )}
                 </Button>
-              ) : null}
-            </div>
+              </div>
+            ) : null}
 
             {generationError ? (
               <p className="text-sm text-destructive" role="alert">
@@ -1100,120 +1152,146 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
               </Button>
             </div>
           </div>
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-4">
-            <label className="grid gap-1 text-xs font-medium text-secondary-text" htmlFor="design-library-search">
+          <div className="flex min-w-0 flex-wrap items-end gap-3">
+            <label
+              className="grid min-w-0 flex-1 gap-1 text-xs font-medium text-secondary-text"
+              htmlFor="design-library-search"
+            >
               {t('designSearch')}
               <input
-                className="min-h-10 rounded-control border border-control-border bg-surface px-3 text-sm text-text outline-none placeholder:text-secondary-text focus-visible:ring-2 focus-visible:ring-focus"
+                className="min-h-10 w-full rounded-control border border-control-border bg-surface px-3 text-sm text-text outline-none placeholder:text-secondary-text focus-visible:ring-2 focus-visible:ring-focus"
                 id="design-library-search"
                 onChange={(event) => setQueryDraft(event.target.value)}
                 placeholder={t('designSearchPlaceholder')}
                 value={queryDraft}
               />
             </label>
-            <Select
-              label={t('designSource')}
-              onChange={(event) => {
-                if (isGallerySourceFilter(event.target.value)) setSourceFilter(event.target.value);
-              }}
-              options={[
-                { value: 'all', label: t('designSourceAll') },
-                { value: 'design', label: t('designSourceDesign') },
-                { value: 'chat', label: t('designSourceChat') },
-              ]}
-              value={sourceFilter}
-            />
-            <Select
-              label={t('designSort')}
-              onChange={(event) => {
-                if (isGallerySort(event.target.value)) setSort(event.target.value);
-              }}
-              options={[
-                { value: 'newest', label: t('designSortNewest') },
-                { value: 'oldest', label: t('designSortOldest') },
-              ]}
-              value={sort}
-            />
-            <Select
-              label={t('designProviderFilter')}
-              onChange={(event) => {
-                if (isGalleryProviderFilter(event.target.value)) setProviderFilter(event.target.value);
-              }}
-              options={[
-                { value: 'all', label: t('designProviderAll') },
-                { value: 'oauth', label: t('designProviderOAuth') },
-                { value: 'api_key', label: t('designProviderApi') },
-              ]}
-              value={providerFilter}
-            />
-            <Select
-              label={t('designModelFilter')}
-              onChange={(event) => setModelFilter(event.target.value)}
-              options={[
-                { value: '', label: t('designAllModels') },
-                ...Array.from(
-                  new Set([...modelOptions.oauth, ...modelOptions.api_key].map((option) => option.value)),
-                ).map((value) => ({
-                  value,
-                  label: imageModelLabel(value, t),
-                })),
-              ]}
-              value={modelFilter}
-            />
-            <label className="grid gap-1 text-xs font-medium text-secondary-text" htmlFor="design-library-tag-filter">
-              {t('designTagFilter')}
-              <input
-                className="min-h-10 rounded-control border border-control-border bg-surface px-3 text-sm text-text outline-none focus-visible:ring-2 focus-visible:ring-focus"
-                id="design-library-tag-filter"
-                maxLength={48}
-                onChange={(event) => setTagFilterDraft(event.target.value)}
-                value={tagFilterDraft}
-              />
-            </label>
-            <Select
-              label={t('designCollectionFilter')}
-              onChange={(event) => setCollectionFilter(event.target.value)}
-              options={[
-                { value: '', label: t('designAllCollections') },
-                ...collections.map((collection) => ({ value: collection.id, label: collection.name })),
-              ]}
-              value={collectionFilter}
-            />
-            <label
-              className="flex min-h-10 items-center gap-2 self-end rounded-control border border-control-border px-3 text-sm text-text"
-              htmlFor="design-favorites-only"
-            >
-              <input
-                checked={favoritesOnly}
-                id="design-favorites-only"
-                onChange={(event) => setFavoritesOnly(event.target.checked)}
-                type="checkbox"
-              />
-              {t('designFavoritesOnly')}
-            </label>
-            <DatePicker label={t('designDateFrom')} onChange={setDateFrom} value={dateFrom} />
-            <DatePicker label={t('designDateTo')} onChange={setDateTo} value={dateTo} />
-            <Button
-              className="self-end"
-              onClick={() => {
-                setQuery('');
-                setQueryDraft('');
-                setSort('newest');
-                setSourceFilter('all');
-                setProviderFilter('all');
-                setModelFilter('');
-                setFavoritesOnly(false);
-                setTagFilter('');
-                setTagFilterDraft('');
-                setCollectionFilter('');
-                setDateFrom('');
-                setDateTo('');
-              }}
-              size="small"
-              variant="ghost"
-            >
-              {t('designClearFilters')}
-            </Button>
+            <details className="design-library-filter shrink-0">
+              <summary
+                aria-label={t(activeFilterCount > 0 ? 'designFiltersActive' : 'designFilters', {
+                  count: activeFilterCount,
+                })}
+                className="design-filter-trigger min-h-10"
+              >
+                <Filter aria-hidden="true" size={15} />
+                <span>{t('designFilters')}</span>
+                {activeFilterCount > 0 ? (
+                  <span aria-hidden="true" className="design-filter-count">
+                    {activeFilterCount}
+                  </span>
+                ) : null}
+                <ChevronDown aria-hidden="true" className="design-filter-chevron" size={15} />
+              </summary>
+              <div className="design-library-filter-menu openchat-dropdown-surface">
+                <Select
+                  label={t('designSource')}
+                  onChange={(event) => {
+                    if (isGallerySourceFilter(event.target.value)) setSourceFilter(event.target.value);
+                  }}
+                  options={[
+                    { value: 'all', label: t('designSourceAll') },
+                    { value: 'design', label: t('designSourceDesign') },
+                    { value: 'chat', label: t('designSourceChat') },
+                  ]}
+                  value={sourceFilter}
+                />
+                <Select
+                  label={t('designSort')}
+                  onChange={(event) => {
+                    if (isGallerySort(event.target.value)) setSort(event.target.value);
+                  }}
+                  options={[
+                    { value: 'newest', label: t('designSortNewest') },
+                    { value: 'oldest', label: t('designSortOldest') },
+                  ]}
+                  value={sort}
+                />
+                <Select
+                  label={t('designProviderFilter')}
+                  onChange={(event) => {
+                    if (isGalleryProviderFilter(event.target.value)) setProviderFilter(event.target.value);
+                  }}
+                  options={[
+                    { value: 'all', label: t('designProviderAll') },
+                    { value: 'oauth', label: t('designProviderOAuth') },
+                    { value: 'api_key', label: t('designProviderApi') },
+                  ]}
+                  value={providerFilter}
+                />
+                <Select
+                  label={t('designModelFilter')}
+                  onChange={(event) => setModelFilter(event.target.value)}
+                  options={[
+                    { value: '', label: t('designAllModels') },
+                    ...Array.from(
+                      new Set([...modelOptions.oauth, ...modelOptions.api_key].map((option) => option.value)),
+                    ).map((value) => ({
+                      value,
+                      label: imageModelLabel(value, t),
+                    })),
+                  ]}
+                  value={modelFilter}
+                />
+                <label
+                  className="grid gap-1 text-xs font-medium text-secondary-text"
+                  htmlFor="design-library-tag-filter"
+                >
+                  {t('designTagFilter')}
+                  <input
+                    className="min-h-10 w-full rounded-control border border-control-border bg-surface px-3 text-sm text-text outline-none focus-visible:ring-2 focus-visible:ring-focus"
+                    id="design-library-tag-filter"
+                    maxLength={48}
+                    onChange={(event) => setTagFilterDraft(event.target.value)}
+                    value={tagFilterDraft}
+                  />
+                </label>
+                <Select
+                  label={t('designCollectionFilter')}
+                  onChange={(event) => setCollectionFilter(event.target.value)}
+                  options={[
+                    { value: '', label: t('designAllCollections') },
+                    ...collections.map((collection) => ({ value: collection.id, label: collection.name })),
+                  ]}
+                  value={collectionFilter}
+                />
+                <label
+                  className="flex min-h-10 items-center gap-2 self-end text-sm text-text"
+                  htmlFor="design-favorites-only"
+                >
+                  <input
+                    checked={favoritesOnly}
+                    id="design-favorites-only"
+                    onChange={(event) => setFavoritesOnly(event.target.checked)}
+                    type="checkbox"
+                  />
+                  {t('designFavoritesOnly')}
+                </label>
+                <DatePicker label={t('designDateFrom')} onChange={setDateFrom} value={dateFrom} />
+                <DatePicker label={t('designDateTo')} onChange={setDateTo} value={dateTo} />
+                <Button
+                  className="design-filter-reset"
+                  disabled={activeFilterCount === 0}
+                  onClick={() => {
+                    setQuery('');
+                    setQueryDraft('');
+                    setSort('newest');
+                    setSourceFilter('all');
+                    setProviderFilter('all');
+                    setModelFilter('');
+                    setFavoritesOnly(false);
+                    setTagFilter('');
+                    setTagFilterDraft('');
+                    setCollectionFilter('');
+                    setDateFrom('');
+                    setDateTo('');
+                  }}
+                  size="small"
+                  variant="ghost"
+                >
+                  {t('designClearFilters')}
+                </Button>
+              </div>
+            </details>
           </div>
           {libraryActionError ? (
             <p className="text-sm text-destructive" role="alert">
@@ -1829,14 +1907,14 @@ function formatImageSize(sizeBytes: number): string {
   return `${new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 }).format(mebibytes)} MiB`;
 }
 
-function getQuotaMessage(quota: ImageQuotaStatus | null, loading: boolean, t: TFunction): string {
+function getQuotaMessage(quota: ChatGptAccountQuotaStatus | null, loading: boolean, t: TFunction): string {
   if (loading) return t('designQuotaChecking');
   if (!quota) return t('designQuotaUnknown');
   if (quota.state === 'not_applicable') return t('designApiQuotaHint');
   if (quota.state === 'unavailable') return t('designQuotaUnavailable');
   if (quota.state === 'unknown') return t('designQuotaUnknown');
   if (quota.state === 'exhausted') {
-    return quota.resetAtUnixMs
+    return quota.resetAtUnixMs !== null
       ? t('designQuotaExhaustedUntil', {
           time: new Intl.DateTimeFormat(undefined, { dateStyle: 'short', timeStyle: 'short' }).format(
             quota.resetAtUnixMs,
@@ -1844,7 +1922,7 @@ function getQuotaMessage(quota: ImageQuotaStatus | null, loading: boolean, t: TF
         })
       : t('designQuotaExhausted');
   }
-  return typeof quota.usedPercent === 'number'
+  return quota.usedPercent !== null
     ? t('designQuotaUsed', { percent: Math.round(quota.usedPercent) })
     : t('designQuotaAvailable');
 }

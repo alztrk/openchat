@@ -106,14 +106,6 @@ pub(super) async fn dispatch(
                 .usage(connection_id, workspace_id, cancellation)
                 .await
         }
-        "chatgpt.images.quota.get" => {
-            let connection_id = required_string(params, "connectionId")?;
-            let workspace_id = required_string(params, "workspaceId")?;
-            let quota = service
-                .image_generation_quota(connection_id, workspace_id, cancellation)
-                .await?;
-            Ok(json!(quota))
-        }
         "chatgpt.images.generate" => {
             generate_design_image(params, storage, service, cancellation).await
         }
@@ -287,7 +279,7 @@ async fn generate_design_image(
             workspace_id,
         } => {
             service
-                .generate_image_with_quota(
+                .generate_image_with_account_quota(
                     &request,
                     ImageGenerationAuth::ChatGptOAuth {
                         connection_id: &connection_id,
@@ -301,7 +293,7 @@ async fn generate_design_image(
         DesignImageAuth::ApiKey { .. } => match api_key.as_deref() {
             Some(api_key) => {
                 service
-                    .generate_image_with_quota(
+                    .generate_image_with_account_quota(
                         &request,
                         ImageGenerationAuth::ApiKey(api_key.as_str()),
                         None,
@@ -340,7 +332,7 @@ async fn generate_design_image(
     };
     Ok(json!({
         "images": images,
-        "quota": generated.quota,
+        "accountQuota": generated.account_quota,
         "generationId": generation_id,
     }))
 }

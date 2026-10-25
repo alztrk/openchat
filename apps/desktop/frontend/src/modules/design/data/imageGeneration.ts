@@ -1,5 +1,6 @@
+import type { ChatGptAccountQuotaStatus } from '@/modules/providers/data/oauthRateLimits';
 import { loadProviderCredentialStatus } from '@/modules/providers/data/providerCredentials';
-import { LocalServiceError, localServiceClient } from '@/platform/local-service';
+import { localServiceClient } from '@/platform/local-service';
 import type { ServiceOperation } from '@/platform/local-service/LocalServiceClient';
 
 export type ImageQuality = 'auto' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
@@ -96,13 +97,6 @@ export interface DesignImagePage {
   nextOffset: number | null;
 }
 
-export interface ImageQuotaStatus {
-  state: 'available' | 'exhausted' | 'unknown' | 'unavailable' | 'not_applicable';
-  usedPercent?: number;
-  resetAtUnixMs?: number;
-  reason?: string;
-}
-
 export interface ImageGenerationOptions {
   prompt: string;
   model: string;
@@ -118,7 +112,7 @@ export interface ImageGenerationOptions {
 
 export interface ImageGenerationResponse {
   images: DesignImageRecord[];
-  quota: ImageQuotaStatus;
+  accountQuota: ChatGptAccountQuotaStatus;
 }
 
 export async function loadDesignImageTargets(): Promise<DesignImageTargetsResult> {
@@ -174,22 +168,6 @@ export function defaultDesignImageTarget(targets: readonly DesignImageTarget[]):
   return targets.find((target) => target.kind === 'oauth' && target.selected)?.key ?? targets[0]?.key ?? '';
 }
 
-export async function refreshImageQuota(target: DesignImageTarget): Promise<ImageQuotaStatus> {
-  if (target.kind === 'api_key' || target.workspaceId === null) return { state: 'not_applicable' };
-  try {
-    const snapshot = await localServiceClient.call('chatgpt.images.quota.get', {
-      connectionId: target.connectionId,
-      workspaceId: target.workspaceId,
-    });
-    return parseQuotaStatus(snapshot);
-  } catch (error) {
-    return {
-      state: 'unavailable',
-      reason: error instanceof LocalServiceError ? error.code : 'usage_refresh_failed',
-    };
-  }
-}
-
 export async function generateDesignImages(
   options: ImageGenerationOptions,
 ): Promise<Omit<ServiceOperation, 'result'> & { result: Promise<ImageGenerationResponse> }> {
@@ -223,7 +201,7 @@ export async function generateDesignImages(
     }
     return {
       images: response.images,
-      quota: parseQuotaStatus(response.quota),
+      accountQuota: parseAccountQuotaStatus(response.accountQuota),
     };
   });
   return { ...operation, result };
@@ -377,8 +355,10 @@ export async function readDesignImage(
   return { mimeType, bytes };
 }
 
-function parseQuotaStatus(value: unknown): ImageQuotaStatus {
-  if (!isObject(value)) return { state: 'unknown' };
+function parseAccountQuotaStatus(value: unknown): ChatGptAccountQuotaStatus {
+  if (!isObject(value)) {
+    return { state: 'unknown', usedPercent: null, resetAtUnixMs: null, reason: 'account_quota_invalid' };
+  }
   if (
     value.state === 'available' ||
     value.state === 'exhausted' ||
@@ -388,12 +368,12 @@ function parseQuotaStatus(value: unknown): ImageQuotaStatus {
   ) {
     return {
       state: value.state,
-      usedPercent: finiteNumber(value.usedPercent) ?? undefined,
-      resetAtUnixMs: finiteNumber(value.resetAtUnixMs) ?? undefined,
-      reason: typeof value.reason === 'string' ? value.reason : undefined,
+      usedPercent: finiteNumber(value.usedPercent),
+      resetAtUnixMs: finiteNumber(value.resetAtUnixMs),
+      ...(typeof value.reason === 'string' ? { reason: value.reason } : {}),
     };
   }
-  return { state: 'unknown' };
+  return { state: 'unknown', usedPercent: null, resetAtUnixMs: null, reason: 'account_quota_invalid' };
 }
 
 function isDesignImageRecord(value: unknown): value is DesignImageRecord {

@@ -248,6 +248,7 @@
   --spacing-attachment-card: 200px;
   --spacing-navigation-rail: 60px;
   --spacing-design-sidebar: 20rem;
+  --spacing-design-filter-menu: 36rem;
   --spacing-dialog: min(36rem, calc(100vw - 2rem));
   --spacing-dialog-compact: min(28rem, calc(100vw - 2rem));
   --spacing-dialog-medium: min(32rem, calc(100vw - 2rem));
