@@ -12,12 +12,12 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
+use rusqlite::{OptionalExtension, TransactionBehavior, params};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use similar::{ChangeTag, TextDiff};
 
-use crate::storage::AppStorage;
+use crate::storage::{AppStorage, StorageConnection, StorageRow, StorageTransaction};
 
 #[path = "file_changes/checkpoints.rs"]
 pub(crate) mod checkpoints;
@@ -1012,7 +1012,7 @@ fn read_baseline(
 }
 
 fn load_changes(
-    connection: &Connection,
+    connection: &StorageConnection<'_>,
     conversation_id: &str,
 ) -> Result<Vec<ManifestEntry>, TrackingError> {
     let mut statement = connection
@@ -1033,7 +1033,7 @@ fn load_changes(
 }
 
 fn load_change(
-    connection: &Connection,
+    connection: &StorageConnection<'_>,
     conversation_id: &str,
     id: &str,
 ) -> Result<Option<ManifestEntry>, TrackingError> {
@@ -1051,7 +1051,7 @@ fn load_change(
         .map_err(|_| TrackingError::StorageUnavailable)
 }
 
-fn manifest_entry_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ManifestEntry> {
+fn manifest_entry_from_row(row: &StorageRow) -> rusqlite::Result<ManifestEntry> {
     Ok(ManifestEntry {
         id: row.get(0)?,
         root: row.get(1)?,
@@ -1074,7 +1074,7 @@ fn manifest_entry_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Manifest
 }
 
 fn store_changes(
-    transaction: &rusqlite::Transaction<'_>,
+    transaction: &StorageTransaction<'_>,
     conversation_id: &str,
     entries: &[ManifestEntry],
 ) -> Result<(), TrackingError> {
@@ -1085,7 +1085,7 @@ fn store_changes(
 }
 
 fn store_change(
-    transaction: &rusqlite::Transaction<'_>,
+    transaction: &StorageTransaction<'_>,
     conversation_id: &str,
     entry: &ManifestEntry,
 ) -> Result<(), TrackingError> {

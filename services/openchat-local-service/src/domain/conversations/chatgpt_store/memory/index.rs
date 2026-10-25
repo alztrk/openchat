@@ -3,15 +3,17 @@
 //! Index maintenance is idempotent and tracks source changes so edited or
 //! excluded messages are not returned as stale archived context.
 
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::{OptionalExtension, Params, params};
+
+use crate::storage::{StorageConnection, StorageRow, StorageTransaction};
 
 use super::unix_time_millis;
 
 pub(super) fn ensure_archived_memory_indexes(
-    connection: &Connection,
+    connection: &mut StorageConnection<'_>,
     conversation_id: &str,
 ) -> rusqlite::Result<()> {
-    crate::storage::tool_index_redaction::register_sqlite_function(connection)?;
+    connection.register_tool_index_redaction()?;
     if !archive_indexing_enabled(connection, conversation_id)? {
         return Ok(());
     }
@@ -119,7 +121,7 @@ pub(super) fn ensure_archived_memory_indexes(
 }
 
 pub(super) fn archive_indexing_enabled(
-    connection: &Connection,
+    connection: &impl StorageRead,
     conversation_id: &str,
 ) -> rusqlite::Result<bool> {
     connection
@@ -131,4 +133,31 @@ pub(super) fn archive_indexing_enabled(
         )
         .optional()
         .map(|included| included.unwrap_or(true))
+}
+
+pub(super) trait StorageRead {
+    fn query_row<T, P, F>(&self, sql: &str, params: P, f: F) -> rusqlite::Result<T>
+    where
+        P: Params,
+        F: FnOnce(&StorageRow) -> rusqlite::Result<T>;
+}
+
+impl StorageRead for StorageConnection<'_> {
+    fn query_row<T, P, F>(&self, sql: &str, params: P, f: F) -> rusqlite::Result<T>
+    where
+        P: Params,
+        F: FnOnce(&StorageRow) -> rusqlite::Result<T>,
+    {
+        StorageConnection::query_row(self, sql, params, f)
+    }
+}
+
+impl StorageRead for StorageTransaction<'_> {
+    fn query_row<T, P, F>(&self, sql: &str, params: P, f: F) -> rusqlite::Result<T>
+    where
+        P: Params,
+        F: FnOnce(&StorageRow) -> rusqlite::Result<T>,
+    {
+        StorageTransaction::query_row(self, sql, params, f)
+    }
 }

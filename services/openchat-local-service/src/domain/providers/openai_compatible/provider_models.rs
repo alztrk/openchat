@@ -6,14 +6,17 @@
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use reqwest::Client;
-use rusqlite::{Connection, OptionalExtension};
+use rusqlite::OptionalExtension;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use tokio::sync::watch;
 
 use crate::domain::http_headers::sensitive_api_key_header;
 use crate::response_budget::{MAX_MODEL_CATALOG_RESPONSE_BYTES, read_bounded_response_body};
-use crate::{protocol::ServiceError, storage::AppStorage};
+use crate::{
+    protocol::ServiceError,
+    storage::{AppStorage, StorageConnection},
+};
 
 use super::{
     CustomProviderConfig, CustomProviderProtocol, api_compatible_provider, cancelled_error,
@@ -275,7 +278,6 @@ pub async fn models(
         if provider_id == "kilo" && api_key.trim().is_empty() {
             models.retain(|m| m.get("groupId").and_then(Value::as_str) == Some("free"));
         }
-        save_catalog(storage, provider.id, &key_hash, &models)?;
         Ok::<_, ServiceError>(models)
     };
 
@@ -287,7 +289,19 @@ pub async fn models(
         result = fetch => result,
     };
     match fetched {
-        Ok(models) => Ok(response(&models, "current")),
+        Ok(mut models) => {
+            if provider.id != "kilo" {
+                crate::domain::usage_statistics::enrich_model_catalog_capabilities(
+                    storage,
+                    provider.id,
+                    &mut models,
+                    cancellation,
+                )
+                .await?;
+            }
+            save_catalog(storage, provider.id, &key_hash, &models)?;
+            Ok(response(&models, "current"))
+        }
         Err(error) if error.code == "network_unavailable" || error.retryable => match cached {
             Some((models, _)) => Ok(response(&models, "stale")),
             None => Err(error),
@@ -296,17 +310,11 @@ pub async fn models(
     }
 }
 
-fn default_provider_context_window(provider_id: &str, model_id: &str) -> Option<i64> {
+fn default_provider_context_window(provider_id: &str) -> Option<i64> {
     match provider_id {
         "deepseek" => Some(64_000),
         "xai" => Some(131_072),
-        "perplexity" => {
-            if model_id.contains("pro") {
-                Some(200_000)
-            } else {
-                Some(128_000)
-            }
-        }
+        "perplexity" => Some(128_000),
         "sambanova" => Some(131_072),
         "anthropic" => Some(200_000),
         "fireworks" => Some(131_072),
@@ -318,13 +326,11 @@ fn default_provider_context_window(provider_id: &str, model_id: &str) -> Option<
     }
 }
 
-fn default_provider_max_output_tokens(provider_id: &str, _model_id: &str) -> Option<i64> {
+fn default_provider_max_output_tokens(provider_id: &str) -> Option<i64> {
     match provider_id {
-        "deepseek" | "xai" => Some(8_192),
-        "perplexity" => Some(4_096),
+        "deepseek" | "xai" | "kilo" => Some(8_192),
+        "perplexity" | "cohere" => Some(4_096),
         "anthropic" => Some(8_192),
-        "cohere" => Some(4_096),
-        "kilo" => Some(8_192),
         _ => None,
     }
 }
@@ -392,7 +398,7 @@ fn parse_models(
                                 .and_then(Value::as_i64)
                         })
                         .or(input_token_limit)
-                        .or_else(|| default_provider_context_window(provider_id, id))
+                        .or_else(|| default_provider_context_window(provider_id))
                         .filter(|value| *value > 0);
                     let input_token_limit = input_token_limit.or(context_window);
                     let max_output_tokens = [
@@ -405,14 +411,16 @@ fn parse_models(
                     .flatten()
                     .filter_map(Value::as_i64)
                     .find(|limit| *limit > 0)
-                    .or_else(|| default_provider_max_output_tokens(provider_id, id));
-                    let supports_images = supports_images(provider_id, id, item, details);
-                    let supports_tools = provider_tool_support(provider_id, id, item);
-                    let reasoning_levels = if provider_id == "mistral" {
-                        mistral_reasoning_levels(id)
+                    .or_else(|| default_provider_max_output_tokens(provider_id));
+                    let supports_images = if provider_id == "kilo" {
+                        Some(supports_images(item, details).unwrap_or(false))
                     } else {
-                        Vec::new()
+                        supports_images(item, details)
                     };
+                    let supports_tools = provider_tool_support(provider_id, item).or_else(|| {
+                        details.and_then(|model| provider_tool_support(provider_id, model))
+                    });
+                    let reasoning_levels: Vec<String> = Vec::new();
                     let is_kilo_free = provider_id == "kilo"
                         && (item.get("isFree").and_then(Value::as_bool) == Some(true)
                             || id.ends_with(":free")
@@ -430,11 +438,17 @@ fn parse_models(
                                             || p.as_str() == Some("include_reasoning")
                                     })
                                 }));
-                    let supports_reasoning = !reasoning_levels.is_empty()
-                        || (provider_id == "deepseek" && id.contains("reasoner"))
-                        || (provider_id == "perplexity" && id.contains("reasoning"))
-                        || (provider_id == "anthropic" && (id.contains("claude-3-7") || id.contains("claude-3.7")))
-                        || is_kilo_reasoning;
+                    let supports_reasoning = if provider_id == "kilo" {
+                        Some(is_kilo_reasoning)
+                    } else {
+                        item.get("reasoning")
+                            .and_then(Value::as_bool)
+                            .or_else(|| {
+                                details
+                                    .and_then(|model| model.get("reasoning"))
+                                    .and_then(Value::as_bool)
+                            })
+                    };
                     let mut model = json!({
                         "id": id,
                         "displayName": item.get("name").or_else(|| details.and_then(|model| model.get("name").or_else(|| model.get("displayName")))).and_then(Value::as_str).filter(|name| !name.trim().is_empty()).unwrap_or(id),
@@ -448,8 +462,9 @@ fn parse_models(
                         "defaultReasoningLevel": null,
                         "reasoningLevels": reasoning_levels,
                         "isAvailable": true,
+                        "capabilityMetadataVersion": 2,
                     });
-                    if provider_id == "mistral" || supports_reasoning {
+                    if let Some(supports_reasoning) = supports_reasoning {
                         model["supportsReasoning"] = json!(supports_reasoning);
                     }
                     Some(model)
@@ -479,79 +494,69 @@ fn has_current_limit_metadata(models: &[Value]) -> bool {
             .is_some_and(|limit| limit > 0)
             && model
                 .get("supportsImages")
-                .and_then(Value::as_bool)
-                .is_some()
+                .is_some_and(|value| value.as_bool().is_some() || value.is_null())
             && model
                 .get("supportsTools")
-                .and_then(Value::as_bool)
-                .is_some()
+                .is_some_and(|value| value.as_bool().is_some() || value.is_null())
+            && model
+                .get("capabilityMetadataVersion")
+                .and_then(Value::as_u64)
+                == Some(2)
     })
 }
 
-fn provider_tool_support(provider_id: &str, model_id: &str, model: &Value) -> Option<bool> {
+fn provider_tool_support(provider_id: &str, model: &Value) -> Option<bool> {
     match provider_id {
-        "gemini" => gemini_supports_tool_calls(model_id),
-        "groq" => groq_supports_tool_calls(model_id),
-        "cerebras" | "openrouter" => Some(true),
+        "gemini" => model.pointer("/function_calling").and_then(Value::as_bool),
+        "groq" => model
+            .pointer("/capabilities/tools")
+            .and_then(Value::as_bool),
+        "cerebras" => model
+            .pointer("/capabilities/function_calling")
+            .and_then(Value::as_bool)
+            .zip(
+                model
+                    .pointer("/capabilities/tools")
+                    .and_then(Value::as_bool),
+            )
+            .map(|(function_calling, tools)| function_calling && tools),
+        "openrouter" => model.get("tool_call").and_then(Value::as_bool).or_else(|| {
+            model
+                .get("supported_parameters")
+                .and_then(Value::as_array)
+                .map(|parameters| {
+                    parameters
+                        .iter()
+                        .any(|parameter| parameter.as_str() == Some("tools"))
+                })
+        }),
         "mistral" => model
             .pointer("/capabilities/function_calling")
             .and_then(Value::as_bool),
-        "deepseek" => Some(!model_id.contains("reasoner")),
-        "xai" => Some(true),
+        "deepseek" => model
+            .pointer("/capabilities/function_calling")
+            .and_then(Value::as_bool),
+        "xai" => None,
         "together" => model
             .pointer("/capabilities/function_calling")
-            .and_then(Value::as_bool)
-            .or(Some(true)),
-        "sambanova" => Some(true),
-        "perplexity" => Some(false),
-        "anthropic" => Some(true),
+            .and_then(Value::as_bool),
+        "sambanova" | "anthropic" => model
+            .pointer("/capabilities/function_calling")
+            .and_then(Value::as_bool),
+        "perplexity" => model
+            .pointer("/capabilities/function_calling")
+            .and_then(Value::as_bool),
         "fireworks" => model
             .pointer("/capabilities/function_calling")
-            .and_then(Value::as_bool)
-            .or(Some(true)),
-        "deepinfra" | "dashscope" | "cohere" => Some(true),
+            .and_then(Value::as_bool),
+        "deepinfra" | "dashscope" | "cohere" => model
+            .pointer("/capabilities/function_calling")
+            .and_then(Value::as_bool),
         "kilo" => model
             .get("supported_parameters")
             .and_then(Value::as_array)
             .map(|params| params.iter().any(|p| p.as_str() == Some("tools")))
             .or(Some(true)),
-        _ => None,
-    }
-}
-
-fn gemini_supports_tool_calls(model_id: &str) -> Option<bool> {
-    let model_id = model_id.strip_prefix("models/").unwrap_or(model_id);
-    match model_id {
-        "gemini-3.8-flash"
-        | "gemini-3.7-flash"
-        | "gemini-3.6-flash"
-        | "gemini-3.5-flash-lite"
-        | "gemini-3.1-pro-preview"
-        | "gemini-3.1-flash-lite"
-        | "gemini-3.5-flash"
-        | "gemini-2.5-pro"
-        | "gemini-2.5-flash"
-        | "gemini-2.5-flash-lite" => Some(true),
-        _ => None,
-    }
-}
-
-fn groq_supports_tool_calls(model_id: &str) -> Option<bool> {
-    match model_id {
-        "openai/gpt-oss-20b"
-        | "openai/gpt-oss-120b"
-        | "openai/gpt-oss-safeguard-20b"
-        | "qwen/qwen3.8-27b"
-        | "minimaxai/minimax-m2.7"
-        | "llama-3.3-70b-versatile"
-        | "llama-3.1-8b-instant" => Some(true),
-        "whisper-large-v3"
-        | "whisper-large-v3-turbo"
-        | "distil-whisper-large-v3-en"
-        | "canopylabs/orpheus-arabic-saudi"
-        | "canopylabs/orpheus-v1-english"
-        | "playai-tts"
-        | "playai-tts-arabic" => Some(false),
         _ => None,
     }
 }
@@ -573,93 +578,36 @@ pub(super) fn supports_tool_calls(
         .and_then(Value::as_bool))
 }
 
-fn supports_images(
-    provider_id: &str,
-    model_id: &str,
-    model: &Value,
-    details: Option<&Value>,
-) -> bool {
+fn supports_images(model: &Value, details: Option<&Value>) -> Option<bool> {
     let advertised_vision = model
         .pointer("/capabilities/vision")
         .or_else(|| details.and_then(|details| details.pointer("/capabilities/vision")))
         .and_then(Value::as_bool)
-        == Some(true);
-    let modalities_include_image = [
+        .or_else(|| model.get("supportsImages").and_then(Value::as_bool))
+        .or_else(|| {
+            details
+                .and_then(|details| details.get("supportsImages"))
+                .and_then(Value::as_bool)
+        });
+    if let Some(supported) = advertised_vision {
+        return Some(supported);
+    }
+    let modalities = [
         model.pointer("/architecture/input_modalities"),
         details.and_then(|details| details.pointer("/inputModalities")),
         details.and_then(|details| details.pointer("/modalities/input")),
     ]
     .into_iter()
     .flatten()
-    .any(|modalities| {
+    .find_map(|modalities| {
         modalities
             .as_array()
-            .is_some_and(|values| values.iter().any(|value| value.as_str() == Some("image")))
+            .map(|values| values.iter().any(|value| value.as_str() == Some("image")))
     });
-    match provider_id {
-        "gemini" => {
-            modalities_include_image
-                || details
-                    .and_then(|details| details.get("supportedGenerationMethods"))
-                    .and_then(Value::as_array)
-                    .is_some_and(|methods| {
-                        methods
-                            .iter()
-                            .any(|method| method.as_str() == Some("generateContent"))
-                            && !model_id.contains("embedding")
-                            && !model_id.contains("aqa")
-                    })
-        }
-        "groq" => {
-            advertised_vision
-                || modalities_include_image
-                || model_id.to_ascii_lowercase().contains("vision")
-                || model_id == "qwen/qwen3.8-27b"
-        }
-        "cerebras" => advertised_vision || modalities_include_image,
-        "openrouter" => {
-            advertised_vision
-                || modalities_include_image
-                || model
-                    .pointer("/architecture/modality")
-                    .and_then(Value::as_str)
-                    .and_then(|modality| modality.split_once("->"))
-                    .is_some_and(|(input, _)| input.split('+').any(|kind| kind == "image"))
-        }
-        "mistral" => advertised_vision || modalities_include_image,
-        "xai" => {
-            advertised_vision
-                || modalities_include_image
-                || model_id.to_ascii_lowercase().contains("vision")
-        }
-        "together" | "sambanova" => advertised_vision || modalities_include_image,
-        "anthropic" => {
-            advertised_vision
-                || modalities_include_image
-                || model_id.contains("claude-3")
-                || model_id.contains("claude")
-        }
-        "fireworks" | "deepinfra" => {
-            advertised_vision
-                || modalities_include_image
-                || model_id.to_ascii_lowercase().contains("vision")
-        }
-        "dashscope" => {
-            advertised_vision
-                || modalities_include_image
-                || model_id.to_ascii_lowercase().contains("vl")
-                || model_id.to_ascii_lowercase().contains("vision")
-        }
-        "deepseek" | "perplexity" | "cohere" => false,
-        "kilo" => advertised_vision || modalities_include_image,
-        _ => false,
-    }
+    modalities
 }
 
-pub(super) fn mistral_reasoning_levels(model_id: &str) -> Vec<String> {
-    if matches!(model_id, "mistral-small-latest" | "mistral-medium-3-5") {
-        return ["none", "high"].map(str::to_owned).to_vec();
-    }
+pub(super) fn mistral_reasoning_levels(_model_id: &str) -> Vec<String> {
     Vec::new()
 }
 
@@ -720,13 +668,21 @@ fn load_catalog(
     load_catalog_from_connection(&connection, provider_id, key_hash)
 }
 
-fn load_catalog_from_connection(
-    connection: &Connection,
-    provider_id: &str,
-    key_hash: &str,
-) -> Result<Option<(Vec<Value>, i64)>, ServiceError> {
-    connection
-        .query_row(
+trait CatalogReadConnection {
+    fn load_catalog_row(
+        &self,
+        provider_id: &str,
+        key_hash: &str,
+    ) -> rusqlite::Result<Option<(String, i64)>>;
+}
+
+impl CatalogReadConnection for rusqlite::Connection {
+    fn load_catalog_row(
+        &self,
+        provider_id: &str,
+        key_hash: &str,
+    ) -> rusqlite::Result<Option<(String, i64)>> {
+        self.query_row(
             "SELECT models_json, fetched_at_unix_ms
              FROM compatible_provider_model_catalog
              WHERE provider_id = ?1 AND api_key_hash = ?2",
@@ -734,6 +690,33 @@ fn load_catalog_from_connection(
             |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)),
         )
         .optional()
+    }
+}
+
+impl CatalogReadConnection for StorageConnection<'_> {
+    fn load_catalog_row(
+        &self,
+        provider_id: &str,
+        key_hash: &str,
+    ) -> rusqlite::Result<Option<(String, i64)>> {
+        self.query_row(
+            "SELECT models_json, fetched_at_unix_ms
+             FROM compatible_provider_model_catalog
+             WHERE provider_id = ?1 AND api_key_hash = ?2",
+            rusqlite::params![provider_id, key_hash],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)),
+        )
+        .optional()
+    }
+}
+
+fn load_catalog_from_connection(
+    connection: &impl CatalogReadConnection,
+    provider_id: &str,
+    key_hash: &str,
+) -> Result<Option<(Vec<Value>, i64)>, ServiceError> {
+    connection
+        .load_catalog_row(provider_id, key_hash)
         .map_err(|_| storage_error())?
         .map(|(models_json, fetched_at)| {
             serde_json::from_str::<Vec<Value>>(&models_json)
@@ -977,45 +960,31 @@ mod tests {
             "id": "model",
             "inputTokenLimit": 8192,
             "supportsImages": false,
-            "supportsTools": false
+            "supportsTools": null,
+            "capabilityMetadataVersion": 2
         })]));
     }
 
     #[test]
-    fn provider_tool_capabilities_are_known_only_from_verified_sources() {
+    fn provider_tool_capabilities_use_reported_metadata() {
         assert_eq!(
-            provider_tool_support("gemini", "gemini-3.8-flash", &json!({})),
+            provider_tool_support("gemini", &json!({"function_calling": true})),
             Some(true)
         );
+        assert_eq!(provider_tool_support("gemini", &json!({})), None);
         assert_eq!(
-            provider_tool_support("gemini", "models/gemini-2.5-pro", &json!({})),
+            provider_tool_support("groq", &json!({"capabilities": {"tools": true}})),
             Some(true)
         );
-        assert_eq!(
-            provider_tool_support("gemini", "gemini-experimental-unknown", &json!({})),
-            None
-        );
-        assert_eq!(
-            provider_tool_support("groq", "llama-3.3-70b-versatile", &json!({})),
-            Some(true)
-        );
-        assert_eq!(
-            provider_tool_support("groq", "whisper-large-v3", &json!({})),
-            Some(false)
-        );
-        assert_eq!(provider_tool_support("groq", "new-model", &json!({})), None);
+        assert_eq!(provider_tool_support("groq", &json!({})), None);
         assert_eq!(
             provider_tool_support(
                 "mistral",
-                "custom-model",
                 &json!({"capabilities": {"function_calling": false}})
             ),
             Some(false)
         );
-        assert_eq!(
-            provider_tool_support("mistral", "custom-model", &json!({})),
-            None
-        );
+        assert_eq!(provider_tool_support("mistral", &json!({})), None);
     }
 
     #[test]
@@ -1167,8 +1136,8 @@ mod tests {
             model_context_window(&mistral, "mistral-small-latest"),
             Some(131072)
         );
-        assert_eq!(mistral[0]["supportsReasoning"], true);
-        assert_eq!(mistral[0]["reasoningLevels"], json!(["none", "high"]));
+        assert!(mistral[0]["supportsReasoning"].is_null());
+        assert_eq!(mistral[0]["reasoningLevels"], json!([]));
         assert_eq!(mistral[0]["supportsTools"], true);
 
         let groq = parse_models(
@@ -1182,8 +1151,8 @@ mod tests {
             None,
         )
         .expect("parse Groq models");
-        assert_eq!(groq[0]["supportsTools"], true);
-        assert_eq!(groq[1]["supportsTools"], false);
+        assert!(groq[0]["supportsTools"].is_null());
+        assert!(groq[1]["supportsTools"].is_null());
 
         let openrouter = parse_models(
             "openrouter",
@@ -1222,9 +1191,9 @@ mod tests {
         .expect("parse DeepSeek models");
         assert_eq!(deepseek.len(), 2);
         assert_eq!(deepseek[0]["contextWindow"], 64_000);
-        assert_eq!(deepseek[0]["supportsTools"], true);
-        assert_eq!(deepseek[1]["supportsTools"], false);
-        assert_eq!(deepseek[1]["supportsReasoning"], true);
+        assert!(deepseek[0]["supportsTools"].is_null());
+        assert!(deepseek[1]["supportsTools"].is_null());
+        assert!(deepseek[1]["supportsReasoning"].is_null());
 
         let xai = parse_models(
             "xai",
@@ -1238,8 +1207,8 @@ mod tests {
         )
         .expect("parse xAI models");
         assert_eq!(xai[0]["contextWindow"], 131_072);
-        assert_eq!(xai[0]["supportsTools"], true);
-        assert_eq!(xai[1]["supportsImages"], true);
+        assert!(xai[0]["supportsTools"].is_null());
+        assert!(xai[1]["supportsImages"].is_null());
 
         let perplexity = parse_models(
             "perplexity",
@@ -1254,9 +1223,9 @@ mod tests {
         )
         .expect("parse Perplexity models");
         assert_eq!(perplexity[0]["contextWindow"], 128_000);
-        assert_eq!(perplexity[1]["contextWindow"], 200_000);
-        assert_eq!(perplexity[2]["supportsReasoning"], true);
-        assert_eq!(perplexity[0]["supportsTools"], false);
+        assert_eq!(perplexity[1]["contextWindow"], 128_000);
+        assert!(perplexity[2]["supportsReasoning"].is_null());
+        assert!(perplexity[0]["supportsTools"].is_null());
     }
 
     #[test]

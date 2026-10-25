@@ -4,10 +4,19 @@ use std::{
     collections::HashMap,
     env, fmt, fs,
     fs::{File, OpenOptions},
-    io::{Read, Write},
+    io::Read,
     path::{Path, PathBuf},
     time::{SystemTime, UNIX_EPOCH},
 };
+
+#[cfg(windows)]
+use std::os::windows::fs::MetadataExt;
+
+#[cfg(windows)]
+use windows_sys::Win32::Storage::FileSystem::FILE_ATTRIBUTE_REPARSE_POINT;
+
+#[cfg(test)]
+use std::io::Write;
 
 #[cfg(windows)]
 use std::{
@@ -138,7 +147,7 @@ impl SecretMapUpdateLock {
 }
 
 /// Owns decrypted secret values and clears them when the map is dropped.
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct SecretMap(HashMap<String, String>);
 
 impl SecretMap {
@@ -146,6 +155,7 @@ impl SecretMap {
     ///
     /// An absent or empty database table produces an empty map. Legacy files are automatically
     /// migrated into the database vault upon first read and removed.
+    #[cfg(test)]
     pub fn read() -> Result<Self, SecretStoreError> {
         #[cfg(windows)]
         {
@@ -157,9 +167,34 @@ impl SecretMap {
         }
     }
 
+    /// Loads the protected secret map through the local service's queued database connection.
+    pub fn read_from_storage(
+        storage: &crate::storage::AppStorage,
+    ) -> Result<Self, SecretStoreError> {
+        #[cfg(windows)]
+        {
+            let mut connection = storage
+                .connect()
+                .map_err(|_| SecretStoreError::Unavailable)?;
+            if connection.is_remote() {
+                return connection
+                    .vault_read_map()
+                    .map_err(|_| SecretStoreError::Unavailable);
+            }
+            migrate_legacy_file_if_present(&mut connection)?;
+            read_secret_map_from_connection(&connection)
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = storage;
+            Err(SecretStoreError::Unavailable)
+        }
+    }
+
     /// Writes the current user's secret map into the unified database `secure_vault` table.
     ///
     /// Keep `update_lock` alive from the read through this write to prevent lost concurrent updates.
+    #[cfg(test)]
     pub fn write(&self, update_lock: &SecretMapUpdateLock) -> Result<(), SecretStoreError> {
         #[cfg(windows)]
         {
@@ -172,6 +207,30 @@ impl SecretMap {
         }
     }
 
+    /// Writes the protected secret map through the local service's queued database connection.
+    pub fn write_to_storage(
+        &self,
+        storage: &crate::storage::AppStorage,
+    ) -> Result<(), SecretStoreError> {
+        #[cfg(windows)]
+        {
+            let mut connection = storage
+                .connect()
+                .map_err(|_| SecretStoreError::Unavailable)?;
+            if connection.is_remote() {
+                return connection
+                    .vault_write_map(self.clone())
+                    .map_err(|_| SecretStoreError::Unavailable);
+            }
+            write_secret_map_to_connection(&mut connection, self)
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = storage;
+            Err(SecretStoreError::Unavailable)
+        }
+    }
+
     /// Returns the stored value for a key without copying it.
     pub fn get(&self, key: &str) -> Option<&str> {
         self.0.get(key).map(String::as_str)
@@ -180,6 +239,28 @@ impl SecretMap {
     /// Returns whether the map contains a key, including one with an empty value.
     pub fn contains_key(&self, key: &str) -> bool {
         self.0.contains_key(key)
+    }
+
+    pub(crate) fn has_same_entries_as(&self, other: &Self) -> bool {
+        self.0.len() == other.0.len()
+            && self
+                .0
+                .iter()
+                .all(|(key, value)| other.0.get(key).is_some_and(|other| other == value))
+    }
+
+    pub(crate) fn is_within_limits(&self) -> bool {
+        self.0.len() <= 16_384
+            && self
+                .0
+                .iter()
+                .try_fold(0usize, |total, (key, value)| {
+                    total
+                        .checked_add(key.len())
+                        .and_then(|total| total.checked_add(value.len()))
+                        .filter(|total| *total <= MAXIMUM_SECRET_MAP_BYTES as usize)
+                })
+                .is_some()
     }
 
     /// Iterates over key names and borrowed values.
@@ -250,6 +331,15 @@ impl SecretMap {
     }
 }
 
+impl fmt::Debug for SecretMap {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("SecretMap")
+            .field("entry_count", &self.0.len())
+            .finish()
+    }
+}
+
 impl Serialize for SecretMap {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -313,7 +403,7 @@ fn database_path() -> Result<PathBuf, SecretStoreError> {
     Ok(path)
 }
 
-#[cfg(windows)]
+#[cfg(all(windows, test))]
 fn open_database_connection(path: &Path) -> Result<rusqlite::Connection, SecretStoreError> {
     let parent = path.parent().ok_or(SecretStoreError::Unavailable)?;
     fs::create_dir_all(parent).map_err(|_| SecretStoreError::Unavailable)?;
@@ -338,7 +428,7 @@ fn open_database_connection(path: &Path) -> Result<rusqlite::Connection, SecretS
 
 #[cfg(windows)]
 fn migrate_legacy_file_if_present(
-    connection: &mut rusqlite::Connection,
+    connection: &mut crate::storage::StorageConnection<'_>,
 ) -> Result<(), SecretStoreError> {
     let legacy_path = match secure_storage_path() {
         Ok(path) => path,
@@ -381,10 +471,18 @@ fn migrate_legacy_file_if_present(
     Ok(())
 }
 
-#[cfg(windows)]
+#[cfg(all(windows, test))]
 fn read_secret_map_from_db(path: &Path) -> Result<SecretMap, SecretStoreError> {
-    let mut connection = open_database_connection(path)?;
+    let mut connection =
+        crate::storage::StorageConnection::standalone(open_database_connection(path)?);
     migrate_legacy_file_if_present(&mut connection)?;
+    read_secret_map_from_connection(&connection)
+}
+
+#[cfg(windows)]
+fn read_secret_map_from_connection(
+    connection: &crate::storage::StorageConnection<'_>,
+) -> Result<SecretMap, SecretStoreError> {
     let mut statement = connection
         .prepare("SELECT key, ciphertext FROM secure_vault")
         .map_err(|_| SecretStoreError::Unavailable)?;
@@ -410,13 +508,154 @@ fn read_secret_map_from_db(path: &Path) -> Result<SecretMap, SecretStoreError> {
     Ok(map)
 }
 
+/// Decrypts the old user-profile vault before its database is imported by LocalService.
 #[cfg(windows)]
+pub(crate) fn read_for_storage_migration(
+    database_path: &Path,
+) -> Result<(SecretMap, Option<PathBuf>), SecretStoreError> {
+    let mut values = SecretMap::default();
+    match fs::symlink_metadata(database_path) {
+        Ok(metadata)
+            if metadata.is_file()
+                && metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT == 0 =>
+        {
+            let connection = rusqlite::Connection::open_with_flags(
+                database_path,
+                rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+            )
+            .map_err(|_| SecretStoreError::Unavailable)?;
+            crate::storage::disable_trusted_schema(&connection)
+                .map_err(|_| SecretStoreError::Unavailable)?;
+            let integrity: String = connection
+                .query_row("PRAGMA quick_check(1)", [], |row| row.get(0))
+                .map_err(|_| SecretStoreError::Unavailable)?;
+            if integrity != "ok" {
+                return Err(SecretStoreError::Unavailable);
+            }
+            let table_exists = connection
+                .query_row(
+                    "SELECT EXISTS (
+                    SELECT 1 FROM sqlite_schema
+                    WHERE type = 'table' AND name = 'secure_vault'
+                )",
+                    [],
+                    |row| row.get::<_, bool>(0),
+                )
+                .map_err(|_| SecretStoreError::Unavailable)?;
+            if table_exists {
+                let mut statement = connection
+                    .prepare("SELECT key, ciphertext FROM secure_vault")
+                    .map_err(|_| SecretStoreError::Unavailable)?;
+                let rows = statement
+                    .query_map([], |row| {
+                        Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?))
+                    })
+                    .map_err(|_| SecretStoreError::Unavailable)?;
+                let mut row_count = 0usize;
+                let mut serialized_bytes = 0usize;
+                for row in rows {
+                    let (key, ciphertext) = row.map_err(|_| SecretStoreError::Unavailable)?;
+                    row_count = row_count
+                        .checked_add(1)
+                        .ok_or(SecretStoreError::Unavailable)?;
+                    serialized_bytes = serialized_bytes
+                        .checked_add(key.len())
+                        .and_then(|total| total.checked_add(ciphertext.len()))
+                        .filter(|total| {
+                            *total <= MAXIMUM_SECRET_MAP_BYTES as usize && row_count <= 16_384
+                        })
+                        .ok_or(SecretStoreError::Unavailable)?;
+                    if key.len() > 4096 {
+                        return Err(SecretStoreError::Unavailable);
+                    }
+                    if key.starts_with("keyring:") {
+                        continue;
+                    }
+                    let plaintext = unprotect_dpapi(&ciphertext)?;
+                    let Ok(value) = String::from_utf8(plaintext.to_vec()) else {
+                        continue;
+                    };
+                    values.insert(key, value);
+                }
+            }
+        }
+        Ok(_) => return Err(SecretStoreError::Unavailable),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(_) => return Err(SecretStoreError::Unavailable),
+    }
+
+    let legacy_path = match secure_storage_path() {
+        Ok(path) => match fs::symlink_metadata(&path) {
+            Ok(metadata)
+                if metadata.is_file()
+                    && metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT == 0 =>
+            {
+                Some(path)
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+            _ => return Err(SecretStoreError::Unavailable),
+        },
+        Err(_) => None,
+    };
+    if let Some(path) = legacy_path.as_deref() {
+        let legacy_values = read_secret_map(path)?;
+        for (key, value) in legacy_values.iter() {
+            values.insert(key.to_owned(), value.to_owned());
+        }
+    }
+    if !values.is_within_limits() {
+        return Err(SecretStoreError::Unavailable);
+    }
+    Ok((values, legacy_path))
+}
+
+/// Removes the legacy DPAPI file only after the service reports a verified import.
+#[cfg(windows)]
+pub(crate) fn finish_storage_migration(legacy_path: Option<&Path>) -> Result<(), SecretStoreError> {
+    let Some(legacy_path) = legacy_path else {
+        return Ok(());
+    };
+    match fs::symlink_metadata(legacy_path) {
+        Ok(metadata)
+            if metadata.is_file()
+                && metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT == 0 =>
+        {
+            fs::remove_file(legacy_path).map_err(|_| SecretStoreError::Unavailable)?;
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        _ => return Err(SecretStoreError::Unavailable),
+    }
+    Ok(())
+}
+
+#[cfg(windows)]
+pub(crate) fn finish_completed_storage_migration() -> Result<(), SecretStoreError> {
+    let Some(path) = secure_storage_path().ok() else {
+        return Ok(());
+    };
+    match fs::symlink_metadata(&path) {
+        Ok(_) => finish_storage_migration(Some(&path)),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(_) => Err(SecretStoreError::Unavailable),
+    }
+}
+
+#[cfg(all(windows, test))]
 fn write_secret_map_to_db(
     path: &Path,
     values: &SecretMap,
     _update_lock: &SecretMapUpdateLock,
 ) -> Result<(), SecretStoreError> {
-    let mut connection = open_database_connection(path)?;
+    let mut connection =
+        crate::storage::StorageConnection::standalone(open_database_connection(path)?);
+    write_secret_map_to_connection(&mut connection, values)
+}
+
+#[cfg(windows)]
+fn write_secret_map_to_connection(
+    connection: &mut crate::storage::StorageConnection<'_>,
+    values: &SecretMap,
+) -> Result<(), SecretStoreError> {
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_err(|_| SecretStoreError::Unavailable)?
@@ -475,6 +714,7 @@ fn write_secret_map_to_db(
 }
 
 /// Loads a single secret by key from the secure vault, decrypting it using DPAPI.
+#[cfg(test)]
 pub fn get_vault_secret(key: &str) -> Result<Option<Zeroizing<String>>, SecretStoreError> {
     #[cfg(windows)]
     {
@@ -488,6 +728,7 @@ pub fn get_vault_secret(key: &str) -> Result<Option<Zeroizing<String>>, SecretSt
 }
 
 /// Stores a single secret by key in the secure vault, encrypting it using DPAPI.
+#[cfg(test)]
 pub fn set_vault_secret(key: &str, value: &str) -> Result<(), SecretStoreError> {
     #[cfg(windows)]
     {
@@ -501,6 +742,7 @@ pub fn set_vault_secret(key: &str, value: &str) -> Result<(), SecretStoreError> 
 }
 
 /// Removes a single secret by key from the secure vault.
+#[cfg(test)]
 pub fn delete_vault_secret(key: &str) -> Result<(), SecretStoreError> {
     #[cfg(windows)]
     {
@@ -514,6 +756,7 @@ pub fn delete_vault_secret(key: &str) -> Result<(), SecretStoreError> {
 }
 
 /// Checks whether a secret exists in the secure vault by key.
+#[cfg(test)]
 pub fn has_vault_secret(key: &str) -> Result<bool, SecretStoreError> {
     #[cfg(windows)]
     {
@@ -526,12 +769,125 @@ pub fn has_vault_secret(key: &str) -> Result<bool, SecretStoreError> {
     }
 }
 
-#[cfg(windows)]
+/// Reads and decrypts one vault entry using the service-owned database queue.
+pub fn get_vault_secret_from_storage(
+    storage: &crate::storage::AppStorage,
+    key: &str,
+) -> Result<Option<Zeroizing<String>>, SecretStoreError> {
+    #[cfg(windows)]
+    {
+        let connection = storage
+            .connect()
+            .map_err(|_| SecretStoreError::Unavailable)?;
+        if connection.is_remote() {
+            return connection
+                .vault_get(key)
+                .map_err(|_| SecretStoreError::Unavailable);
+        }
+        get_vault_secret_from_connection(&connection, key)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (storage, key);
+        Err(SecretStoreError::Unavailable)
+    }
+}
+
+/// Encrypts and stores one vault entry using the service-owned database queue.
+pub fn set_vault_secret_from_storage(
+    storage: &crate::storage::AppStorage,
+    key: &str,
+    value: &str,
+) -> Result<(), SecretStoreError> {
+    #[cfg(windows)]
+    {
+        let connection = storage
+            .connect()
+            .map_err(|_| SecretStoreError::Unavailable)?;
+        if connection.is_remote() {
+            return connection
+                .vault_set(key, value)
+                .map_err(|_| SecretStoreError::Unavailable);
+        }
+        set_vault_secret_on_connection(&connection, key, value)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (storage, key, value);
+        Err(SecretStoreError::Unavailable)
+    }
+}
+
+/// Deletes one vault entry using the service-owned database queue.
+pub fn delete_vault_secret_from_storage(
+    storage: &crate::storage::AppStorage,
+    key: &str,
+) -> Result<(), SecretStoreError> {
+    #[cfg(windows)]
+    {
+        let connection = storage
+            .connect()
+            .map_err(|_| SecretStoreError::Unavailable)?;
+        if connection.is_remote() {
+            return connection
+                .vault_delete(key)
+                .map_err(|_| SecretStoreError::Unavailable);
+        }
+        connection
+            .execute("DELETE FROM secure_vault WHERE key = ?1", [key])
+            .map_err(|_| SecretStoreError::Unavailable)?;
+        Ok(())
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (storage, key);
+        Err(SecretStoreError::Unavailable)
+    }
+}
+
+/// Checks one vault entry using the service-owned database queue.
+pub fn has_vault_secret_from_storage(
+    storage: &crate::storage::AppStorage,
+    key: &str,
+) -> Result<bool, SecretStoreError> {
+    #[cfg(windows)]
+    {
+        let connection = storage
+            .connect()
+            .map_err(|_| SecretStoreError::Unavailable)?;
+        if connection.is_remote() {
+            return connection
+                .vault_has(key)
+                .map_err(|_| SecretStoreError::Unavailable);
+        }
+        let mut statement = connection
+            .prepare("SELECT 1 FROM secure_vault WHERE key = ?1 LIMIT 1")
+            .map_err(|_| SecretStoreError::Unavailable)?;
+        statement
+            .exists([key])
+            .map_err(|_| SecretStoreError::Unavailable)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (storage, key);
+        Err(SecretStoreError::Unavailable)
+    }
+}
+
+#[cfg(all(windows, test))]
 pub(crate) fn get_vault_secret_for_path(
     path: &Path,
     key: &str,
 ) -> Result<Option<Zeroizing<String>>, SecretStoreError> {
     let connection = open_database_connection(path)?;
+    get_vault_secret_from_connection(&connection, key)
+}
+
+#[cfg(windows)]
+fn get_vault_secret_from_connection(
+    connection: &crate::storage::StorageConnection<'_>,
+    key: &str,
+) -> Result<Option<Zeroizing<String>>, SecretStoreError> {
     let mut statement = connection
         .prepare("SELECT ciphertext FROM secure_vault WHERE key = ?1")
         .map_err(|_| SecretStoreError::Unavailable)?;
@@ -549,13 +905,22 @@ pub(crate) fn get_vault_secret_for_path(
     }
 }
 
-#[cfg(windows)]
+#[cfg(all(windows, test))]
 pub(crate) fn set_vault_secret_for_path(
     path: &Path,
     key: &str,
     value: &str,
 ) -> Result<(), SecretStoreError> {
-    let connection = open_database_connection(path)?;
+    let connection = crate::storage::StorageConnection::standalone(open_database_connection(path)?);
+    set_vault_secret_on_connection(&connection, key, value)
+}
+
+#[cfg(windows)]
+fn set_vault_secret_on_connection(
+    connection: &crate::storage::StorageConnection<'_>,
+    key: &str,
+    value: &str,
+) -> Result<(), SecretStoreError> {
     let encrypted = protect_dpapi(value.as_bytes())?;
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -572,7 +937,7 @@ pub(crate) fn set_vault_secret_for_path(
     Ok(())
 }
 
-#[cfg(windows)]
+#[cfg(all(windows, test))]
 pub(crate) fn delete_vault_secret_for_path(path: &Path, key: &str) -> Result<(), SecretStoreError> {
     let connection = open_database_connection(path)?;
     connection
@@ -584,7 +949,7 @@ pub(crate) fn delete_vault_secret_for_path(path: &Path, key: &str) -> Result<(),
     Ok(())
 }
 
-#[cfg(windows)]
+#[cfg(all(windows, test))]
 pub(crate) fn has_vault_secret_for_path(path: &Path, key: &str) -> Result<bool, SecretStoreError> {
     let connection = open_database_connection(path)?;
     let mut statement = connection
@@ -633,6 +998,7 @@ fn secret_map_lock_path(path: &Path) -> Result<PathBuf, SecretStoreError> {
 fn read_secret_map(path: &Path) -> Result<SecretMap, SecretStoreError> {
     #[cfg(windows)]
     {
+        #[cfg(test)]
         if path
             .extension()
             .is_some_and(|ext| ext == "sqlite3" || ext == "db")
@@ -672,6 +1038,7 @@ fn read_bounded_file(path: &Path, maximum_bytes: u64) -> std::io::Result<Option<
     Ok(Some(bytes))
 }
 
+#[cfg(test)]
 fn write_secret_map(
     path: &Path,
     values: &SecretMap,
@@ -679,6 +1046,7 @@ fn write_secret_map(
 ) -> Result<(), SecretStoreError> {
     #[cfg(windows)]
     {
+        #[cfg(test)]
         if path
             .extension()
             .is_some_and(|ext| ext == "sqlite3" || ext == "db")
@@ -703,6 +1071,7 @@ fn write_secret_map(
     }
 }
 
+#[cfg(test)]
 fn write_atomic_bytes(path: &Path, bytes: &[u8]) -> Result<(), SecretStoreError> {
     let parent = path.parent().ok_or(SecretStoreError::Unavailable)?;
     fs::create_dir_all(parent).map_err(|_| SecretStoreError::Unavailable)?;
@@ -736,7 +1105,7 @@ fn write_atomic_bytes(path: &Path, bytes: &[u8]) -> Result<(), SecretStoreError>
     Ok(())
 }
 
-#[cfg(windows)]
+#[cfg(all(test, windows))]
 fn replace_file(staging: &Path, destination: &Path) -> std::io::Result<()> {
     use std::os::windows::ffi::OsStrExt;
     use windows_sys::Win32::Storage::FileSystem::{
@@ -768,7 +1137,7 @@ fn replace_file(staging: &Path, destination: &Path) -> std::io::Result<()> {
     }
 }
 
-#[cfg(not(windows))]
+#[cfg(all(test, not(windows)))]
 fn replace_file(staging: &Path, destination: &Path) -> std::io::Result<()> {
     fs::rename(staging, destination)
 }

@@ -11,11 +11,14 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::{OptionalExtension, params};
 use serde_json::{Value, json};
 use uuid::Uuid;
 
-use crate::{protocol::ServiceError, storage::AppStorage};
+use crate::{
+    protocol::ServiceError,
+    storage::{AppStorage, DatabaseQueueHandle, StorageConnection},
+};
 
 const MAX_MODEL_SCAN_DEPTH: usize = 5;
 const MAX_MODEL_SCAN_ENTRIES: usize = 20_000;
@@ -240,6 +243,7 @@ pub(crate) fn resolve_model_directory(
 }
 
 pub(crate) fn register_with_storage_action(
+    database_queue: DatabaseQueueHandle,
     database_root: &Path,
     engine_id: &str,
     model_path: &str,
@@ -255,13 +259,13 @@ pub(crate) fn register_with_storage_action(
 
     let (source_path, path_kind) = validate_model_path(engine_id, model_path)?;
     if action == StorageAction::Keep {
-        return register_validated(database_root, engine_id, source_path, path_kind);
+        return register_validated(&database_queue, engine_id, source_path, path_kind);
     }
 
     let target_directory = resolve_model_directory(database_root, engine_id, model_directory)?;
 
     if action == StorageAction::Move && source_path.parent() == Some(&target_directory) {
-        return register_validated(database_root, engine_id, source_path, path_kind);
+        return register_validated(&database_queue, engine_id, source_path, path_kind);
     }
 
     let destination = unique_destination(&target_directory, &source_path, path_kind)?;
@@ -309,7 +313,7 @@ pub(crate) fn register_with_storage_action(
             return Err(model_storage_path_error());
         }
     };
-    match register_validated(database_root, engine_id, destination, path_kind) {
+    match register_validated(&database_queue, engine_id, destination, path_kind) {
         Ok(model) => Ok(model),
         Err(error) => {
             if rollback_model_transfers(&transfers).is_err() {
@@ -321,7 +325,7 @@ pub(crate) fn register_with_storage_action(
 }
 
 fn register_validated(
-    storage_root: &Path,
+    database_queue: &DatabaseQueueHandle,
     engine_id: &str,
     model_path: PathBuf,
     path_kind: &'static str,
@@ -339,7 +343,7 @@ fn register_validated(
     .filter(|name| !name.trim().is_empty())
     .ok_or_else(invalid_model_path_error)?
     .to_owned();
-    let connection = connect_at_root(storage_root)?;
+    let connection = database_queue.connect().map_err(|_| database_error())?;
 
     if let Some(model) = connection
         .query_row(
@@ -482,32 +486,8 @@ pub(crate) fn to_json(model: &RegisteredModel, available: bool) -> Result<Value,
     }))
 }
 
-fn connect(storage: &AppStorage) -> Result<Connection, ServiceError> {
-    connect_at_root(storage.root())
-}
-
-fn connect_at_root(root: &Path) -> Result<Connection, ServiceError> {
-    let database_path = root.join("db").join("local_models.sqlite3");
-    let connection = Connection::open(database_path).map_err(|_| database_error())?;
-    connection
-        .busy_timeout(std::time::Duration::from_secs(5))
-        .map_err(|_| database_error())?;
-    crate::storage::disable_trusted_schema(&connection).map_err(|_| database_error())?;
-    connection
-        .execute_batch(
-            "PRAGMA journal_mode = WAL;
-             CREATE TABLE IF NOT EXISTS local_models (
-                id TEXT PRIMARY KEY NOT NULL,
-                engine_id TEXT NOT NULL CHECK (engine_id = 'llama_cpp'),
-                display_name TEXT NOT NULL,
-                model_path TEXT NOT NULL,
-                path_kind TEXT NOT NULL CHECK (path_kind IN ('file', 'directory')),
-                created_at_unix_ms INTEGER NOT NULL,
-                UNIQUE (engine_id, model_path)
-             );",
-        )
-        .map_err(|_| database_error())?;
-    Ok(connection)
+fn connect(storage: &AppStorage) -> Result<StorageConnection<'_>, ServiceError> {
+    storage.connect().map_err(|_| database_error())
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -999,6 +979,7 @@ mod tests {
             .to_str()
             .expect("fixture path should be UTF-8");
         let registered = register_with_storage_action(
+            storage.database_queue_handle(),
             storage.root(),
             "llama_cpp",
             model_path_string,
@@ -1028,6 +1009,7 @@ mod tests {
         fs::write(&source_projector, b"projector").expect("projector fixture should be written");
 
         let model = register_with_storage_action(
+            storage.database_queue_handle(),
             storage.root(),
             "llama_cpp",
             source_path.to_str().expect("fixture path should be UTF-8"),
@@ -1075,6 +1057,7 @@ mod tests {
         fs::write(&source_projector, b"projector").expect("projector fixture should be written");
 
         let model = register_with_storage_action(
+            storage.database_queue_handle(),
             storage.root(),
             "llama_cpp",
             source_path.to_str().expect("fixture path should be UTF-8"),
@@ -1139,6 +1122,7 @@ mod tests {
         fs::write(&projector, b"projector").expect("projector fixture should be written");
 
         let error = register_with_storage_action(
+            storage.database_queue_handle(),
             storage.root(),
             "llama_cpp",
             projector.to_str().expect("fixture path should be UTF-8"),

@@ -123,12 +123,6 @@ export async function getChatSchemaVersion(): Promise<number> {
   return value;
 }
 
-/** Database location and schema version confirmed by the Tauri host. */
-interface PreparedDatabase {
-  databasePath: string;
-  schemaVersion: number;
-}
-
 /** Native events emitted for one line, safe startup failure, or termination of the owned service process. */
 type NativeServiceEvent =
   | { type: 'output'; generation: number; line: string }
@@ -166,6 +160,16 @@ export class LocalServiceClient {
   }
 
   private dispatchBroadcast(event: ServiceEvent): void {
+    if (event.name === 'app.setting.changed') {
+      void invoke('broadcast_window_sync_event', {
+        event: 'openchat://app-setting-changed',
+        payload: event.data,
+      }).catch((cause: unknown) => {
+        globalThis.reportError(
+          new Error('A local setting update could not be synchronized across windows.', { cause }),
+        );
+      });
+    }
     for (const listener of this.broadcastListeners) {
       try {
         listener(event);
@@ -176,13 +180,21 @@ export class LocalServiceClient {
   }
 
   /** Starts and initializes the sidecar once, sharing concurrent startup attempts. */
-  async initialize(): Promise<void> {
-    if (this.initialized) return;
+  async initialize(options: { startWithEmptyStorage?: boolean } = {}): Promise<void> {
+    if (this.initialized) {
+      if (options.startWithEmptyStorage) {
+        throw new LocalServiceError(
+          'service_already_initialized',
+          'The local service is already initialized and cannot switch storage profiles in this session.',
+        );
+      }
+      return;
+    }
     if (!isTauri()) {
       throw new LocalServiceError('desktop_unavailable', 'This feature requires the OpenChat desktop app.');
     }
 
-    const startup = this.startup ?? this.initializeOnce();
+    const startup = this.startup ?? this.initializeOnce(options.startWithEmptyStorage === true);
     this.startup = startup;
     try {
       await startup;
@@ -296,11 +308,11 @@ export class LocalServiceClient {
   }
 
   /** Performs the one-time storage preparation and application initialization handshake. */
-  private async initializeOnce(): Promise<void> {
-    await this.startProcess();
+  private async initializeOnce(startWithEmptyStorage: boolean): Promise<void> {
+    await this.startProcess(startWithEmptyStorage);
     const health = await this.callRaw('system.health', {}, requestTimeoutMs);
-    if (health.status !== 'ready' || typeof health.database_path !== 'string') {
-      throw new LocalServiceError('invalid_storage_path', 'The local service did not provide a valid database path.');
+    if (health.status !== 'ready') {
+      throw new LocalServiceError('invalid_service_response', 'The local service did not report a ready status.');
     }
 
     const chatSchemaVersion = await getChatSchemaVersion();
@@ -310,23 +322,6 @@ export class LocalServiceClient {
       throw new LocalServiceError(
         'database_prepare_failed',
         'The local database could not be safely prepared for an update.',
-      );
-    }
-
-    const prepared: unknown = await invoke('prepare_chat_database');
-    if (!isPreparedDatabase(prepared)) {
-      throw new LocalServiceError(
-        'invalid_database_preparation',
-        'The native database preparation returned invalid data.',
-      );
-    }
-    if (
-      prepared.schemaVersion !== chatSchemaVersion ||
-      normalizePath(prepared.databasePath) !== normalizePath(health.database_path)
-    ) {
-      throw new LocalServiceError(
-        'storage_path_changed',
-        'The local service and chat storage reported different database locations.',
       );
     }
 
@@ -341,9 +336,9 @@ export class LocalServiceClient {
   }
 
   /** Spawns the packaged sidecar and binds its output and lifecycle events to this client. */
-  private async startProcess(): Promise<void> {
-    if (this.processGeneration !== undefined) return;
-    const startup = this.processStartup ?? this.spawnProcess();
+  private async startProcess(startWithEmptyStorage = false): Promise<void> {
+    if (this.processGeneration !== undefined && !startWithEmptyStorage) return;
+    const startup = this.processStartup ?? this.spawnProcess(startWithEmptyStorage);
     this.processStartup = startup;
     try {
       await startup;
@@ -353,14 +348,16 @@ export class LocalServiceClient {
   }
 
   /** Starts one sidecar process and ignores late lifecycle events from a replaced process. */
-  private async spawnProcess(): Promise<void> {
+  private async spawnProcess(startWithEmptyStorage = false): Promise<void> {
     await this.listenForProcessEvents();
     this.lastProcessFailure = null;
     this.processFailure = undefined;
     this.earlyProcessFailures.clear();
     let generation: number;
     try {
-      generation = await invoke<number>('start_local_service');
+      generation = await invoke<number>(
+        startWithEmptyStorage ? 'start_local_service_with_empty_storage' : 'start_local_service',
+      );
     } catch (error) {
       throw new LocalServiceError(
         'service_start_failed',
@@ -706,20 +703,6 @@ function isNativeServiceEvent(value: unknown): value is NativeServiceEvent {
   return value.type === 'stopped';
 }
 
-/** Validates the Tauri host's database-preparation result at the IPC boundary. */
-function isPreparedDatabase(value: unknown): value is PreparedDatabase {
-  return (
-    isJsonObject(value) &&
-    typeof value.databasePath === 'string' &&
-    isChatSchemaVersion(value.schemaVersion)
-  );
-}
-
 function isChatSchemaVersion(value: unknown): value is number {
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= 1 && value <= 100;
-}
-
-/** Normalizes Windows path separators and case before comparing the two storage authorities. */
-function normalizePath(path: string): string {
-  return path.replaceAll('/', '\\').toLocaleLowerCase('en-US');
 }

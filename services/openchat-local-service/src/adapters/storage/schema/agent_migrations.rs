@@ -1048,5 +1048,62 @@ pub(super) fn apply_agent_migrations(
         current_version = 34;
     }
 
+    if current_version < 35 && target_version >= 35 {
+        let transaction = connection.unchecked_transaction()?;
+        transaction.execute_batch(
+            "CREATE TABLE local_models (
+                id TEXT PRIMARY KEY NOT NULL,
+                engine_id TEXT NOT NULL CHECK (engine_id = 'llama_cpp'),
+                display_name TEXT NOT NULL,
+                model_path TEXT NOT NULL,
+                path_kind TEXT NOT NULL CHECK (path_kind IN ('file', 'directory')),
+                created_at_unix_ms INTEGER NOT NULL,
+                UNIQUE (engine_id, model_path)
+            );",
+        )?;
+        transaction.execute(
+            "INSERT INTO openchat_backend_migrations (version, applied_at_unix_ms) VALUES (35, ?1)",
+            [unix_time_millis()?],
+        )?;
+        transaction.commit()?;
+        current_version = 35;
+    }
+
+    if current_version < 36 && target_version >= 36 {
+        let transaction = connection.unchecked_transaction()?;
+        transaction.execute_batch(
+            "CREATE TABLE project_index_state (
+                project_id TEXT PRIMARY KEY NOT NULL,
+                enabled INTEGER NOT NULL CHECK (enabled IN (0, 1)),
+                status TEXT NOT NULL,
+                indexed_files INTEGER NOT NULL,
+                indexed_bytes INTEGER NOT NULL,
+                updated_at_unix_ms INTEGER
+            );
+            CREATE TABLE project_index_roots (
+                project_id TEXT PRIMARY KEY NOT NULL,
+                root_path TEXT NOT NULL
+            );
+            CREATE TABLE project_index_files (
+                project_id TEXT NOT NULL,
+                path TEXT NOT NULL,
+                modified_ns INTEGER NOT NULL,
+                size INTEGER NOT NULL,
+                content TEXT NOT NULL,
+                PRIMARY KEY (project_id, path)
+            );
+            CREATE VIRTUAL TABLE project_index_fts USING fts5(
+                project_id UNINDEXED, path UNINDEXED, content,
+                tokenize='unicode61 remove_diacritics 2'
+            );",
+        )?;
+        transaction.execute(
+            "INSERT INTO openchat_backend_migrations (version, applied_at_unix_ms) VALUES (36, ?1)",
+            [unix_time_millis()?],
+        )?;
+        transaction.commit()?;
+        current_version = 36;
+    }
+
     Ok(current_version)
 }

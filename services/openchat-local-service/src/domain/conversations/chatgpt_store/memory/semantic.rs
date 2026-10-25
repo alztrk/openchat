@@ -22,7 +22,7 @@ use reqwest::{
     StatusCode,
     header::{CONTENT_RANGE, RANGE},
 };
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::{OptionalExtension, params};
 use sha2::{Digest, Sha256};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -35,6 +35,7 @@ use usearch::{
 };
 
 use super::{ArchivedMemoryExcerpt, index, search, vector_math};
+use crate::storage::{DatabaseQueueHandle, StorageConnection, StorageRow, StorageTransaction};
 
 const MODEL_ID: &str = "multilingual-e5-small-761b726d";
 const MODEL_REPOSITORY: &str = "Xenova/multilingual-e5-small";
@@ -134,12 +135,12 @@ impl From<rusqlite::Error> for SemanticMemoryError {
 
 enum WorkerMessage {
     Prepare {
-        database_path: PathBuf,
+        database: DatabaseQueueHandle,
         cache_directory: PathBuf,
         response: SyncSender<Result<(), SemanticMemoryError>>,
     },
     Search {
-        database_path: PathBuf,
+        database: DatabaseQueueHandle,
         cache_directory: PathBuf,
         conversation_id: String,
         through_message_id: Option<String>,
@@ -148,7 +149,7 @@ enum WorkerMessage {
         response: SyncSender<Result<Vec<ArchivedMemoryExcerpt>, SemanticMemoryError>>,
     },
     InvalidateIndex {
-        database_path: PathBuf,
+        database: DatabaseQueueHandle,
         cache_directory: PathBuf,
         response: SyncSender<Result<(), SemanticMemoryError>>,
     },
@@ -178,7 +179,7 @@ pub(super) async fn is_ready(cache_directory: &Path) -> bool {
 }
 
 pub(super) async fn prepare(
-    database_path: PathBuf,
+    database: DatabaseQueueHandle,
     cache_directory: PathBuf,
     cancellation: &mut watch::Receiver<bool>,
     progress: tokio_mpsc::UnboundedSender<serde_json::Value>,
@@ -245,7 +246,7 @@ pub(super) async fn prepare(
         return Err(SemanticMemoryError::Cancelled);
     }
     report_progress(&progress, "indexing", total_bytes, total_bytes, None)?;
-    run_prepare_worker(database_path, cache_directory.clone()).await?;
+    run_prepare_worker(database, cache_directory.clone()).await?;
     tokio::fs::write(directory.join(".ready"), MODEL_ID)
         .await
         .map_err(|error| SemanticMemoryError::Io(error.to_string()))?;
@@ -254,7 +255,7 @@ pub(super) async fn prepare(
 }
 
 pub(super) async fn search_archive(
-    database_path: PathBuf,
+    database: DatabaseQueueHandle,
     cache_directory: PathBuf,
     conversation_id: String,
     through_message_id: Option<String>,
@@ -262,7 +263,7 @@ pub(super) async fn search_archive(
     result_limit: usize,
 ) -> Result<Vec<ArchivedMemoryExcerpt>, SemanticMemoryError> {
     run_search_worker(
-        database_path,
+        database,
         cache_directory,
         conversation_id,
         through_message_id,
@@ -273,7 +274,7 @@ pub(super) async fn search_archive(
 }
 
 async fn run_prepare_worker(
-    database_path: PathBuf,
+    database: DatabaseQueueHandle,
     cache_directory: PathBuf,
 ) -> Result<(), SemanticMemoryError> {
     tokio::task::spawn_blocking(move || {
@@ -281,7 +282,7 @@ async fn run_prepare_worker(
         let (response_sender, response_receiver) = mpsc::sync_channel(1);
         sender
             .send(WorkerMessage::Prepare {
-                database_path,
+                database,
                 cache_directory,
                 response: response_sender,
             })
@@ -295,7 +296,7 @@ async fn run_prepare_worker(
 }
 
 async fn run_search_worker(
-    database_path: PathBuf,
+    database: DatabaseQueueHandle,
     cache_directory: PathBuf,
     conversation_id: String,
     through_message_id: Option<String>,
@@ -307,7 +308,7 @@ async fn run_search_worker(
         let (response_sender, response_receiver) = mpsc::sync_channel(1);
         sender
             .send(WorkerMessage::Search {
-                database_path,
+                database,
                 cache_directory,
                 conversation_id,
                 through_message_id,
@@ -351,15 +352,15 @@ fn worker_loop(receiver: Receiver<WorkerMessage>) {
         };
         match request {
             WorkerMessage::Prepare {
-                database_path,
+                database,
                 cache_directory,
                 response,
             } => {
-                let result = runtime.prepare(&database_path, &cache_directory);
+                let result = runtime.prepare(&database, &cache_directory);
                 let _ = response.send(result);
             }
             WorkerMessage::Search {
-                database_path,
+                database,
                 cache_directory,
                 conversation_id,
                 through_message_id,
@@ -368,7 +369,7 @@ fn worker_loop(receiver: Receiver<WorkerMessage>) {
                 response,
             } => {
                 let result = runtime.search(
-                    &database_path,
+                    &database,
                     &cache_directory,
                     &conversation_id,
                     through_message_id.as_deref(),
@@ -378,11 +379,11 @@ fn worker_loop(receiver: Receiver<WorkerMessage>) {
                 let _ = response.send(result);
             }
             WorkerMessage::InvalidateIndex {
-                database_path,
+                database,
                 cache_directory,
                 response,
             } => {
-                let result = runtime.invalidate_cached_index(&database_path, &cache_directory);
+                let result = runtime.invalidate_cached_index(&database, &cache_directory);
                 let _ = response.send(result);
             }
         }
@@ -390,7 +391,7 @@ fn worker_loop(receiver: Receiver<WorkerMessage>) {
 }
 
 pub(super) async fn invalidate_cached_index(
-    database_path: PathBuf,
+    database: DatabaseQueueHandle,
     cache_directory: PathBuf,
 ) -> Result<(), SemanticMemoryError> {
     tokio::task::spawn_blocking(move || {
@@ -398,7 +399,7 @@ pub(super) async fn invalidate_cached_index(
         let (response_sender, response_receiver) = mpsc::sync_channel(1);
         sender
             .send(WorkerMessage::InvalidateIndex {
-                database_path,
+                database,
                 cache_directory,
                 response: response_sender,
             })
@@ -429,23 +430,23 @@ impl SemanticRuntime {
 
     fn prepare(
         &mut self,
-        database_path: &Path,
+        database: &DatabaseQueueHandle,
         cache_directory: &Path,
     ) -> Result<(), SemanticMemoryError> {
-        let connection = open_database(database_path)?;
+        let connection = database.connect()?;
         self.load_model_and_index(&connection, cache_directory)
     }
 
     fn search(
         &mut self,
-        database_path: &Path,
+        database: &DatabaseQueueHandle,
         cache_directory: &Path,
         conversation_id: &str,
         through_message_id: Option<&str>,
         query: &str,
         result_limit: usize,
     ) -> Result<Vec<ArchivedMemoryExcerpt>, SemanticMemoryError> {
-        let connection = open_database(database_path)?;
+        let mut connection = database.connect()?;
         if !index::archive_indexing_enabled(&connection, conversation_id)? {
             return Ok(Vec::new());
         }
@@ -453,7 +454,7 @@ impl SemanticRuntime {
         self.ensure_index_current(&connection, cache_directory)?;
         let namespace = ensure_namespace(&connection, conversation_id)?;
         self.ensure_conversation_indexed(
-            &connection,
+            &mut connection,
             conversation_id,
             through_message_id,
             namespace,
@@ -523,7 +524,7 @@ impl SemanticRuntime {
 
     fn load_model_and_index(
         &mut self,
-        connection: &Connection,
+        connection: &StorageConnection<'_>,
         cache_directory: &Path,
     ) -> Result<(), SemanticMemoryError> {
         let model_directory = model_directory(cache_directory);
@@ -538,7 +539,7 @@ impl SemanticRuntime {
 
     fn ensure_index_current(
         &mut self,
-        connection: &Connection,
+        connection: &StorageConnection<'_>,
         cache_directory: &Path,
     ) -> Result<(), SemanticMemoryError> {
         let generation = semantic_index_generation(connection)?;
@@ -601,7 +602,7 @@ impl SemanticRuntime {
 
     fn ensure_conversation_indexed(
         &mut self,
-        connection: &Connection,
+        connection: &mut StorageConnection<'_>,
         conversation_id: &str,
         through_message_id: Option<&str>,
         namespace: i64,
@@ -670,10 +671,10 @@ impl SemanticRuntime {
 
     fn invalidate_cached_index(
         &mut self,
-        database_path: &Path,
+        database: &DatabaseQueueHandle,
         cache_directory: &Path,
     ) -> Result<(), SemanticMemoryError> {
-        let connection = open_database(database_path)?;
+        let connection = database.connect()?;
         connection.execute(
             "UPDATE conversation_memory_semantic_index_state
              SET indexed_generation = NULL WHERE id = 1",
@@ -698,7 +699,7 @@ impl SemanticRuntime {
 
     fn embed_messages(
         &mut self,
-        connection: &Connection,
+        connection: &mut StorageConnection<'_>,
         messages: &[MemoryMessage],
         namespace: i64,
         cache_directory: &Path,
@@ -826,7 +827,7 @@ impl SemanticRuntime {
                         vector_bytes,
                     ],
                 )?;
-                new_ids.push(transaction.last_insert_rowid());
+                new_ids.push(transaction.last_insert_rowid()?);
             }
             transaction.execute(
                 "INSERT INTO conversation_memory_embedding_state (
@@ -897,14 +898,6 @@ struct TextChunk {
     start_byte: usize,
     end_byte: usize,
     content: String,
-}
-
-fn open_database(path: &Path) -> Result<Connection, SemanticMemoryError> {
-    let connection = Connection::open(path)?;
-    connection.busy_timeout(Duration::from_secs(5))?;
-    crate::storage::disable_trusted_schema(&connection)?;
-    connection.execute_batch("PRAGMA foreign_keys = ON;")?;
-    Ok(connection)
 }
 
 fn load_model(directory: &Path) -> Result<TextEmbedding, SemanticMemoryError> {
@@ -993,7 +986,7 @@ fn quantize_embedding(embedding: Vec<f32>) -> Result<Vec<i8>, SemanticMemoryErro
 }
 
 fn ensure_namespace(
-    connection: &Connection,
+    connection: &StorageConnection<'_>,
     conversation_id: &str,
 ) -> Result<i64, SemanticMemoryError> {
     connection.execute(
@@ -1021,7 +1014,7 @@ fn index_key(namespace: i64, id: i64) -> Result<u64, SemanticMemoryError> {
 }
 
 fn pending_messages(
-    connection: &Connection,
+    connection: &StorageConnection<'_>,
     conversation_id: &str,
     through_message_id: Option<&str>,
 ) -> Result<Vec<MemoryMessage>, SemanticMemoryError> {
@@ -1062,7 +1055,7 @@ fn pending_messages(
 }
 
 fn next_backfill_messages(
-    connection: &Connection,
+    connection: &StorageConnection<'_>,
     conversation_id: &str,
     cursor_created_at: Option<i64>,
     cursor_message_id: Option<&str>,
@@ -1113,7 +1106,7 @@ fn next_backfill_messages(
         .map_err(Into::into)
 }
 
-fn memory_message_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<MemoryMessage> {
+fn memory_message_from_row(row: &StorageRow) -> rusqlite::Result<MemoryMessage> {
     Ok(MemoryMessage {
         conversation_id: row.get(0)?,
         message_id: row.get(1)?,
@@ -1123,9 +1116,9 @@ fn memory_message_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<MemoryMe
     })
 }
 
-fn begin_embedding_write(
-    connection: &Connection,
-) -> Result<rusqlite::Transaction<'_>, SemanticMemoryError> {
+fn begin_embedding_write<'a>(
+    connection: &'a mut StorageConnection<'_>,
+) -> Result<StorageTransaction<'a>, SemanticMemoryError> {
     let transaction = connection.unchecked_transaction()?;
     transaction.execute(
         "UPDATE conversation_memory_semantic_index_state
@@ -1136,7 +1129,7 @@ fn begin_embedding_write(
 }
 
 fn current_embedding_source(
-    connection: &Connection,
+    connection: &StorageTransaction<'_>,
     conversation_id: &str,
     message_id: &str,
 ) -> rusqlite::Result<Option<String>> {
@@ -1168,7 +1161,7 @@ fn embedding_content(message_content: &str, tool_content: &str) -> String {
 }
 
 fn boundary_order(
-    connection: &Connection,
+    connection: &StorageConnection<'_>,
     conversation_id: &str,
     through_message_id: Option<&str>,
 ) -> Result<Option<(i64, String)>, SemanticMemoryError> {
@@ -1187,7 +1180,7 @@ fn boundary_order(
 }
 
 fn semantic_excerpt(
-    connection: &Connection,
+    connection: &StorageConnection<'_>,
     conversation_id: &str,
     embedding_id: i64,
     boundary: Option<&(i64, String)>,
@@ -1239,7 +1232,9 @@ fn semantic_excerpt(
         .map_err(Into::into)
 }
 
-fn semantic_index_generation(connection: &Connection) -> Result<i64, SemanticMemoryError> {
+fn semantic_index_generation(
+    connection: &StorageConnection<'_>,
+) -> Result<i64, SemanticMemoryError> {
     connection
         .query_row(
             "SELECT generation FROM conversation_memory_semantic_index_state WHERE id = 1",
@@ -1250,7 +1245,7 @@ fn semantic_index_generation(connection: &Connection) -> Result<i64, SemanticMem
 }
 
 fn set_indexed_generation(
-    connection: &Connection,
+    connection: &StorageConnection<'_>,
     generation: i64,
 ) -> Result<(), SemanticMemoryError> {
     connection.execute(
@@ -1262,7 +1257,7 @@ fn set_indexed_generation(
 }
 
 fn save_index(
-    connection: &Connection,
+    connection: &StorageConnection<'_>,
     cache_directory: &Path,
     index: &Index,
     generation: i64,

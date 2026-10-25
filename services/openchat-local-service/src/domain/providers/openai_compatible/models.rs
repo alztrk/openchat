@@ -1,4 +1,4 @@
-//! Loads OpenCode Zen model metadata and provider capability information.
+//! Loads OpenCode inference model metadata and provider capability information.
 //!
 //! Catalog freshness, model support, context limits, and modality flags are
 //! validated before being returned to model selection.
@@ -17,45 +17,14 @@ use crate::{
 };
 
 use super::{
-    cancelled_error, client, http_error, invalid_response_error, network_error_with_details,
+    cancelled_error, client, invalid_response_error, model_error, network_error_with_details,
     storage_error,
 };
-pub(crate) const MODELS_URL: &str = "https://opencode.ai/zen/v1/models";
+#[cfg(test)]
+pub(crate) const MODELS_URL: &str = "https://opencode.ai/inference/v1/models";
 const MODELS_DEV_URL: &str = "https://models.opencode.ai/api.json";
 const MODEL_CATALOG_CACHE_AGE_MS: i64 = 6 * 60 * 60 * 1000;
 const MODEL_METADATA_TIMEOUT: Duration = Duration::from_secs(5);
-const SUPPORTED_FREE_CHAT_MODELS: &[&str] = &[
-    "big-pickle",
-    "exo-free",
-    "ling-3.0-flash-fin-free",
-    "ling-3.1-flash-free",
-    "longcat-2.5-preview-free",
-    "mimo-v2.5-free",
-    "mimo-v2.6-flash-free",
-    "nemotron-3-ultra-free",
-    "nemotron-3.5-lightning-free",
-    "space-bunny-free",
-    "step-5-preview-free",
-];
-const SUPPORTED_PAID_CHAT_MODELS: &[&str] = &[
-    "deepseek-v4.1-flash",
-    "deepseek-v4-pro",
-    "deepseek-v4-flash",
-    "deepseek-v4-flash-vision-exp",
-    "minimax-m3",
-    "minimax-m2.7",
-    "minimax-m2.5",
-    "glm-5.3-flash",
-    "glm-5.3",
-    "glm-5.2",
-    "glm-5.1",
-    "glm-5",
-    "kimi-k2.7-code",
-    "kimi-k3",
-    "kimi-k2.6",
-    "kimi-k2.5",
-    "qwen3.8-max",
-];
 
 fn current_time_millis() -> Result<i64, ServiceError> {
     let elapsed = SystemTime::now()
@@ -112,10 +81,101 @@ fn save_model_catalog(storage: &AppStorage, models: &[Value]) -> Result<(), Serv
     Ok(())
 }
 
-fn model_group(id: &str) -> Option<&'static str> {
-    if is_supported_free_chat_model(id) {
+fn is_free_by_metadata(details: &Value) -> bool {
+    let Some(cost) = details.get("cost") else {
+        return false;
+    };
+    let Some(input_cost) = cost.get("input").and_then(Value::as_f64) else {
+        return false;
+    };
+    let Some(output_cost) = cost.get("output").and_then(Value::as_f64) else {
+        return false;
+    };
+    input_cost == 0.0
+        && output_cost == 0.0
+        && cost
+            .get("tiers")
+            .and_then(Value::as_array)
+            .is_none_or(|tiers| {
+                tiers.iter().all(|tier| {
+                    tier.get("input")
+                        .and_then(Value::as_f64)
+                        .is_some_and(|tier_input_cost| tier_input_cost == 0.0)
+                        && tier
+                            .get("output")
+                            .and_then(Value::as_f64)
+                            .is_some_and(|tier_output_cost| tier_output_cost == 0.0)
+                })
+            })
+}
+
+fn is_paid_by_metadata(details: &Value) -> bool {
+    let Some(cost) = details.get("cost") else {
+        return false;
+    };
+    let Some(input_cost) = cost.get("input").and_then(Value::as_f64) else {
+        return false;
+    };
+    let Some(output_cost) = cost.get("output").and_then(Value::as_f64) else {
+        return false;
+    };
+    let tiers = cost.get("tiers").and_then(Value::as_array);
+    if input_cost < 0.0
+        || output_cost < 0.0
+        || tiers.is_some_and(|tiers| {
+            tiers.iter().any(|tier| {
+                tier.get("input")
+                    .and_then(Value::as_f64)
+                    .is_none_or(|value| value < 0.0)
+                    || tier
+                        .get("output")
+                        .and_then(Value::as_f64)
+                        .is_none_or(|value| value < 0.0)
+            })
+        })
+    {
+        return false;
+    }
+    input_cost > 0.0
+        || output_cost > 0.0
+        || tiers.is_some_and(|tiers| {
+            tiers.iter().any(|tier| {
+                tier.get("input")
+                    .and_then(Value::as_f64)
+                    .is_some_and(|value| value > 0.0)
+                    || tier
+                        .get("output")
+                        .and_then(Value::as_f64)
+                        .is_some_and(|value| value > 0.0)
+            })
+        })
+}
+
+fn inference_base_url(details: &Value) -> Option<String> {
+    let raw = details.pointer("/provider/api")?.as_str()?;
+    validated_inference_base_url(raw)
+}
+
+fn validated_inference_base_url(raw: &str) -> Option<String> {
+    let url = url::Url::parse(raw).ok()?;
+    if url.scheme() != "https"
+        || url.host_str() != Some("opencode.ai")
+        || url.port().is_some()
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.query().is_some()
+        || url.fragment().is_some()
+        || url.path().trim_end_matches('/') != "/inference/openai/v1"
+    {
+        return None;
+    }
+    Some(url.as_str().trim_end_matches('/').to_owned())
+}
+
+fn model_group(details: &Value) -> Option<&'static str> {
+    if is_free_by_metadata(details) {
         Some("free")
-    } else if is_supported_paid_chat_model(id) {
+    } else if is_paid_by_metadata(details) {
         Some("paid")
     } else {
         None
@@ -203,7 +263,6 @@ fn reasoning_levels(details: Option<&Value>) -> Vec<String> {
 async fn fetch_model_metadata(client: &Client) -> Result<Value, ServiceError> {
     let response = client
         .get(MODELS_DEV_URL)
-        .header("User-Agent", "opencode/1.18.30")
         .timeout(MODEL_METADATA_TIMEOUT)
         .send()
         .await
@@ -219,91 +278,97 @@ async fn fetch_model_metadata(client: &Client) -> Result<Value, ServiceError> {
     Ok(value)
 }
 
-fn supported_models(value: &Value, metadata: Option<&Value>) -> Result<Vec<Value>, ServiceError> {
-    let metadata_models = metadata.and_then(metadata_models);
-    value
-        .get("data")
-        .and_then(Value::as_array)
-        .ok_or_else(invalid_response_error)
-        .map(|models| {
-            models
-                .iter()
-                .filter_map(|model| {
-                    let id = model.get("id")?.as_str()?;
-                    let group_id = model_group(id)?;
-                    let details = metadata_models.and_then(|models| models.get(id));
-                    if is_deprecated(details) {
-                        return None;
-                    }
-                    let display_name = details
-                        .and_then(|details| details.get("name"))
-                        .and_then(Value::as_str)
-                        .filter(|name| !name.trim().is_empty())
-                        .unwrap_or(id);
-                    let description = details
-                        .and_then(|details| details.get("description"))
-                        .and_then(Value::as_str)
-                        .filter(|description| !description.trim().is_empty());
-                    let context_window = details
-                        .and_then(|details| details.get("limit"))
-                        .and_then(|limits| limits.get("context"))
-                        .and_then(Value::as_i64)
-                        .filter(|context_window| *context_window > 0);
-                    let input_token_limit = details
-                        .and_then(|details| details.get("limit"))
-                        .and_then(|limits| limits.get("input"))
-                        .and_then(Value::as_i64)
-                        .filter(|input_limit| *input_limit > 0)
-                        .map(|input_limit| {
-                            context_window.map_or(input_limit, |context| input_limit.min(context))
-                        });
-                    let max_output_tokens = details
-                        .and_then(|details| details.get("limit"))
-                        .and_then(|limits| limits.get("output"))
-                        .and_then(Value::as_i64)
-                        .filter(|limit| *limit > 0);
-                    let reasoning_supported = supports_reasoning(details);
-                    let reasoning_levels = reasoning_levels(details);
-                    let catalog_status = metadata_status(details);
-                    let uses_responses_api = uses_responses_api_metadata(details);
-                    let supports_images = supports_image_input_metadata(details);
-                    let supports_tools = details
-                        .and_then(|details| details.get("tool_call"))
-                        .and_then(Value::as_bool);
-                    Some(json!({
-                        "id": id,
-                        "displayName": display_name,
-                        "description": description,
-                        "contextWindow": context_window,
-                        "inputTokenLimit": input_token_limit,
-                        "maxOutputTokens": max_output_tokens,
-                        "catalogStatus": catalog_status,
-                        "groupId": group_id,
-                        "defaultReasoningLevel": null,
-                        "reasoningLevels": reasoning_levels,
-                        "supportsReasoning": reasoning_supported,
-                        "supportsImages": supports_images,
-                        "supportsTools": supports_tools,
-                        "usesResponsesApi": uses_responses_api,
-                        "isAvailable": true,
-                    }))
-                })
-                .collect()
+fn supported_models(metadata: &Value) -> Result<Vec<Value>, ServiceError> {
+    let metadata_models = metadata_models(metadata).ok_or_else(invalid_response_error)?;
+
+    Ok(metadata_models
+        .iter()
+        .filter_map(|(id, details)| {
+            let group_id = model_group(details)?;
+            if is_deprecated(Some(details)) {
+                return None;
+            }
+            let inference_base_url = inference_base_url(details)?;
+            let display_name = details
+                .get("name")
+                .and_then(Value::as_str)
+                .filter(|name| !name.trim().is_empty())
+                .unwrap_or(id);
+            let description = details
+                .get("description")
+                .and_then(Value::as_str)
+                .filter(|description| !description.trim().is_empty());
+            let context_window = details
+                .get("limit")
+                .and_then(|limits| limits.get("context"))
+                .and_then(Value::as_i64)
+                .filter(|context_window| *context_window > 0);
+            let input_token_limit = details
+                .get("limit")
+                .and_then(|limits| limits.get("input"))
+                .and_then(Value::as_i64)
+                .filter(|input_limit| *input_limit > 0)
+                .map(|input_limit| {
+                    context_window.map_or(input_limit, |context| input_limit.min(context))
+                });
+            let max_output_tokens = details
+                .get("limit")
+                .and_then(|limits| limits.get("output"))
+                .and_then(Value::as_i64)
+                .filter(|limit| *limit > 0);
+            let reasoning_supported =
+                details.get("reasoning").and_then(Value::as_bool) == Some(true);
+            let reasoning_levels = reasoning_levels(Some(details));
+            let catalog_status = metadata_status(Some(details));
+            let uses_responses_api = uses_responses_api_metadata(Some(details));
+            let supports_images = supports_image_input_metadata(Some(details));
+            let supports_tools = details.get("tool_call").and_then(Value::as_bool);
+            Some(json!({
+                "id": id,
+                "displayName": display_name,
+                "description": description,
+                "contextWindow": context_window,
+                "inputTokenLimit": input_token_limit,
+                "maxOutputTokens": max_output_tokens,
+                "catalogStatus": catalog_status,
+                "groupId": group_id,
+                "defaultReasoningLevel": null,
+                "reasoningLevels": reasoning_levels,
+                "supportsReasoning": reasoning_supported,
+                "supportsImages": supports_images,
+                "supportsTools": supports_tools,
+                "usesResponsesApi": uses_responses_api,
+                "inferenceBaseUrl": inference_base_url,
+                "isAvailable": true,
+            }))
         })
+        .collect())
 }
 
 fn canonicalize_cached_models(models: &[Value]) -> Vec<Value> {
     models
         .iter()
         .filter_map(|model| {
-            let id = model.get("id")?.as_str()?;
+            let _id = model.get("id")?.as_str()?;
             if model.get("catalogStatus").and_then(Value::as_str) == Some("deprecated") {
                 return None;
             }
-            let group_id = model_group(id)?;
+            let group_id = match model.get("groupId").and_then(Value::as_str) {
+                Some("free") => "free",
+                Some("paid") => "paid",
+                _ => return None,
+            };
+            let Some(base_url) = model
+                .get("inferenceBaseUrl")
+                .and_then(Value::as_str)
+                .and_then(|value| inference_base_url(&json!({"provider": {"api": value}})))
+            else {
+                return None;
+            };
             let mut model = model.clone();
             let fields = model.as_object_mut()?;
             fields.insert("groupId".to_owned(), json!(group_id));
+            fields.insert("inferenceBaseUrl".to_owned(), json!(base_url));
             if matches!(
                 fields.get("description").and_then(Value::as_str),
                 Some("free" | "paid")
@@ -328,16 +393,21 @@ fn has_model_groups(models: &[Value]) -> bool {
                 .get("supportsImages")
                 .and_then(Value::as_bool)
                 .is_some();
+            let valid_group = matches!(
+                model.get("groupId").and_then(Value::as_str),
+                Some("free" | "paid")
+            );
             has_current_reasoning_metadata
                 && has_current_catalog_metadata
                 && has_current_limit_metadata
                 && has_current_image_metadata
                 && model.get("supportsTools").is_some()
                 && model
-                    .get("id")
+                    .get("inferenceBaseUrl")
                     .and_then(Value::as_str)
-                    .and_then(model_group)
-                    == model.get("groupId").and_then(Value::as_str)
+                    .and_then(|value| validated_inference_base_url(value))
+                    .is_some()
+                && valid_group
         })
 }
 
@@ -372,6 +442,49 @@ pub(super) fn supports_tool_calls(
         .and_then(Value::as_bool))
 }
 
+pub(super) fn is_free_model(storage: &AppStorage, model_id: &str) -> Result<bool, ServiceError> {
+    let Some((models, _)) = load_model_catalog(storage)? else {
+        return Ok(false);
+    };
+    Ok(models.iter().any(|model| {
+        model.get("id").and_then(Value::as_str) == Some(model_id)
+            && model.get("groupId").and_then(Value::as_str) == Some("free")
+    }))
+}
+
+pub(super) fn is_paid_model(storage: &AppStorage, model_id: &str) -> Result<bool, ServiceError> {
+    let Some((models, _)) = load_model_catalog(storage)? else {
+        return Ok(false);
+    };
+    Ok(models.iter().any(|model| {
+        model.get("id").and_then(Value::as_str) == Some(model_id)
+            && model.get("groupId").and_then(Value::as_str) == Some("paid")
+    }))
+}
+
+pub(super) fn inference_url(
+    storage: &AppStorage,
+    model_id: &str,
+    responses_api: bool,
+) -> Result<String, ServiceError> {
+    let Some((models, _)) = load_model_catalog(storage)? else {
+        return Err(model_error());
+    };
+    let base_url = models
+        .iter()
+        .find(|model| model.get("id").and_then(Value::as_str) == Some(model_id))
+        .and_then(|model| model.get("inferenceBaseUrl"))
+        .and_then(Value::as_str)
+        .and_then(validated_inference_base_url)
+        .ok_or_else(model_error)?;
+    let endpoint = if responses_api {
+        "responses"
+    } else {
+        "chat/completions"
+    };
+    Ok(format!("{base_url}/{endpoint}"))
+}
+
 pub(super) fn is_responses_api_model(
     storage: &AppStorage,
     model_id: &str,
@@ -384,9 +497,7 @@ pub(super) fn is_responses_api_model(
     {
         return Ok(uses);
     }
-    Ok(model_id.starts_with("muse-")
-        || model_id.starts_with("gpt-")
-        || model_id.starts_with("grok-"))
+    Ok(false)
 }
 
 pub(super) fn context_limits(
@@ -438,7 +549,13 @@ fn visible_models(models: &[Value], api_key: Option<&str>) -> Vec<Value> {
     models
         .iter()
         .filter(|model| {
-            model.get("groupId").and_then(Value::as_str) != Some("paid") || api_key.is_some()
+            model
+                .get("inferenceBaseUrl")
+                .and_then(Value::as_str)
+                .and_then(|value| validated_inference_base_url(value))
+                .is_some()
+                && (model.get("groupId").and_then(Value::as_str) != Some("paid")
+                    || api_key.is_some())
         })
         .cloned()
         .collect()
@@ -468,41 +585,11 @@ pub async fn models(
     }
 
     let http_client = client()?;
-    let session_id = super::opencode_session_id();
-    let mut request = http_client
-        .get(MODELS_URL)
-        .header("User-Agent", "opencode/1.18.30")
-        .header("x-opencode-client", "cli")
-        .header("x-opencode-session", session_id)
-        .header("x-opencode-project", "global");
-    if let Some(api_key) = api_key {
-        request = request.bearer_auth(api_key);
-    } else {
-        request = request.bearer_auth("public");
-    }
     let fetch = async {
-        let provider_fetch = async {
-            let response = request.send().await.map_err(network_error_with_details)?;
-            if !response.status().is_success() {
-                return Err(http_error(response.status(), Some("opencode")));
-            }
-            let body =
-                read_bounded_response_body(response, MAX_MODEL_CATALOG_RESPONSE_BYTES).await?;
-            serde_json::from_slice(&body).map_err(|_| invalid_response_error())
-        };
-        let optional_metadata =
-            async { Ok::<_, ServiceError>(fetch_model_metadata(&http_client).await.ok()) };
-        let (provider_catalog, metadata) = tokio::try_join!(provider_fetch, optional_metadata)?;
-        let models = supported_models(&provider_catalog, metadata.as_ref())?;
-        let freshness = if metadata.is_some() {
-            save_model_catalog(storage, &models)?;
-            "current"
-        } else if let Some((cached_models, _)) = &cached {
-            return Ok::<_, ServiceError>((canonicalize_cached_models(cached_models), "stale"));
-        } else {
-            "current"
-        };
-        Ok::<_, ServiceError>((models, freshness))
+        let metadata = fetch_model_metadata(&http_client).await?;
+        let models = supported_models(&metadata)?;
+        save_model_catalog(storage, &models)?;
+        Ok::<_, ServiceError>((models, "current"))
     };
     let fetch_result = tokio::select! {
         changed = cancellation.changed() => {
@@ -527,14 +614,6 @@ pub async fn models(
         },
         Err(error) => Err(error),
     }
-}
-
-pub(super) fn is_supported_paid_chat_model(id: &str) -> bool {
-    SUPPORTED_PAID_CHAT_MODELS.contains(&id)
-}
-
-pub(super) fn is_supported_free_chat_model(id: &str) -> bool {
-    SUPPORTED_FREE_CHAT_MODELS.contains(&id)
 }
 
 #[cfg(test)]
@@ -577,11 +656,12 @@ mod tests {
 
     #[test]
     fn open_code_catalog_preserves_context_and_prompt_limits_separately() {
-        let provider_models = json!({"data": [{"id": "big-pickle"}]});
         let metadata = json!({
             "opencode": {
                 "models": {
                     "big-pickle": {
+                        "cost": {"input": 0, "output": 0},
+                        "provider": {"api": "https://opencode.ai/inference/openai/v1"},
                         "name": "Big Pickle",
                         "limit": {"context": 262_144, "input": 131_072, "output": 16_384},
                         "tool_call": true
@@ -590,8 +670,7 @@ mod tests {
             }
         });
 
-        let models =
-            supported_models(&provider_models, Some(&metadata)).expect("parse OpenCode models");
+        let models = supported_models(&metadata).expect("parse OpenCode models");
 
         assert_eq!(models[0]["contextWindow"], 262_144);
         assert_eq!(models[0]["inputTokenLimit"], 131_072);
@@ -599,55 +678,76 @@ mod tests {
     }
 
     #[test]
-    fn open_code_catalog_includes_currently_listed_models_by_tier() {
-        let provider_models = json!({"data": [
-            {"id": "exo-free"},
-            {"id": "ling-3.0-flash-fin-free"},
-            {"id": "step-5-preview-free"},
-            {"id": "glm-5.3"},
-            {"id": "qwen3.8-max"}
-        ]});
+    fn open_code_catalog_discovers_free_models_from_price_metadata() {
+        let metadata = json!({"opencode": {"models": {
+            "exo-free": {"cost": {"input": 0, "output": 0}, "provider": {"api": "https://opencode.ai/inference/openai/v1"}},
+            "ling-3.0-flash-fin-free": {"cost": {"input": 0, "output": 0}, "provider": {"api": "https://opencode.ai/inference/openai/v1"}},
+            "step-5-preview-free": {"cost": {"input": 0, "output": 0}, "provider": {"api": "https://opencode.ai/inference/openai/v1"}},
+            "nemotron-3-ultra-free": {"cost": {"input": 0, "output": 0}, "provider": {"api": "https://opencode.ai/inference/openai/v1"}},
+            "glm-5.3": {"cost": {"input": 0.5, "output": 1}, "provider": {"api": "https://opencode.ai/inference/openai/v1"}},
+            "qwen3.8-max": {"cost": {"input": 0.8, "output": 1}, "provider": {"api": "https://opencode.ai/inference/openai/v1"}}
+        }}});
 
-        let models = supported_models(&provider_models, None).expect("catalog");
-        assert_eq!(models.len(), 5);
-        assert_eq!(models[0]["groupId"], "free");
-        assert_eq!(models[1]["groupId"], "free");
-        assert_eq!(models[2]["groupId"], "free");
-        assert_eq!(models[3]["groupId"], "paid");
-        assert_eq!(models[4]["groupId"], "paid");
+        let models = supported_models(&metadata).expect("catalog");
+        assert_eq!(models.len(), 6);
+        assert!(
+            models
+                .iter()
+                .all(|model| model["groupId"] == "free" || model["groupId"] == "paid")
+        );
+        assert_eq!(
+            models
+                .iter()
+                .filter(|model| model["groupId"] == "free")
+                .count(),
+            4
+        );
+        assert_eq!(
+            models
+                .iter()
+                .filter(|model| model["groupId"] == "paid")
+                .count(),
+            2
+        );
     }
 
     #[test]
     fn open_code_catalog_excludes_models_that_require_other_api_protocols() {
-        let provider_models = json!({"data": [
-            {"id": "jev-1.13-free"},
-            {"id": "jev-1.13"},
-            {"id": "muse-spark-1.3-contributor-free"},
-            {"id": "muse-spark-1.3"},
-            {"id": "qwen3.8-flash"},
-            {"id": "qwen3.6-plus"}
-        ]});
+        let metadata = json!({"opencode": {"models": {
+            "non-openai-model": {
+                "cost": {"input": 1, "output": 1},
+                "provider": {"api": "https://opencode.ai/inference/anthropic/v1"}
+            }
+        }}});
 
-        let models = supported_models(&provider_models, None).expect("catalog");
+        let models = supported_models(&metadata).expect("catalog");
         assert!(models.is_empty());
     }
 
     #[test]
     fn open_code_catalog_preserves_false_and_unknown_tool_support() {
-        let provider_models = json!({"data": [{"id": "big-pickle"}]});
         let metadata = json!({
             "opencode": {
                 "models": {
-                    "big-pickle": {"tool_call": false}
+                    "big-pickle": {
+                        "cost": {"input": 0, "output": 0},
+                        "provider": {"api": "https://opencode.ai/inference/openai/v1"},
+                        "tool_call": false
+                    }
                 }
             }
         });
 
-        let models =
-            supported_models(&provider_models, Some(&metadata)).expect("parse OpenCode models");
+        let models = supported_models(&metadata).expect("parse OpenCode models");
         assert_eq!(models[0]["supportsTools"], false);
 
-        let models = supported_models(&provider_models, None).expect("parse without metadata");
+        let paid_metadata = json!({"opencode": {"models": {
+            "paid-model": {
+                "cost": {"input": 0.5, "output": 1},
+                "provider": {"api": "https://opencode.ai/inference/openai/v1"}
+            }
+        }}});
+        let models = supported_models(&paid_metadata).expect("parse paid model metadata");
         assert!(models[0]["supportsTools"].is_null());
     }
 
@@ -660,6 +760,7 @@ mod tests {
             "catalogStatus": null,
             "supportsImages": false,
             "supportsTools": null,
+            "inferenceBaseUrl": "https://opencode.ai/inference/openai/v1",
         });
         assert!(!has_model_groups(std::slice::from_ref(&model)));
         model["inputTokenLimit"] = json!(null);

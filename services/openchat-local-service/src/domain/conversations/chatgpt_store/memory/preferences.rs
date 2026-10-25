@@ -3,7 +3,9 @@
 //! Preference updates also invalidate derived indexes and schedule required
 //! memory rebuilds so retrieval reflects the latest user choice.
 
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::{OptionalExtension, Params, params};
+
+use crate::storage::{StorageConnection, StorageRow, StorageTransaction};
 
 const MAX_ARCHIVE_TOOLS: usize = 128;
 
@@ -20,7 +22,7 @@ pub struct ArchiveIndexTool {
 }
 
 pub(super) fn load(
-    connection: &Connection,
+    connection: &StorageConnection<'_>,
     conversation_id: &str,
 ) -> rusqlite::Result<ArchiveIndexSettings> {
     let included = archive_enabled(connection, conversation_id)?;
@@ -61,7 +63,7 @@ pub(super) fn load(
 }
 
 pub(super) fn set_conversation_included(
-    connection: &mut Connection,
+    connection: &mut StorageConnection<'_>,
     conversation_id: &str,
     included: bool,
 ) -> rusqlite::Result<(ArchiveIndexSettings, bool)> {
@@ -137,7 +139,7 @@ pub(super) fn set_conversation_included(
 }
 
 pub(super) fn set_tool_included(
-    connection: &mut Connection,
+    connection: &mut StorageConnection<'_>,
     conversation_id: &str,
     tool_name: &str,
     included: bool,
@@ -146,6 +148,7 @@ pub(super) fn set_tool_included(
     if tool_name.is_empty() || tool_name.chars().count() > 128 {
         return Err(rusqlite::Error::InvalidQuery);
     }
+    connection.register_tool_index_redaction()?;
     let transaction = connection.transaction()?;
     require_conversation(&transaction, conversation_id)?;
     let tool_exists = transaction.query_row(
@@ -203,7 +206,7 @@ pub(super) fn set_tool_included(
     Ok((load(connection, conversation_id)?, was_included != included))
 }
 
-fn archive_enabled(connection: &Connection, conversation_id: &str) -> rusqlite::Result<bool> {
+fn archive_enabled(connection: &impl StorageRead, conversation_id: &str) -> rusqlite::Result<bool> {
     connection
         .query_row(
             "SELECT included FROM conversation_memory_archive_settings
@@ -215,7 +218,10 @@ fn archive_enabled(connection: &Connection, conversation_id: &str) -> rusqlite::
         .map(|included| included.unwrap_or(true))
 }
 
-fn require_conversation(connection: &Connection, conversation_id: &str) -> rusqlite::Result<()> {
+fn require_conversation(
+    connection: &impl StorageRead,
+    conversation_id: &str,
+) -> rusqlite::Result<()> {
     let exists = connection.query_row(
         "SELECT EXISTS(SELECT 1 FROM conversations WHERE id = ?1)",
         [conversation_id],
@@ -228,8 +234,10 @@ fn require_conversation(connection: &Connection, conversation_id: &str) -> rusql
     }
 }
 
-fn rebuild_tool_index(connection: &Connection, conversation_id: &str) -> rusqlite::Result<()> {
-    crate::storage::tool_index_redaction::register_sqlite_function(connection)?;
+fn rebuild_tool_index(
+    connection: &StorageTransaction<'_>,
+    conversation_id: &str,
+) -> rusqlite::Result<()> {
     connection.execute(
         "DELETE FROM conversation_memory_tools_fts WHERE conversation_id = ?1",
         [conversation_id],
@@ -297,7 +305,7 @@ fn rebuild_tool_index(connection: &Connection, conversation_id: &str) -> rusqlit
 }
 
 fn requeue_tool_embeddings(
-    connection: &Connection,
+    connection: &StorageTransaction<'_>,
     conversation_id: &str,
     tool_name: &str,
 ) -> rusqlite::Result<()> {
@@ -348,15 +356,44 @@ fn requeue_tool_embeddings(
     Ok(())
 }
 
+trait StorageRead {
+    fn query_row<T, P, F>(&self, sql: &str, params: P, f: F) -> rusqlite::Result<T>
+    where
+        P: Params,
+        F: FnOnce(&StorageRow) -> rusqlite::Result<T>;
+}
+
+impl StorageRead for StorageConnection<'_> {
+    fn query_row<T, P, F>(&self, sql: &str, params: P, f: F) -> rusqlite::Result<T>
+    where
+        P: Params,
+        F: FnOnce(&StorageRow) -> rusqlite::Result<T>,
+    {
+        StorageConnection::query_row(self, sql, params, f)
+    }
+}
+
+impl StorageRead for StorageTransaction<'_> {
+    fn query_row<T, P, F>(&self, sql: &str, params: P, f: F) -> rusqlite::Result<T>
+    where
+        P: Params,
+        F: FnOnce(&StorageRow) -> rusqlite::Result<T>,
+    {
+        StorageTransaction::query_row(self, sql, params, f)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use rusqlite::Connection;
 
+    use crate::storage::StorageConnection;
+
     use super::{load, set_conversation_included, set_tool_included};
 
-    fn connection_with_archive() -> Connection {
+    fn connection_with_archive() -> StorageConnection<'static> {
         let connection = Connection::open_in_memory().expect("open archive settings database");
-        connection
+        StorageConnection::standalone(connection)
             .execute_batch(
                 "CREATE TABLE conversations (id TEXT PRIMARY KEY NOT NULL);
                  CREATE TABLE messages (

@@ -109,7 +109,7 @@ impl ChatGptService {
                     );
                     let mut deletion_error = None;
                     for attempt in 0..3 {
-                        match oauth.delete_token_pair(&reference) {
+                        match oauth.delete_token_pair(&cleanup_storage, &reference) {
                             Ok(()) => {
                                 deletion_error = None;
                                 break;

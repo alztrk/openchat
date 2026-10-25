@@ -3,11 +3,11 @@
 //! Database transactions keep assistant messages and associated tool state
 //! consistent when a provider stream is interrupted or completed.
 
-use rusqlite::{OptionalExtension, Row, params, types::Type};
+use rusqlite::{OptionalExtension, params, types::Type};
 
 use crate::{
     provider_schema::{ChatStreamSnapshot, ToolActivity},
-    storage::AppStorage,
+    storage::{AppStorage, StorageConnection, StorageRow},
 };
 
 use super::{
@@ -195,12 +195,20 @@ pub fn conversation_messages(
     conversation_id: &str,
 ) -> rusqlite::Result<Vec<StoredMessage>> {
     let database = storage.connect()?;
+    conversation_messages_on_connection(&database, storage.root(), conversation_id)
+}
+
+pub fn conversation_messages_on_connection(
+    database: &StorageConnection<'_>,
+    storage_root: &std::path::Path,
+    conversation_id: &str,
+) -> rusqlite::Result<Vec<StoredMessage>> {
     let mut statement = database.prepare(
         "SELECT id, role, content, status, output_tokens, tool_activities FROM messages
          WHERE conversation_id = ?1 AND role IN ('user', 'assistant')
          ORDER BY created_at ASC, id ASC",
     )?;
-    let storage_root = storage.root().to_path_buf();
+    let storage_root = storage_root.to_path_buf();
     let rows = statement.query_map([conversation_id], |row| {
         stored_message_from_row(row, &storage_root, conversation_id)
     })?;
@@ -255,7 +263,7 @@ pub fn conversation_messages_from_boundary(
 }
 
 fn stored_message_from_row(
-    row: &Row<'_>,
+    row: &StorageRow,
     storage_root: &std::path::Path,
     conversation_id: &str,
 ) -> rusqlite::Result<StoredMessage> {

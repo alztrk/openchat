@@ -6,7 +6,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::{OptionalExtension, params};
 use serde::Serialize;
 use serde_json::json;
 use similar::TextDiff;
@@ -18,7 +18,7 @@ use super::{
     ensure_no_symlink_path, ensure_snapshot_blob, lock_file_changes, read_snapshot_blob,
     safe_relative_path, sha256, unix_time_millis, validate_change_id, validate_conversation_id,
 };
-use crate::storage::AppStorage;
+use crate::storage::{AppStorage, StorageConnection, StorageTransaction};
 
 const MAX_CHECKPOINTS_PER_CONVERSATION: i64 = 2_000;
 const MAX_CHECKPOINT_FILES_PER_EVENT: usize = 5_000;
@@ -726,7 +726,7 @@ fn read_state_content(
 }
 
 fn mark_snapshot_blob_ready(
-    transaction: &rusqlite::Transaction<'_>,
+    transaction: &StorageTransaction<'_>,
     hash: &str,
 ) -> Result<(), TrackingError> {
     transaction
@@ -759,7 +759,7 @@ fn validate_checkpoint_id(id: &str) -> Result<(), TrackingError> {
 }
 
 fn load_checkpoints(
-    connection: &Connection,
+    connection: &StorageConnection<'_>,
     conversation_id: &str,
 ) -> Result<Vec<Checkpoint>, TrackingError> {
     let mut statement = connection
@@ -846,7 +846,7 @@ fn load_checkpoints(
 }
 
 fn load_checkpoint_file(
-    connection: &Connection,
+    connection: &StorageConnection<'_>,
     conversation_id: &str,
     checkpoint_id: &str,
     file_id: &str,

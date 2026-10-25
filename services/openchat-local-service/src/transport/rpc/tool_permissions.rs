@@ -3,12 +3,12 @@
 //! Values accepted from the renderer are treated as user preference updates or one-time imports;
 //! durable and project-task execution always reloads the effective policy from SQLite.
 
-use rusqlite::{Connection, OptionalExtension};
+use rusqlite::OptionalExtension;
 use serde_json::{Map, Value, json};
 
 use crate::{
     protocol::ServiceError,
-    storage::AppStorage,
+    storage::{AppStorage, StorageConnection},
     tools::{self, ToolPermissionMode, ToolPermissionRule, ToolPermissionRules},
 };
 
@@ -69,7 +69,7 @@ pub(super) fn save_project_rules(
 
 /// Validates and atomically stores one complete project policy on an existing database connection.
 fn save_project_rules_in_connection(
-    connection: &Connection,
+    connection: &StorageConnection<'_>,
     project_id: &str,
     value: &Value,
 ) -> Result<(), ServiceError> {
@@ -89,7 +89,9 @@ fn save_project_rules_in_connection(
 }
 
 /// Loads the effective global policy; an unset preference requires approval.
-pub(super) fn load_mode(connection: &Connection) -> Result<ToolPermissionMode, ServiceError> {
+pub(super) fn load_mode(
+    connection: &StorageConnection<'_>,
+) -> Result<ToolPermissionMode, ServiceError> {
     let mode = connection
         .query_row(
             "SELECT mode FROM tool_permission_mode WHERE preference_id = 1",
@@ -104,7 +106,7 @@ pub(super) fn load_mode(connection: &Connection) -> Result<ToolPermissionMode, S
 
 /// Loads the saved project policy; an unset preference inherits global policy behavior.
 pub(super) fn load_project_rules(
-    connection: &Connection,
+    connection: &StorageConnection<'_>,
     project_id: &str,
 ) -> Result<ToolPermissionRules, ServiceError> {
     let encoded = connection
@@ -124,7 +126,7 @@ pub(super) fn load_project_rules(
 
 /// Persists the selected global policy.
 pub(super) fn save_mode(
-    connection: &Connection,
+    connection: &StorageConnection<'_>,
     mode: ToolPermissionMode,
 ) -> Result<(), ServiceError> {
     connection
@@ -140,7 +142,7 @@ pub(super) fn save_mode(
 
 /// Imports an existing renderer preference without replacing a service-owned value.
 fn seed_mode_if_missing(
-    connection: &Connection,
+    connection: &StorageConnection<'_>,
     initial_mode: Option<ToolPermissionMode>,
 ) -> Result<(), ServiceError> {
     let Some(initial_mode) = initial_mode else {
@@ -159,7 +161,7 @@ fn seed_mode_if_missing(
 
 /// Imports existing project rules without replacing a service-owned policy.
 fn seed_project_rules_if_missing(
-    connection: &Connection,
+    connection: &StorageConnection<'_>,
     project_id: &str,
     initial_rules: Option<&Value>,
 ) -> Result<(), ServiceError> {
@@ -239,7 +241,10 @@ fn validate_project_id(project_id: &str) -> Result<(), ServiceError> {
 }
 
 /// Confirms that a policy update belongs to a currently registered project.
-fn require_project(connection: &Connection, project_id: &str) -> Result<(), ServiceError> {
+fn require_project(
+    connection: &StorageConnection<'_>,
+    project_id: &str,
+) -> Result<(), ServiceError> {
     let exists = connection
         .query_row(
             "SELECT EXISTS (SELECT 1 FROM projects WHERE id = ?1)",

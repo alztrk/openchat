@@ -26,7 +26,7 @@ additional local-provider connections (priority 12) are later work.
 
 - React desktop UI hosted by Tauri, with a local Rust service and SQLite conversation storage under `%LOCALAPPDATA%\OpenChat`.
 - ChatGPT OAuth connections, account/workspace selection, model catalog, account and quota information, streamed Responses, cancellation, and background conversation titles.
-- OpenCode Console's paid models through the current OpenAI Chat Completions and Responses endpoints. Free-tier models are limited by OpenCode to its own app; Anthropic, Gemini, Mistral, and SystemOne protocols remain unsupported here.
+- OpenCode Console through its OpenAI Chat Completions endpoint. Other OpenCode protocol families are not supported.
 - API-key providers: Gemini, Groq, Cerebras, OpenRouter, Mistral, DeepSeek, xAI, Perplexity, Together AI, SambaNova, Fireworks AI, DeepInfra, DashScope (Qwen), and Cohere, plus custom OpenAI- and Anthropic-compatible endpoints. Dedicated Ollama and LM Studio provider connections are planned. Mistral exposes context, vision, and documented reasoning capabilities; OpenRouter models are filtered to current zero-price text-chat entries that advertise tool support.
 - Anthropic Claude Messages API adapter (`/messages`), supporting context limits up to 200K, vision, tools, and model-dependent reasoning controls.
 - Shared provider request, tool, and stream event types across ChatGPT, OpenCode, Anthropic, and all compatible cloud and local providers, plus local shared instructions.
@@ -115,6 +115,19 @@ These bullets describe code present in the repository. They do not mean that eve
 
 **Exit criteria:** malformed or oversized provider events fail with stable errors; migrations reach each requested schema version; cache and model metadata cannot claim readiness from invalid values; downloads and runtime operations have bounded waits and observable failures.
 
+### Centralize primary SQLite ownership and repair known schema drift
+
+**Status: AppContainer child-broker implementation, Windows release/installer builds, and an explicit empty-profile recovery choice are implemented; Alican's end-to-end run remains pending. Existing service-backed data migration is blocked until a verified export path is available.** On Windows, a stable AppContainer child owns the SQLite database and schema lifecycle. The application sidecar communicates with it over inherited standard handles; the NSIS build installs per-user and no longer bundles or registers the storage service.
+
+- Route conversation, message, project, project-index, settings, attachment-index, provider-secret, and MCP-secret database operations through the broker. Tauri's provider and global MCP commands use a bounded private native-host RPC bridge; the Tauri production build no longer includes its old SQLite command implementation or a direct `rusqlite` dependency.
+- Store the Windows database in the stable `OpenChatStorageBrokerV1` AppContainer's private local-data directory. The broker receives no network capability and only the inherited IPC handles. Serialize requests through one long-lived connection and a bounded FIFO queue. Before chat or backend version migrations, create and verify a backup; apply migrations transactionally, then verify integrity and required schema contracts. Missing derived FTS indexes are rebuilt from stored messages and tool activity, and known triggers are recreated.
+- Repair known missing chat columns and sort indexes, plus known backend-derived memory tables, FTS indexes, indexes, and triggers. Do not restore an arbitrary damaged database automatically because an older backup could discard newer messages; fail clearly when integrity validation cannot establish a safe repair.
+- If an empty AppContainer profile is opened while the legacy `OpenChatStorage` service is registered or its protected `%ProgramData%` storage directory remains, stop before importing the older `%LOCALAPPDATA%` copy. The protected service database may contain newer messages, and an unelevated process cannot verify or export it. Preserve both stores until a verified migration flow can move the service profile without elevation or data loss.
+- On that conflict, offer a separately confirmed empty profile. Record the choice in broker metadata so later launches continue to preserve the protected database, legacy secrets, local-model and project indexes, and old WebView localStorage. This starts a usable profile without claiming that old chats were migrated.
+- Import a legacy per-user database only from a verified SQLite snapshot and retain the source as a rollback copy. Migrate the old project's enabled-index preferences into schema version 36; mark derived search text stale so it is rebuilt through the broker, and retain the old index file.
+
+**Exit criteria:** the Windows target compiles; the installer contains only the local sidecar and runs as a per-user install; storage requests execute through the AppContainer broker; Alican validates the full chat workflow and runs concurrency/performance benchmarks. Service-backed profile migration and full-profile restore remain separate work until a verified, non-elevated export/replacement protocol is available.
+
 ### Automate integration and release validation
 
 **Status: implemented in source and covered by local validation.** Offline checks cover the React/Tauri/Rust boundary, provider fixtures, migrations, and local lifecycle behavior. Windows CI builds the Tauri installer; a remote run requires a push or manual workflow dispatch.
@@ -130,20 +143,20 @@ These bullets describe code present in the repository. They do not mean that eve
 
 ### Add portable backup, import, and restore
 
-**Status: selected-conversation archive v1 and encrypted full-profile database/attachment backup are implemented in source.** Profile restore validates before scheduling, activates on the next launch, preserves the replaced profile, and rolls back if startup validation does not complete.
+**Status: selected-conversation archive v1 and encrypted full-profile database/attachment export are implemented in source.** Non-Windows local profile restore validates before scheduling, activates on the next launch, preserves the replaced profile, and rolls back if startup validation does not complete. Windows restore is rejected until the storage service has a replacement and rollback protocol.
 
 - Create a versioned archive for selected conversations and their attachments; full-profile database backup and global settings are not included in this selected-conversation format.
 - Encrypt archives with a passphrase and an age v1 stream. Both formats omit API keys, OAuth tokens, and global preferences outside SQLite; selected-conversation archives also omit linked account/workspace identifiers and projects.
 - Inspect and validate archive contents and integrity before restore. Detect duplicate conversation IDs and offer skip-existing or import-as-copy behavior.
 - Restore database rows in one transaction and create attachments exclusively with rollback cleanup so failed imports leave the current profile usable.
 - Create an age-encrypted, versioned full-profile archive using SQLite's online backup so committed WAL data is included; archive only attachment files referenced by the snapshot. Validate hashes, database integrity, foreign keys, schema versions, and attachment metadata before scheduling restore.
-- Apply full-profile restore during service startup before the database is opened. Keep the old database and attachments under %LOCALAPPDATA%/OpenChat/backups/profile-restores; roll back an unconfirmed restore on a subsequent launch.
+- Keep full-profile restore on Windows blocked until the database can be replaced inside the storage service with a durable service-side rollback journal; do not swap the legacy `%LOCALAPPDATA%` database directory.
 - Exclude platform-stored provider credentials, global preferences outside the database, and external model or runtime binaries. Require the user to confirm replacement and close OpenChat before activation.
 - Keep Markdown export separate. JSON/ZIP interchange and schema-upgrading restore remain future work.
 
 **Exit criteria for selected-conversation v1:** a user can inspect, export, and restore selected conversations and attachments into another local profile; failed restore is recoverable; and linked credentials remain in platform secure storage.
 
-**Full-profile archive exit criteria:** a user can create a passphrase-protected database-and-attachment backup, validate it before restore, replace the active profile only after explicit confirmation, and recover the previous profile if startup validation fails. This archive does not include provider secrets, global preferences outside SQLite, or local model/runtime files.
+**Full-profile archive exit criteria:** a user can create a passphrase-protected database-and-attachment backup, validate it before restore, replace the active profile only after explicit confirmation, and recover the previous profile if startup validation fails. Windows remains open until replacement and rollback are owned by the storage service. This archive does not include provider secrets, global preferences outside SQLite, or local model/runtime files.
 
 ## Prioritized roadmap
 
@@ -247,6 +260,7 @@ These bullets describe code present in the repository. They do not mean that eve
 - Keep attachment-content indexing separately configurable. Implemented as off by default; users can rebuild or clear the derived local index in Settings > Local data. It indexes supported UTF-8 text attachments only, caps the index at 5,000 files or 100 MB, and never changes source files. Images are excluded because OCR is not available.
 - Up to 20 named searches preserve their query, filters, and date range in local preferences. Multi-select can move active conversations between projects and the general chat list or archive them atomically. The encrypted conversation archive supports exporting multiple selected conversations.
 - Keep the existing per-conversation memory search as a focused context tool; make the broader library search a separate history workflow.
+- Let users choose and change the local semantic-memory embedding model from supported model options. Persist the selection and rebuild derived vectors and indexes when it changes, without altering archived conversations.
 
 **Exit criteria:** search results identify the source conversation and message, can open that message directly, and honor the user's indexing and archive settings. Met by source behavior and deterministic tests.
 

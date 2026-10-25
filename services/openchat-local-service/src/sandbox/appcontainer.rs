@@ -12,12 +12,13 @@ use std::{
 };
 
 use windows_sys::Win32::{
-    Foundation::LocalFree,
+    Foundation::{ERROR_ALREADY_EXISTS, LocalFree},
     Security::{
         Authorization::ConvertSidToStringSidW,
         DeriveCapabilitySidsFromName, FreeSid,
         Isolation::{
-            CreateAppContainerProfile, DeleteAppContainerProfile, GetAppContainerFolderPath,
+            CreateAppContainerProfile, DeleteAppContainerProfile,
+            DeriveAppContainerSidFromAppContainerName, GetAppContainerFolderPath,
         },
         PSID,
     },
@@ -51,6 +52,10 @@ pub(crate) struct AppContainerSandbox {
     pub(crate) temp_directory: PathBuf,
     /// Paths whose AppContainer ACEs must be revoked when this sandbox is dropped.
     pub(crate) granted_paths: Vec<PathBuf>,
+    /// Whether this profile is temporary and should be removed when the child exits.
+    persistent_profile: bool,
+    /// Whether this sandbox changed window-station or desktop ACLs.
+    manages_window_access: bool,
 }
 
 impl AppContainerSandbox {
@@ -156,6 +161,8 @@ impl AppContainerSandbox {
             working_directory: working_directory.clone(),
             temp_directory,
             granted_paths: Vec::new(),
+            persistent_profile: false,
+            manages_window_access: true,
         };
         if let Err(error) = grant_user_objects_access(sid) {
             sandbox.cleanup();
@@ -188,6 +195,51 @@ impl AppContainerSandbox {
             }
         }
         Ok(sandbox)
+    }
+
+    /// Creates the stable, no-capability profile used by the SQLite storage broker.
+    ///
+    /// The broker's data remains in the profile's AppContainer-local folder after the process
+    /// exits. Only the broker executable receives an explicit read/execute ACL.
+    pub(crate) fn create_storage_broker(executable: &Path) -> io::Result<(Self, PathBuf)> {
+        let executable = fs::canonicalize(executable)?;
+        if !executable.is_file() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "The storage broker executable is unavailable.",
+            ));
+        }
+        let working_directory = executable
+            .parent()
+            .ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "The broker has no installation directory.",
+                )
+            })?
+            .to_path_buf();
+        let working_directory = shell_path(&working_directory);
+        let name = wide_null("OpenChatStorageBrokerV1");
+        let display_name = wide_null("OpenChat storage broker");
+        let description = wide_null("Persistent isolated storage for OpenChat.");
+        let (sid, sid_string, package_root) =
+            create_profile_identity(&name, &display_name, &description)?;
+        let temp_directory = package_root.join("Temp");
+        let mut sandbox = Self {
+            name,
+            sid: sid as usize,
+            sid_string,
+            working_directory,
+            temp_directory,
+            granted_paths: Vec::new(),
+            persistent_profile: true,
+            manages_window_access: false,
+        };
+        if let Err(error) = sandbox.grant_read_only_path(&executable) {
+            sandbox.cleanup();
+            return Err(error);
+        }
+        Ok((sandbox, package_root.join("OpenChatStorage")))
     }
 
     /// Builds a sorted, NUL-terminated environment containing only the allowed base variables.
@@ -230,6 +282,8 @@ impl AppContainerSandbox {
                         | "USERPROFILE"
                         | "APPDATA"
                         | "LOCALAPPDATA"
+                        | "TEMP"
+                        | "TMP"
                 ) {
                     variables.insert(
                         key_text.to_ascii_uppercase(),
@@ -255,59 +309,75 @@ impl AppContainerSandbox {
                 ),
             );
         }
-        fs::create_dir_all(&self.temp_directory)?;
         let isolated_profile = self.temp_directory.parent().unwrap_or(&self.temp_directory);
         let isolated_appdata = isolated_profile.join("AppData").join("Roaming");
-        let isolated_localappdata = isolated_profile.join("AppData").join("Local");
-        let _ = fs::create_dir_all(&isolated_appdata);
-        let _ = fs::create_dir_all(&isolated_localappdata);
+        let isolated_localappdata = if self.persistent_profile {
+            isolated_profile.to_path_buf()
+        } else {
+            isolated_profile.join("AppData").join("Local")
+        };
+        if !self.persistent_profile {
+            fs::create_dir_all(&self.temp_directory)?;
+            let _ = fs::create_dir_all(&isolated_appdata);
+            let _ = fs::create_dir_all(&isolated_localappdata);
+        }
 
-        variables.insert(
-            "USERPROFILE".to_owned(),
-            Zeroizing::new(
-                isolated_profile
-                    .as_os_str()
-                    .encode_wide()
-                    .collect::<Vec<_>>(),
-            ),
-        );
-        variables.insert(
-            "APPDATA".to_owned(),
-            Zeroizing::new(
-                isolated_appdata
-                    .as_os_str()
-                    .encode_wide()
-                    .collect::<Vec<_>>(),
-            ),
-        );
-        variables.insert(
-            "LOCALAPPDATA".to_owned(),
-            Zeroizing::new(
-                isolated_localappdata
-                    .as_os_str()
-                    .encode_wide()
-                    .collect::<Vec<_>>(),
-            ),
-        );
-
-        variables.insert(
-            "TEMP".to_owned(),
-            Zeroizing::new(
-                self.temp_directory
-                    .as_os_str()
-                    .encode_wide()
-                    .collect::<Vec<_>>(),
-            ),
-        );
-        variables.insert(
-            "TMP".to_owned(),
-            Zeroizing::new(
-                self.temp_directory
-                    .as_os_str()
-                    .encode_wide()
-                    .collect::<Vec<_>>(),
-            ),
-        );
+        if self.persistent_profile {
+            for name in ["LOCALAPPDATA", "TEMP", "TMP"] {
+                if !variables.contains_key(name) {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        "The storage broker base environment is incomplete.",
+                    ));
+                }
+            }
+        } else {
+            variables.insert(
+                "USERPROFILE".to_owned(),
+                Zeroizing::new(
+                    isolated_profile
+                        .as_os_str()
+                        .encode_wide()
+                        .collect::<Vec<_>>(),
+                ),
+            );
+            variables.insert(
+                "APPDATA".to_owned(),
+                Zeroizing::new(
+                    isolated_appdata
+                        .as_os_str()
+                        .encode_wide()
+                        .collect::<Vec<_>>(),
+                ),
+            );
+            variables.insert(
+                "LOCALAPPDATA".to_owned(),
+                Zeroizing::new(
+                    isolated_localappdata
+                        .as_os_str()
+                        .encode_wide()
+                        .collect::<Vec<_>>(),
+                ),
+            );
+            variables.insert(
+                "TEMP".to_owned(),
+                Zeroizing::new(
+                    self.temp_directory
+                        .as_os_str()
+                        .encode_wide()
+                        .collect::<Vec<_>>(),
+                ),
+            );
+            variables.insert(
+                "TMP".to_owned(),
+                Zeroizing::new(
+                    self.temp_directory
+                        .as_os_str()
+                        .encode_wide()
+                        .collect::<Vec<_>>(),
+                ),
+            );
+        }
         for (key, value) in additional_environment {
             let normalized_key = key.to_ascii_uppercase();
             if !is_valid_additional_environment_name(key)
@@ -389,6 +459,8 @@ impl AppContainerSandbox {
                 })?
                 .to_path_buf()
         };
+        set_app_container_traverse_access(&access_root, self.sid as PSID, true)?;
+        self.granted_paths.push(access_root.clone());
         let mut ancestor = access_root.parent();
         while let Some(path) = ancestor {
             if path.parent().is_none() {
@@ -499,7 +571,9 @@ impl AppContainerSandbox {
 
     /// Revokes this profile's ACE from every path recorded during sandbox setup.
     fn cleanup(&mut self) {
-        revoke_user_objects_access(self.sid as PSID);
+        if self.manages_window_access {
+            revoke_user_objects_access(self.sid as PSID);
+        }
         for path in self.granted_paths.drain(..).rev() {
             if set_app_container_access(&path, self.sid as PSID, false, false).is_err() {
                 eprintln!("app_container_acl_cleanup_failed");
@@ -516,11 +590,104 @@ impl Drop for AppContainerSandbox {
         unsafe {
             FreeSid(self.sid as PSID);
             LocalFree(self.sid_string as _);
-            if DeleteAppContainerProfile(self.name.as_ptr()) < 0 {
+            if !self.persistent_profile && DeleteAppContainerProfile(self.name.as_ptr()) < 0 {
                 eprintln!("app_container_profile_cleanup_failed");
             }
         }
     }
+}
+
+/// Creates or resolves a named AppContainer profile and obtains its persistent local-data path.
+fn create_profile_identity(
+    name: &[u16],
+    display_name: &[u16],
+    description: &[u16],
+) -> io::Result<(PSID, usize, PathBuf)> {
+    let mut sid = null_mut();
+    // SAFETY: The strings are NUL-terminated and `sid` is a writable output pointer.
+    let status = unsafe {
+        CreateAppContainerProfile(
+            name.as_ptr(),
+            display_name.as_ptr(),
+            description.as_ptr(),
+            null(),
+            0,
+            &mut sid,
+        )
+    };
+    let profile_created = if status >= 0 {
+        if sid.is_null() {
+            // SAFETY: The API accepted the profile creation request; `name` is still live and terminated.
+            unsafe { DeleteAppContainerProfile(name.as_ptr()) };
+            return Err(io::Error::other(
+                "Windows could not create the storage AppContainer profile.",
+            ));
+        }
+        true
+    } else if status == (0x8007_0000_u32 | ERROR_ALREADY_EXISTS) as i32 {
+        // SAFETY: The profile name is NUL-terminated and `sid` is a writable output pointer.
+        let derived = unsafe { DeriveAppContainerSidFromAppContainerName(name.as_ptr(), &mut sid) };
+        if derived < 0 || sid.is_null() {
+            // SAFETY: A non-null SID was returned by the failed derive call, if any.
+            unsafe {
+                if !sid.is_null() {
+                    FreeSid(sid);
+                }
+            }
+            return Err(io::Error::other(
+                "Windows could not resolve the storage AppContainer profile.",
+            ));
+        }
+        false
+    } else {
+        if !sid.is_null() {
+            // SAFETY: A non-null SID was returned by the failed profile call.
+            unsafe { FreeSid(sid) };
+        }
+        return Err(io::Error::other(
+            "Windows could not create the storage AppContainer profile.",
+        ));
+    };
+
+    let mut sid_string = null_mut();
+    // SAFETY: `sid` is a live SID returned by the AppContainer profile APIs.
+    if unsafe { ConvertSidToStringSidW(sid, &mut sid_string) } == 0 || sid_string.is_null() {
+        // SAFETY: Both resources are still owned here; a newly created profile can be rolled back.
+        unsafe {
+            FreeSid(sid);
+            if profile_created {
+                DeleteAppContainerProfile(name.as_ptr());
+            }
+        }
+        return Err(last_os_error());
+    }
+    let sid_string_value = sid_string as usize;
+    let mut app_container_data = null_mut();
+    // SAFETY: The SID string is NUL-terminated and the output pointer is writable.
+    let folder_result = unsafe {
+        GetAppContainerFolderPath(
+            sid_string_value as windows_sys::core::PCWSTR,
+            &mut app_container_data,
+        )
+    };
+    if folder_result < 0 || app_container_data.is_null() {
+        let error =
+            io::Error::other("Windows could not locate the storage AppContainer data folder.");
+        // SAFETY: The SID resources remain owned here; a new profile may be rolled back.
+        unsafe {
+            FreeSid(sid);
+            LocalFree(sid_string_value as _);
+            if profile_created {
+                DeleteAppContainerProfile(name.as_ptr());
+            }
+        }
+        return Err(error);
+    }
+    // SAFETY: Windows returned a readable NUL-terminated UTF-16 path.
+    let package_root = PathBuf::from(unsafe { wide_os_string(app_container_data) });
+    // SAFETY: `app_container_data` was allocated by GetAppContainerFolderPath.
+    unsafe { CoTaskMemFree(app_container_data.cast()) };
+    Ok((sid, sid_string_value, package_root))
 }
 
 /// Owns SID arrays allocated while resolving the optional `internetClient` capability.

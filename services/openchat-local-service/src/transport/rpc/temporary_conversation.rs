@@ -60,7 +60,7 @@ pub(super) async fn dispatch(
             .await
     } else {
         let credentials = if provider_credentials::uses_saved_api_key(&provider_id) {
-            Some(ProviderCredentials::load()?)
+            Some(ProviderCredentials::load(storage)?)
         } else {
             None
         };

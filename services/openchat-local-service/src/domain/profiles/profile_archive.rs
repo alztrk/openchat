@@ -8,18 +8,26 @@ use std::{
     collections::{BTreeMap, HashSet},
     fs::{self, File, OpenOptions},
     io::{self, BufReader, Read, Write},
-    iter,
     path::{Component, Path, PathBuf},
-    sync::{Mutex, OnceLock},
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use age::{Decryptor, Encryptor, scrypt::Identity, secrecy::SecretString};
+#[cfg(any(not(windows), test))]
+use std::{
+    iter,
+    sync::{Mutex, OnceLock},
+};
+
+#[cfg(any(not(windows), test))]
+use age::{Decryptor, scrypt::Identity};
+use age::{Encryptor, secrecy::SecretString};
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
-use tar::{Archive, Builder, EntryType, Header};
+#[cfg(any(not(windows), test))]
+use tar::Archive;
+use tar::{Builder, EntryType, Header};
 use uuid::Uuid;
 use zeroize::Zeroizing;
 
@@ -38,12 +46,14 @@ const MANIFEST_PATH: &str = "manifest.json";
 const DATABASE_PATH: &str = "database/openchat.sqlite3";
 const MIN_PASSPHRASE_CHARACTERS: usize = 12;
 const MAX_PASSPHRASE_BYTES: usize = 512;
+#[cfg(any(not(windows), test))]
 const MAX_ARCHIVE_BYTES: u64 = 64 * 1024 * 1024 * 1024;
 const MAX_DATABASE_BYTES: u64 = 32 * 1024 * 1024 * 1024;
 const MAX_ATTACHMENT_BYTES: u64 = 24 * 1024 * 1024 * 1024;
 const MAX_ATTACHMENTS: usize = 100_000;
 const MAX_MANIFEST_BYTES: u64 = 128 * 1024 * 1024;
 const MAX_RESTORE_STATE_BYTES: u64 = 4 * 1024;
+#[cfg(any(not(windows), test))]
 const MAX_AGE_SCRYPT_LOG_N: u8 = 18;
 const PROFILE_ARCHIVE_ROOT: &str = "profile-archives";
 const RESTORE_ROOT: &str = "profile-restore";
@@ -52,6 +62,7 @@ const RESTORE_APPLYING_FILE: &str = "restore.applying.json";
 const RESTORE_AWAITING_FILE: &str = "restore.awaiting.json";
 const RESTORE_COMMITTED_FILE: &str = "restore.committed.json";
 const RECOVERY_DIRECTORY: &str = "profile-restores";
+#[cfg(any(not(windows), test))]
 static RESTORE_OPERATION_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -110,10 +121,14 @@ enum ArchiveFailure {
     InvalidPassphrase,
     NotFound,
     Conflict,
+    #[cfg(any(not(windows), test))]
     Busy,
     Storage,
     LimitExceeded,
+    #[cfg(any(not(windows), test))]
     UnsupportedSchema,
+    #[cfg(all(windows, not(test)))]
+    WindowsRestoreUnavailable,
 }
 
 impl From<rusqlite::Error> for ArchiveFailure {
@@ -156,6 +171,7 @@ impl TemporaryDirectory {
         &self.path
     }
 
+    #[cfg(any(not(windows), test))]
     fn preserve(&mut self) {
         self.active = false;
     }
@@ -219,6 +235,7 @@ fn service_error(failure: ArchiveFailure) -> ServiceError {
             "A profile backup is already waiting to be restored, or the output file exists.",
             false,
         ),
+        #[cfg(any(not(windows), test))]
         ArchiveFailure::Busy => ServiceError::new(
             "profile_archive_busy",
             "Another profile backup operation is in progress.",
@@ -234,9 +251,16 @@ fn service_error(failure: ArchiveFailure) -> ServiceError {
             "The profile backup exceeds a supported size or item limit.",
             false,
         ),
+        #[cfg(any(not(windows), test))]
         ArchiveFailure::UnsupportedSchema => ServiceError::new(
             "profile_archive_schema_unsupported",
             "This profile backup was created by a newer OpenChat database schema.",
+            false,
+        ),
+        #[cfg(all(windows, not(test)))]
+        ArchiveFailure::WindowsRestoreUnavailable => ServiceError::new(
+            "profile_archive_restore_unavailable",
+            "Full-profile restore is temporarily unavailable on Windows while the protected storage service owns the database. Your current profile and encrypted backup were not changed.",
             false,
         ),
     }
@@ -262,17 +286,25 @@ pub(crate) fn prepare_restore(
     passphrase: Zeroizing<String>,
     current_chat_schema_version: i64,
 ) -> Result<Value, ServiceError> {
-    validate_passphrase(&passphrase).map_err(service_error)?;
-    if !(1..=100).contains(&current_chat_schema_version) {
-        return Err(service_error(ArchiveFailure::InvalidRequest));
+    #[cfg(all(windows, not(test)))]
+    {
+        let _ = (storage, path, passphrase, current_chat_schema_version);
+        Err(service_error(ArchiveFailure::WindowsRestoreUnavailable))
     }
-    prepare_restore_inner(
-        storage,
-        Path::new(path),
-        passphrase.as_str(),
-        current_chat_schema_version,
-    )
-    .map_err(service_error)
+    #[cfg(any(not(windows), test))]
+    {
+        validate_passphrase(&passphrase).map_err(service_error)?;
+        if !(1..=100).contains(&current_chat_schema_version) {
+            return Err(service_error(ArchiveFailure::InvalidRequest));
+        }
+        prepare_restore_inner(
+            storage,
+            Path::new(path),
+            passphrase.as_str(),
+            current_chat_schema_version,
+        )
+        .map_err(service_error)
+    }
 }
 
 fn export_inner(
@@ -283,13 +315,13 @@ fn export_inner(
     let target = validate_output_path(target)?;
     ensure_destination_is_new(&target)?;
     let source = storage.connect().map_err(|_| ArchiveFailure::Storage)?;
-    storage::verify_database_integrity(&source).map_err(|_| ArchiveFailure::Storage)?;
+    crate::storage::verify_storage_integrity(&source).map_err(|_| ArchiveFailure::Storage)?;
     let archive_temp = TemporaryDirectory::create(
         &storage.root().join("cache").join(PROFILE_ARCHIVE_ROOT),
         "export",
     )?;
     let database_snapshot_path = archive_temp.path().join("openchat.sqlite3");
-    storage::create_verified_database_snapshot(&source, &database_snapshot_path)
+    crate::storage::create_verified_storage_snapshot(&source, &database_snapshot_path)
         .map_err(|_| ArchiveFailure::Storage)?;
     drop(source);
     strip_workspace_file_changes(&database_snapshot_path)?;
@@ -417,6 +449,7 @@ fn strip_workspace_file_changes(database_path: &Path) -> Result<(), ArchiveFailu
         .map_err(|_| ArchiveFailure::Storage)
 }
 
+#[cfg(any(not(windows), test))]
 fn prepare_restore_inner(
     storage: &AppStorage,
     archive_path: &Path,
@@ -633,6 +666,7 @@ impl<R: Read> Read for HashingReader<R> {
     }
 }
 
+#[cfg(any(not(windows), test))]
 fn read_archive_to_stage(
     path: &Path,
     passphrase: &str,
@@ -785,6 +819,7 @@ fn validate_staged_profile(
     Ok(())
 }
 
+#[cfg(any(not(windows), test))]
 fn copy_verified_entry<R: Read>(
     mut entry: tar::Entry<'_, R>,
     mut output: File,
@@ -817,6 +852,7 @@ fn copy_verified_entry<R: Read>(
     output.sync_all().map_err(|_| ArchiveFailure::Storage)
 }
 
+#[cfg(any(not(windows), test))]
 fn create_stage_file(stage: &Path, archive_path: &str) -> Result<File, ArchiveFailure> {
     let relative = safe_archive_path(archive_path)?;
     let output = stage.join(relative);
@@ -829,6 +865,7 @@ fn create_stage_file(stage: &Path, archive_path: &str) -> Result<File, ArchiveFa
         .map_err(|_| ArchiveFailure::Storage)
 }
 
+#[cfg(any(not(windows), test))]
 fn validate_tar_entry<R: Read>(
     entry: &tar::Entry<'_, R>,
     expected: &str,
@@ -839,6 +876,7 @@ fn validate_tar_entry<R: Read>(
     Ok(())
 }
 
+#[cfg(any(not(windows), test))]
 fn tar_path<R: Read>(entry: &tar::Entry<'_, R>) -> Result<String, ArchiveFailure> {
     let path = entry.path().map_err(|_| ArchiveFailure::InvalidArchive)?;
     let path = path.to_str().ok_or(ArchiveFailure::InvalidArchive)?;
@@ -875,6 +913,7 @@ fn validate_attachment_path(value: &str) -> Result<(), ArchiveFailure> {
     }
 }
 
+#[cfg(any(not(windows), test))]
 fn read_entry_json<T: DeserializeOwned, R: Read>(
     entry: tar::Entry<'_, R>,
     maximum: u64,
@@ -1032,6 +1071,7 @@ fn archive_summary(manifest: &ProfileManifest, requires_restart: bool) -> Value 
     })
 }
 
+#[cfg(any(not(windows), test))]
 fn validate_input_path(path: &Path) -> Result<File, ArchiveFailure> {
     let metadata = fs::symlink_metadata(path).map_err(|error| {
         if error.kind() == io::ErrorKind::NotFound {
@@ -1481,9 +1521,7 @@ fn io_to_sql_error(error: io::Error) -> rusqlite::Error {
 }
 
 mod storage {
-    pub(super) use crate::storage::{
-        backend_schema_version, create_verified_database_snapshot, verify_database_integrity,
-    };
+    pub(super) use crate::storage::{backend_schema_version, verify_database_integrity};
 }
 
 #[cfg(test)]

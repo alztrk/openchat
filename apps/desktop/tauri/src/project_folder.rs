@@ -160,6 +160,17 @@ pub(crate) fn discard_project_folder_selection(
     Ok(())
 }
 
+/// Consumes a single-use native folder selection and returns its canonical path.
+#[tauri::command]
+pub(crate) fn consume_project_folder_selection_command(
+    selection_id: BoundedText<MAXIMUM_SELECTION_ID_BYTES>,
+) -> Result<String, ProjectFolderError> {
+    consume_project_folder_selection(&selection_id.into_inner())?
+        .to_str()
+        .map(str::to_owned)
+        .ok_or_else(ProjectFolderError::invalid_input)
+}
+
 /// Consumes a selection token and revalidates that the chosen directory still exists.
 pub(crate) fn consume_project_folder_selection(
     selection_id: &str,
@@ -183,7 +194,7 @@ pub(crate) fn consume_project_folder_selection(
     if current_path != selection.canonical_path {
         return Err(ProjectFolderError::invalid_input());
     }
-    Ok(selection.selected_path)
+    Ok(current_path)
 }
 
 fn canonical_project_folder(path: &Path) -> Result<PathBuf, ProjectFolderError> {

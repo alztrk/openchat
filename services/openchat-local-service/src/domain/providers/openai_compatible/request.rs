@@ -635,10 +635,6 @@ pub(super) fn responses_api_body(
     if let Some(reasoning_effort) = request.reasoning_effort.as_deref() {
         reasoning.insert("effort".to_owned(), json!(reasoning_effort));
     }
-    if provider_id == "chatgpt_api" && crate::openai_api::supports_reasoning_summary(&request.model)
-    {
-        reasoning.insert("summary".to_owned(), json!("auto"));
-    }
     if !reasoning.is_empty() {
         body["reasoning"] = Value::Object(reasoning);
     }

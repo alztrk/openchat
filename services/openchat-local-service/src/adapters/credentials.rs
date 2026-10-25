@@ -311,6 +311,7 @@ impl CredentialStore {
     /// remains zeroizing if validation or storage fails.
     pub fn store_mcp_secret(
         &self,
+        storage: &crate::storage::AppStorage,
         reference: &McpCredentialReference,
         secret: Zeroizing<String>,
     ) -> Result<(), CredentialStoreError> {
@@ -324,7 +325,7 @@ impl CredentialStore {
             .lock()
             .map_err(|_| CredentialStoreError::LockUnavailable)?;
         let vault_key = vault_key_for_mcp(reference);
-        crate::secrets::set_vault_secret(&vault_key, &secret)
+        crate::secrets::set_vault_secret_from_storage(storage, &vault_key, &secret)
             .map_err(|_| CredentialStoreError::StorageWriteFailed)?;
         if let Ok(entry) = mcp_entry(reference) {
             let _ = delete_if_present(&entry);
@@ -340,13 +341,15 @@ impl CredentialStore {
     /// not exist, or a lock, decoding, or storage error otherwise.
     pub fn load_mcp_secret(
         &self,
+        storage: &crate::storage::AppStorage,
         reference: &McpCredentialReference,
     ) -> Result<Zeroizing<String>, CredentialStoreError> {
         let _guard = OPERATION_LOCK
             .lock()
             .map_err(|_| CredentialStoreError::LockUnavailable)?;
         let vault_key = vault_key_for_mcp(reference);
-        if let Ok(Some(secret)) = crate::secrets::get_vault_secret(&vault_key) {
+        if let Ok(Some(secret)) = crate::secrets::get_vault_secret_from_storage(storage, &vault_key)
+        {
             return Ok(secret);
         }
         let entry = mcp_entry(reference)?;
@@ -358,7 +361,7 @@ impl CredentialStore {
         let secret = std::str::from_utf8(secret.as_slice())
             .map_err(|_| CredentialStoreError::InvalidStoredToken)?;
         let result = Zeroizing::new(secret.to_owned());
-        let _ = crate::secrets::set_vault_secret(&vault_key, &result);
+        let _ = crate::secrets::set_vault_secret_from_storage(storage, &vault_key, &result);
         let _ = delete_if_present(&entry);
         Ok(result)
     }
@@ -370,13 +373,14 @@ impl CredentialStore {
     /// Returns a lock or operating-system storage error.
     pub fn has_mcp_secret(
         &self,
+        storage: &crate::storage::AppStorage,
         reference: &McpCredentialReference,
     ) -> Result<bool, CredentialStoreError> {
         let _guard = OPERATION_LOCK
             .lock()
             .map_err(|_| CredentialStoreError::LockUnavailable)?;
         let vault_key = vault_key_for_mcp(reference);
-        if let Ok(true) = crate::secrets::has_vault_secret(&vault_key) {
+        if let Ok(true) = crate::secrets::has_vault_secret_from_storage(storage, &vault_key) {
             return Ok(true);
         }
         credential_exists(&mcp_entry(reference)?)
@@ -389,13 +393,14 @@ impl CredentialStore {
     /// Returns a lock or operating-system storage error.
     pub fn delete_mcp_secret(
         &self,
+        storage: &crate::storage::AppStorage,
         reference: &McpCredentialReference,
     ) -> Result<(), CredentialStoreError> {
         let _guard = OPERATION_LOCK
             .lock()
             .map_err(|_| CredentialStoreError::LockUnavailable)?;
         let vault_key = vault_key_for_mcp(reference);
-        let _ = crate::secrets::delete_vault_secret(&vault_key);
+        let _ = crate::secrets::delete_vault_secret_from_storage(storage, &vault_key);
         delete_if_present(&mcp_entry(reference)?)
     }
 
@@ -408,6 +413,7 @@ impl CredentialStore {
     /// already contains credentials, or a validation, lock, or storage error.
     pub fn store_new_token_pair(
         &self,
+        storage: &crate::storage::AppStorage,
         reference: &OAuthCredentialReference,
         tokens: &OAuthTokenPair,
     ) -> Result<(), CredentialStoreError> {
@@ -422,9 +428,11 @@ impl CredentialStore {
         let refresh_entry = entry(reference, "refresh-v2")?;
         let expiry_entry = entry(reference, "access-exp-v1")?;
 
-        let in_vault = crate::secrets::has_vault_secret(&access_key).unwrap_or(false)
-            || crate::secrets::has_vault_secret(&refresh_key).unwrap_or(false)
-            || crate::secrets::has_vault_secret(&expiry_key).unwrap_or(false);
+        let in_vault = crate::secrets::has_vault_secret_from_storage(storage, &access_key)
+            .unwrap_or(false)
+            || crate::secrets::has_vault_secret_from_storage(storage, &refresh_key)
+                .unwrap_or(false)
+            || crate::secrets::has_vault_secret_from_storage(storage, &expiry_key).unwrap_or(false);
 
         if in_vault
             || credential_exists(&access_entry)?
@@ -434,19 +442,30 @@ impl CredentialStore {
             return Err(CredentialStoreError::ReferenceAlreadyUsed);
         }
 
-        crate::secrets::set_vault_secret(&access_key, tokens.access_token())
+        crate::secrets::set_vault_secret_from_storage(storage, &access_key, tokens.access_token())
             .map_err(|_| CredentialStoreError::StorageWriteFailed)?;
 
-        if crate::secrets::set_vault_secret(&refresh_key, tokens.refresh_token()).is_err() {
-            let _ = crate::secrets::delete_vault_secret(&access_key);
+        if crate::secrets::set_vault_secret_from_storage(
+            storage,
+            &refresh_key,
+            tokens.refresh_token(),
+        )
+        .is_err()
+        {
+            let _ = crate::secrets::delete_vault_secret_from_storage(storage, &access_key);
             return Err(CredentialStoreError::IncompleteWrite);
         }
 
         if let Some(expires_at) = tokens.expires_at_unix_seconds()
-            && crate::secrets::set_vault_secret(&expiry_key, &expires_at.to_string()).is_err()
+            && crate::secrets::set_vault_secret_from_storage(
+                storage,
+                &expiry_key,
+                &expires_at.to_string(),
+            )
+            .is_err()
         {
-            let _ = crate::secrets::delete_vault_secret(&refresh_key);
-            let _ = crate::secrets::delete_vault_secret(&access_key);
+            let _ = crate::secrets::delete_vault_secret_from_storage(storage, &refresh_key);
+            let _ = crate::secrets::delete_vault_secret_from_storage(storage, &access_key);
             return Err(CredentialStoreError::IncompleteWrite);
         }
 
@@ -466,6 +485,7 @@ impl CredentialStore {
     /// present, or a validation, lock, or storage error.
     pub fn load_token_pair(
         &self,
+        storage: &crate::storage::AppStorage,
         reference: &OAuthCredentialReference,
     ) -> Result<OAuthTokenPair, CredentialStoreError> {
         let _guard = OPERATION_LOCK
@@ -475,11 +495,11 @@ impl CredentialStore {
         let refresh_key = vault_key_for_oauth(reference, "refresh-v2");
         let expiry_key = vault_key_for_oauth(reference, "access-exp-v1");
 
-        let vault_access = crate::secrets::get_vault_secret(&access_key)
+        let vault_access = crate::secrets::get_vault_secret_from_storage(storage, &access_key)
             .map_err(|_| CredentialStoreError::StorageReadFailed)?;
-        let vault_refresh = crate::secrets::get_vault_secret(&refresh_key)
+        let vault_refresh = crate::secrets::get_vault_secret_from_storage(storage, &refresh_key)
             .map_err(|_| CredentialStoreError::StorageReadFailed)?;
-        let vault_expiry_str = crate::secrets::get_vault_secret(&expiry_key)
+        let vault_expiry_str = crate::secrets::get_vault_secret_from_storage(storage, &expiry_key)
             .map_err(|_| CredentialStoreError::StorageReadFailed)?;
         let vault_expiry = vault_expiry_str
             .as_deref()
@@ -498,10 +518,22 @@ impl CredentialStore {
         let expiry = read_expiration_optional(&expiry_entry)?;
 
         if let Some(pair) = token_pair(access, refresh, expiry)? {
-            let _ = crate::secrets::set_vault_secret(&access_key, pair.access_token());
-            let _ = crate::secrets::set_vault_secret(&refresh_key, pair.refresh_token());
+            let _ = crate::secrets::set_vault_secret_from_storage(
+                storage,
+                &access_key,
+                pair.access_token(),
+            );
+            let _ = crate::secrets::set_vault_secret_from_storage(
+                storage,
+                &refresh_key,
+                pair.refresh_token(),
+            );
             if let Some(expires_at) = pair.expires_at_unix_seconds() {
-                let _ = crate::secrets::set_vault_secret(&expiry_key, &expires_at.to_string());
+                let _ = crate::secrets::set_vault_secret_from_storage(
+                    storage,
+                    &expiry_key,
+                    &expires_at.to_string(),
+                );
             }
             let _ = delete_if_present(&access_entry);
             let _ = delete_if_present(&refresh_entry);
@@ -520,6 +552,7 @@ impl CredentialStore {
     /// deleted.
     pub fn delete_token_pair(
         &self,
+        storage: &crate::storage::AppStorage,
         reference: &OAuthCredentialReference,
     ) -> Result<(), CredentialStoreError> {
         let _guard = OPERATION_LOCK
@@ -529,9 +562,9 @@ impl CredentialStore {
         let refresh_key = vault_key_for_oauth(reference, "refresh-v2");
         let expiry_key = vault_key_for_oauth(reference, "access-exp-v1");
 
-        let _ = crate::secrets::delete_vault_secret(&access_key);
-        let _ = crate::secrets::delete_vault_secret(&refresh_key);
-        let _ = crate::secrets::delete_vault_secret(&expiry_key);
+        let _ = crate::secrets::delete_vault_secret_from_storage(storage, &access_key);
+        let _ = crate::secrets::delete_vault_secret_from_storage(storage, &refresh_key);
+        let _ = crate::secrets::delete_vault_secret_from_storage(storage, &expiry_key);
 
         let entries = [
             entry(reference, "access-v2")?,
@@ -735,6 +768,30 @@ mod mcp_credential_tests {
         CredentialStore, McpCredentialReference, OAuthCredentialReference, OAuthTokenPair,
         is_valid_environment_name,
     };
+    use crate::storage::AppStorage;
+    use std::{fs, path::PathBuf};
+
+    struct TestStorage {
+        root: PathBuf,
+        storage: AppStorage,
+    }
+
+    impl TestStorage {
+        fn new() -> Self {
+            let root = std::env::temp_dir().join(format!(
+                "openchat-credential-store-test-{}",
+                uuid::Uuid::new_v4()
+            ));
+            let storage = AppStorage::open_at(root.clone()).expect("open isolated test storage");
+            Self { root, storage }
+        }
+    }
+
+    impl Drop for TestStorage {
+        fn drop(&mut self) {
+            fs::remove_dir_all(&self.root).expect("remove isolated test storage");
+        }
+    }
 
     #[test]
     fn mcp_credentials_are_scoped_to_project_server_and_environment_name() {
@@ -777,24 +834,41 @@ mod mcp_credential_tests {
         )
         .expect("valid credential reference");
         let store = CredentialStore;
+        let storage = TestStorage::new();
         let secret = format!("test-{}", uuid::Uuid::new_v4());
 
-        assert!(!store.has_mcp_secret(&reference).expect("query credential"));
+        assert!(
+            !store
+                .has_mcp_secret(&storage.storage, &reference)
+                .expect("query credential")
+        );
         store
-            .store_mcp_secret(&reference, zeroize::Zeroizing::new(secret.clone()))
+            .store_mcp_secret(
+                &storage.storage,
+                &reference,
+                zeroize::Zeroizing::new(secret.clone()),
+            )
             .expect("store credential");
-        assert!(store.has_mcp_secret(&reference).expect("query credential"));
+        assert!(
+            store
+                .has_mcp_secret(&storage.storage, &reference)
+                .expect("query credential")
+        );
         assert_eq!(
             store
-                .load_mcp_secret(&reference)
+                .load_mcp_secret(&storage.storage, &reference)
                 .expect("load credential")
                 .as_str(),
             secret
         );
         store
-            .delete_mcp_secret(&reference)
+            .delete_mcp_secret(&storage.storage, &reference)
             .expect("remove credential");
-        assert!(!store.has_mcp_secret(&reference).expect("query credential"));
+        assert!(
+            !store
+                .has_mcp_secret(&storage.storage, &reference)
+                .expect("query credential")
+        );
     }
 
     #[test]
@@ -803,6 +877,7 @@ mod mcp_credential_tests {
         let gen_id = format!("gen_{}", uuid::Uuid::new_v4().simple());
         let reference = OAuthCredentialReference::new(conn_id, gen_id).expect("valid reference");
         let store = CredentialStore;
+        let storage = TestStorage::new();
         let tokens = OAuthTokenPair::with_expiration(
             zeroize::Zeroizing::new("access_token_val".to_string()),
             zeroize::Zeroizing::new("refresh_token_val".to_string()),
@@ -811,16 +886,18 @@ mod mcp_credential_tests {
         .expect("token pair");
 
         store
-            .store_new_token_pair(&reference, &tokens)
+            .store_new_token_pair(&storage.storage, &reference, &tokens)
             .expect("store new token pair");
-        let loaded = store.load_token_pair(&reference).expect("load token pair");
+        let loaded = store
+            .load_token_pair(&storage.storage, &reference)
+            .expect("load token pair");
         assert_eq!(loaded.access_token(), "access_token_val");
         assert_eq!(loaded.refresh_token(), "refresh_token_val");
         assert_eq!(loaded.expires_at_unix_seconds(), Some(1_800_000_000));
 
         store
-            .delete_token_pair(&reference)
+            .delete_token_pair(&storage.storage, &reference)
             .expect("delete token pair");
-        assert!(store.load_token_pair(&reference).is_err());
+        assert!(store.load_token_pair(&storage.storage, &reference).is_err());
     }
 }

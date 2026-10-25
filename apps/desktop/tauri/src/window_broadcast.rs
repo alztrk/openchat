@@ -9,6 +9,7 @@ use tauri::{AppHandle, Emitter, Runtime};
 use crate::request_bounds::BoundedText;
 
 /// Event channel name used for broadcasting application setting updates.
+#[cfg(test)]
 pub const APP_SETTING_CHANGED_EVENT: &str = "openchat://app-setting-changed";
 
 /// Event channel name used for broadcasting conversation collection updates.
@@ -16,6 +17,7 @@ pub const APP_SETTING_CHANGED_EVENT: &str = "openchat://app-setting-changed";
 pub const CONVERSATION_CHANGED_EVENT: &str = "openchat://conversation-changed";
 
 /// Payload broadcast when an application setting is modified.
+#[cfg(test)]
 #[derive(Clone, Debug, Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct AppSettingChangedPayload {
     /// The setting key that was modified.
@@ -51,6 +53,7 @@ pub fn broadcast_sync_event<R: Runtime, P: Serialize + Clone>(
 ///
 /// # Errors
 /// Returns an error string if event propagation fails.
+#[cfg(test)]
 pub fn broadcast_app_setting_change<R: Runtime>(
     app: &AppHandle<R>,
     key: &str,

@@ -121,6 +121,7 @@ pub(crate) fn server_permission_rule(
 /// # Errors
 /// Returns cancellation, approval broker, or connection errors without registering partial tools.
 pub(crate) async fn connect_with_approval(
+    storage: &crate::storage::AppStorage,
     configs: Vec<StdioServerConfig>,
     rules: &super::ToolPermissionRules,
     full_access: bool,
@@ -162,7 +163,7 @@ pub(crate) async fn connect_with_approval(
         }
     }
 
-    McpRegistry::connect(approved_configs, full_access)
+    McpRegistry::connect(approved_configs, full_access, storage)
         .await
         .map_err(|error| {
             ServiceError::new(
@@ -604,6 +605,7 @@ impl McpRegistry {
     pub(crate) async fn connect(
         configs: Vec<StdioServerConfig>,
         full_access: bool,
+        storage: &crate::storage::AppStorage,
     ) -> Result<Option<Self>, String> {
         if configs.len() > MAX_MCP_SERVERS_PER_REQUEST {
             return Err("The configured MCP server count exceeds the supported limit.".to_owned());
@@ -618,7 +620,7 @@ impl McpRegistry {
                     "The configured MCP server identifiers are invalid or duplicated.".to_owned(),
                 );
             }
-            let client = McpClient::connect(&config, full_access).await?;
+            let client = McpClient::connect(&config, full_access, storage).await?;
             let tools = client.list_tools().await?;
             let (server_definitions, server_routes) = tool_definitions(&config.id, tools)?;
             if definitions.len().saturating_add(server_definitions.len())
@@ -796,6 +798,7 @@ impl McpClient {
     pub(crate) async fn connect(
         config: &StdioServerConfig,
         full_access: bool,
+        storage: &crate::storage::AppStorage,
     ) -> Result<Self, String> {
         let service = if let Some(endpoint) = &config.endpoint {
             let client =
@@ -812,7 +815,7 @@ impl McpClient {
                 )
                 .map_err(|_| "The remote MCP credential name is invalid.".to_owned())?;
                 let secret = crate::credentials::CredentialStore
-                    .load_mcp_secret(&reference)
+                    .load_mcp_secret(storage, &reference)
                     .map_err(|error| {
                         format!("The remote MCP credential is unavailable: {error}")
                     })?;
@@ -833,7 +836,7 @@ impl McpClient {
                         name.clone(),
                     )
                     .map_err(|_| "An MCP environment variable name is invalid.".to_owned())?;
-                    let secret = credentials.load_mcp_secret(&reference).map_err(|error| {
+                    let secret = credentials.load_mcp_secret(storage, &reference).map_err(|error| {
                         format!(
                             "The MCP credential for environment variable {name} is unavailable: {error}"
                         )
@@ -1070,7 +1073,7 @@ mod tests {
         save_server_catalog, server_catalog, start_streamable_http_service, tool_definitions,
         valid_permission_rule_suffix,
     };
-    use crate::{permissions::ToolPermissionBroker, protocol::EventSink};
+    use crate::{permissions::ToolPermissionBroker, protocol::EventSink, storage::AppStorage};
     use rmcp::model::Tool;
     use serde_json::{Value, json};
     use std::collections::HashMap;
@@ -1087,6 +1090,31 @@ mod tests {
         net::TcpListener,
         sync::watch,
     };
+
+    struct TestStorage {
+        root: PathBuf,
+        storage: Arc<AppStorage>,
+    }
+
+    impl TestStorage {
+        fn new() -> Self {
+            let root = std::env::temp_dir().join(format!(
+                "openchat-mcp-storage-test-{}",
+                uuid::Uuid::new_v4()
+            ));
+            let storage = AppStorage::open_at(root.clone()).expect("open isolated test storage");
+            Self {
+                root,
+                storage: Arc::new(storage),
+            }
+        }
+    }
+
+    impl Drop for TestStorage {
+        fn drop(&mut self) {
+            std::fs::remove_dir_all(&self.root).expect("remove isolated test storage");
+        }
+    }
 
     fn tool(name: &str) -> Tool {
         serde_json::from_value(serde_json::json!({
@@ -1399,8 +1427,9 @@ mod tests {
             Path::new(r"C:\workspace"),
         )
         .expect("valid disabled server settings");
+        let storage = TestStorage::new();
 
-        let registry = super::McpRegistry::connect(configs, false)
+        let registry = super::McpRegistry::connect(configs, false, &storage.storage)
             .await
             .expect("disabled servers should not be started");
         assert!(registry.is_none());
@@ -1423,9 +1452,12 @@ mod tests {
         let request_id = json!(42);
         let (cancellation_sender, cancellation) = watch::channel(false);
         let task_broker = broker.clone();
+        let storage = TestStorage::new();
+        let task_storage = Arc::clone(&storage.storage);
         let task = tokio::spawn(async move {
             let mut cancellation = cancellation;
             connect_with_approval(
+                &task_storage,
                 configs,
                 &rules,
                 false,

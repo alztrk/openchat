@@ -22,10 +22,13 @@ pub(crate) fn renderer_rpc_disposition(
     let Ok(request) = serde_json::from_str::<RendererRpcMethod<'_>>(body) else {
         return Some(RendererRpcDisposition::Forward);
     };
+    if request.has_native_request_id {
+        return None;
+    }
     let Some(method) = request.method.as_deref() else {
         return Some(RendererRpcDisposition::Forward);
     };
-    if method == "chat.tool.permission.respond" {
+    if method == "chat.tool.permission.respond" || method.starts_with("internal.") {
         return None;
     }
     if matches!(

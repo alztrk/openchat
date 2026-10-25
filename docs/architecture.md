@@ -121,14 +121,48 @@ remain separate Rust processes with their existing storage and RPC boundaries.
   validate the saved checkpoint. Goal validation, project context preparation,
   checkpoint restoration, atomic run creation, saved route credential
   resolution, and run finalization are isolated in
-  `services/openchat-local-service/src/transport/rpc/chat_execution.rs`. Route loading
-  returns the same request-scoped SQLite connection for run operations, while
-  provider invocation remains in the dispatcher. Provider, pause, cancellation,
-  interruption, and failure outcomes are tested as a pure state classification.
-- The Tauri host and service share `services/provider-secret-store/` for the
-  existing per-user DPAPI file. Tauri writes provider keys and MCP secrets;
-  provider requests resolve keys inside the service from saved route IDs, so
-  provider keys do not cross the renderer boundary.
+  `services/openchat-local-service/src/transport/rpc/chat_execution.rs`. On
+  Windows, the application sidecar launches the storage broker as a child
+  process in the stable `OpenChatStorageBrokerV1` AppContainer profile. The
+  broker has no network capability, receives only its inherited standard
+  handles, and owns the SQLite connection, schema lifecycle, and bounded FIFO
+  request queue. Its database and cache live in that AppContainer's private
+  local-data directory; the parent sidecar does not open the database files.
+  Windows AppContainer isolation prevents other applications from accessing
+  that private data by default. The new NSIS package is per-user and does not
+  install or start a Windows service. The previous `OpenChatStorage` service
+  implementation and installer helper are retained in source but are not
+  referenced or bundled by the current build. Tauri global MCP/provider commands use an allowlisted
+  native-host RPC bridge; private secret-map methods and native response IDs
+  are blocked from renderer requests, and private responses are consumed
+  without forwarding them to the UI. The old Tauri SQLite command
+  implementation is compiled only for tests. Window state remains in a
+  separate JSON file.
+
+  A new AppContainer profile imports the old `%LOCALAPPDATA%` database from a
+  verified SQLite snapshot and retains the source as a rollback copy. The
+  import is skipped with a clear startup error if the legacy Windows storage
+  service is registered or its protected `%ProgramData%` storage directory
+  remains, because that database may contain newer data than the old local
+  copy. That service database is not readable by the unelevated desktop
+  process, so moving an existing service-backed profile still requires a
+  separately verified export path.
+  When this conflict blocks startup, the user may explicitly confirm creating
+  an empty AppContainer profile. The broker records that legacy sources were
+  intentionally preserved, skips database, secret, local-model, and project
+  index imports, and leaves old WebView localStorage untouched on later starts.
+  This does not migrate or delete the protected profile.
+  Legacy provider secrets are transferred in bounded zeroizing IPC frames and
+  remain DPAPI-protected. The old project-index database contributes only
+  per-project enabled settings; its derived text is marked stale and rebuilt
+  through the broker on demand, and the old index file remains untouched. Both
+  chat and backend schema versions migrate after a verified pre-migration
+  backup. Startup checks integrity and the chat schema contract, repairs known
+  missing chat columns and sort indexes, repairs known backend-derived indexes
+  and triggers, and runs the backend migration ledger when needed. Migration
+  steps use SQLite transactions so interrupted upgrades resume from the last
+  committed version. Windows full-profile restore remains unavailable until a
+  verified broker-owned database replacement protocol is implemented.
 - The local service reads newline-delimited JSON-RPC frames with a 24 MiB
   per-request limit, accepts string request IDs up to 256 UTF-8 bytes, and
   accepts method names up to 128 bytes. The parser materializes at most 100,000
@@ -149,7 +183,7 @@ remain separate Rust processes with their existing storage and RPC boundaries.
   operation result open for streaming work. A timed-out operation removes its
   pending response handler and makes one best-effort `system.cancel` request; a
   timed-out cancellation request does not start another cancellation request.
-  Diagnostic health fields and native database-preparation results are
+  Diagnostic health fields and the service database-preparation response are
   validated and typed at the renderer boundary.
   Concurrent initialization and early diagnostic probes share one sidecar
   spawn, and late close events from an older process cannot clear the active
@@ -280,7 +314,12 @@ remain separate Rust processes with their existing storage and RPC boundaries.
 - The sidecar health RPC returns its database path only for the renderer's
   startup consistency check and does not return the broader storage root.
   Support diagnostics use only health status and schema version, so local
-  filesystem paths stay out of the exported bundle.
+  filesystem paths stay out of the exported bundle. Previous Windows installs
+  used a LocalService storage service and protected ProgramData database. The
+  current per-user build uses the AppContainer broker described above and does
+  not start that service. The legacy store remains protected and must be
+  exported by a trusted service process before it can be migrated without
+  elevation; SYSTEM and administrators remain trusted principals.
 - Conversation and profile archive export RPCs do not accept a destination path.
   The service stages one encrypted archive at a time in its application cache
   and returns a random, short-lived export identifier. The Tauri host validates

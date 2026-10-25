@@ -306,6 +306,7 @@ impl ChatGptService {
             tools::mcp::filter_denied_servers(&context.mcp_configs, &context.tool_permission_rules)
         };
         let mcp_registry = tools::mcp::connect_with_approval(
+            context.storage,
             mcp_configs,
             &context.tool_permission_rules,
             context.permission_mode == tools::ToolPermissionMode::FullAccess,
@@ -522,7 +523,7 @@ impl ChatGptService {
             .map_err(|_| network_error())?;
         url.query_pairs_mut()
             .append_pair("client_version", CHATGPT_CLIENT_VERSION);
-        let (_, value) = self
+        let (_, mut value) = self
             .authorized_json_request(
                 "models",
                 Method::GET,
@@ -532,6 +533,16 @@ impl ChatGptService {
                 None,
             )
             .await?;
+        if let Some(models) = value.get_mut("models").and_then(Value::as_array_mut) {
+            let (_cancellation_sender, mut cancellation) = watch::channel(false);
+            crate::usage_statistics::enrich_model_catalog_capabilities(
+                &self.storage,
+                "chatgpt",
+                models,
+                &mut cancellation,
+            )
+            .await?;
+        }
         parse_models(&value)
     }
 
@@ -948,7 +959,8 @@ impl ChatGptService {
                 false,
             )
         })?;
-        self.oauth.store_token_pair(&reference, &refreshed.tokens)?;
+        self.oauth
+            .store_token_pair(&self.storage, &reference, &refreshed.tokens)?;
         let old_reference =
             match self
                 .oauth
@@ -956,15 +968,15 @@ impl ChatGptService {
             {
                 Ok(Some(reference)) => reference,
                 Ok(None) => {
-                    let _ = self.oauth.delete_token_pair(&reference);
+                    let _ = self.oauth.delete_token_pair(&self.storage, &reference);
                     return Err(connection_unavailable());
                 }
                 Err(error) => {
-                    let _ = self.oauth.delete_token_pair(&reference);
+                    let _ = self.oauth.delete_token_pair(&self.storage, &reference);
                     return Err(error);
                 }
             };
-        let delete_result = self.oauth.delete_token_pair(&old_reference);
+        let delete_result = self.oauth.delete_token_pair(&self.storage, &old_reference);
         if let Some(identity) = refreshed.identity {
             chatgpt_store::update_profile(
                 &self.storage,

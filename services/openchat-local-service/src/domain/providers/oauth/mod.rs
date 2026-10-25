@@ -182,7 +182,7 @@ impl OAuthClient {
             })?;
         let reference = parse_reference(connection_id, &reference)?;
         self.credential_store
-            .load_token_pair(&reference)
+            .load_token_pair(storage, &reference)
             .map_err(credential_error)
     }
 
@@ -240,11 +240,12 @@ impl OAuthClient {
 
     pub fn store_token_pair(
         &self,
+        storage: &AppStorage,
         reference: &OAuthCredentialReference,
         tokens: &OAuthTokenPair,
     ) -> Result<(), ServiceError> {
         self.credential_store
-            .store_new_token_pair(reference, tokens)
+            .store_new_token_pair(storage, reference, tokens)
             .map_err(credential_error)
     }
 
@@ -267,10 +268,11 @@ impl OAuthClient {
 
     pub fn delete_token_pair(
         &self,
+        storage: &AppStorage,
         reference: &OAuthCredentialReference,
     ) -> Result<(), ServiceError> {
         self.credential_store
-            .delete_token_pair(reference)
+            .delete_token_pair(storage, reference)
             .map_err(credential_error)
     }
 
@@ -629,7 +631,7 @@ impl OAuthClient {
         } else {
             result.credential_reference.clone()
         };
-        self.store_token_pair(&credential_reference, &result.tokens)?;
+        self.store_token_pair(storage, &credential_reference, &result.tokens)?;
         let connection = NewChatGptConnection {
             id: connection_id,
             external_user_id: result.external_user_id,
@@ -643,7 +645,10 @@ impl OAuthClient {
             match chatgpt_store::reconnect_connection(storage, connection.clone()) {
                 Ok(Some(previous_reference)) => Some(previous_reference),
                 Ok(None) => {
-                    if self.delete_token_pair(&credential_reference).is_err() {
+                    if self
+                        .delete_token_pair(storage, &credential_reference)
+                        .is_err()
+                    {
                         eprintln!("oauth_new_credential_cleanup_failed");
                     }
                     return Err(ServiceError::new(
@@ -653,7 +658,10 @@ impl OAuthClient {
                     ));
                 }
                 Err(error) => {
-                    if self.delete_token_pair(&credential_reference).is_err() {
+                    if self
+                        .delete_token_pair(storage, &credential_reference)
+                        .is_err()
+                    {
                         eprintln!("oauth_new_credential_cleanup_failed");
                     }
                     return Err(database_error(error));
@@ -661,7 +669,10 @@ impl OAuthClient {
             }
         } else {
             if let Err(error) = chatgpt_store::create_connection(storage, connection) {
-                if self.delete_token_pair(&credential_reference).is_err() {
+                if self
+                    .delete_token_pair(storage, &credential_reference)
+                    .is_err()
+                {
                     eprintln!("oauth_new_credential_cleanup_failed");
                 }
                 return Err(database_error(error));
@@ -671,7 +682,7 @@ impl OAuthClient {
         let old_credential_cleanup_failed = match previous_reference {
             Some(reference) => {
                 match parse_reference(credential_reference.connection_id(), &reference) {
-                    Ok(reference) => self.delete_token_pair(&reference).is_err(),
+                    Ok(reference) => self.delete_token_pair(storage, &reference).is_err(),
                     Err(_) => true,
                 }
             }

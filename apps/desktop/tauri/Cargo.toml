@@ -16,11 +16,13 @@ openchat_local_service = { package = "openchat-local-service", path = "../../../
 tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
 tauri-plugin-shell = "2"
-rusqlite = { version = "0.40.2", features = ["bundled", "functions"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 url = "=2.5.8"
 uuid = { version = "1.28", features = ["v4"] }
+
+[dev-dependencies]
+rusqlite = { version = "0.40.2", features = ["bundled", "functions"] }
 
 [target.'cfg(windows)'.dependencies]
 tokio = { version = "1", features = ["fs", "io-util", "rt", "sync", "time"] }

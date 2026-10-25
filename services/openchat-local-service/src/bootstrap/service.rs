@@ -180,7 +180,9 @@ impl std::fmt::Display for RunError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::InvalidArguments => {
-                formatter.write_str("usage: openchat-local-service [--data-root <absolute-path>]")
+                formatter.write_str(
+                    "usage: openchat-local-service [--data-root <absolute-path>] [--start-with-empty-storage]",
+                )
             }
             Self::StorageInitialization(details) => {
                 write!(formatter, "local_storage_initialization_failed: {details}")
@@ -208,15 +210,17 @@ impl std::fmt::Display for RunError {
 
 /// Opens local storage and serves RPC requests over standard input and output.
 ///
-/// The only accepted argument is `--data-root <absolute-path>`; when omitted,
-/// the platform's normal OpenChat data root is used. Errors avoid embedding
-/// request contents or credentials.
+/// Supports an isolated data root for local execution and an explicit opt-in to preserve a
+/// protected legacy profile while starting an empty Windows AppContainer profile. Errors avoid
+/// embedding request contents or credentials.
 pub async fn run() -> Result<(), RunError> {
-    let data_root = parse_data_root(std::env::args_os().skip(1))?;
+    let arguments = parse_service_arguments(std::env::args_os().skip(1))?;
     let storage = Arc::new(
-        match data_root {
-            Some(root) => AppStorage::open_at(root),
-            None => AppStorage::open(),
+        match (arguments.data_root, arguments.start_with_empty_storage) {
+            (Some(root), false) => AppStorage::open_at(root),
+            (None, false) => AppStorage::open(),
+            (None, true) => AppStorage::open_with_empty_legacy_profile(),
+            (Some(_), true) => return Err(RunError::InvalidArguments),
         }
         .map_err(|error| RunError::StorageInitialization(error.to_string()))?,
     );
@@ -227,28 +231,77 @@ pub async fn run() -> Result<(), RunError> {
             details: error.details,
         }
     })?);
+    let (_preload_cancellation_sender, mut preload_cancellation) = tokio_watch::channel(false);
+    match timeout(
+        Duration::from_secs(3),
+        crate::openai_compatible::models(&storage, None, false, &mut preload_cancellation),
+    )
+    .await
+    {
+        Ok(Ok(_)) => {}
+        Ok(Err(error)) => eprintln!(
+            "openchat-local-service-warning: opencode_model_catalog_preload_failed code={}",
+            error.code
+        ),
+        Err(_) => {
+            eprintln!("openchat-local-service-warning: opencode_model_catalog_preload_timed_out")
+        }
+    }
     run_protocol(storage, service)
         .await
         .map_err(|error| RunError::Protocol(error.to_string()))
 }
 
+struct ServiceArguments {
+    data_root: Option<PathBuf>,
+    start_with_empty_storage: bool,
+}
+
+fn parse_service_arguments(
+    arguments: impl IntoIterator<Item = OsString>,
+) -> Result<ServiceArguments, RunError> {
+    let mut arguments = arguments.into_iter();
+    let mut data_root = None;
+    let mut start_with_empty_storage = false;
+    while let Some(argument) = arguments.next() {
+        if argument == OsStr::new("--data-root") {
+            if data_root.is_some() {
+                return Err(RunError::InvalidArguments);
+            }
+            let Some(root) = arguments.next().map(PathBuf::from) else {
+                return Err(RunError::InvalidArguments);
+            };
+            if !root.is_absolute() {
+                return Err(RunError::InvalidArguments);
+            }
+            data_root = Some(root);
+        } else if argument == OsStr::new("--start-with-empty-storage") {
+            if start_with_empty_storage {
+                return Err(RunError::InvalidArguments);
+            }
+            start_with_empty_storage = true;
+        } else {
+            return Err(RunError::InvalidArguments);
+        }
+    }
+    if data_root.is_some() && start_with_empty_storage {
+        return Err(RunError::InvalidArguments);
+    }
+    Ok(ServiceArguments {
+        data_root,
+        start_with_empty_storage,
+    })
+}
+
+#[cfg(test)]
 fn parse_data_root(
     arguments: impl IntoIterator<Item = OsString>,
 ) -> Result<Option<PathBuf>, RunError> {
-    let mut arguments = arguments.into_iter();
-    let Some(argument) = arguments.next() else {
-        return Ok(None);
-    };
-    if argument != OsStr::new("--data-root") {
+    let parsed = parse_service_arguments(arguments)?;
+    if parsed.start_with_empty_storage {
         return Err(RunError::InvalidArguments);
     }
-    let Some(root) = arguments.next().map(PathBuf::from) else {
-        return Err(RunError::InvalidArguments);
-    };
-    if !root.is_absolute() || arguments.next().is_some() {
-        return Err(RunError::InvalidArguments);
-    }
-    Ok(Some(root))
+    Ok(parsed.data_root)
 }
 async fn run_protocol(
     storage: Arc<AppStorage>,

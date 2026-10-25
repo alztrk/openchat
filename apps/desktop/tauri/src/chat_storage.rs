@@ -25,14 +25,12 @@ const MAX_CHAT_STORAGE_DIAGNOSTIC_BYTES: u64 = 512 * 1024;
 static CHAT_STORAGE_DIAGNOSTIC_LOCK: Mutex<()> = Mutex::new(());
 
 mod attachments;
-mod maintenance;
 mod markdown_export;
 mod migrations;
 mod settings;
 mod types;
 
 pub use attachments::*;
-pub use maintenance::*;
 pub use markdown_export::*;
 pub use migrations::*;
 pub use settings::*;
@@ -42,62 +40,6 @@ pub use types::*;
 /// Returns the chat database schema version supported by this application build.
 pub fn get_chat_schema_version() -> i64 {
     CHAT_SCHEMA_VERSION
-}
-
-#[tauri::command]
-/// Checks the local database, applies supported schema migrations, and returns its location.
-///
-/// # Errors
-/// Returns a storage or SQLite compatibility error when the database cannot be prepared safely.
-pub fn prepare_chat_database() -> Result<PreparedDatabase, ChatStorageError> {
-    let database_path = database_path()?;
-    let parent = database_path
-        .parent()
-        .ok_or_else(ChatStorageError::unavailable)?;
-    fs::create_dir_all(parent).map_err(|_| ChatStorageError::unavailable())?;
-    let mut connection = open_supported_connection(&database_path)?;
-
-    let integrity: String = connection
-        .query_row("PRAGMA quick_check(1)", [], |row| row.get(0))
-        .map_err(|_| ChatStorageError::unavailable())?;
-    if integrity != "ok" {
-        return Err(ChatStorageError::unavailable());
-    }
-
-    connection
-        .execute_batch(
-            "PRAGMA journal_mode = WAL;
-             PRAGMA foreign_keys = ON;
-             PRAGMA synchronous = NORMAL;
-             PRAGMA cache_size = -64000;
-             PRAGMA temp_store = MEMORY;
-             PRAGMA mmap_size = 67108864;",
-        )
-        .map_err(|_| ChatStorageError::unavailable())?;
-    let auto_vacuum: i64 = connection
-        .query_row("PRAGMA auto_vacuum", [], |row| row.get(0))
-        .unwrap_or(0);
-    if auto_vacuum == 0 {
-        let _ = connection.execute_batch("PRAGMA auto_vacuum = INCREMENTAL;");
-    }
-    migrate_chat_schema(&mut connection).map_err(|_| ChatStorageError::unavailable())?;
-
-    // Maintenance: prune expired ephemeral cache entries and check freelist
-    if let Ok(now) = unix_time_milliseconds() {
-        let _ = purge_expired_cache(&connection, now);
-    }
-    let _ = perform_incremental_vacuum_if_needed(&connection);
-
-    let integrity: String = connection
-        .query_row("PRAGMA quick_check(1)", [], |row| row.get(0))
-        .map_err(|_| ChatStorageError::unavailable())?;
-    if integrity != "ok" {
-        return Err(ChatStorageError::unavailable());
-    }
-    Ok(PreparedDatabase {
-        database_path: database_path.to_string_lossy().into_owned(),
-        schema_version: CHAT_SCHEMA_VERSION,
-    })
 }
 
 #[tauri::command]
@@ -1798,16 +1740,6 @@ pub(crate) fn unix_time_milliseconds() -> Result<i64, ChatStorageError> {
         .duration_since(UNIX_EPOCH)
         .map_err(|_| ChatStorageError::unavailable())?;
     i64::try_from(elapsed.as_millis()).map_err(|_| ChatStorageError::unavailable())
-}
-
-#[tauri::command]
-/// Runs SQLite's optimizer pragma to update query planner statistics before idle or shutdown.
-///
-/// # Errors
-/// Returns a storage error if PRAGMA optimize fails.
-pub fn optimize_database() -> Result<(), ChatStorageError> {
-    let connection = open_database()?;
-    run_optimize(&connection)
 }
 
 #[cfg(test)]

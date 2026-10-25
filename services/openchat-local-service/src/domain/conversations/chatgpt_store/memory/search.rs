@@ -5,7 +5,9 @@
 
 use std::collections::{HashMap, HashSet};
 
-use rusqlite::{Connection, params};
+use rusqlite::params;
+
+use crate::storage::StorageConnection;
 
 use super::{
     ArchivedMemoryExcerpt, HistorySearchFilters, HistorySearchResult, index, turkish_search,
@@ -59,7 +61,7 @@ pub(super) fn combine_archive_results(
         .collect()
 }
 pub(super) fn retrieve_archived_memories_from_connection(
-    connection: &Connection,
+    connection: &mut StorageConnection<'_>,
     conversation_id: &str,
     through_message_id: &str,
     search_expression: &str,
@@ -77,7 +79,7 @@ pub(super) fn retrieve_archived_memories_from_connection(
 }
 
 pub(super) fn search_archived_memories_from_connection(
-    connection: &Connection,
+    connection: &mut StorageConnection<'_>,
     conversation_id: &str,
     through_message_id: Option<&str>,
     search_expression: &str,
@@ -183,7 +185,7 @@ pub(super) fn search_archived_memories_from_connection(
 }
 
 pub(super) fn search_chat_history_from_connection(
-    connection: &Connection,
+    connection: &StorageConnection<'_>,
     search_expression: Option<&str>,
     query: &str,
     filters: &HistorySearchFilters,

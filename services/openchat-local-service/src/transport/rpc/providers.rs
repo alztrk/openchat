@@ -83,7 +83,7 @@ pub(super) async fn dispatch(
         "chatgpt.api.models.list" => {
             let _untrusted_api_key = take_optional_api_key(params, "apiKey")?;
             let connection_id = bounded_route_id(params, "connectionId")?;
-            let credentials = ProviderCredentials::load()?;
+            let credentials = ProviderCredentials::load(storage)?;
             let api_key = credentials.required_api_key("chatgpt_api", Some(connection_id))?;
             let force_refresh = params
                 .get("forceRefresh")
@@ -108,7 +108,7 @@ pub(super) async fn dispatch(
         }
         "opencode.models.list" => {
             let _untrusted_api_key = take_optional_api_key(params, "apiKey")?;
-            let credentials = ProviderCredentials::load()?;
+            let credentials = ProviderCredentials::load(storage)?;
             let api_key = credentials.api_key("opencode", None)?;
             let force_refresh = params
                 .get("forceRefresh")
@@ -130,7 +130,7 @@ pub(super) async fn dispatch(
                 .and_then(Value::as_bool)
                 .unwrap_or(false);
             if provider_id.starts_with("custom_") {
-                let credentials = ProviderCredentials::load()?;
+                let credentials = ProviderCredentials::load(storage)?;
                 let config = credentials.custom_provider_config(provider_id)?;
                 let api_key = credentials.api_key(provider_id, Some(provider_id))?;
                 openai_compatible::models_for_custom_provider(
@@ -150,7 +150,7 @@ pub(super) async fn dispatch(
                 let api_key = match copilot_token {
                     Some(token) => token,
                     None => {
-                        let credentials = ProviderCredentials::load()?;
+                        let credentials = ProviderCredentials::load(storage)?;
                         if provider_id == "kilo" {
                             credentials
                                 .api_key(provider_id, Some(provider_id))?

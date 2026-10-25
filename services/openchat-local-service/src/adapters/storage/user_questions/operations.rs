@@ -3,15 +3,53 @@
 use std::collections::{HashMap, HashSet};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
+use rusqlite::{OptionalExtension, Params, TransactionBehavior, params};
 use serde::Deserialize;
 use serde_json::Value;
 
+use super::super::connection::{StorageConnection, StorageRow, StorageRows, StorageTransaction};
 use super::types::*;
+
+pub(crate) trait StorageRead {
+    fn query<P: Params>(&self, sql: &str, params: P) -> rusqlite::Result<StorageRows>;
+
+    fn query_row<T, P, F>(&self, sql: &str, params: P, f: F) -> rusqlite::Result<T>
+    where
+        P: Params,
+        F: FnOnce(&StorageRow) -> rusqlite::Result<T>;
+}
+
+impl StorageRead for StorageConnection<'_> {
+    fn query<P: Params>(&self, sql: &str, params: P) -> rusqlite::Result<StorageRows> {
+        StorageConnection::query(self, sql, params)
+    }
+
+    fn query_row<T, P, F>(&self, sql: &str, params: P, f: F) -> rusqlite::Result<T>
+    where
+        P: Params,
+        F: FnOnce(&StorageRow) -> rusqlite::Result<T>,
+    {
+        StorageConnection::query_row(self, sql, params, f)
+    }
+}
+
+impl StorageRead for StorageTransaction<'_> {
+    fn query<P: Params>(&self, sql: &str, params: P) -> rusqlite::Result<StorageRows> {
+        StorageTransaction::query(self, sql, params)
+    }
+
+    fn query_row<T, P, F>(&self, sql: &str, params: P, f: F) -> rusqlite::Result<T>
+    where
+        P: Params,
+        F: FnOnce(&StorageRow) -> rusqlite::Result<T>,
+    {
+        StorageTransaction::query_row(self, sql, params, f)
+    }
+}
 
 #[cfg(test)]
 pub(crate) fn create_run(
-    connection: &Connection,
+    connection: &StorageConnection,
     new_run: &NewAgentRun,
 ) -> Result<AgentRun, UserQuestionError> {
     validate_identifier(&new_run.run_id, "run id")?;
@@ -39,7 +77,7 @@ pub(crate) fn create_run(
 /// # Errors
 /// Returns validation, clock, or database errors without exposing a partial run.
 pub(crate) fn create_run_with_checkpoint(
-    connection: &Connection,
+    connection: &mut StorageConnection,
     new_run: &NewAgentRun,
     checkpoint: &Value,
 ) -> Result<AgentRun, UserQuestionError> {
@@ -47,7 +85,7 @@ pub(crate) fn create_run_with_checkpoint(
     validate_identifier(&new_run.conversation_id, "conversation id")?;
     let checkpoint_json = validate_checkpoint(checkpoint)?;
     let now = unix_time_millis()?;
-    let transaction = Transaction::new_unchecked(connection, TransactionBehavior::Immediate)?;
+    let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
     let result = transaction.execute(
         "INSERT INTO agent_runs (
             id, conversation_id, status, checkpoint_json, checkpoint_revision,
@@ -75,7 +113,7 @@ pub(crate) fn create_run_with_checkpoint(
 }
 
 pub(crate) fn load_run_for_conversation(
-    connection: &Connection,
+    connection: &StorageConnection,
     conversation_id: &str,
     run_id: &str,
 ) -> Result<AgentRun, UserQuestionError> {
@@ -87,7 +125,7 @@ pub(crate) fn load_run_for_conversation(
 }
 
 pub(crate) fn list_subagent_runs_for_conversation(
-    connection: &Connection,
+    connection: &StorageConnection,
     conversation_id: &str,
     requested_limit: usize,
 ) -> Result<Vec<AgentRun>, UserQuestionError> {
@@ -121,7 +159,7 @@ pub(crate) fn list_subagent_runs_for_conversation(
 }
 
 pub(crate) fn list_run_summaries(
-    connection: &Connection,
+    connection: &StorageConnection,
     requested_limit: usize,
 ) -> Result<Vec<AgentRunSummary>, UserQuestionError> {
     if !(1..=50).contains(&requested_limit) {
@@ -215,21 +253,23 @@ pub(crate) fn list_run_summaries(
         .collect()
 }
 
-pub(crate) fn latest_active_goal_run(
-    connection: &Connection,
+pub(crate) fn latest_active_goal_run<Q: StorageRead + ?Sized>(
+    connection: &Q,
     conversation_id: &str,
 ) -> Result<Option<AgentRun>, UserQuestionError> {
     validate_identifier(conversation_id, "conversation id")?;
-    let mut statement = connection.prepare(
+    let mut rows = connection.query(
         "SELECT id
          FROM agent_runs
          WHERE conversation_id = ?1
            AND status IN ('running', 'paused', 'interrupted')
          ORDER BY updated_at_unix_ms DESC, id DESC",
+        [conversation_id],
     )?;
-    let run_ids = statement
-        .query_map([conversation_id], |row| row.get::<_, String>(0))?
-        .collect::<Result<Vec<_>, _>>()?;
+    let mut run_ids = Vec::new();
+    while let Some(row) = rows.next()? {
+        run_ids.push(row.get::<_, String>(0)?);
+    }
     for run_id in run_ids {
         let run = load_run(connection, &run_id)?;
         if run
@@ -250,7 +290,7 @@ pub(crate) enum GoalActivation {
 }
 
 pub(crate) fn activate_goal_run(
-    connection: &Connection,
+    connection: &mut StorageConnection,
     conversation_id: &str,
     run_id: &str,
     expected_revision: i64,
@@ -266,7 +306,7 @@ pub(crate) fn activate_goal_run(
     }
     let checkpoint_json = validate_checkpoint(checkpoint)?;
     let now = unix_time_millis()?;
-    let transaction = Transaction::new_unchecked(connection, TransactionBehavior::Immediate)?;
+    let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
     let run = load_run(&transaction, run_id)?;
     ensure_run_conversation(&run, conversation_id)?;
     if run.checkpoint_revision != expected_revision {
@@ -323,7 +363,7 @@ pub(crate) enum GoalRunTransition {
 }
 
 pub(crate) fn update_goal_run(
-    connection: &Connection,
+    connection: &mut StorageConnection,
     conversation_id: &str,
     run_id: &str,
     expected_revision: i64,
@@ -335,7 +375,7 @@ pub(crate) fn update_goal_run(
     validate_non_negative(expected_revision, "checkpoint revision")?;
     let checkpoint_json = validate_checkpoint(checkpoint)?;
     let now = unix_time_millis()?;
-    let transaction = Transaction::new_unchecked(connection, TransactionBehavior::Immediate)?;
+    let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
     let run = load_run(&transaction, run_id)?;
     ensure_run_conversation(&run, conversation_id)?;
     if run.checkpoint_revision != expected_revision {
@@ -421,7 +461,7 @@ pub(crate) fn update_goal_run(
 }
 
 pub(crate) fn next_question_sequence(
-    connection: &Connection,
+    connection: &StorageConnection,
     conversation_id: &str,
     run_id: &str,
 ) -> Result<i64, UserQuestionError> {
@@ -441,7 +481,7 @@ pub(crate) fn next_question_sequence(
 }
 
 pub(crate) fn save_checkpoint(
-    connection: &Connection,
+    connection: &mut StorageConnection,
     conversation_id: &str,
     run_id: &str,
     expected_revision: i64,
@@ -452,7 +492,7 @@ pub(crate) fn save_checkpoint(
     validate_non_negative(expected_revision, "checkpoint revision")?;
     let checkpoint_json = validate_checkpoint(checkpoint)?;
     let now = unix_time_millis()?;
-    let transaction = Transaction::new_unchecked(connection, TransactionBehavior::Immediate)?;
+    let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
     let run = load_run(&transaction, run_id)?;
     ensure_run_conversation(&run, conversation_id)?;
     if run.checkpoint_revision != expected_revision {
@@ -489,7 +529,7 @@ pub(crate) fn save_checkpoint(
 }
 
 pub(crate) fn pause_with_questions(
-    connection: &Connection,
+    connection: &mut StorageConnection,
     conversation_id: &str,
     run_id: &str,
     expected_revision: i64,
@@ -508,7 +548,7 @@ pub(crate) fn pause_with_questions(
 
     let checkpoint_json = validate_checkpoint(checkpoint)?;
     let now = unix_time_millis()?;
-    let transaction = Transaction::new_unchecked(connection, TransactionBehavior::Immediate)?;
+    let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
     let run = load_run(&transaction, run_id)?;
     ensure_run_conversation(&run, conversation_id)?;
     if run.status != AgentRunStatus::Running {
@@ -550,13 +590,13 @@ pub(crate) fn pause_with_questions(
 
 #[cfg(test)]
 pub(crate) fn list_pending_groups(
-    connection: &Connection,
+    connection: &mut StorageConnection,
     conversation_id: Option<&str>,
 ) -> Result<Vec<PendingQuestionGroup>, UserQuestionError> {
     if let Some(conversation_id) = conversation_id {
         validate_identifier(conversation_id, "conversation id")?;
     }
-    let transaction = Transaction::new_unchecked(connection, TransactionBehavior::Deferred)?;
+    let transaction = connection.transaction_with_behavior(TransactionBehavior::Deferred)?;
     let mut group_ids = Vec::new();
     if let Some(conversation_id) = conversation_id {
         let mut statement = transaction.prepare(
@@ -592,11 +632,11 @@ pub(crate) fn list_pending_groups(
 }
 
 pub(crate) fn list_recoverable_question_groups(
-    connection: &Connection,
+    connection: &mut StorageConnection,
     conversation_id: &str,
 ) -> Result<Vec<PendingQuestionGroup>, UserQuestionError> {
     validate_identifier(conversation_id, "conversation id")?;
-    let transaction = Transaction::new_unchecked(connection, TransactionBehavior::Deferred)?;
+    let transaction = connection.transaction_with_behavior(TransactionBehavior::Deferred)?;
     let mut group_ids = Vec::new();
     let mut statement = transaction.prepare(
         "SELECT groups.id
@@ -633,7 +673,7 @@ pub(crate) fn list_recoverable_question_groups(
 }
 
 pub(crate) fn submit_answers(
-    connection: &Connection,
+    connection: &mut StorageConnection,
     conversation_id: &str,
     group_id: &str,
     expected_revision: i64,
@@ -642,7 +682,7 @@ pub(crate) fn submit_answers(
     validate_identifier(conversation_id, "conversation id")?;
     validate_identifier(group_id, "question group id")?;
     validate_non_negative(expected_revision, "question group revision")?;
-    let transaction = Transaction::new_unchecked(connection, TransactionBehavior::Immediate)?;
+    let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
     let group = load_question_group(&transaction, group_id)?;
     ensure_group_conversation(&group, conversation_id)?;
     let canonical_answers = validate_answers(&group.questions, answers)?;
@@ -705,13 +745,13 @@ pub(crate) fn submit_answers(
 }
 
 pub(crate) fn mark_run_resumed(
-    connection: &Connection,
+    connection: &mut StorageConnection,
     conversation_id: &str,
     run_id: &str,
 ) -> Result<AgentRun, UserQuestionError> {
     validate_identifier(conversation_id, "conversation id")?;
     validate_identifier(run_id, "run id")?;
-    let transaction = Transaction::new_unchecked(connection, TransactionBehavior::Immediate)?;
+    let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
     let run = load_run(&transaction, run_id)?;
     ensure_run_conversation(&run, conversation_id)?;
     match run.status {
@@ -747,13 +787,13 @@ pub(crate) fn mark_run_resumed(
 }
 
 pub(crate) fn claim_run_resume(
-    connection: &Connection,
+    connection: &mut StorageConnection,
     conversation_id: &str,
     run_id: &str,
 ) -> Result<AgentRun, UserQuestionError> {
     validate_identifier(conversation_id, "conversation id")?;
     validate_identifier(run_id, "run id")?;
-    let transaction = Transaction::new_unchecked(connection, TransactionBehavior::Immediate)?;
+    let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
     let run = load_run(&transaction, run_id)?;
     ensure_run_conversation(&run, conversation_id)?;
     if !matches!(
@@ -791,13 +831,13 @@ pub(crate) fn claim_run_resume(
 }
 
 pub(crate) fn mark_run_completed(
-    connection: &Connection,
+    connection: &mut StorageConnection,
     conversation_id: &str,
     run_id: &str,
 ) -> Result<AgentRun, UserQuestionError> {
     validate_identifier(conversation_id, "conversation id")?;
     validate_identifier(run_id, "run id")?;
-    let transaction = Transaction::new_unchecked(connection, TransactionBehavior::Immediate)?;
+    let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
     let run = load_run(&transaction, run_id)?;
     ensure_run_conversation(&run, conversation_id)?;
     match run.status {
@@ -834,13 +874,13 @@ pub(crate) fn mark_run_completed(
 }
 
 pub(crate) fn mark_run_paused(
-    connection: &Connection,
+    connection: &mut StorageConnection,
     conversation_id: &str,
     run_id: &str,
 ) -> Result<AgentRun, UserQuestionError> {
     validate_identifier(conversation_id, "conversation id")?;
     validate_identifier(run_id, "run id")?;
-    let transaction = Transaction::new_unchecked(connection, TransactionBehavior::Immediate)?;
+    let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
     let run = load_run(&transaction, run_id)?;
     ensure_run_conversation(&run, conversation_id)?;
     match run.status {
@@ -863,13 +903,13 @@ pub(crate) fn mark_run_paused(
 }
 
 pub(crate) fn mark_run_cancelled(
-    connection: &Connection,
+    connection: &mut StorageConnection,
     conversation_id: &str,
     run_id: &str,
 ) -> Result<AgentRun, UserQuestionError> {
     validate_identifier(conversation_id, "conversation id")?;
     validate_identifier(run_id, "run id")?;
-    let transaction = Transaction::new_unchecked(connection, TransactionBehavior::Immediate)?;
+    let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
     let run = load_run(&transaction, run_id)?;
     ensure_run_conversation(&run, conversation_id)?;
     match run.status {
@@ -936,13 +976,13 @@ pub(crate) fn mark_run_cancelled(
 }
 
 pub(crate) fn mark_run_interrupted(
-    connection: &Connection,
+    connection: &mut StorageConnection,
     conversation_id: &str,
     run_id: &str,
 ) -> Result<AgentRun, UserQuestionError> {
     validate_identifier(conversation_id, "conversation id")?;
     validate_identifier(run_id, "run id")?;
-    let transaction = Transaction::new_unchecked(connection, TransactionBehavior::Immediate)?;
+    let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
     let run = load_run(&transaction, run_id)?;
     ensure_run_conversation(&run, conversation_id)?;
     match run.status {
@@ -965,13 +1005,13 @@ pub(crate) fn mark_run_interrupted(
 }
 
 pub(crate) fn mark_run_failed(
-    connection: &Connection,
+    connection: &mut StorageConnection,
     conversation_id: &str,
     run_id: &str,
 ) -> Result<AgentRun, UserQuestionError> {
     validate_identifier(conversation_id, "conversation id")?;
     validate_identifier(run_id, "run id")?;
-    let transaction = Transaction::new_unchecked(connection, TransactionBehavior::Immediate)?;
+    let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
     let run = load_run(&transaction, run_id)?;
     ensure_run_conversation(&run, conversation_id)?;
     match run.status {
@@ -1002,13 +1042,13 @@ pub(crate) fn mark_run_failed(
 
 /// Marks all running runs as interrupted during service startup recovery.
 pub(crate) fn interrupt_running_runs_after_restart(
-    connection: &Connection,
+    connection: &mut StorageConnection,
     conversation_id: Option<&str>,
 ) -> Result<Vec<AgentRun>, UserQuestionError> {
     if let Some(conversation_id) = conversation_id {
         validate_identifier(conversation_id, "conversation id")?;
     }
-    let transaction = Transaction::new_unchecked(connection, TransactionBehavior::Immediate)?;
+    let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
     let mut run_ids = Vec::new();
     if let Some(conversation_id) = conversation_id {
         let mut statement = transaction.prepare(
@@ -1053,13 +1093,13 @@ pub(crate) fn interrupt_running_runs_after_restart(
 
 #[cfg(test)]
 pub(crate) fn list_recoverable_runs(
-    connection: &Connection,
+    connection: &mut StorageConnection,
     conversation_id: Option<&str>,
 ) -> Result<Vec<AgentRun>, UserQuestionError> {
     if let Some(conversation_id) = conversation_id {
         validate_identifier(conversation_id, "conversation id")?;
     }
-    let transaction = Transaction::new_unchecked(connection, TransactionBehavior::Deferred)?;
+    let transaction = connection.transaction_with_behavior(TransactionBehavior::Deferred)?;
     let mut run_ids = Vec::new();
     if let Some(conversation_id) = conversation_id {
         let mut statement = transaction.prepare(
@@ -1093,7 +1133,7 @@ pub(crate) fn list_recoverable_runs(
 }
 
 fn insert_question_group(
-    transaction: &Transaction<'_>,
+    transaction: &StorageTransaction<'_>,
     group: &NewQuestionGroup,
     now: i64,
 ) -> Result<(), UserQuestionError> {
@@ -1134,8 +1174,8 @@ fn insert_question_group(
     Ok(())
 }
 
-pub(crate) fn load_run(
-    connection: &Connection,
+pub(crate) fn load_run<Q: StorageRead + ?Sized>(
+    connection: &Q,
     run_id: &str,
 ) -> Result<AgentRun, UserQuestionError> {
     let row = connection
@@ -1176,8 +1216,8 @@ pub(crate) fn load_run(
     })
 }
 
-fn load_question_group(
-    connection: &Connection,
+fn load_question_group<Q: StorageRead + ?Sized>(
+    connection: &Q,
     group_id: &str,
 ) -> Result<PendingQuestionGroup, UserQuestionError> {
     let row = connection
@@ -1229,18 +1269,17 @@ fn load_question_group(
         })?;
     }
 
-    let mut statement = connection.prepare(
+    let mut item_rows = connection.query(
         "SELECT item_id, question_json
          FROM pending_question_items
          WHERE group_id = ?1
          ORDER BY position",
+        [&group_id],
     )?;
-    let item_rows = statement.query_map([&group_id], |row| {
-        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
-    })?;
     let mut questions = Vec::new();
-    for item_row in item_rows {
-        let (item_id, json) = item_row?;
+    while let Some(item_row) = item_rows.next()? {
+        let item_id = item_row.get::<_, String>(0)?;
+        let json = item_row.get::<_, String>(1)?;
         let question = parse_stored_json::<QuestionItem>(&json, "question item")?;
         validate_question_item(&question).map_err(|_| {
             UserQuestionError::CorruptStoredData(

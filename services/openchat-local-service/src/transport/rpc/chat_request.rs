@@ -13,6 +13,7 @@ use crate::{
     goals, instructions,
     protocol::ServiceError,
     provider_credentials::{self, ProviderCredentials},
+    storage::AppStorage,
     tools,
 };
 
@@ -57,9 +58,10 @@ pub(super) struct ChatSendParameters<'a> {
 /// # Errors
 /// Returns a stable RPC error when any renderer-supplied option is malformed,
 /// exceeds its limit, or violates a chat-mode constraint.
-pub(super) fn parse_send_request(
-    params: &mut Value,
-) -> Result<ChatSendParameters<'_>, ServiceError> {
+pub(super) fn parse_send_request<'a>(
+    storage: &AppStorage,
+    params: &'a mut Value,
+) -> Result<ChatSendParameters<'a>, ServiceError> {
     let _ = super::take_optional_api_key(params, "apiKey")?;
     let title_generation_request = parse_title_generation(params)?;
     let conversation_id = required_string(params, "conversationId")?;
@@ -110,7 +112,7 @@ pub(super) fn parse_send_request(
     if goal_requested && (resume_run_id.is_some() || excluded_assistant_message_id.is_some()) {
         return Err(invalid_chat_goal_request("goal start parameters"));
     }
-    let title_generation = resolve_title_generation_credentials(title_generation_request);
+    let title_generation = resolve_title_generation_credentials(storage, title_generation_request);
 
     Ok(ChatSendParameters {
         conversation_id,
@@ -301,14 +303,17 @@ pub(super) fn parse_title_generation(
 /// Resolves optional title-generation credentials after request validation.
 ///
 /// Missing saved credentials disable optional title generation, as before.
-fn resolve_title_generation_credentials(request: TitleGenerationRequest) -> TitleGenerationRequest {
+fn resolve_title_generation_credentials(
+    storage: &AppStorage,
+    request: TitleGenerationRequest,
+) -> TitleGenerationRequest {
     let TitleGenerationRequest::Model(mut model) = request else {
         return request;
     };
     if !provider_credentials::uses_saved_api_key(&model.provider_id) {
         return TitleGenerationRequest::Model(model);
     }
-    let Ok(credentials) = ProviderCredentials::load() else {
+    let Ok(credentials) = ProviderCredentials::load(storage) else {
         return TitleGenerationRequest::Disabled;
     };
     let connection_id = (model.provider_id != "opencode")

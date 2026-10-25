@@ -56,13 +56,13 @@ pub async fn set_conversation_archive_included(
     conversation_id: &str,
     included: bool,
 ) -> rusqlite::Result<ArchiveIndexSettings> {
-    let mut connection = storage.connect()?;
-    let (settings, changed) =
-        preferences::set_conversation_included(&mut connection, conversation_id, included)?;
-    drop(connection);
+    let (settings, changed) = {
+        let mut connection = storage.connect()?;
+        preferences::set_conversation_included(&mut connection, conversation_id, included)?
+    };
     if changed {
         semantic::invalidate_cached_index(
-            storage.database_path().to_owned(),
+            storage.database_queue_handle(),
             storage.semantic_memory_cache_directory(),
         )
         .await
@@ -77,13 +77,13 @@ pub async fn set_archive_tool_included(
     tool_name: &str,
     included: bool,
 ) -> rusqlite::Result<ArchiveIndexSettings> {
-    let mut connection = storage.connect()?;
-    let (settings, changed) =
-        preferences::set_tool_included(&mut connection, conversation_id, tool_name, included)?;
-    drop(connection);
+    let (settings, changed) = {
+        let mut connection = storage.connect()?;
+        preferences::set_tool_included(&mut connection, conversation_id, tool_name, included)?
+    };
     if changed {
         semantic::invalidate_cached_index(
-            storage.database_path().to_owned(),
+            storage.database_queue_handle(),
             storage.semantic_memory_cache_directory(),
         )
         .await
@@ -105,7 +105,7 @@ pub async fn retrieve_archived_memories(
     let Some((result_limit, snippet_words)) = search::retrieval_limits(context_window) else {
         return Ok(Vec::new());
     };
-    let database_path = storage.database_path().to_owned();
+    let database = storage.database_queue_handle();
     let conversation_for_search = conversation_id.to_owned();
     let boundary_for_search = through_message_id.to_owned();
     let query_for_search = query.to_owned();
@@ -115,10 +115,9 @@ pub async fn retrieve_archived_memories(
         let Some(search_expression) = search_expression else {
             return Ok(Vec::new());
         };
-        let connection = rusqlite::Connection::open(database_path)?;
-        crate::storage::disable_trusted_schema(&connection)?;
+        let mut connection = database.connect()?;
         search::retrieve_archived_memories_from_connection(
-            &connection,
+            &mut connection,
             &conversation_for_search,
             &boundary_for_search,
             &search_expression,
@@ -159,7 +158,7 @@ pub async fn search_conversation_archive(
     }
     let cache_directory = storage.semantic_memory_cache_directory();
     let semantic_ready = semantic::is_ready(&cache_directory).await;
-    let database_path = storage.database_path().to_owned();
+    let database = storage.database_queue_handle();
     let conversation_for_search = conversation_id.to_owned();
     let query_for_search = query.to_owned();
     let lexical_results = tokio::task::spawn_blocking(move || {
@@ -168,10 +167,9 @@ pub async fn search_conversation_archive(
         else {
             return Ok(Vec::new());
         };
-        let connection = rusqlite::Connection::open(database_path)?;
-        crate::storage::disable_trusted_schema(&connection)?;
+        let mut connection = database.connect()?;
         search::search_archived_memories_from_connection(
-            &connection,
+            &mut connection,
             &conversation_for_search,
             None,
             &search_expression,
@@ -185,7 +183,7 @@ pub async fn search_conversation_archive(
         return Ok(lexical_results);
     }
     let semantic_results = semantic::search_archive(
-        storage.database_path().to_owned(),
+        storage.database_queue_handle(),
         cache_directory,
         conversation_id.to_owned(),
         None,
@@ -213,11 +211,10 @@ pub async fn search_chat_history(
     if search_expression.is_none() && filters.result_type != "conversations" {
         return Ok(Vec::new());
     }
-    let database_path = storage.database_path().to_owned();
+    let database = storage.database_queue_handle();
     let query = query.to_owned();
     tokio::task::spawn_blocking(move || {
-        let connection = rusqlite::Connection::open(database_path)?;
-        crate::storage::disable_trusted_schema(&connection)?;
+        let connection = database.connect()?;
         search::search_chat_history_from_connection(
             &connection,
             search_expression.as_deref(),
@@ -270,7 +267,7 @@ pub async fn prepare_semantic_search(
     progress: tokio::sync::mpsc::UnboundedSender<serde_json::Value>,
 ) -> rusqlite::Result<()> {
     semantic::prepare(
-        storage.database_path().to_owned(),
+        storage.database_queue_handle(),
         storage.semantic_memory_cache_directory(),
         cancellation,
         progress,
@@ -291,7 +288,7 @@ async fn semantic_results_for_compaction(
         return Ok(None);
     }
     semantic::search_archive(
-        storage.database_path().to_owned(),
+        storage.database_queue_handle(),
         cache_directory,
         conversation_id.to_owned(),
         Some(through_message_id.to_owned()),

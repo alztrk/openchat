@@ -46,10 +46,13 @@
       "nsis": {
         "headerImage": "../assets/brand/installer/header.bmp",
         "sidebarImage": "../assets/brand/installer/sidebar.bmp",
-        "installerIcon": "icons/icon.ico"
+        "installerIcon": "icons/icon.ico",
+        "installMode": "currentUser"
       }
     },
     "icon": ["icons/icon.ico"],
-    "externalBin": ["binaries/openchat-local-service"]
+    "externalBin": [
+      "binaries/openchat-local-service"
+    ]
   }
 }

@@ -324,11 +324,7 @@ async fn summarize_transcript_with_storage(
             && status == reqwest::StatusCode::FORBIDDEN
             && opencode_free_tier_restricted(response).await
         {
-            return Err(ServiceError::new(
-                "opencode_free_tier_restricted",
-                "OpenCode free models can only be used within OpenCode.",
-                false,
-            ));
+            return Err(super::opencode_free_tier_restricted_error());
         }
         return Err(http_error(status, route.provider_id.as_deref()));
     }

@@ -321,12 +321,12 @@ pub(crate) fn start_child_analysis(
     task.task = task_text.to_owned();
     let child_run_id = Uuid::new_v4().simple().to_string();
     let checkpoint = child_run_checkpoint(&task, &route, &child_run_id);
-    let connection = task
+    let mut connection = task
         .storage
         .connect()
         .map_err(|_| subagent_storage_error())?;
     user_questions::create_run_with_checkpoint(
-        &connection,
+        &mut connection,
         &user_questions::NewAgentRun {
             run_id: child_run_id.clone(),
             conversation_id: task.snapshot.conversation_id.clone(),
@@ -389,15 +389,23 @@ pub(crate) fn start_child_analysis(
             user_questions: &task.user_questions,
         };
         let result = run_child_analysis(context, route, worker_run_id.clone()).await;
-        if result.get("error").is_some()
-            && let Ok(connection) = task.storage.connect()
-            && let Ok(run) = user_questions::load_run_for_conversation(
-                &connection,
-                &task.snapshot.conversation_id,
-                &worker_run_id,
-            )
-            && run.status == user_questions::AgentRunStatus::Running
-        {
+        let should_finalize_failed_run = if result.get("error").is_some() {
+            task.storage
+                .connect()
+                .ok()
+                .and_then(|connection| {
+                    user_questions::load_run_for_conversation(
+                        &connection,
+                        &task.snapshot.conversation_id,
+                        &worker_run_id,
+                    )
+                    .ok()
+                })
+                .is_some_and(|run| run.status == user_questions::AgentRunStatus::Running)
+        } else {
+            false
+        };
+        if should_finalize_failed_run {
             let code = result
                 .pointer("/error/code")
                 .and_then(Value::as_str)
@@ -652,7 +660,7 @@ pub(crate) async fn resolve_child_run_route(
                 .api_key_connection_id
                 .as_deref()
                 .ok_or_else(invalid_child_route)?;
-            let credentials = ProviderCredentials::load()?;
+            let credentials = ProviderCredentials::load(storage)?;
             let api_key = credentials
                 .api_key("chatgpt_api", Some(key_id))?
                 .ok_or_else(provider_credentials::missing_credentials)?;
@@ -719,7 +727,7 @@ pub(crate) async fn resolve_child_run_route(
             )
         }
         "opencode" => {
-            let credentials = ProviderCredentials::load()?;
+            let credentials = ProviderCredentials::load(storage)?;
             let api_key = credentials.api_key("opencode", None)?;
             let suffix = protocol_suffix(protocol)?;
             compatible_child_route(
@@ -738,7 +746,7 @@ pub(crate) async fn resolve_child_run_route(
             if key_id != provider_id {
                 return Err(invalid_child_route());
             }
-            let credentials = ProviderCredentials::load()?;
+            let credentials = ProviderCredentials::load(storage)?;
             let provider = credentials.custom_provider_config(provider_id)?;
             let expected_protocol = if provider.is_anthropic() {
                 ChildRequestProtocol::Messages
@@ -782,7 +790,7 @@ pub(crate) async fn resolve_child_run_route(
             if protocol != expected_protocol {
                 return Err(invalid_child_route());
             }
-            let credentials = ProviderCredentials::load()?;
+            let credentials = ProviderCredentials::load(storage)?;
             let api_key = credentials.api_key(provider_id, key_id)?;
             if !is_kilo_free
                 && provider_credentials::requires_saved_api_key(provider_id)
@@ -883,38 +891,29 @@ pub(crate) async fn run_child_analysis(
         return tool_error("operation_cancelled", "The delegated task was stopped.");
     }
 
-    let connection = match storage.connect() {
-        Ok(connection) => connection,
-        Err(_) => {
+    let checkpoint = (|| {
+        let connection = storage.connect().map_err(|_| ())?;
+        let run = user_questions::load_run_for_conversation(
+            &connection,
+            &snapshot.conversation_id,
+            &child_run_id,
+        )
+        .map_err(|_| ())?;
+        run.checkpoint
+            .filter(|checkpoint| {
+                checkpoint.get("runKind").and_then(Value::as_str) == Some("subagent")
+            })
+            .ok_or(())
+    })();
+    let checkpoint = match checkpoint {
+        Ok(checkpoint) => checkpoint,
+        Err(()) => {
             return tool_error(
                 "subagent_storage_unavailable",
-                "The child run could not be saved locally.",
+                "The child run checkpoint is unavailable.",
             );
         }
     };
-    let run = match user_questions::load_run_for_conversation(
-        &connection,
-        &snapshot.conversation_id,
-        &child_run_id,
-    ) {
-        Ok(run) => run,
-        Err(_) => {
-            return tool_error(
-                "subagent_storage_unavailable",
-                "The child run could not be loaded locally.",
-            );
-        }
-    };
-    let Some(checkpoint) = run
-        .checkpoint
-        .filter(|checkpoint| checkpoint.get("runKind").and_then(Value::as_str) == Some("subagent"))
-    else {
-        return tool_error(
-            "subagent_storage_unavailable",
-            "The child run checkpoint is unavailable.",
-        );
-    };
-    drop(connection);
 
     if send_subagent_progress(
         events,
@@ -1048,34 +1047,38 @@ pub(crate) async fn run_child_analysis(
 
     match result {
         Ok((summary, usage)) => {
-            let saved = storage.connect().map_err(|_| ()).and_then(|connection| {
-                let run = user_questions::load_run_for_conversation(
-                    &connection,
-                    &snapshot.conversation_id,
-                    &child_run_id,
-                )
-                .map_err(|_| ())?;
-                let mut saved_checkpoint = run.checkpoint.unwrap_or_else(|| checkpoint.clone());
-                saved_checkpoint["summary"] = json!(summary);
-                saved_checkpoint["usage"] = usage_value(&usage);
-                if saved_checkpoint
-                    .get("text")
-                    .and_then(Value::as_str)
-                    .is_none_or(str::is_empty)
-                {
-                    saved_checkpoint["text"] = json!(summary);
-                    saved_checkpoint["messages"] = json!([{"role":"assistant","content":summary}]);
-                }
-                user_questions::save_checkpoint(
-                    &connection,
-                    &snapshot.conversation_id,
-                    &child_run_id,
-                    run.checkpoint_revision,
-                    &saved_checkpoint,
-                )
-                .map(|_| ())
+            let saved = storage
+                .connect()
                 .map_err(|_| ())
-            });
+                .and_then(|mut connection| {
+                    let run = user_questions::load_run_for_conversation(
+                        &connection,
+                        &snapshot.conversation_id,
+                        &child_run_id,
+                    )
+                    .map_err(|_| ())?;
+                    let mut saved_checkpoint = run.checkpoint.unwrap_or_else(|| checkpoint.clone());
+                    saved_checkpoint["summary"] = json!(summary);
+                    saved_checkpoint["usage"] = usage_value(&usage);
+                    if saved_checkpoint
+                        .get("text")
+                        .and_then(Value::as_str)
+                        .is_none_or(str::is_empty)
+                    {
+                        saved_checkpoint["text"] = json!(summary);
+                        saved_checkpoint["messages"] =
+                            json!([{"role":"assistant","content":summary}]);
+                    }
+                    user_questions::save_checkpoint(
+                        &mut connection,
+                        &snapshot.conversation_id,
+                        &child_run_id,
+                        run.checkpoint_revision,
+                        &saved_checkpoint,
+                    )
+                    .map(|_| ())
+                    .map_err(|_| ())
+                });
             if saved.is_err() {
                 if finish_child_run(
                     user_questions,
@@ -2261,7 +2264,7 @@ async fn send_subagent_progress(
 ) -> Result<(), ServiceError> {
     let mut agent_name = None;
     if status == "running" {
-        let connection = storage.connect().map_err(|_| {
+        let mut connection = storage.connect().map_err(|_| {
             ServiceError::new(
                 "subagent_storage_unavailable",
                 "The child run progress could not be saved locally.",
@@ -2293,7 +2296,7 @@ async fn send_subagent_progress(
             json!({"phase": phase, "toolName": tool_name}),
         );
         user_questions::save_checkpoint(
-            &connection,
+            &mut connection,
             conversation_id,
             run_id,
             run.checkpoint_revision,
@@ -2338,32 +2341,34 @@ async fn send_subagent_delta(
     delta: &str,
     text: &str,
 ) -> Result<(), ServiceError> {
-    let connection = storage.connect().map_err(|_| subagent_storage_error())?;
-    let run = user_questions::load_run_for_conversation(&connection, conversation_id, run_id)
-        .map_err(|_| subagent_storage_error())?;
-    let mut checkpoint = run.checkpoint.unwrap_or_else(|| json!({}));
-    let agent_name = checkpoint
-        .get("agentName")
-        .and_then(Value::as_str)
-        .map(str::to_owned);
-    let persisted_text_bytes = checkpoint
-        .get("text")
-        .and_then(Value::as_str)
-        .map_or(0, str::len);
-    if text.len().saturating_sub(persisted_text_bytes) >= 1024 {
-        checkpoint["text"] = json!(text);
-        checkpoint["messages"] = json!([{"role":"assistant","content":text}]);
-        let checkpoint_revision = run.checkpoint_revision;
-        user_questions::save_checkpoint(
-            &connection,
-            conversation_id,
-            run_id,
-            checkpoint_revision,
-            &checkpoint,
-        )
-        .map_err(|_| subagent_storage_error())?;
-    }
-    drop(connection);
+    let agent_name = {
+        let mut connection = storage.connect().map_err(|_| subagent_storage_error())?;
+        let run = user_questions::load_run_for_conversation(&connection, conversation_id, run_id)
+            .map_err(|_| subagent_storage_error())?;
+        let mut checkpoint = run.checkpoint.unwrap_or_else(|| json!({}));
+        let agent_name = checkpoint
+            .get("agentName")
+            .and_then(Value::as_str)
+            .map(str::to_owned);
+        let persisted_text_bytes = checkpoint
+            .get("text")
+            .and_then(Value::as_str)
+            .map_or(0, str::len);
+        if text.len().saturating_sub(persisted_text_bytes) >= 1024 {
+            checkpoint["text"] = json!(text);
+            checkpoint["messages"] = json!([{"role":"assistant","content":text}]);
+            let checkpoint_revision = run.checkpoint_revision;
+            user_questions::save_checkpoint(
+                &mut connection,
+                conversation_id,
+                run_id,
+                checkpoint_revision,
+                &checkpoint,
+            )
+            .map_err(|_| subagent_storage_error())?;
+        }
+        agent_name
+    };
     events
         .send(&Response::event(
             json!(0),
@@ -2412,7 +2417,7 @@ fn persist_child_text(
     run_id: &str,
     text: &str,
 ) -> Result<(), ServiceError> {
-    let connection = storage.connect().map_err(|_| subagent_storage_error())?;
+    let mut connection = storage.connect().map_err(|_| subagent_storage_error())?;
     let run = user_questions::load_run_for_conversation(&connection, conversation_id, run_id)
         .map_err(|_| subagent_storage_error())?;
     let mut checkpoint = run.checkpoint.unwrap_or_else(|| json!({}));
@@ -2422,7 +2427,7 @@ fn persist_child_text(
     checkpoint["text"] = json!(text);
     checkpoint["messages"] = json!([{"role":"assistant","content":text}]);
     user_questions::save_checkpoint(
-        &connection,
+        &mut connection,
         conversation_id,
         run_id,
         run.checkpoint_revision,

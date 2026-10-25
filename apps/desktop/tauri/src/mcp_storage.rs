@@ -15,10 +15,13 @@ use std::{
 
 pub(crate) use openchat_local_service::secrets::{SecretMap, SecretMapUpdateLock};
 use serde::{Deserialize, Deserializer, Serialize};
+use serde_json::{json, Value};
+use tauri::State;
 use zeroize::Zeroizing;
 
 use crate::{
     file_ops::replace_file_atomically,
+    local_service::{request_local_service, LocalServiceState},
     request_bounds::{
         deserialize_bounded_text, deserialize_bounded_texts, BoundedText, BoundedVec,
     },
@@ -197,6 +200,14 @@ impl McpStorageError {
         }
     }
 
+    pub(crate) fn unavailable() -> Self {
+        Self {
+            code: "mcp_storage_unavailable",
+            message: "A local MCP storage operation failed.",
+            details: None,
+        }
+    }
+
     pub(crate) fn unavailable_with_details(error: impl std::fmt::Display) -> Self {
         let details = error.to_string().chars().take(2048).collect::<String>();
         Self {
@@ -284,7 +295,9 @@ pub struct GlobalMcpSecretStatus {
 ///
 /// # Errors
 /// Returns a storage error if the MCP configuration directory cannot be read.
-pub fn load_global_mcp_servers() -> Result<GlobalMcpLoadResult, McpStorageError> {
+pub async fn load_global_mcp_servers(
+    state: State<'_, LocalServiceState>,
+) -> Result<GlobalMcpLoadResult, McpStorageError> {
     let root = mcp_directory()?;
     fs::create_dir_all(&root).map_err(McpStorageError::unavailable_with_details)?;
     let canonical_root =
@@ -299,14 +312,13 @@ pub fn load_global_mcp_servers() -> Result<GlobalMcpLoadResult, McpStorageError>
                     if let Ok(server) = serde_json::from_slice::<GlobalMcpServer>(&bytes) {
                         if validate_server(&server).is_ok() && server.installed {
                             let key = format!("mcp_server.{}", server.id);
-                            let _ = crate::chat_storage::set_app_setting_raw(
-                                &key,
-                                &String::from_utf8_lossy(&bytes),
-                            );
+                            let value = String::from_utf8_lossy(&bytes).into_owned();
+                            if set_app_setting(&state, &key, &value).await.is_ok() {
+                                let _ = fs::remove_file(&path);
+                            }
                         }
                     }
                 }
-                let _ = fs::remove_file(&path);
             }
         }
     }
@@ -314,9 +326,7 @@ pub fn load_global_mcp_servers() -> Result<GlobalMcpLoadResult, McpStorageError>
     let mut servers = Vec::new();
     let mut invalid_config_count = 0;
 
-    let settings = crate::chat_storage::get_all_app_settings().map_err(|error| {
-        McpStorageError::unavailable_with_details(format!("{}: {}", error.code, error.message))
-    })?;
+    let settings = get_all_app_settings(&state).await?;
     for (key, json_val) in settings {
         if let Some(server_id) = key.strip_prefix("mcp_server.") {
             let parsed = serde_json::from_str::<GlobalMcpServer>(&json_val);
@@ -350,7 +360,8 @@ pub fn load_global_mcp_servers() -> Result<GlobalMcpLoadResult, McpStorageError>
 ///
 /// # Errors
 /// Returns a validation or storage error. A failed write does not return a successful result.
-pub fn save_global_mcp_server(
+pub async fn save_global_mcp_server(
+    state: State<'_, LocalServiceState>,
     mut server: GlobalMcpServer,
 ) -> Result<GlobalMcpServer, McpStorageError> {
     validate_server(&server)?;
@@ -368,7 +379,7 @@ pub fn save_global_mcp_server(
     server.installed = true;
     server.enabled = true;
     server.install_dir = canonical_directory.to_string_lossy().into_owned();
-    write_server_config(&canonical_root, &server)?;
+    write_server_config(&state, &canonical_root, &server).await?;
     Ok(server)
 }
 
@@ -377,7 +388,8 @@ pub fn save_global_mcp_server(
 ///
 /// # Errors
 /// Returns a validation or storage error if the server configuration cannot be loaded or saved.
-pub fn set_global_mcp_enabled(
+pub async fn set_global_mcp_enabled(
+    state: State<'_, LocalServiceState>,
     server_id: BoundedText<MAXIMUM_SERVER_ID_BYTES>,
     enabled: bool,
 ) -> Result<GlobalMcpServer, McpStorageError> {
@@ -385,9 +397,9 @@ pub fn set_global_mcp_enabled(
     let root = mcp_directory()?;
     let canonical_root =
         fs::canonicalize(&root).map_err(McpStorageError::unavailable_with_details)?;
-    let mut server = read_server_config(&canonical_root, &server_id)?;
+    let mut server = read_server_config(&state, &canonical_root, &server_id).await?;
     server.enabled = enabled;
-    write_server_config(&canonical_root, &server)?;
+    write_server_config(&state, &canonical_root, &server).await?;
     Ok(server)
 }
 
@@ -399,7 +411,8 @@ pub fn set_global_mcp_enabled(
 /// # Errors
 /// Returns a validation or storage error. Files outside the app-managed server directory are
 /// not intentionally selected for removal.
-pub fn remove_global_mcp_server(
+pub async fn remove_global_mcp_server(
+    state: State<'_, LocalServiceState>,
     server_id: BoundedText<MAXIMUM_SERVER_ID_BYTES>,
 ) -> Result<(), McpStorageError> {
     let server_id = server_id.into_inner();
@@ -407,7 +420,7 @@ pub fn remove_global_mcp_server(
     let root = mcp_directory()?;
     let canonical_root =
         fs::canonicalize(&root).map_err(McpStorageError::unavailable_with_details)?;
-    let server = read_server_config(&canonical_root, &server_id)?;
+    let server = read_server_config(&state, &canonical_root, &server_id).await?;
     let directory = install_directory(&canonical_root, &server.id);
     match fs::symlink_metadata(&directory) {
         Ok(metadata) if metadata.is_dir() && !metadata.file_type().is_symlink() => {
@@ -424,7 +437,7 @@ pub fn remove_global_mcp_server(
         Err(error) => return Err(McpStorageError::unavailable_with_details(error)),
     }
     let key = format!("mcp_server.{}", server.id);
-    let _ = crate::chat_storage::delete_app_setting_raw(&key);
+    delete_app_setting(&state, &key).await?;
     let config_path = config_path(&canonical_root, &server.id);
     let _ = fs::remove_file(config_path);
     Ok(())
@@ -438,7 +451,8 @@ pub fn remove_global_mcp_server(
 ///
 /// # Errors
 /// Returns a validation or secure-storage error.
-pub fn get_global_mcp_secret_status(
+pub async fn get_global_mcp_secret_status(
+    state: State<'_, LocalServiceState>,
     server_id: BoundedText<MAXIMUM_SERVER_ID_BYTES>,
     environment_names: BoundedVec<
         BoundedText<MAXIMUM_ENVIRONMENT_NAME_BYTES>,
@@ -451,7 +465,7 @@ pub fn get_global_mcp_secret_status(
         .into_iter()
         .map(BoundedText::into_inner)
         .collect::<Vec<_>>();
-    let server = require_server(&server_id)?;
+    let server = require_server(&state, &server_id).await?;
     let allowed_names = all_environment_names(&server);
     let mut requested = HashSet::with_capacity(environment_names.len());
     for name in &environment_names {
@@ -460,7 +474,7 @@ pub fn get_global_mcp_secret_status(
             return Err(McpStorageError::invalid());
         }
     }
-    let values = read_secret_map()?;
+    let values = read_secret_map(&state).await?;
     Ok(environment_names
         .into_iter()
         .map(|environment_name| GlobalMcpSecretStatus {
@@ -480,17 +494,18 @@ pub fn get_global_mcp_secret_status(
 ///
 /// # Errors
 /// Returns a validation or secure-storage error. Invalid updates do not report success.
-pub fn save_global_mcp_secrets(
+pub async fn save_global_mcp_secrets(
+    state: State<'_, LocalServiceState>,
     server_id: BoundedText<MAXIMUM_SERVER_ID_BYTES>,
     updates: BoundedVec<GlobalMcpSecretUpdate, MAXIMUM_ENVIRONMENT_NAMES>,
 ) -> Result<(), McpStorageError> {
     let server_id = server_id.into_inner();
     let updates = updates.into_inner();
-    let server = require_server(&server_id)?;
+    let server = require_server(&state, &server_id).await?;
     let allowed_names = all_environment_names(&server);
     let mut seen_names = HashSet::with_capacity(updates.len());
     let _update_lock = lock_secret_map()?;
-    let mut values = read_secret_map()?;
+    let mut values = read_secret_map(&state).await?;
 
     for update in updates {
         let secret = update.value.0;
@@ -511,16 +526,19 @@ pub fn save_global_mcp_secrets(
         }
     }
 
-    write_secret_map(&values, &_update_lock)
+    write_secret_map(&state, &values, &_update_lock).await
 }
 
 /// Loads one installed server after validating its ID and persisted configuration.
-pub(crate) fn require_server(server_id: &str) -> Result<GlobalMcpServer, McpStorageError> {
+pub(crate) async fn require_server(
+    state: &LocalServiceState,
+    server_id: &str,
+) -> Result<GlobalMcpServer, McpStorageError> {
     validate_server_id(server_id)?;
     let root = mcp_directory()?;
     let canonical_root =
         fs::canonicalize(&root).map_err(McpStorageError::unavailable_with_details)?;
-    read_server_config(&canonical_root, server_id)
+    read_server_config(state, &canonical_root, server_id).await
 }
 
 /// Collects the required and optional environment names declared by a server.
@@ -534,18 +552,34 @@ pub(crate) fn all_environment_names(server: &GlobalMcpServer) -> HashSet<&str> {
 }
 
 /// Reads the shared encrypted secret map and maps backend errors to the MCP contract.
-pub(crate) fn read_secret_map() -> Result<SecretMap, McpStorageError> {
-    SecretMap::read().map_err(McpStorageError::unavailable_with_details)
+pub(crate) async fn read_secret_map(
+    state: &LocalServiceState,
+) -> Result<SecretMap, McpStorageError> {
+    let mut response = request_local_service(state, "internal.secrets.map.read", json!({}))
+        .await
+        .map_err(McpStorageError::unavailable_with_details)?;
+    let secrets = response
+        .as_object_mut()
+        .and_then(|response| response.remove("secrets"))
+        .ok_or_else(McpStorageError::unavailable)?;
+    serde_json::from_value(secrets).map_err(McpStorageError::unavailable_with_details)
 }
 
 /// Persists the shared encrypted secret map and maps backend errors to the MCP contract.
-pub(crate) fn write_secret_map(
+pub(crate) async fn write_secret_map(
+    state: &LocalServiceState,
     values: &SecretMap,
-    update_lock: &SecretMapUpdateLock,
+    _update_lock: &SecretMapUpdateLock,
 ) -> Result<(), McpStorageError> {
-    values
-        .write(update_lock)
-        .map_err(McpStorageError::unavailable_with_details)
+    let values = serde_json::to_value(values).map_err(McpStorageError::unavailable_with_details)?;
+    request_local_service(
+        state,
+        "internal.secrets.map.write",
+        json!({"secrets": values}),
+    )
+    .await
+    .map_err(McpStorageError::unavailable_with_details)?;
+    Ok(())
 }
 
 /// Acquires the cross-process lock required for read-modify-write secret updates.
@@ -672,12 +706,14 @@ fn config_path(root: &Path, server_id: &str) -> PathBuf {
 }
 
 /// Reads a validated MCP server config from SQLite app_settings, falling back to legacy config file if present.
-fn read_server_config(root: &Path, server_id: &str) -> Result<GlobalMcpServer, McpStorageError> {
+async fn read_server_config(
+    state: &LocalServiceState,
+    root: &Path,
+    server_id: &str,
+) -> Result<GlobalMcpServer, McpStorageError> {
     validate_server_id(server_id)?;
     let key = format!("mcp_server.{server_id}");
-    let stored_config = crate::chat_storage::get_app_setting_raw(&key).map_err(|error| {
-        McpStorageError::unavailable_with_details(format!("{}: {}", error.code, error.message))
-    })?;
+    let stored_config = get_app_setting(state, &key).await?;
     if let Some(json_str) = stored_config {
         let mut server = serde_json::from_str::<GlobalMcpServer>(&json_str)
             .map_err(|_| McpStorageError::invalid())?;
@@ -704,8 +740,8 @@ fn read_server_config(root: &Path, server_id: &str) -> Result<GlobalMcpServer, M
             server.install_dir = install_directory(root, server_id)
                 .to_string_lossy()
                 .into_owned();
-            let _ = write_server_config(root, &server);
-            let _ = fs::remove_file(&path);
+            write_server_config(state, root, &server).await?;
+            fs::remove_file(&path).map_err(McpStorageError::unavailable_with_details)?;
             Ok(server)
         }
         Ok(_) => Err(McpStorageError::invalid()),
@@ -742,7 +778,8 @@ fn read_bounded_config_bytes(reader: impl Read) -> Result<Vec<u8>, McpStorageErr
     Ok(bytes)
 }
 
-pub(crate) fn write_server_config(
+pub(crate) async fn write_server_config(
+    state: &LocalServiceState,
     root: &Path,
     server: &GlobalMcpServer,
 ) -> Result<(), McpStorageError> {
@@ -753,11 +790,74 @@ pub(crate) fn write_server_config(
         return Err(McpStorageError::invalid());
     }
     let key = format!("mcp_server.{}", server.id);
-    crate::chat_storage::set_app_setting_raw(&key, &json_str).map_err(|error| {
-        McpStorageError::unavailable_with_details(format!("{}: {}", error.code, error.message))
-    })?;
+    set_app_setting(state, &key, &json_str).await?;
     let legacy_path = config_path(root, &server.id);
     let _ = fs::remove_file(legacy_path);
+    Ok(())
+}
+
+async fn get_all_app_settings(
+    state: &LocalServiceState,
+) -> Result<std::collections::HashMap<String, String>, McpStorageError> {
+    let response = request_local_service(state, "storage.settings.get_all", json!({}))
+        .await
+        .map_err(McpStorageError::unavailable_with_details)?;
+    let settings = response
+        .get("settings")
+        .and_then(Value::as_object)
+        .ok_or_else(|| {
+            McpStorageError::unavailable_with_details("The settings response is invalid.")
+        })?;
+    settings
+        .iter()
+        .map(|(key, value)| {
+            value
+                .as_str()
+                .map(|value| (key.clone(), value.to_owned()))
+                .ok_or_else(|| {
+                    McpStorageError::unavailable_with_details(
+                        "The settings response contains a non-text value.",
+                    )
+                })
+        })
+        .collect()
+}
+
+async fn get_app_setting(
+    state: &LocalServiceState,
+    key: &str,
+) -> Result<Option<String>, McpStorageError> {
+    let response = request_local_service(state, "storage.settings.get", json!({"key": key}))
+        .await
+        .map_err(McpStorageError::unavailable_with_details)?;
+    match response.get("valueJson") {
+        Some(Value::String(value)) => Ok(Some(value.clone())),
+        Some(Value::Null) | None => Ok(None),
+        _ => Err(McpStorageError::unavailable_with_details(
+            "The setting response is invalid.",
+        )),
+    }
+}
+
+async fn set_app_setting(
+    state: &LocalServiceState,
+    key: &str,
+    value_json: &str,
+) -> Result<(), McpStorageError> {
+    request_local_service(
+        state,
+        "storage.settings.set",
+        json!({"key": key, "valueJson": value_json}),
+    )
+    .await
+    .map_err(McpStorageError::unavailable_with_details)?;
+    Ok(())
+}
+
+async fn delete_app_setting(state: &LocalServiceState, key: &str) -> Result<(), McpStorageError> {
+    request_local_service(state, "storage.settings.delete", json!({"key": key}))
+        .await
+        .map_err(McpStorageError::unavailable_with_details)?;
     Ok(())
 }
 

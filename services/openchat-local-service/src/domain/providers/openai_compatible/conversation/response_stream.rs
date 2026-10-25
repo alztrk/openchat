@@ -207,7 +207,9 @@ async fn receive_with_client(
         if let Some(session_id) = request.session_id {
             provider_request = provider_request.header("x-opencode-session", session_id);
         }
-        if let Some(api_key) = request.api_key {
+        if request.route.is_free {
+            provider_request = provider_request.bearer_auth("public");
+        } else if let Some(api_key) = request.api_key {
             provider_request = provider_request.bearer_auth(api_key);
         }
     } else if request.route.is_anthropic()
@@ -257,11 +259,7 @@ async fn receive_with_client(
             && status == StatusCode::FORBIDDEN
             && opencode_free_tier_restricted(response).await
         {
-            return Err(ServiceError::new(
-                "opencode_free_tier_restricted",
-                "OpenCode free models can only be used within OpenCode.",
-                false,
-            ));
+            return Err(super::super::opencode_free_tier_restricted_error());
         }
         if is_local_runtime(request.route.provider_id.as_deref()) {
             return Err(

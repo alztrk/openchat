@@ -840,7 +840,7 @@ fn chatgpt_api_tool_definitions() -> Vec<ToolDefinition> {
             json!({
                 "type": "string",
                 "enum": ["low", "medium", "high", "xhigh", "max", "auto"],
-                "description": "xhigh and max require gpt-image-2.5-sunburst or gpt-image-2.5-flare."
+                "description": "The selected image provider validates supported quality levels."
             }),
         );
     }
@@ -1127,7 +1127,7 @@ pub fn definitions() -> Vec<ToolDefinition> {
                     "model": {
                         "type": "string",
                         "maxLength": 128,
-                        "description": "Optional image model. Defaults to gpt-image-2."
+                        "description": "Image model identifier accepted by the connected image endpoint."
                     },
                     "size": {
                         "type": "string",
@@ -1148,7 +1148,7 @@ pub fn definitions() -> Vec<ToolDefinition> {
                         "enum": ["transparent", "opaque", "auto"]
                     }
                 },
-                "required": ["prompt"],
+                "required": ["prompt", "model"],
                 "additionalProperties": false
             }),
         ),

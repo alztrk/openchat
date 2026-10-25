@@ -44,34 +44,36 @@ impl UserQuestionBroker {
         events: &EventSink,
         cancellation: &mut watch::Receiver<bool>,
     ) -> Result<Vec<user_questions::QuestionAnswer>, ServiceError> {
-        let connection = storage.connect().map_err(|_| unavailable_error())?;
-        let run = user_questions::load_run_for_conversation(&connection, conversation_id, run_id)
-            .map_err(storage_error)?;
-        let sequence = user_questions::next_question_sequence(&connection, conversation_id, run_id)
-            .map_err(storage_error)?;
-        let group = user_questions::NewQuestionGroup {
-            group_id: Uuid::new_v4().simple().to_string(),
-            run_id: run_id.to_owned(),
-            sequence,
-            questions,
-        };
-        let question_checkpoint = json!({
-            "version": 1,
-            "assistantMessageId": assistant_message_id,
-            "toolCallId": call_id,
-            "toolName": call_name,
-            "toolArguments": call_arguments,
-        });
-        let mut checkpoint = run.checkpoint.unwrap_or_else(|| json!({"version": 1}));
-        let Some(checkpoint_object) = checkpoint.as_object_mut() else {
-            return Err(unavailable_error());
-        };
-        checkpoint_object.insert("providerId".to_owned(), json!(provider_id));
-        checkpoint_object.insert("conversationId".to_owned(), json!(conversation_id));
-        checkpoint_object.insert("pendingQuestion".to_owned(), question_checkpoint);
-        let (sender, receiver) = oneshot::channel();
-        {
-            let mut waiters = self.waiters.lock().await;
+        let mut waiters = self.waiters.lock().await;
+        let (group, pending, receiver) = {
+            let mut connection = storage.connect().map_err(|_| unavailable_error())?;
+            let run =
+                user_questions::load_run_for_conversation(&connection, conversation_id, run_id)
+                    .map_err(storage_error)?;
+            let sequence =
+                user_questions::next_question_sequence(&connection, conversation_id, run_id)
+                    .map_err(storage_error)?;
+            let group = user_questions::NewQuestionGroup {
+                group_id: Uuid::new_v4().simple().to_string(),
+                run_id: run_id.to_owned(),
+                sequence,
+                questions,
+            };
+            let question_checkpoint = json!({
+                "version": 1,
+                "assistantMessageId": assistant_message_id,
+                "toolCallId": call_id,
+                "toolName": call_name,
+                "toolArguments": call_arguments,
+            });
+            let mut checkpoint = run.checkpoint.unwrap_or_else(|| json!({"version": 1}));
+            let Some(checkpoint_object) = checkpoint.as_object_mut() else {
+                return Err(unavailable_error());
+            };
+            checkpoint_object.insert("providerId".to_owned(), json!(provider_id));
+            checkpoint_object.insert("conversationId".to_owned(), json!(conversation_id));
+            checkpoint_object.insert("pendingQuestion".to_owned(), question_checkpoint);
+            let (sender, receiver) = oneshot::channel();
             if waiters.contains_key(&group.group_id) {
                 return Err(ServiceError::new(
                     "question_waiter_conflict",
@@ -80,33 +82,35 @@ impl UserQuestionBroker {
                 ));
             }
             waiters.insert(group.group_id.clone(), sender);
-        }
 
-        let pending = match user_questions::pause_with_questions(
-            &connection,
-            conversation_id,
-            run_id,
-            run.checkpoint_revision,
-            &checkpoint,
-            &group,
-        ) {
-            Ok(pending) => pending,
-            Err(error) => {
-                self.remove_waiter(&group.group_id).await;
-                return Err(storage_error(error));
-            }
+            let pending = match user_questions::pause_with_questions(
+                &mut connection,
+                conversation_id,
+                run_id,
+                run.checkpoint_revision,
+                &checkpoint,
+                &group,
+            ) {
+                Ok(pending) => pending,
+                Err(error) => {
+                    waiters.remove(&group.group_id);
+                    return Err(storage_error(error));
+                }
+            };
+            (group, pending, receiver)
         };
 
         if crate::chatgpt_store::save_assistant_tool_checkpoint(storage, snapshot, tool_activities)
             .is_err()
         {
-            self.remove_waiter(&group.group_id).await;
+            waiters.remove(&group.group_id);
             return Err(ServiceError::new(
                 "question_storage_unavailable",
                 "The pending question could not be saved. Try again.",
                 true,
             ));
         }
+        drop(waiters);
 
         if events
             .send(
@@ -185,9 +189,9 @@ impl UserQuestionBroker {
         answers: &[user_questions::QuestionAnswer],
     ) -> Result<Value, ServiceError> {
         let mut waiters = self.waiters.lock().await;
-        let connection = storage.connect().map_err(|_| unavailable_error())?;
+        let mut connection = storage.connect().map_err(|_| unavailable_error())?;
         let submitted = user_questions::submit_answers(
-            &connection,
+            &mut connection,
             conversation_id,
             group_id,
             expected_revision,
@@ -224,14 +228,14 @@ impl UserQuestionBroker {
         storage: &AppStorage,
         conversation_id: &str,
     ) -> Result<Vec<Value>, ServiceError> {
-        let connection = storage.connect().map_err(|error| {
+        let mut connection = storage.connect().map_err(|error| {
             let _ = storage.log_rpc_failure(
                 "chat.questions.list",
                 crate::storage::sqlite_error_code(&error),
             );
             unavailable_error()
         })?;
-        user_questions::list_recoverable_question_groups(&connection, conversation_id)
+        user_questions::list_recoverable_question_groups(&mut connection, conversation_id)
             .map(|groups| groups.iter().map(pending_group_value).collect())
             .map_err(|error| {
                 let code = match &error {
@@ -259,8 +263,8 @@ impl UserQuestionBroker {
         conversation_id: &str,
         run_id: &str,
     ) -> Result<(), ServiceError> {
-        let connection = storage.connect().map_err(|_| unavailable_error())?;
-        user_questions::mark_run_resumed(&connection, conversation_id, run_id)
+        let mut connection = storage.connect().map_err(|_| unavailable_error())?;
+        user_questions::mark_run_resumed(&mut connection, conversation_id, run_id)
             .map(|_| ())
             .map_err(storage_error)
     }
@@ -278,22 +282,22 @@ impl UserQuestionBroker {
             } else {
                 outcome
             };
-        let connection = storage.connect().map_err(|_| unavailable_error())?;
+        let mut connection = storage.connect().map_err(|_| unavailable_error())?;
         let result = match outcome {
             RunOutcome::Completed => {
-                user_questions::mark_run_completed(&connection, conversation_id, run_id)
+                user_questions::mark_run_completed(&mut connection, conversation_id, run_id)
             }
             RunOutcome::Cancelled => {
-                user_questions::mark_run_cancelled(&connection, conversation_id, run_id)
+                user_questions::mark_run_cancelled(&mut connection, conversation_id, run_id)
             }
             RunOutcome::Paused => {
-                user_questions::mark_run_paused(&connection, conversation_id, run_id)
+                user_questions::mark_run_paused(&mut connection, conversation_id, run_id)
             }
             RunOutcome::Interrupted => {
-                user_questions::mark_run_interrupted(&connection, conversation_id, run_id)
+                user_questions::mark_run_interrupted(&mut connection, conversation_id, run_id)
             }
             RunOutcome::Failed => {
-                user_questions::mark_run_failed(&connection, conversation_id, run_id)
+                user_questions::mark_run_failed(&mut connection, conversation_id, run_id)
             }
         };
         result.map(|_| ()).map_err(storage_error)

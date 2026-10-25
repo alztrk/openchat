@@ -6,7 +6,7 @@ use std::{
     sync::atomic::{AtomicBool, Ordering},
 };
 
-use rusqlite::{Connection, OptionalExtension};
+use rusqlite::OptionalExtension;
 use serde_json::{Value, json};
 use zeroize::Zeroizing;
 
@@ -16,7 +16,7 @@ use crate::{
     project_skills::ProjectSkill,
     protocol::ServiceError,
     provider_credentials::{self, ProviderCredentials},
-    storage::{AppStorage, sqlite_error_code, user_questions::AgentRunStatus},
+    storage::{AppStorage, StorageConnection, sqlite_error_code, user_questions::AgentRunStatus},
     tools::{self, ToolPermissionMode},
     user_question_broker::{RunOutcome, UserQuestionBroker},
 };
@@ -42,6 +42,7 @@ impl SavedChatRoute {
     /// Returns the credential store's stable error if the saved route cannot be resolved.
     pub(super) fn resolve_credentials(
         &self,
+        storage: &AppStorage,
     ) -> Result<(Option<Zeroizing<String>>, Option<CustomProviderConfig>), ServiceError> {
         let Some(provider_id) = self
             .provider_id
@@ -51,7 +52,7 @@ impl SavedChatRoute {
             return Ok((None, None));
         };
 
-        let credentials = ProviderCredentials::load()?;
+        let credentials = ProviderCredentials::load(storage)?;
         let connection_id = (provider_id != "opencode")
             .then_some(self.stored_api_key_connection_id.as_deref())
             .flatten();
@@ -66,17 +67,14 @@ impl SavedChatRoute {
     }
 }
 
-/// Opens the chat database once and loads the conversation's saved route.
-///
-/// Returning the connection lets run and checkpoint operations reuse the same
-/// request-scoped database handle.
+/// Loads the conversation's saved route without retaining a database connection.
 ///
 /// # Errors
 /// Returns `storage_unavailable` when the database cannot be opened or queried.
 pub(super) fn load_saved_route(
     storage: &AppStorage,
     conversation_id: &str,
-) -> Result<(Connection, SavedChatRoute), ServiceError> {
+) -> Result<SavedChatRoute, ServiceError> {
     let connection = storage.connect().map_err(|error| {
         log_chat_storage_failure(storage, "chat.send.route_open", &error);
         storage_unavailable()
@@ -120,27 +118,22 @@ pub(super) fn load_saved_route(
         connection_id,
         workspace_id,
     ) = route;
-    Ok((
-        connection,
-        SavedChatRoute {
-            provider_id,
-            project_name,
-            project_root,
-            project_id,
-            stored_api_key_connection_id,
-            model_id,
-            connection_id,
-            workspace_id,
-        },
-    ))
+    Ok(SavedChatRoute {
+        provider_id,
+        project_name,
+        project_root,
+        project_id,
+        stored_api_key_connection_id,
+        model_id,
+        connection_id,
+        workspace_id,
+    })
 }
 
 /// Inputs needed to validate and persist the execution settings for one run.
 pub(super) struct RunPreparation<'a> {
     /// Local store used to load project context and persist run state.
     pub(super) storage: &'a AppStorage,
-    /// Request-scoped SQLite connection shared with route lookup and finalization.
-    pub(super) connection: &'a Connection,
     /// Conversation whose provider route and transcript are being used.
     pub(super) conversation_id: &'a str,
     /// Saved provider and project route loaded for this conversation.
@@ -224,7 +217,6 @@ struct ProjectContext {
 pub(super) fn prepare_run(input: RunPreparation<'_>) -> Result<PreparedChatRun, ServiceError> {
     let RunPreparation {
         storage,
-        connection,
         conversation_id,
         route,
         resume_run_id,
@@ -237,26 +229,32 @@ pub(super) fn prepare_run(input: RunPreparation<'_>) -> Result<PreparedChatRun, 
         profile_tool_allowlist,
     } = input;
 
+    let mut connection = storage.connect().map_err(|error| {
+        log_chat_storage_failure(storage, "chat.send.prepare_open", &error);
+        storage_unavailable()
+    })?;
+
     validate_goal_start(
         storage,
-        connection,
+        &connection,
         conversation_id,
         requested_goal_objective,
     )?;
     validate_fast_mode(route.provider_id.as_deref(), requested_fast_mode)?;
 
     let mut prepared = if let Some(run_id) = resume_run_id {
-        restore_run(storage, connection, conversation_id, route, run_id)?
+        restore_run(storage, &mut connection, conversation_id, route, run_id)?
     } else {
         let project_context = load_project_context(
             storage,
+            &mut connection,
             conversation_id,
             route,
             permission_mode,
             &requested_project_skill_ids,
         )?;
         create_run(CreateRun {
-            connection,
+            connection: &mut connection,
             conversation_id,
             route,
             goal_objective: requested_goal_objective,
@@ -292,7 +290,7 @@ pub(super) fn prepare_run(input: RunPreparation<'_>) -> Result<PreparedChatRun, 
 /// Ensures a new goal is tied to the latest user message and no other goal is active.
 fn validate_goal_start(
     storage: &AppStorage,
-    connection: &Connection,
+    connection: &StorageConnection<'_>,
     conversation_id: &str,
     objective: Option<&str>,
 ) -> Result<(), ServiceError> {
@@ -349,7 +347,7 @@ fn validate_fast_mode(
 /// All checkpoint validation completes before the resume claim is persisted.
 fn restore_run(
     storage: &AppStorage,
-    connection: &Connection,
+    connection: &mut StorageConnection<'_>,
     conversation_id: &str,
     route: &SavedChatRoute,
     run_id: &str,
@@ -486,6 +484,7 @@ fn restore_fast_mode(checkpoint: &Value, provider_id: Option<&str>) -> Result<bo
 /// Loads bounded project context before any new run state is written.
 fn load_project_context(
     storage: &AppStorage,
+    connection: &mut StorageConnection<'_>,
     conversation_id: &str,
     route: &SavedChatRoute,
     permission_mode: ToolPermissionMode,
@@ -517,10 +516,9 @@ fn load_project_context(
     } else if let (Some(project_id), Some(root)) =
         (route.project_id.as_deref(), route.project_root.as_deref())
     {
-        let index_path = storage.root().join("cache").join("project-index.sqlite3");
-        let state = crate::project_index::snapshot(&index_path, project_id)?;
+        let state = crate::project_index::snapshot(connection, project_id)?;
         if state.enabled {
-            let state = crate::project_index::sync(&index_path, project_id, Path::new(root))?;
+            let state = crate::project_index::sync(connection, project_id, Path::new(root))?;
             if state.status == "stale" {
                 let error = ServiceError::new(
                     "project_index_stale",
@@ -532,23 +530,26 @@ fn load_project_context(
                     None => error,
                 });
             }
-            let messages = chatgpt_store::conversation_messages(storage, conversation_id).map_err(
-                |error| {
-                    log_chat_storage_failure(storage, "chat.send.project_history_read", &error);
-                    ServiceError::new(
-                        "storage_unavailable",
-                        "Chat history could not be read.",
-                        false,
-                    )
-                },
-            )?;
+            let messages = chatgpt_store::conversation_messages_on_connection(
+                connection,
+                storage.root(),
+                conversation_id,
+            )
+            .map_err(|error| {
+                log_chat_storage_failure(storage, "chat.send.project_history_read", &error);
+                ServiceError::new(
+                    "storage_unavailable",
+                    "Chat history could not be read.",
+                    false,
+                )
+            })?;
             messages
                 .iter()
                 .rev()
                 .find(|message| message.role == "user")
                 .map(|message| {
                     crate::project_index::search_current(
-                        &index_path,
+                        connection,
                         project_id,
                         Path::new(root),
                         &message.content,
@@ -570,8 +571,8 @@ fn load_project_context(
 }
 
 /// Inputs used to persist a new durable run after its request context is validated.
-struct CreateRun<'a> {
-    connection: &'a Connection,
+struct CreateRun<'a, 'storage> {
+    connection: &'a mut StorageConnection<'storage>,
     conversation_id: &'a str,
     route: &'a SavedChatRoute,
     goal_objective: Option<&'a str>,
@@ -583,7 +584,7 @@ struct CreateRun<'a> {
 }
 
 /// Atomically stores a new run with the checkpoint required for later continuation.
-fn create_run(input: CreateRun<'_>) -> Result<PreparedRunState, ServiceError> {
+fn create_run<'storage>(input: CreateRun<'_, 'storage>) -> Result<PreparedRunState, ServiceError> {
     let CreateRun {
         connection,
         conversation_id,
@@ -667,31 +668,37 @@ pub(super) async fn finish_run(
 ) -> Result<Value, ServiceError> {
     let ChatRunFinalization {
         storage,
-        connection,
         conversation_id,
         run_id,
         resuming_question_run,
         shutdown_requested,
         user_question_broker,
     } = context;
-    let current_run = crate::storage::user_questions::load_run_for_conversation(
-        &connection,
-        conversation_id,
-        run_id,
-    )
-    .map_err(super::map_question_storage_error)?;
-    let is_goal_run = current_run
-        .checkpoint
-        .as_ref()
-        .and_then(|checkpoint| checkpoint.get("goal"))
-        .is_some();
-    let outcome = classify_run_outcome(
-        &result,
-        current_run.status,
-        is_goal_run,
-        resuming_question_run,
-        shutdown_requested.load(Ordering::SeqCst),
-    );
+    let (current_run, is_goal_run, outcome) = {
+        let connection = storage.connect().map_err(|error| {
+            log_chat_storage_failure(storage, "chat.send.finish_open", &error);
+            storage_unavailable()
+        })?;
+        let current_run = crate::storage::user_questions::load_run_for_conversation(
+            &connection,
+            conversation_id,
+            run_id,
+        )
+        .map_err(super::map_question_storage_error)?;
+        let is_goal_run = current_run
+            .checkpoint
+            .as_ref()
+            .and_then(|checkpoint| checkpoint.get("goal"))
+            .is_some();
+        let outcome = classify_run_outcome(
+            &result,
+            current_run.status,
+            is_goal_run,
+            resuming_question_run,
+            shutdown_requested.load(Ordering::SeqCst),
+        );
+        (current_run, is_goal_run, outcome)
+    };
 
     if is_goal_run && current_run.status == AgentRunStatus::Running {
         let mut goal = goals::execution_from_run(current_run.clone())?;
@@ -730,12 +737,10 @@ pub(super) async fn finish_run(
     result
 }
 
-/// Owns the scoped database connection and state needed to finish a chat run.
+/// Carries the state needed to finish a chat run.
 pub(super) struct ChatRunFinalization<'a> {
     /// Storage used when persisting a goal transition and run outcome.
     pub(super) storage: &'a AppStorage,
-    /// Connection used to read the run state after provider execution.
-    pub(super) connection: Connection,
     /// Conversation that owns the run.
     pub(super) conversation_id: &'a str,
     /// Run whose outcome is being finalized.

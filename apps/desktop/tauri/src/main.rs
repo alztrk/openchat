@@ -6,6 +6,10 @@
 use tauri::Manager;
 
 mod archive_export;
+#[cfg(test)]
+mod chat_storage;
+#[cfg(not(test))]
+#[path = "chat_storage_runtime.rs"]
 mod chat_storage;
 mod computer_use_overlay;
 mod file_ops;
@@ -29,20 +33,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .invoke_handler(tauri::generate_handler![
             archive_export::save_pending_archive_export,
             chat_storage::get_chat_schema_version,
-            chat_storage::prepare_chat_database,
             computer_use_overlay::set_computer_use_overlay,
-            chat_storage::has_completed_assistant_response,
-            chat_storage::list_conversations,
-            chat_storage::list_projects,
-            chat_storage::create_project,
-            chat_storage::add_project_workspace_root,
-            chat_storage::remove_project_workspace_root,
             project_folder::select_project_folder,
             project_folder::discard_project_folder_selection,
-            chat_storage::clear_conversation_history,
-            chat_storage::list_model_favorites,
-            chat_storage::set_model_favorite,
-            chat_storage::search_messages,
+            project_folder::consume_project_folder_selection_command,
             local_data::export_support_diagnostics,
             notifications::read_windows_notification_status,
             notifications::open_windows_notification_settings,
@@ -51,23 +45,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             notifications::send_user_question_notification,
             notifications::take_pending_notification_activations,
             notifications::set_notification_frontend_unready,
-            chat_storage::get_conversation,
-            chat_storage::get_messages,
-            chat_storage::list_conversation_attachments,
-            chat_storage::read_message_attachment,
-            chat_storage::get_attachment_text_index_status,
-            chat_storage::rebuild_attachment_text_index,
-            chat_storage::clear_attachment_text_index,
-            chat_storage::create_conversation,
-            chat_storage::rename_conversation,
-            chat_storage::set_conversation_route,
-            chat_storage::set_conversation_pinned,
-            chat_storage::move_conversations,
-            chat_storage::set_conversations_archived,
-            chat_storage::delete_conversation,
             chat_storage::save_conversation_markdown,
             chat_storage::save_conversation_export,
-            chat_storage::save_message,
             chat_storage::record_chat_request_failure,
             chat_storage::record_connection_removal_diagnostic,
             chat_storage::record_context_usage_failure,
@@ -79,6 +58,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             mcp_storage::save_global_mcp_secrets,
             mcp_probe::probe_global_mcp_server,
             local_service::start_local_service,
+            local_service::start_local_service_with_empty_storage,
             local_service::write_local_service,
             local_service::respond_local_service_permission,
             provider_storage::load_provider_credential_status,
@@ -90,25 +70,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             provider_storage::delete_opencode_api_key,
             provider_storage::save_custom_provider,
             provider_storage::delete_custom_provider,
-            chat_storage::get_app_setting,
-            chat_storage::get_all_app_settings,
-            chat_storage::set_app_setting,
-            chat_storage::set_app_settings_batch,
-            chat_storage::delete_app_setting,
-            chat_storage::list_personal_memory_facts,
-            chat_storage::save_personal_memory_fact,
-            chat_storage::delete_personal_memory_fact,
-            chat_storage::clear_personal_memory_facts,
-            chat_storage::get_cache_entry,
-            chat_storage::set_cache_entry,
-            chat_storage::migrate_localstorage_to_db,
-            chat_storage::optimize_database,
             window_broadcast::broadcast_window_sync_event,
         ])
         .setup(|app| {
-            chat_storage::prepare_chat_database().map_err(|error| {
-                std::io::Error::other(format!("Database initialization failed: {error:?}"))
-            })?;
             let main_window = app
                 .get_webview_window("main")
                 .ok_or_else(|| std::io::Error::other("Main window is unavailable"))?;
@@ -129,7 +93,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build(tauri::generate_context!())?;
     app.run(|handle, event| {
         if matches!(event, tauri::RunEvent::Exit) {
-            let _ = chat_storage::optimize_database();
             if let Err(error) = handle.state::<local_service::LocalServiceState>().stop() {
                 eprintln!("OpenChat local service shutdown failed: {error}");
             }

@@ -26,7 +26,7 @@ use crate::{
         CredentialStore, CredentialStoreError, OAuthCredentialReference, OAuthTokenPair,
     },
     protocol::ServiceError,
-    storage::AppStorage,
+    storage::{AppStorage, StorageConnection},
 };
 
 const CLIENT_ID: &str = "Ov23ctr1Udn5GokVCVJf";
@@ -42,6 +42,20 @@ const MAX_TOKEN_BYTES: usize = 4096;
 const MAX_OAUTH_RESPONSE_BYTES: usize = 64 * 1024;
 const MAX_GITHUB_USER_RESPONSE_BYTES: usize = 128 * 1024;
 const MAX_ACTIVE_DEVICE_FLOWS: usize = 4;
+
+macro_rules! stored_connection_from_row {
+    ($row:expr) => {{
+        let row = $row;
+        Ok(StoredConnection {
+            id: row.get(0)?,
+            login: row.get(1)?,
+            name: row.get(2)?,
+            credential_reference: row.get(3)?,
+            auth_status: row.get(4)?,
+            is_selected: row.get::<_, i64>(5)? == 1,
+        })
+    }};
+}
 
 /// Deserializes a secret string directly into storage that clears it on drop.
 fn deserialize_zeroizing_string<'de, D>(deserializer: D) -> Result<Zeroizing<String>, D::Error>
@@ -449,7 +463,7 @@ impl CopilotOAuthService {
 
     pub fn select(&self, storage: &AppStorage, connection_id: &str) -> Result<Value, ServiceError> {
         validate_connection_id(connection_id)?;
-        let connection = storage.connect().map_err(database_error)?;
+        let mut connection = storage.connect().map_err(database_error)?;
         let tx = connection.unchecked_transaction().map_err(database_error)?;
         tx.execute(
             "UPDATE copilot_oauth_connection SET is_selected = 0 WHERE is_selected = 1",
@@ -479,7 +493,7 @@ impl CopilotOAuthService {
         let mut connection = storage.connect().map_err(database_error)?;
         disconnect_connection(&mut connection, connection_id, |reference| {
             self.credentials
-                .delete_token_pair(reference)
+                .delete_token_pair(storage, reference)
                 .map_err(credential_error)
         })
     }
@@ -495,7 +509,7 @@ impl CopilotOAuthService {
         let reference = parse_reference(&connection.credential_reference)?;
         let tokens = self
             .credentials
-            .load_token_pair(&reference)
+            .load_token_pair(storage, &reference)
             .map_err(credential_error)?;
         if !tokens.expires_within(SystemTime::now(), ACCESS_REFRESH_WINDOW) {
             return Ok(Zeroizing::new(tokens.access_token().to_owned()));
@@ -509,7 +523,7 @@ impl CopilotOAuthService {
         let current_reference = parse_reference(&current.credential_reference)?;
         let current_tokens = self
             .credentials
-            .load_token_pair(&current_reference)
+            .load_token_pair(storage, &current_reference)
             .map_err(credential_error)?;
         if !current_tokens.expires_within(SystemTime::now(), ACCESS_REFRESH_WINDOW) {
             return Ok(Zeroizing::new(current_tokens.access_token().to_owned()));
@@ -605,7 +619,7 @@ impl CopilotOAuthService {
         let new_tokens = expiring_tokens(access_token, refresh_token, expires_in)?;
         let new_reference = new_credential_reference(&connection.id)?;
         self.credentials
-            .store_new_token_pair(&new_reference, &new_tokens)
+            .store_new_token_pair(storage, &new_reference, &new_tokens)
             .map_err(credential_error)?;
         let previous_reference = match replace_credential_reference(
             storage,
@@ -619,17 +633,17 @@ impl CopilotOAuthService {
         ) {
             Ok(Some(reference)) => reference,
             Ok(None) => {
-                let _ = self.credentials.delete_token_pair(&new_reference);
+                let _ = self.credentials.delete_token_pair(storage, &new_reference);
                 return Err(authentication_required());
             }
             Err(error) => {
-                let _ = self.credentials.delete_token_pair(&new_reference);
+                let _ = self.credentials.delete_token_pair(storage, &new_reference);
                 return Err(error);
             }
         };
         let cleanup_result = parse_reference(&previous_reference).and_then(|reference| {
             self.credentials
-                .delete_token_pair(&reference)
+                .delete_token_pair(storage, &reference)
                 .map_err(credential_error)
         });
         if cleanup_result.is_err() {
@@ -688,10 +702,10 @@ impl CopilotOAuthService {
         }
         let reference = new_credential_reference(&identity.id)?;
         self.credentials
-            .store_new_token_pair(&reference, &tokens)
+            .store_new_token_pair(storage, &reference, &tokens)
             .map_err(credential_error)?;
         let persisted = (|| {
-            let connection = storage.connect().map_err(database_error)?;
+            let mut connection = storage.connect().map_err(database_error)?;
             let tx = connection.unchecked_transaction().map_err(database_error)?;
             let previous_reference: Option<String> = tx
                 .query_row(
@@ -745,7 +759,11 @@ impl CopilotOAuthService {
         let previous_reference = match persisted {
             Ok(reference) => reference,
             Err(error) => {
-                if self.credentials.delete_token_pair(&reference).is_err() {
+                if self
+                    .credentials
+                    .delete_token_pair(storage, &reference)
+                    .is_err()
+                {
                     eprintln!("copilot_oauth_new_credential_cleanup_failed");
                 }
                 return Err(error);
@@ -756,7 +774,7 @@ impl CopilotOAuthService {
         {
             let cleanup_result = parse_reference(old_reference).and_then(|old_reference| {
                 self.credentials
-                    .delete_token_pair(&old_reference)
+                    .delete_token_pair(storage, &old_reference)
                     .map_err(credential_error)
             });
             if cleanup_result.is_err() {
@@ -806,7 +824,7 @@ fn load_connection(storage: &AppStorage) -> Result<Option<StoredConnection>, Ser
                     auth_status, is_selected
              FROM copilot_oauth_connection WHERE is_selected = 1",
             [],
-            stored_connection_from_row,
+            |row| stored_connection_from_row!(row),
         )
         .optional()
         .map_err(database_error)
@@ -824,7 +842,7 @@ fn load_connection_by_id(
                     auth_status, is_selected
              FROM copilot_oauth_connection WHERE id = ?1",
             [connection_id],
-            stored_connection_from_row,
+            |row| stored_connection_from_row!(row),
         )
         .optional()
         .map_err(database_error)
@@ -841,21 +859,10 @@ fn load_connections(storage: &AppStorage) -> Result<Vec<StoredConnection>, Servi
         )
         .map_err(database_error)?;
     let rows = statement
-        .query_map([], stored_connection_from_row)
+        .query_map([], |row| stored_connection_from_row!(row))
         .map_err(database_error)?;
     rows.collect::<rusqlite::Result<Vec<_>>>()
         .map_err(database_error)
-}
-
-fn stored_connection_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<StoredConnection> {
-    Ok(StoredConnection {
-        id: row.get(0)?,
-        login: row.get(1)?,
-        name: row.get(2)?,
-        credential_reference: row.get(3)?,
-        auth_status: row.get(4)?,
-        is_selected: row.get::<_, i64>(5)? == 1,
-    })
 }
 
 impl StoredConnection {
@@ -874,7 +881,7 @@ impl StoredConnection {
 /// Keeping the reference row until credential cleanup succeeds lets a later disconnect retry
 /// partially completed Windows Credential Manager cleanup.
 fn disconnect_connection(
-    connection: &mut rusqlite::Connection,
+    connection: &mut StorageConnection<'_>,
     connection_id: &str,
     remove_credentials: impl FnOnce(&OAuthCredentialReference) -> Result<(), ServiceError>,
 ) -> Result<Value, ServiceError> {
@@ -952,7 +959,7 @@ fn replace_credential_reference(
     access_expires_at: u64,
     refresh_expires_in: Option<u64>,
 ) -> Result<Option<String>, ServiceError> {
-    let connection = storage.connect().map_err(database_error)?;
+    let mut connection = storage.connect().map_err(database_error)?;
     let tx = connection.unchecked_transaction().map_err(database_error)?;
     let previous: Option<String> = tx
         .query_row(

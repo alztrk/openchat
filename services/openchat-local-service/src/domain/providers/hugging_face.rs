@@ -982,10 +982,12 @@ async fn register_downloaded_model(
     path: PathBuf,
 ) -> Result<Value, ServiceError> {
     let storage_root = storage.root().to_path_buf();
+    let database_queue = storage.database_queue_handle();
     let path = path.to_str().ok_or_else(model_storage_error)?.to_owned();
     let engine = engine_id.to_owned();
     let model = task::spawn_blocking(move || {
         local_engines::models::register_with_storage_action(
+            database_queue,
             &storage_root,
             &engine,
             &path,

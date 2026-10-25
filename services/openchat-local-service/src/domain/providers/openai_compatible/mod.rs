@@ -234,7 +234,9 @@ pub(crate) fn context_usage_tool_definitions(
         supports_tool_calls,
     ))
 }
+#[cfg(test)]
 const CHAT_URL: &str = "https://opencode.ai/inference/openai/v1/chat/completions";
+#[cfg(test)]
 const RESPONSES_URL: &str = "https://opencode.ai/inference/openai/v1/responses";
 const OPENAI_RESPONSES_URL: &str = "https://api.openai.com/v1/responses";
 const MAX_EVENT_BYTES: usize = 1024 * 1024;
@@ -412,6 +414,7 @@ pub(crate) fn opencode_session_id_for_conversation(
     format!("ses_{}{}", time_hex, random_str)
 }
 
+#[cfg(test)]
 pub(crate) fn opencode_session_id() -> String {
     opencode_session_id_for_conversation("", 0)
 }
@@ -597,12 +600,20 @@ pub(super) fn chat_request_http_error_with_retry_after(
 ) -> ServiceError {
     let mut error = chat_request_http_error(status, provider_id, request_includes_tools);
     if status == StatusCode::TOO_MANY_REQUESTS
-        && provider_id == Some("copilot")
+        && matches!(provider_id, Some("copilot" | "opencode"))
         && let Some(seconds) = retry_after_seconds
     {
         error.details = Some(format!("HTTP status 429; retry-after-seconds={seconds}"));
     }
     error
+}
+
+pub(super) fn opencode_free_tier_restricted_error() -> ServiceError {
+    ServiceError::new(
+        "opencode_free_tier_restricted",
+        "OpenCode free models can only be used within OpenCode.",
+        false,
+    )
 }
 
 fn network_error() -> ServiceError {
@@ -1192,6 +1203,7 @@ mod tests {
         let response = client
             .post(super::CHAT_URL)
             .header("x-opencode-session", session_id)
+            .bearer_auth("public")
             .header(ACCEPT, "text/event-stream")
             .json(&body)
             .send()
@@ -1216,6 +1228,7 @@ mod tests {
         let response = client
             .get(super::models::MODELS_URL)
             .header("x-opencode-session", session_id)
+            .bearer_auth("public")
             .send()
             .await
             .expect("fetch models");
@@ -1415,6 +1428,7 @@ mod tests {
         let response = client
             .post(super::RESPONSES_URL)
             .header("x-opencode-session", session_id)
+            .bearer_auth("public")
             .header(ACCEPT, "text/event-stream")
             .json(&body)
             .send()

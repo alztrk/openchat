@@ -201,7 +201,6 @@ impl ChatGptService {
         let (value, image_request_id) = match auth {
             ImageGenerationAuth::ApiKey(api_key) => {
                 validate_api_key(api_key)?;
-                validate_api_quality(request.quality, &request.model)?;
                 self.request_public_json(
                     public_endpoint("images/generations"),
                     api_key,
@@ -597,26 +596,6 @@ fn validate_codex_quality(quality: Option<ImageQuality>) -> Result<(), ServiceEr
     Ok(())
 }
 
-fn validate_api_quality(quality: Option<ImageQuality>, model: &str) -> Result<(), ServiceError> {
-    if matches!(quality, Some(ImageQuality::XHigh | ImageQuality::Max))
-        && !supports_extended_quality(model)
-    {
-        return Err(invalid_image_request("quality"));
-    }
-    Ok(())
-}
-
-fn supports_extended_quality(model: &str) -> bool {
-    ["gpt-image-2.5-sunburst", "gpt-image-2.5-flare"]
-        .iter()
-        .any(|base| {
-            model == *base
-                || model
-                    .strip_prefix(base)
-                    .is_some_and(|suffix| suffix.starts_with('-'))
-        })
-}
-
 fn image_mime_for_signature(bytes: &[u8]) -> Option<&'static str> {
     if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
         Some("image/png")
@@ -718,7 +697,7 @@ mod tests {
     fn generation_request() -> ImageGenerationRequest {
         ImageGenerationRequest {
             prompt: "A small lighthouse at sunrise".to_owned(),
-            model: "gpt-image-2".to_owned(),
+            model: "configured-image-model".to_owned(),
             size: Some("1024x1024".to_owned()),
             quality: Some(ImageQuality::High),
             background: Some(ImageBackground::Auto),
@@ -751,7 +730,7 @@ mod tests {
         assert_eq!(value["quality"], "high");
 
         let mut xhigh_request = generation_request();
-        xhigh_request.model = "gpt-image-2.5-sunburst".to_owned();
+        xhigh_request.model = "configured-image-model-with-extended-quality".to_owned();
         xhigh_request.quality = Some(ImageQuality::XHigh);
         assert_eq!(
             generation_body(&xhigh_request, true, true)["quality"],
@@ -873,20 +852,6 @@ mod tests {
     }
 
     #[test]
-    fn api_image_quality_matches_the_selected_image_model() {
-        assert!(validate_api_quality(Some(ImageQuality::High), "gpt-image-2").is_ok());
-        assert!(validate_api_quality(Some(ImageQuality::Auto), "gpt-image-2").is_ok());
-        assert!(validate_api_quality(Some(ImageQuality::XHigh), "gpt-image-2").is_err());
-        assert!(validate_api_quality(Some(ImageQuality::Max), "gpt-image-2").is_err());
-        assert!(validate_api_quality(Some(ImageQuality::XHigh), "gpt-image-2.5-sunburst").is_ok());
-        assert!(
-            validate_api_quality(Some(ImageQuality::Max), "gpt-image-2.5-flare-2026-09-08").is_ok()
-        );
-        assert!(
-            validate_api_quality(Some(ImageQuality::Max), "gpt-image-2.5-unsupported").is_err()
-        );
-    }
-
     #[test]
     fn generated_image_count_respects_attachment_store_limit() {
         assert!(validate_count(1).is_ok());

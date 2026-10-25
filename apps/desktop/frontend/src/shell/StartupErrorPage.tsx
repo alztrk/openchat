@@ -13,9 +13,14 @@ type StartupErrorCopy = Pick<
   typeof english,
   | 'startupErrorTitle'
   | 'startupErrorDescription'
+  | 'startupErrorLegacyProfileDescription'
+  | 'startupErrorLegacyProfileWarning'
   | 'startupErrorDetails'
   | 'startupErrorRetry'
   | 'startupErrorRetrying'
+  | 'startupErrorStartEmptyProfile'
+  | 'startupErrorConfirmEmptyProfile'
+  | 'startupErrorCancel'
   | 'startupErrorCloseApp'
   | 'startupErrorMinimize'
   | 'startupErrorMaximize'
@@ -79,15 +84,20 @@ function reportWindowActionError(action: string, cause: unknown): void {
 export interface StartupErrorPageProps {
   error: unknown;
   onRetry(): Promise<void>;
+  onStartWithEmptyProfile(): Promise<void>;
 }
 
-export function StartupErrorPage({ error, onRetry }: StartupErrorPageProps) {
+export function StartupErrorPage({ error, onRetry, onStartWithEmptyProfile }: StartupErrorPageProps) {
   const [locale] = useState(getStartupLocale);
   const [copy, setCopy] = useState(getStartupCopy);
   const desktop = isTauri();
   const [isRetrying, setIsRetrying] = useState(false);
   const [currentError, setCurrentError] = useState(error);
   const errorDetails = readStartupErrorDetails(currentError);
+  const legacyProfileConflict =
+    errorDetails?.includes('legacy_profile_conflict:') === true ||
+    errorDetails?.includes('legacy_profile_check_failed:') === true;
+  const [confirmingEmptyProfile, setConfirmingEmptyProfile] = useState(false);
   const [maximized, setMaximized] = useState(false);
   const [systemIsDark, setSystemIsDark] = useState(() => window.matchMedia('(prefers-color-scheme: dark)').matches);
   const [themePreference] = useState(getStartupTheme);
@@ -160,12 +170,13 @@ export function StartupErrorPage({ error, onRetry }: StartupErrorPageProps) {
     };
   }, [desktop]);
 
-  async function retryStartup(): Promise<void> {
+  async function retryStartup(startup: () => Promise<void> = onRetry): Promise<void> {
     setIsRetrying(true);
     try {
-      await onRetry();
+      await startup();
     } catch (cause) {
       setCurrentError(cause);
+      setConfirmingEmptyProfile(false);
       setIsRetrying(false);
     }
   }
@@ -236,8 +247,13 @@ export function StartupErrorPage({ error, onRetry }: StartupErrorPageProps) {
             <h1 className="startup-error-card__title" id="startup-error-title">
               {copy.startupErrorTitle}
             </h1>
-            <p>{copy.startupErrorDescription}</p>
-            {errorDetails ? (
+            <p>{legacyProfileConflict ? copy.startupErrorLegacyProfileDescription : copy.startupErrorDescription}</p>
+            {confirmingEmptyProfile && legacyProfileConflict ? (
+              <p className="startup-error-card__diagnostic" role="status">
+                {copy.startupErrorLegacyProfileWarning}
+              </p>
+            ) : null}
+            {errorDetails && !legacyProfileConflict ? (
               <p className="startup-error-card__diagnostic">
                 <strong>{copy.startupErrorDetails}:</strong> {errorDetails}
               </p>
@@ -245,10 +261,32 @@ export function StartupErrorPage({ error, onRetry }: StartupErrorPageProps) {
           </div>
 
           <div className="startup-error-card__actions">
-            <Button disabled={isRetrying} onClick={() => void retryStartup()} variant="primary">
-              <LoaderCircle aria-hidden="true" className={isRetrying ? 'animate-spin' : ''} size={16} />
-              {isRetrying ? copy.startupErrorRetrying : copy.startupErrorRetry}
-            </Button>
+            {!confirmingEmptyProfile ? (
+              <Button disabled={isRetrying} onClick={() => void retryStartup()} variant="primary">
+                <LoaderCircle aria-hidden="true" className={isRetrying ? 'animate-spin' : ''} size={16} />
+                {isRetrying ? copy.startupErrorRetrying : copy.startupErrorRetry}
+              </Button>
+            ) : null}
+            {legacyProfileConflict && !confirmingEmptyProfile ? (
+              <Button disabled={isRetrying} onClick={() => setConfirmingEmptyProfile(true)} variant="secondary">
+                {copy.startupErrorStartEmptyProfile}
+              </Button>
+            ) : null}
+            {legacyProfileConflict && confirmingEmptyProfile ? (
+              <>
+                <Button
+                  disabled={isRetrying}
+                  onClick={() => void retryStartup(onStartWithEmptyProfile)}
+                  variant="primary"
+                >
+                  <LoaderCircle aria-hidden="true" className={isRetrying ? 'animate-spin' : ''} size={16} />
+                  {copy.startupErrorConfirmEmptyProfile}
+                </Button>
+                <Button disabled={isRetrying} onClick={() => setConfirmingEmptyProfile(false)} variant="secondary">
+                  {copy.startupErrorCancel}
+                </Button>
+              </>
+            ) : null}
             {desktop ? (
               <Button
                 onClick={() => runWindowAction(() => getCurrentWindow().close(), 'close the window')}

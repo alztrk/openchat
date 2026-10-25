@@ -12,10 +12,10 @@ use crate::{
 };
 
 use super::{
-    CHAT_URL, OPENAI_RESPONSES_URL, RESPONSES_URL, api_compatible_provider,
-    authentication_required_error, log_send_storage_failure, model_error,
-    models::is_supported_paid_chat_model, openai_authentication_required_error,
-    provider_authentication_required_error, route_error, storage_error,
+    OPENAI_RESPONSES_URL, api_compatible_provider, authentication_required_error,
+    log_send_storage_failure, model_error, openai_authentication_required_error,
+    opencode_free_tier_restricted_error, provider_authentication_required_error, route_error,
+    storage_error,
 };
 
 #[derive(Clone)]
@@ -91,35 +91,37 @@ pub(super) async fn resolve_chat_route(
     options: ChatRouteOptions<'_>,
     cancellation: &mut tokio::sync::watch::Receiver<bool>,
 ) -> Result<ChatRoute, ServiceError> {
-    let connection = storage.connect().map_err(|error| {
-        log_send_storage_failure(
-            storage,
-            "chat.send.compatible_route_open",
-            sqlite_error_code(&error),
-        );
-        storage_error()
-    })?;
-    let (provider_id, model_id) = connection
-        .query_row(
-            "SELECT provider_id, model_id FROM conversations WHERE id = ?1",
-            [conversation_id],
-            |row| {
-                Ok((
-                    row.get::<_, Option<String>>(0)?,
-                    row.get::<_, Option<String>>(1)?,
-                ))
-            },
-        )
-        .optional()
-        .map_err(|error| {
+    let (provider_id, model_id) = {
+        let connection = storage.connect().map_err(|error| {
             log_send_storage_failure(
                 storage,
-                "chat.send.compatible_route_read",
+                "chat.send.compatible_route_open",
                 sqlite_error_code(&error),
             );
             storage_error()
-        })?
-        .ok_or_else(route_error)?;
+        })?;
+        connection
+            .query_row(
+                "SELECT provider_id, model_id FROM conversations WHERE id = ?1",
+                [conversation_id],
+                |row| {
+                    Ok((
+                        row.get::<_, Option<String>>(0)?,
+                        row.get::<_, Option<String>>(1)?,
+                    ))
+                },
+            )
+            .optional()
+            .map_err(|error| {
+                log_send_storage_failure(
+                    storage,
+                    "chat.send.compatible_route_read",
+                    sqlite_error_code(&error),
+                );
+                storage_error()
+            })?
+            .ok_or_else(route_error)?
+    };
     resolve_chat_route_for_model(storage, provider_id, model_id, options, cancellation)
         .await
         .map_err(|error| {
@@ -191,18 +193,17 @@ async fn resolve_chat_route_for_model(
             if requested_api_key_connection_id.is_some() {
                 return Err(route_error());
             }
-            if !is_supported_paid_chat_model(&model_id) {
+            if super::models::is_free_model(storage, &model_id)? {
+                return Err(opencode_free_tier_restricted_error());
+            }
+            if !super::models::is_paid_model(storage, &model_id)? {
                 return Err(model_error());
             }
             let uses_responses_api = super::models::is_responses_api_model(storage, &model_id)?;
+            let chat_url = super::models::inference_url(storage, &model_id, uses_responses_api)?;
             let supports_tool_calls = super::models::supports_tool_calls(storage, &model_id)?;
             let limits = super::models::context_limits(storage, &model_id)?;
             let supports_images = super::models::supports_image_input(storage, &model_id)?;
-            let chat_url = if uses_responses_api {
-                RESPONSES_URL.to_owned()
-            } else {
-                CHAT_URL.to_owned()
-            };
             ResolvedProviderRoute {
                 provider_model_id: model_id.clone(),
                 chat_url,
@@ -254,7 +255,9 @@ async fn resolve_chat_route_for_model(
                 is_free: false,
                 uses_responses_api: true,
                 limits: super::ModelContextLimits::default(),
-                supports_images: crate::openai_api::supports_image_input(&model_id),
+                supports_images: crate::openai_api::supports_image_input(
+                    storage, api_key, &model_id,
+                ),
                 supports_tool_calls: None,
                 connection_id: stored_api_key_connection_id.map(str::to_owned),
                 local_api_key: None,

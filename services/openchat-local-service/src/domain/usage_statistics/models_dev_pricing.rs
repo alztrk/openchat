@@ -8,11 +8,14 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use futures_util::StreamExt;
 use reqwest::Client;
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::{OptionalExtension, params};
 use serde_json::Value;
 use tokio::sync::watch;
 
-use crate::{protocol::ServiceError, storage::AppStorage};
+use crate::{
+    protocol::ServiceError,
+    storage::{AppStorage, StorageConnection},
+};
 
 const CATALOG_URL: &str = "https://models.dev/api.json";
 const CACHE_AGE_MS: i64 = 6 * 60 * 60 * 1000;
@@ -51,7 +54,10 @@ impl PricingCatalog {
     }
 
     /// Installs validated price tiers in connection-local tables for one query.
-    pub(super) fn install_temporary_prices(&self, database: &Connection) -> rusqlite::Result<()> {
+    pub(super) fn install_temporary_prices(
+        &self,
+        database: &mut StorageConnection<'_>,
+    ) -> rusqlite::Result<()> {
         database.execute_batch(
             "CREATE TEMP TABLE models_dev_prices (
                 provider_id TEXT NOT NULL,
@@ -273,6 +279,7 @@ fn model_from_catalog(catalog: &Value, provider_id: &str, model_id: &str) -> Opt
     let provider = catalog.get(catalog_provider_id)?;
     let model = provider.get("models")?.get(model_id)?;
     let context_window = positive_limit(model, "context");
+    let input_token_limit = positive_limit(model, "input");
     let maximum_output = positive_limit(model, "output");
     let input_modalities = string_list(
         model
@@ -284,6 +291,10 @@ fn model_from_catalog(catalog: &Value, provider_id: &str, model_id: &str) -> Opt
             .get("modalities")
             .and_then(|modalities| modalities.get("output")),
     );
+    let supports_images = model
+        .pointer("/modalities/input")
+        .and_then(Value::as_array)
+        .map(|_| input_modalities.contains(&"image"));
     let cost = model.get("cost").filter(|value| value.is_object());
     let pricing = cost.and_then(|cost| {
         let tiers = parse_model_tiers(cost)?;
@@ -313,12 +324,28 @@ fn model_from_catalog(catalog: &Value, provider_id: &str, model_id: &str) -> Opt
         "modelId": model_id,
         "modelName": model.get("name").and_then(Value::as_str),
         "contextWindow": context_window,
+        "inputTokenLimit": input_token_limit,
         "maximumOutput": maximum_output,
         "inputModalities": input_modalities,
         "outputModalities": output_modalities,
+        "supportsImages": supports_images,
         "supportsTools": model.get("tool_call").and_then(Value::as_bool),
+        "supportsReasoning": model.get("reasoning").and_then(Value::as_bool),
         "pricing": pricing,
     }))
+}
+
+pub(super) fn cached_model_supports_images(
+    storage: &AppStorage,
+    provider_id: &str,
+    model_id: &str,
+) -> Option<bool> {
+    load_cached_catalog(storage)
+        .ok()
+        .flatten()
+        .and_then(|(_, catalog)| serde_json::from_str::<Value>(&catalog).ok())
+        .and_then(|catalog| model_from_catalog(&catalog, provider_id, model_id))
+        .and_then(|model| model.get("supportsImages").and_then(Value::as_bool))
 }
 
 fn positive_limit(model: &Value, field: &str) -> Option<i64> {

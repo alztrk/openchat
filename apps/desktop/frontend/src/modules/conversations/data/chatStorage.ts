@@ -1,5 +1,6 @@
 import type { ChatRoute } from '@/modules/providers/data/routes';
 import { type AssistantAgentSnapshot, isAssistantAgentSnapshot } from '@/modules/settings/data/assistantProfiles';
+import { localServiceClient } from '@/platform/local-service';
 import { invoke } from '@/platform/tauri';
 
 import {
@@ -94,65 +95,107 @@ export interface AttachmentTextIndexStatus {
 }
 
 export async function listConversations(): Promise<ChatConversation[]> {
-  const value: unknown = await invoke('list_conversations');
-  if (!Array.isArray(value) || !value.every(isConversation)) {
+  const response = await localServiceClient.call('storage.chat.conversations.list');
+  if (!Array.isArray(response.conversations) || !response.conversations.every(isConversation)) {
     throw new Error('The stored conversation list is invalid.');
   }
-  return value;
+  return response.conversations;
 }
 
 export async function listProjects(): Promise<ChatProject[]> {
-  const value: unknown = await invoke('list_projects');
-  if (!Array.isArray(value) || !value.every(isProject)) {
+  const response = await localServiceClient.call('storage.chat.projects.list');
+  if (!Array.isArray(response.projects) || !response.projects.every(isProject)) {
     throw new Error('The stored project list is invalid.');
   }
-  return value;
+  return response.projects;
 }
 
 /** Persists a project from a one-time native folder selection token. */
 export async function createProject(id: string, name: string, folderSelectionId: string): Promise<void> {
-  await invoke('create_project', { input: { id, name, folderSelectionId } });
-}
-
-export async function addProjectWorkspaceRoot(projectId: string, folderSelectionId: string): Promise<void> {
-  await invoke('add_project_workspace_root', { projectId, folderSelectionId });
-}
-
-export async function removeProjectWorkspaceRoot(projectId: string, rootPath: string): Promise<void> {
-  await invoke('remove_project_workspace_root', { projectId, rootPath });
-}
-
-export async function renameConversation(conversationId: string, title: string): Promise<void> {
-  await invoke('rename_conversation', { conversationId, title });
-}
-
-export async function setConversationRoute(conversationId: string, route: ChatRoute): Promise<void> {
-  await invoke('set_conversation_route', {
-    input: {
-      conversationId,
-      providerId: route.providerId,
-      modelId: route.modelId,
-      connectionId: route.connectionId ?? null,
-      workspaceId: route.workspaceId ?? null,
-      apiKeyConnectionId: route.apiKeyConnectionId ?? null,
-    },
+  const folderPath: unknown = await invoke('consume_project_folder_selection_command', {
+    selectionId: folderSelectionId,
+  });
+  if (typeof folderPath !== 'string' || folderPath.trim().length === 0) {
+    throw new Error('The selected project folder is invalid.');
+  }
+  await localServiceClient.call('storage.chat.projects.create', {
+    input: { id, name, folderPath },
   });
 }
 
+export async function addProjectWorkspaceRoot(projectId: string, folderSelectionId: string): Promise<void> {
+  const folderPath: unknown = await invoke('consume_project_folder_selection_command', {
+    selectionId: folderSelectionId,
+  });
+  if (typeof folderPath !== 'string' || folderPath.trim().length === 0) {
+    throw new Error('The selected workspace folder is invalid.');
+  }
+  await localServiceClient.call('storage.chat.projects.workspace.add', {
+    input: { projectId, folderPath },
+  });
+}
+
+export async function removeProjectWorkspaceRoot(projectId: string, rootPath: string): Promise<void> {
+  expectDeleted(
+    await localServiceClient.call('storage.chat.projects.workspace.remove', {
+      input: { projectId, rootPath },
+    }),
+  );
+}
+
+export async function renameConversation(conversationId: string, title: string): Promise<void> {
+  expectSaved(
+    await localServiceClient.call('storage.chat.conversations.rename', {
+      input: { conversationId, title },
+    }),
+  );
+}
+
+export async function setConversationRoute(conversationId: string, route: ChatRoute): Promise<void> {
+  expectSaved(
+    await localServiceClient.call('storage.chat.conversations.route.set', {
+      input: {
+        conversationId,
+        providerId: route.providerId,
+        modelId: route.modelId,
+        connectionId: route.connectionId ?? null,
+        workspaceId: route.workspaceId ?? null,
+        apiKeyConnectionId: route.apiKeyConnectionId ?? null,
+      },
+    }),
+  );
+}
+
 export async function setConversationPinned(conversationId: string, isPinned: boolean): Promise<void> {
-  await invoke('set_conversation_pinned', { conversationId, isPinned });
+  expectSaved(
+    await localServiceClient.call('storage.chat.conversations.pinned.set', {
+      input: { conversationId, isPinned },
+    }),
+  );
 }
 
 export async function moveConversations(conversationIds: string[], projectId: string | null): Promise<void> {
-  await invoke('move_conversations', { conversationIds, projectId });
+  expectSaved(
+    await localServiceClient.call('storage.chat.conversations.project.set', {
+      input: { conversationIds, projectId },
+    }),
+  );
 }
 
 export async function setConversationsArchived(conversationIds: string[], isArchived: boolean): Promise<void> {
-  await invoke('set_conversations_archived', { conversationIds, isArchived });
+  expectSaved(
+    await localServiceClient.call('storage.chat.conversations.archived.set', {
+      input: { conversationIds, isArchived },
+    }),
+  );
 }
 
 export async function deleteConversation(conversationId: string): Promise<void> {
-  await invoke('delete_conversation', { conversationId });
+  expectDeleted(
+    await localServiceClient.call('storage.chat.conversations.delete', {
+      input: { conversationId },
+    }),
+  );
 }
 
 export async function recordChatRequestFailure(
@@ -213,23 +256,26 @@ export async function saveConversationMarkdown(fileName: string, title: string, 
 }
 
 export async function hasCompletedAssistantResponse(): Promise<boolean> {
-  const value: unknown = await invoke('has_completed_assistant_response');
-  if (typeof value !== 'boolean') {
+  const response = await localServiceClient.call('storage.chat.responses.has_completed');
+  if (typeof response.completed !== 'boolean') {
     throw new Error('The completed response status is invalid.');
   }
-  return value;
+  return response.completed;
 }
 
 export async function clearConversationHistory(): Promise<void> {
-  await invoke('clear_conversation_history');
+  const response = await localServiceClient.call('storage.chat.conversations.clear');
+  if (response.cleared !== true) {
+    throw new Error('The conversation history clear result is invalid.');
+  }
 }
 
 export async function listModelFavorites(): Promise<ChatModelFavorite[]> {
-  const value: unknown = await invoke('list_model_favorites');
-  if (!Array.isArray(value) || !value.every(isModelFavorite)) {
+  const response = await localServiceClient.call('storage.chat.favorites.list');
+  if (!Array.isArray(response.favorites) || !response.favorites.every(isModelFavorite)) {
     throw new Error('The stored model favorite list is invalid.');
   }
-  return value;
+  return response.favorites;
 }
 
 export async function setModelFavorite(
@@ -238,24 +284,26 @@ export async function setModelFavorite(
   },
   isFavorite: boolean,
 ): Promise<void> {
-  await invoke('set_model_favorite', {
-    input: {
-      providerId: favorite.providerId,
-      modelId: favorite.modelId,
-      displayName: favorite.displayName,
-      isFavorite,
-      sourceConnectionId: favorite.sourceConnectionId ?? null,
-    },
-  });
+  expectSaved(
+    await localServiceClient.call('storage.chat.favorites.set', {
+      input: {
+        providerId: favorite.providerId,
+        modelId: favorite.modelId,
+        displayName: favorite.displayName,
+        isFavorite,
+        sourceConnectionId: favorite.sourceConnectionId ?? null,
+      },
+    }),
+  );
 }
 
 export async function getConversation(conversationId: string): Promise<ChatConversation | null> {
-  const value: unknown = await invoke('get_conversation', { conversationId });
-  if (value === null) return null;
-  if (!isConversation(value)) {
+  const response = await localServiceClient.call('storage.chat.conversations.get', { conversationId });
+  if (response.conversation === null) return null;
+  if (!isConversation(response.conversation)) {
     throw new Error('The stored conversation is invalid.');
   }
-  return value;
+  return response.conversation;
 }
 
 export async function getMessages(conversationId: string): Promise<ChatMessage[]> {
@@ -263,7 +311,7 @@ export async function getMessages(conversationId: string): Promise<ChatMessage[]
   let value: unknown;
   try {
     value = await Promise.race([
-      invoke('get_messages', { conversationId }),
+      localServiceClient.call('storage.chat.messages.list', { conversationId }, 15_000),
       new Promise<never>((_, reject) => {
         timeoutId = window.setTimeout(() => reject(new Error('Loading conversation messages timed out.')), 15_000);
       }),
@@ -271,10 +319,10 @@ export async function getMessages(conversationId: string): Promise<ChatMessage[]
   } finally {
     if (timeoutId !== undefined) window.clearTimeout(timeoutId);
   }
-  if (!Array.isArray(value) || !value.every(isMessage)) {
+  if (!isObject(value) || !Array.isArray(value.messages) || !value.messages.every(isMessage)) {
     throw new Error('The stored message list is invalid.');
   }
-  return value.map((message) => ({
+  return value.messages.map((message) => ({
     ...message,
     ...decodeStoredMessageContent(message.content),
   }));
@@ -304,7 +352,7 @@ export async function searchStoredMessages(
   limit = 40,
   options?: SearchFilterOptions,
 ): Promise<StoredSearchMessageResult[]> {
-  const value: unknown = await invoke('search_messages', {
+  const response = await localServiceClient.call('storage.chat.messages.search', {
     input: {
       query,
       limit,
@@ -312,16 +360,10 @@ export async function searchStoredMessages(
       hasCodeOnly: options?.hasCodeOnly ?? null,
     },
   });
-  if (!Array.isArray(value)) return [];
-  return value
-    .filter((item): item is Record<string, unknown> => typeof item === 'object' && item !== null)
-    .map((item) => ({
-      id: String(item.id ?? ''),
-      conversationId: String(item.conversationId ?? ''),
-      role: item.role === 'assistant' ? 'assistant' : 'user',
-      content: String(item.content ?? ''),
-      createdAt: typeof item.createdAt === 'number' ? item.createdAt : null,
-    }));
+  if (!Array.isArray(response.messages) || !response.messages.every(isStoredSearchMessage)) {
+    throw new Error('The stored message search response is invalid.');
+  }
+  return response.messages;
 }
 
 export async function createConversation(
@@ -331,19 +373,21 @@ export async function createConversation(
   projectId: string | null = null,
   agent: AssistantAgentSnapshot | null = null,
 ): Promise<void> {
-  await invoke('create_conversation', {
-    input: {
-      id,
-      title,
-      providerId: route.providerId,
-      modelId: route.modelId,
-      connectionId: route.connectionId ?? null,
-      workspaceId: route.workspaceId ?? null,
-      apiKeyConnectionId: route.apiKeyConnectionId ?? null,
-      projectId,
-      agent,
-    },
-  });
+  expectSaved(
+    await localServiceClient.call('storage.chat.conversations.create', {
+      input: {
+        id,
+        title,
+        providerId: route.providerId,
+        modelId: route.modelId,
+        connectionId: route.connectionId ?? null,
+        workspaceId: route.workspaceId ?? null,
+        apiKeyConnectionId: route.apiKeyConnectionId ?? null,
+        projectId,
+        agent,
+      },
+    }),
+  );
 }
 
 export async function createConversationBranchFromUserMessage(
@@ -499,14 +543,16 @@ export async function saveMessage(
     kind: attachment.kind,
     dataBase64: encodeBase64(attachment.bytes),
   }));
-  await invoke('save_message', {
-    input: {
-      ...message,
-      content: encodeStoredMessageContent(message.content, metadata),
-      attachments: payload,
-      createdAt: message.createdAt ?? Date.now(),
-    },
-  });
+  expectSaved(
+    await localServiceClient.call('storage.chat.messages.save', {
+      input: {
+        ...message,
+        content: encodeStoredMessageContent(message.content, metadata),
+        attachments: payload,
+        createdAt: message.createdAt ?? Date.now(),
+      },
+    }),
+  );
 }
 
 export async function readMessageAttachment(
@@ -514,13 +560,13 @@ export async function readMessageAttachment(
   messageId: string,
   attachmentId: string,
 ): Promise<Uint8Array> {
-  const value: unknown = await invoke('read_message_attachment', {
+  const response = await localServiceClient.call('storage.chat.attachments.read', {
     conversationId,
     messageId,
     attachmentId,
   });
-  if (typeof value !== 'string') throw new Error('The saved attachment is invalid.');
-  return decodeBase64(value);
+  if (typeof response.dataBase64 !== 'string') throw new Error('The saved attachment is invalid.');
+  return decodeBase64(response.dataBase64);
 }
 
 export async function listConversationAttachments(
@@ -529,7 +575,7 @@ export async function listConversationAttachments(
   query: string,
   availability: 'all' | 'available' | 'missing',
 ): Promise<ConversationAttachmentPage> {
-  const value: unknown = await invoke('list_conversation_attachments', {
+  const value: unknown = await localServiceClient.call('storage.chat.attachments.list', {
     offset,
     limit,
     query: query.trim() || null,
@@ -547,19 +593,19 @@ export async function listConversationAttachments(
 }
 
 export async function getAttachmentTextIndexStatus(): Promise<AttachmentTextIndexStatus> {
-  const value: unknown = await invoke('get_attachment_text_index_status');
+  const value: unknown = await localServiceClient.call('storage.chat.attachments.text_index.status');
   if (!isAttachmentTextIndexStatus(value)) throw new Error('The attachment text index status is invalid.');
   return value;
 }
 
 export async function rebuildAttachmentTextIndex(): Promise<AttachmentTextIndexStatus> {
-  const value: unknown = await invoke('rebuild_attachment_text_index');
+  const value: unknown = await localServiceClient.call('storage.chat.attachments.text_index.rebuild');
   if (!isAttachmentTextIndexStatus(value)) throw new Error('The attachment text index status is invalid.');
   return value;
 }
 
 export async function clearAttachmentTextIndex(): Promise<AttachmentTextIndexStatus> {
-  const value: unknown = await invoke('clear_attachment_text_index');
+  const value: unknown = await localServiceClient.call('storage.chat.attachments.text_index.clear');
   if (!isAttachmentTextIndexStatus(value)) throw new Error('The attachment text index status is invalid.');
   return value;
 }
@@ -635,6 +681,29 @@ function isModelFavorite(value: unknown): value is ChatModelFavorite {
     isString(value.displayName) &&
     isNullableString(value.sourceConnectionId)
   );
+}
+
+function isStoredSearchMessage(value: unknown): value is StoredSearchMessageResult {
+  if (!isObject(value)) return false;
+  return (
+    isString(value.id) &&
+    isString(value.conversationId) &&
+    (value.role === 'user' || value.role === 'assistant') &&
+    isString(value.content) &&
+    isNullableNumber(value.createdAt)
+  );
+}
+
+function expectSaved(response: Record<string, unknown>): void {
+  if (response.saved !== true) {
+    throw new Error('The local service save result is invalid.');
+  }
+}
+
+function expectDeleted(response: Record<string, unknown>): void {
+  if (response.deleted !== true) {
+    throw new Error('The local service delete result is invalid.');
+  }
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {

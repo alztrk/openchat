@@ -5,11 +5,12 @@
 
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, Ordering};
-use tauri::AppHandle;
+use tauri::{AppHandle, State};
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
 use zeroize::{Zeroize, Zeroizing};
 
 use crate::{
+    local_service::LocalServiceState,
     mcp_storage::{lock_secret_map, read_secret_map, write_secret_map, McpStorageError},
     request_bounds::BoundedText,
 };
@@ -251,9 +252,10 @@ struct CompatibleProviderSummary {
 /// # Errors
 /// Returns a storage error if the encrypted credential store cannot be read or contains
 /// a custom provider configuration that fails validation.
-pub fn load_provider_credential_status() -> Result<ProviderCredentialSnapshot, ProviderStorageError>
-{
-    let values = read_secret_map().map_err(map_storage_error)?;
+pub async fn load_provider_credential_status(
+    state: State<'_, LocalServiceState>,
+) -> Result<ProviderCredentialSnapshot, ProviderStorageError> {
+    let values = read_secret_map(&state).await.map_err(map_storage_error)?;
     let mut chatgpt_api_keys = values
         .iter()
         .filter_map(|(key, value)| {
@@ -302,7 +304,8 @@ pub fn load_provider_credential_status() -> Result<ProviderCredentialSnapshot, P
 ///
 /// # Errors
 /// Returns a validation, duplicate-key, or secure-storage error without returning the key.
-pub fn save_chatgpt_api_key(
+pub async fn save_chatgpt_api_key(
+    state: State<'_, LocalServiceState>,
     connection_id: BoundedText<MAXIMUM_PROVIDER_ID_BYTES>,
     api_key: BoundedText<MAXIMUM_KEY_BYTES>,
 ) -> Result<(), ProviderStorageError> {
@@ -313,7 +316,7 @@ pub fn save_chatgpt_api_key(
     }
     let api_key = validated_key("chatgpt_api", api_key)?;
     let _update_lock = lock_secret_map().map_err(map_storage_error)?;
-    let mut values = read_secret_map().map_err(map_storage_error)?;
+    let mut values = read_secret_map(&state).await.map_err(map_storage_error)?;
     if values
         .iter()
         .any(|(name, value)| name.starts_with(CHATGPT_API_KEY_PREFIX) && value == api_key.as_str())
@@ -324,7 +327,9 @@ pub fn save_chatgpt_api_key(
         format!("{CHATGPT_API_KEY_PREFIX}{connection_id}"),
         api_key.to_string(),
     );
-    write_secret_map(&values, &_update_lock).map_err(map_storage_error)
+    write_secret_map(&state, &values, &_update_lock)
+        .await
+        .map_err(map_storage_error)
 }
 
 #[tauri::command]
@@ -335,7 +340,8 @@ pub fn save_chatgpt_api_key(
 ///
 /// # Errors
 /// Returns a validation or secure-storage error without returning the key.
-pub fn save_compatible_provider_api_key(
+pub async fn save_compatible_provider_api_key(
+    state: State<'_, LocalServiceState>,
     provider_id: BoundedText<MAXIMUM_PROVIDER_ID_BYTES>,
     api_key: BoundedText<MAXIMUM_KEY_BYTES>,
 ) -> Result<(), ProviderStorageError> {
@@ -346,12 +352,14 @@ pub fn save_compatible_provider_api_key(
     }
     let api_key = validated_key(&provider_id, api_key)?;
     let _update_lock = lock_secret_map().map_err(map_storage_error)?;
-    let mut values = read_secret_map().map_err(map_storage_error)?;
+    let mut values = read_secret_map(&state).await.map_err(map_storage_error)?;
     values.insert(
         format!("{COMPATIBLE_KEY_PREFIX}{provider_id}"),
         api_key.to_string(),
     );
-    write_secret_map(&values, &_update_lock).map_err(map_storage_error)
+    write_secret_map(&state, &values, &_update_lock)
+        .await
+        .map_err(map_storage_error)
 }
 
 #[tauri::command]
@@ -361,14 +369,17 @@ pub fn save_compatible_provider_api_key(
 ///
 /// # Errors
 /// Returns a validation or secure-storage error without returning the key.
-pub fn save_opencode_api_key(
+pub async fn save_opencode_api_key(
+    state: State<'_, LocalServiceState>,
     api_key: BoundedText<MAXIMUM_KEY_BYTES>,
 ) -> Result<(), ProviderStorageError> {
     let api_key = validated_key("opencode", Zeroizing::new(api_key.into_inner()))?;
     let _update_lock = lock_secret_map().map_err(map_storage_error)?;
-    let mut values = read_secret_map().map_err(map_storage_error)?;
+    let mut values = read_secret_map(&state).await.map_err(map_storage_error)?;
     values.insert(OPENCODE_KEY.to_owned(), api_key.to_string());
-    write_secret_map(&values, &_update_lock).map_err(map_storage_error)
+    write_secret_map(&state, &values, &_update_lock)
+        .await
+        .map_err(map_storage_error)
 }
 
 #[tauri::command]
@@ -385,6 +396,7 @@ pub fn save_opencode_api_key(
 /// Returns a validation, key-reentry, or secure-storage error; the full key is never returned.
 pub async fn save_custom_provider(
     app: AppHandle,
+    state: State<'_, LocalServiceState>,
     input: SaveCustomProviderInput,
 ) -> Result<CustomProviderSummary, ProviderStorageError> {
     let SaveCustomProviderInput {
@@ -412,9 +424,11 @@ pub async fn save_custom_provider(
         }
     }
     let _update_lock = lock_secret_map().map_err(map_storage_error)?;
-    let mut values = read_secret_map().map_err(map_storage_error)?;
+    let mut values = read_secret_map(&state).await.map_err(map_storage_error)?;
     let summary = update_custom_provider_values(&mut values, config, api_key)?;
-    write_secret_map(&values, &_update_lock).map_err(map_storage_error)?;
+    write_secret_map(&state, &values, &_update_lock)
+        .await
+        .map_err(map_storage_error)?;
     Ok(summary)
 }
 
@@ -513,7 +527,8 @@ fn stored_custom_provider_matches_destination(
 ///
 /// # Errors
 /// Returns a validation or secure-storage error.
-pub fn delete_custom_provider(
+pub async fn delete_custom_provider(
+    state: State<'_, LocalServiceState>,
     id: BoundedText<MAXIMUM_PROVIDER_ID_BYTES>,
 ) -> Result<(), ProviderStorageError> {
     let id = id.into_inner();
@@ -521,10 +536,12 @@ pub fn delete_custom_provider(
         return Err(ProviderStorageError::invalid());
     }
     let _update_lock = lock_secret_map().map_err(map_storage_error)?;
-    let mut values = read_secret_map().map_err(map_storage_error)?;
+    let mut values = read_secret_map(&state).await.map_err(map_storage_error)?;
     values.remove(&format!("{CUSTOM_PROVIDER_KEY_PREFIX}{id}"));
     values.remove(&format!("{CUSTOM_PROVIDER_CONFIG_PREFIX}{id}"));
-    write_secret_map(&values, &_update_lock).map_err(map_storage_error)
+    write_secret_map(&state, &values, &_update_lock)
+        .await
+        .map_err(map_storage_error)
 }
 
 #[tauri::command]
@@ -532,7 +549,8 @@ pub fn delete_custom_provider(
 ///
 /// # Errors
 /// Returns a validation or secure-storage error.
-pub fn delete_chatgpt_api_key(
+pub async fn delete_chatgpt_api_key(
+    state: State<'_, LocalServiceState>,
     connection_id: BoundedText<MAXIMUM_PROVIDER_ID_BYTES>,
 ) -> Result<(), ProviderStorageError> {
     let connection_id = connection_id.into_inner();
@@ -540,9 +558,11 @@ pub fn delete_chatgpt_api_key(
         return Err(ProviderStorageError::invalid());
     }
     let _update_lock = lock_secret_map().map_err(map_storage_error)?;
-    let mut values = read_secret_map().map_err(map_storage_error)?;
+    let mut values = read_secret_map(&state).await.map_err(map_storage_error)?;
     values.remove(&format!("{CHATGPT_API_KEY_PREFIX}{connection_id}"));
-    write_secret_map(&values, &_update_lock).map_err(map_storage_error)
+    write_secret_map(&state, &values, &_update_lock)
+        .await
+        .map_err(map_storage_error)
 }
 
 #[tauri::command]
@@ -550,7 +570,8 @@ pub fn delete_chatgpt_api_key(
 ///
 /// # Errors
 /// Returns a validation or secure-storage error.
-pub fn delete_compatible_provider_api_key(
+pub async fn delete_compatible_provider_api_key(
+    state: State<'_, LocalServiceState>,
     provider_id: BoundedText<MAXIMUM_PROVIDER_ID_BYTES>,
 ) -> Result<(), ProviderStorageError> {
     let provider_id = provider_id.into_inner();
@@ -558,9 +579,11 @@ pub fn delete_compatible_provider_api_key(
         return Err(ProviderStorageError::invalid());
     }
     let _update_lock = lock_secret_map().map_err(map_storage_error)?;
-    let mut values = read_secret_map().map_err(map_storage_error)?;
+    let mut values = read_secret_map(&state).await.map_err(map_storage_error)?;
     values.remove(&format!("{COMPATIBLE_KEY_PREFIX}{provider_id}"));
-    write_secret_map(&values, &_update_lock).map_err(map_storage_error)
+    write_secret_map(&state, &values, &_update_lock)
+        .await
+        .map_err(map_storage_error)
 }
 
 #[tauri::command]
@@ -568,11 +591,15 @@ pub fn delete_compatible_provider_api_key(
 ///
 /// # Errors
 /// Returns a secure-storage error.
-pub fn delete_opencode_api_key() -> Result<(), ProviderStorageError> {
+pub async fn delete_opencode_api_key(
+    state: State<'_, LocalServiceState>,
+) -> Result<(), ProviderStorageError> {
     let _update_lock = lock_secret_map().map_err(map_storage_error)?;
-    let mut values = read_secret_map().map_err(map_storage_error)?;
+    let mut values = read_secret_map(&state).await.map_err(map_storage_error)?;
     values.remove(OPENCODE_KEY);
-    write_secret_map(&values, &_update_lock).map_err(map_storage_error)
+    write_secret_map(&state, &values, &_update_lock)
+        .await
+        .map_err(map_storage_error)
 }
 
 /// Trims, bounds, and provider-checks a credential while keeping the owned value zeroizing.

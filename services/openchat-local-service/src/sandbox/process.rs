@@ -158,6 +158,22 @@ impl SandboxedProcess {
         )
     }
 
+    /// Starts the same executable as the long-lived, networkless storage AppContainer.
+    pub(crate) fn spawn_storage_broker(program: &Path) -> io::Result<Self> {
+        validate_win32_string(program.as_os_str())?;
+        let program = fs::canonicalize(program)?;
+        let (sandbox, _) = AppContainerSandbox::create_storage_broker(&program)?;
+        let working_directory = sandbox.working_directory.clone();
+        Self::spawn_process(
+            Some(sandbox),
+            program,
+            vec![std::ffi::OsString::from("--storage-broker-stdio")],
+            working_directory,
+            &[],
+            SandboxOptions::default(),
+        )
+    }
+
     /// Starts a program with the current user's normal filesystem and network access.
     pub fn spawn_program_without_sandbox(
         program: &Path,
@@ -425,6 +441,30 @@ impl SandboxedProcess {
         self.stderr.take()
     }
 
+    /// Takes the process's standard input pipe as a blocking standard-library file.
+    pub(crate) fn take_stdin_blocking(&mut self) -> io::Result<std::fs::File> {
+        take_blocking_file(
+            &mut self.stdin,
+            "The storage broker input pipe is unavailable.",
+        )
+    }
+
+    /// Takes the process's standard output pipe as a blocking standard-library file.
+    pub(crate) fn take_stdout_blocking(&mut self) -> io::Result<std::fs::File> {
+        take_blocking_file(
+            &mut self.stdout,
+            "The storage broker output pipe is unavailable.",
+        )
+    }
+
+    /// Takes the process's standard error pipe as a blocking standard-library file.
+    pub(crate) fn take_stderr_blocking(&mut self) -> io::Result<std::fs::File> {
+        take_blocking_file(
+            &mut self.stderr,
+            "The storage broker error pipe is unavailable.",
+        )
+    }
+
     /// Checks whether the primary process has exited without blocking.
     pub fn try_wait(&self) -> io::Result<Option<std::process::ExitStatus>> {
         // SAFETY: `self.process` is an owned, live process handle.
@@ -485,6 +525,22 @@ impl SandboxedProcess {
             _ => Err(io::Error::other(
                 "The managed process tree returned an unknown wait result.",
             )),
+        }
+    }
+}
+
+fn take_blocking_file(
+    slot: &mut Option<File>,
+    unavailable_message: &'static str,
+) -> io::Result<std::fs::File> {
+    let file = slot
+        .take()
+        .ok_or_else(|| io::Error::other(unavailable_message))?;
+    match file.try_into_std() {
+        Ok(file) => Ok(file),
+        Err(file) => {
+            *slot = Some(file);
+            Err(io::Error::other(unavailable_message))
         }
     }
 }

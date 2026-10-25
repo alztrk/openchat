@@ -119,7 +119,10 @@ pub fn list_models(
             is_available: row.get(5)?,
             default_reasoning_level: row.get(6)?,
             supports_reasoning_summary_parameter: row.get(7)?,
-            supports_images: super::model_supports_images(&id),
+            supports_images: crate::usage_statistics::cached_model_supports_images(
+                storage, "chatgpt", &id,
+            )
+            .unwrap_or(false),
             supports_fast_mode: row.get(8)?,
         })
     })?;
@@ -153,7 +156,10 @@ pub fn selected_model(
                     is_available: row.get(5)?,
                     default_reasoning_level: row.get(6)?,
                     supports_reasoning_summary_parameter: row.get(7)?,
-                    supports_images: super::model_supports_images(&id),
+                    supports_images: crate::usage_statistics::cached_model_supports_images(
+                        storage, "chatgpt", &id,
+                    )
+                    .unwrap_or(false),
                     supports_fast_mode: row.get(8)?,
                 })
             },

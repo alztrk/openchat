@@ -532,7 +532,7 @@ impl ToolExecutor {
     pub(crate) async fn take_computer_use_image(&self, call_id: &str) -> Option<String> {
         #[cfg(windows)]
         {
-        self.computer_use_images.lock().await.remove(call_id)
+            self.computer_use_images.lock().await.remove(call_id)
         }
         #[cfg(not(windows))]
         {
@@ -579,7 +579,10 @@ impl ToolExecutor {
                     events,
                 )
                 .await?;
-                return Ok(ToolResult { call_id: call.id.clone(), output });
+                return Ok(ToolResult {
+                    call_id: call.id.clone(),
+                    output,
+                });
             }
             let requires_approval = self.permission_rules.get("computer_use")
                 == Some(&ToolPermissionRule::Ask)
@@ -596,9 +599,14 @@ impl ToolExecutor {
                 .await?;
                 let approved = permissions
                     .request_approval(
-                    request_id, "computer_use", "desktop",
-                    &call.arguments, events, cancellation,
-                ).await;
+                        request_id,
+                        "computer_use",
+                        "desktop",
+                        &call.arguments,
+                        events,
+                        cancellation,
+                    )
+                    .await;
                 let approved = match approved {
                     Ok(approved) => approved,
                     Err(error) if error.code == "operation_cancelled" => {
@@ -609,24 +617,35 @@ impl ToolExecutor {
                             request_id,
                             snapshot,
                             events,
-                        ).await?;
+                        )
+                        .await?;
                         return Err(error);
                     }
                     Err(error) => return Err(error),
                 };
                 if !approved {
-                    let output = tool_error("permission_denied", "Computer Use was not approved. Do not retry unless the user asks.");
+                    let output = tool_error(
+                        "permission_denied",
+                        "Computer Use was not approved. Do not retry unless the user asks.",
+                    );
                     self.emit_activity(
                         storage,
                         ToolActivity::denied(&activity_call, "desktop".to_owned(), output.clone()),
                         request_id,
                         snapshot,
                         events,
-                    ).await?;
-                    return Ok(ToolResult { call_id: call.id.clone(), output });
+                    )
+                    .await?;
+                    return Ok(ToolResult {
+                        call_id: call.id.clone(),
+                        output,
+                    });
                 }
             }
-            *self.computer_use_approved.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = true;
+            *self
+                .computer_use_approved
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner) = true;
         }
         if *cancellation.borrow() {
             return Err(crate::permissions::operation_cancelled_error());
@@ -637,18 +656,26 @@ impl ToolExecutor {
             request_id,
             snapshot,
             events,
-        ).await?;
+        )
+        .await?;
         let result = self.computer_use.execute(&call.arguments);
         if let Some(image) = result.image {
-            self.computer_use_images.lock().await.insert(call.id.clone(), image);
+            self.computer_use_images
+                .lock()
+                .await
+                .insert(call.id.clone(), image);
         }
         let activity = ToolActivity::finished(
             &activity_call,
             Some("desktop".to_owned()),
             result.output.clone(),
         );
-        self.emit_activity(storage, activity, request_id, snapshot, events).await?;
-        Ok(ToolResult { call_id: call.id.clone(), output: result.output })
+        self.emit_activity(storage, activity, request_id, snapshot, events)
+            .await?;
+        Ok(ToolResult {
+            call_id: call.id.clone(),
+            output: result.output,
+        })
     }
 
     #[cfg(windows)]
@@ -2548,7 +2575,7 @@ fn question_arguments_error() -> ServiceError {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct GenerateImageArguments {
     prompt: String,
-    model: Option<String>,
+    model: String,
     size: Option<String>,
     quality: Option<String>,
     background: Option<String>,
@@ -2577,7 +2604,7 @@ fn parse_image_request(arguments: &Value) -> Result<ImageGenerationRequest, Serv
     };
     Ok(ImageGenerationRequest {
         prompt: arguments.prompt,
-        model: arguments.model.unwrap_or_else(|| "gpt-image-2".to_owned()),
+        model: arguments.model,
         size: arguments.size,
         quality,
         background,

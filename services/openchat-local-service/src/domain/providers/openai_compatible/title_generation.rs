@@ -21,10 +21,7 @@ use crate::{
     storage::AppStorage,
 };
 
-use super::{
-    CustomProviderConfig, OPENAI_RESPONSES_URL, RESPONSES_URL, api_compatible_provider, client,
-    copilot,
-};
+use super::{CustomProviderConfig, OPENAI_RESPONSES_URL, api_compatible_provider, client, copilot};
 
 struct TitleRoute {
     model_id: String,
@@ -132,19 +129,19 @@ async fn resolve_target(
             })
         }
         "opencode" => {
-            if !super::models::is_supported_paid_chat_model(&target.model_id) {
+            if super::models::is_free_model(storage, &target.model_id).map_err(|_| ())? {
+                return Err(());
+            }
+            if !super::models::is_paid_model(storage, &target.model_id).map_err(|_| ())? {
                 return Err(());
             }
             let responses_api =
                 super::models::is_responses_api_model(storage, &target.model_id).map_err(|_| ())?;
+            let url = super::models::inference_url(storage, &target.model_id, responses_api)
+                .map_err(|_| ())?;
             Ok(TitleRoute {
                 model_id: target.model_id,
-                url: if responses_api {
-                    RESPONSES_URL
-                } else {
-                    "https://opencode.ai/inference/openai/v1/chat/completions"
-                }
-                .to_owned(),
+                url,
                 api_key,
                 anthropic: false,
                 copilot: false,

@@ -80,7 +80,10 @@ pub(super) fn parse_models(value: &Value) -> Result<Vec<ChatGptModel>, ServiceEr
                 .get("additional_speed_tiers")
                 .and_then(Value::as_array)
                 .is_some_and(|tiers| tiers.iter().any(|tier| tier.as_str() == Some("fast")));
-        let supports_images = crate::chatgpt_store::model_supports_images(&id);
+        let supports_images = model
+            .get("supportsImages")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
         parsed.push(ChatGptModel {
             id,
             display_name,

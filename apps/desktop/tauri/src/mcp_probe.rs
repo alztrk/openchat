@@ -1,6 +1,7 @@
 //! Discovers tools from installed global MCP servers under bounded AppContainer isolation.
 
 use serde_json::{json, Value};
+use tauri::State;
 use zeroize::Zeroizing;
 
 #[cfg(windows)]
@@ -18,6 +19,7 @@ use tokio::io::AsyncReadExt;
 #[cfg(windows)]
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncWrite, AsyncWriteExt, BufReader};
 
+use crate::local_service::LocalServiceState;
 use crate::mcp_storage::{
     all_environment_names, mcp_directory, read_secret_map, require_server,
     validate_environment_name, write_server_config, GlobalMcpServer, McpStorageError,
@@ -76,11 +78,12 @@ impl RpcOutputBudget {
 #[tauri::command]
 pub async fn probe_global_mcp_server(
     server_id: BoundedText<MAXIMUM_SERVER_ID_BYTES>,
+    state: State<'_, LocalServiceState>,
 ) -> Result<GlobalMcpServer, McpStorageError> {
     let server_id = server_id.into_inner();
     #[cfg(windows)]
     {
-        probe_global_mcp_server_windows(&server_id).await
+        probe_global_mcp_server_windows(&state, &server_id).await
     }
     #[cfg(not(windows))]
     {
@@ -91,18 +94,19 @@ pub async fn probe_global_mcp_server(
 
 #[cfg(windows)]
 async fn probe_global_mcp_server_windows(
+    state: &LocalServiceState,
     server_id: &str,
 ) -> Result<GlobalMcpServer, McpStorageError> {
     let _probe_guard = GLOBAL_MCP_PROBE_LOCK
         .try_lock()
         .map_err(|_| McpStorageError::probe_failed())?;
-    let mut server = require_server(server_id)?;
+    let mut server = require_server(state, server_id).await?;
     let root = mcp_directory()?;
     let canonical_root = fs::canonicalize(root).map_err(|_| McpStorageError::probe_failed())?;
     let install_directory = canonical_install_directory(&canonical_root, &server.id)?;
     server.install_dir = install_directory.to_string_lossy().into_owned();
 
-    let secrets = read_secret_map()?;
+    let secrets = read_secret_map(state).await?;
     let allowed_names = all_environment_names(&server);
     let mut process_environment = Vec::new();
 
@@ -131,7 +135,7 @@ async fn probe_global_mcp_server_windows(
     }
 
     server.discovered_tools = probe_tools(&server, process_environment).await?;
-    write_server_config(&canonical_root, &server)?;
+    write_server_config(state, &canonical_root, &server).await?;
     Ok(server)
 }
 

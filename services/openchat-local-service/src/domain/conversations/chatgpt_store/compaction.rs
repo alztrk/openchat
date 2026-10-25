@@ -5,9 +5,9 @@
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::{OptionalExtension, params};
 
-use crate::storage::AppStorage;
+use crate::storage::{AppStorage, StorageConnection};
 
 #[derive(Clone, Debug)]
 pub struct ConversationContextState {
@@ -135,7 +135,7 @@ pub fn reset_conversation_context(
 }
 
 fn reset_conversation_context_from_connection(
-    connection: &Connection,
+    connection: &StorageConnection<'_>,
     conversation_id: &str,
 ) -> rusqlite::Result<bool> {
     Ok(connection.execute(

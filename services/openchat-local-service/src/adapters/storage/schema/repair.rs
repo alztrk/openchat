@@ -34,6 +34,42 @@ pub(super) fn schema_trigger_exists(connection: &Connection, name: &str) -> rusq
     )
 }
 
+pub(crate) fn needs_repair(
+    connection: &Connection,
+    backend_version: i64,
+) -> rusqlite::Result<bool> {
+    if backend_version >= 11 && !schema_table_exists(connection, "conversation_context_state")? {
+        return Ok(true);
+    }
+    if backend_version < 13 || !schema_table_exists(connection, "messages")? {
+        return Ok(false);
+    }
+    for table in ["conversation_memory_fts", "conversation_memory_tools_fts"] {
+        let required = table == "conversation_memory_fts" || backend_version >= 14;
+        if required && !schema_table_exists(connection, table)? {
+            return Ok(true);
+        }
+    }
+    if !schema_index_exists(connection, "idx_messages_conversation_sort")? {
+        return Ok(true);
+    }
+    if backend_version >= SCHEMA_VERSION {
+        for trigger in [
+            "conversation_memory_message_insert",
+            "conversation_memory_message_update",
+            "conversation_memory_message_delete",
+            "conversation_memory_tool_insert",
+            "conversation_memory_tool_update",
+            "conversation_memory_tool_delete",
+        ] {
+            if !schema_trigger_exists(connection, trigger)? {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
+}
+
 pub(super) fn repair_missing_conversation_context_state(
     connection: &Connection,
     backend_version: i64,

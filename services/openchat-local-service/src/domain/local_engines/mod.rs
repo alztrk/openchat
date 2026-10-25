@@ -246,12 +246,14 @@ pub(crate) async fn register_model(
     storage_action: &str,
 ) -> Result<Value, ServiceError> {
     let database_root = storage.root().to_path_buf();
+    let database_queue = storage.database_queue_handle();
     let engine_id = engine_id.to_owned();
     let model_path = model_path.to_owned();
     let model_directory = model_directory.map(str::to_owned);
     let storage_action = storage_action.to_owned();
     let model = tokio::task::spawn_blocking(move || {
         models::register_with_storage_action(
+            database_queue,
             &database_root,
             &engine_id,
             &model_path,

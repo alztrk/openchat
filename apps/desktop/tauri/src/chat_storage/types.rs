@@ -643,11 +643,3 @@ pub(crate) struct ValidatedAttachment {
     pub(crate) metadata: StoredAttachmentMetadata,
     pub(crate) bytes: Vec<u8>,
 }
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-/// Database location and schema version after a successful integrity check and preparation.
-pub struct PreparedDatabase {
-    pub(crate) database_path: String,
-    pub(crate) schema_version: i64,
-}

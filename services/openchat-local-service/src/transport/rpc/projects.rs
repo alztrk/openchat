@@ -78,8 +78,10 @@ pub(super) async fn dispatch(
         }
         "project.index.get" => {
             let project_id = required_string(params, "projectId")?;
-            let index_path = storage.root().join("cache").join("project-index.sqlite3");
-            Ok(json!({"index": crate::project_index::snapshot(&index_path, project_id)?}))
+            let connection = storage
+                .connect()
+                .map_err(|_| project_index_storage_error())?;
+            Ok(json!({"index": crate::project_index::snapshot(&connection, project_id)?}))
         }
         "project.index.set_enabled" => {
             let project_id = required_string(params, "projectId")?;
@@ -87,23 +89,29 @@ pub(super) async fn dispatch(
                 .get("enabled")
                 .and_then(Value::as_bool)
                 .ok_or_else(invalid_request_params)?;
-            let index_path = storage.root().join("cache").join("project-index.sqlite3");
+            let mut connection = storage
+                .connect()
+                .map_err(|_| project_index_storage_error())?;
             Ok(json!({
-                "index": crate::project_index::set_enabled(&index_path, project_id, enabled)?
+                "index": crate::project_index::set_enabled(&mut connection, project_id, enabled)?
             }))
         }
         "project.index.sync" => {
             let project_id = required_string(params, "projectId")?;
             let project_root = project_root_for_mcp(storage, project_id)?;
-            let index_path = storage.root().join("cache").join("project-index.sqlite3");
+            let mut connection = storage
+                .connect()
+                .map_err(|_| project_index_storage_error())?;
             Ok(json!({
-                "index": crate::project_index::sync(&index_path, project_id, &project_root)?
+                "index": crate::project_index::sync(&mut connection, project_id, &project_root)?
             }))
         }
         "project.index.clear" => {
             let project_id = required_string(params, "projectId")?;
-            let index_path = storage.root().join("cache").join("project-index.sqlite3");
-            Ok(json!({"index": crate::project_index::clear(&index_path, project_id)?}))
+            let mut connection = storage
+                .connect()
+                .map_err(|_| project_index_storage_error())?;
+            Ok(json!({"index": crate::project_index::clear(&mut connection, project_id)?}))
         }
         "project.mcp.catalog.get" => {
             let project_id = required_string(params, "projectId")?;
@@ -133,19 +141,22 @@ pub(super) async fn dispatch(
             if !config.enabled {
                 return Ok(json!({"status": "disabled", "toolCount": 0, "toolNames": []}));
             }
-            let connection = storage.connect().map_err(|error| {
-                ServiceError::new(
-                    "tool_permission_settings_unavailable",
-                    "Tool permission settings could not be accessed safely.",
-                    true,
-                )
-                .with_details(error.to_string())
-            })?;
-            let permission_mode = tool_permissions::load_mode(&connection)?;
+            let permission_mode = {
+                let connection = storage.connect().map_err(|error| {
+                    ServiceError::new(
+                        "tool_permission_settings_unavailable",
+                        "Tool permission settings could not be accessed safely.",
+                        true,
+                    )
+                    .with_details(error.to_string())
+                })?;
+                tool_permissions::load_mode(&connection)?
+            };
             let server_id = config.id.clone();
             let registry = tools::mcp::McpRegistry::connect(
                 vec![config],
                 permission_mode == tools::ToolPermissionMode::FullAccess,
+                storage,
             )
             .await
             .map_err(|error| {
@@ -179,7 +190,7 @@ pub(super) async fn dispatch(
             )
             .map_err(|_| invalid_request_params())?;
             crate::credentials::CredentialStore
-                .store_mcp_secret(&reference, secret)
+                .store_mcp_secret(storage, &reference, secret)
                 .map_err(mcp_credential_error)?;
             Ok(json!({"stored": true}))
         }
@@ -195,7 +206,7 @@ pub(super) async fn dispatch(
             )
             .map_err(|_| invalid_request_params())?;
             crate::credentials::CredentialStore
-                .delete_mcp_secret(&reference)
+                .delete_mcp_secret(storage, &reference)
                 .map_err(mcp_credential_error)?;
             Ok(json!({"removed": true}))
         }
@@ -211,7 +222,7 @@ pub(super) async fn dispatch(
             )
             .map_err(|_| invalid_request_params())?;
             let stored = crate::credentials::CredentialStore
-                .has_mcp_secret(&reference)
+                .has_mcp_secret(storage, &reference)
                 .map_err(mcp_credential_error)?;
             Ok(json!({"stored": stored}))
         }
@@ -275,15 +286,19 @@ pub(super) async fn dispatch(
                 return Err(invalid_request_params());
             }
             let task_root = project_task_root(storage, project_id, worktree_id).await?;
-            let connection = storage.connect().map_err(|_| {
-                ServiceError::new(
-                    "tool_permission_settings_unavailable",
-                    "Tool permission settings could not be accessed safely.",
-                    true,
+            let (permission_rules, permission_mode) = {
+                let connection = storage.connect().map_err(|_| {
+                    ServiceError::new(
+                        "tool_permission_settings_unavailable",
+                        "Tool permission settings could not be accessed safely.",
+                        true,
+                    )
+                })?;
+                (
+                    tool_permissions::load_project_rules(&connection, project_id)?,
+                    tool_permissions::load_mode(&connection)?,
                 )
-            })?;
-            let permission_rules = tool_permissions::load_project_rules(&connection, project_id)?;
-            let permission_mode = tool_permissions::load_mode(&connection)?;
+            };
             let task_permission_rule =
                 tools::project_task_permission_rule(&permission_rules, task_id);
             if task_permission_rule == Some(&ToolPermissionRule::Deny) {
@@ -617,6 +632,14 @@ fn git_worktree_error(error: git_worktrees::GitWorktreeError) -> ServiceError {
             true,
         ),
     }
+}
+
+fn project_index_storage_error() -> ServiceError {
+    ServiceError::new(
+        "project_index_unavailable",
+        "The local project index is unavailable. Retry the operation or clear the index.",
+        true,
+    )
 }
 
 #[cfg(test)]

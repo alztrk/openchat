@@ -1,5 +1,6 @@
 import { unifiedStorage } from '@/platform/storage/unifiedStorage';
-import { invoke, isTauri } from '@/platform/tauri';
+import { localServiceClient } from '@/platform/local-service';
+import { isTauri } from '@/platform/tauri';
 
 export const maxPersonalMemoryFacts = 100;
 export const maxPersonalMemoryFactCharacters = 500;
@@ -31,14 +32,19 @@ export async function readPersonalMemoryPreferences(): Promise<PersonalMemoryPre
 
 export async function writePersonalMemoryEnabled(enabled: boolean): Promise<void> {
   if (isTauri()) {
-    await invoke('set_app_setting', { key: enabledKey, valueJson: String(enabled) });
+    const response = await localServiceClient.call('storage.settings.set', {
+      key: enabledKey,
+      valueJson: String(enabled),
+    });
+    assertServiceFlag(response, 'saved', 'personal memory preference save');
   }
-  unifiedStorage.setItem(enabledKey, String(enabled));
+  unifiedStorage.setItem(enabledKey, String(enabled), !isTauri());
 }
 
 export async function readPersonalMemoryFacts(): Promise<PersonalMemoryFact[]> {
   if (isTauri()) {
-    const decoded: unknown = await invoke('list_personal_memory_facts');
+    const response = await localServiceClient.call('storage.personal_memory.list');
+    const decoded: unknown = isRecord(response) ? response.facts : undefined;
     if (!isUnknownArray(decoded) || decoded.length > maxPersonalMemoryFacts) {
       throw new Error('Saved personal memories are invalid.');
     }
@@ -81,7 +87,8 @@ function readStoredPersonalMemoryFacts(): PersonalMemoryFact[] {
 export async function deletePersonalMemoryFact(id: string): Promise<void> {
   if (!/^[a-f0-9]{32}$/.test(id)) throw new Error('The personal memory ID is invalid.');
   if (isTauri()) {
-    await invoke('delete_personal_memory_fact', { id });
+    const response = await localServiceClient.call('storage.personal_memory.delete', { id });
+    assertServiceBoolean(response, 'deleted', 'personal memory deletion');
     unifiedStorage.removeItem(factsKey);
     return;
   }
@@ -90,7 +97,13 @@ export async function deletePersonalMemoryFact(id: string): Promise<void> {
 }
 
 export async function clearPersonalMemory(): Promise<void> {
-  if (isTauri()) await invoke('clear_personal_memory_facts');
+  if (isTauri()) {
+    const response = await localServiceClient.call('storage.personal_memory.clear');
+    assertServiceFlag(response, 'cleared', 'personal memory clear');
+    unifiedStorage.removeItem(enabledKey, false);
+    unifiedStorage.removeItem(factsKey, false);
+    return;
+  }
   unifiedStorage.removeItem(enabledKey);
   unifiedStorage.removeItem(factsKey);
 }
@@ -224,4 +237,16 @@ function isUnknownArray(value: unknown): value is unknown[] {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function assertServiceFlag(value: unknown, field: 'saved' | 'cleared', operation: string): void {
+  if (!isRecord(value) || value[field] !== true) {
+    throw new Error(`The local service returned an invalid response for ${operation}.`);
+  }
+}
+
+function assertServiceBoolean(value: unknown, field: 'deleted', operation: string): void {
+  if (!isRecord(value) || typeof value[field] !== 'boolean') {
+    throw new Error(`The local service returned an invalid response for ${operation}.`);
+  }
 }

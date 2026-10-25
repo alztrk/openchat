@@ -7,7 +7,7 @@ $binaries = Join-Path $root 'apps\desktop\tauri\binaries'
 
 Push-Location $root
 try {
-    cargo build -p openchat-local-service
+    cargo build -p openchat-local-service --bin openchat-local-service
     if ($LASTEXITCODE -ne 0) {
         throw 'The local service build failed.'
     }

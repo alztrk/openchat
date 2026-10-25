@@ -31,9 +31,10 @@ pub use connections::{
 #[allow(unused_imports)]
 pub use conversations::{
     apply_generated_title, conversation_messages, conversation_messages_from_boundary,
-    conversation_route, conversation_title_is_automatic, create_title_job, finish_title_job,
-    is_custom_title, is_default_title, is_retryable_latest_assistant_message,
-    save_assistant_message, save_assistant_tool_checkpoint, should_generate_automatic_title,
+    conversation_messages_on_connection, conversation_route, conversation_title_is_automatic,
+    create_title_job, finish_title_job, is_custom_title, is_default_title,
+    is_retryable_latest_assistant_message, save_assistant_message, save_assistant_tool_checkpoint,
+    should_generate_automatic_title,
 };
 pub use memory::{
     ArchiveIndexSettings, ArchiveIndexTool, ArchivedMemoryExcerpt, HistorySearchFilterOptions,
@@ -80,32 +81,6 @@ pub struct ChatGptModel {
     pub supports_images: bool,
     pub supports_fast_mode: bool,
     pub is_available: bool,
-}
-
-pub(crate) fn model_supports_images(model_id: &str) -> bool {
-    let normalized = model_id.to_ascii_lowercase();
-    normalized.starts_with("gpt-4o")
-        || normalized.starts_with("gpt-4.1")
-        || normalized.starts_with("gpt-4.5")
-        || normalized.starts_with("gpt-4-turbo")
-        || normalized.starts_with("gpt-4-vision")
-        || normalized.starts_with("gpt-5")
-        || normalized.starts_with("gpt-6")
-        || normalized.starts_with("o1")
-        || normalized.starts_with("o3")
-        || normalized.starts_with("o4")
-}
-
-#[cfg(test)]
-mod model_capability_tests {
-    use super::model_supports_images;
-
-    #[test]
-    fn gpt_6_models_support_images() {
-        for model_id in ["gpt-6-luna", "gpt-6-sol", "gpt-6.1-sol", "gpt-6-astra"] {
-            assert!(model_supports_images(model_id), "{model_id}");
-        }
-    }
 }
 
 #[derive(Clone, Debug)]

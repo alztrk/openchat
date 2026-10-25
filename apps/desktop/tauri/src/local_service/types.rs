@@ -5,11 +5,16 @@ use std::{
     collections::HashMap,
     sync::{
         atomic::{AtomicBool, Ordering},
+        mpsc::SyncSender,
         Arc, Mutex,
     },
 };
 
-use serde::{Deserialize, Serialize};
+use serde::{
+    de::{self, IgnoredAny, MapAccess, SeqAccess, Visitor},
+    Deserialize, Deserializer, Serialize,
+};
+use serde_json::Value;
 use tauri_plugin_shell::process::CommandChild;
 
 pub(crate) const LOCAL_SERVICE_EVENT: &str = "openchat:local-service";
@@ -21,6 +26,7 @@ pub(crate) const MAX_PROJECT_PERMISSION_RULE_COUNT: usize = 1_080;
 pub(crate) const MAX_PROJECT_PERMISSION_RULE_NAME_BYTES: usize = 96;
 pub(crate) const MAX_PROJECT_PERMISSION_DIALOG_RULE_NAMES: usize = 8;
 pub(crate) const MAX_PENDING_PERMISSIONS: usize = 32;
+pub(crate) const MAX_NATIVE_SERVICE_REQUESTS: usize = 64;
 pub(crate) const MAX_PERMISSION_TOOL_NAME_BYTES: usize = 128;
 pub(crate) const MAX_PERMISSION_TARGET_BYTES: usize = 2 * 1024;
 pub(crate) const MAX_PERMISSION_ARGUMENTS_BYTES: usize = 8 * 1024;
@@ -30,7 +36,14 @@ pub(crate) const MAX_PERMISSION_ARGUMENTS_BYTES: usize = 8 * 1024;
 pub(crate) struct LocalServiceState {
     pub(crate) process: Arc<Mutex<ProcessState>>,
     pub(crate) permissions: Arc<Mutex<PendingPermissionState>>,
+    pub(crate) native_responses: Arc<Mutex<HashMap<String, NativeResponseWaiter>>>,
     pub(crate) permission_policy_confirmation_active: AtomicBool,
+}
+
+/// Routes a private native-host request response without forwarding it to the renderer.
+pub(crate) struct NativeResponseWaiter {
+    pub(crate) generation: u64,
+    pub(crate) sender: SyncSender<Value>,
 }
 
 /// Serializes process creation, writes, replacement, and shutdown.
@@ -84,8 +97,103 @@ pub(crate) enum PermissionDetails {
 /// Reads the method field while allowing serde to skip unneeded large renderer parameters.
 #[derive(Deserialize)]
 pub(crate) struct RendererRpcMethod<'a> {
+    #[serde(
+        rename = "id",
+        default,
+        deserialize_with = "deserialize_native_request_id"
+    )]
+    pub(crate) has_native_request_id: bool,
     #[serde(borrow)]
     pub(crate) method: Option<Cow<'a, str>>,
+}
+
+fn deserialize_native_request_id<'de, D>(deserializer: D) -> Result<bool, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    struct NativeRequestIdVisitor;
+
+    impl<'de> Visitor<'de> for NativeRequestIdVisitor {
+        type Value = bool;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            formatter.write_str("an RPC request ID")
+        }
+
+        fn visit_borrowed_str<E>(self, value: &'de str) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            Ok(value.starts_with("native-"))
+        }
+
+        fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            Ok(value.starts_with("native-"))
+        }
+
+        fn visit_string<E>(self, value: String) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            Ok(value.starts_with("native-"))
+        }
+
+        fn visit_unit<E>(self) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            Ok(false)
+        }
+
+        fn visit_bool<E>(self, _: bool) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            Ok(false)
+        }
+
+        fn visit_i64<E>(self, _: i64) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            Ok(false)
+        }
+
+        fn visit_u64<E>(self, _: u64) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            Ok(false)
+        }
+
+        fn visit_f64<E>(self, _: f64) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            Ok(false)
+        }
+
+        fn visit_seq<A>(self, mut sequence: A) -> Result<Self::Value, A::Error>
+        where
+            A: SeqAccess<'de>,
+        {
+            while sequence.next_element::<IgnoredAny>()?.is_some() {}
+            Ok(false)
+        }
+
+        fn visit_map<A>(self, mut fields: A) -> Result<Self::Value, A::Error>
+        where
+            A: MapAccess<'de>,
+        {
+            while fields.next_entry::<IgnoredAny, IgnoredAny>()?.is_some() {}
+            Ok(false)
+        }
+    }
+
+    deserializer.deserialize_any(NativeRequestIdVisitor)
 }
 
 /// Reads only the permission fields needed to recognize privileged mode changes.

@@ -95,9 +95,9 @@ jobs:
 
       - name: Build the local service sidecar
         run: |
-          cargo build --release --locked -p openchat-local-service
+          cargo build --release --locked --target x86_64-pc-windows-msvc -p openchat-local-service --bin openchat-local-service
           New-Item -ItemType Directory -Force apps/desktop/tauri/binaries | Out-Null
-          Copy-Item -LiteralPath target/release/openchat-local-service.exe -Destination apps/desktop/tauri/binaries/openchat-local-service-x86_64-pc-windows-msvc.exe -Force
+          Copy-Item -LiteralPath target/x86_64-pc-windows-msvc/release/openchat-local-service.exe -Destination apps/desktop/tauri/binaries/openchat-local-service-x86_64-pc-windows-msvc.exe -Force
         shell: pwsh
 
       - name: Build the Windows installer

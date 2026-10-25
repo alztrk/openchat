@@ -39,6 +39,8 @@ mod connector_catalog;
 mod conversations;
 #[path = "rpc/file_changes.rs"]
 mod file_changes;
+#[path = "rpc/internal_secrets.rs"]
+mod internal_secrets;
 #[path = "rpc/local_engine_models.rs"]
 mod local_engine_models;
 #[path = "rpc/projects.rs"]
@@ -49,6 +51,12 @@ mod providers;
 mod run_control;
 #[path = "rpc/statistics.rs"]
 mod statistics;
+#[path = "rpc/storage_attachment_index.rs"]
+mod storage_attachment_index;
+#[path = "rpc/storage_chat.rs"]
+mod storage_chat;
+#[path = "rpc/storage_settings.rs"]
+mod storage_settings;
 #[path = "rpc/temporary_conversation.rs"]
 mod temporary_conversation;
 #[path = "rpc/tool_permissions.rs"]
@@ -83,6 +91,18 @@ pub(crate) async fn dispatch(context: RpcDispatchContext<'_>) -> Result<Value, S
         startup_recovered,
     } = context;
     let method = request.method.clone();
+    if method.starts_with("internal.") {
+        return internal_secrets::dispatch(&method, &mut request.params, storage);
+    }
+    if method.starts_with("storage.chat.attachments.text_index.") {
+        return storage_attachment_index::dispatch(&method, storage).await;
+    }
+    if method.starts_with("storage.chat.") {
+        return storage_chat::dispatch(&method, &request.params, storage).await;
+    }
+    if method.starts_with("storage.") {
+        return storage_settings::dispatch(&method, &request.params, storage, &events).await;
+    }
     if method.starts_with("connector.catalog.") || method.starts_with("connector.package.") {
         return connector_catalog::dispatch(&method, &request.params, storage).await;
     }
@@ -172,7 +192,6 @@ pub(crate) async fn dispatch(context: RpcDispatchContext<'_>) -> Result<Value, S
     match method.as_str() {
         "system.health" => Ok(json!({
             "status": "ready",
-            "database_path": storage.database_path().to_string_lossy(),
             "schema_version": storage.schema_version(),
         })),
         "instructions.defaults.get" => Ok(json!({
@@ -225,9 +244,9 @@ pub(crate) async fn dispatch(context: RpcDispatchContext<'_>) -> Result<Value, S
                 .is_ok()
             {
                 let recovery = (|| {
-                    let connection = storage.connect().map_err(|_| ())?;
+                    let mut connection = storage.connect().map_err(|_| ())?;
                     crate::storage::user_questions::interrupt_running_runs_after_restart(
-                        &connection,
+                        &mut connection,
                         None,
                     )
                     .map(|_| ())
@@ -263,7 +282,7 @@ pub(crate) async fn dispatch(context: RpcDispatchContext<'_>) -> Result<Value, S
             .await
         }
         "chat.send" => {
-            let chat_request = chat_request::parse_send_request(&mut request.params)?;
+            let chat_request = chat_request::parse_send_request(storage, &mut request.params)?;
             let chat_request::ChatSendParameters {
                 conversation_id,
                 resume_run_id,
@@ -280,10 +299,17 @@ pub(crate) async fn dispatch(context: RpcDispatchContext<'_>) -> Result<Value, S
                 title_generation,
                 available_subagent_models,
             } = chat_request;
-            let (connection, route) = chat_execution::load_saved_route(storage, conversation_id)?;
+            let route = chat_execution::load_saved_route(storage, conversation_id)?;
             let permission_mode = if plan_mode_requested {
                 ToolPermissionMode::Plan
             } else {
+                let connection = storage.connect().map_err(|_| {
+                    ServiceError::new(
+                        "tool_permissions_unavailable",
+                        "Tool permissions could not be loaded from local storage.",
+                        true,
+                    )
+                })?;
                 tool_permissions::load_mode(&connection)?
             };
             if requested_goal_objective.is_some() && permission_mode == ToolPermissionMode::Plan {
@@ -296,14 +322,22 @@ pub(crate) async fn dispatch(context: RpcDispatchContext<'_>) -> Result<Value, S
             let tool_permission_rules = route
                 .project_id
                 .as_deref()
-                .map(|project_id| tool_permissions::load_project_rules(&connection, project_id))
+                .map(|project_id| {
+                    let connection = storage.connect().map_err(|_| {
+                        ServiceError::new(
+                            "tool_permissions_unavailable",
+                            "Tool permissions could not be loaded from local storage.",
+                            true,
+                        )
+                    })?;
+                    tool_permissions::load_project_rules(&connection, project_id)
+                })
                 .transpose()?
                 .unwrap_or_default();
-            let (api_key_secret, custom_provider) = route.resolve_credentials()?;
+            let (api_key_secret, custom_provider) = route.resolve_credentials(storage)?;
             let resuming_question_run = resume_run_id.is_some();
             let prepared_run = chat_execution::prepare_run(chat_execution::RunPreparation {
                 storage,
-                connection: &connection,
                 conversation_id,
                 route: &route,
                 resume_run_id,
@@ -420,8 +454,15 @@ pub(crate) async fn dispatch(context: RpcDispatchContext<'_>) -> Result<Value, S
                         ) {
                             Ok(configs) => configs,
                             Err(error) => {
+                                let mut connection = storage.connect().map_err(|_| {
+                                    ServiceError::new(
+                                        "question_storage_unavailable",
+                                        "Pending AI questions could not be updated in local storage.",
+                                        true,
+                                    )
+                                })?;
                                 crate::storage::user_questions::mark_run_failed(
-                                    &connection,
+                                    &mut connection,
                                     conversation_id,
                                     &run_id,
                                 )
@@ -523,7 +564,6 @@ pub(crate) async fn dispatch(context: RpcDispatchContext<'_>) -> Result<Value, S
             chat_execution::finish_run(
                 chat_execution::ChatRunFinalization {
                     storage,
-                    connection,
                     conversation_id,
                     run_id: &run_id,
                     resuming_question_run,

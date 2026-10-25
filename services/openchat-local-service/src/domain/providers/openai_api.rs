@@ -40,6 +40,12 @@ pub async fn models(
     let cached = load_catalog(storage, &key_hash)?;
     if !force_refresh
         && let Some((models, fetched_at)) = &cached
+        && models.iter().all(|model| {
+            model
+                .get("capabilityMetadataVersion")
+                .and_then(Value::as_u64)
+                == Some(2)
+        })
         && current_time_millis()?.saturating_sub(*fetched_at) < CACHE_AGE_MS
     {
         return Ok(response(models, "current"));
@@ -64,9 +70,7 @@ pub async fn models(
         }
         let body = read_bounded_response_body(response, MAX_MODEL_CATALOG_RESPONSE_BYTES).await?;
         let value: Value = serde_json::from_slice(&body).map_err(|_| invalid_response_error())?;
-        let models = parse_models(&value)?;
-        save_catalog(storage, &key_hash, &models)?;
-        Ok::<_, ServiceError>(models)
+        parse_models(&value)
     };
 
     let fetched = tokio::select! {
@@ -77,7 +81,17 @@ pub async fn models(
         result = fetch => result,
     };
     match fetched {
-        Ok(models) => Ok(response(&models, "current")),
+        Ok(mut models) => {
+            crate::domain::usage_statistics::enrich_model_catalog_capabilities(
+                storage,
+                "chatgpt_api",
+                &mut models,
+                cancellation,
+            )
+            .await?;
+            save_catalog(storage, &key_hash, &models)?;
+            Ok(response(&models, "current"))
+        }
         Err(error) if error.code == "network_unavailable" || error.retryable => match cached {
             Some((models, _)) => Ok(response(&models, "stale")),
             None => Err(error),
@@ -101,7 +115,10 @@ fn parse_models(value: &Value) -> Result<Vec<Value>, ServiceError> {
                             "id": id,
                             "displayName": id,
                             "contextWindow": null,
-                            "supportsImages": crate::chatgpt_store::model_supports_images(id),
+                            "supportsImages": Value::Null,
+                            "supportsTools": Value::Null,
+                            "supportsReasoning": Value::Null,
+                            "capabilityMetadataVersion": 2,
                             "defaultReasoningLevel": null,
                             "reasoningLevels": [],
                             "isAvailable": true,
@@ -114,67 +131,25 @@ fn parse_models(value: &Value) -> Result<Vec<Value>, ServiceError> {
         .ok_or_else(invalid_response_error)
 }
 
-pub(crate) fn supports_image_input(model_id: &str) -> bool {
-    crate::chatgpt_store::model_supports_images(model_id)
-}
-
-const REASONING_SUMMARY_MODELS: &[&str] = &[
-    "gpt-6-astra",
-    "gpt-6.1-sol",
-    "gpt-6-sol",
-    "gpt-6-luna",
-    "gpt-5.6",
-    "gpt-5.6-sol",
-    "gpt-5.6-terra",
-    "gpt-5.6-luna",
-    "gpt-5.6-cyber",
-    "gpt-5.5",
-    "gpt-5.5-pro",
-    "gpt-5.4",
-    "gpt-5.4-pro",
-    "gpt-5.4-mini",
-    "gpt-5.4-nano",
-    "gpt-5.2",
-    "gpt-5.2-pro",
-    "gpt-5.2-codex",
-    "gpt-5.1",
-    "gpt-5.1-codex",
-    "gpt-5.1-codex-max",
-    "gpt-5.1-codex-mini",
-    "gpt-5",
-    "gpt-5-pro",
-    "gpt-5-mini",
-    "gpt-5-nano",
-    "gpt-5-codex",
-    "gpt-5.3-codex",
-    "o1-pro",
-    "o4-mini",
-    "o3",
-    "o3-pro",
-    "o3-mini",
-    "o3-deep-research",
-    "o4-mini-deep-research",
-    "o1",
-    "o1-mini",
-    "codex-mini-latest",
-    "computer-use-preview",
-];
-
-/// The OpenAI Models API does not include reasoning-summary capabilities.
-/// Keep this list aligned with OpenAI's documented reasoning model families.
-pub(crate) fn supports_reasoning_summary(model_id: &str) -> bool {
-    REASONING_SUMMARY_MODELS.iter().any(|model| {
-        model_id == *model
-            || model_id
-                .strip_prefix(model)
-                .and_then(|suffix| suffix.strip_prefix('-'))
-                .is_some_and(|snapshot| {
-                    !snapshot.is_empty()
-                        && snapshot
-                            .chars()
-                            .all(|character| character.is_ascii_digit() || character == '-')
-                })
-    })
+pub(crate) fn supports_image_input(
+    storage: &AppStorage,
+    api_key: Option<&str>,
+    model_id: &str,
+) -> bool {
+    let Some(api_key) = api_key else {
+        return false;
+    };
+    let key_hash = format!("{:x}", Sha256::digest(api_key.as_bytes()));
+    load_catalog(storage, &key_hash)
+        .ok()
+        .flatten()
+        .and_then(|(models, _)| {
+            models
+                .into_iter()
+                .find(|model| model.get("id").and_then(Value::as_str) == Some(model_id))
+        })
+        .and_then(|model| model.get("supportsImages").and_then(Value::as_bool))
+        .unwrap_or(false)
 }
 
 fn load_catalog(
@@ -282,7 +257,7 @@ fn storage_error() -> ServiceError {
 mod tests {
     use serde_json::json;
 
-    use super::{parse_models, supports_reasoning_summary};
+    use super::parse_models;
 
     #[test]
     fn openai_model_list_does_not_invent_context_limits() {
@@ -293,23 +268,5 @@ mod tests {
 
         assert_eq!(models.len(), 1);
         assert!(models[0]["contextWindow"].is_null());
-    }
-
-    #[test]
-    fn reasoning_summaries_are_enabled_only_for_documented_openai_models() {
-        for model_id in [
-            "gpt-6-astra",
-            "gpt-5.4-mini-2026-03-17",
-            "gpt-5.5-pro-2026-04-23",
-            "o4-mini",
-            "o3-pro-2025-06-10",
-            "computer-use-preview",
-        ] {
-            assert!(supports_reasoning_summary(model_id), "{model_id}");
-        }
-
-        for model_id in ["gpt-4.1", "gpt-6-astra-custom", "ft:gpt-6-astra:team"] {
-            assert!(!supports_reasoning_summary(model_id), "{model_id}");
-        }
     }
 }

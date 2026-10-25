@@ -356,29 +356,33 @@ pub(crate) async fn process_control_calls(
                 if execution.is_some() {
                     json!({"accepted": false, "reason": "goal_already_active"})
                 } else {
-                    let connection = storage.connect().map_err(|_| storage_error())?;
-                    let run = user_questions::load_run_for_conversation(
-                        &connection,
-                        conversation_id,
-                        run_id,
-                    )
-                    .map_err(|_| checkpoint_error())?;
-                    let mut checkpoint = run.checkpoint.clone().ok_or_else(checkpoint_error)?;
-                    initial_checkpoint(&mut checkpoint, objective, current_time_unix_ms()?);
-                    match user_questions::activate_goal_run(
-                        &connection,
-                        conversation_id,
-                        run_id,
-                        run.checkpoint_revision,
-                        &checkpoint,
-                    )
-                    .map_err(|_| goal_state_conflict())?
-                    {
-                        user_questions::GoalActivation::ActiveGoalExists => {
-                            json!({"accepted": false, "reason": "goal_already_active"})
+                    let started = {
+                        let mut connection = storage.connect().map_err(|_| storage_error())?;
+                        let run = user_questions::load_run_for_conversation(
+                            &connection,
+                            conversation_id,
+                            run_id,
+                        )
+                        .map_err(|_| checkpoint_error())?;
+                        let mut checkpoint = run.checkpoint.clone().ok_or_else(checkpoint_error)?;
+                        initial_checkpoint(&mut checkpoint, objective, current_time_unix_ms()?);
+                        match user_questions::activate_goal_run(
+                            &mut connection,
+                            conversation_id,
+                            run_id,
+                            run.checkpoint_revision,
+                            &checkpoint,
+                        )
+                        .map_err(|_| goal_state_conflict())?
+                        {
+                            user_questions::GoalActivation::ActiveGoalExists => None,
+                            user_questions::GoalActivation::Started(run) => {
+                                Some(execution_from_run(run)?)
+                            }
                         }
-                        user_questions::GoalActivation::Started(run) => {
-                            let started = execution_from_run(run)?;
+                    };
+                    match started {
+                        Some(started) => {
                             send_goal_event(
                                 events,
                                 request_id,
@@ -389,6 +393,7 @@ pub(crate) async fn process_control_calls(
                             *execution = Some(started);
                             json!({"accepted": true, "state": "running", "goal": value})
                         }
+                        None => json!({"accepted": false, "reason": "goal_already_active"}),
                     }
                 }
             }
@@ -542,7 +547,7 @@ pub(crate) fn pause_run(
     run_id: &str,
     reason: &str,
 ) -> Result<Value, ServiceError> {
-    let connection = storage.connect().map_err(|_| storage_error())?;
+    let mut connection = storage.connect().map_err(|_| storage_error())?;
     let run = user_questions::load_run_for_conversation(&connection, conversation_id, run_id)
         .map_err(|_| checkpoint_error())?;
     let mut execution = execution_from_run(run)?;
@@ -550,7 +555,7 @@ pub(crate) fn pause_run(
     execution.decision = GoalDecision::Paused;
     set_checkpoint_goal_state(&mut execution, "paused", json!(reason));
     let updated = user_questions::update_goal_run(
-        &connection,
+        &mut connection,
         conversation_id,
         run_id,
         execution.checkpoint_revision,
@@ -577,7 +582,7 @@ fn stop_run_with_reason(
     stop_reason: &str,
     progress: Option<&str>,
 ) -> Result<Value, ServiceError> {
-    let connection = storage.connect().map_err(|_| storage_error())?;
+    let mut connection = storage.connect().map_err(|_| storage_error())?;
     let run = user_questions::load_run_for_conversation(&connection, conversation_id, run_id)
         .map_err(|_| checkpoint_error())?;
     let mut execution = execution_from_run(run)?;
@@ -587,7 +592,7 @@ fn stop_run_with_reason(
     execution.decision = GoalDecision::Stopped;
     set_checkpoint_goal_state(&mut execution, "cancelled", json!(stop_reason));
     let updated = user_questions::update_goal_run(
-        &connection,
+        &mut connection,
         conversation_id,
         run_id,
         execution.checkpoint_revision,
@@ -624,9 +629,9 @@ pub(crate) fn latest_active_goal(
 }
 
 fn save_progress(storage: &AppStorage, execution: &mut GoalExecution) -> Result<(), ServiceError> {
-    let connection = storage.connect().map_err(|_| storage_error())?;
+    let mut connection = storage.connect().map_err(|_| storage_error())?;
     let updated = user_questions::update_goal_run(
-        &connection,
+        &mut connection,
         &execution.conversation_id,
         &execution.run_id,
         execution.checkpoint_revision,

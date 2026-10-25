@@ -55,8 +55,13 @@ impl EventSink {
         let mut encoded = serde_json::to_vec(response).map_err(io::Error::other)?;
         encoded.push(b'\n');
         let mut output = self.output.lock().await;
-        output.write_all(&encoded).await?;
-        output.flush().await
+        let result = async {
+            output.write_all(&encoded).await?;
+            output.flush().await
+        }
+        .await;
+        encoded.zeroize();
+        result
     }
 }
 
@@ -94,7 +99,10 @@ fn zeroize_sensitive_request_fields(value: &mut Value) {
         }
         Value::Object(fields) => {
             for (name, field_value) in fields {
-                if matches!(name.as_str(), "apiKey" | "secret" | "passphrase") {
+                if matches!(
+                    name.as_str(),
+                    "apiKey" | "secret" | "passphrase" | "secrets"
+                ) {
                     zeroize_request_json_strings(field_value);
                 } else {
                     zeroize_sensitive_request_fields(field_value);
@@ -594,6 +602,34 @@ pub struct Response {
     pub event: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub data: Option<Value>,
+}
+
+impl Drop for Response {
+    fn drop(&mut self) {
+        if let Some(result) = &mut self.result {
+            zeroize_response_value(result);
+        }
+        if let Some(data) = &mut self.data {
+            zeroize_response_value(data);
+        }
+    }
+}
+
+fn zeroize_response_value(value: &mut Value) {
+    match value {
+        Value::String(text) => text.zeroize(),
+        Value::Array(values) => {
+            for value in values {
+                zeroize_response_value(value);
+            }
+        }
+        Value::Object(fields) => {
+            for value in fields.values_mut() {
+                zeroize_response_value(value);
+            }
+        }
+        _ => {}
+    }
 }
 
 impl Response {

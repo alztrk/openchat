@@ -20,8 +20,8 @@ pub(crate) struct ProviderCredentials {
 
 impl ProviderCredentials {
     /// Reads the existing DPAPI-protected credential map for the current Windows user.
-    pub(crate) fn load() -> Result<Self, ServiceError> {
-        let values = SecretMap::read().map_err(map_store_error)?;
+    pub(crate) fn load(storage: &crate::storage::AppStorage) -> Result<Self, ServiceError> {
+        let values = SecretMap::read_from_storage(storage).map_err(map_store_error)?;
         Ok(Self { values })
     }
 

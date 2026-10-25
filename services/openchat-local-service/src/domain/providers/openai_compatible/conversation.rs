@@ -330,6 +330,7 @@ pub async fn send_message(
             });
         }
         crate::tools::mcp::connect_with_approval(
+            storage,
             mcp_configs,
             &tool_permission_rules,
             permission_mode == crate::tools::ToolPermissionMode::FullAccess,

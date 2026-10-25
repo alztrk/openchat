@@ -13,7 +13,7 @@ use std::{
 };
 
 use age::{Decryptor, Encryptor, scrypt::Identity, secrecy::SecretString};
-use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
+use rusqlite::{OptionalExtension, TransactionBehavior, params};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -26,7 +26,7 @@ use crate::{
         AttachmentMetadata, message_attachment_metadata, validate_portable_attachment_content,
     },
     protocol::ServiceError,
-    storage::AppStorage,
+    storage::{AppStorage, StorageConnection, StorageTransaction},
 };
 
 const ARCHIVE_FORMAT: &str = "openchat-conversations";
@@ -682,7 +682,7 @@ fn load_conversations(
 }
 
 fn read_memory_settings(
-    connection: &Connection,
+    connection: &StorageTransaction<'_>,
     conversation_id: &str,
 ) -> Result<ArchivedMemorySettings, ArchiveFailure> {
     let included = connection
@@ -1143,7 +1143,7 @@ fn expected_attachment_metadata(
 }
 
 fn count_existing_conversations(
-    connection: &Connection,
+    connection: &StorageConnection<'_>,
     conversations: &[ArchivedConversation],
 ) -> Result<usize, ArchiveFailure> {
     let mut statement =
@@ -1167,7 +1167,7 @@ fn archive_summary(manifest: &ArchiveManifest, duplicate_count: usize) -> Value 
 }
 
 fn restore_transaction(
-    transaction: &Transaction<'_>,
+    transaction: &StorageTransaction<'_>,
     storage_root: &Path,
     stage: &RestoreStage,
     manifest: &ArchiveManifest,

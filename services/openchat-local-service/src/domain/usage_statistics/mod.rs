@@ -11,7 +11,10 @@ use std::collections::BTreeMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
 
-use crate::{protocol::ServiceError, storage::AppStorage};
+use crate::{
+    protocol::ServiceError,
+    storage::{AppStorage, StorageConnection},
+};
 use tokio::sync::watch;
 
 #[derive(Clone, Debug, Default)]
@@ -599,9 +602,9 @@ pub(crate) async fn get_statistics(
     cancellation: &mut watch::Receiver<bool>,
 ) -> Result<Value, ServiceError> {
     let catalog = models_dev_pricing::load(storage, cancellation).await?;
-    let database = storage.connect().map_err(|_| statistics_storage_error())?;
+    let mut database = storage.connect().map_err(|_| statistics_storage_error())?;
     catalog
-        .install_temporary_prices(&database)
+        .install_temporary_prices(&mut database)
         .map_err(|_| statistics_storage_error())?;
     get_statistics_from_database(&database, query, catalog.metadata())
         .map_err(|_| statistics_storage_error())
@@ -626,6 +629,81 @@ pub(crate) async fn get_model_details_batch(
     models_dev_pricing::model_details_batch(storage, models, cancellation).await
 }
 
+/// Fills missing per-model capabilities from the shared models.dev catalog.
+/// Provider-reported values remain authoritative when they are present.
+pub(crate) async fn enrich_model_catalog_capabilities(
+    storage: &AppStorage,
+    provider_id: &str,
+    models: &mut [Value],
+    cancellation: &mut watch::Receiver<bool>,
+) -> Result<(), ServiceError> {
+    if models.is_empty() {
+        return Ok(());
+    }
+    let requested = models
+        .iter()
+        .filter_map(|model| {
+            model
+                .get("id")
+                .or_else(|| model.get("slug"))
+                .and_then(Value::as_str)
+                .map(|model_id| (provider_id.to_owned(), model_id.to_owned()))
+        })
+        .collect::<Vec<_>>();
+    let details = get_model_details_batch(storage, &requested, cancellation).await?;
+    let Some(details) = details.get("models").and_then(Value::as_array) else {
+        return Ok(());
+    };
+
+    for model in models {
+        let Some(model_id) = model
+            .get("id")
+            .or_else(|| model.get("slug"))
+            .and_then(Value::as_str)
+        else {
+            continue;
+        };
+        let catalog_model = details
+            .iter()
+            .find(|entry| entry.get("modelId").and_then(Value::as_str) == Some(model_id))
+            .and_then(|entry| entry.get("model"));
+        let Some(catalog_model) = catalog_model else {
+            continue;
+        };
+        for capability in ["supportsImages", "supportsTools", "supportsReasoning"] {
+            if model.get(capability).is_none_or(Value::is_null)
+                && let Some(value) = catalog_model
+                    .get(capability)
+                    .filter(|value| value.is_boolean())
+            {
+                model[capability] = value.clone();
+            }
+        }
+        for (field, catalog_field) in [
+            ("contextWindow", "contextWindow"),
+            ("inputTokenLimit", "inputTokenLimit"),
+            ("maxOutputTokens", "maximumOutput"),
+        ] {
+            if model.get(field).is_none_or(Value::is_null)
+                && let Some(value) = catalog_model
+                    .get(catalog_field)
+                    .filter(|value| value.as_i64().is_some_and(|limit| limit > 0))
+            {
+                model[field] = value.clone();
+            }
+        }
+    }
+    Ok(())
+}
+
+pub(crate) fn cached_model_supports_images(
+    storage: &AppStorage,
+    provider_id: &str,
+    model_id: &str,
+) -> Option<bool> {
+    models_dev_pricing::cached_model_supports_images(storage, provider_id, model_id)
+}
+
 fn statistics_storage_error() -> ServiceError {
     ServiceError::new(
         "usage_statistics_unavailable",
@@ -635,7 +713,7 @@ fn statistics_storage_error() -> ServiceError {
 }
 
 fn get_statistics_from_database(
-    database: &rusqlite::Connection,
+    database: &StorageConnection<'_>,
     query: &StatisticsQuery,
     pricing_metadata: Value,
 ) -> rusqlite::Result<Value> {
@@ -733,7 +811,7 @@ fn get_statistics_from_database(
 }
 
 fn breakdown(
-    database: &rusqlite::Connection,
+    database: &StorageConnection<'_>,
     query: &StatisticsQuery,
     group_column: &str,
     output_key: &str,
@@ -783,7 +861,7 @@ fn breakdown(
 }
 
 fn fast_mode_breakdown(
-    database: &rusqlite::Connection,
+    database: &StorageConnection<'_>,
     query: &StatisticsQuery,
 ) -> rusqlite::Result<Vec<Value>> {
     let sql = format!(
@@ -814,7 +892,7 @@ fn fast_mode_breakdown(
 }
 
 fn service_tier_breakdown(
-    database: &rusqlite::Connection,
+    database: &StorageConnection<'_>,
     query: &StatisticsQuery,
 ) -> rusqlite::Result<Vec<Value>> {
     let sql = format!(
@@ -852,7 +930,7 @@ fn service_tier_breakdown(
 }
 
 fn trend(
-    database: &rusqlite::Connection,
+    database: &StorageConnection<'_>,
     query: &StatisticsQuery,
     date_format: &str,
     key: &str,
@@ -884,7 +962,7 @@ fn trend(
 }
 
 fn conversation_ranking(
-    database: &rusqlite::Connection,
+    database: &StorageConnection<'_>,
     query: &StatisticsQuery,
 ) -> rusqlite::Result<Vec<Value>> {
     let sql = format!(
@@ -923,7 +1001,7 @@ fn conversation_ranking(
 }
 
 fn count_details(
-    database: &rusqlite::Connection,
+    database: &StorageConnection<'_>,
     query: &StatisticsQuery,
 ) -> rusqlite::Result<i64> {
     let sql = format!("SELECT COUNT(*) FROM usage_events AS e {}", FILTER);
@@ -931,7 +1009,7 @@ fn count_details(
 }
 
 fn request_details(
-    database: &rusqlite::Connection,
+    database: &StorageConnection<'_>,
     query: &StatisticsQuery,
 ) -> rusqlite::Result<Vec<Value>> {
     let sql = format!(
@@ -1189,9 +1267,9 @@ mod request_tracker_tests {
     }
 }
 
-fn filter_options(database: &rusqlite::Connection) -> rusqlite::Result<Value> {
+fn filter_options(database: &StorageConnection<'_>) -> rusqlite::Result<Value> {
     fn distinct_values(
-        database: &rusqlite::Connection,
+        database: &StorageConnection<'_>,
         column: &str,
     ) -> rusqlite::Result<Vec<String>> {
         let sql = format!(
@@ -1222,7 +1300,7 @@ fn filter_options(database: &rusqlite::Connection) -> rusqlite::Result<Value> {
 }
 
 fn quota_history(
-    database: &rusqlite::Connection,
+    database: &StorageConnection<'_>,
     query: &StatisticsQuery,
 ) -> rusqlite::Result<Vec<Value>> {
     let mut statement = database.prepare(

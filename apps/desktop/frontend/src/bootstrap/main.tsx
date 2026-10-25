@@ -11,14 +11,14 @@ if (!rootElement) {
 }
 const reactRoot = ReactDOM.createRoot(rootElement);
 
-async function startApplication(): Promise<void> {
+async function startApplication(options: { startWithEmptyStorage?: boolean } = {}): Promise<void> {
   if (new URLSearchParams(location.search).get('computerUseOverlay') === '1') {
     const { ComputerUseOverlay } = await import('./ComputerUseOverlay');
     reactRoot.render(<ComputerUseOverlay />);
     return;
   }
   const appImportPromise = import('./App');
-  await unifiedStorage.initialize();
+  await unifiedStorage.initialize(options);
   const [{ App }, { i18n, i18nReady }] = await Promise.all([appImportPromise, import('../localization/i18n')]);
   await i18nReady;
 
@@ -35,5 +35,11 @@ async function startApplication(): Promise<void> {
 }
 
 void startApplication().catch((error: unknown) => {
-  reactRoot.render(<StartupErrorPage error={error} onRetry={startApplication} />);
+  reactRoot.render(
+    <StartupErrorPage
+      error={error}
+      onRetry={() => startApplication()}
+      onStartWithEmptyProfile={() => startApplication({ startWithEmptyStorage: true })}
+    />,
+  );
 });
