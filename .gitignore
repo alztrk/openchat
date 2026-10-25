@@ -34,6 +34,11 @@ migrate_working_dir/
 /apps/desktop/tauri/gen/schemas/
 /apps/desktop/tauri/binaries/
 /scripts/
+!/scripts/
+/scripts/*
+!/scripts/opencode_probe.py
+/reports/
+/.opencode_probe/
 /coverage/
 /test/failures/
 
