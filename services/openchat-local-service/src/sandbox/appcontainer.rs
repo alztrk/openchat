@@ -345,39 +345,43 @@ impl AppContainerSandbox {
         } else {
             isolated_profile.join("AppData").join("Local")
         };
+        fs::create_dir_all(&self.temp_directory)?;
         if !self.persistent_profile {
-            fs::create_dir_all(&self.temp_directory)?;
             let _ = fs::create_dir_all(&isolated_appdata);
             let _ = fs::create_dir_all(&isolated_localappdata);
+            variables.insert(
+                "USERPROFILE".to_owned(),
+                Zeroizing::new(
+                    isolated_profile
+                        .as_os_str()
+                        .encode_wide()
+                        .collect::<Vec<_>>(),
+                ),
+            );
+            variables.insert(
+                "APPDATA".to_owned(),
+                Zeroizing::new(
+                    isolated_appdata
+                        .as_os_str()
+                        .encode_wide()
+                        .collect::<Vec<_>>(),
+                ),
+            );
+            variables.insert(
+                "LOCALAPPDATA".to_owned(),
+                Zeroizing::new(
+                    isolated_localappdata
+                        .as_os_str()
+                        .encode_wide()
+                        .collect::<Vec<_>>(),
+                ),
+            );
+        } else if !variables.contains_key("LOCALAPPDATA") {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "The storage broker base environment is incomplete.",
+            ));
         }
-
-        variables.insert(
-            "USERPROFILE".to_owned(),
-            Zeroizing::new(
-                isolated_profile
-                    .as_os_str()
-                    .encode_wide()
-                    .collect::<Vec<_>>(),
-            ),
-        );
-        variables.insert(
-            "APPDATA".to_owned(),
-            Zeroizing::new(
-                isolated_appdata
-                    .as_os_str()
-                    .encode_wide()
-                    .collect::<Vec<_>>(),
-            ),
-        );
-        variables.insert(
-            "LOCALAPPDATA".to_owned(),
-            Zeroizing::new(
-                isolated_localappdata
-                    .as_os_str()
-                    .encode_wide()
-                    .collect::<Vec<_>>(),
-            ),
-        );
         variables.insert(
             "TEMP".to_owned(),
             Zeroizing::new(
