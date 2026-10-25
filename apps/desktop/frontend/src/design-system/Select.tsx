@@ -94,12 +94,11 @@ export function Select({
               {leadingIcon ?? selectedOption?.icon}
             </span>
           ) : null}
-          <SelectPrimitive.Value
-            className="min-w-0 flex-1 truncate"
-            placeholder={placeholder ?? (required ? undefined : options[0]?.label)}
-          >
-            {selectedOption ? <span className="block truncate">{selectedOption.label}</span> : undefined}
-          </SelectPrimitive.Value>
+          <span className="min-w-0 flex-1 truncate">
+            <SelectPrimitive.Value placeholder={placeholder ?? (required ? undefined : options[0]?.label)}>
+              {selectedOption ? <span className="block truncate">{selectedOption.label}</span> : undefined}
+            </SelectPrimitive.Value>
+          </span>
           <SelectPrimitive.Icon aria-hidden="true" className="shrink-0 text-secondary-icon">
             <ChevronDown size={15} />
           </SelectPrimitive.Icon>
