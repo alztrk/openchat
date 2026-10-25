@@ -10,6 +10,7 @@ import type { WorkspaceFileSelection } from './ChatFileChangesPanel';
 import { MessageAttachments } from './MessageAttachments';
 import { CitationSources } from './message/CitationSources';
 import { FileChangesSummaryCard } from './message/FileChangesSummaryCard';
+import { separateInBandReasoning } from './message/inBandReasoning';
 import { MessageCopyMenu } from './message/MessageCopyMenu';
 import { MessageMarkdown } from './message/MessageMarkdown';
 import { parseCitationSources, parseReasoningSummaries, parseToolActivities } from './message/messageData';
@@ -60,6 +61,9 @@ export function MessageItem({
   const [memorySourcesError, setMemorySourcesError] = useState(false);
   const resetTimer = useRef<number | undefined>(undefined);
   const isUser = message.role === 'user';
+  const inBandReasoning = isUser
+    ? { visibleContent: message.content, reasoningContent: '' }
+    : separateInBandReasoning(message.content);
   const personalMemoryFactIds = parsePersonalMemoryFactIds(message.personalMemoryFactIds) ?? [];
   const citationSources = isUser ? [] : parseCitationSources(message.citationSources);
   const parsedReasoningSummaries = isUser ? [] : parseReasoningSummaries(message.reasoningSummaries);
@@ -69,6 +73,14 @@ export function MessageItem({
       : message.providerId === 'chatgpt' || message.providerId === 'chatgpt_api'
         ? parsedReasoningSummaries
         : [];
+  if (inBandReasoning.reasoningContent.trim().length > 0) {
+    reasoningSummaries.push({
+      id: `reasoning_${message.id}`,
+      content: inBandReasoning.reasoningContent,
+      elapsedMicroseconds: null,
+      isComplete: message.status !== 'streaming',
+    });
+  }
   const toolActivities = isUser ? [] : parseToolActivities(message.toolActivities);
   const canRetry = !isUser && onRetryMessage !== undefined && message.status !== 'streaming';
   const hasResponseVersions =
@@ -87,7 +99,7 @@ export function MessageItem({
 
   const copyMessage = async () => {
     try {
-      await navigator.clipboard.writeText(message.content);
+      await navigator.clipboard.writeText(inBandReasoning.visibleContent);
       setCopyResult('copied');
     } catch {
       setCopyResult('failed');
@@ -161,16 +173,18 @@ export function MessageItem({
             ))}
           </div>
         ) : null}
-        {message.status === 'streaming' && message.content.trim().length === 0 && !isUser ? (
+        {message.status === 'streaming' && inBandReasoning.visibleContent.trim().length === 0 && !isUser ? (
           <ResponseSkeleton />
-        ) : message.content ? (
+        ) : inBandReasoning.visibleContent ? (
           isUser ? (
-            <p className="conversation-message-content whitespace-pre-wrap break-words text-text">{message.content}</p>
+            <p className="conversation-message-content whitespace-pre-wrap break-words text-text">
+              {inBandReasoning.visibleContent}
+            </p>
           ) : (
-            <MessageMarkdown content={message.content} citationSources={citationSources} />
+            <MessageMarkdown content={inBandReasoning.visibleContent} citationSources={citationSources} />
           )
         ) : null}
-        {message.status === 'streaming' && message.content.trim().length > 0 && !isUser ? (
+        {message.status === 'streaming' && inBandReasoning.visibleContent.trim().length > 0 && !isUser ? (
           <span
             aria-label={t('responseInProgress')}
             className="ml-1 inline-block h-4 w-1 animate-pulse rounded-xs bg-accent align-middle motion-reduce:animate-none"
