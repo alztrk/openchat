@@ -28,12 +28,37 @@ use super::super::{
         update_provider_request_usage,
     },
 };
-use super::ResponseStreamRequest;
+use super::{ResponseStreamRequest, think_tag_filter::ThinkTagFilter};
 
 pub(super) struct StreamedTurn {
     pub(super) round_content: String,
     pub(super) tool_calls: Vec<ToolCall>,
     pub(super) provider_request_usage: Option<ProviderRequestUsage>,
+}
+
+async fn append_visible_text(
+    request: &mut ResponseStreamRequest<'_>,
+    round_content: &mut String,
+    text: &str,
+) -> Result<(), ServiceError> {
+    if text.is_empty() {
+        return Ok(());
+    }
+    request.content.push_str(text);
+    round_content.push_str(text);
+    request
+        .events
+        .send(
+            &ChatStreamEvent::TextAppended(ChatStreamDelta::new(
+                request.conversation_id,
+                request.message_id,
+                text,
+                request.created_at,
+            ))
+            .into_rpc(request.request_id.clone()),
+        )
+        .await
+        .map_err(|_| protocol_error())
 }
 
 async fn send_reasoning_summaries(
@@ -295,6 +320,7 @@ async fn receive_with_client(
     let mut pending = Vec::new();
     let mut round_content = String::new();
     let mut tool_calls = BTreeMap::<usize, StreamedToolCall>::new();
+    let mut think_filter = ThinkTagFilter::default();
     let supports_provider_citations = matches!(
         request.route.provider_id.as_deref(),
         Some(
@@ -424,21 +450,9 @@ async fn receive_with_client(
                                     .and_then(|delta| delta.get("text"))
                                     .and_then(Value::as_str)
                                 {
-                                    request.content.push_str(text);
-                                    round_content.push_str(text);
-                                    request
-                                        .events
-                                        .send(
-                                            &ChatStreamEvent::TextAppended(ChatStreamDelta::new(
-                                                request.conversation_id,
-                                                request.message_id,
-                                                text,
-                                                request.created_at,
-                                            ))
-                                            .into_rpc(request.request_id.clone()),
-                                        )
-                                        .await
-                                        .map_err(|_| protocol_error())?;
+                                    let text = think_filter.push(text);
+                                    append_visible_text(&mut request, &mut round_content, &text)
+                                        .await?;
                                 }
                             }
                             Some("input_json_delta") => {
@@ -526,21 +540,8 @@ async fn receive_with_client(
                 }
                 match handle_responses_api_event(&value, &mut tool_calls)? {
                     ResponsesStreamEffect::TextDelta(text) => {
-                        request.content.push_str(&text);
-                        round_content.push_str(&text);
-                        request
-                            .events
-                            .send(
-                                &ChatStreamEvent::TextAppended(ChatStreamDelta::new(
-                                    request.conversation_id,
-                                    request.message_id,
-                                    &text,
-                                    request.created_at,
-                                ))
-                                .into_rpc(request.request_id.clone()),
-                            )
-                            .await
-                            .map_err(|_| protocol_error())?;
+                        let text = think_filter.push(&text);
+                        append_visible_text(&mut request, &mut round_content, &text).await?;
                     }
                     ResponsesStreamEffect::ReasoningDelta(reasoning) => {
                         if request.route.provider_id.as_deref() != Some("chatgpt_api") {
@@ -622,7 +623,7 @@ async fn receive_with_client(
                         .flatten()
                         .and_then(Value::as_str)
                 });
-            let mut visible_delta = text.unwrap_or_default().to_owned();
+            let mut visible_delta = think_filter.push(text.unwrap_or_default());
             if let Some(delta) = mistral_delta.as_ref() {
                 for reference_id in &delta.reference_ids {
                     let Some(source_id) = mistral_reference_sources.get(*reference_id) else {
@@ -633,23 +634,7 @@ async fn receive_with_client(
                     visible_delta.push(']');
                 }
             }
-            if !visible_delta.is_empty() {
-                request.content.push_str(&visible_delta);
-                round_content.push_str(&visible_delta);
-                request
-                    .events
-                    .send(
-                        &ChatStreamEvent::TextAppended(ChatStreamDelta::new(
-                            request.conversation_id,
-                            request.message_id,
-                            &visible_delta,
-                            request.created_at,
-                        ))
-                        .into_rpc(request.request_id.clone()),
-                    )
-                    .await
-                    .map_err(|_| protocol_error())?;
-            }
+            append_visible_text(&mut request, &mut round_content, &visible_delta).await?;
             let reasoning = mistral_delta
                 .as_ref()
                 .and_then(|delta| (!delta.reasoning.is_empty()).then_some(delta.reasoning.as_str()))
@@ -697,6 +682,9 @@ async fn receive_with_client(
             }
         }
     }
+
+    let trailing_text = think_filter.finish();
+    append_visible_text(&mut request, &mut round_content, &trailing_text).await?;
 
     if !request.reasoning_content.is_empty() {
         let summary = ReasoningSummary {

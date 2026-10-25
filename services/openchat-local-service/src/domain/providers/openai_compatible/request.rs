@@ -250,6 +250,16 @@ pub(super) fn chat_completion_body(
         "messages": messages,
         "stream": true,
     });
+    if provider_id.starts_with("custom_")
+        && request
+            .model
+            .to_ascii_lowercase()
+            .contains("nemotron-3.5-super-vl")
+    {
+        // vLLM Nemotron templates enable reasoning by default; prevent an
+        // unparsed thinking stream from entering the user-facing content field.
+        body["chat_template_kwargs"] = json!({"enable_thinking": false});
+    }
     if matches!(
         provider_id,
         "chatgpt_api" | "opencode" | "gemini" | "groq" | "mistral" | "openrouter"

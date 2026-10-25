@@ -33,6 +33,7 @@ use super::{
 };
 
 mod response_stream;
+mod think_tag_filter;
 mod tool_round;
 
 /// Contains the route and stream state for one temporary provider conversation.
