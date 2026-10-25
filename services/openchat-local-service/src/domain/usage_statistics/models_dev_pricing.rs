@@ -4,7 +4,10 @@
 //! failures produce an explicit stale or unavailable catalog state rather than
 //! fabricated prices.
 
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::{
+    collections::HashMap,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 
 use futures_util::StreamExt;
 use reqwest::Client;
@@ -271,11 +274,7 @@ pub(super) async fn model_details_batch(
 }
 
 fn model_from_catalog(catalog: &Value, provider_id: &str, model_id: &str) -> Option<Value> {
-    let catalog_provider_id = match provider_id {
-        "chatgpt" | "chatgpt_api" => "openai",
-        "gemini" => "google",
-        provider => provider,
-    };
+    let catalog_provider_id = catalog_provider_id(provider_id);
     let provider = catalog.get(catalog_provider_id)?;
     let model = provider.get("models")?.get(model_id)?;
     let context_window = positive_limit(model, "context");
@@ -346,6 +345,50 @@ pub(super) fn cached_model_supports_images(
         .and_then(|(_, catalog)| serde_json::from_str::<Value>(&catalog).ok())
         .and_then(|catalog| model_from_catalog(&catalog, provider_id, model_id))
         .and_then(|model| model.get("supportsImages").and_then(Value::as_bool))
+}
+
+pub(super) fn cached_models_support_images(
+    storage: &AppStorage,
+    provider_id: &str,
+    model_ids: &[String],
+) -> HashMap<String, bool> {
+    let Some((_, catalog_json)) = load_cached_catalog(storage).ok().flatten() else {
+        return HashMap::new();
+    };
+    let Ok(catalog) = serde_json::from_str::<Value>(&catalog_json) else {
+        return HashMap::new();
+    };
+    let Some(models) = catalog
+        .get(catalog_provider_id(provider_id))
+        .and_then(|provider| provider.get("models"))
+        .and_then(Value::as_object)
+    else {
+        return HashMap::new();
+    };
+
+    model_ids
+        .iter()
+        .filter_map(|model_id| {
+            let model = models.get(model_id)?;
+            let supports_images = model
+                .pointer("/modalities/input")
+                .and_then(Value::as_array)
+                .is_some_and(|modalities| {
+                    modalities
+                        .iter()
+                        .any(|modality| modality.as_str() == Some("image"))
+                });
+            Some((model_id.clone(), supports_images))
+        })
+        .collect()
+}
+
+fn catalog_provider_id(provider_id: &str) -> &str {
+    match provider_id {
+        "chatgpt" | "chatgpt_api" => "openai",
+        "gemini" => "google",
+        provider => provider,
+    }
 }
 
 fn positive_limit(model: &Value, field: &str) -> Option<i64> {

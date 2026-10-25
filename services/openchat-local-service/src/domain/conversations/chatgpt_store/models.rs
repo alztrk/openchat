@@ -97,36 +97,47 @@ pub fn list_models(
     connection_id: &str,
     workspace_id: &str,
 ) -> rusqlite::Result<Vec<ChatGptModel>> {
-    let database = storage.connect()?;
-    let mut statement = database.prepare(
-        "SELECT model_id, display_name, description, context_window,
-                reasoning_levels_json, is_available, default_reasoning_level,
-                supports_reasoning_summary_parameter, supports_fast_mode
-         FROM chatgpt_models
-         WHERE connection_id = ?1 AND workspace_id = ?2
-         ORDER BY is_available DESC, model_id COLLATE NOCASE",
-    )?;
-    let rows = statement.query_map(params![connection_id, workspace_id], |row| {
-        let levels = row.get::<_, String>(4)?;
-        let reasoning_levels = parse_reasoning_levels(&levels, 4)?;
-        let id: String = row.get(0)?;
-        Ok(ChatGptModel {
-            id: id.clone(),
-            display_name: row.get(1)?,
-            description: row.get(2)?,
-            context_window: row.get(3)?,
-            reasoning_levels,
-            is_available: row.get(5)?,
-            default_reasoning_level: row.get(6)?,
-            supports_reasoning_summary_parameter: row.get(7)?,
-            supports_images: crate::usage_statistics::cached_model_supports_images(
-                storage, "chatgpt", &id,
-            )
-            .unwrap_or(false),
-            supports_fast_mode: row.get(8)?,
-        })
-    })?;
-    rows.collect()
+    let mut models = {
+        let database = storage.connect()?;
+        let mut statement = database.prepare(
+            "SELECT model_id, display_name, description, context_window,
+                    reasoning_levels_json, is_available, default_reasoning_level,
+                    supports_reasoning_summary_parameter, supports_fast_mode
+             FROM chatgpt_models
+             WHERE connection_id = ?1 AND workspace_id = ?2
+             ORDER BY is_available DESC, model_id COLLATE NOCASE",
+        )?;
+        let rows = statement.query_map(params![connection_id, workspace_id], |row| {
+            let levels = row.get::<_, String>(4)?;
+            Ok(ChatGptModel {
+                id: row.get(0)?,
+                display_name: row.get(1)?,
+                description: row.get(2)?,
+                context_window: row.get(3)?,
+                reasoning_levels: parse_reasoning_levels(&levels, 4)?,
+                is_available: row.get(5)?,
+                default_reasoning_level: row.get(6)?,
+                supports_reasoning_summary_parameter: row.get(7)?,
+                supports_images: false,
+                supports_fast_mode: row.get(8)?,
+            })
+        })?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()?
+    };
+
+    if !models.is_empty() {
+        let model_ids = models
+            .iter()
+            .map(|model| model.id.clone())
+            .collect::<Vec<_>>();
+        let image_support =
+            crate::usage_statistics::cached_models_support_images(storage, "chatgpt", &model_ids);
+        for model in &mut models {
+            model.supports_images = image_support.get(&model.id).copied().unwrap_or(false);
+        }
+    }
+
+    Ok(models)
 }
 
 pub fn selected_model(
@@ -135,36 +146,43 @@ pub fn selected_model(
     workspace_id: &str,
     model_id: &str,
 ) -> rusqlite::Result<Option<ChatGptModel>> {
-    let database = storage.connect()?;
-    database
-        .query_row(
-            "SELECT model_id, display_name, description, context_window,
+    let mut model = {
+        let database = storage.connect()?;
+        database
+            .query_row(
+                "SELECT model_id, display_name, description, context_window,
                 reasoning_levels_json, is_available, default_reasoning_level,
                 supports_reasoning_summary_parameter, supports_fast_mode
          FROM chatgpt_models
          WHERE connection_id = ?1 AND workspace_id = ?2 AND model_id = ?3",
-            params![connection_id, workspace_id, model_id],
-            |row| {
-                let levels = row.get::<_, String>(4)?;
-                let id: String = row.get(0)?;
-                Ok(ChatGptModel {
-                    id: id.clone(),
-                    display_name: row.get(1)?,
-                    description: row.get(2)?,
-                    context_window: row.get(3)?,
-                    reasoning_levels: parse_reasoning_levels(&levels, 4)?,
-                    is_available: row.get(5)?,
-                    default_reasoning_level: row.get(6)?,
-                    supports_reasoning_summary_parameter: row.get(7)?,
-                    supports_images: crate::usage_statistics::cached_model_supports_images(
-                        storage, "chatgpt", &id,
-                    )
-                    .unwrap_or(false),
-                    supports_fast_mode: row.get(8)?,
-                })
-            },
-        )
-        .optional()
+                params![connection_id, workspace_id, model_id],
+                |row| {
+                    let levels = row.get::<_, String>(4)?;
+                    let id: String = row.get(0)?;
+                    Ok(ChatGptModel {
+                        id: id.clone(),
+                        display_name: row.get(1)?,
+                        description: row.get(2)?,
+                        context_window: row.get(3)?,
+                        reasoning_levels: parse_reasoning_levels(&levels, 4)?,
+                        is_available: row.get(5)?,
+                        default_reasoning_level: row.get(6)?,
+                        supports_reasoning_summary_parameter: row.get(7)?,
+                        supports_images: false,
+                        supports_fast_mode: row.get(8)?,
+                    })
+                },
+            )
+            .optional()?
+    };
+
+    if let Some(model) = &mut model {
+        model.supports_images =
+            crate::usage_statistics::cached_model_supports_images(storage, "chatgpt", &model.id)
+                .unwrap_or(false);
+    }
+
+    Ok(model)
 }
 
 fn parse_reasoning_levels(value: &str, column_index: usize) -> rusqlite::Result<Vec<String>> {

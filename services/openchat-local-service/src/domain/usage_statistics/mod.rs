@@ -7,7 +7,7 @@ mod models_dev_pricing;
 
 use rusqlite::{params, params_from_iter};
 use serde_json::{Value, json};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::time::{SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
 
@@ -702,6 +702,14 @@ pub(crate) fn cached_model_supports_images(
     model_id: &str,
 ) -> Option<bool> {
     models_dev_pricing::cached_model_supports_images(storage, provider_id, model_id)
+}
+
+pub(crate) fn cached_models_support_images(
+    storage: &AppStorage,
+    provider_id: &str,
+    model_ids: &[String],
+) -> HashMap<String, bool> {
+    models_dev_pricing::cached_models_support_images(storage, provider_id, model_ids)
 }
 
 fn statistics_storage_error() -> ServiceError {
