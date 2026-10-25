@@ -339,6 +339,8 @@ async fn generate_design_image(
     Ok(json!({
         "images": images,
         "accountQuota": generated.account_quota,
+        "failedCount": generated.failed_count,
+        "failureCode": generated.failure.as_ref().map(|failure| failure.code),
         "generationId": generation_id,
     }))
 }

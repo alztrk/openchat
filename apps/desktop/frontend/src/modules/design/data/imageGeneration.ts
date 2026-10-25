@@ -116,6 +116,8 @@ export interface ImageGenerationOptions {
 export interface ImageGenerationResponse {
   images: DesignImageRecord[];
   accountQuota: ChatGptAccountQuotaStatus;
+  failedCount: number;
+  failureCode: string | null;
 }
 
 export async function loadDesignImageTargets(): Promise<DesignImageTargetsResult> {
@@ -193,23 +195,39 @@ export async function generateDesignImages(
     size: options.size === 'auto' ? null : options.size,
     quality: options.quality,
     background: options.background,
+    count: options.count,
     ...(target.kind === 'api_key' ? { moderation: options.moderation } : {}),
     ...(target.kind === 'api_key'
       ? {
           outputFormat: options.outputFormat,
           outputCompression: options.outputFormat === 'png' ? null : options.outputCompression,
-          count: options.count,
         }
       : {}),
     auth,
   });
   const result = operation.result.then((response): ImageGenerationResponse => {
-    if (!Array.isArray(response.images) || !response.images.every(isDesignImageRecord)) {
+    const failedCount = response.failedCount;
+    const failureCode = response.failureCode;
+    if (
+      !Array.isArray(response.images) ||
+      !response.images.every(isDesignImageRecord) ||
+      response.images.length === 0 ||
+      typeof failedCount !== 'number' ||
+      !Number.isSafeInteger(failedCount) ||
+      failedCount < 0 ||
+      failedCount > options.count ||
+      !(failureCode === null || typeof failureCode === 'string') ||
+      response.images.length + failedCount !== options.count ||
+      (failedCount === 0 && failureCode !== null) ||
+      (failedCount > 0 && failureCode === null)
+    ) {
       throw new Error('The image-generation response is invalid.');
     }
     return {
       images: response.images,
       accountQuota: parseAccountQuotaStatus(response.accountQuota),
+      failedCount,
+      failureCode,
     };
   });
   return { ...operation, result };

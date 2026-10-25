@@ -6,7 +6,7 @@
 use std::future::Future;
 
 use base64::{Engine as _, engine::general_purpose::STANDARD};
-use futures_util::StreamExt;
+use futures_util::{StreamExt, future::join_all};
 use reqwest::{RequestBuilder, Response, StatusCode, header::HeaderMap};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -239,6 +239,10 @@ pub struct ImageGenerationWithAccountQuotaResult {
     pub result: ImageGenerationResult,
     /// ChatGPT account quota information for the authentication route.
     pub account_quota: ChatGptAccountQuotaStatus,
+    /// Number of requested images that could not be returned after partial success.
+    pub failed_count: u8,
+    /// First safe error from a partially successful multi-image request.
+    pub failure: Option<ServiceError>,
 }
 
 impl ImageGenerationRequest {
@@ -299,7 +303,8 @@ impl ChatGptService {
     /// Checks the ChatGPT account quota and generates through the shared image service.
     ///
     /// API-key authentication skips this check because OpenAI applies API limits when
-    /// the generation request is submitted.
+    /// the generation request is submitted. OAuth batches use concurrent single-image
+    /// requests after one account-quota check because that route does not accept `n`.
     pub async fn generate_image_with_account_quota(
         &self,
         request: &ImageGenerationRequest,
@@ -308,6 +313,11 @@ impl ChatGptService {
         cancellation: &mut watch::Receiver<bool>,
     ) -> Result<ImageGenerationWithAccountQuotaResult, ServiceError> {
         request.validate()?;
+        if matches!(auth, ImageGenerationAuth::ChatGptOAuth { .. }) {
+            let mut single_image_request = request.clone();
+            single_image_request.count = 1;
+            validate_codex_image_request(&single_image_request)?;
+        }
         let account_quota = match auth {
             ImageGenerationAuth::ApiKey(_) => ChatGptAccountQuotaStatus {
                 state: ChatGptAccountQuotaState::NotApplicable,
@@ -319,7 +329,6 @@ impl ChatGptService {
                 connection_id,
                 workspace_id,
             } => {
-                validate_codex_image_request(request)?;
                 self.chatgpt_account_quota(connection_id, workspace_id, cancellation)
                     .await?
             }
@@ -331,13 +340,119 @@ impl ChatGptService {
                 true,
             ));
         }
-        let result = self
-            .generate_image(request, auth, turn_id, cancellation)
-            .await?;
+        let (result, failed_count, failure) = match auth {
+            ImageGenerationAuth::ApiKey(_) => {
+                let result = self
+                    .generate_image(request, auth, turn_id, cancellation)
+                    .await?;
+                let returned_count =
+                    u8::try_from(result.outputs.len()).map_err(|_| invalid_image_response())?;
+                if returned_count > request.count {
+                    return Err(invalid_image_response());
+                }
+                let failed_count = request.count - returned_count;
+                let failure = (failed_count > 0).then(|| {
+                    ServiceError::new(
+                        "image_generation_incomplete",
+                        "The image provider returned fewer images than requested.",
+                        true,
+                    )
+                });
+                (result, failed_count, failure)
+            }
+            ImageGenerationAuth::ChatGptOAuth { .. } if request.count == 1 => {
+                let result = self
+                    .generate_image(request, auth, turn_id, cancellation)
+                    .await?;
+                if result.outputs.len() != 1 {
+                    return Err(invalid_image_response());
+                }
+                (result, 0, None)
+            }
+            ImageGenerationAuth::ChatGptOAuth { .. } => {
+                self.generate_oauth_image_batch(request, auth, turn_id, cancellation)
+                    .await?
+            }
+        };
         Ok(ImageGenerationWithAccountQuotaResult {
             result,
             account_quota,
+            failed_count,
+            failure,
         })
+    }
+
+    /// Runs a bounded batch of concurrent OAuth image requests and preserves partial successes.
+    async fn generate_oauth_image_batch(
+        &self,
+        request: &ImageGenerationRequest,
+        auth: ImageGenerationAuth<'_>,
+        turn_id: Option<&str>,
+        cancellation: &mut watch::Receiver<bool>,
+    ) -> Result<(ImageGenerationResult, u8, Option<ServiceError>), ServiceError> {
+        let mut single_image_request = request.clone();
+        single_image_request.count = 1;
+        let single_image_request = &single_image_request;
+        let cancellation_receivers = (0..request.count)
+            .map(|_| cancellation.clone())
+            .collect::<Vec<_>>();
+        let responses = join_all(cancellation_receivers.into_iter().map(
+            |mut request_cancellation| async move {
+                self.generate_image(
+                    single_image_request,
+                    auth,
+                    turn_id,
+                    &mut request_cancellation,
+                )
+                .await
+            },
+        ))
+        .await;
+
+        let mut outputs = Vec::new();
+        let mut metadata = None;
+        let mut failed_count = 0_u8;
+        let mut first_failure = None;
+        for response in responses {
+            match response {
+                Ok(mut result) if result.outputs.len() == 1 => {
+                    if metadata.is_none() {
+                        metadata = Some(result.metadata.clone());
+                    }
+                    outputs.append(&mut result.outputs);
+                }
+                Ok(_) => {
+                    failed_count = failed_count.saturating_add(1);
+                    first_failure.get_or_insert_with(invalid_image_response);
+                }
+                Err(error) => {
+                    failed_count = failed_count.saturating_add(1);
+                    first_failure.get_or_insert(error);
+                }
+            }
+        }
+        if outputs.is_empty() {
+            return match first_failure {
+                Some(error) => Err(error),
+                None => Err(ServiceError::new(
+                    "image_generation_failed",
+                    "The image provider did not return an image.",
+                    true,
+                )),
+            };
+        }
+        let Some(metadata) = metadata else {
+            return Err(ServiceError::new(
+                "image_generation_failed",
+                "The image provider did not return valid image metadata.",
+                true,
+            ));
+        };
+        Ok((
+            ImageGenerationResult { metadata, outputs },
+            failed_count,
+            first_failure,
+        ))
     }
 
     /// Sends an image-generation request and returns validated image bytes.

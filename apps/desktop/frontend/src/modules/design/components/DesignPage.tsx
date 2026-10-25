@@ -518,6 +518,17 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
       const result = await nextOperation.result;
       if (!mountedRef.current) return;
       setGenerationStatus(t('designGenerationComplete', { count: result.images.length }));
+      if (result.failedCount > 0) {
+        if (result.failureCode === 'image_rate_limited' && options.target.kind === 'oauth') {
+          setGenerationError(t('designQuotaRequestLimited'));
+        } else if (result.failureCode === 'image_api_rate_limited') {
+          setGenerationError(t('designApiRateLimited'));
+        } else if (result.failureCode === 'request_cancelled') {
+          setGenerationError(t('designGenerationCancelled'));
+        } else {
+          setGenerationError(t('designGenerationFailed'));
+        }
+      }
       if (options.target.kind === 'oauth') setAccountQuota(result.accountQuota);
       await loadGalleryPage({ design: 0, chat: 0 }, false);
       if (options.target.kind === 'oauth' && options.target.workspaceId !== null) {
@@ -1202,18 +1213,18 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
                     <span className="text-xs font-normal text-secondary-text">{t('designCompressionHint')}</span>
                   </label>
                 ) : null}
-                <Select
-                  disabled={activeOperation !== null || generationStarting}
-                  label={t('designImageCount')}
-                  onChange={(event) => setCount(event.target.value)}
-                  options={[1, 2, 3].map((value) => ({
-                    value: String(value),
-                    label: t('designImageCountOption', { count: value }),
-                  }))}
-                  value={count}
-                />
               </>
             ) : null}
+            <Select
+              disabled={activeOperation !== null || generationStarting}
+              label={t('designImageCount')}
+              onChange={(event) => setCount(event.target.value)}
+              options={[1, 2, 3].map((value) => ({
+                value: String(value),
+                label: t('designImageCountOption', { count: value }),
+              }))}
+              value={count}
+            />
             {generationError ? (
               <p className="text-sm text-destructive" role="alert">
                 {generationError}
