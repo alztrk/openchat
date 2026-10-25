@@ -248,8 +248,8 @@ export function SettingsPage({
           aria-label={t(sectionTitleKeys[section])}
           className="settings-main settings-main-surface flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
         >
-          <header className="settings-page-header shrink-0 px-4 pb-4 pt-5 sm:px-6">
-            <div className="mx-auto w-full max-w-settings">
+          <header className="settings-page-header shrink-0 pb-3 pt-4 sm:pb-4 sm:pt-5">
+            <div className="w-full">
               <div className="settings-page-header-content">
                 <h1
                   aria-live="polite"
@@ -264,7 +264,7 @@ export function SettingsPage({
               </div>
             </div>
           </header>
-          <div className="settings-content mx-auto flex min-h-0 w-full max-w-settings flex-1">
+          <div className="settings-content flex min-h-0 w-full flex-1">
             <SettingsSectionPage
               active={section === 'connections'}
               fallback={t('settingsSectionLoading')}

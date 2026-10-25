@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { SegmentedControl, Select } from '@/design-system';
 import {
@@ -8,7 +9,6 @@ import {
   type SupportedLocale,
   supportedLocales,
 } from '@/localization/i18n';
-import { useComposerPreferencesStore } from '@/modules/conversations/data/composerPreferences';
 import {
   type AppearancePreferences,
   type AppFontPreference,
@@ -53,9 +53,7 @@ export function GeneralSettingsSection({
 }: GeneralSettingsSectionProps) {
   const { t } = useTranslation();
   const [localePreference, setLocalePreference] = useState<LocalePreference>(getLocalePreference);
-  const [saveError, setSaveError] = useState<'language' | 'theme' | 'appearance' | 'composer' | null>(null);
-  const submissionMode = useComposerPreferencesStore((state) => state.submissionMode);
-  const setSubmissionMode = useComposerPreferencesStore((state) => state.setSubmissionMode);
+  const [saveError, setSaveError] = useState<'language' | 'theme' | 'appearance' | null>(null);
 
   const changeLocale = async (preference: LocalePreference) => {
     try {
@@ -112,16 +110,6 @@ export function GeneralSettingsSection({
     }
   };
 
-  const changeSubmissionMode = (value: string) => {
-    if (value !== 'enter' && value !== 'ctrlEnter') return;
-    try {
-      setSubmissionMode(value);
-      setSaveError(null);
-    } catch {
-      setSaveError('composer');
-    }
-  };
-
   const localeOptions = [
     { value: 'system', label: t('systemLanguage') },
     ...supportedLocales.map((locale) => ({ value: locale, label: t(localeLabelKeys[locale]) })),
@@ -131,9 +119,7 @@ export function GeneralSettingsSection({
       ? 'languageSaveFailed'
       : saveError === 'theme'
         ? 'themeSaveFailed'
-        : saveError === 'composer'
-          ? 'composerPreferenceSaveFailed'
-          : 'appearancePreferenceSaveFailed';
+        : 'appearancePreferenceSaveFailed';
 
   return (
     <section aria-labelledby="settings-page-heading" className="grid gap-5">
@@ -196,17 +182,6 @@ export function GeneralSettingsSection({
           options={fontOptions}
           value={appearance.appFont}
           visuallyHiddenLabel
-        />
-      </SettingRow>
-      <SettingRow description={t('composerSendKeyBindingDescription')} label={t('composerSendKeyBinding')}>
-        <SegmentedControl
-          label={t('composerSendKeyBinding')}
-          onValueChange={changeSubmissionMode}
-          options={[
-            { value: 'enter', label: t('composerSubmissionModeEnter') },
-            { value: 'ctrlEnter', label: t('composerSubmissionModeCtrlEnter') },
-          ]}
-          value={submissionMode}
         />
       </SettingRow>
       {saveError ? (

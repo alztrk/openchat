@@ -955,6 +955,10 @@ label:has(> input:focus) .openchat-segment-label {
   overflow: hidden;
 }
 
+.settings-page-header {
+  padding-inline: 24px;
+}
+
 .settings-content {
   min-height: 0;
   flex: 1 1 auto;
@@ -973,7 +977,7 @@ label:has(> input:focus) .openchat-segment-label {
   height: 100%;
   min-height: 0;
   overflow-y: auto;
-  padding: 24px 24px 32px;
+  padding: 20px 24px 28px;
 }
 
 .settings-navigation-button {
@@ -1023,12 +1027,16 @@ label:has(> input:focus) .openchat-segment-label {
 }
 
 @container (max-width: 639.99px) {
+  .settings-page-header {
+    padding-inline: 16px;
+  }
+
   .settings-page-description {
     display: none;
   }
 
   .settings-section-scroll {
-    padding-inline: 16px;
+    padding: 16px 16px 24px;
   }
 }
 
@@ -1437,9 +1445,6 @@ html[data-motion-input='keyboard'] .openchat-popover-enter[data-state='closed'] 
     padding-inline: 4px;
   }
 
-  .settings-section-scroll {
-    padding-inline: 8px;
-  }
 }
 
 @media (max-height: 640px) {
