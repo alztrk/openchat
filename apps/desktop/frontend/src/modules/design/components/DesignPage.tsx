@@ -73,10 +73,7 @@ type DesignServiceOperation = Omit<ServiceOperation, 'result'> & { result: Promi
 
 const galleryPageSize = 30;
 const modelOptions = {
-  oauth: [
-    { value: 'gpt-image-2', labelKey: 'designModelTwo' },
-    { value: 'chatgpt-image-latest', labelKey: 'designModelChatGpt' },
-  ],
+  oauth: [{ value: 'chatgpt-image-latest', labelKey: 'designModelChatGpt' }],
   api_key: [
     { value: 'gpt-image-2.5-flare', labelKey: 'designModelFast' },
     { value: 'gpt-image-2.5-sunburst', labelKey: 'designModelDetailed' },
