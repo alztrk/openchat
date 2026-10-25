@@ -213,6 +213,7 @@ struct DesignImageRequest {
     rename_all_fields = "camelCase"
 )]
 enum DesignImageAuth {
+    #[serde(rename = "oauth")]
     OAuth {
         connection_id: String,
         workspace_id: String,
@@ -360,7 +361,36 @@ mod tests {
 
     use crate::{chatgpt::ChatGptService, service::OperationGate, storage::AppStorage};
 
-    use super::dispatch;
+    use super::{DesignImageAuth, DesignImageRequest, dispatch};
+
+    #[test]
+    fn design_image_request_accepts_frontend_oauth_payload() {
+        let request = json!({
+            "prompt": "test image",
+            "model": "chatgpt-image-latest",
+            "size": "1024x1024",
+            "quality": "auto",
+            "background": "auto",
+            "auth": {
+                "kind": "oauth",
+                "connectionId": "connection-id",
+                "workspaceId": "workspace-id"
+            }
+        });
+
+        let parsed = serde_json::from_value::<DesignImageRequest>(request)
+            .expect("frontend OAuth image request should deserialize");
+        let DesignImageAuth::OAuth {
+            connection_id,
+            workspace_id,
+        } = parsed.auth
+        else {
+            panic!("frontend OAuth image request should use OAuth auth");
+        };
+
+        assert_eq!(connection_id, "connection-id");
+        assert_eq!(workspace_id, "workspace-id");
+    }
 
     #[tokio::test]
     async fn provider_dispatch_preserves_error_contract_and_removes_renderer_keys() {
