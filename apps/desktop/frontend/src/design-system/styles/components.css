@@ -385,7 +385,11 @@ html[data-motion-input='keyboard'] .openchat-dialog {
 }
 
 .openchat-date-picker-popover {
+  position: fixed;
+  z-index: 60;
   width: min(20rem, calc(100vw - 1rem));
+  max-height: calc(100dvh - 1rem);
+  overflow-y: auto;
 }
 
 .openchat-popover-enter,

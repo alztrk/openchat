@@ -77,13 +77,14 @@ export function DatePicker({ disabled = false, label, max, min, onChange, value 
   const labelId = useId();
   const valueId = useId();
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
   const dayButtons = useRef(new Map<string, HTMLButtonElement>());
   const todayKey = todayDateKey();
   const selectedDateKey = parseDateKey(value) ? value : undefined;
   const selectedDate = selectedDateKey ? parseDateKey(selectedDateKey) : null;
   const initialDate = parseDateKey(constrainDateKey(selectedDateKey ?? todayKey, min, max));
   const [open, setOpen] = useState(false);
-  const [alignEnd, setAlignEnd] = useState(false);
+  const [popoverPosition, setPopoverPosition] = useState<{ top: number; left: number } | null>(null);
   const [focusedDate, setFocusedDate] = useState(() => (initialDate ? dateKey(initialDate) : todayKey));
   const [visibleMonth, setVisibleMonth] = useState(() => monthStart(initialDate ?? new Date()));
 
@@ -127,17 +128,43 @@ export function DatePicker({ disabled = false, label, max, min, onChange, value 
 
   useLayoutEffect(() => {
     if (!open) return;
-    const updateAlignment = () => {
+    const updatePosition = () => {
       const trigger = triggerRef.current;
-      if (!trigger) return;
-      const availableWidth = Math.max(0, window.innerWidth - 16);
-      const panelWidth = Math.min(320, availableWidth);
-      setAlignEnd(trigger.getBoundingClientRect().left + panelWidth > window.innerWidth - 8);
+      const popover = popoverRef.current;
+      if (!trigger || !popover) return;
+
+      const triggerBounds = trigger.getBoundingClientRect();
+      const popoverBounds = popover.getBoundingClientRect();
+      const viewportPadding = 8;
+      const left = Math.max(
+        viewportPadding,
+        Math.min(triggerBounds.left, window.innerWidth - popoverBounds.width - viewportPadding),
+      );
+      const availableBelow = window.innerHeight - triggerBounds.bottom - viewportPadding;
+      const availableAbove = triggerBounds.top - viewportPadding;
+      const openAbove = popoverBounds.height > availableBelow && availableAbove > availableBelow;
+      const requestedTop = openAbove
+        ? triggerBounds.top - popoverBounds.height - viewportPadding
+        : triggerBounds.bottom + viewportPadding;
+      const maxTop = Math.max(viewportPadding, window.innerHeight - popoverBounds.height - viewportPadding);
+      const top = Math.max(viewportPadding, Math.min(requestedTop, maxTop));
+
+      setPopoverPosition((current) => (current?.left === left && current.top === top ? current : { left, top }));
     };
 
-    updateAlignment();
-    window.addEventListener('resize', updateAlignment);
-    return () => window.removeEventListener('resize', updateAlignment);
+    updatePosition();
+    const resizeObserver = new ResizeObserver(updatePosition);
+    const trigger = triggerRef.current;
+    const popover = popoverRef.current;
+    if (trigger) resizeObserver.observe(trigger);
+    if (popover) resizeObserver.observe(popover);
+    window.addEventListener('resize', updatePosition);
+    window.addEventListener('scroll', updatePosition, true);
+    return () => {
+      resizeObserver.disconnect();
+      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', updatePosition, true);
+    };
   }, [open]);
 
   const changeMonth = (amount: number) => {
@@ -220,10 +247,14 @@ export function DatePicker({ disabled = false, label, max, min, onChange, value 
   });
   const previousMonth = new Date(Date.UTC(visibleMonth.getUTCFullYear(), visibleMonth.getUTCMonth() - 1, 1));
   const nextMonth = new Date(Date.UTC(visibleMonth.getUTCFullYear(), visibleMonth.getUTCMonth() + 1, 1));
+  const handleOpenChange = (nextOpen: boolean) => {
+    if (nextOpen) setPopoverPosition(null);
+    setOpen(nextOpen);
+  };
 
   return (
-    <DialogPrimitive.Root modal={false} onOpenChange={setOpen} open={open}>
-      <div className="relative grid gap-1">
+    <DialogPrimitive.Root modal={false} onOpenChange={handleOpenChange} open={open}>
+      <div className="grid gap-1">
         <span className="text-xs font-medium text-secondary-text" id={labelId}>
           {label}
         </span>
@@ -239,103 +270,108 @@ export function DatePicker({ disabled = false, label, max, min, onChange, value 
             <span id={valueId}>{displayedValue}</span>
           </Button>
         </DialogPrimitive.Trigger>
-        <DialogPrimitive.Content
-          aria-describedby={undefined}
-          className={cn(
-            'openchat-dropdown-surface openchat-popover-enter openchat-date-picker-popover absolute top-full z-50 mt-2 p-2',
-            alignEnd ? 'right-0' : 'left-0',
-          )}
-        >
-          <DialogPrimitive.Title className="sr-only">{t('datePickerDialogTitle', { label })}</DialogPrimitive.Title>
-          <div className="grid gap-4">
-            <div className="flex items-center justify-between gap-2">
-              <Button
-                aria-label={t('datePickerPreviousMonth')}
-                disabled={!monthHasSelectableDate(previousMonth, min, max)}
-                onClick={() => changeMonth(-1)}
-                size="icon"
-                variant="ghost"
-              >
-                <ChevronLeft aria-hidden="true" size={18} />
-              </Button>
-              <p aria-live="polite" className="text-sm font-semibold capitalize text-text">
-                {monthLabel}
-              </p>
-              <Button
-                aria-label={t('datePickerNextMonth')}
-                disabled={!monthHasSelectableDate(nextMonth, min, max)}
-                onClick={() => changeMonth(1)}
-                size="icon"
-                variant="ghost"
-              >
-                <ChevronRight aria-hidden="true" size={18} />
-              </Button>
-            </div>
-            <fieldset className="grid min-w-0 grid-cols-7 gap-1" onKeyDown={handleCalendarKeyDown}>
-              <legend className="sr-only">{monthLabel}</legend>
-              {weekdays.map((weekday) => (
-                <span
-                  className="flex h-8 items-center justify-center text-xs font-medium text-secondary-text"
-                  key={weekday.key}
-                  title={weekday.full}
-                >
-                  {weekday.short}
-                </span>
-              ))}
-              {calendarDays.map((date) => {
-                const key = dateKey(date);
-                const inMonth = date.getUTCMonth() === visibleMonth.getUTCMonth();
-                const isSelected = value === key;
-                const isToday = todayKey === key;
-                const isDisabled = (min !== undefined && key < min) || (max !== undefined && key > max);
-
-                return (
-                  <Button
-                    aria-current={isToday ? 'date' : undefined}
-                    aria-label={dateFormatter.format(date)}
-                    aria-pressed={isSelected}
-                    className={cn(
-                      'w-full min-w-0 px-0 font-normal',
-                      !inMonth && 'text-secondary-text',
-                      isToday && !isSelected && 'ring-1 ring-border',
-                    )}
-                    disabled={isDisabled}
-                    key={key}
-                    onClick={() => {
-                      onChange(key);
-                      setOpen(false);
-                    }}
-                    ref={(element) => {
-                      if (element) dayButtons.current.set(key, element);
-                      else dayButtons.current.delete(key);
-                    }}
-                    tabIndex={focusedDate === key ? 0 : -1}
-                    variant={isSelected ? 'primary' : 'ghost'}
-                  >
-                    {dayNumberFormatter.format(date.getUTCDate())}
-                  </Button>
-                );
-              })}
-            </fieldset>
-            <div className="flex justify-end gap-2">
-              {value ? (
+        <DialogPrimitive.Portal>
+          <DialogPrimitive.Content
+            aria-describedby={undefined}
+            className="openchat-dropdown-surface openchat-popover-enter openchat-date-picker-popover p-2"
+            ref={popoverRef}
+            style={{
+              left: popoverPosition?.left ?? 0,
+              top: popoverPosition?.top ?? 0,
+              visibility: popoverPosition ? 'visible' : 'hidden',
+            }}
+          >
+            <DialogPrimitive.Title className="sr-only">{t('datePickerDialogTitle', { label })}</DialogPrimitive.Title>
+            <div className="grid gap-4">
+              <div className="flex items-center justify-between gap-2">
                 <Button
-                  onClick={() => {
-                    onChange('');
-                    setOpen(false);
-                  }}
-                  size="small"
+                  aria-label={t('datePickerPreviousMonth')}
+                  disabled={!monthHasSelectableDate(previousMonth, min, max)}
+                  onClick={() => changeMonth(-1)}
+                  size="icon"
                   variant="ghost"
                 >
-                  {t('datePickerClear')}
+                  <ChevronLeft aria-hidden="true" size={18} />
                 </Button>
-              ) : null}
-              <Button onClick={() => setOpen(false)} size="small">
-                {t('datePickerClose')}
-              </Button>
+                <p aria-live="polite" className="text-sm font-semibold capitalize text-text">
+                  {monthLabel}
+                </p>
+                <Button
+                  aria-label={t('datePickerNextMonth')}
+                  disabled={!monthHasSelectableDate(nextMonth, min, max)}
+                  onClick={() => changeMonth(1)}
+                  size="icon"
+                  variant="ghost"
+                >
+                  <ChevronRight aria-hidden="true" size={18} />
+                </Button>
+              </div>
+              <fieldset className="grid min-w-0 grid-cols-7 gap-1" onKeyDown={handleCalendarKeyDown}>
+                <legend className="sr-only">{monthLabel}</legend>
+                {weekdays.map((weekday) => (
+                  <span
+                    className="flex h-8 items-center justify-center text-xs font-medium text-secondary-text"
+                    key={weekday.key}
+                    title={weekday.full}
+                  >
+                    {weekday.short}
+                  </span>
+                ))}
+                {calendarDays.map((date) => {
+                  const key = dateKey(date);
+                  const inMonth = date.getUTCMonth() === visibleMonth.getUTCMonth();
+                  const isSelected = value === key;
+                  const isToday = todayKey === key;
+                  const isDisabled = (min !== undefined && key < min) || (max !== undefined && key > max);
+
+                  return (
+                    <Button
+                      aria-current={isToday ? 'date' : undefined}
+                      aria-label={dateFormatter.format(date)}
+                      aria-pressed={isSelected}
+                      className={cn(
+                        'w-full min-w-0 px-0 font-normal',
+                        !inMonth && 'text-secondary-text',
+                        isToday && !isSelected && 'ring-1 ring-border',
+                      )}
+                      disabled={isDisabled}
+                      key={key}
+                      onClick={() => {
+                        onChange(key);
+                        setOpen(false);
+                      }}
+                      ref={(element) => {
+                        if (element) dayButtons.current.set(key, element);
+                        else dayButtons.current.delete(key);
+                      }}
+                      tabIndex={focusedDate === key ? 0 : -1}
+                      variant={isSelected ? 'primary' : 'ghost'}
+                    >
+                      {dayNumberFormatter.format(date.getUTCDate())}
+                    </Button>
+                  );
+                })}
+              </fieldset>
+              <div className="flex justify-end gap-2">
+                {value ? (
+                  <Button
+                    onClick={() => {
+                      onChange('');
+                      setOpen(false);
+                    }}
+                    size="small"
+                    variant="ghost"
+                  >
+                    {t('datePickerClear')}
+                  </Button>
+                ) : null}
+                <Button onClick={() => setOpen(false)} size="small">
+                  {t('datePickerClose')}
+                </Button>
+              </div>
             </div>
-          </div>
-        </DialogPrimitive.Content>
+          </DialogPrimitive.Content>
+        </DialogPrimitive.Portal>
       </div>
     </DialogPrimitive.Root>
   );
