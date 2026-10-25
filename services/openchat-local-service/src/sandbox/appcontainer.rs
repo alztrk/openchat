@@ -38,7 +38,7 @@ use super::{
     },
 };
 
-/// Owns a temporary AppContainer profile and the ACL grants made for its process.
+/// Owns an AppContainer profile, its ACL grants, and temporary runtime files.
 pub(crate) struct AppContainerSandbox {
     /// NUL-terminated unique profile name used to remove the profile on drop.
     pub(crate) name: Vec<u16>,
@@ -52,6 +52,8 @@ pub(crate) struct AppContainerSandbox {
     pub(crate) temp_directory: PathBuf,
     /// Paths whose AppContainer ACEs must be revoked when this sandbox is dropped.
     pub(crate) granted_paths: Vec<PathBuf>,
+    /// Private runtime directory removed after the managed child process exits.
+    runtime_directory: Option<PathBuf>,
     /// Whether this profile is temporary and should be removed when the child exits.
     persistent_profile: bool,
     /// Whether this sandbox changed window-station or desktop ACLs.
@@ -161,6 +163,7 @@ impl AppContainerSandbox {
             working_directory: working_directory.clone(),
             temp_directory,
             granted_paths: Vec::new(),
+            runtime_directory: None,
             persistent_profile: false,
             manages_window_access: true,
         };
@@ -200,7 +203,7 @@ impl AppContainerSandbox {
     /// Creates the stable, no-capability profile used by the SQLite storage broker.
     ///
     /// The broker's data remains in the profile's AppContainer-local folder after the process
-    /// exits. Only the broker executable receives an explicit read/execute ACL.
+    /// exits. A private executable copy avoids changing ACLs on the installed application folder.
     pub(crate) fn create_storage_broker(executable: &Path) -> io::Result<(Self, PathBuf)> {
         let executable = fs::canonicalize(executable)?;
         if !executable.is_file() {
@@ -209,37 +212,63 @@ impl AppContainerSandbox {
                 "The storage broker executable is unavailable.",
             ));
         }
-        let working_directory = executable
-            .parent()
-            .ok_or_else(|| {
-                io::Error::new(
-                    io::ErrorKind::InvalidInput,
-                    "The broker has no installation directory.",
-                )
-            })?
-            .to_path_buf();
-        let working_directory = shell_path(&working_directory);
         let name = wide_null("OpenChatStorageBrokerV1");
         let display_name = wide_null("OpenChat storage broker");
         let description = wide_null("Persistent isolated storage for OpenChat.");
-        let (sid, sid_string, package_root) =
+        let (sid, sid_string, profile_root) =
             create_profile_identity(&name, &display_name, &description)?;
-        let temp_directory = package_root.join("Temp");
+        let temp_directory = profile_root.join("Temp");
         let mut sandbox = Self {
             name,
             sid: sid as usize,
             sid_string,
-            working_directory,
+            working_directory: profile_root.clone(),
             temp_directory,
             granted_paths: Vec::new(),
+            runtime_directory: None,
             persistent_profile: true,
             manages_window_access: false,
         };
-        if let Err(error) = sandbox.grant_read_only_path(&executable) {
+        let profile_metadata = match fs::symlink_metadata(&profile_root) {
+            Ok(metadata) => metadata,
+            Err(error) => {
+                sandbox.cleanup();
+                return Err(error);
+            }
+        };
+        if profile_metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
+            || !profile_metadata.is_dir()
+        {
+            sandbox.cleanup();
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "The storage broker profile folder is unsafe.",
+            ));
+        }
+        let profile_root = match fs::canonicalize(&profile_root) {
+            Ok(path) => path,
+            Err(error) => {
+                sandbox.cleanup();
+                return Err(error);
+            }
+        };
+        sandbox.working_directory = profile_root.clone();
+        let runtime_directory = profile_root.join(format!(
+            "OpenChatStorageBrokerRuntime{}",
+            uuid::Uuid::new_v4().simple()
+        ));
+        if let Err(error) = fs::create_dir(&runtime_directory) {
             sandbox.cleanup();
             return Err(error);
         }
-        Ok((sandbox, package_root.join("OpenChatStorage")))
+        sandbox.runtime_directory = Some(runtime_directory.clone());
+        let staged_executable = runtime_directory.join("openchat-storage-broker.exe");
+        if let Err(error) = fs::copy(executable, &staged_executable) {
+            sandbox.cleanup();
+            return Err(error);
+        }
+        sandbox.working_directory = shell_path(&fs::canonicalize(&runtime_directory)?);
+        Ok((sandbox, staged_executable))
     }
 
     /// Builds a sorted, NUL-terminated environment containing only the allowed base variables.
@@ -322,62 +351,51 @@ impl AppContainerSandbox {
             let _ = fs::create_dir_all(&isolated_localappdata);
         }
 
-        if self.persistent_profile {
-            for name in ["LOCALAPPDATA", "TEMP", "TMP"] {
-                if !variables.contains_key(name) {
-                    return Err(io::Error::new(
-                        io::ErrorKind::InvalidInput,
-                        "The storage broker base environment is incomplete.",
-                    ));
-                }
-            }
-        } else {
-            variables.insert(
-                "USERPROFILE".to_owned(),
-                Zeroizing::new(
-                    isolated_profile
-                        .as_os_str()
-                        .encode_wide()
-                        .collect::<Vec<_>>(),
-                ),
-            );
-            variables.insert(
-                "APPDATA".to_owned(),
-                Zeroizing::new(
-                    isolated_appdata
-                        .as_os_str()
-                        .encode_wide()
-                        .collect::<Vec<_>>(),
-                ),
-            );
-            variables.insert(
-                "LOCALAPPDATA".to_owned(),
-                Zeroizing::new(
-                    isolated_localappdata
-                        .as_os_str()
-                        .encode_wide()
-                        .collect::<Vec<_>>(),
-                ),
-            );
-            variables.insert(
-                "TEMP".to_owned(),
-                Zeroizing::new(
-                    self.temp_directory
-                        .as_os_str()
-                        .encode_wide()
-                        .collect::<Vec<_>>(),
-                ),
-            );
-            variables.insert(
-                "TMP".to_owned(),
-                Zeroizing::new(
-                    self.temp_directory
-                        .as_os_str()
-                        .encode_wide()
-                        .collect::<Vec<_>>(),
-                ),
-            );
-        }
+        variables.insert(
+            "USERPROFILE".to_owned(),
+            Zeroizing::new(
+                isolated_profile
+                    .as_os_str()
+                    .encode_wide()
+                    .collect::<Vec<_>>(),
+            ),
+        );
+        variables.insert(
+            "APPDATA".to_owned(),
+            Zeroizing::new(
+                isolated_appdata
+                    .as_os_str()
+                    .encode_wide()
+                    .collect::<Vec<_>>(),
+            ),
+        );
+        variables.insert(
+            "LOCALAPPDATA".to_owned(),
+            Zeroizing::new(
+                isolated_localappdata
+                    .as_os_str()
+                    .encode_wide()
+                    .collect::<Vec<_>>(),
+            ),
+        );
+        variables.insert(
+            "TEMP".to_owned(),
+            Zeroizing::new(
+                self.temp_directory
+                    .as_os_str()
+                    .encode_wide()
+                    .collect::<Vec<_>>(),
+            ),
+        );
+        variables.insert(
+            "TMP".to_owned(),
+            Zeroizing::new(
+                self.temp_directory
+                    .as_os_str()
+                    .encode_wide()
+                    .collect::<Vec<_>>(),
+            ),
+        );
         for (key, value) in additional_environment {
             let normalized_key = key.to_ascii_uppercase();
             if !is_valid_additional_environment_name(key)
@@ -579,11 +597,16 @@ impl AppContainerSandbox {
                 eprintln!("app_container_acl_cleanup_failed");
             }
         }
+        if let Some(runtime_directory) = self.runtime_directory.take()
+            && fs::remove_dir_all(runtime_directory).is_err()
+        {
+            eprintln!("app_container_runtime_cleanup_failed");
+        }
     }
 }
 
 impl Drop for AppContainerSandbox {
-    /// Revokes granted ACLs, then releases the profile SID and deletes the profile.
+    /// Cleans up transient access and runtime state before releasing the profile SID.
     fn drop(&mut self) {
         self.cleanup();
         // SAFETY: These pointers were allocated by the paired Windows APIs and are still owned by this sandbox.

@@ -12,10 +12,6 @@ path = "src/lib.rs"
 name = "openchat-local-service"
 path = "src/main.rs"
 
-[[bin]]
-name = "openchat-storage-service"
-path = "src/storage_service_main.rs"
-
 [dependencies]
 age = "=0.12.1"
 rusqlite = { version = "0.40.2", features = ["backup", "bundled", "functions"] }
@@ -62,19 +58,15 @@ windows-sys = { version = "=0.61.2", features = [
     "Win32_Security_Isolation",
     "Win32_Storage_FileSystem",
     "Win32_System_Com",
-    "Win32_System_Diagnostics_ToolHelp",
     "Win32_System_IO",
     "Win32_System_JobObjects",
     "Win32_System_Pipes",
-    "Win32_System_ProcessStatus",
     "Win32_System_StationsAndDesktops",
     "Win32_System_SystemInformation",
     "Win32_System_SystemServices",
     "Win32_System_Threading",
-    "Win32_System_WindowsProgramming",
     "Win32_Graphics_Gdi",
     "Win32_UI_Input_KeyboardAndMouse",
     "Win32_UI_WindowsAndMessaging",
     "Win32_UI_HiDpi",
 ] }
-windows-service = "=0.8.1"

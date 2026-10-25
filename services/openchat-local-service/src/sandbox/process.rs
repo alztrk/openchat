@@ -162,11 +162,11 @@ impl SandboxedProcess {
     pub(crate) fn spawn_storage_broker(program: &Path) -> io::Result<Self> {
         validate_win32_string(program.as_os_str())?;
         let program = fs::canonicalize(program)?;
-        let (sandbox, _) = AppContainerSandbox::create_storage_broker(&program)?;
+        let (sandbox, executable) = AppContainerSandbox::create_storage_broker(&program)?;
         let working_directory = sandbox.working_directory.clone();
         Self::spawn_process(
             Some(sandbox),
-            program,
+            executable,
             vec![std::ffi::OsString::from("--storage-broker-stdio")],
             working_directory,
             &[],

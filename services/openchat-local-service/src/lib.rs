@@ -31,8 +31,8 @@ mod service;
 #[path = "adapters/storage/mod.rs"]
 mod storage;
 #[cfg(windows)]
-#[path = "storage_service.rs"]
-mod storage_service;
+#[path = "storage_broker.rs"]
+mod storage_broker;
 
 #[cfg(windows)]
 #[path = "adapters/credentials.rs"]
@@ -48,7 +48,7 @@ pub mod sandbox;
 pub use service::{RunError, run};
 pub use storage::migrate_chat_schema;
 #[cfg(windows)]
-pub use storage_service::{run as run_storage_service, run_broker_stdio};
+pub use storage_broker::run_broker_stdio;
 
 /// Chat schema version supported by this service build.
 pub const CHAT_SCHEMA_VERSION: i64 = 22;

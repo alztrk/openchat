@@ -185,7 +185,7 @@ impl AppStorage {
                 let protected_legacy_profile = if start_with_empty_legacy_profile {
                     false
                 } else {
-                    legacy_storage_may_contain_profile_data().map_err(|_| {
+                    legacy_protected_storage_may_contain_profile_data().map_err(|_| {
                         rusqlite::Error::SqliteFailure(
                             ffi::Error::new(ffi::SQLITE_CANTOPEN),
                             Some(
@@ -951,32 +951,18 @@ impl AppStorage {
 }
 
 #[cfg(windows)]
-fn legacy_storage_may_contain_profile_data() -> rusqlite::Result<bool> {
-    use windows_service::{
-        Error as ServiceError,
-        service::ServiceAccess,
-        service_manager::{ServiceManager, ServiceManagerAccess},
-    };
-
-    let manager = ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT)
-        .map_err(|_| legacy_storage_service_check_error())?;
-    match manager.open_service("OpenChatStorage", ServiceAccess::QUERY_STATUS) {
-        Ok(_) => return Ok(true),
-        Err(ServiceError::Winapi(error)) if error.raw_os_error() == Some(1060) => {}
-        Err(_) => return Err(legacy_storage_service_check_error()),
-    }
-
+fn legacy_protected_storage_may_contain_profile_data() -> rusqlite::Result<bool> {
     let program_data = env::var_os("PROGRAMDATA")
         .filter(|value| !value.is_empty())
         .map(PathBuf::from)
         .filter(|path| path.is_absolute())
-        .ok_or_else(legacy_storage_service_check_error)?;
+        .ok_or_else(legacy_protected_storage_check_error)?;
     let protected_root = program_data.join("OpenChat").join("Storage");
     match fs::symlink_metadata(protected_root) {
         Ok(_) => Ok(true),
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(false),
         Err(error) if error.kind() == io::ErrorKind::PermissionDenied => Ok(true),
-        Err(_) => Err(legacy_storage_service_check_error()),
+        Err(_) => Err(legacy_protected_storage_check_error()),
     }
 }
 
@@ -996,7 +982,7 @@ fn legacy_database_exists(database_path: &Path) -> rusqlite::Result<bool> {
 }
 
 #[cfg(windows)]
-fn legacy_storage_service_check_error() -> rusqlite::Error {
+fn legacy_protected_storage_check_error() -> rusqlite::Error {
     rusqlite::Error::SqliteFailure(
         ffi::Error::new(ffi::SQLITE_CANTOPEN),
         Some("The previous OpenChat storage state could not be checked safely.".to_owned()),

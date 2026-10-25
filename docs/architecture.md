@@ -126,13 +126,18 @@ remain separate Rust processes with their existing storage and RPC boundaries.
   process in the stable `OpenChatStorageBrokerV1` AppContainer profile. The
   broker has no network capability, receives only its inherited standard
   handles, and owns the SQLite connection, schema lifecycle, and bounded FIFO
-  request queue. Its database and cache live in that AppContainer's private
-  local-data directory; the parent sidecar does not open the database files.
+  request queue. The parent stages a private copy of its executable in the
+  AppContainer profile and removes that runtime copy after the broker exits,
+  so launching it does not require changing ACLs on the installed application
+  folder. Its database and cache live in that AppContainer's private local-data
+  directory; the parent sidecar does not open the database files.
+  The broker's profile environment variables point to that AppContainer-local
+  directory rather than the desktop user's normal profile.
   Windows AppContainer isolation prevents other applications from accessing
   that private data by default. The new NSIS package is per-user and does not
-  install or start a Windows service. The previous `OpenChatStorage` service
-  implementation and installer helper are retained in source but are not
-  referenced or bundled by the current build. Tauri global MCP/provider commands use an allowlisted
+  install or start a Windows service. The previous Windows SCM service
+  executable and named-pipe server have been removed from source. Tauri global
+  MCP/provider commands use an allowlisted
   native-host RPC bridge; private secret-map methods and native response IDs
   are blocked from renderer requests, and private responses are consumed
   without forwarding them to the UI. The old Tauri SQLite command
@@ -141,10 +146,10 @@ remain separate Rust processes with their existing storage and RPC boundaries.
 
   A new AppContainer profile imports the old `%LOCALAPPDATA%` database from a
   verified SQLite snapshot and retains the source as a rollback copy. The
-  import is skipped with a clear startup error if the legacy Windows storage
-  service is registered or its protected `%ProgramData%` storage directory
-  remains, because that database may contain newer data than the old local
-  copy. That service database is not readable by the unelevated desktop
+  import is skipped with a clear startup error if the protected
+  `%ProgramData%\OpenChat\Storage` directory remains, because that database
+  may contain newer data than the old local copy. The protected database is
+  not readable by the unelevated desktop
   process, so moving an existing service-backed profile still requires a
   separately verified export path.
   When this conflict blocks startup, the user may explicitly confirm creating
