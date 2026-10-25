@@ -1023,6 +1023,120 @@ mod tests {
     }
 
     #[test]
+    fn image_quota_uses_only_image_specific_buckets() {
+        let status = image_quota_status(&json!({
+            "buckets": [
+                {
+                    "limitId": "codex:primary",
+                    "usedPercent": 100.0,
+                    "resetAtUnixMs": i64::MAX
+                },
+                {
+                    "limitId": "image_generation:primary",
+                    "usedPercent": 42.5,
+                    "resetAtUnixMs": i64::MAX
+                }
+            ]
+        }));
+
+        assert_eq!(status.state, ImageQuotaState::Available);
+        assert_eq!(status.used_percent, Some(42.5));
+        assert_eq!(status.reset_at_unix_ms, Some(i64::MAX));
+    }
+
+    #[test]
+    fn image_quota_reads_the_image_bucket_from_oauth_usage_payload() {
+        let snapshot = super::super::response_parser::parse_usage(
+            &json!({
+                "rate_limit": {
+                    "primary_window": {
+                        "used_percent": 100.0,
+                        "reset_at": 4_102_444_800_i64
+                    }
+                },
+                "additional_rate_limits": [{
+                    "limit_name": "image_generation",
+                    "rate_limit": {
+                        "primary_window": {
+                            "used_percent": 42.5,
+                            "reset_at": 4_102_444_800_i64
+                        }
+                    }
+                }]
+            }),
+            "connection",
+            "workspace",
+            Vec::new(),
+            None,
+            "omitted",
+        )
+        .expect("OAuth usage response should parse");
+        let buckets = serde_json::to_value(snapshot.buckets)
+            .expect("usage buckets should serialize for quota evaluation");
+
+        let status = image_quota_status(&json!({"buckets": buckets}));
+
+        assert_eq!(status.state, ImageQuotaState::Available);
+        assert_eq!(status.used_percent, Some(42.5));
+        assert_eq!(status.reset_at_unix_ms, Some(4_102_444_800_000));
+    }
+
+    #[test]
+    fn image_quota_reports_active_exhaustion_and_ignores_expired_windows() {
+        let exhausted = image_quota_status(&json!({
+            "buckets": [{
+                "limitId": "image_generation:primary",
+                "usedPercent": 100.0,
+                "resetAtUnixMs": i64::MAX
+            }]
+        }));
+        assert_eq!(exhausted.state, ImageQuotaState::Exhausted);
+        assert_eq!(exhausted.used_percent, Some(100.0));
+
+        let expired = image_quota_status(&json!({
+            "buckets": [{
+                "limitId": "image_generation:primary",
+                "usedPercent": 100.0,
+                "resetAtUnixMs": 0
+            }]
+        }));
+        assert_eq!(expired.state, ImageQuotaState::Unknown);
+        assert_eq!(expired.reason.as_deref(), Some("image_quota_incomplete"));
+    }
+
+    #[test]
+    fn image_quota_is_unknown_when_the_provider_reports_no_image_limit() {
+        let status = image_quota_status(&json!({
+            "buckets": [{
+                "limitId": "codex:secondary",
+                "usedPercent": 10.0,
+                "resetAtUnixMs": i64::MAX
+            }]
+        }));
+
+        assert_eq!(status.state, ImageQuotaState::Unknown);
+        assert_eq!(status.used_percent, None);
+        assert_eq!(status.reason.as_deref(), Some("image_quota_not_reported"));
+    }
+
+    #[test]
+    fn rate_limit_errors_keep_oauth_and_api_key_routes_distinct() {
+        let oauth = provider_status_error_for_route(
+            StatusCode::TOO_MANY_REQUESTS,
+            ImageRequestRoute::ChatGptOAuth,
+        );
+        let api_key = provider_status_error_for_route(
+            StatusCode::TOO_MANY_REQUESTS,
+            ImageRequestRoute::ApiKey,
+        );
+
+        assert_eq!(oauth.code, "image_rate_limited");
+        assert_eq!(api_key.code, "image_api_rate_limited");
+        assert!(oauth.retryable);
+        assert!(api_key.retryable);
+    }
+
+    #[test]
     fn validation_rejects_invalid_request_fields() {
         let mut request = generation_request();
         request.prompt = "   ".to_owned();
