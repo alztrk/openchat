@@ -1370,18 +1370,6 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
         ) : null}
 
         <div aria-live="polite" className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-7" ref={galleryScrollRef}>
-          {galleryError !== 'none' && gallery.length > 0 ? (
-            <div
-              className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-control border border-border bg-raised px-3 py-2"
-              role="status"
-            >
-              <p className="text-sm text-secondary-text">{t('designLibraryPartialFailed')}</p>
-              <Button onClick={() => void loadGalleryPage({ design: 0, chat: 0 }, false)} size="small" variant="ghost">
-                <RefreshCw aria-hidden="true" size={14} />
-                {t('retry')}
-              </Button>
-            </div>
-          ) : null}
           {galleryError !== 'none' && gallery.length === 0 ? (
             <div className="mx-auto grid max-w-lg gap-3 py-12 text-center" role="alert">
               <p className="text-sm text-destructive">{t('designLibraryFailed')}</p>
@@ -1480,6 +1468,10 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
             {selectedDesignImage ? (
               <dl className="grid grid-cols-2 gap-3 rounded-control border border-border bg-raised p-3 text-sm sm:grid-cols-3">
                 <div className="min-w-0">
+                  <dt className="text-xs text-secondary-text">{t('designSource')}</dt>
+                  <dd className="mt-1 break-words font-medium text-text">{t('designSourceDesign')}</dd>
+                </div>
+                <div className="min-w-0">
                   <dt className="text-xs text-secondary-text">{t('designMetadataModel')}</dt>
                   <dd className="mt-1 break-words font-medium text-text">
                     {imageModelLabel(selectedDesignImage.model, t)}
@@ -1531,6 +1523,10 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
             ) : null}
             {selectedImage.image.source === 'chat' ? (
               <dl className="grid grid-cols-2 gap-3 rounded-control border border-border bg-raised p-3 text-sm sm:grid-cols-3">
+                <div className="min-w-0">
+                  <dt className="text-xs text-secondary-text">{t('designSource')}</dt>
+                  <dd className="mt-1 break-words font-medium text-text">{t('designSourceChat')}</dd>
+                </div>
                 <div className="min-w-0">
                   <dt className="text-xs text-secondary-text">{t('designMetadataModel')}</dt>
                   <dd className="mt-1 break-words font-medium text-text">
