@@ -11,9 +11,12 @@ export type ImageOutputFormat = 'png' | 'jpeg' | 'webp';
 export interface DesignImageTarget {
   key: string;
   kind: 'oauth' | 'api_key';
+  providerId: string;
+  providerName: string;
   connectionId: string;
   workspaceId: string | null;
-  label: string;
+  accountLabel: string | null;
+  workspaceLabel: string | null;
   selected: boolean;
 }
 
@@ -121,7 +124,7 @@ export async function loadDesignImageTargets(): Promise<DesignImageTargetsResult
     loadProviderCredentialStatus(),
   ]);
   if (oauthResult.status === 'rejected' && credentialsResult.status === 'rejected') {
-    throw new Error('ChatGPT OAuth accounts and API key connections could not be loaded.');
+    throw new Error('Image provider connections could not be loaded.');
   }
 
   const targets: DesignImageTarget[] = [];
@@ -129,17 +132,19 @@ export async function loadDesignImageTargets(): Promise<DesignImageTargetsResult
   if (oauthConnections !== null) {
     for (const connection of oauthConnections) {
       if (!isObject(connection) || connection.authStatus !== 'active' || typeof connection.id !== 'string') continue;
-      const connectionLabel = firstString(connection.email, connection.displayName) ?? 'ChatGPT';
+      const accountLabel = firstString(connection.email, connection.displayName);
       if (!Array.isArray(connection.workspaces)) continue;
       for (const workspace of connection.workspaces) {
         if (!isObject(workspace) || typeof workspace.id !== 'string') continue;
-        const workspaceLabel = firstString(workspace.displayName) ?? 'Workspace';
         targets.push({
           key: `oauth:${connection.id}:${workspace.id}`,
           kind: 'oauth',
+          providerId: 'chatgpt',
+          providerName: 'ChatGPT',
           connectionId: connection.id,
           workspaceId: workspace.id,
-          label: `${connectionLabel} · ${workspaceLabel}`,
+          accountLabel,
+          workspaceLabel: firstString(workspace.displayName),
           selected: connection.isSelected === true && workspace.isSelected === true,
         });
       }
@@ -150,9 +155,12 @@ export async function loadDesignImageTargets(): Promise<DesignImageTargetsResult
       targets.push({
         key: `api:${credential.id}`,
         kind: 'api_key',
+        providerId: 'openai_api',
+        providerName: 'OpenAI API',
         connectionId: credential.id,
         workspaceId: null,
-        label: credential.keySuffix ? `OpenAI API · ••••${credential.keySuffix}` : 'OpenAI API',
+        accountLabel: credential.keySuffix ? `••••${credential.keySuffix}` : null,
+        workspaceLabel: null,
         selected: false,
       });
     }
@@ -165,7 +173,7 @@ export async function loadDesignImageTargets(): Promise<DesignImageTargetsResult
 }
 
 export function defaultDesignImageTarget(targets: readonly DesignImageTarget[]): string {
-  return targets.find((target) => target.kind === 'oauth' && target.selected)?.key ?? targets[0]?.key ?? '';
+  return targets.find((target) => target.selected)?.key ?? targets[0]?.key ?? '';
 }
 
 export async function generateDesignImages(

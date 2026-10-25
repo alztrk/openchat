@@ -166,6 +166,16 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
   const isApiKeyRoute = selectedTarget?.kind === 'api_key';
   const supportsFlexibleSize = isApiKeyRoute && supportsCustomResolution(selectedModel?.value ?? '');
   const supportsExtendedQuality = isApiKeyRoute && supportsHighQualityTier(selectedModel?.value ?? '');
+  const providerOptions = Array.from(
+    new Map(
+      targets.map((target) => [target.providerId, { value: target.providerId, label: target.providerName }]),
+    ).values(),
+  );
+  const selectedProvider =
+    providerOptions.find((option) => option.value === selectedTarget?.providerId) ?? providerOptions[0] ?? null;
+  const providerTargets = selectedProvider
+    ? targets.filter((target) => target.providerId === selectedProvider.value)
+    : [];
   const activeSizeOptions = supportsFlexibleSize ? [...sizeOptions, customSizeOption] : standardSizeOptions;
   const customResolutionValid = size !== 'custom' || isValidImageSize(customWidth, customHeight);
   const selectedDesignImage = selectedImage?.image.source === 'design' ? selectedImage.image.image : null;
@@ -391,6 +401,12 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
       setModeration('auto');
       setQuality((current) => (current === 'xhigh' || current === 'max' ? 'auto' : current));
     }
+  };
+
+  const updateProvider = (event: { target: { value: string } }) => {
+    const providerTargets = targets.filter((target) => target.providerId === event.target.value);
+    const nextTarget = providerTargets.find((target) => target.selected) ?? providerTargets[0] ?? null;
+    if (nextTarget) updateTarget({ target: { value: nextTarget.key } });
   };
 
   const runGeneration = async (options: ImageGenerationOptions) => {
@@ -776,7 +792,6 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
           </span>
           <div className="min-w-0">
             <h1 className="text-section-title font-semibold">{t('designTitle')}</h1>
-            <p className="text-sm text-secondary-text">{t('designSubtitle')}</p>
           </div>
         </div>
 
@@ -800,12 +815,31 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
 
         {targets.length > 0 ? (
           <>
+            {providerOptions.length > 1 ? (
+              <Select
+                disabled={activeOperation !== null || generationStarting}
+                leadingIcon={<PanelsTopLeft aria-hidden="true" size={16} />}
+                label={t('designProvider')}
+                onChange={updateProvider}
+                options={providerOptions}
+                value={selectedProvider?.value ?? ''}
+              />
+            ) : (
+              <div className="flex min-w-0 items-center gap-2 text-sm">
+                <PanelsTopLeft aria-hidden="true" className="shrink-0 text-secondary-icon" size={16} />
+                <span className="shrink-0 text-secondary-text">{t('designProvider')}</span>
+                <span className="truncate font-medium text-text">{selectedProvider?.label}</span>
+              </div>
+            )}
             <Select
               disabled={activeOperation !== null || generationStarting}
               leadingIcon={<UserRound aria-hidden="true" size={16} />}
-              label={t('designProvider')}
+              label={t('designAccount')}
               onChange={updateTarget}
-              options={targets.map((target) => ({ value: target.key, label: target.label }))}
+              options={providerTargets.map((target) => ({
+                value: target.key,
+                label: imageGenerationAccountLabel(target, t),
+              }))}
               value={targetKey}
             />
 
@@ -1856,6 +1890,14 @@ function isGallerySort(value: string): value is 'newest' | 'oldest' {
 
 function isGalleryProviderFilter(value: string): value is 'all' | 'oauth' | 'api_key' {
   return value === 'all' || value === 'oauth' || value === 'api_key';
+}
+
+function imageGenerationAccountLabel(target: DesignImageTarget, t: TFunction): string {
+  const accountLabel =
+    target.accountLabel ?? t(target.kind === 'api_key' ? 'designAccountApiKey' : 'designAccountDefault');
+  const workspaceLabel =
+    target.workspaceId === null ? null : (target.workspaceLabel ?? t('designWorkspaceDefault'));
+  return workspaceLabel ? `${accountLabel} · ${workspaceLabel}` : accountLabel;
 }
 
 function extensionFromMime(mimeType: string): string {
