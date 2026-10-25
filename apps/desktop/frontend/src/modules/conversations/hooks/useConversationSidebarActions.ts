@@ -23,6 +23,7 @@ export function useConversationSidebarActions() {
   const [isBusy, setIsBusy] = useState(false);
   const [feedback, setFeedback] = useState<{ key: TranslationKey; success: boolean } | null>(null);
   const isBusyRef = useRef(false);
+  const actionGenerationRef = useRef(0);
   const activeConversationId = useChatStore((state) => state.activeConversationId);
   const isSending = useChatStore((state) => state.isSending);
   const sendingConversationId = useChatStore((state) => state.sendingConversationId);
@@ -40,6 +41,7 @@ export function useConversationSidebarActions() {
   const beginAction = () => {
     if (isBusyRef.current) return false;
     isBusyRef.current = true;
+    actionGenerationRef.current += 1;
     setIsBusy(true);
     setFeedback(null);
     return true;
@@ -114,60 +116,63 @@ export function useConversationSidebarActions() {
 
   const deleteConversation = async (conversation: ChatConversation): Promise<boolean> => {
     if (!beginAction()) return false;
+    const actionGeneration = actionGenerationRef.current;
     if (isConversationBusy(conversation.id)) {
       showFeedback('stopResponseBeforeDelete');
       endAction();
       return false;
     }
     try {
-      let deleted = false;
-      let cleanupFailed = false;
+      const chatState = useChatStore.getState();
+      if (chatState.activeConversationId === conversation.id) chatState.startNewChat();
+      useChatStore.setState((state) => ({
+        conversations: state.conversations.filter((item) => item.id !== conversation.id),
+      }));
+      void persistConversationDeletion(conversation.id, actionGeneration).catch((cause: unknown) => {
+        globalThis.reportError(new Error('Conversation deletion could not be completed.', { cause }));
+      });
+      return true;
+    } finally {
+      endAction();
+    }
+  };
+
+  const persistConversationDeletion = async (conversationId: string, actionGeneration: number): Promise<void> => {
+    let deleted = false;
+    let cleanupFailed = false;
+    try {
+      await deleteConversationStorage(conversationId);
+      deleted = true;
+    } catch {
       try {
-        await deleteConversationStorage(conversation.id);
-        deleted = true;
+        deleted = (await getConversation(conversationId)) === null;
       } catch {
-        try {
-          deleted = (await getConversation(conversation.id)) === null;
-        } catch {
-          deleted = false;
-        }
-        cleanupFailed = deleted;
+        deleted = false;
       }
-      if (!deleted) {
-        let historyUnavailable = false;
-        try {
-          await refreshConversations();
-        } catch {
-          historyUnavailable = true;
-        }
-        showFeedback(historyUnavailable ? 'chatHistoryUnavailable' : 'conversationDeleteFailed');
-        return false;
-      }
+      cleanupFailed = deleted;
+    }
+
+    if (!deleted) {
       let historyUnavailable = false;
       try {
         await refreshConversations();
       } catch {
         historyUnavailable = true;
       }
-      showFeedback(
-        historyUnavailable
-          ? 'chatHistoryUnavailable'
-          : cleanupFailed
-            ? 'conversationDeletedFileChangesCleanupFailed'
-            : 'conversationDeleted',
-        !historyUnavailable && !cleanupFailed,
-      );
-      void localServiceClient.call('chat.file_changes.delete', { conversationId: conversation.id }).catch(() => {
-        setFeedback((current) =>
-          current?.key === 'conversationDeleted'
-            ? { key: 'conversationDeletedFileChangesCleanupFailed', success: false }
-            : current,
-        );
-      });
-      return true;
-    } finally {
-      endAction();
+      if (actionGenerationRef.current === actionGeneration) {
+        showFeedback(historyUnavailable ? 'chatHistoryUnavailable' : 'conversationDeleteFailed');
+      }
+      return;
     }
+
+    if (actionGenerationRef.current === actionGeneration) {
+      showFeedback(cleanupFailed ? 'conversationDeletedFileChangesCleanupFailed' : 'conversationDeleted', !cleanupFailed);
+    }
+    void localServiceClient.call('chat.file_changes.delete', { conversationId }).catch(() => {
+      if (actionGenerationRef.current === actionGeneration) {
+        showFeedback('conversationDeletedFileChangesCleanupFailed');
+      }
+    });
   };
 
   const createProject = async (name: string, folderSelectionId: string) => {
