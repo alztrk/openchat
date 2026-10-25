@@ -61,9 +61,6 @@ const modelOptions = {
     { value: 'gpt-image-2.5-flare', labelKey: 'designModelFast' },
     { value: 'gpt-image-2.5-sunburst', labelKey: 'designModelDetailed' },
     { value: 'gpt-image-2', labelKey: 'designModelTwo' },
-    { value: 'gpt-image-1.5', labelKey: 'designModel15' },
-    { value: 'gpt-image-1-mini', labelKey: 'designModelMini' },
-    { value: 'chatgpt-image-latest', labelKey: 'designModelChatGpt' },
   ],
 } as const;
 const qualityOptions = [

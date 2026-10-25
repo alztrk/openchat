@@ -2334,8 +2334,6 @@
   "designModelFast": "GPT Image 2.5 Flare · rápido",
   "designModelDetailed": "GPT Image 2.5 Sunburst · detallado",
   "designModelTwo": "GPT Image 2",
-  "designModel15": "GPT Image 1.5 · heredado",
-  "designModelMini": "GPT Image 1 Mini",
   "designResolution": "Resolución",
   "designResolutionAuto": "Automática",
   "designResolutionCustom": "Dimensiones personalizadas",
