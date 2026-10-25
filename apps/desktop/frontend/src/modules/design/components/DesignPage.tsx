@@ -1215,16 +1215,23 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
                 ) : null}
               </>
             ) : null}
-            <Select
-              disabled={activeOperation !== null || generationStarting}
-              label={t('designImageCount')}
-              onChange={(event) => setCount(event.target.value)}
-              options={[1, 2, 3].map((value) => ({
-                value: String(value),
-                label: t('designImageCountOption', { count: value }),
-              }))}
-              value={count}
-            />
+            <label className="grid gap-2 text-sm font-medium text-text" htmlFor="design-image-count">
+              <span className="flex items-center justify-between gap-3">
+                <span>{t('designImageCount')}</span>
+                <span className="text-secondary-text">{t('designImageCountOption', { count: Number(count) })}</span>
+              </span>
+              <input
+                className="w-full accent-accent"
+                disabled={activeOperation !== null || generationStarting}
+                id="design-image-count"
+                max={3}
+                min={1}
+                onChange={(event) => setCount(event.target.value)}
+                step={1}
+                type="range"
+                value={count}
+              />
+            </label>
             {generationError ? (
               <p className="text-sm text-destructive" role="alert">
                 {generationError}
