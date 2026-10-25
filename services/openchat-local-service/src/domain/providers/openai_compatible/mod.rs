@@ -455,6 +455,21 @@ fn client() -> Result<Client, ServiceError> {
     Ok(CLIENT.get_or_init(|| client).clone())
 }
 
+/// Identity the OpenCode CLI reports in `User-Agent` and `x-opencode-client`.
+///
+/// `packages/core/src/app.ts` formats the value as
+/// `opencode/{channel}/{version}/{name}`; the released CLI supplies
+/// `channel = "latest"`, `version = 2.1.4`, and `name = "cli"` (or
+/// `OPENCODE_CLIENT` when set). Keep these in sync with the OpenCode release
+/// OpenChat targets so requests stay indistinguishable from the reference client.
+const OPENCODE_CHANNEL: &str = "latest";
+const OPENCODE_VERSION: &str = "2.1.4";
+const OPENCODE_CLIENT_NAME: &str = "cli";
+
+fn opencode_user_agent() -> String {
+    format!("opencode/{OPENCODE_CHANNEL}/{OPENCODE_VERSION}/{OPENCODE_CLIENT_NAME}")
+}
+
 /// Applies the request headers OpenCode sends for session affinity and project scope.
 pub(super) fn apply_opencode_headers(
     mut request: reqwest::RequestBuilder,
@@ -462,11 +477,12 @@ pub(super) fn apply_opencode_headers(
     project_id: Option<&str>,
 ) -> reqwest::RequestBuilder {
     request = request
+        .header(reqwest::header::USER_AGENT, opencode_user_agent())
         .header("x-opencode-session-id", session_id)
         .header("x-session-affinity", session_id)
         .header("X-Session-Id", session_id)
         .header("x-opencode-session", session_id)
-        .header("x-opencode-client", "OpenChat");
+        .header("x-opencode-client", OPENCODE_CLIENT_NAME);
     if let Some(project_id) = project_id {
         request = request.header("x-opencode-project", project_id);
     }
@@ -1097,6 +1113,16 @@ mod tests {
         assert!(!super::contains_free_tier_error(&json!({
             "error": {"type": "Unauthorized", "message": "Invalid API key"}
         })));
+    }
+
+    #[test]
+    fn opencode_user_agent_matches_the_reference_client_format() {
+        assert_eq!(
+            super::opencode_user_agent(),
+            "opencode/latest/2.1.4/cli",
+            "User-Agent must match the OpenCode CLI identity to stay on the same inference path"
+        );
+        assert_eq!(super::OPENCODE_CLIENT_NAME, "cli");
     }
 
     #[test]

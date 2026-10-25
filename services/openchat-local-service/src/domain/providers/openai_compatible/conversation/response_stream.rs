@@ -2253,7 +2253,8 @@ mod tests {
         assert!(request.contains("x-session-affinity: ses_testaffinity"));
         assert!(request.contains("x-session-id: ses_testaffinity"));
         assert!(request.contains("x-opencode-session: ses_testaffinity"));
-        assert!(request.contains("x-opencode-client: openchat"));
+        assert!(request.contains("x-opencode-client: cli"));
+        assert!(request.contains("user-agent: opencode/latest/2.1.4/cli"));
         assert!(request.contains("x-opencode-project: project-test"));
     }
 

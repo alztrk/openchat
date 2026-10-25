@@ -842,7 +842,8 @@ mod tests {
             assert!(lower_request.contains("x-opencode-session: session-test"));
             assert!(lower_request.contains("x-opencode-session-id: session-test"));
             assert!(lower_request.contains("x-session-affinity: session-test"));
-            assert!(lower_request.contains("x-opencode-client: openchat"));
+            assert!(lower_request.contains("x-opencode-client: cli"));
+            assert!(lower_request.contains("user-agent: opencode/latest/2.1.4/cli"));
             assert!(!lower_request.contains("x-opencode-project:"));
             assert!(lower_request.contains("authorization: bearer test-opencode-key"));
             let body = request.split("\r\n\r\n").nth(1).expect("request body");

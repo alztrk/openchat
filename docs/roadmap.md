@@ -973,7 +973,7 @@ Hosted sharing remains out of scope under the current product decision.
 
 ### 57. Extend OpenCode authentication coverage and probe validation
 
-**Status: planned, P2.** The free OpenCode route now uses anonymous `Bearer public` requests with OpenCode's session-affinity headers, and paid models keep their existing credential flow. Authentication variants beyond that path remain unvalidated.
+**Status: planned, P2.** The free OpenCode route now uses anonymous `Bearer public` requests with OpenCode's session-affinity headers, and paid models keep their existing credential flow. Requests also carry the reference CLI identity (`User-Agent: opencode/latest/2.1.4/cli`, `x-opencode-client: cli`); bump that constant when OpenCode releases change so the request shape does not drift. Authentication variants beyond that path remain unvalidated.
 
 - Resolve and test Console OAuth access tokens for OpenCode inference requests. OpenCode's provider resolver passes an OAuth credential's access token as the OpenAI-compatible `apiKey`, so a connected Console account does not use `Bearer public`; the current probe's `console-chat` command still does this incorrectly.
 - Add a Console API-key probe mode (`Authorization: Bearer <console_api_key>`) so free-model quota can be checked without starting an OAuth device login. Keep the anonymous `public` path available separately.
