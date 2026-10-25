@@ -13,6 +13,7 @@ import { loadRouteParameters } from '@/modules/providers/data/modelRouteParamete
 import { type LocalServiceClient, LocalServiceError } from '@/platform/local-service';
 import { getAudioContext, playAssistantResponseAudio } from '@/shared/utils/audioFeedback';
 import type { ChatState } from './chatStore';
+import { getOpenCodeRetryAtUnixMs } from './chatStoreErrorDetails';
 import { applyStreamEvent, numberOrNull, titleFromMessage, upsertMessage } from './chatStoreUtils';
 import { createStreamMessagePublisher } from './streamMessagePublisher';
 
@@ -72,6 +73,7 @@ export function createTemporaryChatActions(
         searchHighlightMessageId: null,
         errorCode: null,
         errorMessage: null,
+        opencodeRetryAtUnixMs: null,
       });
       return true;
     },
@@ -103,6 +105,7 @@ export function createTemporaryChatActions(
         searchHighlightMessageId: null,
         errorCode: null,
         errorMessage: null,
+        opencodeRetryAtUnixMs: null,
       });
     },
     setPendingAttachmentCount(count) {
@@ -128,7 +131,7 @@ export function createTemporarySendMessageAction(
     const session = state.temporaryChat;
     if (!session || state.isSending || state.isUpdatingConversationModel) return false;
     if (resumeRunId || resumeAssistantMessageId || options?.mode) {
-      set({ errorCode: 'chatRequestFailed' });
+      set({ errorCode: 'chatRequestFailed', opencodeRetryAtUnixMs: null });
       return false;
     }
     if (!content && attachments.length === 0) return false;
@@ -220,6 +223,7 @@ export function createTemporarySendMessageAction(
       isSending: true,
       errorCode: null,
       errorMessage: null,
+      opencodeRetryAtUnixMs: null,
     }));
     options?.onUserMessageCommitted?.(session.id);
 
@@ -351,8 +355,10 @@ export function createTemporarySendMessageAction(
       if (get().temporaryChat?.id === session.id) {
         set((current) => ({
           messages: upsertMessage(current.messages, failureMessage),
-          errorCode: failureCode === 'provider_credentials_missing' ? 'providerCredentialMissing' : 'chatRequestFailed',
+          errorCode:
+            failureCode === 'provider_credentials_missing' ? 'providerCredentialMissing' : 'chatRequestFailed',
           errorMessage: readTemporaryChatErrorDetails(error),
+          opencodeRetryAtUnixMs: getOpenCodeRetryAtUnixMs(error, selectedModel.providerId),
         }));
       }
       return false;
@@ -411,6 +417,7 @@ export function createSaveTemporaryChatAction(
         conversations,
         messages: state.messages.map((message) => ({ ...message, conversationId })),
         errorCode: null,
+        opencodeRetryAtUnixMs: null,
       });
       await get().selectConversation(conversationId);
       return true;
@@ -426,6 +433,7 @@ export function createSaveTemporaryChatAction(
       set({
         errorCode: rollbackFailed ? 'temporaryChatSaveCleanupFailed' : 'temporaryChatSaveFailed',
         errorMessage: null,
+        opencodeRetryAtUnixMs: null,
       });
       return false;
     }

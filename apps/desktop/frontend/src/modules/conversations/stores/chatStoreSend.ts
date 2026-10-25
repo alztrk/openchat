@@ -29,6 +29,7 @@ import { readSharedInstructions } from '@/modules/settings/data/sharedInstructio
 import { type LocalServiceClient, LocalServiceError } from '@/platform/local-service';
 import { getAudioContext, playAssistantResponseAudio } from '@/shared/utils/audioFeedback';
 import type { ChatState } from './chatStore';
+import { getOpenCodeRetryAtUnixMs } from './chatStoreErrorDetails';
 import { refreshConversationListAfterResponse } from './chatStorePostResponse';
 import { loadTitleGenerationRequest } from './chatStoreTitleGeneration';
 import { handleToolPermissionEvent } from './chatStoreToolPermissions';
@@ -57,8 +58,12 @@ export function createSendMessageAction(
       conversationCreated
         ? get().activeConversationId === conversationId
         : get().activeConversationId === state.activeConversationId;
-    const setRequestError = (errorCode: ChatState['errorCode'], errorMessage: string | null = null) => {
-      if (isRequestConversationActive()) set({ errorCode, errorMessage });
+    const setRequestError = (
+      errorCode: ChatState['errorCode'],
+      errorMessage: string | null = null,
+      opencodeRetryAtUnixMs: number | null = null,
+    ) => {
+      if (isRequestConversationActive()) set({ errorCode, errorMessage, opencodeRetryAtUnixMs });
     };
     const targetConvId = conversationId;
     const pendingQuestionBlocksSend =
@@ -128,7 +133,13 @@ export function createSendMessageAction(
       return false;
     }
 
-    set({ isSending: true, sendingConversationId: conversationId, errorCode: null, errorMessage: null });
+    set({
+      isSending: true,
+      sendingConversationId: conversationId,
+      errorCode: null,
+      errorMessage: null,
+      opencodeRetryAtUnixMs: null,
+    });
     if (goalObjective && conversationId !== null) {
       try {
         const response = await localServiceClient.call('chat.goal.active', {
@@ -519,7 +530,7 @@ export function createSendMessageAction(
                       : 'chatRequestFailed';
       const errorMessage =
         error instanceof LocalServiceError ? (error.details ?? error.message).trim().slice(0, 1000) || null : null;
-      setRequestError(code, errorMessage);
+      setRequestError(code, errorMessage, getOpenCodeRetryAtUnixMs(error, selectedModel.providerId));
       await persistenceQueue;
       const streamedMessage = assistantMessage.current;
       if (streamedMessage) {

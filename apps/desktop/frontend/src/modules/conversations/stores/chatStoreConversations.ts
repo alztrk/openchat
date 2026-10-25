@@ -86,6 +86,7 @@ export function createConversationsActions(set: StoreSet, get: StoreGet) {
       selectedModelKey: preservedModel?.key ?? defaultModel?.key ?? null,
       errorCode: projectPreferenceInvalid ? 'projectDefaultModelLoadFailed' : null,
       errorMessage: null,
+      opencodeRetryAtUnixMs: null,
     });
   };
 
@@ -184,6 +185,7 @@ export function createConversationsActions(set: StoreSet, get: StoreGet) {
         isLoadingMessages: false,
         errorCode: null,
         errorMessage: null,
+        opencodeRetryAtUnixMs: null,
       });
     },
 
@@ -241,6 +243,7 @@ export function createConversationsActions(set: StoreSet, get: StoreGet) {
         isLoadingMessages: true,
         errorCode: null,
         errorMessage: null,
+        opencodeRetryAtUnixMs: null,
         searchTargetMessageId: targetMessageId,
         searchHighlightMessageId: null,
         searchHighlightQuery: targetQuery,
@@ -259,6 +262,7 @@ export function createConversationsActions(set: StoreSet, get: StoreGet) {
               searchTargetMessageId: null,
               errorCode: targetMessageId ? 'searchMessageUnavailable' : 'messageHistoryLoadFailed',
               errorMessage: null,
+              opencodeRetryAtUnixMs: null,
             });
             return;
           }
@@ -274,6 +278,7 @@ export function createConversationsActions(set: StoreSet, get: StoreGet) {
             searchTargetMessageId: null,
             errorCode: targetMessageId ? 'searchMessageUnavailable' : 'messageHistoryLoadFailed',
             errorMessage: null,
+            opencodeRetryAtUnixMs: null,
           });
           return;
         }
@@ -294,6 +299,7 @@ export function createConversationsActions(set: StoreSet, get: StoreGet) {
           searchTargetMessageId: targetWasFound ? targetMessageId : null,
           errorCode: targetWasFound ? null : 'searchMessageUnavailable',
           errorMessage: null,
+          opencodeRetryAtUnixMs: null,
         });
         void get().refreshActiveGoal(id);
       } catch {
@@ -304,6 +310,7 @@ export function createConversationsActions(set: StoreSet, get: StoreGet) {
           searchTargetMessageId: null,
           errorCode: targetMessageId ? 'searchMessageUnavailable' : 'messageHistoryLoadFailed',
           errorMessage: null,
+          opencodeRetryAtUnixMs: null,
         });
       }
     },
@@ -322,6 +329,7 @@ export function createConversationsActions(set: StoreSet, get: StoreGet) {
         searchHighlightQuery: found ? get().searchHighlightQuery : null,
         errorCode: found ? null : 'searchMessageUnavailable',
         errorMessage: null,
+        opencodeRetryAtUnixMs: null,
       });
     },
 

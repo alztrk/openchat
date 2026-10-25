@@ -671,6 +671,7 @@
   "contextWindowExceeded": "Sohbet bu modelin bağlam sınırı için fazla büyük. Son mesajı kısalt veya daha geniş bağlamlı bir model seç. Sohbet geçmişin kayıtlı.",
   "openCodeFreeTierRestricted": "OpenCode ücretsiz modelleri yalnızca OpenCode uygulamasında kullanılabilir.",
   "openCodeFreeUsageLimit": "OpenCode ücretsiz kullanım sınırına ulaşıldı. Daha sonra tekrar dene veya başka bir model seç.",
+  "openCodeRetryAfterAt": "Yeniden deneyebileceğin zaman: {{date}}.",
   "apiKey": "API anahtarı",
   "openAiApiKeyInputLabel": "API anahtarı",
   "apiKeyRequired": "Bir API anahtarı gir.",

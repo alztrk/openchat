@@ -38,7 +38,7 @@ export interface ComposerFeedbackListProps {
   commandFeedbackKey: ChatCommandFeedbackKey | null;
   successFeedback: boolean;
   chatErrorCode: ChatErrorCode | null;
-  chatErrorMessage: string | null;
+  opencodeRetryAtUnixMs: number | null;
   modelError: boolean;
 }
 
@@ -47,10 +47,10 @@ export function ComposerFeedbackList({
   commandFeedbackKey,
   successFeedback,
   chatErrorCode,
-  chatErrorMessage,
+  opencodeRetryAtUnixMs,
   modelError,
 }: ComposerFeedbackListProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
 
   return (
     <>
@@ -70,9 +70,14 @@ export function ComposerFeedbackList({
       {chatErrorCode && chatErrorCode !== 'searchMessageUnavailable' && chatErrorCode !== 'messageHistoryLoadFailed' ? (
         <div className="mt-2 text-sm text-destructive" role="alert">
           <p>{t(chatErrorCode)}</p>
-          {chatErrorMessage ? (
-            <p className="mt-1 whitespace-pre-wrap break-words text-xs">
-              {t('chatErrorDetails')}: {chatErrorMessage}
+          {chatErrorCode === 'chatRequestFailed' && opencodeRetryAtUnixMs !== null ? (
+            <p className="mt-1 text-xs">
+              {t('openCodeRetryAfterAt', {
+                date: new Intl.DateTimeFormat(i18n.resolvedLanguage ?? i18n.language, {
+                  dateStyle: 'medium',
+                  timeStyle: 'short',
+                }).format(new Date(opencodeRetryAtUnixMs)),
+              })}
             </p>
           ) : null}
         </div>

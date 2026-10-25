@@ -671,6 +671,7 @@
   "contextWindowExceeded": "Die Unterhaltung ist zu groß für das Kontextfenster dieses Modells. Kürzen Sie die letzte Nachricht oder wählen Sie ein Modell mit einem größeren Kontextfenster. Ihr Chatverlauf ist gespeichert.",
   "openCodeFreeTierRestricted": "Kostenlose OpenCode-Modelle sind nur innerhalb der OpenCode-App verfügbar.",
   "openCodeFreeUsageLimit": "Das kostenlose Nutzungslimit von OpenCode wurde erreicht. Versuchen Sie es später erneut oder wählen Sie ein anderes Modell.",
+  "openCodeRetryAfterAt": "Sie können es ab {{date}} erneut versuchen.",
   "apiKey": "API-Schlüssel",
   "openAiApiKeyInputLabel": "API-Schlüssel",
   "apiKeyRequired": "Geben Sie einen API-Schlüssel ein.",

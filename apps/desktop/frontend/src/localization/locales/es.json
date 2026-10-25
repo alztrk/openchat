@@ -671,6 +671,7 @@
   "contextWindowExceeded": "La conversación es demasiado grande para la ventana de contexto de este modelo. Acorta el último mensaje o elige un modelo con una ventana de contexto mayor. Tu historial de chat está guardado.",
   "openCodeFreeTierRestricted": "Los modelos gratuitos de OpenCode solo están disponibles dentro de la aplicación OpenCode.",
   "openCodeFreeUsageLimit": "Se ha alcanzado el límite de uso gratuito de OpenCode. Vuelve a intentarlo más tarde o elige otro modelo.",
+  "openCodeRetryAfterAt": "Puedes volver a intentarlo a partir del {{date}}.",
   "apiKey": "Clave de API",
   "openAiApiKeyInputLabel": "Clave de API",
   "apiKeyRequired": "Introduce una clave de API.",

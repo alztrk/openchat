@@ -53,7 +53,7 @@ export function createBranchesActions(set: StoreSet, get: StoreGet) {
         set({ errorCode: 'conversationBranchCreateFailed' });
         return false;
       }
-      set({ errorCode: null, errorMessage: null, isCreatingMessageBranch: true });
+      set({ errorCode: null, errorMessage: null, opencodeRetryAtUnixMs: null, isCreatingMessageBranch: true });
       try {
         const branch = await createConversationBranchFromUserMessage(
           sourceConversationId,
@@ -85,7 +85,12 @@ export function createBranchesActions(set: StoreSet, get: StoreGet) {
           userMessageAlreadySaved: true,
         });
       } catch {
-        set({ errorCode: 'conversationBranchCreateFailed', errorMessage: null, isCreatingMessageBranch: false });
+        set({
+          errorCode: 'conversationBranchCreateFailed',
+          errorMessage: null,
+          opencodeRetryAtUnixMs: null,
+          isCreatingMessageBranch: false,
+        });
         return false;
       } finally {
         set({ isCreatingMessageBranch: false });
@@ -99,7 +104,7 @@ export function createBranchesActions(set: StoreSet, get: StoreGet) {
     },
 
     dismissError(): void {
-      set({ errorCode: null, errorMessage: null });
+      set({ errorCode: null, errorMessage: null, opencodeRetryAtUnixMs: null });
     },
   };
 }

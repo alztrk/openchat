@@ -138,7 +138,7 @@ export function ChatComposer({
   const setPendingProjectId = useChatStore((state) => state.setPendingProjectId);
   const selectReasoningEffort = useChatStore((state) => state.selectReasoningEffort);
   const chatErrorCode = useChatStore((state) => state.errorCode);
-  const chatErrorMessage = useChatStore((state) => state.errorMessage);
+  const opencodeRetryAtUnixMs = useChatStore((state) => state.opencodeRetryAtUnixMs);
   const modelError = useChatStore((state) => state.modelError);
   const modelContextLimits = useChatStore((state) => state.modelContextLimits);
   const { stopResponse } = useChatStreaming();
@@ -494,7 +494,7 @@ export function ChatComposer({
         <ComposerFeedbackList
           attachmentErrorKey={attachmentErrorKey}
           chatErrorCode={chatErrorCode}
-          chatErrorMessage={chatErrorMessage}
+          opencodeRetryAtUnixMs={opencodeRetryAtUnixMs}
           commandFeedbackKey={commandFeedbackKey}
           modelError={modelError}
           successFeedback={successFeedback}

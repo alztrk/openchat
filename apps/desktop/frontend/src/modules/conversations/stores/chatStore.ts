@@ -152,6 +152,7 @@ export interface ChatState {
   modelError: boolean;
   errorCode: ChatErrorCode | null;
   errorMessage: string | null;
+  opencodeRetryAtUnixMs: number | null;
   initialize(): Promise<void>;
   refreshConversations(): Promise<void>;
   renameConversation(conversationId: string, title: string): Promise<void>;
@@ -261,6 +262,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   modelError: false,
   errorCode: null,
   errorMessage: null,
+  opencodeRetryAtUnixMs: null,
 
   async initialize() {
     if (get().serviceStatus === 'loading' || get().serviceStatus === 'ready') return;
@@ -270,6 +272,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       projectsStatus: 'loading',
       errorCode: null,
       errorMessage: null,
+      opencodeRetryAtUnixMs: null,
     });
     try {
       const storagePromise = Promise.allSettled([
@@ -356,6 +359,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       selectedReasoningEffort: current.selectedModelKey === key ? current.selectedReasoningEffort : null,
       errorCode: null,
       errorMessage: null,
+      opencodeRetryAtUnixMs: null,
     });
   },
 
@@ -375,10 +379,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
     const conversation = current.conversations.find((item) => item.id === conversationId);
     if (!conversation) {
-      set({ errorCode: 'messageHistoryLoadFailed' });
+      set({ errorCode: 'messageHistoryLoadFailed', opencodeRetryAtUnixMs: null });
       return false;
     }
-    set({ isUpdatingConversationModel: true, errorCode: null, errorMessage: null });
+    set({ isUpdatingConversationModel: true, errorCode: null, errorMessage: null, opencodeRetryAtUnixMs: null });
     try {
       await setConversationRoute(conversationId, model);
       const latest = get();
@@ -410,7 +414,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }
       return true;
     } catch {
-      set({ errorCode: 'conversationModelSaveFailed' });
+      set({ errorCode: 'conversationModelSaveFailed', opencodeRetryAtUnixMs: null });
       return false;
     } finally {
       set({ isUpdatingConversationModel: false });
