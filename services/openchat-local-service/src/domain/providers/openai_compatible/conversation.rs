@@ -644,12 +644,16 @@ pub async fn send_message(
             route.max_output_tokens,
         );
         request::apply_fast_mode(&mut request_body, provider_id, fast_mode);
+        let archive_opencode_session = route
+            .is_opencode
+            .then(|| opencode_session_id_for_conversation(conversation_id, created_at));
         request::apply_prompt_cache_affinity(
             &mut request_body,
             provider_id,
             route.connection_id.as_deref(),
             &route.provider_model_id,
             conversation_id,
+            archive_opencode_session.as_deref(),
         );
         let archive_context_limit = route.request_context_limit().map(|limit| {
             limit.saturating_sub(
@@ -905,6 +909,8 @@ pub async fn send_message(
         let title_anthropic = route.is_anthropic();
         let title_is_copilot = route.is_copilot;
         let title_responses_api = route.uses_responses_api;
+        let title_is_opencode = route.is_opencode;
+        let title_is_free = route.is_free;
         let title_service = Arc::clone(image_service);
         tokio::spawn(async move {
             match title_generation {
@@ -920,6 +926,8 @@ pub async fn send_message(
                             anthropic: title_anthropic,
                             copilot: title_is_copilot,
                             responses_api: title_responses_api,
+                            opencode: title_is_opencode,
+                            is_free: title_is_free,
                         },
                         title_excluded_message_id.as_deref(),
                         title_events,
@@ -1043,6 +1051,7 @@ async fn stream_conversation(context: StreamConversationContext<'_>) -> Result<(
             route.connection_id.as_deref(),
             &route.provider_model_id,
             context.conversation_id,
+            session_id.as_deref(),
         );
         context_compaction::validate_request_context(&body, route.request_context_limit())?;
         let mut usage_request = UsageRequestTracker::start(

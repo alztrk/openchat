@@ -420,6 +420,7 @@ type TranslationKey = keyof typeof import('@/localization/locales/en.json');
 
 const failureKeys: Partial<Record<string, TranslationKey>> = {
   opencode_free_tier_restricted: 'openCodeFreeTierRestricted',
+  opencode_free_usage_limit: 'openCodeFreeUsageLimit',
   authentication_required: 'providerAuthenticationRequired',
   refresh_rejected: 'providerAuthenticationRequired',
   invalid_api_key: 'providerAuthenticationRequired',

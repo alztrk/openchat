@@ -21,7 +21,10 @@ use crate::{
     storage::AppStorage,
 };
 
-use super::{CustomProviderConfig, OPENAI_RESPONSES_URL, api_compatible_provider, client, copilot};
+use super::{
+    CustomProviderConfig, OPENAI_RESPONSES_URL, api_compatible_provider, apply_opencode_headers,
+    client, copilot, opencode_project_id, opencode_session_id_for_conversation,
+};
 
 struct TitleRoute {
     model_id: String,
@@ -30,6 +33,8 @@ struct TitleRoute {
     anthropic: bool,
     copilot: bool,
     responses_api: bool,
+    opencode: bool,
+    is_free: bool,
 }
 
 /// Holds the selected provider route settings for one automatic title request.
@@ -40,6 +45,8 @@ pub(crate) struct TitleRouteRequest {
     pub(crate) anthropic: bool,
     pub(crate) copilot: bool,
     pub(crate) responses_api: bool,
+    pub(crate) opencode: bool,
+    pub(crate) is_free: bool,
 }
 
 pub(crate) async fn generate_title_for_target(
@@ -79,6 +86,8 @@ pub(crate) async fn generate_title_for_route(
         anthropic,
         copilot,
         responses_api,
+        opencode,
+        is_free,
     } = route;
     let api_key = if copilot {
         match service.copilot_access_token().await {
@@ -98,6 +107,8 @@ pub(crate) async fn generate_title_for_route(
             anthropic,
             copilot,
             responses_api,
+            opencode,
+            is_free,
         },
         excluded_assistant_message_id,
         events,
@@ -126,13 +137,16 @@ async fn resolve_target(
                 anthropic: false,
                 copilot: false,
                 responses_api: true,
+                opencode: false,
+                is_free: false,
             })
         }
         "opencode" => {
-            if super::models::is_free_model(storage, &target.model_id).map_err(|_| ())? {
-                return Err(());
-            }
-            if !super::models::is_paid_model(storage, &target.model_id).map_err(|_| ())? {
+            let is_free =
+                super::models::is_free_model(storage, &target.model_id).map_err(|_| ())?;
+            if !is_free
+                && !super::models::is_paid_model(storage, &target.model_id).map_err(|_| ())?
+            {
                 return Err(());
             }
             let responses_api =
@@ -146,6 +160,8 @@ async fn resolve_target(
                 anthropic: false,
                 copilot: false,
                 responses_api,
+                opencode: true,
+                is_free,
             })
         }
         "llama_cpp" => {
@@ -161,6 +177,8 @@ async fn resolve_target(
                 anthropic: false,
                 copilot: false,
                 responses_api: false,
+                opencode: false,
+                is_free: false,
             })
         }
         provider_id if provider_id.starts_with("custom_") => {
@@ -186,6 +204,8 @@ async fn resolve_target(
                 anthropic,
                 copilot: false,
                 responses_api: false,
+                opencode: false,
+                is_free: false,
             })
         }
         "copilot" => {
@@ -204,6 +224,8 @@ async fn resolve_target(
                 anthropic,
                 copilot: true,
                 responses_api: model_route.uses_responses_api,
+                opencode: false,
+                is_free: false,
             })
         }
         provider_id => {
@@ -218,6 +240,8 @@ async fn resolve_target(
                 anthropic: false,
                 copilot: false,
                 responses_api: false,
+                opencode: false,
+                is_free: false,
             })
         }
     }
@@ -247,6 +271,13 @@ async fn generate_title(
     }) else {
         return;
     };
+    let opencode_session_id = route
+        .opencode
+        .then(|| opencode_session_id_for_conversation(conversation_id, 0));
+    let opencode_project_id = route
+        .opencode
+        .then(|| opencode_project_id(storage, conversation_id))
+        .flatten();
     let request = if route.responses_api {
         let mut request = client.request(Method::POST, &route.url)
             .json(&json!({"model": route.model_id, "input": prompt, "stream": false, "store": false, "max_output_tokens": 64}));
@@ -290,6 +321,16 @@ async fn generate_title(
                     copilot::authorize_inference(request, key, copilot::RequestIntent::Background);
             } else {
                 return;
+            }
+        } else if route.opencode {
+            let Some(session_id) = opencode_session_id.as_deref() else {
+                return;
+            };
+            request = apply_opencode_headers(request, session_id, opencode_project_id.as_deref());
+            if route.is_free {
+                request = request.bearer_auth("public");
+            } else if let Some(key) = route.api_key.as_deref() {
+                request = request.bearer_auth(key);
             }
         } else if let Some(key) = route.api_key.as_deref() {
             request = request.bearer_auth(key);

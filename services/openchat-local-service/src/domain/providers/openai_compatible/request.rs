@@ -478,13 +478,36 @@ pub(super) fn apply_model_output_limit(
     body[field] = json!(max_output_tokens);
 }
 
+fn opencode_cache_key(session_id: &str) -> &str {
+    let Some(hex) = session_id.strip_prefix("ses_") else {
+        return session_id;
+    };
+    if hex.len() == 64
+        && hex
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    {
+        hex
+    } else {
+        session_id
+    }
+}
+
 pub(super) fn apply_prompt_cache_affinity(
     body: &mut Value,
     provider_id: &str,
     connection_id: Option<&str>,
     model_id: &str,
     conversation_id: &str,
+    opencode_session_id: Option<&str>,
 ) {
+    if provider_id == "opencode" {
+        if let Some(session_id) = opencode_session_id {
+            body["prompt_cache_key"] = json!(opencode_cache_key(session_id));
+        }
+        return;
+    }
+
     let field = match provider_id {
         "cerebras" | "mistral" => "prompt_cache_key",
         "openrouter" => "session_id",
@@ -654,6 +677,42 @@ mod tests {
             tools: Vec::new(),
             reasoning_effort: None,
         }
+    }
+
+    #[test]
+    fn sends_opencode_prompt_cache_key_from_the_session_affinity() {
+        let mut body = json!({});
+        apply_prompt_cache_affinity(
+            &mut body,
+            "opencode",
+            None,
+            "big-pickle",
+            "conversation",
+            Some("ses_ab12cd34ef5678901234567890"),
+        );
+        assert_eq!(body["prompt_cache_key"], "ses_ab12cd34ef5678901234567890");
+
+        let mut body = json!({});
+        apply_prompt_cache_affinity(
+            &mut body,
+            "opencode",
+            None,
+            "big-pickle",
+            "conversation",
+            Some(&format!("ses_{}", "a".repeat(64))),
+        );
+        assert_eq!(body["prompt_cache_key"], "a".repeat(64));
+
+        let mut body = json!({});
+        apply_prompt_cache_affinity(
+            &mut body,
+            "opencode",
+            None,
+            "big-pickle",
+            "conversation",
+            None,
+        );
+        assert!(body.get("prompt_cache_key").is_none());
     }
 
     #[test]

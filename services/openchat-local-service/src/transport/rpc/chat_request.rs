@@ -361,7 +361,11 @@ pub(super) fn current_time_unix_ms() -> Result<i64, ServiceError> {
 pub(super) fn is_quota_or_rate_limit_error(error: &ServiceError) -> bool {
     matches!(
         error.code,
-        "rate_limited" | "quota_exceeded" | "insufficient_quota" | "resource_exhausted"
+        "rate_limited"
+            | "quota_exceeded"
+            | "insufficient_quota"
+            | "resource_exhausted"
+            | "opencode_free_usage_limit"
     )
 }
 

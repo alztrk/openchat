@@ -414,6 +414,18 @@ pub(crate) fn opencode_session_id_for_conversation(
     format!("ses_{}{}", time_hex, random_str)
 }
 
+pub(super) fn opencode_project_id(storage: &AppStorage, conversation_id: &str) -> Option<String> {
+    let connection = storage.connect().ok()?;
+    connection
+        .query_row(
+            "SELECT project_id FROM conversations WHERE id = ?1",
+            [conversation_id],
+            |row| row.get::<_, Option<String>>(0),
+        )
+        .ok()
+        .flatten()
+}
+
 #[cfg(test)]
 pub(crate) fn opencode_session_id() -> String {
     opencode_session_id_for_conversation("", 0)
@@ -443,7 +455,25 @@ fn client() -> Result<Client, ServiceError> {
     Ok(CLIENT.get_or_init(|| client).clone())
 }
 
-pub(super) async fn opencode_free_tier_restricted(response: reqwest::Response) -> bool {
+/// Applies the request headers OpenCode sends for session affinity and project scope.
+pub(super) fn apply_opencode_headers(
+    mut request: reqwest::RequestBuilder,
+    session_id: &str,
+    project_id: Option<&str>,
+) -> reqwest::RequestBuilder {
+    request = request
+        .header("x-opencode-session-id", session_id)
+        .header("x-session-affinity", session_id)
+        .header("X-Session-Id", session_id)
+        .header("x-opencode-session", session_id)
+        .header("x-opencode-client", "OpenChat");
+    if let Some(project_id) = project_id {
+        request = request.header("x-opencode-project", project_id);
+    }
+    request
+}
+
+async fn read_opencode_error_body(response: reqwest::Response) -> Option<Value> {
     let mut body = Vec::new();
     let mut chunks = response.bytes_stream();
     while body.len() < MAX_PROVIDER_ERROR_BYTES {
@@ -453,10 +483,13 @@ pub(super) async fn opencode_free_tier_restricted(response: reqwest::Response) -
         let remaining = MAX_PROVIDER_ERROR_BYTES - body.len();
         body.extend_from_slice(&chunk[..chunk.len().min(remaining)]);
     }
-    let Ok(value) = serde_json::from_slice::<Value>(&body) else {
-        return false;
-    };
-    contains_free_tier_error(&value)
+    serde_json::from_slice::<Value>(&body).ok()
+}
+
+pub(super) async fn opencode_free_tier_restricted(response: reqwest::Response) -> bool {
+    read_opencode_error_body(response)
+        .await
+        .is_some_and(|value| contains_free_tier_error(&value))
 }
 
 fn contains_free_tier_error(value: &Value) -> bool {
@@ -468,6 +501,18 @@ fn contains_free_tier_error(value: &Value) -> bool {
         Value::Object(fields) => {
             fields.get("type").and_then(Value::as_str) == Some("FreeTierError")
                 || fields.values().any(contains_free_tier_error)
+        }
+        _ => false,
+    }
+}
+
+fn contains_free_usage_limit_error(value: &Value) -> bool {
+    match value {
+        Value::String(message) => message.contains("FreeUsageLimitError"),
+        Value::Array(values) => values.iter().any(contains_free_usage_limit_error),
+        Value::Object(fields) => {
+            fields.get("type").and_then(Value::as_str) == Some("FreeUsageLimitError")
+                || fields.values().any(contains_free_usage_limit_error)
         }
         _ => false,
     }
@@ -614,6 +659,18 @@ pub(super) fn opencode_free_tier_restricted_error() -> ServiceError {
         "OpenCode free models can only be used within OpenCode.",
         false,
     )
+}
+
+pub(super) fn opencode_free_usage_limit_error(retry_after_seconds: Option<u64>) -> ServiceError {
+    let mut error = ServiceError::new(
+        "opencode_free_usage_limit",
+        "OpenCode's free usage limit has been reached. Try again later or choose another model.",
+        false,
+    );
+    if let Some(seconds) = retry_after_seconds {
+        error.details = Some(format!("HTTP status 429; retry-after-seconds={seconds}"));
+    }
+    error
 }
 
 fn network_error() -> ServiceError {
@@ -1040,6 +1097,30 @@ mod tests {
         assert!(!super::contains_free_tier_error(&json!({
             "error": {"type": "Unauthorized", "message": "Invalid API key"}
         })));
+    }
+
+    #[test]
+    fn recognizes_the_opencode_free_usage_limit_error() {
+        let error = json!({
+            "type": "error",
+            "error": {
+                "type": "FreeUsageLimitError",
+                "message": "Free usage limit reached. Free models work in OpenCode."
+            }
+        });
+
+        assert!(super::contains_free_usage_limit_error(&error));
+        assert!(!super::contains_free_usage_limit_error(&json!({
+            "error": {"type": "FreeTierError", "message": "policy"}
+        })));
+
+        let mapped = super::opencode_free_usage_limit_error(Some(53_819));
+        assert_eq!(mapped.code, "opencode_free_usage_limit");
+        assert!(!mapped.retryable);
+        assert_eq!(
+            mapped.details.as_deref(),
+            Some("HTTP status 429; retry-after-seconds=53819")
+        );
     }
 
     #[test]

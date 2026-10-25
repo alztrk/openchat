@@ -670,6 +670,7 @@
   "providerNetworkUnavailable": "Le fournisseur est injoignable. Vérifiez votre connexion et réessayez.",
   "contextWindowExceeded": "La conversation est trop volumineuse pour la fenêtre contextuelle de ce modèle. Raccourcissez le dernier message ou choisissez un modèle avec une fenêtre contextuelle plus grande. Votre historique de discussion est enregistré.",
   "openCodeFreeTierRestricted": "Les modèles gratuits OpenCode ne sont disponibles que dans l'application OpenCode.",
+  "openCodeFreeUsageLimit": "La limite d'utilisation gratuite d'OpenCode est atteinte. Réessayez plus tard ou choisissez un autre modèle.",
   "apiKey": "Clé API",
   "openAiApiKeyInputLabel": "Clé API",
   "apiKeyRequired": "Entrez une clé API.",

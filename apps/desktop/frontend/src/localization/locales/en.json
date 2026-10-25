@@ -670,6 +670,7 @@
   "providerNetworkUnavailable": "The provider could not be reached. Check your connection and try again.",
   "contextWindowExceeded": "The conversation is too large for this model's context window. Shorten the latest message or choose a model with a larger context window. Your chat history is saved.",
   "openCodeFreeTierRestricted": "OpenCode free models are only available within the OpenCode app.",
+  "openCodeFreeUsageLimit": "OpenCode's free usage limit has been reached. Try again later or choose another model.",
   "apiKey": "API key",
   "openAiApiKeyInputLabel": "API key",
   "apiKeyRequired": "Enter an API key.",

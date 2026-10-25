@@ -595,6 +595,7 @@ function providerRequestOutcomeForError(error: unknown): ProviderRequestOutcome 
     case 'invalid_api_key':
       return 'authenticationFailed';
     case 'rate_limited':
+    case 'opencode_free_usage_limit':
     case 'quota_exceeded':
     case 'insufficient_quota':
     case 'resource_exhausted':

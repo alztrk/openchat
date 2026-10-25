@@ -18,8 +18,9 @@ use crate::{
 };
 
 use super::super::{
-    MAX_EVENT_BYTES, cancelled_error, chat_request_http_error_with_retry_after, client, copilot,
-    invalid_response_error, network_error, opencode_free_tier_restricted, protocol_error,
+    MAX_EVENT_BYTES, apply_opencode_headers, cancelled_error,
+    chat_request_http_error_with_retry_after, client, copilot, invalid_response_error,
+    network_error, opencode_free_usage_limit_error, protocol_error,
     stream::{
         ProviderRequestUsage, ResponsesStreamEffect, SseLine, StreamedToolCall,
         append_tool_call_deltas, finish_reason, handle_responses_api_event, parse_sse_line,
@@ -205,7 +206,11 @@ async fn receive_with_client(
         );
     } else if request.route.is_opencode {
         if let Some(session_id) = request.session_id {
-            provider_request = provider_request.header("x-opencode-session", session_id);
+            provider_request = apply_opencode_headers(
+                provider_request,
+                session_id,
+                request.route.project_id.as_deref(),
+            );
         }
         if request.route.is_free {
             provider_request = provider_request.bearer_auth("public");
@@ -256,10 +261,22 @@ async fn receive_with_client(
         let status = response.status();
         if request.route.is_opencode
             && request.route.is_free
-            && status == StatusCode::FORBIDDEN
-            && opencode_free_tier_restricted(response).await
+            && matches!(
+                status,
+                StatusCode::FORBIDDEN | StatusCode::TOO_MANY_REQUESTS
+            )
+            && let Some(error_body) = super::super::read_opencode_error_body(response).await
         {
-            return Err(super::super::opencode_free_tier_restricted_error());
+            if status == StatusCode::FORBIDDEN
+                && super::super::contains_free_tier_error(&error_body)
+            {
+                return Err(super::super::opencode_free_tier_restricted_error());
+            }
+            if status == StatusCode::TOO_MANY_REQUESTS
+                && super::super::contains_free_usage_limit_error(&error_body)
+            {
+                return Err(opencode_free_usage_limit_error(retry_after_seconds));
+            }
         }
         if is_local_runtime(request.route.provider_id.as_deref()) {
             return Err(
@@ -1804,6 +1821,7 @@ mod tests {
             supports_tool_calls: None,
             connection_id: None,
             local_api_key: None,
+            project_id: None,
         }
     }
 
@@ -2174,6 +2192,118 @@ mod tests {
         let error = expect_service_error(receive.await);
         assert_eq!(error.code, "response_too_large");
         assert_eq!(content, "partial");
+        server.await.expect("fixture server should finish");
+    }
+
+    #[tokio::test]
+    async fn opencode_free_requests_send_affinity_headers_and_public_auth() {
+        let response = sse_event(
+            json!({"choices": [{"finish_reason": "stop", "delta": {"content": "ok"}}]}),
+            true,
+        );
+        let (url, server) = spawn_fixture_server(200, response).await;
+        let mut route = route("opencode");
+        route.chat_url = url;
+        route.is_opencode = true;
+        route.is_free = true;
+        route.project_id = Some("project-test".to_owned());
+        let client = fixture_client(Duration::from_secs(5));
+        let (events, _event_receiver) = EventSink::test_channel();
+        let (_cancel_sender, mut cancellation) = watch::channel(false);
+        let body = json!({"model": "big-pickle", "messages": [{"role": "user", "content": "hi"}]});
+        let mut content = String::new();
+        let mut reasoning = String::new();
+        let mut reasoning_summaries = Vec::new();
+        let mut output_tokens = None;
+        let mut input_tokens = None;
+        let request_id = json!("fixture-request");
+        let mut response_budget = ProviderResponseBudget::default();
+
+        let result = receive_for_test(
+            &client,
+            ResponseStreamRequest {
+                route: &route,
+                api_key: None,
+                session_id: Some("ses_testaffinity"),
+                body: &body,
+                request_id: &request_id,
+                conversation_id: "fixture-conversation",
+                message_id: "fixture-message",
+                created_at: 1,
+                content: &mut content,
+                reasoning_content: &mut reasoning,
+                reasoning_summaries: &mut reasoning_summaries,
+                output_tokens: &mut output_tokens,
+                input_tokens: &mut input_tokens,
+                started: Instant::now(),
+                cancellation: &mut cancellation,
+                events: &events,
+                response_budget: &mut response_budget,
+            },
+        )
+        .await;
+
+        assert!(result.is_ok());
+        let request = server.await.expect("fixture server should finish");
+        let request = String::from_utf8(request)
+            .expect("request bytes are UTF-8")
+            .to_ascii_lowercase();
+        assert!(request.contains("authorization: bearer public"));
+        assert!(request.contains("x-opencode-session-id: ses_testaffinity"));
+        assert!(request.contains("x-session-affinity: ses_testaffinity"));
+        assert!(request.contains("x-session-id: ses_testaffinity"));
+        assert!(request.contains("x-opencode-session: ses_testaffinity"));
+        assert!(request.contains("x-opencode-client: openchat"));
+        assert!(request.contains("x-opencode-project: project-test"));
+    }
+
+    #[tokio::test]
+    async fn opencode_free_usage_limit_returns_a_specific_error() {
+        let response = br#"{"type":"error","error":{"type":"FreeUsageLimitError","message":"Free usage limit reached. Free models work in OpenCode."}}"#.to_vec();
+        let (url, server) = spawn_fixture_server(429, response).await;
+        let mut route = route("opencode");
+        route.chat_url = url;
+        route.is_opencode = true;
+        route.is_free = true;
+        let client = fixture_client(Duration::from_secs(5));
+        let (events, _event_receiver) = EventSink::test_channel();
+        let (_cancel_sender, mut cancellation) = watch::channel(false);
+        let body = json!({"model": "big-pickle", "messages": []});
+        let mut content = String::new();
+        let mut reasoning = String::new();
+        let mut reasoning_summaries = Vec::new();
+        let mut output_tokens = None;
+        let mut input_tokens = None;
+        let request_id = json!("fixture-request");
+        let mut response_budget = ProviderResponseBudget::default();
+
+        let error = expect_service_error(
+            receive_for_test(
+                &client,
+                ResponseStreamRequest {
+                    route: &route,
+                    api_key: None,
+                    session_id: Some("ses_testaffinity"),
+                    body: &body,
+                    request_id: &request_id,
+                    conversation_id: "fixture-conversation",
+                    message_id: "fixture-message",
+                    created_at: 1,
+                    content: &mut content,
+                    reasoning_content: &mut reasoning,
+                    reasoning_summaries: &mut reasoning_summaries,
+                    output_tokens: &mut output_tokens,
+                    input_tokens: &mut input_tokens,
+                    started: Instant::now(),
+                    cancellation: &mut cancellation,
+                    events: &events,
+                    response_budget: &mut response_budget,
+                },
+            )
+            .await,
+        );
+        assert_eq!(error.code, "opencode_free_usage_limit");
+        assert!(!error.retryable);
         server.await.expect("fixture server should finish");
     }
 

@@ -17,7 +17,7 @@ use crate::{
 
 use super::route::ChatRoute;
 use super::{
-    cancelled_error, client, copilot, http_error, invalid_response_error,
+    apply_opencode_headers, cancelled_error, client, copilot, http_error, invalid_response_error,
     network_error_with_details, opencode_free_tier_restricted, storage_error,
 };
 
@@ -260,7 +260,7 @@ async fn summarize_transcript_with_storage(
     let mut request = request_client.post(route.chat_url.as_str());
     if route.is_opencode {
         let session_id = session_id.ok_or_else(invalid_response_error)?;
-        request = request.header("x-opencode-session", session_id);
+        request = apply_opencode_headers(request, session_id, route.project_id.as_deref());
     }
     if route.is_copilot {
         let Some(api_key) = api_key else {
@@ -703,6 +703,7 @@ mod tests {
             supports_tool_calls: None,
             connection_id: Some("gemini".to_owned()),
             local_api_key: None,
+            project_id: None,
         };
         let (_cancel_sender, mut cancellation) = watch::channel(false);
         let summary = summarize_transcript(
@@ -819,6 +820,7 @@ mod tests {
             supports_tool_calls: None,
             connection_id: None,
             local_api_key: None,
+            project_id: None,
         };
         let (_cancel_sender, mut cancellation) = watch::channel(false);
         let summary = summarize_history(
@@ -838,7 +840,9 @@ mod tests {
         for (index, request) in requests.iter().enumerate() {
             let lower_request = request.to_ascii_lowercase();
             assert!(lower_request.contains("x-opencode-session: session-test"));
-            assert!(!lower_request.contains("x-opencode-client:"));
+            assert!(lower_request.contains("x-opencode-session-id: session-test"));
+            assert!(lower_request.contains("x-session-affinity: session-test"));
+            assert!(lower_request.contains("x-opencode-client: openchat"));
             assert!(!lower_request.contains("x-opencode-project:"));
             assert!(lower_request.contains("authorization: bearer test-opencode-key"));
             let body = request.split("\r\n\r\n").nth(1).expect("request body");
@@ -875,6 +879,7 @@ mod tests {
             supports_tool_calls: None,
             connection_id: None,
             local_api_key: None,
+            project_id: None,
         };
         let mut latest = message("latest", &format!("{} LATEST-END", "ö界🙂".repeat(100)));
         latest.role = "assistant".to_owned();
@@ -918,6 +923,7 @@ mod tests {
             supports_tool_calls: None,
             connection_id: None,
             local_api_key: None,
+            project_id: None,
         };
         let messages = [message("history", "historical detail")];
         let (_cancel_sender, mut cancellation) = watch::channel(true);
@@ -968,6 +974,7 @@ mod tests {
             supports_tool_calls: None,
             connection_id: None,
             local_api_key: None,
+            project_id: None,
         };
         let (_cancel_sender, mut cancellation) = watch::channel(false);
 

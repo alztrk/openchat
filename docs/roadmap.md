@@ -971,6 +971,18 @@ Hosted sharing remains out of scope under the current product decision.
 
 **Exit criteria:** met for persisted root selection, file and terminal access boundaries, sidebar indicators, and dynamic add/remove. Windows runtime permission behavior still requires a local build and manual confirmation.
 
+### 57. Extend OpenCode authentication coverage and probe validation
+
+**Status: planned, P2.** The free OpenCode route now uses anonymous `Bearer public` requests with OpenCode's session-affinity headers, and paid models keep their existing credential flow. Authentication variants beyond that path remain unvalidated.
+
+- Resolve and test Console OAuth access tokens for OpenCode inference requests. OpenCode's provider resolver passes an OAuth credential's access token as the OpenAI-compatible `apiKey`, so a connected Console account does not use `Bearer public`; the current probe's `console-chat` command still does this incorrectly.
+- Add a Console API-key probe mode (`Authorization: Bearer <console_api_key>`) so free-model quota can be checked without starting an OAuth device login. Keep the anonymous `public` path available separately.
+- Fix the probe's device-flow details: send `supports_org_scope` as a JSON boolean, start device-code expiry when the code is issued rather than after approval, and tolerate `null` provider/model header objects.
+- Re-run the live anonymous and Console-authenticated probes after the reported `FreeUsageLimitError` cooldown expires. Do not infer that the earlier `403 FreeTierError` is resolved from a later `429` response. The 2026-10-25 re-probe with the full anonymous header set returned `429 FreeUsageLimitError` with `Retry-After: 51735` and no policy error, so only quota validation and streamed-output checks remain.
+- Keep `FreeUsageLimitError` handling and numeric `Retry-After` guidance without automatic retries. Surface the free-tier policy error separately from free-quota exhaustion.
+
+**Exit criteria:** anonymous, Console API-key, and Console OAuth request paths are documented and reproducible in the probe; each path reports its own quota or policy errors; and no credential is sent when a free request uses the anonymous route.
+
 
 
 

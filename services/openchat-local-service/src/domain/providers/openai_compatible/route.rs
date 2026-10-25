@@ -14,8 +14,7 @@ use crate::{
 use super::{
     OPENAI_RESPONSES_URL, api_compatible_provider, authentication_required_error,
     log_send_storage_failure, model_error, openai_authentication_required_error,
-    opencode_free_tier_restricted_error, provider_authentication_required_error, route_error,
-    storage_error,
+    provider_authentication_required_error, route_error, storage_error,
 };
 
 #[derive(Clone)]
@@ -37,6 +36,7 @@ pub(super) struct ChatRoute {
     pub(super) supports_tool_calls: Option<bool>,
     pub(super) connection_id: Option<String>,
     pub(super) local_api_key: Option<Zeroizing<String>>,
+    pub(super) project_id: Option<String>,
 }
 
 impl ChatRoute {
@@ -91,7 +91,7 @@ pub(super) async fn resolve_chat_route(
     options: ChatRouteOptions<'_>,
     cancellation: &mut tokio::sync::watch::Receiver<bool>,
 ) -> Result<ChatRoute, ServiceError> {
-    let (provider_id, model_id) = {
+    let (provider_id, model_id, project_id) = {
         let connection = storage.connect().map_err(|error| {
             log_send_storage_failure(
                 storage,
@@ -102,12 +102,13 @@ pub(super) async fn resolve_chat_route(
         })?;
         connection
             .query_row(
-                "SELECT provider_id, model_id FROM conversations WHERE id = ?1",
+                "SELECT provider_id, model_id, project_id FROM conversations WHERE id = ?1",
                 [conversation_id],
                 |row| {
                     Ok((
                         row.get::<_, Option<String>>(0)?,
                         row.get::<_, Option<String>>(1)?,
+                        row.get::<_, Option<String>>(2)?,
                     ))
                 },
             )
@@ -122,18 +123,21 @@ pub(super) async fn resolve_chat_route(
             })?
             .ok_or_else(route_error)?
     };
-    resolve_chat_route_for_model(storage, provider_id, model_id, options, cancellation)
-        .await
-        .map_err(|error| {
-            if error.code == "storage_unavailable" {
-                log_send_storage_failure(
-                    storage,
-                    "chat.send.compatible_route_metadata",
-                    error.code,
-                );
-            }
-            error
-        })
+    resolve_chat_route_for_model(
+        storage,
+        provider_id,
+        model_id,
+        project_id.as_deref(),
+        options,
+        cancellation,
+    )
+    .await
+    .map_err(|error| {
+        if error.code == "storage_unavailable" {
+            log_send_storage_failure(storage, "chat.send.compatible_route_metadata", error.code);
+        }
+        error
+    })
 }
 
 pub(super) async fn resolve_temporary_chat_route(
@@ -154,6 +158,7 @@ pub(super) async fn resolve_temporary_chat_route(
         storage,
         Some(provider_id.to_owned()),
         Some(model_id.to_owned()),
+        None,
         options,
         cancellation,
     )
@@ -174,6 +179,7 @@ async fn resolve_chat_route_for_model(
     storage: &AppStorage,
     provider_id: Option<String>,
     model_id: Option<String>,
+    project_id: Option<&str>,
     options: ChatRouteOptions<'_>,
     cancellation: &mut tokio::sync::watch::Receiver<bool>,
 ) -> Result<ChatRoute, ServiceError> {
@@ -193,10 +199,8 @@ async fn resolve_chat_route_for_model(
             if requested_api_key_connection_id.is_some() {
                 return Err(route_error());
             }
-            if super::models::is_free_model(storage, &model_id)? {
-                return Err(opencode_free_tier_restricted_error());
-            }
-            if !super::models::is_paid_model(storage, &model_id)? {
+            let is_free = super::models::is_free_model(storage, &model_id)?;
+            if !is_free && !super::models::is_paid_model(storage, &model_id)? {
                 return Err(model_error());
             }
             let uses_responses_api = super::models::is_responses_api_model(storage, &model_id)?;
@@ -207,7 +211,7 @@ async fn resolve_chat_route_for_model(
             ResolvedProviderRoute {
                 provider_model_id: model_id.clone(),
                 chat_url,
-                is_free: false,
+                is_free,
                 uses_responses_api,
                 limits,
                 supports_images,
@@ -395,6 +399,7 @@ async fn resolve_chat_route_for_model(
         supports_tool_calls: resolved.supports_tool_calls,
         connection_id: resolved.connection_id,
         local_api_key: resolved.local_api_key,
+        project_id: project_id.map(str::to_owned),
     })
 }
 
@@ -425,6 +430,7 @@ mod tests {
             supports_tool_calls: None,
             connection_id: None,
             local_api_key: None,
+            project_id: None,
         }
     }
 
