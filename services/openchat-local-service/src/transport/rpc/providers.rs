@@ -206,7 +206,12 @@ struct DesignImageRequest {
 }
 
 #[derive(Deserialize)]
-#[serde(deny_unknown_fields, tag = "kind", rename_all = "snake_case")]
+#[serde(
+    deny_unknown_fields,
+    tag = "kind",
+    rename_all = "snake_case",
+    rename_all_fields = "camelCase"
+)]
 enum DesignImageAuth {
     OAuth {
         connection_id: String,
