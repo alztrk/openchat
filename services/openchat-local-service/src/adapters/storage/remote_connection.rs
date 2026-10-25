@@ -271,7 +271,7 @@ fn drain_broker_stderr(mut stderr: File) {
             Ok(bytes_read) => {
                 for byte in &buffer[..bytes_read] {
                     if *byte == b'\n' {
-                        report_broker_startup_error(&line);
+                        report_broker_stderr_line(&line);
                         line.clear();
                     } else if line.len() < 512 {
                         line.push(*byte);
@@ -285,19 +285,24 @@ fn drain_broker_stderr(mut stderr: File) {
             }
         }
     }
-    report_broker_startup_error(&line);
+    report_broker_stderr_line(&line);
 }
 
-fn report_broker_startup_error(line: &[u8]) {
-    let Some(message) = line.strip_prefix(b"openchat-storage-broker-error: ") else {
-        return;
-    };
+fn report_broker_stderr_line(line: &[u8]) {
+    let (kind, message) =
+        if let Some(message) = line.strip_prefix(b"openchat-storage-broker-error: ") {
+            ("startup_error", message)
+        } else if let Some(message) = line.strip_prefix(b"openchat-storage-broker-diagnostic: ") {
+            ("diagnostic", message)
+        } else {
+            return;
+        };
     let message = String::from_utf8_lossy(message)
         .chars()
         .filter(|character| !character.is_control())
         .take(256)
         .collect::<String>();
-    eprintln!("storage_broker_child_startup_error={message}");
+    eprintln!("storage_broker_child_{kind}={message}");
 }
 
 /// Owns the buffered reader and writer ends of the broker's inherited standard handles.

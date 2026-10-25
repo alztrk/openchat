@@ -1,10 +1,12 @@
 //! Serializes primary SQLite operations through a bounded FIFO queue.
 
 use std::{
+    collections::VecDeque,
     marker::PhantomData,
     ops::{Deref, DerefMut},
     rc::Rc,
     sync::{Arc, Condvar, Mutex, MutexGuard},
+    time::{Duration, Instant},
 };
 
 use rusqlite::{Connection, ffi};
@@ -14,7 +16,8 @@ use super::connection::StorageConnection;
 #[cfg(windows)]
 use super::broker_connection::BrokerConnection;
 
-const MAX_QUEUED_OPERATIONS: u64 = 64;
+const MAX_QUEUED_OPERATIONS: usize = 64;
+const DATABASE_QUEUE_WAIT_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[derive(Clone)]
 pub(crate) struct DatabaseQueueHandle {
@@ -27,10 +30,11 @@ enum DatabaseQueueBackend {
     Remote,
 }
 
-#[derive(Default)]
 struct QueueState {
     next_ticket: u64,
-    serving_ticket: u64,
+    waiting_tickets: VecDeque<u64>,
+    active_ticket: Option<u64>,
+    active_since: Option<Instant>,
 }
 
 /// Owns the primary database connection and its FIFO operation queue.
@@ -43,15 +47,25 @@ pub(super) struct DatabaseQueue {
 /// A database connection lease that owns its FIFO queue slot until dropped.
 pub struct QueuedConnection<'a> {
     connection: MutexGuard<'a, Connection>,
+    // Release the SQLite connection before allowing the next FIFO ticket to proceed.
+    _lease: DatabaseQueueLease<'a>,
+    _not_send: PhantomData<Rc<()>>,
+}
+
+struct DatabaseQueueLease<'a> {
     queue: &'a DatabaseQueue,
     ticket: u64,
-    _not_send: PhantomData<Rc<()>>,
 }
 
 impl DatabaseQueue {
     fn new(connection: Connection) -> Self {
         Self {
-            state: Mutex::new(QueueState::default()),
+            state: Mutex::new(QueueState {
+                next_ticket: 0,
+                waiting_tickets: VecDeque::new(),
+                active_ticket: None,
+                active_since: None,
+            }),
             ready: Condvar::new(),
             connection: Mutex::new(connection),
         }
@@ -63,19 +77,53 @@ impl DatabaseQueue {
                 .state
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner());
-            if state.next_ticket.wrapping_sub(state.serving_ticket) >= MAX_QUEUED_OPERATIONS {
+            let active_operation_count =
+                state.waiting_tickets.len() + state.active_ticket.is_some() as usize;
+            if active_operation_count >= MAX_QUEUED_OPERATIONS {
                 return Err(queue_full_error());
             }
 
             let ticket = state.next_ticket;
             state.next_ticket = state.next_ticket.wrapping_add(1);
-            while state.serving_ticket != ticket {
-                state = self
+            state.waiting_tickets.push_back(ticket);
+            let waiting_since = Instant::now();
+
+            loop {
+                if state.active_ticket.is_none() && state.waiting_tickets.front() == Some(&ticket) {
+                    let _ = state.waiting_tickets.pop_front();
+                    state.active_ticket = Some(ticket);
+                    state.active_since = Some(Instant::now());
+                    break ticket;
+                }
+
+                let remaining = DATABASE_QUEUE_WAIT_TIMEOUT.saturating_sub(waiting_since.elapsed());
+                if remaining.is_zero() {
+                    state
+                        .waiting_tickets
+                        .retain(|queued_ticket| *queued_ticket != ticket);
+                    let active_ticket = state.active_ticket;
+                    let queue_head_ticket = state.waiting_tickets.front().copied();
+                    let active_lease_ms = state
+                        .active_since
+                        .map(|active_since| active_since.elapsed().as_millis())
+                        .unwrap_or_default();
+                    let wait_ms = waiting_since.elapsed().as_millis();
+                    let queue_depth =
+                        state.waiting_tickets.len() + state.active_ticket.is_some() as usize;
+                    self.ready.notify_all();
+                    drop(state);
+                    eprintln!(
+                        "openchat-storage-broker-diagnostic: local_database_queue_wait_timed_out ticket={ticket} active_ticket={active_ticket:?} queue_head_ticket={queue_head_ticket:?} queue_depth={queue_depth} wait_ms={wait_ms} active_lease_ms={active_lease_ms}"
+                    );
+                    return Err(queue_wait_timed_out_error());
+                }
+
+                let (next_state, _) = self
                     .ready
-                    .wait(state)
+                    .wait_timeout(state, remaining)
                     .unwrap_or_else(|poisoned| poisoned.into_inner());
+                state = next_state;
             }
-            ticket
         };
 
         let connection = self
@@ -84,8 +132,10 @@ impl DatabaseQueue {
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         Ok(QueuedConnection {
             connection,
-            queue: self,
-            ticket,
+            _lease: DatabaseQueueLease {
+                queue: self,
+                ticket,
+            },
             _not_send: PhantomData,
         })
     }
@@ -95,8 +145,9 @@ impl DatabaseQueue {
             .state
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        if state.serving_ticket == ticket {
-            state.serving_ticket = state.serving_ticket.wrapping_add(1);
+        if state.active_ticket == Some(ticket) {
+            state.active_ticket = None;
+            state.active_since = None;
         }
         self.ready.notify_all();
     }
@@ -203,7 +254,7 @@ impl DerefMut for QueuedConnection<'_> {
     }
 }
 
-impl Drop for QueuedConnection<'_> {
+impl Drop for DatabaseQueueLease<'_> {
     fn drop(&mut self) {
         self.queue.release(self.ticket);
     }
@@ -213,5 +264,12 @@ fn queue_full_error() -> rusqlite::Error {
     rusqlite::Error::SqliteFailure(
         ffi::Error::new(ffi::SQLITE_BUSY),
         Some("database operation queue is full".to_owned()),
+    )
+}
+
+fn queue_wait_timed_out_error() -> rusqlite::Error {
+    rusqlite::Error::SqliteFailure(
+        ffi::Error::new(ffi::SQLITE_BUSY),
+        Some("database operation queue wait timed out".to_owned()),
     )
 }
