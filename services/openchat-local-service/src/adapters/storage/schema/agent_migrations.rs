@@ -1256,5 +1256,23 @@ pub(super) fn apply_agent_migrations(
         current_version = 38;
     }
 
+    if current_version < 39 && target_version >= 39 {
+        let transaction = connection.unchecked_transaction()?;
+        transaction.execute_batch(
+            "CREATE INDEX conversation_file_changes_baseline_blob_idx
+                ON conversation_file_changes (baseline_blob_hash);
+            CREATE INDEX conversation_file_checkpoint_files_before_blob_idx
+                ON conversation_file_checkpoint_files (before_blob_hash);
+            CREATE INDEX conversation_file_checkpoint_files_after_blob_idx
+                ON conversation_file_checkpoint_files (after_blob_hash);",
+        )?;
+        transaction.execute(
+            "INSERT INTO openchat_backend_migrations (version, applied_at_unix_ms) VALUES (39, ?1)",
+            [unix_time_millis()?],
+        )?;
+        transaction.commit()?;
+        current_version = 39;
+    }
+
     Ok(current_version)
 }
