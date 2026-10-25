@@ -25,6 +25,8 @@ const MAXIMUM_PROVIDER_ID_BYTES: usize = 64;
 const MAXIMUM_PROVIDER_NAME_BYTES: usize = 320;
 const MAXIMUM_PROVIDER_URL_BYTES: usize = 2048;
 const MAXIMUM_PROVIDER_PROTOCOL_BYTES: usize = 16;
+const MAXIMUM_REASONING_MODE_BYTES: usize = 32;
+const MAXIMUM_REASONING_LEVELS_BYTES: usize = 32;
 const MAXIMUM_DIALOG_COPY_FIELD_BYTES: usize = 1024;
 const COMPATIBLE_PROVIDER_IDS: [&str; 16] = [
     "gemini",
@@ -159,6 +161,12 @@ pub struct CustomProviderConfig {
     /// Explicit user approval for sending provider requests over unencrypted HTTP.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub allow_insecure_http: Option<bool>,
+    /// Reasoning request format selected for this provider's OpenAI-compatible models.
+    #[serde(default)]
+    pub reasoning_mode: String,
+    /// Reasoning effort values supported by this provider's models.
+    #[serde(default)]
+    pub reasoning_levels: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -170,6 +178,8 @@ pub(crate) struct SaveCustomProviderInput {
     base_url: BoundedText<MAXIMUM_PROVIDER_URL_BYTES>,
     protocol: BoundedText<MAXIMUM_PROVIDER_PROTOCOL_BYTES>,
     allow_insecure_http: bool,
+    reasoning_mode: Option<BoundedText<MAXIMUM_REASONING_MODE_BYTES>>,
+    reasoning_levels: Option<BoundedText<MAXIMUM_REASONING_LEVELS_BYTES>>,
     api_key: Option<BoundedText<MAXIMUM_KEY_BYTES>>,
     dialog_copy: HttpProviderDialogCopy,
 }
@@ -227,6 +237,8 @@ pub struct CustomProviderSummary {
     pub base_url: String,
     pub protocol: String,
     pub allow_insecure_http: bool,
+    pub reasoning_mode: String,
+    pub reasoning_levels: Vec<String>,
     pub is_configured: bool,
     pub key_suffix: Option<String>,
 }
@@ -405,6 +417,8 @@ pub async fn save_custom_provider(
         base_url,
         protocol,
         allow_insecure_http,
+        reasoning_mode,
+        reasoning_levels,
         api_key,
         dialog_copy,
     } = input;
@@ -416,6 +430,8 @@ pub async fn save_custom_provider(
         base_url.into_inner(),
         protocol.into_inner(),
         Some(allow_insecure_http),
+        reasoning_mode.map(BoundedText::into_inner),
+        reasoning_levels.map(BoundedText::into_inner),
     )?;
     if requires_native_http_approval(&config) {
         let _confirmation_guard = HttpProviderConfirmationGuard::acquire()?;
@@ -516,6 +532,8 @@ fn stored_custom_provider_matches_destination(
         stored.base_url,
         stored.protocol,
         stored.allow_insecure_http,
+        Some(stored.reasoning_mode),
+        Some(stored.reasoning_levels.join(",")),
     ) else {
         return false;
     };
@@ -640,6 +658,8 @@ fn validated_custom_provider(
     base_url: String,
     protocol: String,
     allow_insecure_http: Option<bool>,
+    reasoning_mode: Option<String>,
+    reasoning_levels: Option<String>,
 ) -> Result<CustomProviderConfig, ProviderStorageError> {
     let name = name.trim();
     let base_url = normalized_base_url(&base_url).ok_or_else(ProviderStorageError::invalid)?;
@@ -656,6 +676,14 @@ fn validated_custom_provider(
     if !is_custom_provider_id(&id) {
         return Err(ProviderStorageError::invalid());
     }
+    let reasoning_mode = reasoning_mode
+        .filter(|mode| !mode.is_empty())
+        .unwrap_or_else(|| "none".to_owned());
+    let reasoning_levels = parse_custom_reasoning_levels(
+        &protocol,
+        &reasoning_mode,
+        reasoning_levels.as_deref().unwrap_or_default(),
+    )?;
     Ok(CustomProviderConfig {
         id,
         name: name.to_owned(),
@@ -666,7 +694,41 @@ fn validated_custom_provider(
         } else {
             Some(false)
         },
+        reasoning_mode,
+        reasoning_levels,
     })
+}
+
+fn parse_custom_reasoning_levels(
+    protocol: &str,
+    reasoning_mode: &str,
+    levels: &str,
+) -> Result<Vec<String>, ProviderStorageError> {
+    match (protocol, reasoning_mode) {
+        (_, "none") => return Ok(Vec::new()),
+        ("openAi", "reasoningEffort") => {}
+        ("openAi", "chatTemplateThinking") => return Ok(Vec::new()),
+        _ => return Err(ProviderStorageError::invalid()),
+    }
+    let values = levels
+        .split(',')
+        .filter(|level| !level.is_empty())
+        .collect::<Vec<_>>();
+    if values.is_empty()
+        || values.len() > 3
+        || values
+            .iter()
+            .any(|level| !matches!(*level, "low" | "medium" | "high"))
+    {
+        return Err(ProviderStorageError::invalid());
+    }
+    let mut unique = values.to_vec();
+    unique.sort_unstable();
+    unique.dedup();
+    if unique.len() != values.len() {
+        return Err(ProviderStorageError::invalid());
+    }
+    Ok(values.into_iter().map(str::to_owned).collect())
 }
 
 /// Normalizes an HTTP(S) endpoint while rejecting embedded credentials and URL decorations.
@@ -718,6 +780,8 @@ fn load_custom_providers(
                 config.base_url,
                 config.protocol,
                 config.allow_insecure_http,
+                Some(config.reasoning_mode),
+                Some(config.reasoning_levels.join(",")),
             )?;
             Ok(custom_provider_summary(&validated, values))
         })
@@ -738,6 +802,8 @@ fn custom_provider_summary(
         base_url: config.base_url.clone(),
         protocol: config.protocol.clone(),
         allow_insecure_http: config.allow_insecure_http.unwrap_or(false),
+        reasoning_mode: config.reasoning_mode.clone(),
+        reasoning_levels: config.reasoning_levels.clone(),
         is_configured: key.is_some_and(|value| !value.trim().is_empty()),
         key_suffix: key.and_then(key_suffix),
     }
@@ -783,6 +849,8 @@ mod tests {
             name.to_owned(),
             base_url.to_owned(),
             protocol.to_owned(),
+            None,
+            None,
             None,
         )
         .expect("test provider configuration should be valid")
@@ -937,6 +1005,8 @@ mod tests {
             "http://127.0.0.1:8080/v1".to_owned(),
             "openAi".to_owned(),
             Some(false),
+            None,
+            None,
         )
         .expect_err("new HTTP providers require explicit approval");
         assert_eq!(error.code, "custom_provider_http_approval_required");
@@ -947,6 +1017,8 @@ mod tests {
             "http://127.0.0.1:8080/v1".to_owned(),
             "openAi".to_owned(),
             Some(true),
+            None,
+            None,
         )
         .expect("explicit HTTP approval should preserve local provider support");
         assert_eq!(allowed.allow_insecure_http, Some(true));
@@ -1000,6 +1072,8 @@ mod tests {
             base_url: "https://provider.example/v1".to_owned(),
             protocol: "openAi".to_owned(),
             allow_insecure_http: None,
+            reasoning_mode: "none".to_owned(),
+            reasoning_levels: Vec::new(),
         })
         .expect("test configuration should serialize");
 

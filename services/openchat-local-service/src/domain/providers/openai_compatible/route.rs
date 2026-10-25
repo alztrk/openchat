@@ -28,6 +28,7 @@ pub(super) struct ChatRoute {
     pub(super) is_copilot: bool,
     pub(super) uses_responses_api: bool,
     pub(super) reasoning_levels: Vec<String>,
+    pub(super) custom_reasoning_mode: Option<String>,
     pub(super) context_window: Option<i64>,
     pub(super) input_token_limit: Option<i64>,
     pub(super) max_output_tokens: Option<i64>,
@@ -324,7 +325,11 @@ async fn resolve_chat_route_for_model(
                 supports_tool_calls: None,
                 connection_id: Some(id.to_owned()),
                 local_api_key: None,
-                reasoning_levels: Vec::new(),
+                reasoning_levels: match provider.reasoning_mode.as_str() {
+                    "reasoningEffort" => provider.reasoning_levels.clone(),
+                    "chatTemplateThinking" => vec!["enabled".to_owned()],
+                    _ => Vec::new(),
+                },
             }
         }
         Some(id) => {
@@ -380,6 +385,9 @@ async fn resolve_chat_route_for_model(
     }
 
     let is_copilot = provider_id.as_deref() == Some("copilot");
+    let custom_reasoning_mode = custom_provider
+        .filter(|provider| provider_id.as_deref() == Some(provider.id.as_str()))
+        .map(|provider| provider.reasoning_mode.clone());
 
     Ok(ChatRoute {
         model_id,
@@ -392,6 +400,7 @@ async fn resolve_chat_route_for_model(
         is_copilot,
         context_window: resolved.limits.context_window,
         reasoning_levels: resolved.reasoning_levels,
+        custom_reasoning_mode,
         input_token_limit: resolved.limits.input_token_limit,
         max_output_tokens: resolved.limits.max_output_tokens,
         context_limit_override,
@@ -422,6 +431,7 @@ mod tests {
             is_copilot: false,
             uses_responses_api: false,
             reasoning_levels: Vec::new(),
+            custom_reasoning_mode: None,
             context_window,
             input_token_limit,
             max_output_tokens: None,

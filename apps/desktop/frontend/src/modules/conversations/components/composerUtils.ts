@@ -91,6 +91,7 @@ const reasoningTranslationKeys: Partial<Record<string, TranslationKey>> = {
   max: 'reasoningMax',
   maximum: 'reasoningMax',
   ultra: 'reasoningUltra',
+  enabled: 'reasoningEnabled',
 };
 
 export function reasoningLevelLabel(level: string, t: (key: TranslationKey) => string): string {

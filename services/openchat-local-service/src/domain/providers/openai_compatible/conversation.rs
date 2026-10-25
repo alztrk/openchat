@@ -159,7 +159,12 @@ pub(crate) async fn send_temporary_message(
     } else if route.is_anthropic() {
         request::anthropic_messages_body(&provider_request, &provider_messages)?
     } else {
-        request::chat_completion_body(&provider_request, &provider_messages, provider_id)
+        request::chat_completion_body(
+            &provider_request,
+            &provider_messages,
+            provider_id,
+            route.custom_reasoning_mode.as_deref(),
+        )
     };
     if route.is_copilot && route.uses_responses_api {
         body["store"] = serde_json::json!(false);
@@ -633,7 +638,12 @@ pub async fn send_message(
         } else if route.is_anthropic() {
             request::anthropic_messages_body(&provider_request, &current_messages)?
         } else {
-            request::chat_completion_body(&provider_request, &current_messages, provider_id)
+            request::chat_completion_body(
+                &provider_request,
+                &current_messages,
+                provider_id,
+                route.custom_reasoning_mode.as_deref(),
+            )
         };
         if route.is_copilot && route.uses_responses_api {
             request_body["store"] = serde_json::json!(false);
@@ -1034,7 +1044,12 @@ async fn stream_conversation(context: StreamConversationContext<'_>) -> Result<(
         } else if route.is_anthropic() {
             request::anthropic_messages_body(provider_request, messages)?
         } else {
-            request::chat_completion_body(provider_request, messages, provider_id)
+            request::chat_completion_body(
+                provider_request,
+                messages,
+                provider_id,
+                route.custom_reasoning_mode.as_deref(),
+            )
         };
         if route.is_copilot && route.uses_responses_api {
             body["store"] = serde_json::json!(false);

@@ -63,6 +63,8 @@ export interface CustomProviderSummary {
   baseUrl: string;
   protocol: 'openAi' | 'anthropic';
   allowInsecureHttp: boolean;
+  reasoningMode: 'none' | 'reasoningEffort' | 'chatTemplateThinking';
+  reasoningLevels: string[];
   isConfigured: boolean;
   keySuffix: string | null;
 }
@@ -123,6 +125,11 @@ export async function loadProviderCredentialStatus(): Promise<ProviderCredential
       typeof item.baseUrl !== 'string' ||
       (item.protocol !== 'openAi' && item.protocol !== 'anthropic') ||
       typeof item.allowInsecureHttp !== 'boolean' ||
+      (item.reasoningMode !== 'none' &&
+        item.reasoningMode !== 'reasoningEffort' &&
+        item.reasoningMode !== 'chatTemplateThinking') ||
+      !Array.isArray(item.reasoningLevels) ||
+      !item.reasoningLevels.every((level) => typeof level === 'string') ||
       typeof item.isConfigured !== 'boolean' ||
       !isNullableString(item.keySuffix)
     ) {
@@ -135,6 +142,8 @@ export async function loadProviderCredentialStatus(): Promise<ProviderCredential
         baseUrl: item.baseUrl,
         protocol: item.protocol,
         allowInsecureHttp: item.allowInsecureHttp,
+        reasoningMode: item.reasoningMode,
+        reasoningLevels: item.reasoningLevels,
         isConfigured: item.isConfigured,
         keySuffix: item.keySuffix,
       },
@@ -199,19 +208,20 @@ export async function saveOpenCodeApiKey(apiKey: string): Promise<void> {
  * @param input User-entered custom-provider settings and optional API key.
  * @throws When the native host rejects the configuration or cannot write protected storage.
  */
-export async function saveCustomProvider(
-  input: {
-    id: `custom_${string}`;
-    name: string;
-    baseUrl: string;
-    protocol: 'openAi' | 'anthropic';
-    allowInsecureHttp: boolean;
-    apiKey: string;
-  },
-): Promise<CustomProviderSummary> {
+export async function saveCustomProvider(input: {
+  id: `custom_${string}`;
+  name: string;
+  baseUrl: string;
+  protocol: 'openAi' | 'anthropic';
+  allowInsecureHttp: boolean;
+  reasoningMode: 'none' | 'reasoningEffort' | 'chatTemplateThinking';
+  reasoningLevels: string[];
+  apiKey: string;
+}): Promise<CustomProviderSummary> {
   const value: unknown = await invoke('save_custom_provider', {
     input: {
       ...input,
+      reasoningLevels: input.reasoningLevels.join(','),
       apiKey: input.apiKey.trim().length > 0 ? input.apiKey : null,
       dialogCopy: getNativeHttpProviderDialogCopy(),
     },
@@ -224,6 +234,11 @@ export async function saveCustomProvider(
     typeof value.baseUrl !== 'string' ||
     (value.protocol !== 'openAi' && value.protocol !== 'anthropic') ||
     typeof value.allowInsecureHttp !== 'boolean' ||
+    (value.reasoningMode !== 'none' &&
+      value.reasoningMode !== 'reasoningEffort' &&
+      value.reasoningMode !== 'chatTemplateThinking') ||
+    !Array.isArray(value.reasoningLevels) ||
+    !value.reasoningLevels.every((level) => typeof level === 'string') ||
     typeof value.isConfigured !== 'boolean' ||
     !isNullableString(value.keySuffix)
   ) {
@@ -235,6 +250,8 @@ export async function saveCustomProvider(
     baseUrl: value.baseUrl,
     protocol: value.protocol,
     allowInsecureHttp: value.allowInsecureHttp,
+    reasoningMode: value.reasoningMode,
+    reasoningLevels: value.reasoningLevels,
     isConfigured: value.isConfigured,
     keySuffix: value.keySuffix,
   };

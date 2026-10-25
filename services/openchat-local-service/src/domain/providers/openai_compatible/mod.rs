@@ -99,6 +99,8 @@ pub(crate) struct CustomProviderConfig {
     pub(crate) id: String,
     pub(crate) base_url: String,
     pub(crate) protocol: CustomProviderProtocol,
+    pub(crate) reasoning_mode: String,
+    pub(crate) reasoning_levels: Vec<String>,
 }
 
 /// Token limits verified from the selected provider model's catalog metadata.
@@ -162,10 +164,49 @@ impl CustomProviderConfig {
             Some("anthropic") => CustomProviderProtocol::Anthropic,
             _ => return Err(invalid()),
         };
+        let reasoning_mode = value
+            .get("reasoningMode")
+            .and_then(Value::as_str)
+            .filter(|mode| !mode.is_empty())
+            .unwrap_or("none");
+        let reasoning_levels = value
+            .get("reasoningLevels")
+            .and_then(Value::as_array)
+            .map(|levels| {
+                levels
+                    .iter()
+                    .map(|level| level.as_str().ok_or_else(invalid))
+                    .collect::<Result<Vec<_>, _>>()
+            })
+            .transpose()?
+            .unwrap_or_default();
+        let valid_effort_levels = !reasoning_levels.is_empty()
+            && reasoning_levels.len() <= 3
+            && reasoning_levels
+                .iter()
+                .all(|level| matches!(*level, "low" | "medium" | "high"))
+            && reasoning_levels
+                .iter()
+                .collect::<std::collections::HashSet<_>>()
+                .len()
+                == reasoning_levels.len();
+        if !matches!(
+            (protocol, reasoning_mode),
+            (
+                CustomProviderProtocol::OpenAi,
+                "none" | "reasoningEffort" | "chatTemplateThinking"
+            ) | (CustomProviderProtocol::Anthropic, "none")
+        ) || (reasoning_mode == "reasoningEffort" && !valid_effort_levels)
+            || (reasoning_mode != "reasoningEffort" && !reasoning_levels.is_empty())
+        {
+            return Err(invalid());
+        }
         Ok(Self {
             id: id.to_owned(),
             base_url: base_url.trim_end_matches('/').to_owned(),
             protocol,
+            reasoning_mode: reasoning_mode.to_owned(),
+            reasoning_levels: reasoning_levels.into_iter().map(str::to_owned).collect(),
         })
     }
 

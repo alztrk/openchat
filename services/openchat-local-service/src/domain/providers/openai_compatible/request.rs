@@ -86,6 +86,20 @@ pub(super) fn build_provider_request(
             Some(level.to_owned())
         }
         ("copilot", selected) => copilot_reasoning_effort(selected, supported_reasoning_levels)?,
+        (id, Some(level)) if id.starts_with("custom_") => {
+            if supported_reasoning_levels
+                .iter()
+                .any(|supported| supported == level)
+            {
+                Some(level.to_owned())
+            } else {
+                return Err(ServiceError::new(
+                    "invalid_request_params",
+                    "The selected reasoning level is not supported by this custom provider model.",
+                    false,
+                ));
+            }
+        }
         _ => None,
     };
     if excluded_assistant_message_id.is_some_and(|id| {
@@ -244,6 +258,7 @@ pub(super) fn chat_completion_body(
     request: &ProviderChatRequest,
     messages: &[Value],
     provider_id: &str,
+    custom_reasoning_mode: Option<&str>,
 ) -> Value {
     let mut body = json!({
         "model": request.model,
@@ -259,6 +274,21 @@ pub(super) fn chat_completion_body(
         // vLLM Nemotron templates enable reasoning by default; prevent an
         // unparsed thinking stream from entering the user-facing content field.
         body["chat_template_kwargs"] = json!({"enable_thinking": false});
+    }
+    if provider_id.starts_with("custom_") {
+        match custom_reasoning_mode {
+            Some("reasoningEffort") => {
+                if let Some(reasoning_effort) = request.reasoning_effort.as_deref() {
+                    body["reasoning_effort"] = json!(reasoning_effort);
+                }
+            }
+            Some("chatTemplateThinking") => {
+                body["chat_template_kwargs"] = json!({
+                    "enable_thinking": request.reasoning_effort.as_deref() == Some("enabled")
+                });
+            }
+            _ => {}
+        }
     }
     if provider_id.starts_with("custom_")
         || matches!(
@@ -754,7 +784,7 @@ mod tests {
             "mistral",
             "openrouter",
         ] {
-            let body = chat_completion_body(&request(), &[], provider_id);
+            let body = chat_completion_body(&request(), &[], provider_id, None);
 
             assert_eq!(
                 body["stream_options"]["include_usage"], true,
@@ -765,7 +795,7 @@ mod tests {
 
     #[test]
     fn leaves_usage_flags_out_for_cerebras_automatic_stream_usage() {
-        let body = chat_completion_body(&request(), &[], "cerebras");
+        let body = chat_completion_body(&request(), &[], "cerebras", None);
 
         assert!(body.get("stream_options").is_none());
         assert!(body.get("usage").is_none());
@@ -775,7 +805,7 @@ mod tests {
     fn keeps_opencode_tool_request_shape() {
         let mut request = request();
         request.tools = tools::definitions_for_provider("opencode");
-        let body = chat_completion_body(&request, &[], "opencode");
+        let body = chat_completion_body(&request, &[], "opencode", None);
         let tool_names = body["tools"]
             .as_array()
             .expect("OpenCode tools array")
@@ -791,7 +821,7 @@ mod tests {
 
     #[test]
     fn omits_tool_fields_when_opencode_model_does_not_support_tools() {
-        let body = chat_completion_body(&request(), &[], "opencode");
+        let body = chat_completion_body(&request(), &[], "opencode", None);
 
         assert!(body.get("tools").is_none());
         assert!(body.get("tool_choice").is_none());
@@ -806,7 +836,7 @@ mod tests {
     fn sends_mistral_reasoning_effort_with_stream_usage() {
         let mut request = request();
         request.reasoning_effort = Some("high".to_owned());
-        let body = chat_completion_body(&request, &[], "mistral");
+        let body = chat_completion_body(&request, &[], "mistral", None);
 
         assert_eq!(body["reasoning_effort"], "high");
         assert_eq!(body["stream_options"]["include_usage"], true);

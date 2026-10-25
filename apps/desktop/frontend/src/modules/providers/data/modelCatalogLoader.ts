@@ -379,6 +379,8 @@ async function loadCustomProviderCatalog(
         baseUrl: provider.baseUrl,
         protocol: provider.protocol,
         allowInsecureHttp: provider.allowInsecureHttp,
+        reasoningMode: provider.reasoningMode,
+        reasoningLevels: provider.reasoningLevels,
       },
     });
   } catch {
