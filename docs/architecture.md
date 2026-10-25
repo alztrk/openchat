@@ -131,6 +131,13 @@ remain separate Rust processes with their existing storage and RPC boundaries.
   so launching it does not require changing ACLs on the installed application
   folder. Its database and cache live in that AppContainer's private local-data
   directory; the parent sidecar does not open the database files.
+  Broker response waits are capped at eight seconds. A transport failure or
+  timeout discards the owned broker runtime; the next database operation opens
+  a fresh broker without replaying the failed operation. RPC dispatch runs on
+  Tokio's blocking pool so synchronous storage calls cannot occupy its request
+  reader workers. The desktop passes its process ID to the sidecar and starts it
+  in a process group. If the desktop exits unexpectedly, the sidecar exits too,
+  closing the kill-on-close job that owns the broker.
   The broker's profile environment variables point to that AppContainer-local
   directory rather than the desktop user's normal profile.
   Windows AppContainer isolation prevents other applications from accessing

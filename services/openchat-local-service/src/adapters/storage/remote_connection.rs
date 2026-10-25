@@ -9,8 +9,17 @@
 use std::{
     fs::File,
     io::{BufRead, BufReader, BufWriter, Read, Write},
-    sync::{Arc, Mutex, OnceLock},
+    os::windows::io::AsRawHandle,
+    sync::{
+        Arc, Mutex, OnceLock,
+        atomic::{AtomicBool, Ordering},
+    },
     thread,
+    time::{Duration, Instant},
+};
+use windows_sys::Win32::{
+    Foundation::{ERROR_BROKEN_PIPE, ERROR_PIPE_NOT_CONNECTED, GetLastError, HANDLE},
+    System::Pipes::PeekNamedPipe,
 };
 use zeroize::Zeroizing;
 
@@ -21,6 +30,8 @@ use super::ipc_protocol::{
 };
 
 static STORAGE_BROKER_RUNTIME: OnceLock<Mutex<Option<StorageBrokerRuntime>>> = OnceLock::new();
+const BROKER_RESPONSE_TIMEOUT: Duration = Duration::from_secs(8);
+const BROKER_PIPE_POLL_INTERVAL: Duration = Duration::from_millis(10);
 
 /// A transport or protocol failure that is safe to expose to callers.
 ///
@@ -45,6 +56,8 @@ pub(crate) enum RemoteStorageError {
     ServerRejected { code: i32 },
     /// The connection mutex was poisoned after a transport worker panicked.
     Poisoned,
+    /// The broker did not respond before its bounded request deadline.
+    TimedOut,
 }
 
 impl std::fmt::Display for RemoteStorageError {
@@ -66,6 +79,7 @@ impl std::fmt::Display for RemoteStorageError {
                 formatter.write_str("The storage broker rejected the request.")
             }
             Self::Poisoned => formatter.write_str("The storage broker connection is unavailable."),
+            Self::TimedOut => formatter.write_str("The storage broker did not respond in time."),
         }
     }
 }
@@ -80,13 +94,16 @@ impl std::error::Error for RemoteStorageError {}
 #[derive(Clone)]
 pub(crate) struct RemoteStorageConnection {
     pipe: Arc<Mutex<RemotePipeStream>>,
+    poisoned: Arc<AtomicBool>,
 }
 
 impl RemoteStorageConnection {
     /// Starts or reuses the current process's isolated storage broker.
     pub(crate) fn connect() -> Result<Self, RemoteStorageError> {
         let runtime = STORAGE_BROKER_RUNTIME.get_or_init(|| Mutex::new(None));
-        let mut runtime = runtime.lock().map_err(|_| RemoteStorageError::Poisoned)?;
+        let mut runtime = runtime
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         if runtime.is_none() {
             *runtime = Some(StorageBrokerRuntime::launch()?);
         }
@@ -104,23 +121,85 @@ impl RemoteStorageConnection {
         &self,
         request: StorageRequest,
     ) -> Result<StorageResponse, RemoteStorageError> {
-        let mut pipe = self.pipe.lock().map_err(|_| RemoteStorageError::Poisoned)?;
-        write_frame(&mut pipe.writer, &request)?;
-        let frame = Zeroizing::new(
-            read_frame(&mut pipe.reader)?.ok_or(RemoteStorageError::UnexpectedEndOfStream)?,
-        );
-        let response = serde_json::from_slice::<StorageResponse>(&frame)
-            .map_err(|_| RemoteStorageError::InvalidFrame)?;
-        match response {
-            StorageResponse::Error { code, .. } => Err(RemoteStorageError::ServerRejected { code }),
-            response => Ok(response),
+        let connection = if self.poisoned.load(Ordering::Acquire) {
+            Self::connect()?
+        } else {
+            self.clone()
+        };
+        connection.request_with_recovery(request, true)
+    }
+
+    fn request_with_recovery(
+        &self,
+        request: StorageRequest,
+        invalidate_on_failure: bool,
+    ) -> Result<StorageResponse, RemoteStorageError> {
+        let mut request_written = false;
+        let result = (|| {
+            if self.poisoned.load(Ordering::Acquire) {
+                return Err(RemoteStorageError::Transport);
+            }
+            let mut pipe = self.pipe.lock().map_err(|_| RemoteStorageError::Poisoned)?;
+            if self.poisoned.load(Ordering::Acquire) {
+                return Err(RemoteStorageError::Transport);
+            }
+            write_frame(&mut pipe.writer, &request)?;
+            request_written = true;
+            let frame = Zeroizing::new(
+                read_frame(&mut pipe.reader, BROKER_RESPONSE_TIMEOUT)?
+                    .ok_or(RemoteStorageError::UnexpectedEndOfStream)?,
+            );
+            let response = serde_json::from_slice::<StorageResponse>(&frame)
+                .map_err(|_| RemoteStorageError::InvalidFrame)?;
+            match response {
+                StorageResponse::Error { code, .. } => {
+                    Err(RemoteStorageError::ServerRejected { code })
+                }
+                response => Ok(response),
+            }
+        })();
+
+        if result.as_ref().is_err_and(|error| {
+            !matches!(error, RemoteStorageError::ServerRejected { .. })
+                && !(matches!(error, RemoteStorageError::FrameTooLarge) && !request_written)
+        }) {
+            self.poisoned.store(true, Ordering::Release);
+            if invalidate_on_failure {
+                self.invalidate_runtime();
+            }
         }
+
+        result
+    }
+
+    /// Drops only the broker runtime that owns this failed connection.
+    fn invalidate_runtime(&self) {
+        let Some(runtime) = STORAGE_BROKER_RUNTIME.get() else {
+            return;
+        };
+        let invalidated = {
+            let mut runtime = runtime
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            if runtime
+                .as_ref()
+                .is_some_and(|current| Arc::ptr_eq(&current.connection.pipe, &self.pipe))
+            {
+                runtime.take()
+            } else {
+                None
+            }
+        };
+        drop(invalidated);
     }
 
     fn handshake(&self) -> Result<(), RemoteStorageError> {
-        let response = self.request(StorageRequest::Hello {
-            version: STORAGE_PROTOCOL_VERSION,
-        })?;
+        let response = self.request_with_recovery(
+            StorageRequest::Hello {
+                version: STORAGE_PROTOCOL_VERSION,
+            },
+            false,
+        )?;
         match response {
             StorageResponse::Ready { version } if version == STORAGE_PROTOCOL_VERSION => Ok(()),
             StorageResponse::Ready { .. } => Err(RemoteStorageError::ProtocolVersionMismatch),
@@ -153,6 +232,7 @@ impl StorageBrokerRuntime {
             .map_err(|_| RemoteStorageError::Transport)?;
         let connection = RemoteStorageConnection {
             pipe: Arc::new(Mutex::new(RemotePipeStream::new_split(output, input))),
+            poisoned: Arc::new(AtomicBool::new(false)),
         };
         let stderr_worker = thread::Builder::new()
             .name("openchat-storage-broker-stderr".to_owned())
@@ -254,9 +334,43 @@ fn write_frame(
         .map_err(|_| RemoteStorageError::Transport)
 }
 
-fn read_frame(reader: &mut BufReader<File>) -> Result<Option<Vec<u8>>, RemoteStorageError> {
+fn read_frame(
+    reader: &mut BufReader<File>,
+    timeout: Duration,
+) -> Result<Option<Vec<u8>>, RemoteStorageError> {
+    let deadline = Instant::now() + timeout;
     let mut frame = Vec::new();
     loop {
+        if Instant::now() >= deadline {
+            return Err(RemoteStorageError::TimedOut);
+        }
+        if reader.buffer().is_empty() {
+            let mut available = 0u32;
+            // SAFETY: The reader owns a live anonymous-pipe handle and `available` is writable.
+            let peeked = unsafe {
+                PeekNamedPipe(
+                    reader.get_ref().as_raw_handle() as HANDLE,
+                    std::ptr::null_mut(),
+                    0,
+                    std::ptr::null_mut(),
+                    &mut available,
+                    std::ptr::null_mut(),
+                )
+            };
+            if peeked == 0 {
+                // SAFETY: GetLastError reads the calling thread's error from PeekNamedPipe.
+                let error = unsafe { GetLastError() };
+                if matches!(error, ERROR_BROKEN_PIPE | ERROR_PIPE_NOT_CONNECTED) {
+                    return Ok(None);
+                }
+                return Err(RemoteStorageError::Transport);
+            }
+            if available == 0 {
+                let remaining = deadline.saturating_duration_since(Instant::now());
+                thread::sleep(remaining.min(BROKER_PIPE_POLL_INTERVAL));
+                continue;
+            }
+        }
         let buffer = reader
             .fill_buf()
             .map_err(|_| RemoteStorageError::Transport)?;
@@ -286,5 +400,76 @@ fn read_frame(reader: &mut BufReader<File>) -> Result<Option<Vec<u8>>, RemoteSto
         let consumed = buffer.len();
         frame.extend_from_slice(buffer);
         reader.consume(consumed);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        fs::File,
+        io::{BufReader, Write},
+        os::windows::io::FromRawHandle,
+        ptr::null_mut,
+        time::{Duration, Instant},
+    };
+
+    use windows_sys::Win32::{Foundation::HANDLE, System::Pipes::CreatePipe};
+
+    use super::{RemoteStorageError, read_frame};
+
+    fn anonymous_pipe() -> (File, File) {
+        let mut read = null_mut();
+        let mut write = null_mut();
+        // SAFETY: Both output pointers are writable and null security attributes request defaults.
+        assert_ne!(
+            unsafe { CreatePipe(&mut read, &mut write, null_mut(), 0) },
+            0
+        );
+        // SAFETY: CreatePipe returned two distinct owned handles transferred exactly once.
+        unsafe {
+            (
+                File::from_raw_handle(read as HANDLE),
+                File::from_raw_handle(write as HANDLE),
+            )
+        }
+    }
+
+    #[test]
+    fn broker_frame_read_times_out_while_pipe_stays_open() {
+        let (read, _write) = anonymous_pipe();
+        let mut reader = BufReader::new(read);
+        let started = Instant::now();
+
+        assert_eq!(
+            read_frame(&mut reader, Duration::from_millis(30)),
+            Err(RemoteStorageError::TimedOut)
+        );
+        assert!(started.elapsed() < Duration::from_secs(1));
+    }
+
+    #[test]
+    fn broker_frame_read_returns_complete_pipe_frame() {
+        let (read, mut write) = anonymous_pipe();
+        write
+            .write_all(b"broker-ready\n")
+            .expect("write pipe frame");
+        let mut reader = BufReader::new(read);
+
+        assert_eq!(
+            read_frame(&mut reader, Duration::from_secs(1)).expect("read pipe frame"),
+            Some(b"broker-ready".to_vec())
+        );
+    }
+
+    #[test]
+    fn closed_broker_pipe_reports_end_of_stream() {
+        let (read, write) = anonymous_pipe();
+        drop(write);
+        let mut reader = BufReader::new(read);
+
+        assert_eq!(
+            read_frame(&mut reader, Duration::from_secs(1)).expect("read closed pipe"),
+            None
+        );
     }
 }

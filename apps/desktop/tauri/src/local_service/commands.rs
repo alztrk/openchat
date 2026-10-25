@@ -50,6 +50,7 @@ fn start_local_service_process(
         .next_generation
         .checked_add(1)
         .ok_or("The local service generation limit was reached.")?;
+    let parent_pid = std::process::id().to_string();
     let spawn = |sidecar_name: &str| {
         app.shell().sidecar(sidecar_name).and_then(|command| {
             let command = if start_with_empty_storage {
@@ -57,7 +58,10 @@ fn start_local_service_process(
             } else {
                 command
             };
-            command.spawn()
+            command
+                .args(["--parent-pid", parent_pid.as_str()])
+                .set_process_group(true)
+                .spawn()
         })
     };
     let spawn_result = spawn("binaries/openchat-local-service")

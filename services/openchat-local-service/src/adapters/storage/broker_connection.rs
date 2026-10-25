@@ -1008,6 +1008,10 @@ fn remote_error(error: RemoteStorageError) -> Error {
             ffi::SQLITE_MISMATCH,
             "The storage broker protocol is unsupported.",
         ),
+        RemoteStorageError::TimedOut => sqlite_failure(
+            ffi::SQLITE_IOERR,
+            "The storage broker did not respond in time.",
+        ),
         RemoteStorageError::ServerRejected { code } => {
             sqlite_failure(code, sqlite_code_message(code))
         }

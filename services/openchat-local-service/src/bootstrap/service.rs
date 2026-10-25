@@ -3,6 +3,8 @@
 //! Request frames, parsed JSON values, active-operation count, and aggregate in-flight budgets are
 //! limited before dispatch. Cancellation and shutdown are propagated to active tasks before exit.
 
+#[cfg(windows)]
+use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
 use std::{
     collections::HashMap,
     ffi::{OsStr, OsString},
@@ -181,7 +183,7 @@ impl std::fmt::Display for RunError {
         match self {
             Self::InvalidArguments => {
                 formatter.write_str(
-                    "usage: openchat-local-service [--data-root <absolute-path>] [--start-with-empty-storage]",
+                    "usage: openchat-local-service [--data-root <absolute-path>] [--start-with-empty-storage] [--parent-pid <process-id>]",
                 )
             }
             Self::StorageInitialization(details) => {
@@ -215,6 +217,7 @@ impl std::fmt::Display for RunError {
 /// embedding request contents or credentials.
 pub async fn run() -> Result<(), RunError> {
     let arguments = parse_service_arguments(std::env::args_os().skip(1))?;
+    monitor_parent_process(arguments.parent_pid)?;
     let storage = Arc::new(
         match (arguments.data_root, arguments.start_with_empty_storage) {
             (Some(root), false) => AppStorage::open_at(root),
@@ -255,6 +258,7 @@ pub async fn run() -> Result<(), RunError> {
 struct ServiceArguments {
     data_root: Option<PathBuf>,
     start_with_empty_storage: bool,
+    parent_pid: Option<u32>,
 }
 
 fn parse_service_arguments(
@@ -263,6 +267,7 @@ fn parse_service_arguments(
     let mut arguments = arguments.into_iter();
     let mut data_root = None;
     let mut start_with_empty_storage = false;
+    let mut parent_pid = None;
     while let Some(argument) = arguments.next() {
         if argument == OsStr::new("--data-root") {
             if data_root.is_some() {
@@ -280,6 +285,22 @@ fn parse_service_arguments(
                 return Err(RunError::InvalidArguments);
             }
             start_with_empty_storage = true;
+        } else if argument == OsStr::new("--parent-pid") {
+            if parent_pid.is_some() {
+                return Err(RunError::InvalidArguments);
+            }
+            let Some(value) = arguments.next() else {
+                return Err(RunError::InvalidArguments);
+            };
+            let Some(parent) = value.to_str().and_then(|value| {
+                if value.is_empty() || !value.bytes().all(|byte| byte.is_ascii_digit()) {
+                    return None;
+                }
+                value.parse::<u32>().ok().filter(|parent| *parent > 0)
+            }) else {
+                return Err(RunError::InvalidArguments);
+            };
+            parent_pid = Some(parent);
         } else {
             return Err(RunError::InvalidArguments);
         }
@@ -290,7 +311,54 @@ fn parse_service_arguments(
     Ok(ServiceArguments {
         data_root,
         start_with_empty_storage,
+        parent_pid,
     })
+}
+
+#[cfg(windows)]
+fn monitor_parent_process(parent_pid: Option<u32>) -> Result<(), RunError> {
+    use windows_sys::Win32::{
+        Foundation::{HANDLE, WAIT_OBJECT_0},
+        System::Threading::{INFINITE, OpenProcess, PROCESS_SYNCHRONIZE, WaitForSingleObject},
+    };
+
+    let Some(parent_pid) = parent_pid else {
+        return Ok(());
+    };
+    // SAFETY: OpenProcess is called with synchronization-only access and a validated nonzero PID.
+    let process = unsafe { OpenProcess(PROCESS_SYNCHRONIZE, 0, parent_pid) };
+    if process.is_null() {
+        return Err(RunError::ServiceInitialization {
+            code: "parent_process_unavailable",
+            message: "The desktop process could not be monitored.".to_owned(),
+            details: None,
+        });
+    }
+    // SAFETY: OpenProcess returned an owned process handle transferred exactly once.
+    let process = unsafe { OwnedHandle::from_raw_handle(process as _) };
+    std::thread::Builder::new()
+        .name("openchat-parent-monitor".to_owned())
+        .spawn(move || {
+            // SAFETY: The owned process handle remains live for the entire infinite wait.
+            let result =
+                unsafe { WaitForSingleObject(process.as_raw_handle() as HANDLE, INFINITE) };
+            if result == WAIT_OBJECT_0 {
+                // Exiting closes the service-owned kill-on-close job that contains the broker.
+                std::process::exit(0);
+            }
+            std::process::exit(1);
+        })
+        .map_err(|_| RunError::ServiceInitialization {
+            code: "parent_process_monitor_unavailable",
+            message: "The desktop process could not be monitored.".to_owned(),
+            details: None,
+        })?;
+    Ok(())
+}
+
+#[cfg(not(windows))]
+fn monitor_parent_process(_parent_pid: Option<u32>) -> Result<(), RunError> {
+    Ok(())
 }
 
 #[cfg(test)]
@@ -503,34 +571,49 @@ async fn run_protocol(
         let operation_recovery = Arc::clone(&startup_recovered);
         let operation_output = output.clone();
         let operation_map = Arc::clone(&active_operations);
+        let id = request.id.clone();
+        let diagnostic_operation = rpc_failure_diagnostic_operation(&request);
         tokio::spawn(async move {
-            let id = request.id.clone();
-            let diagnostic_operation = rpc_failure_diagnostic_operation(&request);
-            let response = match rpc::dispatch(rpc::RpcDispatchContext {
-                storage: &operation_storage,
-                service: &operation_service,
-                request,
-                cancellation: cancellation_receiver,
-                cancellation_gate: Arc::clone(&cancellation_gate),
-                events: operation_output.clone(),
-                permission_broker: operation_permissions,
-                user_question_broker: operation_questions,
-                shutdown_requested: operation_shutdown,
-                startup_recovered: operation_recovery,
+            let dispatch_output = operation_output.clone();
+            let dispatch_cancellation_gate = Arc::clone(&cancellation_gate);
+            let dispatch_runtime = tokio::runtime::Handle::current();
+            let dispatch_result = tokio::task::spawn_blocking(move || {
+                let result = dispatch_runtime.block_on(rpc::dispatch(rpc::RpcDispatchContext {
+                    storage: &operation_storage,
+                    service: &operation_service,
+                    request,
+                    cancellation: cancellation_receiver,
+                    cancellation_gate: dispatch_cancellation_gate,
+                    events: dispatch_output,
+                    permission_broker: operation_permissions,
+                    user_question_broker: operation_questions,
+                    shutdown_requested: operation_shutdown,
+                    startup_recovered: operation_recovery,
+                }));
+                if let Err(error) = &result
+                    && let Some(operation) = diagnostic_operation
+                    && operation_storage
+                        .log_rpc_failure(operation, error.code)
+                        .is_err()
+                {
+                    eprintln!("rpc_failure_diagnostic_write_failed");
+                }
+                result
             })
-            .await
-            {
-                Ok(result) => Response::success(id, result),
-                Err(error) => {
-                    if let Some(operation) = diagnostic_operation {
-                        if operation_storage
-                            .log_rpc_failure(operation, error.code)
-                            .is_err()
-                        {
-                            eprintln!("rpc_failure_diagnostic_write_failed");
-                        }
-                    }
-                    Response::failure(id, error)
+            .await;
+            let response = match dispatch_result {
+                Ok(Ok(result)) => Response::success(id, result),
+                Ok(Err(error)) => Response::failure(id, error),
+                Err(_) => {
+                    eprintln!("local_service_operation_worker_failed");
+                    Response::failure(
+                        id,
+                        ServiceError::new(
+                            "local_service_operation_failed",
+                            "The local service could not complete the request.",
+                            false,
+                        ),
+                    )
                 }
             };
             cancellation_gate.complete();
@@ -723,7 +806,8 @@ mod tests {
         ActiveOperations, BoundedRequestLine, MAX_ACTIVE_OPERATIONS, MAX_ACTIVE_REQUEST_BYTES,
         MAX_ACTIVE_REQUEST_PARAMETER_NODES, MAX_REQUEST_BYTES, MAX_REQUEST_ID_BYTES,
         OperationAdmissionError, OperationGate, is_valid_request_id, parse_data_root,
-        read_bounded_request_line, rpc_failure_diagnostic_operation, zeroize_passphrase,
+        parse_service_arguments, read_bounded_request_line, rpc_failure_diagnostic_operation,
+        zeroize_passphrase,
     };
     use crate::protocol::Request;
 
@@ -1150,5 +1234,32 @@ mod tests {
             .is_err()
         );
         assert!(parse_data_root([OsString::from("--unexpected")]).is_err());
+    }
+
+    #[test]
+    fn parent_pid_requires_one_nonzero_decimal_process_id() {
+        let arguments =
+            parse_service_arguments([OsString::from("--parent-pid"), OsString::from("42")])
+                .expect("valid parent process ID");
+        assert_eq!(arguments.parent_pid, Some(42));
+
+        assert!(parse_service_arguments([OsString::from("--parent-pid")]).is_err());
+        assert!(
+            parse_service_arguments([OsString::from("--parent-pid"), OsString::from("0"),])
+                .is_err()
+        );
+        assert!(
+            parse_service_arguments([OsString::from("--parent-pid"), OsString::from("42x"),])
+                .is_err()
+        );
+        assert!(
+            parse_service_arguments([
+                OsString::from("--parent-pid"),
+                OsString::from("42"),
+                OsString::from("--parent-pid"),
+                OsString::from("43"),
+            ])
+            .is_err()
+        );
     }
 }
