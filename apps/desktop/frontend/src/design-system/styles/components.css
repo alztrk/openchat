@@ -402,6 +402,14 @@ html[data-motion-input='keyboard'] .openchat-dialog {
   overflow-y: auto;
 }
 
+.color-picker-popover {
+  position: fixed;
+  z-index: 60;
+  width: min(18rem, calc(100vw - 1rem));
+  max-height: calc(100dvh - 1rem);
+  overflow-y: auto;
+}
+
 .openchat-popover-enter,
 .openchat-disclosure-enter {
   opacity: 1;

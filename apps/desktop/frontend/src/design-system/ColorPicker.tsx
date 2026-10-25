@@ -1,5 +1,5 @@
 import { Check, ChevronDown } from 'lucide-react';
-import { type PointerEvent, useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
+import { type PointerEvent, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 
@@ -12,8 +12,8 @@ interface ColorPickerProps {
 
 interface PopoverPosition {
   left: number;
+  maxHeight: number;
   top: number;
-  width: number;
 }
 
 const presetColors = [
@@ -51,7 +51,7 @@ export function ColorPicker({ disabled = false, label, onChange, value }: ColorP
   const popoverRef = useRef<HTMLDivElement>(null);
   const [isOpen, setIsOpen] = useState(false);
   const [hexDraft, setHexDraft] = useState(value.toUpperCase());
-  const [position, setPosition] = useState<PopoverPosition>({ left: 0, top: 0, width: 256 });
+  const [position, setPosition] = useState<PopoverPosition | null>(null);
   const hsv = hexToHsv(value);
 
   const updateColor = (hue: number, saturation: number, brightness: number) => {
@@ -60,25 +60,55 @@ export function ColorPicker({ disabled = false, label, onChange, value }: ColorP
     onChange(nextValue.toLowerCase());
   };
 
-  const updatePosition = useCallback(() => {
-    const rect = triggerRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    const width = Math.min(256, window.innerWidth - 16);
-    const height = 410;
-    setPosition({
-      left: Math.max(8, Math.min(rect.left, window.innerWidth - width - 8)),
-      top: Math.max(8, Math.min(rect.bottom + 8, window.innerHeight - height - 8)),
-      width,
-    });
-  }, []);
-
   useEffect(() => {
     setHexDraft(value.toUpperCase());
   }, [value]);
 
   useLayoutEffect(() => {
-    if (isOpen) updatePosition();
-  }, [isOpen, updatePosition]);
+    if (!isOpen) return;
+    const updatePosition = () => {
+      const trigger = triggerRef.current;
+      const popover = popoverRef.current;
+      if (!trigger || !popover) return;
+
+      const triggerBounds = trigger.getBoundingClientRect();
+      const popoverBounds = popover.getBoundingClientRect();
+      const viewportPadding = 8;
+      const left = Math.max(
+        viewportPadding,
+        Math.min(triggerBounds.left, window.innerWidth - popoverBounds.width - viewportPadding),
+      );
+      const availableBelow = window.innerHeight - triggerBounds.bottom - viewportPadding * 2;
+      const availableAbove = triggerBounds.top - viewportPadding * 2;
+      const openAbove = availableAbove > availableBelow;
+      const availableHeight = Math.max(0, openAbove ? availableAbove : availableBelow);
+      const requestedTop = openAbove
+        ? triggerBounds.top - popoverBounds.height - viewportPadding
+        : triggerBounds.bottom + viewportPadding;
+      const maxTop = Math.max(viewportPadding, window.innerHeight - popoverBounds.height - viewportPadding);
+      const top = Math.max(viewportPadding, Math.min(requestedTop, maxTop));
+
+      setPosition((current) =>
+        current?.left === left && current.top === top && current.maxHeight === availableHeight
+          ? current
+          : { left, maxHeight: availableHeight, top },
+      );
+    };
+
+    updatePosition();
+    const resizeObserver = new ResizeObserver(updatePosition);
+    const trigger = triggerRef.current;
+    const popover = popoverRef.current;
+    if (trigger) resizeObserver.observe(trigger);
+    if (popover) resizeObserver.observe(popover);
+    window.addEventListener('resize', updatePosition);
+    window.addEventListener('scroll', updatePosition, true);
+    return () => {
+      resizeObserver.disconnect();
+      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', updatePosition, true);
+    };
+  }, [isOpen]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -86,25 +116,23 @@ export function ColorPicker({ disabled = false, label, onChange, value }: ColorP
       const target = event.target;
       if (target instanceof Node && !triggerRef.current?.contains(target) && !popoverRef.current?.contains(target)) {
         setIsOpen(false);
+        setPosition(null);
       }
     };
     const closeOnEscape = (event: globalThis.KeyboardEvent) => {
       if (event.key === 'Escape') {
         setIsOpen(false);
+        setPosition(null);
         triggerRef.current?.focus();
       }
     };
-    window.addEventListener('resize', updatePosition);
-    window.addEventListener('scroll', updatePosition, true);
     document.addEventListener('pointerdown', closeOnOutsidePointer);
     document.addEventListener('keydown', closeOnEscape);
     return () => {
-      window.removeEventListener('resize', updatePosition);
-      window.removeEventListener('scroll', updatePosition, true);
       document.removeEventListener('pointerdown', closeOnOutsidePointer);
       document.removeEventListener('keydown', closeOnEscape);
     };
-  }, [isOpen, updatePosition]);
+  }, [isOpen]);
 
   const updateColorFromPointer = (event: PointerEvent<HTMLDivElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();
@@ -121,7 +149,10 @@ export function ColorPicker({ disabled = false, label, onChange, value }: ColorP
         aria-expanded={isOpen}
         className="flex min-h-10 min-w-0 items-center gap-2 rounded-control border border-control-border bg-surface px-2 text-left outline-none hover:bg-surface-hover focus-visible:ring-2 focus-visible:ring-focus disabled:cursor-not-allowed disabled:opacity-50"
         disabled={disabled}
-        onClick={() => setIsOpen((open) => !open)}
+        onClick={() => {
+          setPosition(null);
+          setIsOpen((open) => !open);
+        }}
         ref={triggerRef}
         type="button"
       >
@@ -138,12 +169,17 @@ export function ColorPicker({ disabled = false, label, onChange, value }: ColorP
       {isOpen
         ? createPortal(
             <div
-              className="fixed z-50 grid w-64 gap-3 overflow-y-auto rounded-panel border border-control-border bg-panel p-3 text-text shadow-xl"
+              className="color-picker-popover grid gap-3 rounded-panel border border-control-border bg-raised p-3 text-text shadow-xl"
               id={`${id}-popover`}
               ref={popoverRef}
               role="dialog"
               aria-label={label}
-              style={{ ...position, maxHeight: window.innerHeight - 16 }}
+              style={{
+                left: position?.left ?? 0,
+                maxHeight: position?.maxHeight,
+                top: position?.top ?? 0,
+                visibility: position ? 'visible' : 'hidden',
+              }}
             >
               <div
                 aria-hidden="true"
