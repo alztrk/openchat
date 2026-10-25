@@ -1742,7 +1742,7 @@ function ImageTile({
     };
   }, [entry, inRange]);
 
-  const label = entry.source === 'design' ? entry.image.prompt : entry.image.conversationTitle;
+  const label = galleryPrompt(entry);
   return (
     <button
       aria-label={t('designOpenImage', { label: label.slice(0, 100) })}
@@ -1769,8 +1769,16 @@ function ImageTile({
           <LoaderCircle aria-label={t('designImageLoading')} className="animate-spin" size={18} />
         </span>
       )}
-      <span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 to-transparent px-3 pb-2 pt-8 text-xs font-medium text-white">
-        {entry.source === 'design' ? entry.image.model : entry.image.conversationTitle}
+      <span className="absolute inset-x-0 bottom-0 flex items-end justify-between gap-2 bg-gradient-to-t from-black/80 via-black/45 to-transparent px-3 pb-2 pt-12">
+        <span
+          aria-hidden="true"
+          className="pointer-events-none line-clamp-3 min-w-0 flex-1 break-words text-left text-xs font-medium leading-4 text-white/75 opacity-0 transition-opacity duration-quick group-hover:opacity-75 group-focus-visible:opacity-75 motion-reduce:transition-none"
+        >
+          {label}
+        </span>
+        <span className="max-w-1/2 shrink-0 truncate text-xs font-medium text-white/70">
+          {entry.source === 'design' ? entry.image.model : entry.image.conversationTitle}
+        </span>
       </span>
     </button>
   );
