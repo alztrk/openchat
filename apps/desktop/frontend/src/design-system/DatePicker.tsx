@@ -1,11 +1,11 @@
+import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react';
 import type { KeyboardEvent } from 'react';
-import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { cn } from '@/shared/utils/cn';
 import { Button } from './Button';
-import { Dialog } from './Dialog';
 
 export interface DatePickerProps {
   /** Date value in the stable YYYY-MM-DD format used by the application. */
@@ -76,12 +76,14 @@ export function DatePicker({ disabled = false, label, max, min, onChange, value 
   const locale = i18n.resolvedLanguage ?? i18n.language;
   const labelId = useId();
   const valueId = useId();
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const dayButtons = useRef(new Map<string, HTMLButtonElement>());
   const todayKey = todayDateKey();
   const selectedDateKey = parseDateKey(value) ? value : undefined;
   const selectedDate = selectedDateKey ? parseDateKey(selectedDateKey) : null;
   const initialDate = parseDateKey(constrainDateKey(selectedDateKey ?? todayKey, min, max));
   const [open, setOpen] = useState(false);
+  const [alignEnd, setAlignEnd] = useState(false);
   const [focusedDate, setFocusedDate] = useState(() => (initialDate ? dateKey(initialDate) : todayKey));
   const [visibleMonth, setVisibleMonth] = useState(() => monthStart(initialDate ?? new Date()));
 
@@ -122,6 +124,21 @@ export function DatePicker({ disabled = false, label, max, min, onChange, value 
     if (!open) return;
     dayButtons.current.get(focusedDate)?.focus();
   }, [focusedDate, open]);
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    const updateAlignment = () => {
+      const trigger = triggerRef.current;
+      if (!trigger) return;
+      const availableWidth = Math.max(0, window.innerWidth - 16);
+      const panelWidth = Math.min(320, availableWidth);
+      setAlignEnd(trigger.getBoundingClientRect().left + panelWidth > window.innerWidth - 8);
+    };
+
+    updateAlignment();
+    window.addEventListener('resize', updateAlignment);
+    return () => window.removeEventListener('resize', updateAlignment);
+  }, [open]);
 
   const changeMonth = (amount: number) => {
     const nextMonth = new Date(Date.UTC(visibleMonth.getUTCFullYear(), visibleMonth.getUTCMonth() + amount, 1));
@@ -205,113 +222,121 @@ export function DatePicker({ disabled = false, label, max, min, onChange, value 
   const nextMonth = new Date(Date.UTC(visibleMonth.getUTCFullYear(), visibleMonth.getUTCMonth() + 1, 1));
 
   return (
-    <div className="grid gap-1">
-      <span className="text-xs font-medium text-secondary-text" id={labelId}>
-        {label}
-      </span>
-      <Button
-        aria-expanded={open}
-        aria-haspopup="dialog"
-        aria-labelledby={`${labelId} ${valueId}`}
-        className="w-full justify-start font-normal"
-        disabled={disabled}
-        onClick={() => setOpen(true)}
-        type="button"
-      >
-        <CalendarDays aria-hidden="true" size={16} />
-        <span id={valueId}>{displayedValue}</span>
-      </Button>
-      <Dialog onOpenChange={setOpen} open={open} title={t('datePickerDialogTitle', { label })}>
-        <div className="grid gap-4">
-          <div className="flex items-center justify-between gap-2">
-            <Button
-              aria-label={t('datePickerPreviousMonth')}
-              disabled={!monthHasSelectableDate(previousMonth, min, max)}
-              onClick={() => changeMonth(-1)}
-              size="icon"
-              variant="ghost"
-            >
-              <ChevronLeft aria-hidden="true" size={18} />
-            </Button>
-            <p aria-live="polite" className="text-sm font-semibold capitalize text-text">
-              {monthLabel}
-            </p>
-            <Button
-              aria-label={t('datePickerNextMonth')}
-              disabled={!monthHasSelectableDate(nextMonth, min, max)}
-              onClick={() => changeMonth(1)}
-              size="icon"
-              variant="ghost"
-            >
-              <ChevronRight aria-hidden="true" size={18} />
-            </Button>
-          </div>
-          <fieldset className="grid grid-cols-7 gap-1" onKeyDown={handleCalendarKeyDown}>
-            <legend className="sr-only">{monthLabel}</legend>
-            {weekdays.map((weekday) => (
-              <span
-                className="flex h-8 items-center justify-center text-xs font-medium text-secondary-text"
-                key={weekday.key}
-                title={weekday.full}
-              >
-                {weekday.short}
-              </span>
-            ))}
-            {calendarDays.map((date) => {
-              const key = dateKey(date);
-              const inMonth = date.getUTCMonth() === visibleMonth.getUTCMonth();
-              const isSelected = value === key;
-              const isToday = todayKey === key;
-              const isDisabled = (min !== undefined && key < min) || (max !== undefined && key > max);
-
-              return (
-                <Button
-                  aria-current={isToday ? 'date' : undefined}
-                  aria-label={dateFormatter.format(date)}
-                  aria-pressed={isSelected}
-                  className={cn(
-                    'font-normal',
-                    !inMonth && 'text-secondary-text',
-                    isToday && !isSelected && 'ring-1 ring-border',
-                  )}
-                  disabled={isDisabled}
-                  key={key}
-                  onClick={() => {
-                    onChange(key);
-                    setOpen(false);
-                  }}
-                  ref={(element) => {
-                    if (element) dayButtons.current.set(key, element);
-                    else dayButtons.current.delete(key);
-                  }}
-                  size="icon"
-                  tabIndex={focusedDate === key ? 0 : -1}
-                  variant={isSelected ? 'primary' : 'ghost'}
-                >
-                  {dayNumberFormatter.format(date.getUTCDate())}
-                </Button>
-              );
-            })}
-          </fieldset>
-          <div className="flex justify-end gap-2">
-            {value ? (
+    <DialogPrimitive.Root modal={false} onOpenChange={setOpen} open={open}>
+      <div className="relative grid gap-1">
+        <span className="text-xs font-medium text-secondary-text" id={labelId}>
+          {label}
+        </span>
+        <DialogPrimitive.Trigger asChild>
+          <Button
+            aria-labelledby={`${labelId} ${valueId}`}
+            className="w-full justify-start font-normal"
+            disabled={disabled}
+            ref={triggerRef}
+            type="button"
+          >
+            <CalendarDays aria-hidden="true" size={16} />
+            <span id={valueId}>{displayedValue}</span>
+          </Button>
+        </DialogPrimitive.Trigger>
+        <DialogPrimitive.Content
+          aria-describedby={undefined}
+          className={cn(
+            'openchat-dropdown-surface openchat-popover-enter openchat-date-picker-popover absolute top-full z-50 mt-2 p-2',
+            alignEnd ? 'right-0' : 'left-0',
+          )}
+        >
+          <DialogPrimitive.Title className="sr-only">{t('datePickerDialogTitle', { label })}</DialogPrimitive.Title>
+          <div className="grid gap-4">
+            <div className="flex items-center justify-between gap-2">
               <Button
-                onClick={() => {
-                  onChange('');
-                  setOpen(false);
-                }}
-                size="small"
+                aria-label={t('datePickerPreviousMonth')}
+                disabled={!monthHasSelectableDate(previousMonth, min, max)}
+                onClick={() => changeMonth(-1)}
+                size="icon"
                 variant="ghost"
               >
-                {t('datePickerClear')}
+                <ChevronLeft aria-hidden="true" size={18} />
               </Button>
-            ) : null}
-            <Button onClick={() => setOpen(false)} size="small">
-              {t('datePickerClose')}
-            </Button>
+              <p aria-live="polite" className="text-sm font-semibold capitalize text-text">
+                {monthLabel}
+              </p>
+              <Button
+                aria-label={t('datePickerNextMonth')}
+                disabled={!monthHasSelectableDate(nextMonth, min, max)}
+                onClick={() => changeMonth(1)}
+                size="icon"
+                variant="ghost"
+              >
+                <ChevronRight aria-hidden="true" size={18} />
+              </Button>
+            </div>
+            <fieldset className="grid min-w-0 grid-cols-7 gap-1" onKeyDown={handleCalendarKeyDown}>
+              <legend className="sr-only">{monthLabel}</legend>
+              {weekdays.map((weekday) => (
+                <span
+                  className="flex h-8 items-center justify-center text-xs font-medium text-secondary-text"
+                  key={weekday.key}
+                  title={weekday.full}
+                >
+                  {weekday.short}
+                </span>
+              ))}
+              {calendarDays.map((date) => {
+                const key = dateKey(date);
+                const inMonth = date.getUTCMonth() === visibleMonth.getUTCMonth();
+                const isSelected = value === key;
+                const isToday = todayKey === key;
+                const isDisabled = (min !== undefined && key < min) || (max !== undefined && key > max);
+
+                return (
+                  <Button
+                    aria-current={isToday ? 'date' : undefined}
+                    aria-label={dateFormatter.format(date)}
+                    aria-pressed={isSelected}
+                    className={cn(
+                      'w-full min-w-0 px-0 font-normal',
+                      !inMonth && 'text-secondary-text',
+                      isToday && !isSelected && 'ring-1 ring-border',
+                    )}
+                    disabled={isDisabled}
+                    key={key}
+                    onClick={() => {
+                      onChange(key);
+                      setOpen(false);
+                    }}
+                    ref={(element) => {
+                      if (element) dayButtons.current.set(key, element);
+                      else dayButtons.current.delete(key);
+                    }}
+                    tabIndex={focusedDate === key ? 0 : -1}
+                    variant={isSelected ? 'primary' : 'ghost'}
+                  >
+                    {dayNumberFormatter.format(date.getUTCDate())}
+                  </Button>
+                );
+              })}
+            </fieldset>
+            <div className="flex justify-end gap-2">
+              {value ? (
+                <Button
+                  onClick={() => {
+                    onChange('');
+                    setOpen(false);
+                  }}
+                  size="small"
+                  variant="ghost"
+                >
+                  {t('datePickerClear')}
+                </Button>
+              ) : null}
+              <Button onClick={() => setOpen(false)} size="small">
+                {t('datePickerClose')}
+              </Button>
+            </div>
           </div>
-        </div>
-      </Dialog>
-    </div>
+        </DialogPrimitive.Content>
+      </div>
+    </DialogPrimitive.Root>
   );
 }

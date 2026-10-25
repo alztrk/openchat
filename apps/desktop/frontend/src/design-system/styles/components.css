@@ -384,6 +384,10 @@ html[data-motion-input='keyboard'] .openchat-dialog {
   border-radius: var(--dropdown-surface-radius);
 }
 
+.openchat-date-picker-popover {
+  width: min(20rem, calc(100vw - 1rem));
+}
+
 .openchat-popover-enter,
 .openchat-disclosure-enter {
   opacity: 1;
