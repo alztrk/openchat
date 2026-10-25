@@ -131,6 +131,7 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
   const [size, setSize] = useState('1024x1024');
   const [quality, setQuality] = useState<ImageQuality>('auto');
   const [background, setBackground] = useState<ImageBackground>('auto');
+  const [backgroundDescription, setBackgroundDescription] = useState('');
   const [moderation, setModeration] = useState<ImageModeration>('auto');
   const [outputFormat, setOutputFormat] = useState<ImageOutputFormat>('png');
   const [outputCompression, setOutputCompression] = useState(90);
@@ -203,6 +204,14 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
   const selectedDesignImage = selectedImage?.image.source === 'design' ? selectedImage.image.image : null;
   const generationInProgress = generationStarting || activeOperation !== null;
   const generationPlaceholderCount = Number(count);
+  const trimmedBackgroundDescription = backgroundDescription.trim();
+  const backgroundPromptInstruction = trimmedBackgroundDescription
+    ? t('designCustomBackgroundPromptInstruction', { description: trimmedBackgroundDescription })
+    : '';
+  const generationPrompt = backgroundPromptInstruction
+    ? `${prompt.trim()}\n\n${backgroundPromptInstruction}`
+    : prompt.trim();
+  const generationPromptTooLong = Array.from(generationPrompt).length > 10_000;
 
   const loadTargets = useCallback(async () => {
     setTargetsLoading(true);
@@ -575,7 +584,7 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
     if (!selectedTarget || !selectedModel || generationStarting || activeOperation !== null) return;
     if (selectedTarget.kind === 'oauth' && accountQuota?.state === 'exhausted') return;
     await runGeneration({
-      prompt: prompt.trim(),
+      prompt: generationPrompt,
       model: selectedModel.value,
       size: size === 'custom' ? `${customWidth}x${customHeight}` : size,
       quality,
@@ -600,6 +609,7 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
 
   const reusePrompt = (value: string) => {
     setPrompt(value);
+    setBackgroundDescription('');
     setSelectedImage(null);
     promptRef.current?.focus();
   };
@@ -863,6 +873,7 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
     !generationStarting &&
     activeOperation === null &&
     customResolutionValid &&
+    !generationPromptTooLong &&
     !(selectedTarget.kind === 'oauth' && accountQuota?.state === 'exhausted');
   const activeFilterCount = [
     queryDraft.trim() !== '',
@@ -1165,10 +1176,39 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
               options={[
                 { value: 'auto', label: t('designBackgroundAuto') },
                 { value: 'opaque', label: t('designBackgroundOpaque') },
-                { value: 'transparent', label: t('designBackgroundTransparent') },
+                {
+                  value: 'transparent',
+                  label: t('designBackgroundTransparent'),
+                  disabled: trimmedBackgroundDescription.length > 0,
+                },
               ]}
               value={background}
             />
+            <label className="grid gap-2 text-sm font-medium text-text" htmlFor="design-background-description">
+              {t('designCustomBackground')}
+              <textarea
+                aria-describedby="design-background-description-hint"
+                className="min-h-20 w-full resize-y rounded-control border border-control-border bg-surface px-3 py-2 text-sm font-normal leading-relaxed text-text outline-none placeholder:text-secondary-text focus-visible:ring-2 focus-visible:ring-focus disabled:cursor-not-allowed disabled:opacity-50"
+                disabled={activeOperation !== null || generationStarting}
+                id="design-background-description"
+                maxLength={500}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  setBackgroundDescription(value);
+                  if (value.trim().length > 0 && background !== 'opaque') setBackground('opaque');
+                }}
+                placeholder={t('designCustomBackgroundPlaceholder')}
+                value={backgroundDescription}
+              />
+              <span className="text-xs font-normal text-secondary-text" id="design-background-description-hint">
+                {t('designCustomBackgroundHint')}
+              </span>
+            </label>
+            {generationPromptTooLong ? (
+              <p className="text-sm text-destructive" role="alert">
+                {t('designPromptCombinedTooLong')}
+              </p>
+            ) : null}
 
             {isApiKeyRoute ? (
               <>
