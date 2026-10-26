@@ -317,6 +317,17 @@ button:focus-visible * {
   animation: openchat-dialog-in var(--motion-duration-ui) var(--motion-ease-out) both;
 }
 
+.command-palette-dialog {
+  width: min(44rem, calc(100vw - 2rem));
+  animation: none;
+}
+
+.command-palette-results {
+  max-height: min(56dvh, 32rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
 .saved-response-workspace-body {
   display: grid;
   gap: var(--spacing-response-workspace-gap);

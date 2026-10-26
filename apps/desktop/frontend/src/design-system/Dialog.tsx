@@ -1,5 +1,5 @@
 import * as DialogPrimitive from '@radix-ui/react-dialog';
-import type { ReactNode } from 'react';
+import type { ReactNode, RefObject } from 'react';
 
 import { cn } from '@/shared/utils/cn';
 
@@ -13,12 +13,14 @@ export interface DialogProps {
   onOpenChange(open: boolean): void;
   /** Content announced as the dialog's accessible name. */
   title: ReactNode;
+  /** Optional element that receives focus when the dialog opens. */
+  initialFocusRef?: RefObject<HTMLElement | null>;
   /** Dialog body content. */
   children: ReactNode;
 }
 
 /** Renders a modal with managed focus, Escape dismissal, and an accessible title. */
-export function Dialog({ children, className, onOpenChange, open, title }: DialogProps) {
+export function Dialog({ children, className, initialFocusRef, onOpenChange, open, title }: DialogProps) {
   return (
     <DialogPrimitive.Root onOpenChange={onOpenChange} open={open}>
       <DialogPrimitive.Portal>
@@ -26,6 +28,11 @@ export function Dialog({ children, className, onOpenChange, open, title }: Dialo
         <DialogPrimitive.Content
           aria-describedby={undefined}
           className={cn('openchat-dialog w-dialog', className)}
+          onOpenAutoFocus={(event) => {
+            if (!initialFocusRef?.current) return;
+            event.preventDefault();
+            initialFocusRef.current.focus();
+          }}
           onPointerDownOutside={(event) => event.preventDefault()}
         >
           <DialogPrimitive.Title className="mb-4 text-section-title font-semibold">{title}</DialogPrimitive.Title>

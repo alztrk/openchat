@@ -14,7 +14,7 @@ import {
   SlidersHorizontal,
 } from 'lucide-react';
 import type { ReactNode } from 'react';
-import { lazy, Suspense, useEffect, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import type { ThemePreference } from './GeneralSettingsSection';
@@ -42,8 +42,7 @@ const loadNotifications = () =>
   import('@/modules/notifications/components/NotificationSettingsSection').then((module) => ({
     default: module.NotificationSettingsSection,
   }));
-const loadShortcuts = () =>
-  import('./ShortcutsSection').then((module) => ({ default: module.ShortcutsSection }));
+const loadShortcuts = () => import('./ShortcutsSection').then((module) => ({ default: module.ShortcutsSection }));
 
 const GeneralSettingsSection = lazy(loadGeneralSettings);
 const ProviderSettingsSection = lazy(loadProviderSettings);
@@ -61,7 +60,7 @@ const ShortcutsSection = lazy(loadShortcuts);
 import type { AppearancePreferences } from '@/modules/settings/data/appearancePreferences';
 import '@/modules/settings/settings.css';
 
-type SettingsSection =
+export type SettingsSection =
   | 'connections'
   | 'localEngines'
   | 'models'
@@ -74,6 +73,11 @@ type SettingsSection =
   | 'localData'
   | 'personalMemory'
   | 'notifications';
+
+export interface SettingsSectionRequest {
+  section: SettingsSection;
+  requestId: number;
+}
 type TranslationKey = keyof typeof import('@/localization/locales/en.json');
 
 const sectionTitleKeys: Record<SettingsSection, TranslationKey> = {
@@ -112,6 +116,7 @@ export interface SettingsPageProps {
   appearance: AppearancePreferences;
   onAppearanceChange(preferences: Partial<AppearancePreferences>): void;
   onOpenConversation(conversationId: string): void;
+  sectionRequest?: SettingsSectionRequest;
 }
 
 export function SettingsPage({
@@ -119,6 +124,7 @@ export function SettingsPage({
   onAppearanceChange,
   onOpenConversation,
   onThemeChange,
+  sectionRequest,
   theme,
 }: SettingsPageProps) {
   const { t } = useTranslation();
@@ -138,16 +144,25 @@ export function SettingsPage({
       loadShortcuts(),
     ]);
   }, []);
-  const [section, setSection] = useState<SettingsSection>('connections');
-  const [visitedSections, setVisitedSections] = useState<ReadonlySet<SettingsSection>>(() => new Set(['connections']));
+  const [section, setSection] = useState<SettingsSection>(() => sectionRequest?.section ?? 'connections');
+  const [visitedSections, setVisitedSections] = useState<ReadonlySet<SettingsSection>>(
+    () => new Set([sectionRequest?.section ?? 'connections']),
+  );
+  const appliedSectionRequestId = useRef(sectionRequest?.requestId ?? 0);
 
-  const navigateToSection = (nextSection: SettingsSection) => {
+  const navigateToSection = useCallback((nextSection: SettingsSection) => {
     setSection(nextSection);
     setVisitedSections((current) => {
       if (current.has(nextSection)) return current;
       return new Set([...current, nextSection]);
     });
-  };
+  }, []);
+
+  useEffect(() => {
+    if (!sectionRequest || sectionRequest.requestId === appliedSectionRequestId.current) return;
+    appliedSectionRequestId.current = sectionRequest.requestId;
+    navigateToSection(sectionRequest.section);
+  }, [navigateToSection, sectionRequest]);
 
   return (
     <div className="settings-page-container">

@@ -1,4 +1,4 @@
-import { ArrowLeft, ArrowRight, Copy, Minus, PanelLeftClose, PanelLeftOpen, Square, X } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Command, Copy, Minus, PanelLeftClose, PanelLeftOpen, Square, X } from 'lucide-react';
 import { type MouseEvent, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -13,6 +13,7 @@ export interface TitleBarProps {
   isSidebarOpen?: boolean;
   onGoBack(): void;
   onGoForward(): void;
+  onOpenCommandPalette(): void;
   onSelectConversation(conversationId: string, messageId?: string | null, searchQuery?: string | null): void;
   onToggleSidebar?(): void;
 }
@@ -23,6 +24,7 @@ export function TitleBar({
   isSidebarOpen = true,
   onGoBack,
   onGoForward,
+  onOpenCommandPalette,
   onSelectConversation,
   onToggleSidebar,
 }: TitleBarProps) {
@@ -121,6 +123,18 @@ export function TitleBar({
         </div>
         <div className="titlebar-drag-region min-w-3 flex-1 self-stretch" />
         <TitleBarSearch onSelectConversation={onSelectConversation} />
+        <Tooltip label={t('commandPaletteOpen')}>
+          <Button
+            aria-label={t('commandPaletteOpen')}
+            className="mx-2 h-8 min-h-8 px-2 text-secondary-icon"
+            onClick={onOpenCommandPalette}
+            size="small"
+            variant="ghost"
+          >
+            <Command aria-hidden="true" size={16} />
+            <kbd className="hidden rounded-control border border-border px-1 text-xs sm:inline">Ctrl K</kbd>
+          </Button>
+        </Tooltip>
         <div className="titlebar-drag-region min-w-3 flex-1 self-stretch" />
         {desktop ? (
           <div className="titlebar-window-controls h-full items-center gap-2">

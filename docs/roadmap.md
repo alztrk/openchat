@@ -951,14 +951,12 @@ Hosted sharing remains out of scope under the current product decision.
 
 ### 55. Add unified keyboard-first command palette (Ctrl+K)
 
-**Status: planned, P1.** Provide instant, keyboard-driven navigation, action execution, and configuration control across the entire desktop workspace.
+**Status: Windows-first command palette implemented, P1; full workflow coverage remains open.** The palette opens with `Ctrl+K` or its title-bar button. Fuzzy search covers recent and matching conversations, projects, workspace surfaces, and settings sections. Actions start a new chat, start a project-scoped chat, open an existing conversation, navigate to a workspace surface or settings section, and switch the theme. The modal focuses its search field, supports arrow-key selection, Enter, and Escape, and has localized labels and loading, empty, and unavailable states.
 
-- Implement an accessible modal command palette accessible anywhere via `Ctrl/Cmd+K` inspired by Raycast and Linear.
-- Support instant fuzzy search over open conversations, project directories, model switching, settings toggles, custom agent invocation, and recent files.
-- Enable direct execution of quick commands (e.g. `New Chat`, `Switch to Claude 3.7`, `Open Settings`, `Purge Project Memory`, `Export Markdown`) with clear keyboard shortcuts and category groupings.
-- Deconstruct the monolithic `App.tsx` state to ensure the palette operates with zero perceptible input latency and full focus trapping.
+- Add model selection, custom-agent invocation, recent-file search, and direct export or other bounded workspace actions when their existing contracts can be reused safely.
+- Review platform-specific shortcut labels and test the complete keyboard flow on each supported desktop platform.
 
-**Exit criteria:** `Ctrl+K` triggers instantly with zero layout lag; keyboard arrow navigation and selection are completely accessible; and all core app workflows can be navigated without touching the mouse.
+**Exit criteria:** the remaining search and action categories are implemented and the palette provides accessible, mouse-free navigation for the supported core workflows.
 
 ### 56. Add multi-root workspace support
 

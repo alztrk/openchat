@@ -44,6 +44,7 @@ import {
   shouldRefreshOAuthPlansOnFocus,
 } from '@/modules/providers/data/oauthPlanMonitor';
 import type { ThemePreference } from '@/modules/settings/components/GeneralSettingsSection';
+import type { SettingsSection } from '@/modules/settings/components/SettingsPage';
 import {
   type AppearancePreferences,
   getAppearanceCssValues,
@@ -54,6 +55,7 @@ import { localServiceClient } from '@/platform/local-service';
 import { unifiedStorage } from '@/platform/storage/unifiedStorage';
 import { getCurrentWindow, getVersion, invoke, isTauri, listen } from '@/platform/tauri';
 import { BrandMark } from '@/shell/BrandMark';
+import { CommandPalette } from '@/shell/CommandPalette';
 import { ConversationActionsHeader } from '@/shell/ConversationActionsHeader';
 import { type AppSurface, NavigationRail } from '@/shell/NavigationRail';
 import { TitleBar } from '@/shell/TitleBar';
@@ -126,6 +128,11 @@ export function App() {
     tab: 'models' | 'agents';
     requestId: number;
   }>({ tab: 'models', requestId: 0 });
+  const [settingsSectionRequest, setSettingsSectionRequest] = useState<{
+    section: SettingsSection;
+    requestId: number;
+  }>({ section: 'connections', requestId: 0 });
+  const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [appVersion, setAppVersion] = useState<string | null>(null);
   const activeSurface = surfaceHistory.surfaces[surfaceHistory.index] ?? 'chats';
   const [theme, setTheme] = useState<ThemePreference>(readThemePreference);
@@ -269,6 +276,11 @@ export function App() {
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        setIsCommandPaletteOpen(true);
+        return;
+      }
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'b') {
         const target = event.target;
         if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) return;
@@ -991,6 +1003,7 @@ export function App() {
         isSidebarOpen={isSidebarOpen}
         onGoBack={() => moveInHistory(-1)}
         onGoForward={() => moveInHistory(1)}
+        onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
         onSelectConversation={openSearchConversation}
         onToggleSidebar={activeSurface === 'chats' ? () => setIsSidebarOpen((open) => !open) : undefined}
       />
@@ -1198,6 +1211,7 @@ export function App() {
                   onOpenConversation={openStatisticsConversation}
                   onAppearanceChange={(updated) => setAppearance((current) => ({ ...current, ...updated }))}
                   onThemeChange={changeThemePreference}
+                  sectionRequest={settingsSectionRequest}
                   theme={theme}
                 />
               </Suspense>
@@ -1238,6 +1252,28 @@ export function App() {
         onOpenChange={closeTemporaryChatExitDialog}
         onSave={() => void saveTemporaryChatAndContinue()}
         open={temporaryExitIntent !== null}
+      />
+      <CommandPalette
+        isDark={isDark}
+        onNewChat={startWorkspaceChat}
+        onNavigate={navigate}
+        onOpenAgents={openAgentLibrary}
+        onOpenChange={setIsCommandPaletteOpen}
+        onOpenSettingsSection={(section) => {
+          requestTemporaryChatExit(() => {
+            setSettingsSectionRequest((current) => ({ section, requestId: current.requestId + 1 }));
+            if (activeSurface !== 'settings') navigateSurface('settings');
+          });
+        }}
+        onSelectConversation={(conversationId) => openSearchConversation(conversationId)}
+        onStartProjectChat={(projectId) => {
+          requestTemporaryChatExit(() => {
+            navigateSurface('chats');
+            useChatStore.getState().startNewChat(projectId);
+          });
+        }}
+        onToggleTheme={toggleTheme}
+        open={isCommandPaletteOpen}
       />
     </div>
   );
