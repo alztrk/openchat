@@ -169,7 +169,7 @@
 }
 
 .conversation-sidebar-shell {
-  --conversation-sidebar-width: min(var(--conversation-sidebar-custom-width, 280px), calc(100% - 60px));
+  --conversation-sidebar-width: min(var(--conversation-sidebar-custom-width, 280px), calc(100vw - 60px));
   display: flex;
   width: var(--conversation-sidebar-width);
   min-height: 0;
@@ -395,7 +395,7 @@
 
 @media (min-width: 1440px) {
   .conversation-sidebar-shell {
-    --conversation-sidebar-width: min(var(--conversation-sidebar-custom-width, 320px), calc(100% - 60px));
+    --conversation-sidebar-width: min(var(--conversation-sidebar-custom-width, 320px), calc(100vw - 60px));
   }
 
   .conversation-sidebar {
@@ -1418,7 +1418,7 @@ html[data-motion-input='keyboard'] .openchat-popover-enter[data-state='closed'] 
   }
 
   .conversation-sidebar-shell {
-    --conversation-sidebar-width: min(var(--conversation-sidebar-custom-width, 300px), calc(100% - 60px));
+    --conversation-sidebar-width: min(var(--conversation-sidebar-custom-width, 300px), calc(100vw - 52px));
   }
 
   .conversation-sidebar {
