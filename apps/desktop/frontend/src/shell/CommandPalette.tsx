@@ -35,11 +35,16 @@ import { useTranslation } from 'react-i18next';
 
 import { Dialog } from '@/design-system/Dialog';
 import type en from '@/localization/locales/en.json';
+import { providerNameForModel } from '@/modules/conversations/components/composerUtils';
 import { useChatStore } from '@/modules/conversations/stores/chatStore';
+import { modelRouteKey } from '@/modules/providers/data/modelPreferences';
 import type { SettingsSection } from '@/modules/settings/components/SettingsPage';
+import type { AssistantAgentSnapshot } from '@/modules/settings/data/assistantProfiles';
+import { snapshotAssistantProfile } from '@/modules/settings/data/assistantProfiles';
+import { useAssistantProfilesStore } from '@/modules/settings/stores/assistantProfilesStore';
 import type { AppSurface } from './NavigationRail';
 
-type PaletteCategory = 'actions' | 'navigation' | 'conversations' | 'projects' | 'settings';
+type PaletteCategory = 'actions' | 'navigation' | 'conversations' | 'projects' | 'models' | 'agents' | 'settings';
 type TranslationKey = keyof typeof en;
 
 interface PaletteItem {
@@ -48,6 +53,7 @@ interface PaletteItem {
   label: string;
   description?: string;
   searchTerms?: string[];
+  disabled?: boolean;
   icon: ReactNode;
   onSelect(): void;
 }
@@ -59,6 +65,8 @@ export interface CommandPaletteProps {
   onNewChat(): void;
   onNavigate(surface: AppSurface): void;
   onOpenAgents(): void;
+  onSelectModel(modelKey: string): void;
+  onStartChatWithAgent(agent: AssistantAgentSnapshot): void;
   onOpenSettingsSection(section: SettingsSection): void;
   onSelectConversation(conversationId: string): void;
   onStartProjectChat(projectId: string): void;
@@ -150,6 +158,8 @@ const categoryTranslationKeys: Record<PaletteCategory, TranslationKey> = {
   navigation: 'commandPaletteNavigation',
   conversations: 'chats',
   projects: 'projects',
+  models: 'models',
+  agents: 'assistantProfiles',
   settings: 'settings',
 };
 
@@ -158,6 +168,8 @@ export function CommandPalette({
   onNewChat,
   onNavigate,
   onOpenAgents,
+  onSelectModel,
+  onStartChatWithAgent,
   onOpenChange,
   onOpenSettingsSection,
   onSelectConversation,
@@ -170,12 +182,24 @@ export function CommandPalette({
   const projects = useChatStore((state) => state.projects);
   const serviceStatus = useChatStore((state) => state.serviceStatus);
   const projectsStatus = useChatStore((state) => state.projectsStatus);
+  const models = useChatStore((state) => state.models);
+  const modelStatus = useChatStore((state) => state.modelStatus);
+  const hiddenModelKeys = useChatStore((state) => state.hiddenModelKeys);
+  const isSending = useChatStore((state) => state.isSending);
+  const isUpdatingConversationModel = useChatStore((state) => state.isUpdatingConversationModel);
+  const profiles = useAssistantProfilesStore((state) => state.profiles);
+  const profilesLoadState = useAssistantProfilesStore((state) => state.loadState);
+  const initializeProfiles = useAssistantProfilesStore((state) => state.initialize);
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const optionRefs = useRef(new Map<string, HTMLButtonElement>());
   const listboxId = useId();
   const normalizedQuery = normalizeText(query.trim(), i18n.language);
+
+  useEffect(() => {
+    if (open && profilesLoadState === 'idle') initializeProfiles();
+  }, [initializeProfiles, open, profilesLoadState]);
 
   const items = useMemo<PaletteItem[]>(() => {
     const actions: PaletteItem[] = [
@@ -270,6 +294,41 @@ export function CommandPalette({
       onSelect: () => onStartProjectChat(project.id),
     }));
 
+    const modelItems =
+      normalizedQuery.length > 0 && modelStatus === 'ready'
+        ? models
+            .filter((model) => !hiddenModelKeys.includes(modelRouteKey(model)))
+            .map<PaletteItem>((model) => {
+              const provider = providerNameForModel(model, t);
+              return {
+                id: `model-${model.key}`,
+                category: 'models',
+                label: model.displayName,
+                description:
+                  isSending || isUpdatingConversationModel
+                    ? t('commandPaletteModelBusy')
+                    : t('commandPaletteSelectModel', { provider }),
+                searchTerms: [model.modelId, model.providerId, provider, 'model'],
+                disabled: isSending || isUpdatingConversationModel,
+                icon: <Cpu aria-hidden="true" size={17} />,
+                onSelect: () => onSelectModel(model.key),
+              };
+            })
+        : [];
+
+    const agentItems =
+      normalizedQuery.length > 0
+        ? profiles.map<PaletteItem>((profile) => ({
+            id: `agent-${profile.id}`,
+            category: 'agents',
+            label: profile.name,
+            description: t('commandPaletteStartWithAgent'),
+            searchTerms: ['agent', 'assistant', 'custom profile'],
+            icon: <WandSparkles aria-hidden="true" size={17} />,
+            onSelect: () => onStartChatWithAgent(snapshotAssistantProfile(profile)),
+          }))
+        : [];
+
     const settings = settingsSections.map<PaletteItem>((entry) => {
       const label = t(entry.translationKey);
       return {
@@ -283,10 +342,25 @@ export function CommandPalette({
       };
     });
 
-    return [...actions, ...navigation, ...conversationItems, ...projectItems, ...settings];
+    return [
+      ...actions,
+      ...navigation,
+      ...conversationItems,
+      ...projectItems,
+      ...modelItems,
+      ...agentItems,
+      ...settings,
+    ];
   }, [
     conversations,
     isDark,
+    hiddenModelKeys,
+    isSending,
+    isUpdatingConversationModel,
+    modelStatus,
+    models,
+    onSelectModel,
+    onStartChatWithAgent,
     normalizedQuery,
     onNewChat,
     onNavigate,
@@ -296,6 +370,7 @@ export function CommandPalette({
     onStartProjectChat,
     onToggleTheme,
     projects,
+    profiles,
     t,
   ]);
 
@@ -303,8 +378,17 @@ export function CommandPalette({
     () => rankPaletteItems(items, normalizedQuery, i18n.language),
     [i18n.language, items, normalizedQuery],
   );
-  const isLoading = serviceStatus === 'loading' || projectsStatus === 'loading';
-  const hasLoadError = serviceStatus === 'error' || projectsStatus === 'error';
+  const isLoading =
+    serviceStatus === 'loading' ||
+    projectsStatus === 'loading' ||
+    modelStatus === 'loading' ||
+    (open && profilesLoadState === 'idle') ||
+    profilesLoadState === 'loading' ||
+    (normalizedQuery.length > 0 && modelStatus === 'idle');
+  const hasRecentDataLoadError = serviceStatus === 'error' || projectsStatus === 'error';
+  const hasSearchDataLoadError =
+    hasRecentDataLoadError ||
+    (normalizedQuery.length > 0 && (profilesLoadState === 'error' || modelStatus === 'error'));
   const selectedItem = filteredItems[selectedIndex];
 
   useEffect(() => {
@@ -320,8 +404,12 @@ export function CommandPalette({
   }, [selectedItem]);
 
   useEffect(() => {
-    setSelectedIndex((current) => Math.min(current, Math.max(filteredItems.length - 1, 0)));
-  }, [filteredItems.length]);
+    setSelectedIndex((current) => {
+      const currentItem = filteredItems[current];
+      if (currentItem && !currentItem.disabled) return current;
+      return filteredItems.findIndex((item) => !item.disabled);
+    });
+  }, [filteredItems]);
 
   const selectItem = (item: PaletteItem) => {
     onOpenChange(false);
@@ -331,13 +419,11 @@ export function CommandPalette({
   const handleInputKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
     if (event.key === 'ArrowDown') {
       event.preventDefault();
-      setSelectedIndex((current) => (filteredItems.length === 0 ? 0 : (current + 1) % filteredItems.length));
+      setSelectedIndex((current) => nextEnabledIndex(filteredItems, current, 1));
     } else if (event.key === 'ArrowUp') {
       event.preventDefault();
-      setSelectedIndex((current) =>
-        filteredItems.length === 0 ? 0 : (current - 1 + filteredItems.length) % filteredItems.length,
-      );
-    } else if (event.key === 'Enter' && selectedItem) {
+      setSelectedIndex((current) => nextEnabledIndex(filteredItems, current, -1));
+    } else if (event.key === 'Enter' && selectedItem && !selectedItem.disabled) {
       event.preventDefault();
       selectItem(selectedItem);
     }
@@ -392,12 +478,22 @@ export function CommandPalette({
             {t('commandPaletteLoading')}
           </p>
         ) : null}
-        {hasLoadError && filteredItems.length === 0 ? (
+        {normalizedQuery.length > 0 && profilesLoadState === 'error' ? (
+          <p aria-live="polite" className="text-xs text-destructive" role="status">
+            {t('assistantProfilesLoadFailed')}
+          </p>
+        ) : null}
+        {modelStatus === 'error' && normalizedQuery.length > 0 ? (
+          <p aria-live="polite" className="text-xs text-destructive" role="status">
+            {t('commandPaletteModelsUnavailable')}
+          </p>
+        ) : null}
+        {hasRecentDataLoadError ? (
           <p aria-live="polite" className="text-sm text-secondary-text" role="status">
             {t('commandPaletteRecentUnavailable')}
           </p>
         ) : null}
-        {filteredItems.length === 0 && !hasLoadError ? (
+        {filteredItems.length === 0 && !isLoading && !hasSearchDataLoadError ? (
           <p aria-live="polite" className="py-8 text-center text-sm text-secondary-text" role="status">
             {t('commandPaletteNoResults')}
           </p>
@@ -428,12 +524,16 @@ export function CommandPalette({
                           id={`${listboxId}-${itemIndex}`}
                           key={item.id}
                           onClick={() => selectItem(item)}
-                          onMouseMove={() => setSelectedIndex(itemIndex)}
+                          onMouseMove={() => {
+                            if (!item.disabled) setSelectedIndex(itemIndex);
+                          }}
                           ref={(element) => {
                             if (element) optionRefs.current.set(item.id, element);
                             else optionRefs.current.delete(item.id);
                           }}
                           role="option"
+                          aria-disabled={item.disabled || undefined}
+                          disabled={item.disabled}
                           type="button"
                         >
                           <span className="shrink-0">{item.icon}</span>
@@ -461,6 +561,15 @@ export function CommandPalette({
       </div>
     </Dialog>
   );
+}
+
+function nextEnabledIndex(items: readonly PaletteItem[], currentIndex: number, direction: 1 | -1): number {
+  if (items.length === 0) return 0;
+  for (let offset = 1; offset <= items.length; offset += 1) {
+    const candidate = (((currentIndex + direction * offset) % items.length) + items.length) % items.length;
+    if (!items[candidate]?.disabled) return candidate;
+  }
+  return currentIndex;
 }
 
 function rankPaletteItems(items: PaletteItem[], query: string, language: string): PaletteItem[] {

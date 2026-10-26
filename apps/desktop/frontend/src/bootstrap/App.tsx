@@ -1258,6 +1258,11 @@ export function App() {
         onNewChat={startWorkspaceChat}
         onNavigate={navigate}
         onOpenAgents={openAgentLibrary}
+        onSelectModel={(modelKey) => {
+          const chat = useChatStore.getState();
+          void chat.selectConversationModel(modelKey, chat.activeConversationId ?? undefined);
+        }}
+        onStartChatWithAgent={startWorkspaceAgentChat}
         onOpenChange={setIsCommandPaletteOpen}
         onOpenSettingsSection={(section) => {
           requestTemporaryChatExit(() => {
