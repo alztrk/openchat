@@ -590,21 +590,8 @@ pub(crate) fn sync_roots(
                 });
                 continue;
             }
-            match fs::canonicalize(entry.path()) {
-                Ok(path) if path.starts_with(root) => {}
-                Ok(_) => {
-                    record_index_failure(
-                        &mut failed,
-                        &mut error_details,
-                        "A file resolved outside the selected project folder.",
-                    );
-                    continue;
-                }
-                Err(error) => {
-                    record_index_failure(&mut failed, &mut error_details, error);
-                    continue;
-                }
-            }
+            // The walker does not follow links, and the opened directory capability confines
+            // this read to the selected root without resolving every file through an ambient path.
             let Some(read_limit) = bounded_index_read_limit(scanned_bytes, metadata.len()) else {
                 truncated = true;
                 set_first_diagnostic(
@@ -797,9 +784,11 @@ pub(crate) fn sync_roots(
                     file.symbols_indexed
                 ])
                 .map_err(unavailable_error_with_details)?;
-            delete_symbols_by_path
-                .execute(params![project_id, file.path])
-                .map_err(unavailable_error_with_details)?;
+            if !reset_project {
+                delete_symbols_by_path
+                    .execute(params![project_id, file.path])
+                    .map_err(unavailable_error_with_details)?;
+            }
             if let Some(symbols) = file.symbols.as_deref() {
                 for symbol in symbols {
                     insert_symbol
