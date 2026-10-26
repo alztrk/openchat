@@ -7,6 +7,8 @@ import { cn } from '@/shared/utils/cn';
 export interface DialogProps {
   /** Additional content classes. */
   className?: string;
+  /** Width preset; defaults to `default` and keeps `className` available for specialized layouts. */
+  size?: DialogSize;
   /** Whether the dialog is currently open. */
   open: boolean;
   /** Called when Escape requests a state change. */
@@ -19,15 +21,22 @@ export interface DialogProps {
   children: ReactNode;
 }
 
+export type DialogSize = 'default' | 'wide';
+
+const sizeClasses: Record<DialogSize, string> = {
+  default: 'w-dialog',
+  wide: 'w-dialog-wide',
+};
+
 /** Renders a modal with managed focus, Escape dismissal, and an accessible title. */
-export function Dialog({ children, className, initialFocusRef, onOpenChange, open, title }: DialogProps) {
+export function Dialog({ children, className, initialFocusRef, onOpenChange, open, size = 'default', title }: DialogProps) {
   return (
     <DialogPrimitive.Root onOpenChange={onOpenChange} open={open}>
       <DialogPrimitive.Portal>
         <DialogPrimitive.Overlay className="openchat-dialog-overlay" />
         <DialogPrimitive.Content
           aria-describedby={undefined}
-          className={cn('openchat-dialog w-dialog', className)}
+          className={cn('openchat-dialog', sizeClasses[size], className)}
           onOpenAutoFocus={(event) => {
             if (!initialFocusRef?.current) return;
             event.preventDefault();

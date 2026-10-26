@@ -1,11 +1,13 @@
-import { type ButtonHTMLAttributes, forwardRef } from 'react';
+import { LoaderCircle } from 'lucide-react';
+import { type ButtonHTMLAttributes, forwardRef, type ReactNode } from 'react';
 
 import { cn } from '@/shared/utils/cn';
 
 /** Semantic visual treatment available to shared buttons. */
-type ButtonVariant = 'primary' | 'secondary' | 'elevated' | 'ghost' | 'destructive';
-/** Supported button density and shape presets. */
-type ButtonSize = 'default' | 'small' | 'icon';
+export type ButtonVariant = 'primary' | 'secondary' | 'elevated' | 'ghost' | 'destructive';
+/** Supported button density and shape presets. The small density keeps the 40px touch target. */
+export type ButtonSize = 'default' | 'small' | 'icon';
+export type ButtonShape = 'rounded' | 'pill';
 
 /** Native button attributes with the design system's visual variants. */
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -13,6 +15,12 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: ButtonVariant;
   /** Preset dimensions; defaults to `default`. */
   size?: ButtonSize;
+  /** Corner treatment for controls such as compact filter chips. */
+  shape?: ButtonShape;
+  /** Announces a pending action and disables the button until it finishes. */
+  loading?: boolean;
+  /** Replaces the normal button content while loading. Use `null` for icon-only buttons. */
+  loadingContent?: ReactNode;
 }
 
 const variantClasses: Record<ButtonVariant, string> = {
@@ -29,22 +37,52 @@ const sizeClasses: Record<ButtonSize, string> = {
   icon: 'size-10 p-0',
 };
 
+const shapeClasses: Record<ButtonShape, string> = {
+  rounded: 'rounded-button',
+  pill: 'rounded-full',
+};
+
 /** Renders a keyboard-accessible native button using shared OpenChat styles. */
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
-  { className, variant = 'secondary', size = 'default', type = 'button', ...props },
+  {
+    'aria-busy': ariaBusy,
+    className,
+    disabled,
+    loading = false,
+    loadingContent,
+    variant = 'secondary',
+    size = 'default',
+    shape = 'rounded',
+    type = 'button',
+    children,
+    ...props
+  },
   ref,
 ) {
   return (
     <button
+      aria-busy={loading ? true : ariaBusy}
       className={cn(
-        'openchat-button inline-flex items-center justify-center gap-2 rounded-button font-medium transition-colors duration-quick focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-45',
+        'openchat-button inline-flex items-center justify-center gap-2 font-medium transition-colors duration-quick focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-45',
         variantClasses[variant],
         sizeClasses[size],
+        shapeClasses[shape],
         className,
       )}
+      data-loading={loading || undefined}
+      disabled={disabled || loading}
       ref={ref}
       type={type}
       {...props}
-    />
+    >
+      {loading ? (
+        <>
+          <LoaderCircle aria-hidden="true" className="shrink-0 animate-spin" size={16} />
+          {loadingContent === undefined ? children : loadingContent}
+        </>
+      ) : (
+        children
+      )}
+    </button>
   );
 });

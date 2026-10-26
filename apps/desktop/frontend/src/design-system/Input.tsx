@@ -1,55 +1,95 @@
-import { type InputHTMLAttributes, useId } from 'react';
+import type { InputHTMLAttributes } from 'react';
+import { forwardRef } from 'react';
 
 import { cn } from '@/shared/utils/cn';
+import { Field, type FieldControlProps, type FieldLayout } from './Field';
 
-/** Native input attributes with optional visible label and inline error feedback. */
+export type InputAppearance = 'default' | 'bare';
+export type InputDensity = 'default' | 'compact';
+
+/** Native input attributes with optional field metadata and display presets. */
 export interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
-  /** Visible label; provide an accessible name with native ARIA attributes when omitted. */
-  label?: string;
+  /** Visual treatment; `bare` is intended for inputs embedded in a toolbar or composite control. */
+  appearance?: InputAppearance;
+  /** Input density while retaining a usable touch target on narrow screens. */
+  density?: InputDensity;
+  /** Helper text associated with the input for visual and assistive-technology users. */
+  description?: string;
   /** Error text announced through the input's described-by relationship. */
   error?: string;
+  /** Classes applied to the field wrapper. */
+  fieldClassName?: string;
+  /** Field label and control arrangement. Use `none` when a surrounding control supplies semantics. */
+  fieldLayout?: FieldLayout | 'none';
+  /** Visible label; provide an accessible name with native ARIA attributes when omitted. */
+  label?: string;
 }
 
-/** Renders a labeled native input and keeps helper and error descriptions associated. */
-export function Input({
-  'aria-describedby': describedBy,
-  'aria-invalid': ariaInvalid,
-  className,
-  error,
-  id,
-  label,
-  ...props
-}: InputProps) {
-  const generatedId = useId();
-  const inputId = id ?? generatedId;
-  const errorId = `${inputId}-error`;
-  const descriptionIds = [describedBy, error ? errorId : undefined]
-    .filter((descriptionId): descriptionId is string => Boolean(descriptionId))
-    .join(' ');
+type InputControlProps = Omit<FieldControlProps, 'id' | 'labelId'> & { id?: string };
+
+const appearanceClasses: Record<InputAppearance, string> = {
+  default: 'rounded-control border border-control-border bg-surface',
+  bare: 'rounded-control border border-transparent bg-transparent',
+};
+
+const densityClasses: Record<InputDensity, string> = {
+  default: 'min-h-10 px-3 py-2',
+  compact: 'min-h-10 px-2 py-1 text-sm sm:min-h-8',
+};
+
+/** Renders a labeled native input and keeps helper, error, and ref behavior shared. */
+export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
+  {
+    'aria-describedby': describedBy,
+    'aria-invalid': ariaInvalid,
+    appearance = 'default',
+    className,
+    density = 'default',
+    description,
+    error,
+    fieldClassName,
+    fieldLayout = 'stacked',
+    id,
+    label,
+    ...props
+  },
+  ref,
+) {
+  const renderInput = (controlProps: InputControlProps) => (
+        <input
+          {...props}
+          {...controlProps}
+          className={cn(
+            'w-full text-text outline-none placeholder:text-secondary-text focus-visible:ring-2 focus-visible:ring-focus disabled:cursor-not-allowed disabled:opacity-50',
+            appearanceClasses[appearance],
+            densityClasses[density],
+            error && 'border-destructive',
+            className,
+          )}
+          ref={ref}
+        />
+  );
+
+  if (fieldLayout === 'none') {
+    return renderInput({
+      id,
+      'aria-describedby': describedBy,
+      'aria-invalid': error ? true : ariaInvalid,
+    });
+  }
 
   return (
-    <div className="grid gap-2">
-      {label ? (
-        <label className="text-sm font-medium text-text" htmlFor={inputId}>
-          {label}
-        </label>
-      ) : null}
-      <input
-        id={inputId}
-        aria-describedby={descriptionIds || undefined}
-        aria-invalid={error ? true : ariaInvalid}
-        className={cn(
-          'min-h-10 w-full rounded-control border border-control-border bg-surface px-3 py-2 text-text outline-none placeholder:text-secondary-text focus-visible:ring-2 focus-visible:ring-focus disabled:cursor-not-allowed disabled:opacity-50',
-          error && 'border-destructive',
-          className,
-        )}
-        {...props}
-      />
-      {error ? (
-        <p className="text-sm text-destructive" id={errorId} role="alert">
-          {error}
-        </p>
-      ) : null}
-    </div>
+    <Field
+      aria-describedby={describedBy}
+      aria-invalid={ariaInvalid}
+      className={fieldClassName}
+      description={description}
+      error={error}
+      id={id}
+      label={label}
+      layout={fieldLayout}
+    >
+      {renderInput}
+    </Field>
   );
-}
+});
