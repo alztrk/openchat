@@ -6,12 +6,6 @@ import { Button, Dialog, Input, Select, Switch } from '@/design-system';
 import type { CustomProviderSummary } from '@/modules/providers/data/providerCredentials';
 import { containsAsciiControlCharacters } from '@/shared/utils/textValidation';
 
-const reasoningLevelLabels = {
-  low: 'reasoningLow',
-  medium: 'reasoningMedium',
-  high: 'reasoningHigh',
-} as const;
-
 /** Values submitted by the custom-provider editor for native validation and storage. */
 export interface CustomProviderDraft {
   id: `custom_${string}`;
@@ -19,8 +13,8 @@ export interface CustomProviderDraft {
   baseUrl: string;
   protocol: 'openAi' | 'anthropic';
   allowInsecureHttp: boolean;
-  reasoningMode: 'none' | 'reasoningEffort' | 'chatTemplateThinking';
-  reasoningLevels: string[];
+  reasoningEfforts: string[];
+  enableThinking: boolean;
   apiKey: string;
 }
 
@@ -68,8 +62,8 @@ export function CustomProviderDialog({
     | null
   >(null);
   const [allowInsecureHttp, setAllowInsecureHttp] = useState(false);
-  const [reasoningMode, setReasoningMode] = useState<CustomProviderDraft['reasoningMode']>('none');
-  const [reasoningLevels, setReasoningLevels] = useState<string[]>([]);
+  const [reasoningEffortsText, setReasoningEffortsText] = useState('');
+  const [enableThinking, setEnableThinking] = useState(false);
 
   useEffect(() => {
     if (!open) {
@@ -80,8 +74,8 @@ export function CustomProviderDialog({
     setBaseUrl(provider?.baseUrl ?? '');
     setProtocol(provider?.protocol ?? 'openAi');
     setAllowInsecureHttp(provider?.allowInsecureHttp ?? false);
-    setReasoningMode(provider?.reasoningMode ?? 'none');
-    setReasoningLevels(provider?.reasoningLevels ?? []);
+    setReasoningEffortsText(provider?.reasoningEfforts.join(', ') ?? '');
+    setEnableThinking(provider?.enableThinking ?? false);
     setApiKey('');
     setErrorKey(null);
   }, [open, provider]);
@@ -108,7 +102,18 @@ export function CustomProviderDialog({
       setErrorKey('apiKeyInvalidFormat');
       return;
     }
-    if (protocol === 'openAi' && reasoningMode === 'reasoningEffort' && reasoningLevels.length === 0) {
+    const reasoningEfforts = [
+      ...new Set(
+        reasoningEffortsText
+          .split(',')
+          .map((value) => value.trim())
+          .filter(Boolean),
+      ),
+    ];
+    if (
+      protocol === 'openAi' &&
+      (reasoningEfforts.length > 16 || reasoningEfforts.some((value) => !/^[a-zA-Z0-9_-]{1,64}$/.test(value)))
+    ) {
       setErrorKey('customProviderReasoningLevelRequired');
       return;
     }
@@ -118,8 +123,8 @@ export function CustomProviderDialog({
       baseUrl: normalizedUrl,
       protocol,
       allowInsecureHttp: isHttpUrl(normalizedUrl) && allowInsecureHttp,
-      reasoningMode: protocol === 'openAi' ? reasoningMode : 'none',
-      reasoningLevels: reasoningMode === 'reasoningEffort' ? reasoningLevels : [],
+      reasoningEfforts: protocol === 'openAi' ? reasoningEfforts : [],
+      enableThinking: protocol === 'openAi' && enableThinking,
       apiKey: normalizedApiKey,
     });
   };
@@ -152,7 +157,10 @@ export function CustomProviderDialog({
           onChange={(event) => {
             const nextProtocol = event.target.value === 'anthropic' ? 'anthropic' : 'openAi';
             setProtocol(nextProtocol);
-            if (nextProtocol === 'anthropic') setReasoningMode('none');
+            if (nextProtocol === 'anthropic') {
+              setReasoningEffortsText('');
+              setEnableThinking(false);
+            }
             setErrorKey(null);
           }}
           options={[
@@ -167,49 +175,28 @@ export function CustomProviderDialog({
               <h3 className="text-sm font-semibold text-text">{t('customProviderReasoningMode')}</h3>
               <p className="text-sm text-secondary-text">{t('customProviderReasoningDescription')}</p>
             </div>
-            <Select
+            <Input
               disabled={saving}
-              label={t('customProviderReasoningMode')}
+              label={t('customProviderReasoningEffort')}
+              maxLength={1100}
               onChange={(event) => {
-                const nextMode = event.currentTarget.value;
-                setReasoningMode(
-                  nextMode === 'reasoningEffort' || nextMode === 'chatTemplateThinking' ? nextMode : 'none',
-                );
+                setReasoningEffortsText(event.target.value);
                 setErrorKey(null);
               }}
-              options={[
-                { value: 'none', label: t('customProviderReasoningDisabled') },
-                { value: 'reasoningEffort', label: t('customProviderReasoningEffort') },
-                { value: 'chatTemplateThinking', label: t('customProviderReasoningTemplate') },
-              ]}
-              value={reasoningMode}
+              placeholder={t('customProviderReasoningEffortsPlaceholder')}
+              value={reasoningEffortsText}
             />
-            {reasoningMode === 'reasoningEffort' ? (
-              <fieldset className="grid gap-2">
-                <legend className="text-sm font-medium text-text">{t('customProviderReasoningLevels')}</legend>
-                {(['low', 'medium', 'high'] as const).map((level) => {
-                  const labelId = `custom-provider-reasoning-${level}`;
-                  return (
-                    <div className="flex items-center justify-between gap-3" key={level}>
-                      <span className="text-sm text-text" id={labelId}>
-                        {t(reasoningLevelLabels[level])}
-                      </span>
-                      <Switch
-                        aria-labelledby={labelId}
-                        checked={reasoningLevels.includes(level)}
-                        disabled={saving}
-                        onCheckedChange={(checked) => {
-                          setReasoningLevels((current) =>
-                            checked ? [...current, level] : current.filter((item) => item !== level),
-                          );
-                          setErrorKey(null);
-                        }}
-                      />
-                    </div>
-                  );
-                })}
-              </fieldset>
-            ) : null}
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-sm text-text" id="custom-provider-thinking-label">
+                {t('customProviderReasoningTemplate')}
+              </span>
+              <Switch
+                aria-labelledby="custom-provider-thinking-label"
+                checked={enableThinking}
+                disabled={saving}
+                onCheckedChange={setEnableThinking}
+              />
+            </div>
           </div>
         ) : null}
         <Input

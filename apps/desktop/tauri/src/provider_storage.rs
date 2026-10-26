@@ -25,8 +25,7 @@ const MAXIMUM_PROVIDER_ID_BYTES: usize = 64;
 const MAXIMUM_PROVIDER_NAME_BYTES: usize = 320;
 const MAXIMUM_PROVIDER_URL_BYTES: usize = 2048;
 const MAXIMUM_PROVIDER_PROTOCOL_BYTES: usize = 16;
-const MAXIMUM_REASONING_MODE_BYTES: usize = 32;
-const MAXIMUM_REASONING_LEVELS_BYTES: usize = 32;
+const MAXIMUM_REASONING_EFFORTS_BYTES: usize = 1100;
 const MAXIMUM_DIALOG_COPY_FIELD_BYTES: usize = 1024;
 const COMPATIBLE_PROVIDER_IDS: [&str; 16] = [
     "gemini",
@@ -161,12 +160,18 @@ pub struct CustomProviderConfig {
     /// Explicit user approval for sending provider requests over unencrypted HTTP.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub allow_insecure_http: Option<bool>,
-    /// Reasoning request format selected for this provider's OpenAI-compatible models.
-    #[serde(default)]
-    pub reasoning_mode: String,
     /// Reasoning effort values supported by this provider's models.
     #[serde(default)]
-    pub reasoning_levels: Vec<String>,
+    pub reasoning_efforts: Vec<String>,
+    /// Whether vLLM-style chat template thinking should be enabled.
+    #[serde(default)]
+    pub enable_thinking: bool,
+    /// Legacy field retained to migrate configurations written by older versions.
+    #[serde(default, rename = "reasoningMode", skip_serializing)]
+    legacy_reasoning_mode: Option<String>,
+    /// Legacy field retained to migrate configurations written by older versions.
+    #[serde(default, rename = "reasoningLevels", skip_serializing)]
+    legacy_reasoning_levels: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -178,8 +183,9 @@ pub(crate) struct SaveCustomProviderInput {
     base_url: BoundedText<MAXIMUM_PROVIDER_URL_BYTES>,
     protocol: BoundedText<MAXIMUM_PROVIDER_PROTOCOL_BYTES>,
     allow_insecure_http: bool,
-    reasoning_mode: Option<BoundedText<MAXIMUM_REASONING_MODE_BYTES>>,
-    reasoning_levels: Option<BoundedText<MAXIMUM_REASONING_LEVELS_BYTES>>,
+    reasoning_efforts: Option<BoundedText<MAXIMUM_REASONING_EFFORTS_BYTES>>,
+    #[serde(default)]
+    enable_thinking: bool,
     api_key: Option<BoundedText<MAXIMUM_KEY_BYTES>>,
     dialog_copy: HttpProviderDialogCopy,
 }
@@ -237,8 +243,8 @@ pub struct CustomProviderSummary {
     pub base_url: String,
     pub protocol: String,
     pub allow_insecure_http: bool,
-    pub reasoning_mode: String,
-    pub reasoning_levels: Vec<String>,
+    pub reasoning_efforts: Vec<String>,
+    pub enable_thinking: bool,
     pub is_configured: bool,
     pub key_suffix: Option<String>,
 }
@@ -417,8 +423,8 @@ pub async fn save_custom_provider(
         base_url,
         protocol,
         allow_insecure_http,
-        reasoning_mode,
-        reasoning_levels,
+        reasoning_efforts,
+        enable_thinking,
         api_key,
         dialog_copy,
     } = input;
@@ -430,8 +436,8 @@ pub async fn save_custom_provider(
         base_url.into_inner(),
         protocol.into_inner(),
         Some(allow_insecure_http),
-        reasoning_mode.map(BoundedText::into_inner),
-        reasoning_levels.map(BoundedText::into_inner),
+        reasoning_efforts.map(BoundedText::into_inner),
+        enable_thinking,
     )?;
     if requires_native_http_approval(&config) {
         let _confirmation_guard = HttpProviderConfirmationGuard::acquire()?;
@@ -526,15 +532,7 @@ fn stored_custom_provider_matches_destination(
     if stored.id != requested.id {
         return false;
     }
-    let Ok(stored) = validated_custom_provider(
-        stored.id,
-        stored.name,
-        stored.base_url,
-        stored.protocol,
-        stored.allow_insecure_http,
-        Some(stored.reasoning_mode),
-        Some(stored.reasoning_levels.join(",")),
-    ) else {
+    let Ok(stored) = validated_stored_custom_provider(stored) else {
         return false;
     };
     stored.base_url == requested.base_url && stored.protocol == requested.protocol
@@ -658,8 +656,8 @@ fn validated_custom_provider(
     base_url: String,
     protocol: String,
     allow_insecure_http: Option<bool>,
-    reasoning_mode: Option<String>,
-    reasoning_levels: Option<String>,
+    reasoning_efforts: Option<String>,
+    enable_thinking: bool,
 ) -> Result<CustomProviderConfig, ProviderStorageError> {
     let name = name.trim();
     let base_url = normalized_base_url(&base_url).ok_or_else(ProviderStorageError::invalid)?;
@@ -673,16 +671,15 @@ fn validated_custom_provider(
     if !matches!(protocol.as_str(), "openAi" | "anthropic") {
         return Err(ProviderStorageError::invalid());
     }
+    if protocol == "anthropic" && enable_thinking {
+        return Err(ProviderStorageError::invalid());
+    }
     if !is_custom_provider_id(&id) {
         return Err(ProviderStorageError::invalid());
     }
-    let reasoning_mode = reasoning_mode
-        .filter(|mode| !mode.is_empty())
-        .unwrap_or_else(|| "none".to_owned());
-    let reasoning_levels = parse_custom_reasoning_levels(
+    let reasoning_efforts = parse_custom_reasoning_efforts(
         &protocol,
-        &reasoning_mode,
-        reasoning_levels.as_deref().unwrap_or_default(),
+        reasoning_efforts.as_deref().unwrap_or_default(),
     )?;
     Ok(CustomProviderConfig {
         id,
@@ -694,31 +691,57 @@ fn validated_custom_provider(
         } else {
             Some(false)
         },
-        reasoning_mode,
-        reasoning_levels,
+        reasoning_efforts,
+        enable_thinking,
+        legacy_reasoning_mode: None,
+        legacy_reasoning_levels: Vec::new(),
     })
 }
 
-fn parse_custom_reasoning_levels(
+fn validated_stored_custom_provider(
+    stored: CustomProviderConfig,
+) -> Result<CustomProviderConfig, ProviderStorageError> {
+    let (reasoning_efforts, enable_thinking) = match stored.legacy_reasoning_mode.as_deref() {
+        Some("reasoningEffort") if stored.reasoning_efforts.is_empty() => (
+            stored.legacy_reasoning_levels.clone(),
+            stored.enable_thinking,
+        ),
+        Some("chatTemplateThinking") => (stored.reasoning_efforts.clone(), true),
+        _ => (stored.reasoning_efforts.clone(), stored.enable_thinking),
+    };
+    validated_custom_provider(
+        stored.id,
+        stored.name,
+        stored.base_url,
+        stored.protocol,
+        stored.allow_insecure_http,
+        Some(reasoning_efforts.join(",")),
+        enable_thinking,
+    )
+}
+
+fn parse_custom_reasoning_efforts(
     protocol: &str,
-    reasoning_mode: &str,
-    levels: &str,
+    efforts: &str,
 ) -> Result<Vec<String>, ProviderStorageError> {
-    match (protocol, reasoning_mode) {
-        (_, "none") => return Ok(Vec::new()),
-        ("openAi", "reasoningEffort") => {}
-        ("openAi", "chatTemplateThinking") => return Ok(Vec::new()),
-        _ => return Err(ProviderStorageError::invalid()),
+    if protocol != "openAi" {
+        if efforts.trim().is_empty() {
+            return Ok(Vec::new());
+        }
+        return Err(ProviderStorageError::invalid());
     }
-    let values = levels
+    let values = efforts
         .split(',')
+        .map(str::trim)
         .filter(|level| !level.is_empty())
         .collect::<Vec<_>>();
-    if values.is_empty()
-        || values.len() > 3
-        || values
-            .iter()
-            .any(|level| !matches!(*level, "low" | "medium" | "high"))
+    if values.len() > 16
+        || values.iter().any(|level| {
+            level.len() > 64
+                || !level
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || b"_-".contains(&byte))
+        })
     {
         return Err(ProviderStorageError::invalid());
     }
@@ -774,15 +797,7 @@ fn load_custom_providers(
             if config.id != id {
                 return Err(ProviderStorageError::invalid());
             }
-            let validated = validated_custom_provider(
-                config.id,
-                config.name,
-                config.base_url,
-                config.protocol,
-                config.allow_insecure_http,
-                Some(config.reasoning_mode),
-                Some(config.reasoning_levels.join(",")),
-            )?;
+            let validated = validated_stored_custom_provider(config)?;
             Ok(custom_provider_summary(&validated, values))
         })
         .collect::<Result<Vec<_>, ProviderStorageError>>()?;
@@ -802,8 +817,8 @@ fn custom_provider_summary(
         base_url: config.base_url.clone(),
         protocol: config.protocol.clone(),
         allow_insecure_http: config.allow_insecure_http.unwrap_or(false),
-        reasoning_mode: config.reasoning_mode.clone(),
-        reasoning_levels: config.reasoning_levels.clone(),
+        reasoning_efforts: config.reasoning_efforts.clone(),
+        enable_thinking: config.enable_thinking,
         is_configured: key.is_some_and(|value| !value.trim().is_empty()),
         key_suffix: key.and_then(key_suffix),
     }
@@ -851,7 +866,7 @@ mod tests {
             protocol.to_owned(),
             None,
             None,
-            None,
+            false,
         )
         .expect("test provider configuration should be valid")
     }
@@ -884,6 +899,7 @@ mod tests {
         assert_text_boundary::<MAXIMUM_PROVIDER_PROTOCOL_BYTES>();
         assert_text_boundary::<MAXIMUM_PROVIDER_URL_BYTES>();
         assert_text_boundary::<MAXIMUM_DIALOG_COPY_FIELD_BYTES>();
+        assert_text_boundary::<MAXIMUM_REASONING_EFFORTS_BYTES>();
     }
 
     #[test]
@@ -1006,7 +1022,7 @@ mod tests {
             "openAi".to_owned(),
             Some(false),
             None,
-            None,
+            false,
         )
         .expect_err("new HTTP providers require explicit approval");
         assert_eq!(error.code, "custom_provider_http_approval_required");
@@ -1018,7 +1034,7 @@ mod tests {
             "openAi".to_owned(),
             Some(true),
             None,
-            None,
+            false,
         )
         .expect("explicit HTTP approval should preserve local provider support");
         assert_eq!(allowed.allow_insecure_http, Some(true));
@@ -1072,8 +1088,10 @@ mod tests {
             base_url: "https://provider.example/v1".to_owned(),
             protocol: "openAi".to_owned(),
             allow_insecure_http: None,
-            reasoning_mode: "none".to_owned(),
-            reasoning_levels: Vec::new(),
+            reasoning_efforts: Vec::new(),
+            enable_thinking: false,
+            legacy_reasoning_mode: None,
+            legacy_reasoning_levels: Vec::new(),
         })
         .expect("test configuration should serialize");
 

@@ -163,7 +163,7 @@ pub(crate) async fn send_temporary_message(
             &provider_request,
             &provider_messages,
             provider_id,
-            route.custom_reasoning_mode.as_deref(),
+            route.custom_enable_thinking,
         )
     };
     if route.is_copilot && route.uses_responses_api {
@@ -642,7 +642,7 @@ pub async fn send_message(
                 &provider_request,
                 &current_messages,
                 provider_id,
-                route.custom_reasoning_mode.as_deref(),
+                route.custom_enable_thinking,
             )
         };
         if route.is_copilot && route.uses_responses_api {
@@ -1048,7 +1048,7 @@ async fn stream_conversation(context: StreamConversationContext<'_>) -> Result<(
                 provider_request,
                 messages,
                 provider_id,
-                route.custom_reasoning_mode.as_deref(),
+                route.custom_enable_thinking,
             )
         };
         if route.is_copilot && route.uses_responses_api {

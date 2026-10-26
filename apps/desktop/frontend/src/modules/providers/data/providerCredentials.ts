@@ -63,8 +63,8 @@ export interface CustomProviderSummary {
   baseUrl: string;
   protocol: 'openAi' | 'anthropic';
   allowInsecureHttp: boolean;
-  reasoningMode: 'none' | 'reasoningEffort' | 'chatTemplateThinking';
-  reasoningLevels: string[];
+  reasoningEfforts: string[];
+  enableThinking: boolean;
   isConfigured: boolean;
   keySuffix: string | null;
 }
@@ -125,11 +125,9 @@ export async function loadProviderCredentialStatus(): Promise<ProviderCredential
       typeof item.baseUrl !== 'string' ||
       (item.protocol !== 'openAi' && item.protocol !== 'anthropic') ||
       typeof item.allowInsecureHttp !== 'boolean' ||
-      (item.reasoningMode !== 'none' &&
-        item.reasoningMode !== 'reasoningEffort' &&
-        item.reasoningMode !== 'chatTemplateThinking') ||
-      !Array.isArray(item.reasoningLevels) ||
-      !item.reasoningLevels.every((level) => typeof level === 'string') ||
+      !Array.isArray(item.reasoningEfforts) ||
+      !item.reasoningEfforts.every((level) => typeof level === 'string') ||
+      typeof item.enableThinking !== 'boolean' ||
       typeof item.isConfigured !== 'boolean' ||
       !isNullableString(item.keySuffix)
     ) {
@@ -142,8 +140,8 @@ export async function loadProviderCredentialStatus(): Promise<ProviderCredential
         baseUrl: item.baseUrl,
         protocol: item.protocol,
         allowInsecureHttp: item.allowInsecureHttp,
-        reasoningMode: item.reasoningMode,
-        reasoningLevels: item.reasoningLevels,
+        reasoningEfforts: item.reasoningEfforts,
+        enableThinking: item.enableThinking,
         isConfigured: item.isConfigured,
         keySuffix: item.keySuffix,
       },
@@ -214,14 +212,14 @@ export async function saveCustomProvider(input: {
   baseUrl: string;
   protocol: 'openAi' | 'anthropic';
   allowInsecureHttp: boolean;
-  reasoningMode: 'none' | 'reasoningEffort' | 'chatTemplateThinking';
-  reasoningLevels: string[];
+  reasoningEfforts: string[];
+  enableThinking: boolean;
   apiKey: string;
 }): Promise<CustomProviderSummary> {
   const value: unknown = await invoke('save_custom_provider', {
     input: {
       ...input,
-      reasoningLevels: input.reasoningLevels.join(','),
+      reasoningEfforts: input.reasoningEfforts.join(','),
       apiKey: input.apiKey.trim().length > 0 ? input.apiKey : null,
       dialogCopy: getNativeHttpProviderDialogCopy(),
     },
@@ -234,11 +232,9 @@ export async function saveCustomProvider(input: {
     typeof value.baseUrl !== 'string' ||
     (value.protocol !== 'openAi' && value.protocol !== 'anthropic') ||
     typeof value.allowInsecureHttp !== 'boolean' ||
-    (value.reasoningMode !== 'none' &&
-      value.reasoningMode !== 'reasoningEffort' &&
-      value.reasoningMode !== 'chatTemplateThinking') ||
-    !Array.isArray(value.reasoningLevels) ||
-    !value.reasoningLevels.every((level) => typeof level === 'string') ||
+    !Array.isArray(value.reasoningEfforts) ||
+    !value.reasoningEfforts.every((level) => typeof level === 'string') ||
+    typeof value.enableThinking !== 'boolean' ||
     typeof value.isConfigured !== 'boolean' ||
     !isNullableString(value.keySuffix)
   ) {
@@ -250,8 +246,8 @@ export async function saveCustomProvider(input: {
     baseUrl: value.baseUrl,
     protocol: value.protocol,
     allowInsecureHttp: value.allowInsecureHttp,
-    reasoningMode: value.reasoningMode,
-    reasoningLevels: value.reasoningLevels,
+    reasoningEfforts: value.reasoningEfforts,
+    enableThinking: value.enableThinking,
     isConfigured: value.isConfigured,
     keySuffix: value.keySuffix,
   };

@@ -99,8 +99,8 @@ pub(crate) struct CustomProviderConfig {
     pub(crate) id: String,
     pub(crate) base_url: String,
     pub(crate) protocol: CustomProviderProtocol,
-    pub(crate) reasoning_mode: String,
-    pub(crate) reasoning_levels: Vec<String>,
+    pub(crate) reasoning_efforts: Vec<String>,
+    pub(crate) enable_thinking: bool,
 }
 
 /// Token limits verified from the selected provider model's catalog metadata.
@@ -164,40 +164,53 @@ impl CustomProviderConfig {
             Some("anthropic") => CustomProviderProtocol::Anthropic,
             _ => return Err(invalid()),
         };
-        let reasoning_mode = value
-            .get("reasoningMode")
-            .and_then(Value::as_str)
-            .filter(|mode| !mode.is_empty())
-            .unwrap_or("none");
-        let reasoning_levels = value
-            .get("reasoningLevels")
+        let legacy_reasoning_mode = value.get("reasoningMode").and_then(Value::as_str);
+        let mut reasoning_efforts = value
+            .get("reasoningEfforts")
             .and_then(Value::as_array)
             .map(|levels| {
                 levels
                     .iter()
-                    .map(|level| level.as_str().ok_or_else(invalid))
+                    .map(|level| level.as_str().ok_or_else(invalid).map(str::to_owned))
                     .collect::<Result<Vec<_>, _>>()
             })
             .transpose()?
             .unwrap_or_default();
-        let valid_effort_levels = !reasoning_levels.is_empty()
-            && reasoning_levels.len() <= 3
-            && reasoning_levels
-                .iter()
-                .all(|level| matches!(*level, "low" | "medium" | "high"))
-            && reasoning_levels
+        let enable_thinking = value
+            .get("enableThinking")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+            || legacy_reasoning_mode == Some("chatTemplateThinking");
+        if reasoning_efforts.is_empty() && legacy_reasoning_mode == Some("reasoningEffort") {
+            reasoning_efforts = value
+                .get("reasoningLevels")
+                .and_then(Value::as_array)
+                .map(|levels| {
+                    levels
+                        .iter()
+                        .map(|level| level.as_str().ok_or_else(invalid).map(str::to_owned))
+                        .collect::<Result<Vec<_>, _>>()
+                })
+                .transpose()?
+                .unwrap_or_default();
+        }
+        let valid_efforts = !reasoning_efforts.is_empty()
+            && reasoning_efforts.len() <= 16
+            && reasoning_efforts.iter().all(|level| {
+                !level.is_empty()
+                    && level.len() <= 64
+                    && level
+                        .bytes()
+                        .all(|byte| byte.is_ascii_alphanumeric() || b"_-".contains(&byte))
+            })
+            && reasoning_efforts
                 .iter()
                 .collect::<std::collections::HashSet<_>>()
                 .len()
-                == reasoning_levels.len();
-        if !matches!(
-            (protocol, reasoning_mode),
-            (
-                CustomProviderProtocol::OpenAi,
-                "none" | "reasoningEffort" | "chatTemplateThinking"
-            ) | (CustomProviderProtocol::Anthropic, "none")
-        ) || (reasoning_mode == "reasoningEffort" && !valid_effort_levels)
-            || (reasoning_mode != "reasoningEffort" && !reasoning_levels.is_empty())
+                == reasoning_efforts.len();
+        if (protocol == CustomProviderProtocol::Anthropic
+            && (!reasoning_efforts.is_empty() || enable_thinking))
+            || (!reasoning_efforts.is_empty() && !valid_efforts)
         {
             return Err(invalid());
         }
@@ -205,8 +218,8 @@ impl CustomProviderConfig {
             id: id.to_owned(),
             base_url: base_url.trim_end_matches('/').to_owned(),
             protocol,
-            reasoning_mode: reasoning_mode.to_owned(),
-            reasoning_levels: reasoning_levels.into_iter().map(str::to_owned).collect(),
+            reasoning_efforts,
+            enable_thinking,
         })
     }
 

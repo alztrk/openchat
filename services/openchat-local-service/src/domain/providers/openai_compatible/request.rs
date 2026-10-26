@@ -258,7 +258,7 @@ pub(super) fn chat_completion_body(
     request: &ProviderChatRequest,
     messages: &[Value],
     provider_id: &str,
-    custom_reasoning_mode: Option<&str>,
+    custom_enable_thinking: bool,
 ) -> Value {
     let mut body = json!({
         "model": request.model,
@@ -276,18 +276,11 @@ pub(super) fn chat_completion_body(
         body["chat_template_kwargs"] = json!({"enable_thinking": false});
     }
     if provider_id.starts_with("custom_") {
-        match custom_reasoning_mode {
-            Some("reasoningEffort") => {
-                if let Some(reasoning_effort) = request.reasoning_effort.as_deref() {
-                    body["reasoning_effort"] = json!(reasoning_effort);
-                }
-            }
-            Some("chatTemplateThinking") => {
-                body["chat_template_kwargs"] = json!({
-                    "enable_thinking": request.reasoning_effort.as_deref() == Some("enabled")
-                });
-            }
-            _ => {}
+        if let Some(reasoning_effort) = request.reasoning_effort.as_deref() {
+            body["reasoning_effort"] = json!(reasoning_effort);
+        }
+        if custom_enable_thinking {
+            body["chat_template_kwargs"] = json!({"enable_thinking": true});
         }
     }
     if provider_id.starts_with("custom_")
@@ -784,7 +777,7 @@ mod tests {
             "mistral",
             "openrouter",
         ] {
-            let body = chat_completion_body(&request(), &[], provider_id, None);
+            let body = chat_completion_body(&request(), &[], provider_id, false);
 
             assert_eq!(
                 body["stream_options"]["include_usage"], true,
@@ -795,7 +788,7 @@ mod tests {
 
     #[test]
     fn leaves_usage_flags_out_for_cerebras_automatic_stream_usage() {
-        let body = chat_completion_body(&request(), &[], "cerebras", None);
+        let body = chat_completion_body(&request(), &[], "cerebras", false);
 
         assert!(body.get("stream_options").is_none());
         assert!(body.get("usage").is_none());
@@ -805,7 +798,7 @@ mod tests {
     fn keeps_opencode_tool_request_shape() {
         let mut request = request();
         request.tools = tools::definitions_for_provider("opencode");
-        let body = chat_completion_body(&request, &[], "opencode", None);
+        let body = chat_completion_body(&request, &[], "opencode", false);
         let tool_names = body["tools"]
             .as_array()
             .expect("OpenCode tools array")
@@ -821,7 +814,7 @@ mod tests {
 
     #[test]
     fn omits_tool_fields_when_opencode_model_does_not_support_tools() {
-        let body = chat_completion_body(&request(), &[], "opencode", None);
+        let body = chat_completion_body(&request(), &[], "opencode", false);
 
         assert!(body.get("tools").is_none());
         assert!(body.get("tool_choice").is_none());
@@ -836,7 +829,7 @@ mod tests {
     fn sends_mistral_reasoning_effort_with_stream_usage() {
         let mut request = request();
         request.reasoning_effort = Some("high".to_owned());
-        let body = chat_completion_body(&request, &[], "mistral", None);
+        let body = chat_completion_body(&request, &[], "mistral", false);
 
         assert_eq!(body["reasoning_effort"], "high");
         assert_eq!(body["stream_options"]["include_usage"], true);

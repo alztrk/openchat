@@ -29,12 +29,7 @@ export function parseProviderCatalog(
       Array.isArray(item.reasoningLevels) && item.reasoningLevels.every((level) => typeof level === 'string')
         ? item.reasoningLevels
         : [];
-    const reasoningLevels =
-      route.customProvider?.reasoningMode === 'reasoningEffort'
-        ? route.customProvider.reasoningLevels
-        : route.customProvider?.reasoningMode === 'chatTemplateThinking'
-          ? ['enabled']
-          : catalogReasoningLevels;
+    const reasoningLevels = route.customProvider ? route.customProvider.reasoningEfforts : catalogReasoningLevels;
     const connectionId = route.connectionId;
     const apiKeyConnectionId =
       route.providerId === 'chatgpt_api'
@@ -54,10 +49,7 @@ export function parseProviderCatalog(
         key: `${route.providerId}:${connectionId ?? ''}:${item.id}`,
         displayName: item.displayName,
         description: typeof item.description === 'string' ? item.description : null,
-        supportsReasoning:
-          route.customProvider?.reasoningMode !== undefined && route.customProvider.reasoningMode !== 'none'
-            ? true
-            : item.supportsReasoning === true,
+        supportsReasoning: route.customProvider ? reasoningLevels.length > 0 : item.supportsReasoning === true,
         supportsImages: item.supportsImages === true,
         supportsTools: typeof item.supportsTools === 'boolean' ? item.supportsTools : null,
         supportsFastMode: item.supportsFastMode === true,
