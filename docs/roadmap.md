@@ -971,24 +971,6 @@ Hosted sharing remains out of scope under the current product decision.
 
 **Exit criteria:** met for persisted root selection, file and terminal access boundaries, sidebar indicators, and dynamic add/remove. Windows runtime permission behavior still requires a local build and manual confirmation.
 
-### 57. Extend OpenCode authentication coverage and probe validation
-
-**Status: planned, P2.** The free OpenCode route now uses anonymous `Bearer public` requests with OpenCode's session-affinity headers, and paid models keep their existing credential flow. Requests also carry the reference CLI identity (`User-Agent: opencode/latest/2.1.4/cli`, `x-opencode-client: cli`); bump that constant when OpenCode releases change so the request shape does not drift. Authentication variants beyond that path remain unvalidated.
-
-- Resolve and test Console OAuth access tokens for OpenCode inference requests. OpenCode's provider resolver passes an OAuth credential's access token as the OpenAI-compatible `apiKey`, so a connected Console account does not use `Bearer public`; the current probe's `console-chat` command still does this incorrectly.
-- Keep Console usage separate from the anonymous free-model quota. OpenCode’s public usage service reads authenticated workspace budgets from `/api/policies/current-budgets` and Go rolling, weekly, and monthly meters from `/zen/go/v1/usage`; its `/api/experimental/usage/limits` route does not expose anonymous free-pool remaining usage. For the anonymous route, quota state is only learned from inference responses. See the [usage service](https://github.com/anomalyco/opencode/blob/dev/packages/core/src/usage-limits.ts) and [usage route](https://github.com/anomalyco/opencode/blob/dev/packages/protocol/src/groups/usage.ts).
-- Fix the probe's device-flow details: send `supports_org_scope` as a JSON boolean, start device-code expiry when the code is issued rather than after approval, and tolerate `null` provider/model header objects.
-- Re-run the live anonymous and Console-authenticated probes after the reported `FreeUsageLimitError` cooldown expires. Do not infer that the earlier `403 FreeTierError` is resolved from a later `429` response. The 2026-10-25 re-probe with the full anonymous header set returned `429 FreeUsageLimitError` with `Retry-After: 51735` and no policy error, so only quota validation and streamed-output checks remain. Two probes showed `Retry-After` counting down to 00:00 UTC, indicating the anonymous free quota resets daily at midnight UTC.
-- Keep `FreeUsageLimitError` handling and numeric `Retry-After` guidance without automatic retries. Surface the free-tier policy error separately from free-quota exhaustion.
-
-**Exit criteria:** anonymous, Console API-key, and Console OAuth request paths are documented and reproducible in the probe; each path reports its own quota or policy errors; and no credential is sent when a free request uses the anonymous route.
-
-
-
-
-
-
-
 ## Explicit boundaries
 
 - No centralized account, message, or credential service; OpenChat remains local-first and self-hostable in its app model.
@@ -1022,12 +1004,6 @@ Hosted sharing remains out of scope under the current product decision.
 - [Codex CLI usage commands](https://learn.chatgpt.com/docs/developer-commands)
 - [Mistral Agents tools](https://docs.mistral.ai/studio/agents/agent-tools)
 - [xAI tools](https://docs.x.ai/developers/tools/overview)
-- [OpenCode providers](https://opencode.ai/docs/providers)
-- [OpenCode cache-key configuration](https://docs.opencode.ai/docs/config/)
-- [OpenCode CLI usage and cost statistics](https://dev.opencode.ai/docs/cli/)
-- [OpenCode usage normalization source](https://github.com/anomalyco/opencode/blob/dev/packages/opencode/src/session/session.ts)
-- [OpenCode tools](https://dev.opencode.ai/docs/tools/)
-- [OpenCode MCP servers](https://opencode.ai/v2/docs/mcp-servers)
 - [Model Context Protocol Streamable HTTP transport](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports)
 - [Claude Code features](https://code.claude.com/docs/en/features-overview)
 - [Goose extensions](https://goose-docs.ai/docs/getting-started/using-extensions/)
