@@ -1507,8 +1507,9 @@ mod tests {
         let storage = AppStorage::open_at(directory.0.clone()).expect("open isolated storage");
 
         let image_directory = image_directory(&storage, true).expect("create image directory");
+        let storage_root = directory.0.canonicalize().expect("resolve storage root");
 
-        assert!(image_directory.starts_with(&directory.0));
+        assert!(image_directory.starts_with(storage_root));
         assert!(image_directory.is_dir());
     }
 }

@@ -2226,7 +2226,13 @@ async fn project_deny_rule_blocks_file_write_without_requesting_approval() {
     let call = ToolCall {
         id: "write-blocked".to_owned(),
         name: "write_file".to_owned(),
-        arguments: json!({"path": "blocked.txt", "content": "must not be written"}),
+        arguments: json!({
+            "path": PathBuf::from(directory.root())
+                .join("blocked.txt")
+                .to_str()
+                .expect("fixture path should be UTF-8"),
+            "content": "must not be written"
+        }),
     };
     let broker = ToolPermissionBroker::default();
     let events = EventSink::new();

@@ -776,6 +776,7 @@ pub(crate) fn delete_conversation_changes(
             [conversation_id],
         )
         .map_err(|_| TrackingError::StorageUnavailable)?;
+    drop(connection);
     remove_legacy_conversation_directory(storage.root(), conversation_id)?;
     cleanup_pending_snapshot_blobs(storage)
 }
@@ -795,6 +796,7 @@ pub(crate) fn delete_all_changes(storage: &AppStorage) -> Result<(), TrackingErr
     connection
         .execute("DELETE FROM file_change_legacy_imports", [])
         .map_err(|_| TrackingError::StorageUnavailable)?;
+    drop(connection);
     let root = storage
         .root()
         .canonicalize()
@@ -1355,7 +1357,7 @@ fn migrate_legacy_conversation(
     storage: &AppStorage,
     conversation_id: &str,
 ) -> Result<(), TrackingError> {
-    let mut connection = storage
+    let connection = storage
         .connect()
         .map_err(|_| TrackingError::StorageUnavailable)?;
     let conversation_exists = connection
@@ -1379,6 +1381,7 @@ fn migrate_legacy_conversation(
             |row| row.get::<_, bool>(0),
         )
         .map_err(|_| TrackingError::StorageUnavailable)?;
+    drop(connection);
     if imported {
         if directory.is_some() {
             remove_legacy_conversation_directory(storage.root(), conversation_id)?;
@@ -1419,6 +1422,9 @@ fn migrate_legacy_conversation(
         imported_entries.push(entry);
     }
 
+    let mut connection = storage
+        .connect()
+        .map_err(|_| TrackingError::StorageUnavailable)?;
     let transaction = connection
         .transaction()
         .map_err(|_| TrackingError::StorageUnavailable)?;
@@ -1865,28 +1871,36 @@ mod tests {
                 .join(LEGACY_FILE_CHANGE_DIRECTORY)
                 .exists()
         );
+        let storage_directory = data._directory.0.clone();
+        let TestStorage {
+            storage,
+            _directory,
+        } = data;
+        drop(storage);
         let reopened =
-            AppStorage::open_at(data._directory.0.clone()).expect("reopen persistent test storage");
+            AppStorage::open_at(storage_directory).expect("reopen persistent test storage");
         assert_eq!(
             list_changes(&reopened, "conversation-1")
                 .expect("load persisted change history")
                 .len(),
             1
         );
-        let diff = read_diff(&data.storage, "conversation-1", &summaries[0].id).expect("read diff");
+        let diff = read_diff(&reopened, "conversation-1", &summaries[0].id).expect("read diff");
         assert!(
             diff["diff"]
                 .as_str()
                 .is_some_and(|text| text.contains("+third"))
         );
 
-        let changes = revert_change(&data.storage, "conversation-1", &summaries[0].id)
-            .expect("revert change");
+        let changes =
+            revert_change(&reopened, "conversation-1", &summaries[0].id).expect("revert change");
         assert_eq!(changes[0].status, "reverted");
         assert_eq!(
             fs::read_to_string(root.0.join("note.txt")).expect("read restored file"),
             "first\nsecond\n"
         );
+        drop(reopened);
+        drop(_directory);
     }
 
     #[test]

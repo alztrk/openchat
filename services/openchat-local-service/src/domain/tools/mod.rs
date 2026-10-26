@@ -166,6 +166,12 @@ fn read_directory_listing(
     explicit_filter_scope: bool,
     retain_count: usize,
 ) -> Result<DirectoryListing, ServiceError> {
+    if !has_gitignore_rule_ancestor(directory)
+        && let Ok(entries) = fs::read_dir(directory)
+    {
+        return read_directory_listing_from_entries(entries, explicit_filter_scope, retain_count);
+    }
+
     let mut retained = BinaryHeap::with_capacity(retain_count);
     let mut total_entries = 0usize;
     let mut scanned = 0usize;
@@ -239,6 +245,86 @@ fn read_directory_listing(
             retained.push((name.to_owned(), is_directory));
         }
     }
+    let was_scan_limited = scanned > MAX_LIST_SCAN || incomplete;
+    let mut entries = retained.into_vec();
+    entries.sort_unstable_by(|left, right| left.0.cmp(&right.0));
+    Ok(DirectoryListing {
+        entries,
+        total_entries,
+        truncated: was_scan_limited,
+    })
+}
+
+fn has_gitignore_rule_ancestor(directory: &Path) -> bool {
+    for ancestor in directory.ancestors() {
+        match fs::symlink_metadata(ancestor.join(".gitignore")) {
+            Ok(_) => return true,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Err(_) => return true,
+        }
+    }
+    false
+}
+
+fn read_directory_listing_from_entries(
+    entries: fs::ReadDir,
+    explicit_filter_scope: bool,
+    retain_count: usize,
+) -> Result<DirectoryListing, ServiceError> {
+    let mut retained = BinaryHeap::with_capacity(retain_count);
+    let mut total_entries = 0usize;
+    let mut scanned = 0usize;
+    let mut incomplete = false;
+
+    for entry in entries {
+        let Ok(entry) = entry else {
+            incomplete = true;
+            continue;
+        };
+        let Some(name) = entry.file_name().to_str().map(str::to_owned) else {
+            incomplete = true;
+            continue;
+        };
+        let Some(file_type) = entry.file_type().ok() else {
+            incomplete = true;
+            continue;
+        };
+        if !explicit_filter_scope
+            && ((file_type.is_dir() && is_default_ignored_directory(&name))
+                || name.starts_with('.'))
+        {
+            continue;
+        }
+        #[cfg(windows)]
+        if !explicit_filter_scope
+            && entry
+                .metadata()
+                .is_ok_and(|metadata| windows_hidden(&metadata))
+        {
+            continue;
+        }
+
+        scanned += 1;
+        if scanned > MAX_LIST_SCAN {
+            break;
+        }
+        if file_type.is_symlink() || (!file_type.is_dir() && !file_type.is_file()) {
+            continue;
+        }
+
+        total_entries += 1;
+        let is_directory = file_type.is_dir();
+        if retained.len() < retain_count {
+            retained.push((name.clone(), is_directory));
+        } else if retained
+            .peek()
+            .is_some_and(|largest: &(String, bool)| name.as_str() < largest.0.as_str())
+        {
+            retained.pop();
+            retained.push((name, is_directory));
+        }
+    }
+
     let was_scan_limited = scanned > MAX_LIST_SCAN || incomplete;
     let mut entries = retained.into_vec();
     entries.sort_unstable_by(|left, right| left.0.cmp(&right.0));

@@ -1862,31 +1862,72 @@ mod tests {
         let database_directory = directory.0.join("db");
         fs::create_dir_all(&database_directory).expect("create database directory");
         let database_path = database_directory.join("openchat.sqlite3");
-        let initial = Connection::open(&database_path).expect("create existing database");
+        let mut initial = Connection::open(&database_path).expect("create existing database");
         initial
             .execute_batch(
-                "CREATE TABLE openchat_backend_migrations (
-                    version INTEGER PRIMARY KEY,
-                    applied_at_unix_ms INTEGER NOT NULL
-                 );
-                 INSERT INTO openchat_backend_migrations VALUES (17, 1);
-                 CREATE TABLE migration_probe (value TEXT NOT NULL);
+                "CREATE TABLE migration_probe (value TEXT NOT NULL);
                  INSERT INTO migration_probe VALUES ('preserved');
+                 CREATE TABLE projects (
+                    id TEXT PRIMARY KEY NOT NULL,
+                    name TEXT NOT NULL,
+                    folder_path TEXT NOT NULL,
+                    created_at INTEGER NOT NULL,
+                    updated_at INTEGER NOT NULL
+                 );
+                 CREATE TABLE conversations (
+                    id TEXT PRIMARY KEY NOT NULL,
+                    title TEXT NOT NULL,
+                    title_source TEXT NOT NULL DEFAULT 'automatic',
+                    is_pinned INTEGER NOT NULL DEFAULT 0,
+                    connection_id TEXT,
+                    workspace_id TEXT,
+                    project_id TEXT,
+                    provider_id TEXT,
+                    api_key_connection_id TEXT,
+                    created_at INTEGER NOT NULL,
+                    updated_at INTEGER NOT NULL
+                 );
+                 CREATE TABLE messages (
+                    id TEXT NOT NULL,
+                    conversation_id TEXT NOT NULL,
+                    role TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    created_at INTEGER,
+                    output_tokens INTEGER,
+                    tokens_per_second REAL,
+                    elapsed_microseconds INTEGER,
+                    status TEXT NOT NULL,
+                    PRIMARY KEY (conversation_id, id)
+                 );
+                 CREATE TABLE model_favorites (
+                    provider_id TEXT NOT NULL,
+                    model_id TEXT NOT NULL,
+                    display_name TEXT NOT NULL,
+                    favorited_at INTEGER NOT NULL,
+                    source_connection_id TEXT,
+                    PRIMARY KEY (provider_id, model_id)
+                 );
                  PRAGMA user_version = 9;",
             )
             .expect("prepare database one chat migration behind");
+        super::migrate_chat_schema(&mut initial)
+            .expect("prepare chat schema for backend migration");
+        super::initialize_schema(&initial, 17).expect("prepare backend schema at version 17");
+        initial
+            .pragma_update(None, "user_version", 9)
+            .expect("mark chat migration pending");
         drop(initial);
 
         let storage = AppStorage::open_at(directory.0.clone()).expect("open storage");
 
         assert!(
             storage
-                .prepare_chat_schema_migration(10)
+                .prepare_chat_schema_migration(crate::CHAT_SCHEMA_VERSION)
                 .expect("prepare chat migration")
         );
         assert!(
             !storage
-                .prepare_chat_schema_migration(10)
+                .prepare_chat_schema_migration(crate::CHAT_SCHEMA_VERSION)
                 .expect("avoid duplicate startup backup")
         );
 

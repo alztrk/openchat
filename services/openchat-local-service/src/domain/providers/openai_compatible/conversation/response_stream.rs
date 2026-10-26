@@ -1408,7 +1408,7 @@ mod tests {
         let mut response = Vec::new();
         response.extend(sse_event(
             json!({"type": "response.reasoning_text.delta", "delta": "private reasoning"}),
-            false,
+            true,
         ));
         response.extend(sse_event(
             json!({
@@ -1417,7 +1417,7 @@ mod tests {
                 "summary_index": 0,
                 "delta": "First summary"
             }),
-            false,
+            true,
         ));
         response.extend(sse_event(
             json!({
@@ -1426,7 +1426,7 @@ mod tests {
                 "summary_index": 1,
                 "delta": "Second summary"
             }),
-            false,
+            true,
         ));
         response.extend(sse_event(
             json!({
@@ -1435,7 +1435,7 @@ mod tests {
                 "summary_index": 0,
                 "text": "First summary"
             }),
-            false,
+            true,
         ));
         response.extend(sse_event(
             json!({
@@ -1444,11 +1444,11 @@ mod tests {
                 "summary_index": 1,
                 "part": {"type": "summary_text", "text": "Second summary"}
             }),
-            false,
+            true,
         ));
         response.extend(sse_event(
             json!({"type": "response.output_text.delta", "delta": "Final answer"}),
-            false,
+            true,
         ));
         response.extend(sse_event(
             json!({
@@ -1460,7 +1460,11 @@ mod tests {
 
         let outcome = run_fixture_for_provider("chatgpt_api", 200, response, true).await;
 
-        assert!(outcome.result.is_ok());
+        assert!(
+            outcome.result.is_ok(),
+            "provider error: {:?}",
+            outcome.result.as_ref().err().map(|error| error.code)
+        );
         assert_eq!(outcome.content, "Final answer");
         assert!(outcome.reasoning.is_empty());
         assert_eq!(outcome.reasoning_summaries.len(), 2);
@@ -2057,10 +2061,6 @@ mod tests {
     async fn gemini_grounding_metadata_streams_clickable_citation_sources() {
         let mut response_body = Vec::new();
         response_body.extend(sse_event(
-            json!({"choices": [{"delta": {"content": "Claim. More text."}}]}),
-            true,
-        ));
-        response_body.extend(sse_event(
             json!({
                 "candidates": [{
                     "content": {"parts": [{"text": "Claim. More text."}]},
@@ -2086,7 +2086,11 @@ mod tests {
 
         let outcome = run_fixture(200, response_body, false).await;
 
-        assert!(outcome.result.is_ok());
+        assert!(
+            outcome.result.is_ok(),
+            "provider error: {:?}",
+            outcome.result.as_ref().err().map(|error| error.code)
+        );
         assert_eq!(outcome.content, "Claim. [P1] More text.");
         let citation_event = outcome
             .events
@@ -2213,7 +2217,7 @@ mod tests {
     #[tokio::test]
     async fn oversized_provider_stream_keeps_content_received_within_the_budget() {
         let initial = sse_event(
-            json!({"choices": [{"delta": {"content": "partial"}}]}),
+            json!({"choices": [{"delta": {"content": "</think>partial"}}]}),
             true,
         );
         let remaining = sse_event(

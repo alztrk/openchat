@@ -399,6 +399,7 @@ mod tests {
         let directory = TestDirectory::new();
         let storage =
             Arc::new(AppStorage::open_at(directory.0.join("data")).expect("open test storage"));
+        initialize_test_schema(&storage);
         let service = Arc::new(
             ChatGptService::new(Arc::clone(&storage)).expect("initialize provider service"),
         );
@@ -443,6 +444,30 @@ mod tests {
         .await
         .expect_err("unknown provider methods are rejected");
         assert_eq!(error.code, "method_not_found");
+    }
+
+    fn initialize_test_schema(storage: &AppStorage) {
+        let connection = storage.connect().expect("connect test storage");
+        connection
+            .execute_batch(
+                "CREATE TABLE conversations (id TEXT PRIMARY KEY NOT NULL);
+                 CREATE TABLE messages (
+                     id TEXT NOT NULL,
+                     conversation_id TEXT NOT NULL REFERENCES conversations(id),
+                     role TEXT NOT NULL,
+                     content TEXT NOT NULL,
+                     status TEXT NOT NULL,
+                     created_at INTEGER,
+                     output_tokens INTEGER,
+                     tool_activities TEXT NOT NULL DEFAULT '[]',
+                     PRIMARY KEY (conversation_id, id)
+                 );",
+            )
+            .expect("create host conversation schema");
+        drop(connection);
+        storage
+            .initialize_backend_schema()
+            .expect("initialize current backend schema");
     }
 
     struct TestDirectory(PathBuf);

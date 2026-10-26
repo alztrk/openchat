@@ -21,8 +21,8 @@ const MAX_SEARCH_RESULTS: usize = 40;
 const MAX_SEARCH_FILES: usize = 100_000;
 const MAX_SEARCH_DIRS: usize = 100_000;
 const MAX_SEARCH_BYTES: u64 = 128 * 1024 * 1024;
-const MAX_DIRECT_SEARCH_WORKERS: usize = 8;
-pub(super) const DIRECT_SEARCH_INITIAL_BATCH_FILES: usize = 2_048;
+const MAX_DIRECT_SEARCH_WORKERS: usize = 16;
+pub(super) const DIRECT_SEARCH_INITIAL_BATCH_FILES: usize = 256;
 const DIRECT_SEARCH_BATCH_FILES: usize = MAX_DIRECT_SEARCH_WORKERS * 1024;
 
 /// Maintains pagination state while ordered candidate batches are processed.

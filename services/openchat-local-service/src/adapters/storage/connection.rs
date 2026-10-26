@@ -560,32 +560,21 @@ impl StorageRowIndex for &str {
 /// An owned result row stream.  The current row remains borrowed until the next call to
 /// [`StorageRows::next`], matching the existing broker facade and rusqlite cursor usage.
 pub(crate) struct StorageRows {
-    rows: Vec<StorageRow>,
-    next_index: usize,
+    rows: std::vec::IntoIter<StorageRow>,
     current: Option<StorageRow>,
 }
 
 impl StorageRows {
     fn new(rows: Vec<StorageRow>) -> Self {
         Self {
-            rows,
-            next_index: 0,
+            rows: rows.into_iter(),
             current: None,
         }
     }
 
     /// Returns the next owned row, borrowing it until the next call.
     pub(crate) fn next(&mut self) -> Result<Option<&StorageRow>> {
-        if self.next_index >= self.rows.len() {
-            self.current = None;
-            return Ok(None);
-        }
-        let row = std::mem::replace(
-            &mut self.rows[self.next_index],
-            StorageRow::new(Arc::from([]), Vec::new()),
-        );
-        self.next_index += 1;
-        self.current = Some(row);
+        self.current = self.rows.next();
         Ok(self.current.as_ref())
     }
 }
@@ -707,4 +696,48 @@ fn result_too_large(message: &'static str) -> Error {
         ffi::Error::new(ffi::SQLITE_TOOBIG),
         Some(message.to_owned()),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use rusqlite::{Error, types::Value};
+
+    use super::{StorageRow, StorageRows};
+
+    fn row(text: &str) -> StorageRow {
+        StorageRow::new(
+            Arc::from(vec!["value".to_owned(), "optional".to_owned()].into_boxed_slice()),
+            vec![Value::Text(text.to_owned()), Value::Null],
+        )
+    }
+
+    #[test]
+    fn borrowed_text_accessors_return_text_and_null() {
+        let row = row("value");
+
+        assert_eq!(row.get_str("value").unwrap(), "value");
+        assert_eq!(row.get_optional_str("optional").unwrap(), None);
+    }
+
+    #[test]
+    fn borrowed_text_accessor_preserves_typed_column_errors() {
+        let row = row("value");
+
+        assert!(matches!(
+            row.get_str("optional"),
+            Err(Error::InvalidColumnType(1, name, rusqlite::types::Type::Null))
+                if name == "optional"
+        ));
+    }
+
+    #[test]
+    fn storage_rows_advance_without_changing_the_borrowed_row_contract() {
+        let mut rows = StorageRows::new(vec![row("first"), row("second")]);
+
+        assert_eq!(rows.next().unwrap().unwrap().get_str(0).unwrap(), "first");
+        assert_eq!(rows.next().unwrap().unwrap().get_str(0).unwrap(), "second");
+        assert!(rows.next().unwrap().is_none());
+    }
 }

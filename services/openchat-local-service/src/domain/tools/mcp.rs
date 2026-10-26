@@ -1091,28 +1091,31 @@ mod tests {
         sync::watch,
     };
 
+    struct TestDirectory(PathBuf);
+
+    impl Drop for TestDirectory {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
     struct TestStorage {
-        root: PathBuf,
         storage: Arc<AppStorage>,
+        _directory: TestDirectory,
     }
 
     impl TestStorage {
         fn new() -> Self {
-            let root = std::env::temp_dir().join(format!(
+            let directory = TestDirectory(std::env::temp_dir().join(format!(
                 "openchat-mcp-storage-test-{}",
                 uuid::Uuid::new_v4()
-            ));
-            let storage = AppStorage::open_at(root.clone()).expect("open isolated test storage");
+            )));
+            let storage =
+                AppStorage::open_at(directory.0.clone()).expect("open isolated test storage");
             Self {
-                root,
                 storage: Arc::new(storage),
+                _directory: directory,
             }
-        }
-    }
-
-    impl Drop for TestStorage {
-        fn drop(&mut self) {
-            std::fs::remove_dir_all(&self.root).expect("remove isolated test storage");
         }
     }
 

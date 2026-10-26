@@ -841,6 +841,7 @@ mod tests {
         let directory = TestDirectory::new();
         let storage =
             Arc::new(AppStorage::open_at(directory.0.clone()).expect("open test storage"));
+        initialize_chat_test_schema(&storage);
         let service = Arc::new(
             ChatGptService::new(Arc::clone(&storage)).expect("initialize ChatGPT service"),
         );
@@ -925,6 +926,7 @@ mod tests {
         let directory = TestDirectory::new();
         let storage =
             Arc::new(AppStorage::open_at(directory.0.clone()).expect("open test storage"));
+        initialize_chat_test_schema(&storage);
         let service = Arc::new(
             ChatGptService::new(Arc::clone(&storage)).expect("initialize ChatGPT service"),
         );
@@ -1009,6 +1011,17 @@ mod tests {
         let connection = storage.connect().expect("connect test storage");
         connection
             .execute(
+                "INSERT INTO projects (id, name, folder_path, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, 0, 0)",
+                params![
+                    "project-1",
+                    "RPC fixture project",
+                    project_root.to_string_lossy().as_ref()
+                ],
+            )
+            .expect("save project folder");
+        connection
+            .execute(
                 "INSERT INTO conversations (
                     id, provider_id, project_id, model_id, connection_id, workspace_id,
                     api_key_connection_id
@@ -1016,12 +1029,6 @@ mod tests {
                 params!["conversation"],
             )
             .expect("insert API-key provider conversation");
-        connection
-            .execute(
-                "INSERT INTO projects (id, folder_path) VALUES (?1, ?2)",
-                params!["project-1", project_root.to_string_lossy().as_ref()],
-            )
-            .expect("save project folder");
         drop(connection);
 
         let service = Arc::new(
@@ -1286,31 +1293,30 @@ mod tests {
             .execute_batch(
                 "CREATE TABLE conversations (
                     id TEXT PRIMARY KEY NOT NULL,
-                    title_source TEXT NOT NULL DEFAULT 'automatic'
+                    title TEXT NOT NULL DEFAULT '',
+                    is_pinned INTEGER NOT NULL DEFAULT 0,
+                    created_at INTEGER NOT NULL DEFAULT 0,
+                    updated_at INTEGER NOT NULL DEFAULT 0
                  );
-                 ALTER TABLE conversations ADD COLUMN project_id TEXT;
-                 ALTER TABLE conversations ADD COLUMN model_id TEXT;
-                 ALTER TABLE conversations ADD COLUMN connection_id TEXT;
-                 ALTER TABLE conversations ADD COLUMN workspace_id TEXT;
-                 CREATE TABLE projects (id TEXT PRIMARY KEY, folder_path TEXT);
                  CREATE TABLE messages (
-                    rowid INTEGER PRIMARY KEY,
                     id TEXT NOT NULL,
-                    conversation_id TEXT NOT NULL,
+                    conversation_id TEXT NOT NULL
+                        REFERENCES conversations(id) ON DELETE CASCADE,
                     role TEXT NOT NULL,
                     content TEXT NOT NULL,
-                    status TEXT NOT NULL,
                     created_at INTEGER,
                     output_tokens INTEGER,
-                    tool_activities TEXT NOT NULL DEFAULT '[]',
-                    UNIQUE (conversation_id, id)
+                    tokens_per_second REAL,
+                    elapsed_microseconds INTEGER,
+                    status TEXT NOT NULL DEFAULT 'completed',
+                    PRIMARY KEY (conversation_id, id)
                  );",
             )
-            .expect("create desktop conversation schema");
+            .expect("create initial chat schema");
         drop(connection);
         storage
-            .initialize_backend_schema()
-            .expect("initialize native conversation schema");
+            .prepare_chat_schema_migration(crate::CHAT_SCHEMA_VERSION)
+            .expect("initialize current chat and backend schemas");
     }
 
     impl TestDirectory {

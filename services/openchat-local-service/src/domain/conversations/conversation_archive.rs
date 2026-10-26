@@ -1753,6 +1753,7 @@ mod tests {
             .expect("restored attachment should exist"),
             attachment
         );
+        drop(connection);
 
         let second_restore = restore(
             &destination,

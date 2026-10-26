@@ -696,13 +696,22 @@ pub(super) fn responses_api_body(
         body["parallel_tool_calls"] = json!(true);
     }
     let mut reasoning = serde_json::Map::new();
-    if let Some(reasoning_effort) = request.reasoning_effort.as_deref() {
+    if provider_id != "chatgpt"
+        && let Some(reasoning_effort) = request.reasoning_effort.as_deref()
+    {
         reasoning.insert("effort".to_owned(), json!(reasoning_effort));
+    }
+    if provider_id == "chatgpt_api" && supports_openai_reasoning_summary(&request.model) {
+        reasoning.insert("summary".to_owned(), json!("auto"));
     }
     if !reasoning.is_empty() {
         body["reasoning"] = Value::Object(reasoning);
     }
     body
+}
+
+fn supports_openai_reasoning_summary(model_id: &str) -> bool {
+    model_id.starts_with("gpt-5") || model_id.starts_with("gpt-6")
 }
 
 #[cfg(test)]

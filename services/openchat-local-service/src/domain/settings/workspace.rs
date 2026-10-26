@@ -125,7 +125,8 @@ fn strip_verbatim_prefix(text: &str) -> String {
 
 /// Rejects paths that could break the `<env>` block or exceed prompt budgets.
 fn is_prompt_safe_path(text: &str) -> bool {
-    text.len() <= MAX_WORKSPACE_PATH_BYTES
+    Path::new(text).is_absolute()
+        && text.len() <= MAX_WORKSPACE_PATH_BYTES
         && !text.chars().any(|ch| {
             ch.is_control() || ch == '<' || ch == '>' || ch == '\u{2028}' || ch == '\u{2029}'
         })
@@ -350,6 +351,7 @@ mod tests {
         let directory = temporary_directory("prompt");
         let canonical = fs::canonicalize(&directory).expect("canonical directory");
         let prompt = prompt_workspace_path(&canonical).expect("prompt path");
+        assert!(prompt_workspace_path(Path::new("relative/folder")).is_none());
         assert!(!prompt.starts_with(r"\\?\"));
         assert!(!prompt.contains('\n'));
         assert!(!prompt.contains('\r'));

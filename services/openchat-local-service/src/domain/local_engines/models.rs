@@ -906,6 +906,32 @@ mod tests {
         }
     }
 
+    fn test_storage(root: PathBuf) -> AppStorage {
+        let storage = AppStorage::open_at(root).expect("test storage should open");
+        let connection = storage.connect().expect("test storage should connect");
+        connection
+            .execute_batch(
+                "CREATE TABLE conversations (id TEXT PRIMARY KEY NOT NULL);
+                 CREATE TABLE messages (
+                     id TEXT NOT NULL,
+                     conversation_id TEXT NOT NULL REFERENCES conversations(id),
+                     role TEXT NOT NULL,
+                     content TEXT NOT NULL,
+                     status TEXT NOT NULL,
+                     created_at INTEGER,
+                     output_tokens INTEGER,
+                     tool_activities TEXT NOT NULL DEFAULT '[]',
+                     PRIMARY KEY (conversation_id, id)
+                 );",
+            )
+            .expect("create host conversation schema");
+        drop(connection);
+        storage
+            .initialize_backend_schema()
+            .expect("initialize current backend schema");
+        storage
+    }
+
     #[test]
     fn discovers_nested_gguf_files_without_matching_other_extensions() {
         let temporary = TestDirectory::new();
@@ -969,7 +995,7 @@ mod tests {
     fn discovery_omits_models_that_are_already_registered() {
         let temporary = TestDirectory::new();
         let database_root = temporary.0.join("app");
-        let storage = AppStorage::open_at(database_root).expect("test storage should open");
+        let storage = test_storage(database_root);
         let model_directory = temporary.0.join("models");
         fs::create_dir_all(&model_directory).expect("model directory should be created");
         let model_path = model_directory.join("qwen-7b.gguf");
@@ -998,7 +1024,7 @@ mod tests {
     fn copies_registered_models_into_the_selected_engine_directory() {
         let temporary = TestDirectory::new();
         let database_root = temporary.0.join("app");
-        let storage = AppStorage::open_at(database_root).expect("test storage should open");
+        let storage = test_storage(database_root);
         let source_directory = temporary.0.join("source");
         let model_directory = temporary.0.join("chosen-models");
         fs::create_dir_all(&source_directory).expect("source directory should be created");
@@ -1046,7 +1072,7 @@ mod tests {
     fn moving_a_vision_model_moves_its_projector_as_a_pair() {
         let temporary = TestDirectory::new();
         let database_root = temporary.0.join("app");
-        let storage = AppStorage::open_at(database_root).expect("test storage should open");
+        let storage = test_storage(database_root);
         let source_directory = temporary.0.join("source");
         let model_directory = temporary.0.join("chosen-models");
         fs::create_dir_all(&source_directory).expect("source directory should be created");
@@ -1116,8 +1142,7 @@ mod tests {
     #[test]
     fn vision_projector_files_cannot_be_registered_as_primary_models() {
         let temporary = TestDirectory::new();
-        let storage =
-            AppStorage::open_at(temporary.0.join("app")).expect("test storage should open");
+        let storage = test_storage(temporary.0.join("app"));
         let projector = temporary.0.join("mmproj-orphan.gguf");
         fs::write(&projector, b"projector").expect("projector fixture should be written");
 

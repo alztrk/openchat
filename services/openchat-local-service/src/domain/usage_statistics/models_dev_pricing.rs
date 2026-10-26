@@ -205,6 +205,10 @@ impl PricingCatalog {
             transaction.commit()?;
         }
 
+        if self.models.is_empty() {
+            return Ok(());
+        }
+
         let (selected_events, event_source, event_filter, event_cost_table) = match page {
             Some(_) => (
                 format!(
@@ -929,12 +933,13 @@ mod tests {
         collections::HashMap,
         fs,
         path::PathBuf,
+        sync::Arc,
         time::{Duration, Instant},
     };
 
     use super::{
-        build_catalog_http_client, cached_model_details_batch, cached_model_supports_images,
-        cached_models_support_images, model_from_catalog,
+        PricingCatalog, build_catalog_http_client, cached_model_details_batch,
+        cached_model_supports_images, cached_models_support_images, model_from_catalog,
     };
     use crate::storage::AppStorage;
     use rusqlite::params;
@@ -943,6 +948,8 @@ mod tests {
         io::{AsyncReadExt, AsyncWriteExt},
         net::TcpListener,
     };
+
+    use super::super::StatisticsQuery;
 
     struct TestDirectory(PathBuf);
 
@@ -975,6 +982,41 @@ mod tests {
                 );",
             )
             .expect("create test catalog cache");
+    }
+
+    #[test]
+    fn empty_pricing_catalog_skips_usage_event_cost_query() {
+        let directory = TestDirectory::new();
+        let storage = AppStorage::open_at(directory.0.clone()).expect("open test storage");
+        let mut database = storage.connect().expect("connect test storage");
+        let catalog = PricingCatalog {
+            state: "unavailable",
+            fetched_at_unix_ms: None,
+            models: Arc::new(Vec::new()),
+            catalog_json: None,
+        };
+        let query = StatisticsQuery {
+            from_unix_ms: 0,
+            to_unix_ms: 1,
+            provider_id: None,
+            model_id: None,
+            operation: None,
+            reasoning_effort: None,
+            fast_mode: None,
+            offset: 0,
+            limit: 1,
+        };
+
+        catalog
+            .install_temporary_prices(&mut database, &query, None)
+            .expect("skip cost query without pricing models");
+
+        let cached_price_count = database
+            .query_row("SELECT COUNT(*) FROM temp.models_dev_prices", [], |row| {
+                row.get::<_, i64>(0)
+            })
+            .expect("read temporary prices");
+        assert_eq!(cached_price_count, 0);
     }
 
     /// Confirms a redirected pricing request cannot reach an unrelated loopback host.
