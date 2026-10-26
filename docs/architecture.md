@@ -245,18 +245,31 @@ remain separate Rust processes with their existing storage and RPC boundaries.
   an additional budget capped at 8% of that window. The fixed byte caps apply
   when the provider does not report a limit.
 - Project creation schedules the code index on a bounded background queue. The
-  index currently covers the project's primary folder, follows `.gitignore`,
-  reads at most 20,000 files and 128 MiB per scan, indexes at most 64 MiB of
-  text, and stores up to 100,000 Tree-sitter symbols
-  across supported Bash, C, C++, C#, Go, Java, PHP, Python, Rust, JavaScript,
-  and TypeScript files. Symbol results include file paths and 1-based line
-  ranges. `search_project_code` returns bounded text excerpts and symbol
-  locations, so an agent can locate relevant code before requesting a narrow
-  `read_file` range. This avoids sending unrelated file contents into a request;
-  token savings have not been measured. The per-file index records whether
-  symbol extraction has run, including files with no declarations, so unchanged
-  files are not repeatedly parsed. Migration marks existing indexes stale for
-  one symbol-aware refresh.
+  index covers up to eight configured workspace roots, follows `.gitignore`,
+  and applies shared limits of 20,000 files and 128 MiB scanned per sync, 64 MiB
+  of indexed text, and 100,000 Tree-sitter symbols across Bash, C, C++, C#,
+  Go, Java, PHP, Python, Rust, JavaScript, and TypeScript. Indexed paths and
+  search results use canonical absolute paths. Symbol results include 1-based
+  line ranges, declaration signatures, containing types, and inheritance or
+  implementation relationships when the grammar exposes them. The richer
+  structural details are extracted from cached indexed source when searching,
+  so they do not require a separate database migration. `search_project_code`
+  returns bounded text excerpts, symbol locations, and enabled durable project
+  notes, helping an agent select a narrow `read_file` range. The expected token
+  savings come from retrieving those excerpts instead of sending unrelated file
+  contents; the benchmark's comparison with the entire synthetic workspace is
+  an upper bound, and reading one already identified narrow file can be cheaper
+  than a search response. Exact savings depend on the repository, task, and
+  provider tokenizer.
+  The per-file index records whether symbol extraction has run, including files
+  with no declarations, so unchanged files are not repeatedly parsed. Index
+  updates to any configured workspace root mark the shared index stale.
+- Glob-scoped project rules live in `.openchat/rules/**/*.mdc`. The agent gets
+  a rule only when its `globs` front matter matches a returned or requested
+  project file path. A first write or edit to a matching path returns the rule
+  and pauses that operation; the agent retries after receiving the rule. Rule
+  loading is local, redacted, and bounded by file-count, scan, per-file, glob,
+  and total-context limits.
 - `read_file` reads a requested range of at most 500 lines, caps the returned
   source text at 64 KiB, and rejects files larger than 64 MiB. The response
   also includes line-number objects and hashline anchors, so serialized JSON is

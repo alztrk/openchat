@@ -61,7 +61,20 @@ pub(crate) async fn execute_model_tool_with_workspace_roots(
             &prepared.relative_path,
             *start_line,
             *line_count,
-        ),
+        )
+        .and_then(|mut output| {
+            if workspace_roots.is_empty() {
+                return Ok(output);
+            }
+            let rules = crate::domain::project_rules::matching_rules_for_target(
+                workspace_roots,
+                &prepared.target_path,
+            )?;
+            if !rules.is_empty() {
+                output["projectRules"] = json!(rules);
+            }
+            Ok(output)
+        }),
         ToolOperation::Write { content } => {
             write_file(&prepared.root, &prepared.relative_path, content)
         }
@@ -253,10 +266,78 @@ fn service_error(error: ServiceError) -> Value {
 
 #[cfg(test)]
 mod tests {
-    use super::execute_model_tool;
+    use super::{execute_model_tool, execute_model_tool_with_workspace_roots};
     use crate::tools::executor::{PreparedToolCall, ToolOperation, paths::ToolPathScope};
     use crate::tools::terminal::TerminalSessionManager;
     use std::path::PathBuf;
+
+    struct TestDirectory(PathBuf);
+
+    impl TestDirectory {
+        fn new() -> Self {
+            let root = std::env::temp_dir()
+                .join(format!("openchat-tool-execution-{}", uuid::Uuid::new_v4()));
+            std::fs::create_dir_all(&root).expect("create execution test folder");
+            Self(root)
+        }
+    }
+
+    impl Drop for TestDirectory {
+        fn drop(&mut self) {
+            std::fs::remove_dir_all(&self.0).expect("remove execution test folder");
+        }
+    }
+
+    #[tokio::test]
+    async fn read_file_includes_only_rules_matching_the_requested_path() {
+        let directory = TestDirectory::new();
+        let root = std::fs::canonicalize(&directory.0).expect("canonicalize project folder");
+        let rules = root.join(".openchat/rules");
+        std::fs::create_dir_all(&rules).expect("create project rules folder");
+        std::fs::create_dir_all(root.join("src")).expect("create source folder");
+        std::fs::create_dir_all(root.join("tests")).expect("create test folder");
+        std::fs::write(
+            rules.join("rust.mdc"),
+            "---\nglobs: \"src/**/*.rs\"\n---\nKeep the Rust API backward compatible.\n",
+        )
+        .expect("write scoped project rule");
+        for relative_path in ["src/lib.rs", "tests/lib.rs"] {
+            std::fs::write(root.join(relative_path), "pub fn run() {}\n")
+                .expect("write source fixture");
+        }
+        let execute_read = |relative_path: &str| PreparedToolCall {
+            root: root.clone(),
+            relative_path: relative_path.to_owned(),
+            requested_path: relative_path.to_owned(),
+            target_path: root.join(relative_path),
+            scope: ToolPathScope::Project,
+            operation: ToolOperation::Read {
+                start_line: 1,
+                line_count: 20,
+            },
+        };
+
+        let matched = execute_model_tool_with_workspace_roots(
+            &execute_read("src/lib.rs"),
+            "rule-read-test",
+            std::slice::from_ref(&root),
+            false,
+        )
+        .await;
+        assert_eq!(
+            matched["projectRules"][0]["instructions"],
+            "Keep the Rust API backward compatible."
+        );
+
+        let unmatched = execute_model_tool_with_workspace_roots(
+            &execute_read("tests/lib.rs"),
+            "rule-read-test",
+            std::slice::from_ref(&root),
+            false,
+        )
+        .await;
+        assert!(unmatched.get("projectRules").is_none());
+    }
 
     #[tokio::test]
     async fn execute_command_runs_echo_successfully() {

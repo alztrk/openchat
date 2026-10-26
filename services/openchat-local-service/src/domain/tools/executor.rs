@@ -20,6 +20,7 @@ use crate::{
 use rusqlite::OptionalExtension;
 use serde::Deserialize;
 use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
 use std::{
     collections::{HashMap, HashSet},
     path::{Path, PathBuf},
@@ -64,6 +65,7 @@ pub enum ToolPermissionRule {
 
 pub(crate) type ToolPermissionRules = HashMap<String, ToolPermissionRule>;
 const MAX_TOOL_PERMISSION_RULES: usize = 1080;
+const MAX_PROJECT_RULE_PRECHECKS: usize = 256;
 
 pub(crate) fn project_task_permission_rule<'a>(
     rules: &'a ToolPermissionRules,
@@ -410,6 +412,7 @@ pub struct ToolExecutor {
 struct ToolTurnState {
     round_sequence: usize,
     current_round_id: Option<String>,
+    project_rule_prechecks: HashSet<String>,
 }
 
 enum PendingFileChangeCapture {
@@ -861,6 +864,52 @@ impl ToolExecutor {
         *turn_state = ToolTurnState::default();
     }
 
+    fn project_rules_required_for_write(
+        &self,
+        prepared: &PreparedToolCall,
+    ) -> Result<Option<Vec<crate::domain::project_rules::ScopedProjectRule>>, ServiceError> {
+        if !matches!(
+            &prepared.operation,
+            ToolOperation::Write { .. } | ToolOperation::Edit { .. }
+        ) {
+            return Ok(None);
+        }
+        if self.project_roots.is_empty() {
+            return Ok(None);
+        }
+        let rules = crate::domain::project_rules::matching_rules_for_target(
+            &self.project_roots,
+            &prepared.target_path,
+        )?;
+        if rules.is_empty() {
+            return Ok(None);
+        }
+        let serialized_rules = serde_json::to_vec(&rules).map_err(|_| {
+            ServiceError::new(
+                "project_rules_unavailable",
+                "The matching project rules could not be prepared safely.",
+                false,
+            )
+        })?;
+        let mut fingerprint = Sha256::new();
+        fingerprint.update(prepared.target_path.to_string_lossy().as_bytes());
+        fingerprint.update([0]);
+        fingerprint.update(serialized_rules);
+        let fingerprint = format!("{:x}", fingerprint.finalize());
+        let mut turn_state = self
+            .turn_state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if turn_state.project_rule_prechecks.contains(&fingerprint) {
+            return Ok(None);
+        }
+        if turn_state.project_rule_prechecks.len() >= MAX_PROJECT_RULE_PRECHECKS {
+            turn_state.project_rule_prechecks.clear();
+        }
+        turn_state.project_rule_prechecks.insert(fingerprint);
+        Ok(Some(rules))
+    }
+
     #[cfg(test)]
     pub async fn execute_call(
         &self,
@@ -1108,6 +1157,53 @@ impl ToolExecutor {
                 call_id: call.id.clone(),
                 output,
             });
+        }
+
+        match self.project_rules_required_for_write(&prepared) {
+            Ok(Some(rules)) => {
+                let mut output = tool_error(
+                    "project_rules_required",
+                    "Review the matching project rules and retry the file operation.",
+                );
+                output["projectRules"] = json!(rules);
+                output["retryRequired"] = json!(true);
+                self.emit_activity(
+                    storage,
+                    ToolActivity::finished(
+                        call,
+                        Some(prepared.target_path.to_string_lossy().into_owned()),
+                        output.clone(),
+                    ),
+                    request_id,
+                    snapshot,
+                    events,
+                )
+                .await?;
+                return Ok(ToolResult {
+                    call_id: call.id.clone(),
+                    output,
+                });
+            }
+            Ok(None) => {}
+            Err(error) => {
+                let output = tool_error(error.code, &error.message);
+                self.emit_activity(
+                    storage,
+                    ToolActivity::finished(
+                        call,
+                        Some(prepared.target_path.to_string_lossy().into_owned()),
+                        output.clone(),
+                    ),
+                    request_id,
+                    snapshot,
+                    events,
+                )
+                .await?;
+                return Ok(ToolResult {
+                    call_id: call.id.clone(),
+                    output,
+                });
+            }
         }
 
         if rule == ToolPermissionRule::Ask {
@@ -1417,6 +1513,7 @@ impl ToolExecutor {
                 storage,
                 &snapshot.conversation_id,
                 &prepared,
+                &self.project_roots,
                 query,
                 mode,
                 *limit,
@@ -1428,6 +1525,7 @@ impl ToolExecutor {
                 limit,
             } => {
                 crate::tools::lsp::execute_lsp_query(
+                    &self.data_root,
                     &prepared.root,
                     &prepared.relative_path,
                     action,
@@ -2331,15 +2429,37 @@ fn tracking_error_code(error: crate::file_changes::TrackingError) -> &'static st
 
 #[cfg(test)]
 mod policy_tests {
-    use std::path::Path;
+    use std::{
+        fs,
+        path::{Path, PathBuf},
+    };
 
     use serde_json::json;
 
     use super::{
-        ToolCall, ToolExecutor, ToolPermissionMode, ToolPermissionRule, ToolPermissionRules,
-        parse_tool_permission_rules, qualify_citation_source_ids,
+        PreparedToolCall, ToolCall, ToolExecutor, ToolPermissionMode, ToolPermissionRule,
+        ToolPermissionRules, parse_tool_permission_rules, qualify_citation_source_ids,
     };
-    use crate::tools::executor::validation::ToolOperation;
+    use crate::tools::executor::{paths::ToolPathScope, validation::ToolOperation};
+
+    struct TestDirectory(PathBuf);
+
+    impl TestDirectory {
+        fn new() -> Self {
+            let root = std::env::temp_dir().join(format!(
+                "openchat-project-rule-precheck-{}",
+                uuid::Uuid::new_v4()
+            ));
+            fs::create_dir_all(&root).expect("create project rule fixture");
+            Self(root)
+        }
+    }
+
+    impl Drop for TestDirectory {
+        fn drop(&mut self) {
+            fs::remove_dir_all(&self.0).expect("remove project rule fixture");
+        }
+    }
 
     #[test]
     fn rejects_calls_that_were_not_advertised_to_the_model() {
@@ -2770,6 +2890,58 @@ mod policy_tests {
         assert_eq!(output["nested"]["normal"], "hello world");
         assert_eq!(output["list"][1], "normal item");
     }
+
+    #[test]
+    fn matching_project_rules_preflight_a_write_once_and_refresh_when_changed() {
+        let project = TestDirectory::new();
+        let root = fs::canonicalize(&project.0).expect("canonicalize project root");
+        fs::create_dir_all(root.join(".openchat/rules")).expect("create project rules folder");
+        fs::create_dir_all(root.join("src")).expect("create source folder");
+        let rule_path = root.join(".openchat/rules/source.mdc");
+        fs::write(
+            &rule_path,
+            "---\nglobs: \"src/**/*.rs\"\n---\nUse Rust style.\n",
+        )
+        .expect("write source rule");
+        let target_path = root.join("src/new_module.rs");
+        let prepared = PreparedToolCall {
+            root: root.clone(),
+            relative_path: "src/new_module.rs".to_owned(),
+            requested_path: target_path.to_string_lossy().into_owned(),
+            target_path,
+            scope: ToolPathScope::Full,
+            operation: ToolOperation::Write {
+                content: "pub fn new_module() {}".to_owned(),
+            },
+        };
+        let executor =
+            ToolExecutor::new(Some(&root), Path::new("."), ToolPermissionMode::FullAccess)
+                .with_workspace_roots(vec![root]);
+
+        let first = executor
+            .project_rules_required_for_write(&prepared)
+            .expect("load project rule");
+        assert_eq!(first.as_ref().map(Vec::len), Some(1));
+        assert!(
+            executor
+                .project_rules_required_for_write(&prepared)
+                .expect("recognize rule already supplied")
+                .is_none()
+        );
+
+        fs::write(
+            &rule_path,
+            "---\nglobs: \"src/**/*.rs\"\n---\nUse the updated Rust style.\n",
+        )
+        .expect("update source rule");
+        let updated = executor
+            .project_rules_required_for_write(&prepared)
+            .expect("reload changed project rule");
+        assert_eq!(
+            updated.as_ref().map(|rules| rules[0].instructions.as_str()),
+            Some("Use the updated Rust style.")
+        );
+    }
 }
 
 fn question_arguments_error() -> ServiceError {
@@ -2880,6 +3052,7 @@ fn execute_project_code_search(
     storage: &AppStorage,
     conversation_id: &str,
     prepared: &PreparedToolCall,
+    project_roots: &[PathBuf],
     query: &str,
     mode: &str,
     limit: usize,
@@ -2943,11 +3116,16 @@ fn execute_project_code_search(
         if let Some(state) = state.as_ref()
             && state.status != "current"
         {
-            let index_scheduled = crate::project_index::schedule_sync_on_connection(
+            let roots = if project_roots.is_empty() {
+                vec![prepared.root.clone()]
+            } else {
+                project_roots.to_vec()
+            };
+            let index_scheduled = crate::project_index::schedule_sync_roots_on_connection(
                 &connection,
                 storage.database_queue_handle(),
                 &project_id,
-                &prepared.root,
+                &roots,
             )
             .is_ok();
             return Ok(json!({
@@ -2959,11 +3137,15 @@ fn execute_project_code_search(
             }));
         }
 
+        let mut rule_targets = Vec::new();
         let matches = if mode == "all" || mode == "text" {
             crate::project_index::search_current_hits(&connection, &project_id, query)?
                 .into_iter()
                 .take(limit)
-                .map(|hit| json!({"path": hit.path, "excerpt": hit.excerpt}))
+                .map(|hit| {
+                    rule_targets.push(PathBuf::from(&hit.path));
+                    json!({"path": hit.path, "excerpt": hit.excerpt})
+                })
                 .collect::<Vec<_>>()
         } else {
             Vec::new()
@@ -2972,24 +3154,39 @@ fn execute_project_code_search(
             crate::project_index::search_symbols(&connection, &project_id, query, limit)?
                 .into_iter()
                 .map(|hit| {
+                    rule_targets.push(PathBuf::from(&hit.path));
                     json!({
                         "path": hit.path,
                         "name": hit.name,
                         "kind": hit.kind,
                         "startLine": hit.start_line,
                         "endLine": hit.end_line,
+                        "signature": hit.signature,
+                        "container": hit.container,
+                        "relationships": hit.relationships,
                     })
                 })
                 .collect::<Vec<_>>()
         } else {
             Vec::new()
         };
-        Ok(json!({
+        let roots = if project_roots.is_empty() {
+            vec![prepared.root.clone()]
+        } else {
+            project_roots.to_vec()
+        };
+        let project_rules =
+            crate::domain::project_rules::matching_rules_for_targets(&roots, &rule_targets)?;
+        let mut output = json!({
             "status": if needs_code_index { "current" } else { "memory_only" },
             "matches": matches,
             "symbols": symbols,
             "memory": memory
-        }))
+        });
+        if !project_rules.is_empty() {
+            output["projectRules"] = json!(project_rules);
+        }
+        Ok(output)
     })();
     result.unwrap_or_else(|error| {
         let mut output = tool_error(error.code, &error.message);

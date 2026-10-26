@@ -590,45 +590,55 @@ async fn load_project_context(
             route.project_root.as_deref(),
             latest_user_message.as_deref(),
         ) {
-            let state = crate::project_index::sync(connection, project_id, Path::new(root))?;
-            if state.status == "stale" {
-                let error = ServiceError::new(
-                    "project_index_stale",
-                    "The project index could not be fully synchronized. Retry sync in project options or disable the index.",
-                    true,
-                );
-                return Err(match state.error_details {
-                    Some(details) => error.with_details(details),
-                    None => error,
-                });
+            let state = crate::project_index::snapshot(connection, project_id)?;
+            if state.status != "current" {
+                match super::projects::project_workspace_roots_for_project(storage, project_id) {
+                    Ok(roots) => {
+                        if let Err(error) = crate::project_index::schedule_sync_roots_on_connection(
+                            connection,
+                            storage.database_queue_handle(),
+                            project_id,
+                            &roots,
+                        ) {
+                            eprintln!("project_index_sync_schedule_failed code={}", error.code);
+                        }
+                    }
+                    Err(error) => {
+                        eprintln!("project_index_workspace_roots_failed code={}", error.code);
+                    }
+                }
             }
             let hits = crate::project_index::search_current_hits(connection, project_id, query)?;
-            let candidates = hits
-                .iter()
-                .map(|hit| format!("{}\n{}", hit.path, hit.excerpt))
-                .collect::<Vec<_>>();
-            let ranked_indices =
-                chatgpt_store::rank_project_candidates(storage, query, candidates).await;
-            let ranked_hits = if let Some(ranked_indices) = ranked_indices {
-                let mut seen = HashSet::new();
-                let mut ranked_hits = Vec::with_capacity(hits.len());
-                for index in ranked_indices {
-                    if let Some(hit) = hits.get(index)
-                        && seen.insert(index)
-                    {
-                        ranked_hits.push(hit.clone());
-                    }
-                }
-                for (index, hit) in hits.iter().enumerate() {
-                    if seen.insert(index) {
-                        ranked_hits.push(hit.clone());
-                    }
-                }
-                ranked_hits
+            if hits.is_empty() {
+                None
             } else {
-                hits
-            };
-            crate::project_index::format_current_hits(Path::new(root), &ranked_hits)
+                let candidates = hits
+                    .iter()
+                    .map(|hit| format!("{}\n{}", hit.path, hit.excerpt))
+                    .collect::<Vec<_>>();
+                let ranked_indices =
+                    chatgpt_store::rank_project_candidates(storage, query, candidates).await;
+                let ranked_hits = if let Some(ranked_indices) = ranked_indices {
+                    let mut seen = HashSet::new();
+                    let mut ranked_hits = Vec::with_capacity(hits.len());
+                    for index in ranked_indices {
+                        if let Some(hit) = hits.get(index)
+                            && seen.insert(index)
+                        {
+                            ranked_hits.push(hit.clone());
+                        }
+                    }
+                    for (index, hit) in hits.iter().enumerate() {
+                        if seen.insert(index) {
+                            ranked_hits.push(hit.clone());
+                        }
+                    }
+                    ranked_hits
+                } else {
+                    hits
+                };
+                crate::project_index::format_current_hits(Path::new(root), &ranked_hits)
+            }
         } else {
             None
         }

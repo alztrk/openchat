@@ -10,6 +10,9 @@ pub(crate) struct IndexedSymbol {
     pub(crate) kind: &'static str,
     pub(crate) start_line: usize,
     pub(crate) end_line: usize,
+    pub(crate) signature: Option<String>,
+    pub(crate) container: Option<String>,
+    pub(crate) relationships: Vec<String>,
 }
 
 pub(crate) fn extract_symbols(path: &Path, source: &str, limit: usize) -> Vec<IndexedSymbol> {
@@ -24,7 +27,15 @@ pub(crate) fn extract_symbols(path: &Path, source: &str, limit: usize) -> Vec<In
         return Vec::new();
     };
     let mut symbols = Vec::new();
-    collect_symbols(tree.root_node(), family, source, false, &mut symbols, limit);
+    collect_symbols(
+        tree.root_node(),
+        family,
+        source,
+        false,
+        None,
+        &mut symbols,
+        limit,
+    );
     symbols
 }
 
@@ -77,6 +88,7 @@ fn collect_symbols(
     family: LanguageFamily,
     source: &str,
     inside_class: bool,
+    container: Option<&str>,
     symbols: &mut Vec<IndexedSymbol>,
     limit: usize,
 ) {
@@ -94,28 +106,115 @@ fn collect_symbols(
                 kind,
                 start_line: node.start_position().row.saturating_add(1),
                 end_line: node.end_position().row.saturating_add(1),
+                signature: declaration_signature(node, source, family),
+                container: container.map(str::to_owned),
+                relationships: declaration_relationships(node, source, family),
             });
         }
     }
-    let next_inside_class = inside_class
-        || matches!(
-            node.kind(),
-            "class_definition"
-                | "class_declaration"
-                | "class_specifier"
-                | "struct_declaration"
-                | "struct_specifier"
-                | "interface_declaration"
-                | "record_declaration"
-                | "trait_declaration"
-        );
+    let next_container = if is_container(node.kind()) {
+        declaration_name(node)
+            .and_then(|name| name.utf8_text(source.as_bytes()).ok())
+            .map(str::trim)
+            .filter(|name| !name.is_empty())
+            .or(container)
+    } else {
+        container
+    };
+    let next_inside_class = inside_class || is_container(node.kind());
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         if symbols.len() >= limit {
             break;
         }
-        collect_symbols(child, family, source, next_inside_class, symbols, limit);
+        collect_symbols(
+            child,
+            family,
+            source,
+            next_inside_class,
+            next_container,
+            symbols,
+            limit,
+        );
     }
+}
+
+fn is_container(node_kind: &str) -> bool {
+    matches!(
+        node_kind,
+        "class_definition"
+            | "class_declaration"
+            | "class_specifier"
+            | "struct_declaration"
+            | "struct_specifier"
+            | "interface_declaration"
+            | "record_declaration"
+            | "trait_declaration"
+    )
+}
+
+fn declaration_signature(node: Node<'_>, source: &str, family: LanguageFamily) -> Option<String> {
+    let kind = symbol_kind(family, node.kind(), false)?;
+    if !matches!(
+        kind,
+        "function" | "method" | "constructor" | "class" | "interface" | "record"
+    ) {
+        return None;
+    }
+    let body_start = ["body", "block", "declaration_list"]
+        .iter()
+        .filter_map(|field| node.child_by_field_name(field))
+        .map(|body| body.start_byte())
+        .min()
+        .unwrap_or_else(|| node.end_byte());
+    if body_start <= node.start_byte() || body_start > source.len() {
+        return None;
+    }
+    let header = source.get(node.start_byte()..body_start)?;
+    let signature = compact_text(header, 512);
+    (!signature.is_empty()).then_some(signature)
+}
+
+fn declaration_relationships(node: Node<'_>, source: &str, family: LanguageFamily) -> Vec<String> {
+    if !matches!(
+        symbol_kind(family, node.kind(), false),
+        Some("class" | "interface" | "record" | "struct" | "trait")
+    ) {
+        return Vec::new();
+    }
+    let relationship_nodes: &[&str] = match family {
+        LanguageFamily::CSharp => &["base_list"],
+        LanguageFamily::Cpp => &["base_class_clause"],
+        LanguageFamily::Java => &["superclass", "super_interfaces"],
+        LanguageFamily::Php => &["base_clause", "class_interface_clause"],
+        LanguageFamily::Python => &["argument_list"],
+        LanguageFamily::TypeScript => &["class_heritage"],
+        _ => &[],
+    };
+    let mut relationships = Vec::new();
+    let mut cursor = node.walk();
+    for child in node.named_children(&mut cursor) {
+        if !relationship_nodes.contains(&child.kind()) {
+            continue;
+        }
+        if let Ok(value) = child.utf8_text(source.as_bytes()) {
+            let value = compact_text(value, 256);
+            if !value.is_empty() && !relationships.contains(&value) {
+                relationships.push(value);
+            }
+        }
+    }
+    relationships
+}
+
+fn compact_text(value: &str, max_chars: usize) -> String {
+    value
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .chars()
+        .take(max_chars)
+        .collect()
 }
 
 fn symbol_kind(
@@ -258,5 +357,67 @@ mod tests {
         let source = "fn first() {} fn second() {} fn third() {}";
         assert_eq!(extract_symbols(Path::new("src/lib.rs"), source, 2).len(), 2);
         assert!(extract_symbols(Path::new("README.md"), source, 8).is_empty());
+    }
+
+    #[test]
+    fn extracts_function_signatures_class_relationships_and_containers() {
+        let symbols = extract_symbols(
+            Path::new("src/app.ts"),
+            "class Child extends Base implements Runnable { run(input: string): number { return 1; } }",
+            16,
+        );
+        let class = symbols
+            .iter()
+            .find(|symbol| symbol.name == "Child")
+            .expect("find the class symbol");
+        assert_eq!(
+            class.signature.as_deref(),
+            Some("class Child extends Base implements Runnable")
+        );
+        assert_eq!(class.relationships, ["extends Base implements Runnable"]);
+        let method = symbols
+            .iter()
+            .find(|symbol| symbol.name == "run")
+            .expect("find the method symbol");
+        assert_eq!(method.container.as_deref(), Some("Child"));
+        assert_eq!(
+            method.signature.as_deref(),
+            Some("run(input: string): number")
+        );
+    }
+
+    #[test]
+    fn extracts_class_relationships_from_supported_grammars() {
+        let samples = [
+            (
+                Path::new("src/Child.cs"),
+                "class Child : Base, IRunnable {}",
+            ),
+            (Path::new("src/Child.cpp"), "class Child : public Base {};"),
+            (
+                Path::new("src/Child.java"),
+                "class Child extends Base implements Runnable {}",
+            ),
+            (
+                Path::new("src/Child.php"),
+                "<?php class Child extends Base implements Runnable {}",
+            ),
+            (
+                Path::new("src/child.py"),
+                "class Child(Base, Protocol):\n    pass\n",
+            ),
+        ];
+
+        for (path, source) in samples {
+            let class = extract_symbols(path, source, 16)
+                .into_iter()
+                .find(|symbol| symbol.name == "Child")
+                .unwrap_or_else(|| panic!("expected class symbol from {}", path.display()));
+            assert!(
+                !class.relationships.is_empty(),
+                "expected class relationships from {}",
+                path.display()
+            );
+        }
     }
 }

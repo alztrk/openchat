@@ -211,6 +211,13 @@ impl SandboxedProcess {
         additional_environment: &[(String, Zeroizing<String>)],
         options: SandboxOptions<'_>,
     ) -> io::Result<Self> {
+        // Some Windows runtimes reject extended-length executable prefixes even for short paths.
+        // Preserve them only when removing the prefix would exceed the traditional path limit.
+        let application = if application.as_os_str().encode_wide().count() < 260 {
+            super::types::shell_path(&application)
+        } else {
+            application
+        };
         let security_attributes = SECURITY_ATTRIBUTES {
             nLength: size_of::<SECURITY_ATTRIBUTES>() as u32,
             bInheritHandle: 1,

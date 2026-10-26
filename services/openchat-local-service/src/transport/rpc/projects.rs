@@ -186,11 +186,11 @@ pub(super) async fn dispatch(
             crate::project_index::set_enabled(&mut connection, project_id, enabled)?;
             drop(connection);
             let index_scheduled = if enabled {
-                match project_root_for_mcp(storage, project_id) {
-                    Ok(root) => crate::project_index::schedule_sync(
+                match project_workspace_roots_for_project(storage, project_id) {
+                    Ok(roots) => crate::project_index::schedule_sync_roots(
                         storage.database_queue_handle(),
                         project_id,
-                        &root,
+                        &roots,
                     )
                     .is_ok(),
                     Err(_) => false,
@@ -208,11 +208,11 @@ pub(super) async fn dispatch(
         }
         "project.index.sync" => {
             let project_id = required_string(params, "projectId")?;
-            let project_root = project_root_for_mcp(storage, project_id)?;
-            let index_scheduled = crate::project_index::schedule_sync(
+            let project_roots = project_workspace_roots_for_project(storage, project_id)?;
+            let index_scheduled = crate::project_index::schedule_sync_roots(
                 storage.database_queue_handle(),
                 project_id,
-                &project_root,
+                &project_roots,
             )
             .is_ok();
             let connection = storage

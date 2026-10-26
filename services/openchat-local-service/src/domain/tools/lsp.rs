@@ -173,6 +173,7 @@ mod windows {
     }
 
     pub(super) async fn execute(
+        cache_root: &Path,
         root: &Path,
         relative_path: &str,
         action: &str,
@@ -182,6 +183,7 @@ mod windows {
         cancellation: &mut watch::Receiver<bool>,
     ) -> Value {
         match query(
+            cache_root,
             root,
             relative_path,
             action,
@@ -207,6 +209,7 @@ mod windows {
     }
 
     async fn query(
+        cache_root: &Path,
         root: &Path,
         relative_path: &str,
         action: &str,
@@ -262,8 +265,16 @@ mod windows {
             root: root.clone(),
             server_id: spec.id,
         };
-        let session =
-            session_for(key.clone(), &root, spec, &program, &arguments, cancellation).await?;
+        let session = session_for(
+            key.clone(),
+            cache_root,
+            &root,
+            spec,
+            &program,
+            &arguments,
+            cancellation,
+        )
+        .await?;
         let session_to_lock = Arc::clone(&session);
         let mut session = tokio::select! {
             guard = session_to_lock.lock_owned() => guard,
@@ -317,6 +328,7 @@ mod windows {
 
     async fn session_for(
         key: SessionKey,
+        cache_root: &Path,
         root: &Path,
         spec: ServerSpec,
         program: &Path,
@@ -350,7 +362,7 @@ mod windows {
         }
         evict_oldest_session_if_full(&mut sessions);
         let session = Arc::new(Mutex::new(LspSession::spawn(
-            root, spec, program, arguments, permit,
+            cache_root, root, spec, program, arguments, permit,
         )?));
         sessions.insert(
             key.clone(),
@@ -483,6 +495,11 @@ mod windows {
                 }
             }
         }
+        if spec.id == DART.id
+            && let Some(program) = find_dart_sdk_program(&path)
+        {
+            return Some((program, spec.arguments.iter().map(OsString::from).collect()));
+        }
         let (package, entry) = npm_server_entry(spec.id)?;
         let node = find_program_in_path(&path, &["node.exe"])?;
         let script = find_npm_entry(&path, package, entry)?;
@@ -500,6 +517,20 @@ mod windows {
                 {
                     return Some(canonical);
                 }
+            }
+        }
+        None
+    }
+
+    fn find_dart_sdk_program(path: &std::ffi::OsStr) -> Option<PathBuf> {
+        for directory in std::env::split_paths(path) {
+            let launcher = directory.join("dart.bat");
+            let candidate = directory.join("cache/dart-sdk/bin/dart.exe");
+            if launcher.is_file()
+                && candidate.is_file()
+                && let Ok(candidate) = fs::canonicalize(candidate)
+            {
+                return Some(candidate);
             }
         }
         None
@@ -528,17 +559,23 @@ mod windows {
 
     impl LspSession {
         fn spawn(
+            cache_root: &Path,
             root: &Path,
             spec: ServerSpec,
             program: &Path,
             arguments: &[OsString],
             permit: OwnedSemaphorePermit,
         ) -> Result<Self, ServiceError> {
-            let cache_directory = lsp_cache_directory(root, spec.id);
+            let cache_directory = lsp_cache_directory(cache_root, root, spec.id);
             fs::create_dir_all(&cache_directory).map_err(|_| lsp_start_error(spec.id))?;
             let mut read_only_paths = vec![root.to_path_buf()];
             if let Some(program_directory) = program.parent() {
                 read_only_paths.push(program_directory.to_path_buf());
+            }
+            if spec.id == DART.id
+                && let Some(sdk_directory) = program.parent().and_then(Path::parent)
+            {
+                read_only_paths.push(sdk_directory.to_path_buf());
             }
             if let Some(script) = arguments
                 .first()
@@ -564,14 +601,26 @@ mod windows {
                 }),
                 ..SandboxOptions::default()
             };
+            let mut process_arguments = arguments.to_vec();
+            if spec.id == DART.id {
+                let mut cache_argument = OsString::from("--cache=");
+                cache_argument.push(cache_directory.as_os_str());
+                process_arguments.push(cache_argument);
+            }
             let mut process = SandboxedProcess::spawn_program_with_options(
                 program,
-                arguments,
+                &process_arguments,
                 &cache_directory,
                 &[],
                 options,
             )
-            .map_err(|_| lsp_start_error(spec.id))?;
+            .map_err(|error| {
+                lsp_start_error(spec.id).with_details(format!(
+                    "Sandbox I/O kind: {:?}; operating-system code: {:?}.",
+                    error.kind(),
+                    error.raw_os_error()
+                ))
+            })?;
             let stdin = process
                 .take_stdin()
                 .ok_or_else(|| lsp_start_error(spec.id))?;
@@ -731,7 +780,7 @@ mod windows {
                     }
                     match timeout_at(deadline, self.read_message()).await {
                         Ok(Ok(message)) => self.handle_incoming(message).await?,
-                        Ok(Err(_)) => return Err(lsp_protocol_error()),
+                        Ok(Err(error)) => return Err(lsp_protocol_io_error(&error)),
                         Err(_) => return Err(diagnostics_unavailable_error()),
                     }
                 }
@@ -761,12 +810,12 @@ mod windows {
                 &json!({"jsonrpc":"2.0","id":request_id,"method":method,"params":params}),
             )
             .await
-            .map_err(|_| lsp_protocol_error())?;
+            .map_err(|error| lsp_protocol_io_error(&error))?;
             loop {
                 let message = self
                     .read_message()
                     .await
-                    .map_err(|_| lsp_protocol_error())?;
+                    .map_err(|error| lsp_protocol_io_error(&error))?;
                 if message.get("id") == Some(&json!(request_id)) {
                     if let Some(error) = message.get("error") {
                         let code = error
@@ -796,7 +845,7 @@ mod windows {
         async fn notify(&mut self, method: &str, params: Value) -> Result<(), ServiceError> {
             self.write_message(&json!({"jsonrpc":"2.0","method":method,"params":params}))
                 .await
-                .map_err(|_| lsp_protocol_error())
+                .map_err(|error| lsp_protocol_io_error(&error))
         }
 
         async fn handle_incoming(&mut self, message: Value) -> Result<(), ServiceError> {
@@ -828,7 +877,7 @@ mod windows {
                 };
                 self.write_message(&json!({"jsonrpc":"2.0","id":id,"result":result}))
                     .await
-                    .map_err(|_| lsp_protocol_error())?;
+                    .map_err(|error| lsp_protocol_io_error(&error))?;
             }
             Ok(())
         }
@@ -965,7 +1014,7 @@ mod windows {
         Ok(json!({"contents":text.chars().take(MAX_HOVER_BYTES).collect::<String>()}))
     }
 
-    fn lsp_cache_directory(root: &Path, server_id: &str) -> PathBuf {
+    fn lsp_cache_directory(cache_root: &Path, root: &Path, server_id: &str) -> PathBuf {
         let mut hasher = Sha256::new();
         hasher.update(root.to_string_lossy().as_bytes());
         hasher.update(server_id.as_bytes());
@@ -974,7 +1023,7 @@ mod windows {
             .iter()
             .map(|byte| format!("{byte:02x}"))
             .collect::<String>();
-        std::env::temp_dir().join("OpenChatLspCache").join(key)
+        cache_root.join("lsp").join(key)
     }
 
     fn project_root_error() -> ServiceError {
@@ -1025,6 +1074,14 @@ mod windows {
         )
     }
 
+    fn lsp_protocol_io_error(error: &io::Error) -> ServiceError {
+        lsp_protocol_error().with_details(format!(
+            "LSP transport I/O kind: {:?}; operating-system code: {:?}.",
+            error.kind(),
+            error.raw_os_error()
+        ))
+    }
+
     fn lsp_timeout_error() -> ServiceError {
         ServiceError::new(
             "lsp_timeout",
@@ -1051,9 +1108,53 @@ mod windows {
 
     #[cfg(test)]
     mod tests {
-        use std::fs;
+        use std::{
+            fs,
+            path::{Path, PathBuf},
+        };
 
-        use super::{find_npm_entry, npm_server_entry};
+        use super::{find_dart_sdk_program, find_npm_entry, npm_server_entry};
+
+        struct TemporaryProject {
+            root: std::path::PathBuf,
+            cache_root: std::path::PathBuf,
+            directory: std::path::PathBuf,
+        }
+
+        impl TemporaryProject {
+            fn new() -> Self {
+                let directory = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                    .join("target")
+                    .join(format!("openchat-lsp-integration-{}", uuid::Uuid::new_v4()));
+                let root = directory.join("project");
+                let cache_root = directory.join("app-data");
+                fs::create_dir_all(&root).expect("create temporary LSP project");
+                fs::create_dir_all(&cache_root).expect("create temporary LSP cache root");
+                Self {
+                    root,
+                    cache_root,
+                    directory,
+                }
+            }
+        }
+
+        impl Drop for TemporaryProject {
+            fn drop(&mut self) {
+                fs::remove_dir_all(&self.directory).expect("remove temporary LSP project");
+            }
+        }
+
+        async fn stop_cached_session(root: &Path, server_id: &'static str) {
+            let key = super::SessionKey {
+                root: root.to_path_buf(),
+                server_id,
+            };
+            super::SESSIONS
+                .get_or_init(|| tokio::sync::Mutex::new(std::collections::HashMap::new()))
+                .lock()
+                .await
+                .remove(&key);
+        }
 
         #[test]
         fn npm_backed_servers_resolve_their_package_entry_points() {
@@ -1098,6 +1199,24 @@ mod windows {
 
             assert_eq!(entry, package_entry.canonicalize().ok());
             fs::remove_dir_all(root).expect("remove package fixture");
+        }
+
+        #[test]
+        fn flutter_path_resolves_its_bundled_dart_language_server_binary() {
+            let root =
+                std::env::temp_dir().join(format!("openchat-dart-test-{}", uuid::Uuid::new_v4()));
+            let bin_directory = root.join("flutter/bin");
+            let dart_binary = bin_directory.join("cache/dart-sdk/bin/dart.exe");
+            fs::create_dir_all(dart_binary.parent().expect("Dart binary parent"))
+                .expect("create Flutter Dart SDK fixture");
+            fs::write(bin_directory.join("dart.bat"), "@echo off\n")
+                .expect("create Flutter Dart launcher");
+            fs::write(&dart_binary, "fixture").expect("create Dart executable fixture");
+
+            let resolved = find_dart_sdk_program(bin_directory.as_os_str());
+
+            assert_eq!(resolved, dart_binary.canonicalize().ok());
+            fs::remove_dir_all(root).expect("remove Flutter Dart SDK fixture");
         }
 
         #[test]
@@ -1160,11 +1279,96 @@ mod windows {
             );
             fs::remove_dir_all(root).expect("remove project fixture");
         }
+
+        #[tokio::test]
+        #[ignore = "manual integration test requires Rust Analyzer on PATH"]
+        async fn installed_rust_analyzer_resolves_a_project_definition() {
+            use tokio::sync::watch;
+
+            let project = TemporaryProject::new();
+            fs::create_dir_all(project.root.join("src")).expect("create source directory");
+            fs::write(
+                project.root.join("Cargo.toml"),
+                "[package]\nname = \"openchat_lsp_fixture\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+            )
+            .expect("write fixture manifest");
+            fs::write(project.root.join("src/lib.rs"), "pub fn target() {}\n")
+                .expect("write definition");
+            fs::write(
+                project.root.join("src/main.rs"),
+                "use openchat_lsp_fixture::target;\nfn main() { target(); }\n",
+            )
+            .expect("write reference");
+            let root = fs::canonicalize(&project.root).expect("canonicalize fixture root");
+            let (_cancel, mut cancellation) = watch::channel(false);
+
+            let result = super::query(
+                &project.cache_root,
+                &root,
+                "src/main.rs",
+                "definition",
+                Some(2),
+                Some(13),
+                10,
+                &mut cancellation,
+            )
+            .await;
+            stop_cached_session(&root, super::RUST_ANALYZER.id).await;
+            let result = result.expect("Rust Analyzer should resolve the reference");
+            let expected = fs::canonicalize(root.join("src/lib.rs"))
+                .expect("canonicalize definition file")
+                .to_string_lossy()
+                .into_owned();
+            assert!(
+                result["locations"]
+                    .as_array()
+                    .is_some_and(|locations| locations
+                        .iter()
+                        .any(|location| { location["path"].as_str() == Some(expected.as_str()) })),
+                "Rust Analyzer returned {result}"
+            );
+        }
+
+        #[tokio::test]
+        #[ignore = "manual integration test requires Dart SDK on PATH"]
+        async fn installed_dart_language_server_answers_hover() {
+            use tokio::sync::watch;
+
+            let project = TemporaryProject::new();
+            fs::write(
+                project.root.join("main.dart"),
+                "void main() { print('hello'); }\n",
+            )
+            .expect("write Dart source");
+            let root = fs::canonicalize(&project.root).expect("canonicalize fixture root");
+            let (_cancel, mut cancellation) = watch::channel(false);
+
+            let result = super::query(
+                &project.cache_root,
+                &root,
+                "main.dart",
+                "hover",
+                Some(1),
+                Some(6),
+                10,
+                &mut cancellation,
+            )
+            .await;
+            stop_cached_session(&root, super::DART.id).await;
+            let result = result.expect("Dart language server should answer hover");
+            assert!(
+                result["contents"]
+                    .as_str()
+                    .is_some_and(|contents| contents.contains("main")),
+                "Dart language server returned {result}"
+            );
+        }
     }
 }
 
 #[cfg(windows)]
 pub(crate) async fn execute_lsp_query(
+    cache_root: &Path,
     root: &Path,
     relative_path: &str,
     action: &str,
@@ -1174,6 +1378,7 @@ pub(crate) async fn execute_lsp_query(
     cancellation: &mut tokio::sync::watch::Receiver<bool>,
 ) -> Value {
     windows::execute(
+        cache_root,
         root,
         relative_path,
         action,
@@ -1187,6 +1392,7 @@ pub(crate) async fn execute_lsp_query(
 
 #[cfg(not(windows))]
 pub(crate) async fn execute_lsp_query(
+    _cache_root: &Path,
     _root: &Path,
     _relative_path: &str,
     _action: &str,
