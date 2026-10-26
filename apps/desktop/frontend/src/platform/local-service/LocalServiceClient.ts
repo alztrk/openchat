@@ -309,23 +309,12 @@ export class LocalServiceClient {
 
   /** Performs the one-time storage preparation and application initialization handshake. */
   private async initializeOnce(startWithEmptyStorage: boolean): Promise<void> {
-    await this.startProcess(startWithEmptyStorage);
-    const health = await this.callRaw('system.health', {}, requestTimeoutMs);
-    if (health.status !== 'ready') {
-      throw new LocalServiceError('invalid_service_response', 'The local service did not report a ready status.');
-    }
+    const [chatSchemaVersion] = await Promise.all([
+      getChatSchemaVersion(),
+      this.startProcess(startWithEmptyStorage),
+    ]);
 
-    const chatSchemaVersion = await getChatSchemaVersion();
-
-    const preparation = await this.callRaw('system.database.prepare', { chatSchemaVersion }, requestTimeoutMs);
-    if (preparation.status !== 'ready') {
-      throw new LocalServiceError(
-        'database_prepare_failed',
-        'The local database could not be safely prepared for an update.',
-      );
-    }
-
-    const initialization = await this.callRaw('system.initialize', {}, requestTimeoutMs);
+    const initialization = await this.callRaw('system.initialize', { chatSchemaVersion }, requestTimeoutMs);
     if (initialization.status !== 'ready') {
       throw new LocalServiceError(
         'storage_initialization_failed',

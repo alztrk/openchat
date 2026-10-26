@@ -206,7 +206,7 @@ pub(crate) async fn dispatch(context: RpcDispatchContext<'_>) -> Result<Value, S
         "instructions.defaults.get" => Ok(json!({
             "instructions": instructions::base_instructions(),
         })),
-        "system.database.prepare" => {
+        "system.initialize" => {
             let chat_schema_version = request
                 .params
                 .get("chatSchemaVersion")
@@ -229,9 +229,6 @@ pub(crate) async fn dispatch(context: RpcDispatchContext<'_>) -> Result<Value, S
                     )
                     .with_details(error.to_string())
                 })?;
-            Ok(json!({"status": "ready", "backupCreated": backup_created}))
-        }
-        "system.initialize" => {
             let schema_version = storage.initialize_backend_schema().map_err(|error| {
                 ServiceError::new(
                     "storage_initialization_failed",
@@ -277,7 +274,11 @@ pub(crate) async fn dispatch(context: RpcDispatchContext<'_>) -> Result<Value, S
                     false,
                 )
             })?;
-            Ok(json!({"status": "ready", "schema_version": schema_version}))
+            Ok(json!({
+                "status": "ready",
+                "schema_version": schema_version,
+                "backupCreated": backup_created,
+            }))
         }
         "chat.temporary.send" => {
             temporary_conversation::dispatch(

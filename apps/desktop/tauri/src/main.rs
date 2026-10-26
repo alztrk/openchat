@@ -76,6 +76,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             window_broadcast::broadcast_window_sync_event,
         ])
         .setup(|app| {
+            if let Err(error) = local_service::start_local_service_early(app.handle()) {
+                eprintln!(
+                    "OpenChat local service early startup failed; the renderer will retry: {error}"
+                );
+            }
             let main_window = app
                 .get_webview_window("main")
                 .ok_or_else(|| std::io::Error::other("Main window is unavailable"))?;

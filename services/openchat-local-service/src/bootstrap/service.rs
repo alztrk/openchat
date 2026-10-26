@@ -234,22 +234,6 @@ pub async fn run() -> Result<(), RunError> {
             details: error.details,
         }
     })?);
-    let (_preload_cancellation_sender, mut preload_cancellation) = tokio_watch::channel(false);
-    match timeout(
-        Duration::from_secs(3),
-        crate::openai_compatible::models(&storage, None, false, &mut preload_cancellation),
-    )
-    .await
-    {
-        Ok(Ok(_)) => {}
-        Ok(Err(error)) => eprintln!(
-            "openchat-local-service-warning: opencode_model_catalog_preload_failed code={}",
-            error.code
-        ),
-        Err(_) => {
-            eprintln!("openchat-local-service-warning: opencode_model_catalog_preload_timed_out")
-        }
-    }
     run_protocol(storage, service)
         .await
         .map_err(|error| RunError::Protocol(error.to_string()))

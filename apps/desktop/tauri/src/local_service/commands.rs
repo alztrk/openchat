@@ -6,7 +6,7 @@ use std::{
 };
 
 use serde_json::{json, Value};
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_shell::{process::CommandEvent, ShellExt};
 use zeroize::{Zeroize, Zeroizing};
 
@@ -14,6 +14,12 @@ use super::dialogs::PermissionDialogCopy;
 use super::process::*;
 use super::rpc_frame::*;
 use super::types::*;
+
+/// Starts the sidecar during native startup so it can initialize while the WebView loads.
+pub(crate) fn start_local_service_early(app: &AppHandle) -> Result<u64, String> {
+    let state = app.state::<LocalServiceState>();
+    start_local_service_process(app.clone(), &state, false)
+}
 
 #[tauri::command]
 pub(crate) fn start_local_service(
