@@ -117,7 +117,7 @@
   "customProviderReasoningDisabled": "Akıl yürütme ayarı gönderme",
   "customProviderReasoningEffort": "Akıl yürütme düzeyi",
   "customProviderReasoningEffortsPlaceholder": "low, medium, high, xhigh",
-  "customProviderReasoningTemplate": "vLLM düşünme şablonu",
+  "customProviderReasoningTemplate": "Thinking'i etkinleştir",
   "customProviderReasoningLevels": "Desteklenen düzeyler",
   "customProviderReasoningLevelRequired": "Virgülle ayrılmış en fazla 16 değer girin. Harf, rakam, alt çizgi ve tire kullanabilirsiniz.",
   "customProviderKeyUnchanged": "Adres ve API biçimi aynı kalacaksa boş bırakın",

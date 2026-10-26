@@ -117,7 +117,7 @@
   "customProviderReasoningDisabled": "Ne pas envoyer de paramètre de raisonnement",
   "customProviderReasoningEffort": "Niveau de raisonnement",
   "customProviderReasoningEffortsPlaceholder": "low, medium, high, xhigh",
-  "customProviderReasoningTemplate": "Modèle de réflexion vLLM",
+  "customProviderReasoningTemplate": "Activer thinking",
   "customProviderReasoningLevels": "Niveaux pris en charge",
   "customProviderReasoningLevelRequired": "Saisissez jusqu’à 16 valeurs séparées par des virgules, avec des lettres, chiffres, tirets bas ou tirets.",
   "customProviderKeyUnchanged": "Laissez vide uniquement si l’adresse et le format API restent identiques",

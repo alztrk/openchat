@@ -117,7 +117,7 @@
   "customProviderReasoningDisabled": "No enviar un ajuste de razonamiento",
   "customProviderReasoningEffort": "Nivel de razonamiento",
   "customProviderReasoningEffortsPlaceholder": "low, medium, high, xhigh",
-  "customProviderReasoningTemplate": "Plantilla de pensamiento de vLLM",
+  "customProviderReasoningTemplate": "Activar thinking",
   "customProviderReasoningLevels": "Niveles disponibles",
   "customProviderReasoningLevelRequired": "Escribe hasta 16 valores separados por comas, con letras, números, guiones bajos o guiones.",
   "customProviderKeyUnchanged": "Déjalo en blanco solo si la dirección y el formato de API no cambian",

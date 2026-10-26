@@ -117,7 +117,7 @@
   "customProviderReasoningDisabled": "Do not send a reasoning setting",
   "customProviderReasoningEffort": "Reasoning effort",
   "customProviderReasoningEffortsPlaceholder": "low, medium, high, xhigh",
-  "customProviderReasoningTemplate": "vLLM thinking template",
+  "customProviderReasoningTemplate": "Enable Thinking",
   "customProviderReasoningLevels": "Supported effort levels",
   "customProviderReasoningLevelRequired": "Use up to 16 comma-separated values containing letters, numbers, underscores, or hyphens.",
   "customProviderKeyUnchanged": "Leave blank only if the endpoint and API format stay the same",

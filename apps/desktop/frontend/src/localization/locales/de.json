@@ -117,7 +117,7 @@
   "customProviderReasoningDisabled": "Keine Reasoning-Einstellung senden",
   "customProviderReasoningEffort": "Reasoning-Stufe",
   "customProviderReasoningEffortsPlaceholder": "low, medium, high, xhigh",
-  "customProviderReasoningTemplate": "vLLM-Denkvorlage",
+  "customProviderReasoningTemplate": "Thinking aktivieren",
   "customProviderReasoningLevels": "Unterstützte Stufen",
   "customProviderReasoningLevelRequired": "Gib bis zu 16 durch Kommas getrennte Werte mit Buchstaben, Zahlen, Unterstrichen oder Bindestrichen ein.",
   "customProviderKeyUnchanged": "Leer lassen, wenn Endpunkt und API-Format gleich bleiben",
