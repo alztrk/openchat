@@ -38,6 +38,10 @@
   grid-template-rows: 48px minmax(0, 1fr) 20px;
 }
 
+.app-shell:has(.chat-workspace-layout) {
+  background: rgb(var(--surface));
+}
+
 .startup-loading-page {
   display: grid;
   min-block-size: 100%;
