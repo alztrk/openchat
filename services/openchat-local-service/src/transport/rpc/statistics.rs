@@ -221,6 +221,36 @@ mod tests {
         }
     }
 
+    #[tokio::test]
+    async fn statistics_dispatch_loads_an_initialized_empty_database() {
+        let directory = TestDirectory::new();
+        let storage = AppStorage::open_at(directory.0.clone()).expect("open test storage");
+        storage
+            .prepare_chat_schema_migration(crate::CHAT_SCHEMA_VERSION)
+            .expect("prepare current chat schema");
+        storage
+            .initialize_backend_schema()
+            .expect("initialize current backend schema");
+        let (_cancel_sender, mut cancellation) = watch::channel(false);
+
+        let statistics = dispatch(
+            "statistics.get",
+            &json!({
+                "fromUnixMs": 0,
+                "toUnixMs": 1_000,
+                "limit": 100,
+                "offset": 0
+            }),
+            &storage,
+            &mut cancellation,
+        )
+        .await
+        .expect("statistics should load from initialized empty storage");
+
+        assert_eq!(statistics["summary"]["totalRequests"], json!(0));
+        assert_eq!(statistics["providerBreakdown"], json!([]));
+    }
+
     struct TestDirectory(PathBuf);
 
     impl TestDirectory {
