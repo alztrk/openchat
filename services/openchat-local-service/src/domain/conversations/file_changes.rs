@@ -512,6 +512,7 @@ pub(crate) fn revert_change(
         .map_err(|_| RevertError::Unavailable)?;
     store_change(&transaction, conversation_id, &entry).map_err(|_| RevertError::Unavailable)?;
     transaction.commit().map_err(|_| RevertError::Unavailable)?;
+    drop(connection);
     let connection = storage.connect().map_err(|_| RevertError::Unavailable)?;
     load_changes(&connection, conversation_id)
         .map_err(|_| RevertError::Unavailable)
@@ -557,6 +558,7 @@ pub(crate) fn approve_change(
         .map_err(|_| RevertError::Unavailable)?;
     store_change(&transaction, conversation_id, &entry).map_err(|_| RevertError::Unavailable)?;
     transaction.commit().map_err(|_| RevertError::Unavailable)?;
+    drop(connection);
     let connection = storage.connect().map_err(|_| RevertError::Unavailable)?;
     load_changes(&connection, conversation_id)
         .map_err(|_| RevertError::Unavailable)
@@ -723,6 +725,7 @@ pub(crate) fn revert_hunk(
         .map_err(|_| RevertError::Unavailable)?;
     store_change(&transaction, conversation_id, &entry).map_err(|_| RevertError::Unavailable)?;
     transaction.commit().map_err(|_| RevertError::Unavailable)?;
+    drop(connection);
     let connection = storage.connect().map_err(|_| RevertError::Unavailable)?;
     load_changes(&connection, conversation_id)
         .map_err(|_| RevertError::Unavailable)
@@ -1706,8 +1709,8 @@ mod tests {
     }
 
     struct TestStorage {
-        _directory: TestDirectory,
         storage: AppStorage,
+        _directory: TestDirectory,
     }
 
     impl TestStorage {
@@ -1762,8 +1765,8 @@ mod tests {
                 .initialize_backend_schema()
                 .expect("initialize test backend schema");
             Self {
-                _directory: directory,
                 storage,
+                _directory: directory,
             }
         }
 

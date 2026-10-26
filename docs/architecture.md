@@ -97,7 +97,11 @@ remain separate Rust processes with their existing storage and RPC boundaries.
   the module preserves the existing validation and stable error contract.
 - Usage statistics and model-pricing routes are dispatched by
   `services/openchat-local-service/src/transport/rpc/statistics.rs`. Date ranges,
-  filters, pagination, and batch size are validated at the RPC boundary.
+  filters, pagination, and batch size are validated at the RPC boundary. The
+  statistics response aggregates summary, breakdown, and trend data from one
+  bounded keyset scan of matching usage events. CSV export pages request their
+  total count once, and backend schema version 42 retains the descending
+  timestamp and event ID order used by those pages.
 - ChatGPT and Copilot account/authentication routes plus OpenAI-compatible model
   discovery are dispatched by
   `services/openchat-local-service/src/transport/rpc/providers.rs`. Provider secrets
@@ -231,6 +235,15 @@ remain separate Rust processes with their existing storage and RPC boundaries.
   and caps one sync at 128 MiB of file reads, 128 KiB per file, 20,000 indexed
   files, and 100,000 traversal entries. A scan that reaches a bound stays stale,
   so partial results are not used as model context.
+- Project retrieval uses FTS5 for project files and prior project conversations.
+  When the local embedding model is already prepared, it semantically reranks
+  up to 24 lexical file candidates and searches existing embeddings from up to
+  eight recent project conversations. Chat sends do not download the model or
+  backfill conversation embeddings. Retrieved code and history share a 12 KiB
+  context bound; history remains disabled until the user opts in per project.
+  When the selected model advertises an input limit, notes and retrieval share
+  an additional budget capped at 8% of that window. The fixed byte caps apply
+  when the provider does not report a limit.
 - Read-only Git status, diff, and history use fixed arguments, bounded output,
   and a five-second process deadline. The repository-classification probe also
   has a deadline and kills its child when the task is dropped.
@@ -988,6 +1001,6 @@ runtime, extraction throughput, CPU use, or memory use.
 ## Roadmap
 
 - **Persistent Project Agent Memory & Semantic Context Engine:**
-  - Dedicated `project_memory` storage to preserve architectural decisions, user conventions, and learned operational constraints across conversation sessions.
-  - Automatic prompt context injection on new runs without leaking memory across distinct projects.
-  - Hybrid lexical (FTS5) and semantic retrieval for large-scale codebases.
+  - Local notes have per-project opt-ins, separate assistant-save permission, source labels, bounded storage, JSON export, editing, and selective deletion.
+  - Enabled notes enter normal project-run context and its continuation checkpoint; temporary chats and Plan mode do not receive them.
+  - Project files and prior project conversations use bounded FTS5 retrieval; a prepared local model adds semantic reranking and searches existing conversation embeddings without chat-time downloads or backfill.

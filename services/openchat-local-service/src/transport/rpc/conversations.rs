@@ -239,6 +239,15 @@ pub(super) async fn dispatch(
                 .map_err(|_| invalid_context_usage_params())?;
             let conversation_id = optional_string(params, "conversationId")?;
             let project_id = optional_string(params, "projectId")?;
+            let project_context_window_tokens = match params.get("contextWindow") {
+                None | Some(Value::Null) => None,
+                Some(Value::Number(value)) => value
+                    .as_i64()
+                    .filter(|limit| (1..=2_000_000).contains(limit))
+                    .ok_or_else(invalid_context_usage_params)
+                    .map(Some)?,
+                _ => return Err(invalid_context_usage_params()),
+            };
             let permission_mode = if plan_mode_requested {
                 ToolPermissionMode::Plan
             } else {
@@ -251,7 +260,7 @@ pub(super) async fn dispatch(
                 })?;
                 tool_permissions::load_mode(&connection)?
             };
-            let (project_name, project_root) = match (conversation_id, project_id) {
+            let (project_id, project_name, project_root) = match (conversation_id, project_id) {
                 (Some(conversation_id), _) => {
                     let connection = storage.connect().map_err(|_| {
                         ServiceError::new(
@@ -262,7 +271,7 @@ pub(super) async fn dispatch(
                     })?;
                     connection
                         .query_row(
-                            "SELECT projects.name, projects.folder_path
+                            "SELECT projects.id, projects.name, projects.folder_path
                              FROM conversations
                              INNER JOIN projects ON projects.id = conversations.project_id
                              WHERE conversations.id = ?1",
@@ -271,6 +280,7 @@ pub(super) async fn dispatch(
                                 Ok((
                                     row.get::<_, Option<String>>(0)?,
                                     row.get::<_, Option<String>>(1)?,
+                                    row.get::<_, Option<String>>(2)?,
                                 ))
                             },
                         )
@@ -282,7 +292,7 @@ pub(super) async fn dispatch(
                                 true,
                             )
                         })?
-                        .unwrap_or((None, None))
+                        .unwrap_or((None, None, None))
                 }
                 (None, Some(project_id)) => {
                     let connection = storage.connect().map_err(|_| {
@@ -294,12 +304,13 @@ pub(super) async fn dispatch(
                     })?;
                     connection
                         .query_row(
-                            "SELECT name, folder_path FROM projects WHERE id = ?1",
+                            "SELECT id, name, folder_path FROM projects WHERE id = ?1",
                             [project_id],
                             |row| {
                                 Ok((
                                     row.get::<_, Option<String>>(0)?,
                                     row.get::<_, Option<String>>(1)?,
+                                    row.get::<_, Option<String>>(2)?,
                                 ))
                             },
                         )
@@ -311,9 +322,9 @@ pub(super) async fn dispatch(
                                 true,
                             )
                         })?
-                        .unwrap_or((None, None))
+                        .unwrap_or((None, None, None))
                 }
-                (None, None) => (None, None),
+                (None, None) => (None, None, None),
             };
             let project_root = project_root.filter(|path| !path.trim().is_empty());
             let project_context_unavailable = project_id.is_some() && project_root.is_none();
@@ -325,6 +336,20 @@ pub(super) async fn dispatch(
                     .map(|root| crate::project_instructions::load(Path::new(root)))
                     .transpose()?
                     .flatten()
+            };
+            let project_memory_context = if permission_mode == ToolPermissionMode::Plan {
+                None
+            } else if let Some(project_id) = project_id.as_deref() {
+                let connection = storage.connect().map_err(|_| {
+                    ServiceError::new(
+                        "project_memory_unavailable",
+                        "Project memory could not be accessed. Retry the operation.",
+                        true,
+                    )
+                })?;
+                crate::project_memory::context(&connection, project_id)?
+            } else {
+                None
             };
             let project_skill_ids = match params.get("projectSkillIds") {
                 None => Vec::new(),
@@ -368,7 +393,9 @@ pub(super) async fn dispatch(
                     custom: custom_instructions,
                     project: project_instructions.as_deref(),
                     project_skills: &project_skills,
+                    project_memory_context: project_memory_context.as_deref(),
                     project_index_context: None,
+                    project_context_window_tokens,
                     permission_mode,
                     has_project,
                     project_name: project_name.as_deref(),
@@ -445,6 +472,7 @@ pub(super) async fn dispatch(
                 provider_id: optional_history_filter_string(params, "providerId")?,
                 model_id: optional_history_filter_string(params, "modelId")?,
                 project_id: optional_history_filter_string(params, "projectId")?,
+                excluded_conversation_id: None,
                 is_archived: optional_history_filter_bool(params, "isArchived")?,
                 result_type,
                 sort_order,

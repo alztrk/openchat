@@ -80,6 +80,9 @@ pub(crate) enum ToolOperation {
     SaveMemory {
         fact: String,
     },
+    SaveProjectMemory {
+        note: String,
+    },
     Info,
 }
 
@@ -189,6 +192,38 @@ impl ToolExecutor {
                     scope: ToolPathScope::Project,
                     operation: ToolOperation::SaveMemory {
                         fact: fact.to_owned(),
+                    },
+                });
+            }
+            "save_project_memory" => {
+                if !only_keys(&call.arguments, &["note"]) {
+                    return Err(tool_error(
+                        "invalid_tool_input",
+                        "The project memory arguments are invalid.",
+                    ));
+                }
+                let Some(note) = string_argument(&call.arguments, "note") else {
+                    return Err(tool_error(
+                        "invalid_tool_input",
+                        "A project memory note is required.",
+                    ));
+                };
+                let note = note.trim();
+                if note.is_empty() || note.len() > 2000 || note.chars().count() > 500 {
+                    return Err(tool_error(
+                        "invalid_tool_input",
+                        "A project memory note must contain 1 to 500 characters.",
+                    ));
+                }
+                let root = self.data_root.clone();
+                return Ok(PreparedToolCall {
+                    root: root.clone(),
+                    relative_path: String::new(),
+                    requested_path: "project memory".to_owned(),
+                    target_path: PathBuf::from("project memory"),
+                    scope: ToolPathScope::Project,
+                    operation: ToolOperation::SaveProjectMemory {
+                        note: note.to_owned(),
                     },
                 });
             }

@@ -682,6 +682,21 @@ mod tests {
         }
     }
 
+    fn prepare_service_storage(storage: &AppStorage) {
+        storage
+            .connect()
+            .expect("connect storage")
+            .execute_batch(
+                "CREATE TABLE image_generation_runs (
+                    id TEXT PRIMARY KEY NOT NULL,
+                    status TEXT NOT NULL,
+                    error_code TEXT,
+                    updated_at_unix_ms INTEGER NOT NULL
+                );",
+            )
+            .expect("create image generation recovery table");
+    }
+
     #[tokio::test]
     async fn deleting_an_already_removed_connection_confirms_completion() {
         let directory = TestDirectory::new();
@@ -697,6 +712,7 @@ mod tests {
                 );",
             )
             .expect("create cleanup queue");
+        prepare_service_storage(&storage);
         let service = ChatGptService::new(Arc::clone(&storage)).expect("create provider service");
 
         let (_cancellation_sender, mut cancellation) = watch::channel(false);
@@ -736,6 +752,7 @@ mod tests {
             )
             .expect("insert ChatGPT connection");
         drop(connection);
+        prepare_service_storage(&storage);
         let service =
             Arc::new(ChatGptService::new(Arc::clone(&storage)).expect("create provider service"));
         let lock = service.connection_refresh_lock("connection-1").await;
@@ -791,6 +808,7 @@ mod tests {
             )
             .expect("insert ChatGPT connection");
         drop(connection);
+        prepare_service_storage(&storage);
         let service = ChatGptService::new(Arc::clone(&storage)).expect("create provider service");
         let (_cancellation_sender, mut cancellation) = watch::channel(false);
         let cancellation_gate = OperationGate::default();

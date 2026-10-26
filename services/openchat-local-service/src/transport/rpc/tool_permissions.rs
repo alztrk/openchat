@@ -280,9 +280,10 @@ mod tests {
         load_mode, load_project_rules, parse_mode, save_mode, save_project_rules_in_connection,
         seed_mode_if_missing, seed_project_rules_if_missing,
     };
+    use crate::storage::StorageConnection;
     use crate::tools::{ToolPermissionMode, ToolPermissionRule};
 
-    fn settings_connection() -> Connection {
+    fn settings_connection() -> StorageConnection<'static> {
         let connection = Connection::open_in_memory().expect("open in-memory database");
         connection
             .execute_batch(
@@ -302,7 +303,7 @@ mod tests {
         connection
             .execute("INSERT INTO projects (id) VALUES ('project-1')", [])
             .expect("insert project fixture");
-        connection
+        StorageConnection::standalone(connection)
     }
 
     #[test]

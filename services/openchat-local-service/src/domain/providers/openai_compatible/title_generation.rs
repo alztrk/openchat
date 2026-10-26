@@ -145,26 +145,28 @@ async fn resolve_target(
             })
         }
         "opencode" => {
-            let is_free =
-                super::models::is_free_model(storage, &target.model_id).map_err(|_| ())?;
-            if !is_free
-                && !super::models::is_paid_model(storage, &target.model_id).map_err(|_| ())?
-            {
+            let metadata = super::models::route_model_metadata(storage, &target.model_id)
+                .map_err(|_| ())?
+                .ok_or(())?;
+            if !metadata.is_free && !metadata.is_paid {
                 return Err(());
             }
-            let responses_api =
-                super::models::is_responses_api_model(storage, &target.model_id).map_err(|_| ())?;
-            let url = super::models::inference_url(storage, &target.model_id, responses_api)
-                .map_err(|_| ())?;
+            let inference_base_url = metadata.inference_base_url.ok_or(())?;
+            let responses_api = metadata.uses_responses_api;
+            let endpoint = if responses_api {
+                "responses"
+            } else {
+                "chat/completions"
+            };
             Ok(TitleRoute {
                 model_id: target.model_id,
-                url,
+                url: format!("{inference_base_url}/{endpoint}"),
                 api_key,
                 anthropic: false,
                 copilot: false,
                 responses_api,
                 opencode: true,
-                is_free,
+                is_free: metadata.is_free,
             })
         }
         "llama_cpp" => {
@@ -275,7 +277,6 @@ async fn generate_title(
         let workspace =
             crate::workspace_settings::conversation_workspace_path(storage, conversation_id);
         if let Some(title) = generate_free_opencode_title(
-            storage,
             conversation_id,
             &route,
             project_id.as_deref(),
@@ -401,7 +402,6 @@ async fn apply_title(storage: &AppStorage, conversation_id: &str, title: &str, e
 
 /// Streams a title through the OpenCode free tier and assembles its text.
 async fn generate_free_opencode_title(
-    storage: &AppStorage,
     conversation_id: &str,
     route: &TitleRoute,
     project_id: Option<&str>,
@@ -425,8 +425,11 @@ async fn generate_free_opencode_title(
     let headers = opencode_free_headers(Some(&session_id), project_id);
     // Free models are served by the chat-completions endpoint even when the
     // catalog marks a model as using the Responses API.
-    let url = super::models::inference_url(storage, &route.model_id, false)
-        .unwrap_or_else(|_| route.url.clone());
+    let url = route
+        .url
+        .strip_suffix("/responses")
+        .map(|base| format!("{base}/chat/completions"))
+        .unwrap_or_else(|| route.url.clone());
     let Ok(Ok(mut response)) = tokio::time::timeout(
         Duration::from_secs(30),
         opencode_free_transport::send(&url, headers, body),

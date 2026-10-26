@@ -81,6 +81,7 @@ export type LoadState = 'loading' | 'loaded' | 'failed';
 
 export function statisticsQuery({
   fromDate,
+  includeTotal,
   limit,
   modelId,
   offset,
@@ -93,6 +94,7 @@ export function statisticsQuery({
   modelId: string | null;
   offset: number;
   limit: number;
+  includeTotal?: boolean;
 }): JsonObject {
   const fromUnixMs = fromDate.getTime();
   const end = new Date(toDate);
@@ -105,6 +107,7 @@ export function statisticsQuery({
     modelId,
     offset,
     limit,
+    ...(includeTotal === undefined ? {} : { includeTotal }),
   };
 }
 
@@ -130,6 +133,20 @@ export function parseStatistics(value: JsonObject): StatisticsSnapshot {
     requestDetailCount: requiredInteger(value, 'requestDetailCount'),
     requests: parseRequests(value.requestDetails),
     filterOptions: parseFilterOptions(value.filterOptions),
+  };
+}
+
+export function parseStatisticsDetails(value: JsonObject): {
+  requestDetailCount: number | null;
+  requests: StatisticsRequest[];
+} {
+  const requestDetailCount = value.requestDetailCount;
+  return {
+    requestDetailCount:
+      requestDetailCount === null || requestDetailCount === undefined
+        ? null
+        : requiredInteger(value, 'requestDetailCount'),
+    requests: parseRequests(value.requestDetails),
   };
 }
 

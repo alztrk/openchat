@@ -17,8 +17,7 @@ use crate::{
 };
 
 use super::{
-    cancelled_error, client, invalid_response_error, model_error, network_error_with_details,
-    storage_error,
+    cancelled_error, client, invalid_response_error, network_error_with_details, storage_error,
 };
 #[cfg(test)]
 pub(crate) const MODELS_URL: &str = "https://opencode.ai/inference/v1/models";
@@ -51,16 +50,44 @@ fn load_model_catalog(storage: &AppStorage) -> Result<Option<(Vec<Value>, i64)>,
     }))
 }
 
-pub(super) fn supports_image_input(
+pub(super) struct RouteModelMetadata {
+    pub(super) is_free: bool,
+    pub(super) is_paid: bool,
+    pub(super) uses_responses_api: bool,
+    pub(super) inference_base_url: Option<String>,
+    pub(super) supports_tool_calls: Option<bool>,
+    pub(super) context_limits: super::ModelContextLimits,
+    pub(super) supports_images: bool,
+}
+
+pub(super) fn route_model_metadata(
     storage: &AppStorage,
     model_id: &str,
-) -> Result<bool, ServiceError> {
+) -> Result<Option<RouteModelMetadata>, ServiceError> {
     let Some((models, _)) = load_model_catalog(storage)? else {
-        return Ok(false);
+        return Ok(None);
     };
-    Ok(models.iter().any(|model| {
-        model.get("id").and_then(Value::as_str) == Some(model_id)
-            && model.get("supportsImages").and_then(Value::as_bool) == Some(true)
+    let Some(model) = models
+        .iter()
+        .find(|model| model.get("id").and_then(Value::as_str) == Some(model_id))
+    else {
+        return Ok(None);
+    };
+
+    Ok(Some(RouteModelMetadata {
+        is_free: model.get("groupId").and_then(Value::as_str) == Some("free"),
+        is_paid: model.get("groupId").and_then(Value::as_str) == Some("paid"),
+        uses_responses_api: model
+            .get("usesResponsesApi")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+        inference_base_url: model
+            .get("inferenceBaseUrl")
+            .and_then(Value::as_str)
+            .and_then(validated_inference_base_url),
+        supports_tool_calls: model.get("supportsTools").and_then(Value::as_bool),
+        context_limits: model_context_limits(Some(model)),
+        supports_images: model.get("supportsImages").and_then(Value::as_bool) == Some(true),
     }))
 }
 
@@ -428,121 +455,25 @@ pub(super) fn supports_reasoning_level(
     }))
 }
 
-pub(super) fn supports_tool_calls(
-    storage: &AppStorage,
-    model_id: &str,
-) -> Result<Option<bool>, ServiceError> {
-    let Some((models, _)) = load_model_catalog(storage)? else {
-        return Ok(None);
-    };
-    Ok(models
-        .iter()
-        .find(|model| model.get("id").and_then(Value::as_str) == Some(model_id))
-        .and_then(|model| model.get("supportsTools"))
-        .and_then(Value::as_bool))
-}
-
-pub(super) fn is_free_model(storage: &AppStorage, model_id: &str) -> Result<bool, ServiceError> {
-    let Some((models, _)) = load_model_catalog(storage)? else {
-        return Ok(false);
-    };
-    Ok(models.iter().any(|model| {
-        model.get("id").and_then(Value::as_str) == Some(model_id)
-            && model.get("groupId").and_then(Value::as_str) == Some("free")
-    }))
-}
-
-pub(super) fn is_paid_model(storage: &AppStorage, model_id: &str) -> Result<bool, ServiceError> {
-    let Some((models, _)) = load_model_catalog(storage)? else {
-        return Ok(false);
-    };
-    Ok(models.iter().any(|model| {
-        model.get("id").and_then(Value::as_str) == Some(model_id)
-            && model.get("groupId").and_then(Value::as_str) == Some("paid")
-    }))
-}
-
-pub(super) fn inference_url(
-    storage: &AppStorage,
-    model_id: &str,
-    responses_api: bool,
-) -> Result<String, ServiceError> {
-    let Some((models, _)) = load_model_catalog(storage)? else {
-        return Err(model_error());
-    };
-    let base_url = models
-        .iter()
-        .find(|model| model.get("id").and_then(Value::as_str) == Some(model_id))
-        .and_then(|model| model.get("inferenceBaseUrl"))
-        .and_then(Value::as_str)
-        .and_then(validated_inference_base_url)
-        .ok_or_else(model_error)?;
-    let endpoint = if responses_api {
-        "responses"
-    } else {
-        "chat/completions"
-    };
-    Ok(format!("{base_url}/{endpoint}"))
-}
-
-pub(super) fn is_responses_api_model(
-    storage: &AppStorage,
-    model_id: &str,
-) -> Result<bool, ServiceError> {
-    if let Some((models, _)) = load_model_catalog(storage)?
-        && let Some(model) = models
-            .iter()
-            .find(|m| m.get("id").and_then(Value::as_str) == Some(model_id))
-        && let Some(uses) = model.get("usesResponsesApi").and_then(Value::as_bool)
-    {
-        return Ok(uses);
-    }
-    Ok(false)
-}
-
-pub(super) fn context_limits(
-    storage: &AppStorage,
-    model_id: &str,
-) -> Result<super::ModelContextLimits, ServiceError> {
-    let models_json = storage
-        .connect()
-        .map_err(|_| storage_error())?
-        .query_row(
-            "SELECT models_json FROM opencode_model_catalog WHERE catalog_id = 1",
-            [],
-            |row| row.get::<_, String>(0),
-        )
-        .optional()
-        .map_err(|_| storage_error())?;
-    let Some(models_json) = models_json else {
-        return Ok(super::ModelContextLimits::default());
-    };
-    let models =
-        serde_json::from_str::<Vec<Value>>(&models_json).map_err(|_| invalid_response_error())?;
-    let Some(model) = models
-        .iter()
-        .find(|model| model.get("id").and_then(Value::as_str) == Some(model_id))
-    else {
-        return Ok(super::ModelContextLimits::default());
-    };
+fn model_context_limits(model: Option<&Value>) -> super::ModelContextLimits {
     let context_window = model
-        .get("contextWindow")
+        .and_then(|model| model.get("contextWindow"))
         .and_then(Value::as_i64)
         .filter(|window| *window > 0);
     let input_token_limit = model
-        .get("inputTokenLimit")
+        .and_then(|model| model.get("inputTokenLimit"))
         .and_then(Value::as_i64)
         .filter(|limit| *limit > 0)
         .map(|limit| context_window.map_or(limit, |context| limit.min(context)));
     let max_output_tokens = model
-        .get("maxOutputTokens")
+        .and_then(|model| model.get("maxOutputTokens"))
         .and_then(Value::as_i64)
         .filter(|limit| *limit > 0);
-    Ok(super::ModelContextLimits {
+    super::ModelContextLimits {
         context_window,
         input_token_limit,
         max_output_tokens,
-    })
+    }
 }
 
 fn visible_models(models: &[Value], api_key: Option<&str>) -> Vec<Value> {

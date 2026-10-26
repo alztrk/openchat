@@ -879,7 +879,7 @@ pub(crate) fn get_vault_secret_for_path(
     path: &Path,
     key: &str,
 ) -> Result<Option<Zeroizing<String>>, SecretStoreError> {
-    let connection = open_database_connection(path)?;
+    let connection = crate::storage::StorageConnection::standalone(open_database_connection(path)?);
     get_vault_secret_from_connection(&connection, key)
 }
 

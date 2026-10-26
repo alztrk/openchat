@@ -357,11 +357,13 @@ pub(crate) async fn dispatch(context: RpcDispatchContext<'_>) -> Result<Value, S
                 requested_project_skill_ids,
                 permission_mode,
                 profile_tool_allowlist,
-            })?;
+            })
+            .await?;
             let chat_execution::PreparedChatRun {
                 run_id,
                 custom_instructions,
                 project_instructions,
+                project_memory_context,
                 project_skills,
                 project_index_context,
                 reasoning_effort,
@@ -493,6 +495,7 @@ pub(crate) async fn dispatch(context: RpcDispatchContext<'_>) -> Result<Value, S
                 excluded_assistant_message_id,
                 custom_instructions: custom_instructions.as_deref(),
                 project_instructions: project_instructions.as_deref(),
+                project_memory_context: project_memory_context.as_deref(),
                 project_skills,
                 project_index_context,
                 project_root: project_root.as_deref().map(Path::new),
@@ -1173,7 +1176,7 @@ mod tests {
         storage
             .initialize_backend_schema()
             .expect("initialize native conversation schema");
-        let connection = storage.connect().expect("connect initialized storage");
+        let mut connection = storage.connect().expect("connect initialized storage");
         connection
             .execute(
                 "INSERT INTO conversations (id, title) VALUES ('conversation', 'Background task')",
@@ -1189,7 +1192,7 @@ mod tests {
         )
         .expect("create active run");
         user_questions::save_checkpoint(
-            &connection,
+            &mut connection,
             "conversation",
             "active-run",
             0,

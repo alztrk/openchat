@@ -657,14 +657,15 @@ Hosted sharing remains out of scope under the current product decision.
 
 ### 25. Add persistent project agent memory and semantic context engine
 
-**Status: planned, P1.** Maintain cross-session agent understanding, learned project conventions, and architecture decisions bounded per project.
+**Status: implemented in source and covered by focused local tests, P1.** Bounded notes, assistant learning, export, and opt-in project retrieval are implemented in source. Project isolation, assistant opt-ins, storage limits, project-index states, and prompt-context rules have deterministic coverage.
 
-- Add a dedicated `project_memory` storage layer scoped to each local project, keeping facts, architectural rules, and operational constraints persistent across conversation sessions.
-- Automatically construct and inject project-relevant memory into new agent runs while strictly enforcing project isolation so memories never leak across distinct workspaces.
-- Support hybrid lexical (FTS5) and semantic vector retrieval over project history and codebase context for fast, targeted recall.
-- Allow users to inspect, curate, export, and selectively purge learned project memory items directly from project settings.
+- Store up to 20 user-managed or assistant-authored notes per project in local SQLite, with an 8 KiB project limit and 4 KiB per-note limit. Assistant-authored notes require separate opt-ins, carry their origin in the UI, and remain editable and individually deletable.
+- Include enabled notes only in normal runs for their attached project. New run checkpoints preserve the captured note context for continuation; temporary chats and Plan mode exclude it. Users can export the current project's notes as JSON.
+- Add optional retrieval from other conversations attached to the same project. FTS5 searches project history; semantic results use existing local conversation embeddings without downloading the model or backfilling conversations during a chat send. Archived conversations excluded from memory search and the active conversation are not used.
+- Use project-index FTS5 results to select code candidates and semantically rerank up to 24 candidates with the prepared local embedding model. Keep the existing keyword order when the model is not ready or reranking fails.
+- Bound retrieved project context to 12 KiB, including code and history excerpts, and notes to 8 KiB. When the selected model advertises an input limit, both share an additional budget capped at 8% of that window.
 
-**Exit criteria:** agent runs preserve verified project conventions across session boundaries; memories are strictly isolated to their originating project; users can inspect and delete stored items; and memory injection does not degrade token budgets on small-context models.
+**Exit criteria:** agent runs preserve verified project conventions across session boundaries; memory remains isolated to its project; users can inspect, export, and delete stored items; and retrieval does not degrade token budgets on small-context models.
 
 ### 26. Add main-agent-delegated general subagents
 

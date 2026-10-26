@@ -200,23 +200,25 @@ async fn resolve_chat_route_for_model(
             if requested_api_key_connection_id.is_some() {
                 return Err(route_error());
             }
-            let is_free = super::models::is_free_model(storage, &model_id)?;
-            if !is_free && !super::models::is_paid_model(storage, &model_id)? {
+            let metadata =
+                super::models::route_model_metadata(storage, &model_id)?.ok_or_else(model_error)?;
+            if !metadata.is_free && !metadata.is_paid {
                 return Err(model_error());
             }
-            let uses_responses_api = super::models::is_responses_api_model(storage, &model_id)?;
-            let chat_url = super::models::inference_url(storage, &model_id, uses_responses_api)?;
-            let supports_tool_calls = super::models::supports_tool_calls(storage, &model_id)?;
-            let limits = super::models::context_limits(storage, &model_id)?;
-            let supports_images = super::models::supports_image_input(storage, &model_id)?;
+            let inference_base_url = metadata.inference_base_url.ok_or_else(model_error)?;
+            let endpoint = if metadata.uses_responses_api {
+                "responses"
+            } else {
+                "chat/completions"
+            };
             ResolvedProviderRoute {
                 provider_model_id: model_id.clone(),
-                chat_url,
-                is_free,
-                uses_responses_api,
-                limits,
-                supports_images,
-                supports_tool_calls,
+                chat_url: format!("{inference_base_url}/{endpoint}"),
+                is_free: metadata.is_free,
+                uses_responses_api: metadata.uses_responses_api,
+                limits: metadata.context_limits,
+                supports_images: metadata.supports_images,
+                supports_tool_calls: metadata.supports_tool_calls,
                 connection_id: None,
                 local_api_key: None,
                 reasoning_levels: Vec::new(),
@@ -346,11 +348,8 @@ async fn resolve_chat_route_for_model(
                 return Err(provider_authentication_required_error(id));
             }
             let key = api_key.unwrap_or("");
-            let limits = super::provider_models::context_limits(storage, id, key, &model_id)?;
-            let supports_images =
-                super::provider_models::supports_image_input(storage, id, key, &model_id)?;
-            let supports_tool_calls =
-                super::provider_models::supports_tool_calls(storage, id, key, &model_id)?;
+            let metadata =
+                super::provider_models::route_model_metadata(storage, id, key, &model_id)?;
             ResolvedProviderRoute {
                 provider_model_id: model_id.clone(),
                 chat_url: if provider.is_anthropic() {
@@ -360,9 +359,9 @@ async fn resolve_chat_route_for_model(
                 },
                 is_free: is_kilo_free,
                 uses_responses_api: false,
-                limits,
-                supports_images,
-                supports_tool_calls,
+                limits: metadata.context_limits,
+                supports_images: metadata.supports_images,
+                supports_tool_calls: metadata.supports_tool_calls,
                 connection_id: Some(id.to_owned()),
                 local_api_key: None,
                 reasoning_levels: Vec::new(),

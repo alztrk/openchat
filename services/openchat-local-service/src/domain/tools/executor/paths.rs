@@ -279,6 +279,7 @@ pub(super) fn qualify_output_paths(
         | ToolOperation::GetSubagentResult { .. }
         | ToolOperation::CancelSubagent { .. }
         | ToolOperation::SaveMemory { .. }
+        | ToolOperation::SaveProjectMemory { .. }
         | ToolOperation::ProjectTool { .. } => {}
     }
 }

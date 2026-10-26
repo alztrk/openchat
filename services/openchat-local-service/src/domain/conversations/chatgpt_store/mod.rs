@@ -38,8 +38,9 @@ pub use conversations::{
 };
 pub use memory::{
     ArchiveIndexSettings, ArchiveIndexTool, ArchivedMemoryExcerpt, HistorySearchFilterOptions,
-    HistorySearchFilters, history_search_filter_options, prepare_semantic_search,
-    retrieve_archived_memories, search_chat_history, search_conversation_archive,
+    HistorySearchFilters, ProjectHistoryExcerpt, history_search_filter_options,
+    prepare_semantic_search, rank_project_candidates, retrieve_archived_memories,
+    search_chat_history, search_conversation_archive, search_project_history,
     semantic_search_is_ready, set_archive_tool_included, set_conversation_archive_included,
     turkish_search,
 };

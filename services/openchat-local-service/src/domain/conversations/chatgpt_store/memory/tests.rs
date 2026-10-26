@@ -5,6 +5,7 @@
 
 use std::time::Instant;
 
+use crate::storage::StorageConnection;
 use rusqlite::Connection;
 
 use super::search::{
@@ -123,10 +124,11 @@ fn archived_search_backfills_once_and_stays_within_conversation_and_boundary() {
                     ('other', 'conversation-b', 'user', 'Atlas unrelated detail', 'completed', 5);",
             )
             .expect("create archive schema and data");
+    let mut connection = StorageConnection::standalone(connection);
     let search = search_expression("conversation-a", "Atlas").expect("search term");
 
     let results = retrieve_archived_memories_from_connection(
-        &connection,
+        &mut connection,
         "conversation-a",
         "boundary",
         &search,
@@ -145,7 +147,7 @@ fn archived_search_backfills_once_and_stays_within_conversation_and_boundary() {
     assert!(!message_ids.contains(&"other"));
 
     let archive_results = search_archived_memories_from_connection(
-        &connection,
+        &mut connection,
         "conversation-a",
         None,
         &search,
@@ -259,10 +261,11 @@ fn archived_search_retrieves_completed_tool_activity_details() {
                     ('boundary', 'tool-history', 'user', 'Continue from there.', 'completed', 20, '[]');",
             )
             .expect("create tool activity archive schema and data");
+    let mut connection = StorageConnection::standalone(connection);
     let search = search_expression("tool-history", "opalquartz").expect("search term");
 
     let results = retrieve_archived_memories_from_connection(
-        &connection,
+        &mut connection,
         "tool-history",
         "boundary",
         &search,
@@ -276,7 +279,7 @@ fn archived_search_retrieves_completed_tool_activity_details() {
     assert!(results[0].content.contains("opalquartz"));
 
     let archive_results = search_archived_memories_from_connection(
-        &connection,
+        &mut connection,
         "tool-history",
         None,
         &search,
@@ -411,12 +414,13 @@ fn archived_memory_search_scales_to_large_conversations() {
     transaction
         .commit()
         .expect("commit conversation benchmark rows");
+    let mut connection = StorageConnection::standalone(connection);
 
     let search = search_expression("large-history", "parchmentquartz")
         .expect("build distinctive search query");
     let started = Instant::now();
     let backfilled_results = retrieve_archived_memories_from_connection(
-        &connection,
+        &mut connection,
         "large-history",
         &format!("message-{}", MESSAGE_COUNT - 1),
         &search,
@@ -431,7 +435,7 @@ fn archived_memory_search_scales_to_large_conversations() {
     let tool_search = search_expression("large-history", "toolparchmentquartz")
         .expect("build distinctive tool-result search query");
     let backfilled_tool_results = retrieve_archived_memories_from_connection(
-        &connection,
+        &mut connection,
         "large-history",
         &format!("message-{}", MESSAGE_COUNT - 1),
         &tool_search,
@@ -458,7 +462,7 @@ fn archived_memory_search_scales_to_large_conversations() {
 
     let started = Instant::now();
     let indexed_results = retrieve_archived_memories_from_connection(
-        &connection,
+        &mut connection,
         "large-history",
         &format!("message-{}", MESSAGE_COUNT - 1),
         &search,
@@ -470,7 +474,7 @@ fn archived_memory_search_scales_to_large_conversations() {
     assert!(indexed_results[0].content.contains("parchmentquartz"));
 
     let indexed_tool_results = retrieve_archived_memories_from_connection(
-        &connection,
+        &mut connection,
         "large-history",
         &format!("message-{}", MESSAGE_COUNT - 1),
         &tool_search,
@@ -546,11 +550,12 @@ fn turkish_fts_search_matches_bidirectional_and_folded_variants() {
                 ('msg-tr-1', 'conv-tr', 'user', 'İstanbul şehrinde ışık ve kütüphane projesi', 'completed', 10);",
         )
         .expect("create turkish fts schema and fixture");
+    let mut connection = StorageConnection::standalone(connection);
 
     // Search with ASCII "isik" should match "ışıklandırma"
     let search_ascii = search_expression("conv-tr", "isik").expect("search expression for isik");
     let results_ascii = search_archived_memories_from_connection(
-        &connection,
+        &mut connection,
         "conv-tr",
         None,
         &search_ascii,
@@ -564,7 +569,7 @@ fn turkish_fts_search_matches_bidirectional_and_folded_variants() {
     // Search with Turkish uppercase "IŞIK" should match
     let search_upper = search_expression("conv-tr", "IŞIK").expect("search expression for ISIK");
     let results_upper = search_archived_memories_from_connection(
-        &connection,
+        &mut connection,
         "conv-tr",
         None,
         &search_upper,
@@ -578,7 +583,7 @@ fn turkish_fts_search_matches_bidirectional_and_folded_variants() {
     // Search with ASCII "kutuphane" should match "kütüphane"
     let search_folded = search_expression("conv-tr", "kutuphane").expect("search kutuphane");
     let results_folded = search_archived_memories_from_connection(
-        &connection,
+        &mut connection,
         "conv-tr",
         None,
         &search_folded,

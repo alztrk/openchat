@@ -1469,7 +1469,7 @@ mod tests {
             .await
         });
 
-        let event = received_events
+        let mut event = received_events
             .recv()
             .await
             .expect("server startup requests approval before connecting");
@@ -1477,7 +1477,10 @@ mod tests {
             event.event.as_deref(),
             Some("chat.tool.permission.requested")
         );
-        let data = event.data.expect("permission event includes its request");
+        let data = event
+            .data
+            .take()
+            .expect("permission event includes its request");
         assert_eq!(data["toolName"], "mcp_server_start");
         assert_eq!(
             data["targetPath"],

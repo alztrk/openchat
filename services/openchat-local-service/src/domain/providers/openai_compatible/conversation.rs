@@ -283,6 +283,7 @@ pub async fn send_message(
         excluded_assistant_message_id,
         custom_instructions,
         project_instructions,
+        project_memory_context,
         project_skills,
         project_index_context,
         project_root,
@@ -468,8 +469,10 @@ pub async fn send_message(
             excluded_assistant_message_id,
             custom_instructions,
             project_instructions,
+            project_memory_context,
             project_skills: &project_skills,
             project_index_context: project_index_context.as_deref(),
+            project_context_window_tokens: route.request_context_limit(),
             permission_mode,
             has_project: project_root.is_some(),
             project_name,
@@ -735,6 +738,7 @@ pub async fn send_message(
             custom_instructions,
             project_instructions,
             &project_skills,
+            project_memory_context,
             project_index_context.as_deref(),
             goal.is_some(),
         ),
@@ -825,6 +829,7 @@ pub async fn send_message(
         tool_permission_rules,
     )
     .with_workspace_roots(workspace_roots)
+    .with_project_memory_context(project_memory_context.map(str::to_owned))
     .with_chat_service(image_service.as_ref().clone())
     .with_subagent_models(available_subagent_models)
     .with_subagent_tool_definitions(provider_request.tools.clone());

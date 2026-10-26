@@ -5,7 +5,7 @@
 
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use reqwest::Client;
+use reqwest::{Client, RequestBuilder};
 use rusqlite::OptionalExtension;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -37,6 +37,58 @@ fn catalog_client(provider: &str) -> Result<Client, ServiceError> {
         .redirect(reqwest::redirect::Policy::none())
         .build()
         .map_err(|_| network_error(provider))
+}
+
+async fn fetch_catalog_json(
+    request: RequestBuilder,
+    provider_id: &str,
+    provider_name: &str,
+) -> Result<Value, ServiceError> {
+    let response = request
+        .send()
+        .await
+        .map_err(|_| network_error(provider_name))?;
+    if !response.status().is_success() {
+        return Err(http_error(response.status(), Some(provider_id)));
+    }
+    let body = read_bounded_response_body(response, MAX_MODEL_CATALOG_RESPONSE_BYTES).await?;
+    serde_json::from_slice(&body).map_err(|_| invalid_response_error())
+}
+
+async fn fetch_catalog_pair(
+    primary_request: RequestBuilder,
+    metadata_request: Option<RequestBuilder>,
+    provider_id: &str,
+    provider_name: &str,
+) -> Result<(Value, Option<Value>), ServiceError> {
+    let primary = fetch_catalog_json(primary_request, provider_id, provider_name);
+    let Some(metadata_request) = metadata_request else {
+        return primary.await.map(|catalog| (catalog, None));
+    };
+    let metadata = fetch_catalog_json(metadata_request, provider_id, provider_name);
+    tokio::pin!(primary);
+    tokio::pin!(metadata);
+
+    tokio::select! {
+        biased;
+        primary_result = &mut primary => {
+            let primary = primary_result?;
+            let metadata = metadata.await?;
+            Ok((primary, Some(metadata)))
+        }
+        metadata_result = &mut metadata => {
+            match metadata_result {
+                Ok(metadata) => {
+                    let primary = primary.await?;
+                    Ok((primary, Some(metadata)))
+                }
+                Err(metadata_error) => match primary.await {
+                    Err(primary_error) => Err(primary_error),
+                    Ok(_) => Err(metadata_error),
+                }
+            }
+        }
+    }
 }
 
 pub async fn models_for_custom_provider(
@@ -234,46 +286,18 @@ pub async fn models(
         } else if !api_key.trim().is_empty() {
             request = request.bearer_auth(api_key);
         }
-        let response = request
-            .send()
-            .await
-            .map_err(|_| network_error(provider.name))?;
-        if !response.status().is_success() {
-            return Err(http_error(response.status(), Some(provider.id)));
-        }
-        let body = read_bounded_response_body(response, MAX_MODEL_CATALOG_RESPONSE_BYTES).await?;
-        let value: Value = serde_json::from_slice(&body).map_err(|_| invalid_response_error())?;
-        let metadata = if provider.id == "cerebras" {
-            let response = client
-                .get(CEREBRAS_PUBLIC_MODELS_URL)
-                .send()
-                .await
-                .map_err(|_| network_error(provider.name))?;
-            if !response.status().is_success() {
-                return Err(http_error(response.status(), Some(provider.id)));
-            }
-            let body =
-                read_bounded_response_body(response, MAX_MODEL_CATALOG_RESPONSE_BYTES).await?;
-            Some(serde_json::from_slice(&body).map_err(|_| invalid_response_error())?)
+        let metadata_request = if provider.id == "cerebras" {
+            Some(client.get(CEREBRAS_PUBLIC_MODELS_URL))
         } else if provider.id == "gemini" {
-            let response = client
-                .get(GEMINI_MODELS_URL)
-                .header(
-                    "x-goog-api-key",
-                    sensitive_api_key_header(api_key).map_err(|_| invalid_request_error())?,
-                )
-                .send()
-                .await
-                .map_err(|_| network_error(provider.name))?;
-            if !response.status().is_success() {
-                return Err(http_error(response.status(), Some(provider.id)));
-            }
-            let body =
-                read_bounded_response_body(response, MAX_MODEL_CATALOG_RESPONSE_BYTES).await?;
-            Some(serde_json::from_slice(&body).map_err(|_| invalid_response_error())?)
+            Some(client.get(GEMINI_MODELS_URL).header(
+                "x-goog-api-key",
+                sensitive_api_key_header(api_key).map_err(|_| invalid_request_error())?,
+            ))
         } else {
             None
         };
+        let (value, metadata) =
+            fetch_catalog_pair(request, metadata_request, provider.id, provider.name).await?;
         let mut models = parse_models(provider.id, &value, metadata.as_ref())?;
         if provider_id == "kilo" && api_key.trim().is_empty() {
             models.retain(|m| m.get("groupId").and_then(Value::as_str) == Some("free"));
@@ -561,21 +585,57 @@ fn provider_tool_support(provider_id: &str, model: &Value) -> Option<bool> {
     }
 }
 
-pub(super) fn supports_tool_calls(
+pub(super) struct RouteModelMetadata {
+    pub(super) context_limits: super::ModelContextLimits,
+    pub(super) supports_images: bool,
+    pub(super) supports_tool_calls: Option<bool>,
+}
+
+pub(super) fn route_model_metadata(
     storage: &AppStorage,
     provider_id: &str,
     api_key: &str,
     model_id: &str,
-) -> Result<Option<bool>, ServiceError> {
+) -> Result<RouteModelMetadata, ServiceError> {
     let key_hash = api_key_hash(api_key);
     let Some((models, _)) = load_catalog(storage, provider_id, &key_hash)? else {
-        return Ok(None);
+        return Ok(RouteModelMetadata {
+            context_limits: super::ModelContextLimits::default(),
+            supports_images: false,
+            supports_tool_calls: None,
+        });
     };
-    Ok(models
+    let model = models
         .iter()
-        .find(|model| model.get("id").and_then(Value::as_str) == Some(model_id))
-        .and_then(|model| model.get("supportsTools"))
-        .and_then(Value::as_bool))
+        .find(|model| model.get("id").and_then(Value::as_str) == Some(model_id));
+    let context_window = model
+        .and_then(|model| model.get("contextWindow"))
+        .and_then(Value::as_i64)
+        .filter(|window| *window > 0);
+    let input_token_limit = model
+        .and_then(|model| model.get("inputTokenLimit"))
+        .and_then(Value::as_i64)
+        .filter(|limit| *limit > 0)
+        .map(|limit| context_window.map_or(limit, |context| limit.min(context)));
+    let max_output_tokens = model
+        .and_then(|model| model.get("maxOutputTokens"))
+        .and_then(Value::as_i64)
+        .filter(|limit| *limit > 0);
+
+    Ok(RouteModelMetadata {
+        context_limits: super::ModelContextLimits {
+            context_window,
+            input_token_limit,
+            max_output_tokens,
+        },
+        supports_images: model
+            .and_then(|model| model.get("supportsImages"))
+            .and_then(Value::as_bool)
+            == Some(true),
+        supports_tool_calls: model
+            .and_then(|model| model.get("supportsTools"))
+            .and_then(Value::as_bool),
+    })
 }
 
 fn supports_images(model: &Value, details: Option<&Value>) -> Option<bool> {
@@ -726,55 +786,6 @@ fn load_catalog_from_connection(
         .transpose()
 }
 
-pub(super) fn context_limits(
-    storage: &AppStorage,
-    provider_id: &str,
-    api_key: &str,
-    model_id: &str,
-) -> Result<super::ModelContextLimits, ServiceError> {
-    let key_hash = api_key_hash(api_key);
-    let Some((models, _)) = load_catalog(storage, provider_id, &key_hash)? else {
-        return Ok(super::ModelContextLimits::default());
-    };
-    let model = models
-        .iter()
-        .find(|model| model.get("id").and_then(Value::as_str) == Some(model_id));
-    let context_window = model
-        .and_then(|model| model.get("contextWindow"))
-        .and_then(Value::as_i64)
-        .filter(|window| *window > 0);
-    let input_token_limit = model
-        .and_then(|model| model.get("inputTokenLimit"))
-        .and_then(Value::as_i64)
-        .filter(|limit| *limit > 0)
-        .map(|limit| context_window.map_or(limit, |context| limit.min(context)));
-    let max_output_tokens = model
-        .and_then(|model| model.get("maxOutputTokens"))
-        .and_then(Value::as_i64)
-        .filter(|limit| *limit > 0);
-    Ok(super::ModelContextLimits {
-        context_window,
-        input_token_limit,
-        max_output_tokens,
-    })
-}
-
-pub(super) fn supports_image_input(
-    storage: &AppStorage,
-    provider_id: &str,
-    api_key: &str,
-    model_id: &str,
-) -> Result<bool, ServiceError> {
-    let key_hash = api_key_hash(api_key);
-    let Some((models, _)) = load_catalog(storage, provider_id, &key_hash)? else {
-        return Ok(false);
-    };
-    Ok(models.iter().any(|model| {
-        model.get("id").and_then(Value::as_str) == Some(model_id)
-            && model.get("supportsImages").and_then(Value::as_bool) == Some(true)
-    }))
-}
-
 #[cfg(test)]
 fn model_context_window(models: &[Value], model_id: &str) -> Option<i64> {
     models
@@ -849,16 +860,19 @@ fn storage_error() -> ServiceError {
 
 #[cfg(test)]
 mod tests {
-    use std::{fs, path::PathBuf};
+    use std::{fs, path::PathBuf, time::Duration};
 
+    use reqwest::Client;
     use rusqlite::Connection;
     use serde_json::json;
+    use tokio::{io::AsyncWriteExt, net::TcpListener};
 
     use crate::storage::AppStorage;
 
     use super::{
-        api_key_hash, catalog_client, has_current_limit_metadata, load_catalog_from_connection,
-        model_context_window, parse_models, provider_tool_support, supports_tool_calls,
+        api_key_hash, catalog_client, fetch_catalog_pair, has_current_limit_metadata,
+        load_catalog_from_connection, model_context_window, parse_models, provider_tool_support,
+        route_model_metadata,
     };
 
     struct TestDirectory(PathBuf);
@@ -895,9 +909,107 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn provider_catalog_client_does_not_follow_redirects_with_credentials() {
-        use tokio::{io::AsyncWriteExt, net::TcpListener};
+    async fn provider_catalog_and_metadata_requests_start_concurrently() {
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind catalog fixture");
+        let address = listener.local_addr().expect("read catalog fixture address");
+        let server = tokio::spawn(async move {
+            let (mut first, _) = tokio::time::timeout(Duration::from_secs(1), listener.accept())
+                .await
+                .expect("receive first catalog request")
+                .expect("accept first catalog request");
+            let (mut second, _) = tokio::time::timeout(Duration::from_secs(1), listener.accept())
+                .await
+                .expect("receive metadata before responding")
+                .expect("accept metadata request");
+            tokio::join!(
+                read_request_headers(&mut first),
+                read_request_headers(&mut second)
+            );
+            let response = b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}";
+            let (first_result, second_result) =
+                tokio::join!(first.write_all(response), second.write_all(response));
+            first_result.expect("write primary catalog response");
+            second_result.expect("write metadata response");
+        });
 
+        let client = Client::new();
+        let (catalog, metadata) = tokio::time::timeout(
+            Duration::from_secs(2),
+            fetch_catalog_pair(
+                client.get(format!("http://{address}/models")),
+                Some(client.get(format!("http://{address}/metadata"))),
+                "gemini",
+                "Gemini",
+            ),
+        )
+        .await
+        .expect("concurrent catalog requests should complete")
+        .expect("load both catalog responses");
+
+        assert_eq!(catalog, json!({}));
+        assert_eq!(metadata, Some(json!({})));
+        server.await.expect("catalog fixture should complete");
+    }
+
+    #[tokio::test]
+    async fn primary_catalog_error_keeps_precedence_over_metadata_error() {
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind catalog error fixture");
+        let address = listener.local_addr().expect("read fixture address");
+        let server = tokio::spawn(async move {
+            let (mut first, _) = listener.accept().await.expect("accept first request");
+            let (mut second, _) = listener.accept().await.expect("accept second request");
+            let (first_request, second_request) = tokio::join!(
+                read_request_headers(&mut first),
+                read_request_headers(&mut second)
+            );
+            assert!(
+                first_request.starts_with("GET /metadata ")
+                    || second_request.starts_with("GET /metadata ")
+            );
+            let (mut primary, mut metadata) = if first_request.starts_with("GET /models ") {
+                (first, second)
+            } else {
+                (second, first)
+            };
+            metadata
+                .write_all(
+                    b"HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                )
+                .await
+                .expect("write metadata error");
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            primary
+                .write_all(
+                    b"HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                )
+                .await
+                .expect("write primary catalog error");
+        });
+
+        let client = Client::new();
+        let error = tokio::time::timeout(
+            Duration::from_secs(2),
+            fetch_catalog_pair(
+                client.get(format!("http://{address}/models")),
+                Some(client.get(format!("http://{address}/metadata"))),
+                "gemini",
+                "Gemini",
+            ),
+        )
+        .await
+        .expect("catalog errors should complete")
+        .expect_err("catalog requests should fail");
+
+        assert_eq!(error.code, "authentication_required");
+        server.await.expect("catalog error fixture should complete");
+    }
+
+    #[tokio::test]
+    async fn provider_catalog_client_does_not_follow_redirects_with_credentials() {
         let listener = TcpListener::bind("127.0.0.1:0")
             .await
             .expect("bind redirect fixture");
@@ -929,7 +1041,7 @@ mod tests {
     }
 
     /// Reads the loopback request before writing a deterministic fixture response.
-    async fn read_request_headers(stream: &mut tokio::net::TcpStream) {
+    async fn read_request_headers(stream: &mut tokio::net::TcpStream) -> String {
         use tokio::io::AsyncReadExt;
 
         let mut request = Vec::new();
@@ -939,6 +1051,7 @@ mod tests {
             assert_ne!(read, 0, "client closed before sending request headers");
             request.push(byte[0]);
         }
+        String::from_utf8(request).expect("request headers should be UTF-8")
     }
 
     #[test]
@@ -1318,18 +1431,21 @@ mod tests {
         }
 
         assert_eq!(
-            supports_tool_calls(&storage, "mistral", "account-one", "model")
-                .expect("read first account capability"),
+            route_model_metadata(&storage, "mistral", "account-one", "model")
+                .expect("read first account capability")
+                .supports_tool_calls,
             Some(true)
         );
         assert_eq!(
-            supports_tool_calls(&storage, "mistral", "account-two", "model")
-                .expect("read second account capability"),
+            route_model_metadata(&storage, "mistral", "account-two", "model")
+                .expect("read second account capability")
+                .supports_tool_calls,
             Some(false)
         );
         assert_eq!(
-            supports_tool_calls(&storage, "groq", "account-one", "model")
-                .expect("read other provider capability"),
+            route_model_metadata(&storage, "groq", "account-one", "model")
+                .expect("read other provider capability")
+                .supports_tool_calls,
             Some(true)
         );
     }

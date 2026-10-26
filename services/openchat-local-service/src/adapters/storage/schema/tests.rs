@@ -74,6 +74,40 @@ fn latest_schema_recreates_missing_conversation_context_state() {
     assert_eq!(route, (17, "connection".to_owned(), "workspace".to_owned()));
 }
 
+#[test]
+fn migration_40_indexes_usage_event_export_order() {
+    let connection = memory_index_repair_fixture(SCHEMA_VERSION - 1);
+
+    assert_eq!(
+        initialize_schema(&connection, SCHEMA_VERSION).expect("add usage event export index"),
+        SCHEMA_VERSION
+    );
+
+    let plan = connection
+        .prepare(
+            "EXPLAIN QUERY PLAN
+             SELECT event_id FROM usage_events
+             WHERE started_at_unix_ms >= ?1 AND started_at_unix_ms < ?2
+             ORDER BY started_at_unix_ms DESC, event_id DESC
+             LIMIT ?3 OFFSET ?4",
+        )
+        .expect("prepare usage event export plan")
+        .query_map([0_i64, 100, 1000, 0], |row| row.get::<_, String>(3))
+        .expect("explain usage event export query")
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .expect("read usage event export query plan");
+
+    assert!(
+        plan.iter()
+            .any(|detail| detail.contains("usage_events_started_desc_event_id_desc_idx")),
+        "usage event export did not select the new index: {plan:?}"
+    );
+    assert!(
+        plan.iter().all(|detail| !detail.contains("TEMP B-TREE")),
+        "usage event export still sorts into a temporary B-tree: {plan:?}"
+    );
+}
+
 fn memory_index_repair_fixture(version: i64) -> Connection {
     let connection = Connection::open_in_memory().expect("open in-memory database");
     connection

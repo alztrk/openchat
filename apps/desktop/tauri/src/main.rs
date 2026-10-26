@@ -7,6 +7,8 @@ use tauri::Manager;
 
 mod archive_export;
 #[cfg(test)]
+// The test harness does not start the Tauri runtime that calls these commands.
+#[allow(dead_code)]
 mod chat_storage;
 #[cfg(not(test))]
 #[path = "chat_storage_runtime.rs"]
@@ -22,6 +24,7 @@ mod project_folder;
 mod provider_storage;
 mod request_bounds;
 mod save_dialog;
+#[cfg_attr(test, allow(dead_code))]
 mod window_broadcast;
 mod window_state;
 

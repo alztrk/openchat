@@ -371,12 +371,37 @@ pub(super) fn is_quota_or_rate_limit_error(error: &ServiceError) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use std::{fs, path::PathBuf};
+
     use serde_json::json;
+    use uuid::Uuid;
 
     use super::parse_send_request;
+    use crate::storage::AppStorage;
+
+    struct TestStorage {
+        root: PathBuf,
+        storage: AppStorage,
+    }
+
+    impl TestStorage {
+        fn new() -> Self {
+            let root =
+                std::env::temp_dir().join(format!("openchat-chat-request-{}", Uuid::new_v4()));
+            let storage = AppStorage::open_at(root.clone()).expect("open isolated request storage");
+            Self { root, storage }
+        }
+    }
+
+    impl Drop for TestStorage {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.root);
+        }
+    }
 
     #[test]
     fn durable_chat_rejects_renderer_supplied_permission_policy() {
+        let storage = TestStorage::new();
         for field in [
             json!({"toolPermissionMode": "full_access"}),
             json!({"toolPermissionRules": {"read_file": "allow"}}),
@@ -387,7 +412,7 @@ mod tests {
                 .expect("request object")
                 .extend(field.as_object().expect("permission field object").clone());
 
-            let error = parse_send_request(&mut params)
+            let error = parse_send_request(&storage.storage, &mut params)
                 .err()
                 .expect("renderer policy must not configure a durable run");
             assert_eq!(error.code, "invalid_request_params");
@@ -396,8 +421,10 @@ mod tests {
 
     #[test]
     fn renderer_can_request_plan_mode_as_a_restriction() {
+        let storage = TestStorage::new();
         let mut params = json!({"conversationId": "conversation-1", "planMode": true});
-        let request = parse_send_request(&mut params).expect("valid plan-mode request");
+        let request =
+            parse_send_request(&storage.storage, &mut params).expect("valid plan-mode request");
 
         assert!(request.plan_mode_requested);
     }

@@ -1,4 +1,4 @@
-import { ChevronLeft, FolderTree, GitBranch, Hand, NotebookPen, Search, Server, Sparkles, Star } from 'lucide-react';
+import { Brain, ChevronLeft, FolderTree, GitBranch, Hand, NotebookPen, Search, Server, Sparkles, Star } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -7,13 +7,23 @@ import type { ChatProject } from '@/modules/conversations/data/chatStorage';
 import { ProjectDefaultModelPanel } from './ProjectDefaultModelPanel';
 import { ProjectIndexPanel } from './ProjectIndexPanel';
 import { ProjectInstructionsPanel } from './ProjectInstructionsPanel';
+import { ProjectMemoryPanel } from './ProjectMemoryPanel';
 import { ProjectMcpPanel } from './ProjectMcpPanel';
 import { ProjectSkillsPanel } from './ProjectSkillsPanel';
 import { ProjectToolPermissionsPanel } from './ProjectToolPermissionsPanel';
 import { ProjectWorktreesPanel } from './ProjectWorktreesPanel';
 import { ProjectWorkspaceRootsPanel } from './ProjectWorkspaceRootsPanel';
 
-type ProjectOptionId = 'workspaceRoots' | 'defaultModel' | 'instructions' | 'skills' | 'index' | 'permissions' | 'mcp' | 'worktrees';
+type ProjectOptionId =
+  | 'workspaceRoots'
+  | 'defaultModel'
+  | 'instructions'
+  | 'memory'
+  | 'skills'
+  | 'index'
+  | 'permissions'
+  | 'mcp'
+  | 'worktrees';
 
 interface ProjectOptionsDialogProps {
   project: ChatProject | null;
@@ -34,6 +44,7 @@ export function ProjectOptionsDialog({ project, open, onOpenChange, onUseWorktre
     workspaceRoots: t('projectWorkspaceRootsTitle'),
     defaultModel: t('projectDefaultModelUseCurrent'),
     instructions: t('projectOptionsInstructions'),
+    memory: t('projectMemoryTitle'),
     skills: t('projectOptionsSkills'),
     index: t('projectIndexTitle'),
     permissions: t('projectOptionsToolPermissions'),
@@ -79,6 +90,7 @@ export function ProjectOptionsDialog({ project, open, onOpenChange, onUseWorktre
                 label={optionLabels.instructions}
                 onClick={() => setOption('instructions')}
               />
+              <ProjectOptionButton icon={Brain} label={optionLabels.memory} onClick={() => setOption('memory')} />
               <ProjectOptionButton icon={Sparkles} label={optionLabels.skills} onClick={() => setOption('skills')} />
               <ProjectOptionButton icon={Search} label={optionLabels.index} onClick={() => setOption('index')} />
               <ProjectOptionButton
@@ -101,6 +113,7 @@ export function ProjectOptionsDialog({ project, open, onOpenChange, onUseWorktre
           {option === 'instructions' ? (
             <ProjectInstructionsPanel onClose={() => onOpenChange(false)} project={project} />
           ) : null}
+          {option === 'memory' ? <ProjectMemoryPanel onClose={() => onOpenChange(false)} project={project} /> : null}
           {option === 'skills' ? <ProjectSkillsPanel onClose={() => onOpenChange(false)} project={project} /> : null}
           {option === 'index' ? <ProjectIndexPanel onClose={() => onOpenChange(false)} project={project} /> : null}
           {option === 'permissions' ? (

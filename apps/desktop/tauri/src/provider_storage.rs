@@ -850,6 +850,7 @@ mod tests {
         CustomProviderConfig, HttpProviderDialogCopy, SaveCustomProviderInput,
         MAXIMUM_DIALOG_COPY_FIELD_BYTES, MAXIMUM_KEY_BYTES, MAXIMUM_PROVIDER_ID_BYTES,
         MAXIMUM_PROVIDER_NAME_BYTES, MAXIMUM_PROVIDER_PROTOCOL_BYTES, MAXIMUM_PROVIDER_URL_BYTES,
+        MAXIMUM_REASONING_EFFORTS_BYTES,
     };
     use crate::mcp_storage::SecretMap;
     use zeroize::Zeroizing;

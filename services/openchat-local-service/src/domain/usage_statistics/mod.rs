@@ -201,6 +201,7 @@ pub(crate) fn instruction_source_categories(
     custom_instructions: Option<&str>,
     project_instructions: Option<&str>,
     project_skills: &[crate::project_skills::ProjectSkill],
+    project_memory_context: Option<&str>,
     project_index_context: Option<&str>,
     goal_mode: bool,
 ) -> Vec<String> {
@@ -213,6 +214,9 @@ pub(crate) fn instruction_source_categories(
     }
     if !project_skills.is_empty() {
         sources.push("project_skills".to_owned());
+    }
+    if project_memory_context.is_some_and(|value| !value.trim().is_empty()) {
+        sources.push("project_memory".to_owned());
     }
     if project_index_context.is_some_and(|value| !value.trim().is_empty()) {
         sources.push("project_index".to_owned());
@@ -312,7 +316,7 @@ impl<'a> UsageRequestTracker<'a> {
             "unavailable"
         };
         let database = self.storage.connect()?;
-        database.execute(
+        let updated = database.execute(
             "UPDATE usage_events
              SET status = ?2,
                  input_tokens = ?3,
@@ -341,7 +345,33 @@ impl<'a> UsageRequestTracker<'a> {
             ],
         )?;
         self.is_finished = true;
+        if updated > 0 {
+            invalidate_cached_event_cost(&database, &self.event_id)?;
+        }
         Ok(())
+    }
+}
+
+fn invalidate_cached_event_cost(
+    database: &StorageConnection<'_>,
+    event_id: &str,
+) -> rusqlite::Result<()> {
+    match database.execute(
+        "DELETE FROM temp.models_dev_event_costs WHERE event_id = ?1",
+        [event_id],
+    ) {
+        Ok(_) => Ok(()),
+        Err(rusqlite::Error::SqliteFailure(failure, Some(message)))
+            if failure.code == rusqlite::ErrorCode::Unknown
+                && matches!(
+                    message.as_str(),
+                    "no such table: temp.models_dev_event_costs"
+                        | "no such table: models_dev_event_costs"
+                ) =>
+        {
+            Ok(())
+        }
+        Err(error) => Err(error),
     }
 }
 
@@ -407,6 +437,7 @@ fn request_data_manifest(payload: &Value, sources: Option<&RequestDataSources>) 
                 "shared_preferences"
                     | "project_instructions"
                     | "project_skills"
+                    | "project_memory"
                     | "project_index"
                     | "goal_mode"
             ) && !instruction_sources.contains(&source.as_str())
@@ -567,6 +598,8 @@ const FILTER: &str = "
 
 const CATALOG_COST_JOIN: &str =
     "LEFT JOIN models_dev_event_costs AS mc ON mc.event_id = e.event_id";
+const PAGE_CATALOG_COST_JOIN: &str =
+    "LEFT JOIN models_dev_page_event_costs AS mc ON mc.event_id = e.event_id";
 
 fn filter_params(query: &StatisticsQuery) -> [rusqlite::types::Value; 7] {
     [
@@ -580,34 +613,410 @@ fn filter_params(query: &StatisticsQuery) -> [rusqlite::types::Value; 7] {
     ]
 }
 
-fn sum_fields() -> &'static str {
-    "COALESCE(SUM(e.input_tokens), 0),
-     COALESCE(SUM(e.output_tokens), 0),
-     COALESCE(SUM(e.reasoning_tokens), 0),
-     COALESCE(SUM(e.cached_input_tokens), 0),
-     COALESCE(SUM(e.cache_write_tokens), 0),
-     COALESCE(SUM(e.reported_cost_nano_usd), 0) / 1000000000.0,
-     COALESCE(SUM(CASE WHEN e.reported_cost_nano_usd IS NOT NULL THEN 1 ELSE 0 END), 0),
-     COALESCE(SUM(mc.cost_usd), 0),
-     COALESCE(SUM(CASE WHEN mc.event_id IS NOT NULL THEN 1 ELSE 0 END), 0)"
+const STATISTICS_AGGREGATION_PAGE_SIZE: i64 = 20_000;
+const STATUS_CODE_COMPLETED: i64 = 1;
+const STATUS_CODE_FAILED: i64 = 2;
+const STATUS_CODE_CANCELLED: i64 = 3;
+const STATUS_CODE_INTERRUPTED: i64 = 4;
+const STATUS_CODE_PENDING: i64 = 5;
+
+struct AggregationEvent<'a> {
+    is_request: bool,
+    is_legacy_output: bool,
+    event_id: &'a str,
+    conversation_id: &'a str,
+    conversation_exists: bool,
+    provider_id: Option<&'a str>,
+    model_id: Option<&'a str>,
+    reasoning_effort: Option<&'a str>,
+    operation: &'a str,
+    status_code: i64,
+    fast_requested: Option<bool>,
+    service_tier: Option<&'a str>,
+    input_tokens: Option<i64>,
+    output_tokens: Option<i64>,
+    reasoning_tokens: Option<i64>,
+    cached_input_tokens: Option<i64>,
+    cache_write_tokens: Option<i64>,
+    estimated_cost_usd: Option<f64>,
+    started_at_unix_ms: i64,
+    day: Option<&'a str>,
+}
+
+#[derive(Default)]
+struct UsageTotals {
+    count: i64,
+    input_tokens: i64,
+    output_tokens: i64,
+    reasoning_tokens: i64,
+    cached_input_tokens: i64,
+    cache_write_tokens: i64,
+    estimated_cost_usd: f64,
+    estimated_cost_requests: i64,
+}
+
+impl UsageTotals {
+    fn add(&mut self, event: &AggregationEvent<'_>) -> rusqlite::Result<()> {
+        increment(&mut self.count)?;
+        add_optional(&mut self.input_tokens, event.input_tokens)?;
+        add_optional(&mut self.output_tokens, event.output_tokens)?;
+        add_optional(&mut self.reasoning_tokens, event.reasoning_tokens)?;
+        add_optional(&mut self.cached_input_tokens, event.cached_input_tokens)?;
+        add_optional(&mut self.cache_write_tokens, event.cache_write_tokens)?;
+        if let Some(cost) = event.estimated_cost_usd {
+            self.estimated_cost_usd += cost;
+            increment(&mut self.estimated_cost_requests)?;
+        }
+        Ok(())
+    }
+
+    fn to_breakdown_json(&self, key: &str, value: &str) -> Value {
+        json!({
+            key: value,
+            "requests": self.count,
+            "inputTokens": self.input_tokens,
+            "outputTokens": self.output_tokens,
+            "reasoningTokens": self.reasoning_tokens,
+            "cachedInputTokens": self.cached_input_tokens,
+            "cacheWriteTokens": self.cache_write_tokens,
+            "estimatedCostUsd": self.estimated_cost_usd,
+            "estimatedCostRequests": self.estimated_cost_requests,
+        })
+    }
+}
+
+#[derive(Default)]
+struct TrendTotals {
+    usage: UsageTotals,
+    requests: i64,
+}
+
+#[derive(Default)]
+struct ConversationTotals {
+    conversation_exists: bool,
+    usage: UsageTotals,
+    request_count: i64,
+    last_event_at_unix_ms: Option<i64>,
+}
+
+#[derive(Default)]
+struct StatisticsAggregation {
+    all_events: UsageTotals,
+    total_requests: i64,
+    successful_requests: i64,
+    failed_requests: i64,
+    cancelled_requests: i64,
+    interrupted_requests: i64,
+    pending_requests: i64,
+    conversations: HashMap<String, ConversationTotals>,
+    fast_requested_requests: i64,
+    input_usage_requests: i64,
+    output_usage_requests: i64,
+    reasoning_usage_requests: i64,
+    any_usage_requests: i64,
+    legacy_output_messages: i64,
+    providers: HashMap<String, UsageTotals>,
+    models: HashMap<String, UsageTotals>,
+    reasoning_efforts: HashMap<String, UsageTotals>,
+    operations: HashMap<String, UsageTotals>,
+    fast_modes: HashMap<Option<bool>, UsageTotals>,
+    service_tiers: HashMap<String, UsageTotals>,
+    daily_trends: HashMap<String, TrendTotals>,
+    daily_trend_without_date: Option<TrendTotals>,
+    monthly_trends: HashMap<String, TrendTotals>,
+    monthly_trend_without_date: Option<TrendTotals>,
+}
+
+impl StatisticsAggregation {
+    fn add(&mut self, event: &AggregationEvent<'_>) -> rusqlite::Result<()> {
+        self.all_events.add(event)?;
+        let is_request = event.is_request;
+        let conversation = group_for::<_, str, _>(&mut self.conversations, event.conversation_id)?;
+        conversation.conversation_exists |= event.conversation_exists;
+        conversation.usage.add(event)?;
+        if is_request {
+            increment(&mut conversation.request_count)?;
+        }
+        conversation.last_event_at_unix_ms = Some(
+            conversation
+                .last_event_at_unix_ms
+                .map_or(event.started_at_unix_ms, |last| {
+                    last.max(event.started_at_unix_ms)
+                }),
+        );
+        if is_request {
+            increment(&mut self.total_requests)?;
+            match event.status_code {
+                STATUS_CODE_COMPLETED => increment(&mut self.successful_requests)?,
+                STATUS_CODE_FAILED => increment(&mut self.failed_requests)?,
+                STATUS_CODE_CANCELLED => increment(&mut self.cancelled_requests)?,
+                STATUS_CODE_INTERRUPTED => increment(&mut self.interrupted_requests)?,
+                STATUS_CODE_PENDING => increment(&mut self.pending_requests)?,
+                _ => {}
+            }
+            if event.fast_requested == Some(true) {
+                increment(&mut self.fast_requested_requests)?;
+            }
+            if event.input_tokens.is_some() {
+                increment(&mut self.input_usage_requests)?;
+            }
+            if event.output_tokens.is_some() {
+                increment(&mut self.output_usage_requests)?;
+            }
+            if event.reasoning_tokens.is_some() {
+                increment(&mut self.reasoning_usage_requests)?;
+            }
+            if event.input_tokens.is_some()
+                || event.output_tokens.is_some()
+                || event.reasoning_tokens.is_some()
+                || event.cached_input_tokens.is_some()
+                || event.cache_write_tokens.is_some()
+            {
+                increment(&mut self.any_usage_requests)?;
+            }
+            if let Some(provider_id) = event.provider_id {
+                group_for::<_, str, _>(&mut self.providers, provider_id)?.add(event)?;
+            }
+            if let Some(model_id) = event.model_id {
+                group_for::<_, str, _>(&mut self.models, model_id)?.add(event)?;
+            }
+            let reasoning_effort = event.reasoning_effort.unwrap_or("unspecified");
+            group_for::<_, str, _>(&mut self.reasoning_efforts, reasoning_effort)?.add(event)?;
+            group_for::<_, str, _>(&mut self.operations, event.operation)?.add(event)?;
+            group_for(&mut self.fast_modes, &event.fast_requested)?.add(event)?;
+            if let Some(service_tier) = event.service_tier {
+                group_for::<_, str, _>(&mut self.service_tiers, service_tier)?.add(event)?;
+            }
+        } else if event.is_legacy_output {
+            increment(&mut self.legacy_output_messages)?;
+        }
+
+        let day = match event.day {
+            Some(day) => group_for::<_, str, _>(&mut self.daily_trends, day)?,
+            None => self
+                .daily_trend_without_date
+                .get_or_insert_with(TrendTotals::default),
+        };
+        day.usage.add(event)?;
+        if is_request {
+            increment(&mut day.requests)?;
+        }
+        let month = match event.day.and_then(|day| day.get(..7)) {
+            Some(month) => group_for::<_, str, _>(&mut self.monthly_trends, month)?,
+            None => self
+                .monthly_trend_without_date
+                .get_or_insert_with(TrendTotals::default),
+        };
+        month.usage.add(event)?;
+        if is_request {
+            increment(&mut month.requests)?;
+        }
+        Ok(())
+    }
+
+    fn summary_json(&self) -> Value {
+        json!({
+            "inputTokens": self.all_events.input_tokens,
+            "outputTokens": self.all_events.output_tokens,
+            "totalTokens": self.all_events.input_tokens.saturating_add(self.all_events.output_tokens),
+            "reasoningTokens": self.all_events.reasoning_tokens,
+            "cachedInputTokens": self.all_events.cached_input_tokens,
+            "cacheWriteTokens": self.all_events.cache_write_tokens,
+            "estimatedCostUsd": self.all_events.estimated_cost_usd,
+            "estimatedCostRequests": self.all_events.estimated_cost_requests,
+            "totalRequests": self.total_requests,
+            "successfulRequests": self.successful_requests,
+            "failedRequests": self.failed_requests,
+            "cancelledRequests": self.cancelled_requests,
+            "interruptedRequests": self.interrupted_requests,
+            "pendingRequests": self.pending_requests,
+            "conversationCount": self.conversations.len(),
+            "fastRequestedRequests": self.fast_requested_requests,
+            "inputUsageRequests": self.input_usage_requests,
+            "outputUsageRequests": self.output_usage_requests,
+            "reasoningUsageRequests": self.reasoning_usage_requests,
+            "anyUsageRequests": self.any_usage_requests,
+            "legacyOutputMessages": self.legacy_output_messages,
+        })
+    }
+}
+
+fn increment(value: &mut i64) -> rusqlite::Result<()> {
+    *value = value.checked_add(1).ok_or_else(integer_overflow)?;
+    Ok(())
+}
+
+fn add_optional(total: &mut i64, value: Option<i64>) -> rusqlite::Result<()> {
+    if let Some(value) = value {
+        *total = total.checked_add(value).ok_or_else(integer_overflow)?;
+    }
+    Ok(())
+}
+
+fn integer_overflow() -> rusqlite::Error {
+    rusqlite::Error::SqliteFailure(
+        rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_ERROR),
+        Some("integer overflow".to_owned()),
+    )
+}
+
+fn group_for<'a, K, Q, V>(groups: &'a mut HashMap<K, V>, key: &Q) -> rusqlite::Result<&'a mut V>
+where
+    K: Eq + std::hash::Hash + std::borrow::Borrow<Q>,
+    Q: Eq + std::hash::Hash + ToOwned<Owned = K> + ?Sized,
+    V: Default,
+{
+    if !groups.contains_key(key) {
+        groups.insert(key.to_owned(), V::default());
+    }
+    groups.get_mut(key).ok_or(rusqlite::Error::InvalidQuery)
+}
+
+fn aggregate_usage_events(
+    database: &StorageConnection<'_>,
+    query: &StatisticsQuery,
+) -> rusqlite::Result<StatisticsAggregation> {
+    // Encode finite status labels before crossing the storage boundary for each page.
+    let first_page_sql = format!(
+        "SELECT e.event_id,
+            e.event_kind = 'request', e.event_kind = 'legacy_output', e.conversation_id,
+            e.provider_id,
+            e.model_id, e.reasoning_effort, e.operation,
+            CASE e.status
+                WHEN 'completed' THEN 1 WHEN 'failed' THEN 2 WHEN 'cancelled' THEN 3
+                WHEN 'interrupted' THEN 4 WHEN 'pending' THEN 5 ELSE 0
+            END, e.fast_requested,
+            e.service_tier, e.input_tokens, e.output_tokens, e.reasoning_tokens,
+            e.cached_input_tokens, e.cache_write_tokens, mc.cost_usd,
+            e.started_at_unix_ms,
+            strftime('%Y-%m-%d', e.started_at_unix_ms / 1000, 'unixepoch', 'localtime'),
+            conversation.id IS NOT NULL
+         FROM usage_events AS e {CATALOG_COST_JOIN}
+         LEFT JOIN conversations AS conversation ON conversation.id = e.conversation_id
+         {} ORDER BY e.started_at_unix_ms DESC, e.event_id DESC LIMIT ?8",
+        FILTER
+    );
+    let next_page_sql = format!(
+        "SELECT e.event_id,
+            e.event_kind = 'request', e.event_kind = 'legacy_output', e.conversation_id,
+            e.provider_id,
+            e.model_id, e.reasoning_effort, e.operation,
+            CASE e.status
+                WHEN 'completed' THEN 1 WHEN 'failed' THEN 2 WHEN 'cancelled' THEN 3
+                WHEN 'interrupted' THEN 4 WHEN 'pending' THEN 5 ELSE 0
+            END, e.fast_requested,
+            e.service_tier, e.input_tokens, e.output_tokens, e.reasoning_tokens,
+            e.cached_input_tokens, e.cache_write_tokens, mc.cost_usd,
+            e.started_at_unix_ms,
+            strftime('%Y-%m-%d', e.started_at_unix_ms / 1000, 'unixepoch', 'localtime'),
+            conversation.id IS NOT NULL
+         FROM usage_events AS e {CATALOG_COST_JOIN}
+         LEFT JOIN conversations AS conversation ON conversation.id = e.conversation_id
+         {} AND (e.started_at_unix_ms < ?8 OR (
+            e.started_at_unix_ms = ?8 AND e.event_id < ?9
+         ))
+         ORDER BY e.started_at_unix_ms DESC, e.event_id DESC LIMIT ?10",
+        FILTER
+    );
+
+    let mut aggregate = StatisticsAggregation::default();
+    let mut cursor: Option<(i64, String)> = None;
+    loop {
+        let mut parameters = filter_params(query).to_vec();
+        let sql = if let Some((started_at_unix_ms, event_id)) = cursor.as_ref() {
+            parameters.extend([
+                (*started_at_unix_ms).into(),
+                event_id.clone().into(),
+                STATISTICS_AGGREGATION_PAGE_SIZE.into(),
+            ]);
+            &next_page_sql
+        } else {
+            parameters.push(STATISTICS_AGGREGATION_PAGE_SIZE.into());
+            &first_page_sql
+        };
+        let mut statement = database.prepare(sql)?;
+        let mut rows = statement.query(params_from_iter(parameters.iter()))?;
+        let mut row_count = 0_i64;
+        let mut last_event = None;
+        while let Some(row) = rows.next()? {
+            let event = AggregationEvent {
+                event_id: row.get_str(0)?,
+                is_request: row.get(1)?,
+                is_legacy_output: row.get(2)?,
+                conversation_id: row.get_str(3)?,
+                conversation_exists: row.get(19)?,
+                provider_id: row.get_optional_str(4)?,
+                model_id: row.get_optional_str(5)?,
+                reasoning_effort: row.get_optional_str(6)?,
+                operation: row.get_str(7)?,
+                status_code: row.get(8)?,
+                fast_requested: row.get(9)?,
+                service_tier: row.get_optional_str(10)?,
+                input_tokens: row.get(11)?,
+                output_tokens: row.get(12)?,
+                reasoning_tokens: row.get(13)?,
+                cached_input_tokens: row.get(14)?,
+                cache_write_tokens: row.get(15)?,
+                estimated_cost_usd: row.get(16)?,
+                started_at_unix_ms: row.get(17)?,
+                day: row.get_optional_str(18)?,
+            };
+            aggregate.add(&event)?;
+            row_count += 1;
+            if row_count == STATISTICS_AGGREGATION_PAGE_SIZE {
+                last_event = Some((event.started_at_unix_ms, event.event_id.to_owned()));
+            }
+        }
+        drop(rows);
+        drop(statement);
+        if row_count < STATISTICS_AGGREGATION_PAGE_SIZE {
+            break;
+        }
+        cursor = last_event;
+    }
+    Ok(aggregate)
 }
 
 /// Returns aggregated request usage and costs for the requested filters.
 ///
-/// Estimated costs are included only when pricing metadata matches; cancellation
-/// and local storage failures are returned as service errors.
+/// Statistics use cached pricing only so a remote catalog refresh cannot delay
+/// local usage data. Estimated costs are included only when cached pricing
+/// metadata matches; local storage failures are returned as service errors.
 pub(crate) async fn get_statistics(
     storage: &AppStorage,
     query: &StatisticsQuery,
-    cancellation: &mut watch::Receiver<bool>,
+    _cancellation: &mut watch::Receiver<bool>,
 ) -> Result<Value, ServiceError> {
-    let catalog = models_dev_pricing::load(storage, cancellation).await?;
+    let catalog = models_dev_pricing::load_cached(storage)?;
     let mut database = storage.connect().map_err(|_| statistics_storage_error())?;
     catalog
-        .install_temporary_prices(&mut database)
+        .install_temporary_prices(&mut database, query, None)
         .map_err(|_| statistics_storage_error())?;
     get_statistics_from_database(&database, query, catalog.metadata())
         .map_err(|_| statistics_storage_error())
+}
+
+/// Returns a page of filtered request details for CSV export.
+pub(crate) fn get_statistics_details(
+    storage: &AppStorage,
+    query: &StatisticsQuery,
+    include_total: bool,
+) -> Result<Value, ServiceError> {
+    let catalog = models_dev_pricing::load_cached(storage)?;
+    let mut database = storage.connect().map_err(|_| statistics_storage_error())?;
+    catalog
+        .install_temporary_prices(&mut database, query, Some((query.limit, query.offset)))
+        .map_err(|_| statistics_storage_error())?;
+    let detail_count = include_total
+        .then(|| count_details(&database, query))
+        .transpose()
+        .map_err(|_| statistics_storage_error())?;
+    let request_details =
+        request_details_for_export(&database, query).map_err(|_| statistics_storage_error())?;
+    Ok(json!({
+        "requestDetailCount": detail_count,
+        "requestDetails": request_details,
+    }))
 }
 
 /// Returns cached pricing and context metadata for one provider model.
@@ -629,7 +1038,7 @@ pub(crate) async fn get_model_details_batch(
     models_dev_pricing::model_details_batch(storage, models, cancellation).await
 }
 
-/// Fills missing per-model capabilities from the shared models.dev catalog.
+/// Fills missing per-model capabilities from the local models.dev cache.
 /// Provider-reported values remain authoritative when they are present.
 pub(crate) async fn enrich_model_catalog_capabilities(
     storage: &AppStorage,
@@ -639,6 +1048,9 @@ pub(crate) async fn enrich_model_catalog_capabilities(
 ) -> Result<(), ServiceError> {
     if models.is_empty() {
         return Ok(());
+    }
+    if *cancellation.borrow_and_update() {
+        return Err(model_catalog_enrichment_cancelled_error());
     }
     let requested = models
         .iter()
@@ -650,10 +1062,20 @@ pub(crate) async fn enrich_model_catalog_capabilities(
                 .map(|model_id| (provider_id.to_owned(), model_id.to_owned()))
         })
         .collect::<Vec<_>>();
-    let details = get_model_details_batch(storage, &requested, cancellation).await?;
+    let details = models_dev_pricing::cached_model_details_batch(storage, &requested)?;
+    tokio::task::yield_now().await;
+    if *cancellation.borrow_and_update() {
+        return Err(model_catalog_enrichment_cancelled_error());
+    }
     let Some(details) = details.get("models").and_then(Value::as_array) else {
         return Ok(());
     };
+    let mut details_by_model_id = HashMap::with_capacity(details.len());
+    for entry in details {
+        if let Some(model_id) = entry.get("modelId").and_then(Value::as_str) {
+            details_by_model_id.entry(model_id).or_insert(entry);
+        }
+    }
 
     for model in models {
         let Some(model_id) = model
@@ -663,9 +1085,8 @@ pub(crate) async fn enrich_model_catalog_capabilities(
         else {
             continue;
         };
-        let catalog_model = details
-            .iter()
-            .find(|entry| entry.get("modelId").and_then(Value::as_str) == Some(model_id))
+        let catalog_model = details_by_model_id
+            .get(model_id)
             .and_then(|entry| entry.get("model"));
         let Some(catalog_model) = catalog_model else {
             continue;
@@ -694,6 +1115,14 @@ pub(crate) async fn enrich_model_catalog_capabilities(
         }
     }
     Ok(())
+}
+
+fn model_catalog_enrichment_cancelled_error() -> ServiceError {
+    ServiceError::new(
+        "request_cancelled",
+        "The model request was cancelled.",
+        true,
+    )
 }
 
 pub(crate) fn cached_model_supports_images(
@@ -725,68 +1154,26 @@ fn get_statistics_from_database(
     query: &StatisticsQuery,
     pricing_metadata: Value,
 ) -> rusqlite::Result<Value> {
-    let filter = filter_params(query);
-    let summary_sql = format!(
-        "SELECT {},
-            COALESCE(SUM(CASE WHEN e.event_kind = 'request' THEN 1 ELSE 0 END), 0),
-            COALESCE(SUM(CASE WHEN e.event_kind = 'request' AND e.status = 'completed' THEN 1 ELSE 0 END), 0),
-            COALESCE(SUM(CASE WHEN e.event_kind = 'request' AND e.status = 'failed' THEN 1 ELSE 0 END), 0),
-            COALESCE(SUM(CASE WHEN e.event_kind = 'request' AND e.status = 'cancelled' THEN 1 ELSE 0 END), 0),
-            COALESCE(SUM(CASE WHEN e.event_kind = 'request' AND e.status = 'interrupted' THEN 1 ELSE 0 END), 0),
-            COALESCE(SUM(CASE WHEN e.event_kind = 'request' AND e.status = 'pending' THEN 1 ELSE 0 END), 0),
-            COUNT(DISTINCT e.conversation_id),
-            COALESCE(SUM(CASE WHEN e.event_kind = 'request' AND e.fast_requested = 1 THEN 1 ELSE 0 END), 0),
-            COALESCE(SUM(CASE WHEN e.event_kind = 'request' AND e.input_tokens IS NOT NULL THEN 1 ELSE 0 END), 0),
-            COALESCE(SUM(CASE WHEN e.event_kind = 'request' AND e.output_tokens IS NOT NULL THEN 1 ELSE 0 END), 0),
-            COALESCE(SUM(CASE WHEN e.event_kind = 'request' AND e.reasoning_tokens IS NOT NULL THEN 1 ELSE 0 END), 0),
-            COALESCE(SUM(CASE WHEN e.event_kind = 'request' AND (
-                e.input_tokens IS NOT NULL OR e.output_tokens IS NOT NULL
-                OR e.reasoning_tokens IS NOT NULL OR e.cached_input_tokens IS NOT NULL
-                OR e.cache_write_tokens IS NOT NULL
-            ) THEN 1 ELSE 0 END), 0),
-            COALESCE(SUM(CASE WHEN e.event_kind = 'legacy_output' THEN 1 ELSE 0 END), 0)
-         FROM usage_events AS e {CATALOG_COST_JOIN} {}",
-        sum_fields(),
-        FILTER
+    let aggregate = aggregate_usage_events(database, query)?;
+    let summary = aggregate.summary_json();
+    let detail_count = aggregate.all_events.count;
+    let provider_breakdown = sorted_breakdown(aggregate.providers, "providerId", 200);
+    let model_breakdown = sorted_breakdown(aggregate.models, "modelId", 200);
+    let reasoning_breakdown = sorted_breakdown(aggregate.reasoning_efforts, "reasoningEffort", 200);
+    let operation_breakdown = sorted_breakdown(aggregate.operations, "operation", 200);
+    let fast_mode_breakdown = fast_mode_values(aggregate.fast_modes);
+    let service_tier_breakdown = sorted_service_tiers(aggregate.service_tiers);
+    let daily_trend = trend_values(
+        aggregate.daily_trends,
+        aggregate.daily_trend_without_date,
+        "day",
     );
-    let summary = database.query_row(&summary_sql, filter, |row| {
-        let input_tokens = row.get::<_, i64>(0)?;
-        let output_tokens = row.get::<_, i64>(1)?;
-        Ok(json!({
-            "inputTokens": input_tokens,
-            "outputTokens": output_tokens,
-            "totalTokens": input_tokens.saturating_add(output_tokens),
-            "reasoningTokens": row.get::<_, i64>(2)?,
-            "cachedInputTokens": row.get::<_, i64>(3)?,
-            "cacheWriteTokens": row.get::<_, i64>(4)?,
-            "estimatedCostUsd": row.get::<_, f64>(7)?,
-            "estimatedCostRequests": row.get::<_, i64>(8)?,
-            "totalRequests": row.get::<_, i64>(9)?,
-            "successfulRequests": row.get::<_, i64>(10)?,
-            "failedRequests": row.get::<_, i64>(11)?,
-            "cancelledRequests": row.get::<_, i64>(12)?,
-            "interruptedRequests": row.get::<_, i64>(13)?,
-            "pendingRequests": row.get::<_, i64>(14)?,
-            "conversationCount": row.get::<_, i64>(15)?,
-            "fastRequestedRequests": row.get::<_, i64>(16)?,
-            "inputUsageRequests": row.get::<_, i64>(17)?,
-            "outputUsageRequests": row.get::<_, i64>(18)?,
-            "reasoningUsageRequests": row.get::<_, i64>(19)?,
-            "anyUsageRequests": row.get::<_, i64>(20)?,
-            "legacyOutputMessages": row.get::<_, i64>(21)?,
-        }))
-    })?;
-
-    let provider_breakdown = breakdown(database, query, "provider_id", "providerId")?;
-    let model_breakdown = breakdown(database, query, "model_id", "modelId")?;
-    let reasoning_breakdown = breakdown(database, query, "reasoning_effort", "reasoningEffort")?;
-    let operation_breakdown = breakdown(database, query, "operation", "operation")?;
-    let fast_mode_breakdown = fast_mode_breakdown(database, query)?;
-    let service_tier_breakdown = service_tier_breakdown(database, query)?;
-    let daily_trend = trend(database, query, "%Y-%m-%d", "day")?;
-    let monthly_trend = trend(database, query, "%Y-%m", "month")?;
-    let conversation_ranking = conversation_ranking(database, query)?;
-    let detail_count = count_details(database, query)?;
+    let monthly_trend = trend_values(
+        aggregate.monthly_trends,
+        aggregate.monthly_trend_without_date,
+        "month",
+    );
+    let conversation_ranking = conversation_ranking(database, aggregate.conversations)?;
     let request_details = request_details(database, query)?;
     let filter_options = filter_options(database)?;
     let quota_history = quota_history(database, query)?;
@@ -818,196 +1205,130 @@ fn get_statistics_from_database(
     }))
 }
 
-fn breakdown(
-    database: &StorageConnection<'_>,
-    query: &StatisticsQuery,
-    group_column: &str,
-    output_key: &str,
-) -> rusqlite::Result<Vec<Value>> {
-    let (group_expression, group_condition) = match group_column {
-        "provider_id" => ("e.provider_id", "AND e.provider_id IS NOT NULL"),
-        "model_id" => ("e.model_id", "AND e.model_id IS NOT NULL"),
-        "reasoning_effort" => ("COALESCE(e.reasoning_effort, 'unspecified')", ""),
-        "operation" => ("e.operation", "AND e.operation IS NOT NULL"),
-        _ => return Err(rusqlite::Error::InvalidQuery),
-    };
-    let sql = format!(
-        "SELECT {group_expression},
-            COUNT(*),
-            COALESCE(SUM(e.input_tokens), 0),
-            COALESCE(SUM(e.output_tokens), 0),
-            COALESCE(SUM(e.reasoning_tokens), 0),
-            COALESCE(SUM(e.cached_input_tokens), 0),
-            COALESCE(SUM(e.cache_write_tokens), 0),
-            COALESCE(SUM(e.reported_cost_nano_usd), 0) / 1000000000.0,
-            COALESCE(SUM(CASE WHEN e.reported_cost_nano_usd IS NOT NULL THEN 1 ELSE 0 END), 0),
-            COALESCE(SUM(mc.cost_usd), 0),
-            COALESCE(SUM(CASE WHEN mc.event_id IS NOT NULL THEN 1 ELSE 0 END), 0)
-         FROM usage_events AS e {CATALOG_COST_JOIN} {}
-           AND e.event_kind = 'request' {group_condition}
-         GROUP BY {group_expression}
-         ORDER BY (COALESCE(SUM(e.input_tokens), 0) + COALESCE(SUM(e.output_tokens), 0)) DESC, {group_expression}
-         LIMIT 200",
-        FILTER
-    );
-    let mut statement = database.prepare(&sql)?;
-    statement
-        .query_map(filter_params(query), |row| {
-            Ok(json!({
-                output_key: row.get::<_, String>(0)?,
-                "requests": row.get::<_, i64>(1)?,
-                "inputTokens": row.get::<_, i64>(2)?,
-                "outputTokens": row.get::<_, i64>(3)?,
-                "reasoningTokens": row.get::<_, i64>(4)?,
-                "cachedInputTokens": row.get::<_, i64>(5)?,
-                "cacheWriteTokens": row.get::<_, i64>(6)?,
-                "estimatedCostUsd": row.get::<_, f64>(9)?,
-                "estimatedCostRequests": row.get::<_, i64>(10)?,
-            }))
-        })?
+fn sorted_breakdown(groups: HashMap<String, UsageTotals>, key: &str, limit: usize) -> Vec<Value> {
+    let mut groups = groups.into_iter().collect::<Vec<_>>();
+    groups.sort_by(|(left_key, left), (right_key, right)| {
+        (i128::from(right.input_tokens) + i128::from(right.output_tokens))
+            .cmp(&(i128::from(left.input_tokens) + i128::from(left.output_tokens)))
+            .then_with(|| left_key.cmp(right_key))
+    });
+    groups
+        .into_iter()
+        .take(limit)
+        .map(|(group, totals)| totals.to_breakdown_json(key, &group))
         .collect()
 }
 
-fn fast_mode_breakdown(
-    database: &StorageConnection<'_>,
-    query: &StatisticsQuery,
-) -> rusqlite::Result<Vec<Value>> {
-    let sql = format!(
-        "SELECT e.fast_requested, COUNT(*),
-            COALESCE(SUM(e.input_tokens), 0), COALESCE(SUM(e.output_tokens), 0),
-            COALESCE(SUM(e.reported_cost_nano_usd), 0) / 1000000000.0,
-            COALESCE(SUM(CASE WHEN e.reported_cost_nano_usd IS NOT NULL THEN 1 ELSE 0 END), 0),
-            COALESCE(SUM(mc.cost_usd), 0),
-            COALESCE(SUM(CASE WHEN mc.event_id IS NOT NULL THEN 1 ELSE 0 END), 0)
-         FROM usage_events AS e {CATALOG_COST_JOIN} {}
-           AND e.event_kind = 'request'
-         GROUP BY e.fast_requested ORDER BY e.fast_requested DESC",
-        FILTER
-    );
-    let mut statement = database.prepare(&sql)?;
-    statement
-        .query_map(filter_params(query), |row| {
-            Ok(json!({
-                "fastRequested": row.get::<_, Option<bool>>(0)?,
-                "requests": row.get::<_, i64>(1)?,
-                "inputTokens": row.get::<_, i64>(2)?,
-                "outputTokens": row.get::<_, i64>(3)?,
-                "estimatedCostUsd": row.get::<_, f64>(6)?,
-                "estimatedCostRequests": row.get::<_, i64>(7)?,
-            }))
-        })?
+fn fast_mode_values(groups: HashMap<Option<bool>, UsageTotals>) -> Vec<Value> {
+    let mut groups = groups.into_iter().collect::<Vec<_>>();
+    groups.sort_by(|(left, _), (right, _)| right.cmp(left));
+    groups
+        .into_iter()
+        .map(|(fast_requested, totals)| {
+            json!({
+                "fastRequested": fast_requested,
+                "requests": totals.count,
+                "inputTokens": totals.input_tokens,
+                "outputTokens": totals.output_tokens,
+                "estimatedCostUsd": totals.estimated_cost_usd,
+                "estimatedCostRequests": totals.estimated_cost_requests,
+            })
+        })
         .collect()
 }
 
-fn service_tier_breakdown(
-    database: &StorageConnection<'_>,
-    query: &StatisticsQuery,
-) -> rusqlite::Result<Vec<Value>> {
-    let sql = format!(
-        "SELECT e.service_tier, COUNT(*),
-            COALESCE(SUM(e.input_tokens), 0),
-            COALESCE(SUM(e.output_tokens), 0),
-            COALESCE(SUM(e.reasoning_tokens), 0),
-            COALESCE(SUM(e.cached_input_tokens), 0),
-            COALESCE(SUM(e.cache_write_tokens), 0),
-            COALESCE(SUM(e.reported_cost_nano_usd), 0) / 1000000000.0,
-            COALESCE(SUM(CASE WHEN e.reported_cost_nano_usd IS NOT NULL THEN 1 ELSE 0 END), 0),
-            COALESCE(SUM(mc.cost_usd), 0),
-            COALESCE(SUM(CASE WHEN mc.event_id IS NOT NULL THEN 1 ELSE 0 END), 0)
-         FROM usage_events AS e {CATALOG_COST_JOIN} {}
-           AND e.event_kind = 'request' AND e.service_tier IS NOT NULL
-         GROUP BY e.service_tier ORDER BY COUNT(*) DESC, e.service_tier",
-        FILTER
-    );
-    let mut statement = database.prepare(&sql)?;
-    statement
-        .query_map(filter_params(query), |row| {
-            Ok(json!({
-                "serviceTier": row.get::<_, String>(0)?,
-                "requests": row.get::<_, i64>(1)?,
-                "inputTokens": row.get::<_, i64>(2)?,
-                "outputTokens": row.get::<_, i64>(3)?,
-                "reasoningTokens": row.get::<_, i64>(4)?,
-                "cachedInputTokens": row.get::<_, i64>(5)?,
-                "cacheWriteTokens": row.get::<_, i64>(6)?,
-                "estimatedCostUsd": row.get::<_, f64>(9)?,
-                "estimatedCostRequests": row.get::<_, i64>(10)?,
-            }))
-        })?
+fn sorted_service_tiers(groups: HashMap<String, UsageTotals>) -> Vec<Value> {
+    let mut groups = groups.into_iter().collect::<Vec<_>>();
+    groups.sort_by(|(left_key, left), (right_key, right)| {
+        right
+            .count
+            .cmp(&left.count)
+            .then_with(|| left_key.cmp(right_key))
+    });
+    groups
+        .into_iter()
+        .map(|(service_tier, totals)| totals.to_breakdown_json("serviceTier", &service_tier))
         .collect()
 }
 
-fn trend(
-    database: &StorageConnection<'_>,
-    query: &StatisticsQuery,
-    date_format: &str,
+fn trend_values(
+    groups: HashMap<String, TrendTotals>,
+    without_date: Option<TrendTotals>,
     key: &str,
-) -> rusqlite::Result<Vec<Value>> {
-    let sql = format!(
-        "SELECT strftime('{date_format}', e.started_at_unix_ms / 1000, 'unixepoch', 'localtime'),
-            COALESCE(SUM(e.input_tokens), 0),
-            COALESCE(SUM(e.output_tokens), 0),
-            COALESCE(SUM(mc.cost_usd), 0),
-            COALESCE(SUM(CASE WHEN mc.event_id IS NOT NULL THEN 1 ELSE 0 END), 0),
-            COALESCE(SUM(CASE WHEN e.event_kind = 'request' THEN 1 ELSE 0 END), 0)
-         FROM usage_events AS e {CATALOG_COST_JOIN} {}
-         GROUP BY 1 ORDER BY 1",
-        FILTER
-    );
-    database
-        .prepare(&sql)?
-        .query_map(filter_params(query), |row| {
-            Ok(json!({
-                key: row.get::<_, Option<String>>(0)?,
-                "inputTokens": row.get::<_, i64>(1)?,
-                "outputTokens": row.get::<_, i64>(2)?,
-                "estimatedCostUsd": row.get::<_, f64>(3)?,
-                "estimatedCostRequests": row.get::<_, i64>(4)?,
-                "requests": row.get::<_, i64>(5)?,
-            }))
-        })?
+) -> Vec<Value> {
+    let mut groups = groups
+        .into_iter()
+        .map(|(date, totals)| (Some(date), totals))
+        .collect::<Vec<_>>();
+    if let Some(totals) = without_date {
+        groups.push((None, totals));
+    }
+    groups.sort_by(|(left_key, _), (right_key, _)| left_key.cmp(right_key));
+    groups
+        .into_iter()
+        .map(|(date, totals)| {
+            json!({
+                key: date,
+                "inputTokens": totals.usage.input_tokens,
+                "outputTokens": totals.usage.output_tokens,
+                "estimatedCostUsd": totals.usage.estimated_cost_usd,
+                "estimatedCostRequests": totals.usage.estimated_cost_requests,
+                "requests": totals.requests,
+            })
+        })
         .collect()
 }
-
 fn conversation_ranking(
     database: &StorageConnection<'_>,
-    query: &StatisticsQuery,
+    groups: HashMap<String, ConversationTotals>,
 ) -> rusqlite::Result<Vec<Value>> {
-    let sql = format!(
-        "SELECT e.conversation_id, conversation.title,
-            COUNT(CASE WHEN e.event_kind = 'request' THEN 1 END),
-            COALESCE(SUM(e.input_tokens), 0),
-            COALESCE(SUM(e.output_tokens), 0),
-            COALESCE(SUM(mc.cost_usd), 0),
-            COALESCE(SUM(CASE WHEN mc.event_id IS NOT NULL THEN 1 ELSE 0 END), 0),
-            MAX(e.started_at_unix_ms)
-         FROM usage_events AS e
-         {CATALOG_COST_JOIN}
-         JOIN conversations AS conversation ON conversation.id = e.conversation_id
-         {}
-         GROUP BY e.conversation_id, conversation.title
-         ORDER BY (COALESCE(SUM(e.input_tokens), 0) + COALESCE(SUM(e.output_tokens), 0)) DESC,
-                  MAX(e.started_at_unix_ms) DESC
-         LIMIT 20",
-        FILTER
-    );
-    let mut statement = database.prepare(&sql)?;
-    statement
-        .query_map(filter_params(query), |row| {
-            Ok(json!({
-                "conversationId": row.get::<_, String>(0)?,
-                "title": row.get::<_, String>(1)?,
-                "requests": row.get::<_, i64>(2)?,
-                "inputTokens": row.get::<_, i64>(3)?,
-                "outputTokens": row.get::<_, i64>(4)?,
-                "estimatedCostUsd": row.get::<_, f64>(5)?,
-                "estimatedCostRequests": row.get::<_, i64>(6)?,
-                "lastRequestAtUnixMs": row.get::<_, i64>(7)?,
-            }))
+    let mut groups = groups
+        .into_iter()
+        .filter(|(_, totals)| totals.conversation_exists)
+        .collect::<Vec<_>>();
+    groups.sort_by(|(left_id, left), (right_id, right)| {
+        (i128::from(right.usage.input_tokens) + i128::from(right.usage.output_tokens))
+            .cmp(&(i128::from(left.usage.input_tokens) + i128::from(left.usage.output_tokens)))
+            .then_with(|| right.last_event_at_unix_ms.cmp(&left.last_event_at_unix_ms))
+            .then_with(|| left_id.cmp(right_id))
+    });
+    let groups = groups.into_iter().take(20).collect::<Vec<_>>();
+    if groups.is_empty() {
+        return Ok(Vec::new());
+    }
+    let parameters = groups
+        .iter()
+        .map(|(conversation_id, _)| conversation_id.clone().into())
+        .collect::<Vec<rusqlite::types::Value>>();
+    let placeholders = (1..=groups.len())
+        .map(|index| format!("?{index}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let sql = format!("SELECT id, title FROM conversations WHERE id IN ({placeholders})");
+    let titles = database
+        .query_map(&sql, params_from_iter(parameters.iter()), |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
         })?
-        .collect()
-}
+        .collect::<rusqlite::Result<HashMap<_, _>>>()?;
 
+    Ok(groups
+        .into_iter()
+        .filter_map(|(conversation_id, totals)| {
+            let title = titles.get(&conversation_id)?.clone();
+            let last_request_at = totals.last_event_at_unix_ms?;
+            Some(json!({
+                "conversationId": conversation_id,
+                "title": title,
+                "requests": totals.request_count,
+                "inputTokens": totals.usage.input_tokens,
+                "outputTokens": totals.usage.output_tokens,
+                "estimatedCostUsd": totals.usage.estimated_cost_usd,
+                "estimatedCostRequests": totals.usage.estimated_cost_requests,
+                "lastRequestAtUnixMs": last_request_at,
+            }))
+        })
+        .collect())
+}
 fn count_details(
     database: &StorageConnection<'_>,
     query: &StatisticsQuery,
@@ -1082,6 +1403,52 @@ fn request_details(
         .collect()
 }
 
+fn request_details_for_export(
+    database: &StorageConnection<'_>,
+    query: &StatisticsQuery,
+) -> rusqlite::Result<Vec<Value>> {
+    let sql = format!(
+        "SELECT e.event_kind, e.started_at_unix_ms, conversation.title,
+            e.provider_id, e.model_id, e.reasoning_effort, e.operation, e.status,
+            e.fast_requested, e.input_tokens, e.output_tokens, e.reasoning_tokens,
+            e.cached_input_tokens, e.cache_write_tokens, mc.cost_usd,
+            e.usage_source, e.run_id
+         FROM usage_events AS e
+         {PAGE_CATALOG_COST_JOIN}
+         JOIN conversations AS conversation ON conversation.id = e.conversation_id
+         {} ORDER BY e.started_at_unix_ms DESC, e.event_id DESC
+         LIMIT ?8 OFFSET ?9",
+        FILTER
+    );
+    let mut values = filter_params(query).to_vec();
+    values.push(query.limit.into());
+    values.push(query.offset.into());
+    let mut statement = database.prepare(&sql)?;
+    statement
+        .query_map(params_from_iter(values.iter()), |row| {
+            Ok(json!({
+                "eventKind": row.get::<_, String>(0)?,
+                "startedAtUnixMs": row.get::<_, i64>(1)?,
+                "conversationTitle": row.get::<_, String>(2)?,
+                "providerId": row.get::<_, Option<String>>(3)?,
+                "modelId": row.get::<_, Option<String>>(4)?,
+                "reasoningEffort": row.get::<_, Option<String>>(5)?,
+                "operation": row.get::<_, String>(6)?,
+                "status": row.get::<_, String>(7)?,
+                "fastRequested": row.get::<_, Option<bool>>(8)?,
+                "inputTokens": row.get::<_, Option<i64>>(9)?,
+                "outputTokens": row.get::<_, Option<i64>>(10)?,
+                "reasoningTokens": row.get::<_, Option<i64>>(11)?,
+                "cachedInputTokens": row.get::<_, Option<i64>>(12)?,
+                "cacheWriteTokens": row.get::<_, Option<i64>>(13)?,
+                "estimatedCostUsd": row.get::<_, Option<f64>>(14)?,
+                "usageSource": row.get::<_, String>(15)?,
+                "runId": row.get::<_, Option<String>>(16)?,
+            }))
+        })?
+        .collect()
+}
+
 #[cfg(test)]
 mod request_manifest_tests {
     use serde_json::json;
@@ -1094,10 +1461,12 @@ mod request_manifest_tests {
     #[test]
     fn instruction_source_categories_exclude_empty_and_unconfigured_sources() {
         assert_eq!(
-            instruction_source_categories(Some("shared"), Some("project"), &[], None, true),
+            instruction_source_categories(Some("shared"), Some("project"), &[], None, None, true,),
             ["shared_preferences", "project_instructions", "goal_mode"]
         );
-        assert!(instruction_source_categories(Some(" \n"), None, &[], None, false).is_empty());
+        assert!(
+            instruction_source_categories(Some(" \n"), None, &[], None, None, false).is_empty()
+        );
     }
 
     #[test]
@@ -1107,7 +1476,7 @@ mod request_manifest_tests {
             content: "Use rustfmt.".to_owned(),
         }];
         assert_eq!(
-            instruction_source_categories(None, None, &skills, None, false),
+            instruction_source_categories(None, None, &skills, None, None, false),
             ["project_skills"]
         );
     }
@@ -1115,7 +1484,7 @@ mod request_manifest_tests {
     #[test]
     fn instruction_source_categories_record_project_index_separately() {
         assert_eq!(
-            instruction_source_categories(None, None, &[], Some("excerpt"), false),
+            instruction_source_categories(None, None, &[], None, Some("excerpt"), false),
             ["project_index"]
         );
     }
@@ -1186,7 +1555,7 @@ mod request_tracker_tests {
 
     use crate::storage::AppStorage;
 
-    use super::{UsageRequestDetails, UsageRequestTracker};
+    use super::{UsageData, UsageRequestDetails, UsageRequestTracker};
 
     struct TestDirectory(PathBuf);
 
@@ -1273,6 +1642,86 @@ mod request_tracker_tests {
             assert_eq!(run_id.as_deref(), expected_run_id);
         }
     }
+
+    #[test]
+    fn finishing_a_request_invalidates_its_cached_estimated_cost() {
+        let directory = TestDirectory::new();
+        let storage = AppStorage::open_at(directory.0.clone()).expect("open test storage");
+        storage
+            .connect()
+            .expect("connect to test storage")
+            .execute_batch(
+                "CREATE TABLE conversations (id TEXT PRIMARY KEY NOT NULL);
+                 CREATE TABLE usage_events (
+                    event_id TEXT PRIMARY KEY NOT NULL,
+                    event_kind TEXT NOT NULL,
+                    conversation_id TEXT NOT NULL REFERENCES conversations(id),
+                    assistant_message_id TEXT,
+                    provider_id TEXT,
+                    model_id TEXT,
+                    reasoning_effort TEXT,
+                    operation TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    fast_requested INTEGER,
+                    usage_source TEXT NOT NULL,
+                    started_at_unix_ms INTEGER NOT NULL,
+                    finished_at_unix_ms INTEGER,
+                    input_tokens INTEGER,
+                    output_tokens INTEGER,
+                    reasoning_tokens INTEGER,
+                    cached_input_tokens INTEGER,
+                    cache_write_tokens INTEGER,
+                    reported_cost_nano_usd INTEGER,
+                    cost_source TEXT,
+                    service_tier TEXT,
+                    run_id TEXT
+                 );
+                 CREATE TEMP TABLE models_dev_event_costs (
+                    event_id TEXT PRIMARY KEY NOT NULL,
+                    cost_usd REAL NOT NULL
+                 );
+                 INSERT INTO conversations (id) VALUES ('conversation-1');",
+            )
+            .expect("create isolated usage event schema");
+
+        let mut tracker = UsageRequestTracker::start(
+            &storage,
+            UsageRequestDetails {
+                conversation_id: "conversation-1",
+                assistant_message_id: None,
+                provider_id: "provider",
+                model_id: "model",
+                reasoning_effort: None,
+                operation: "chat",
+                fast_requested: false,
+                run_id: None,
+            },
+        )
+        .expect("record usage request");
+        let database = storage.connect().expect("connect to test storage");
+        database
+            .execute(
+                "INSERT INTO temp.models_dev_event_costs (event_id, cost_usd)
+                 VALUES (?1, 0.01)",
+                [&tracker.event_id],
+            )
+            .expect("cache estimated cost");
+        drop(database);
+
+        tracker
+            .complete(&UsageData::default())
+            .expect("finish usage request");
+
+        let database = storage.connect().expect("connect to test storage");
+        let cached_cost_count = database
+            .query_row(
+                "SELECT COUNT(*) FROM temp.models_dev_event_costs WHERE event_id = ?1",
+                [&tracker.event_id],
+                |row| row.get::<_, i64>(0),
+            )
+            .expect("read cached cost count");
+        assert_eq!(cached_cost_count, 0);
+    }
 }
 
 fn filter_options(database: &StorageConnection<'_>) -> rusqlite::Result<Value> {
@@ -1315,17 +1764,29 @@ fn quota_history(
         "SELECT snapshot.id, snapshot.connection_id, snapshot.workspace_id,
             connection.display_name, workspace.display_name, snapshot.fetched_at_unix_ms,
             snapshot.freshness, snapshot.ordinary_usage_allowed,
-            snapshot.reset_credit_count, snapshot.reset_credit_details_state
+            snapshot.reset_credit_count, snapshot.reset_credit_details_state,
+            bucket.limit_id, bucket.used_percent, bucket.window_seconds,
+            bucket.reset_at_unix_ms
          FROM chatgpt_usage_snapshots AS snapshot
          JOIN chatgpt_connections AS connection ON connection.id = snapshot.connection_id
          JOIN chatgpt_workspaces AS workspace
            ON workspace.connection_id = snapshot.connection_id
           AND workspace.id = snapshot.workspace_id
+         LEFT JOIN chatgpt_usage_buckets AS bucket ON bucket.snapshot_id = snapshot.id
          WHERE snapshot.fetched_at_unix_ms >= ?1 AND snapshot.fetched_at_unix_ms < ?2
-         ORDER BY snapshot.fetched_at_unix_ms DESC, snapshot.id",
+         ORDER BY snapshot.fetched_at_unix_ms DESC, snapshot.id, bucket.limit_id",
     )?;
-    let snapshots = statement
+    let rows = statement
         .query_map(params![query.from_unix_ms, query.to_unix_ms], |row| {
+            let bucket = match row.get::<_, Option<String>>(10)? {
+                Some(limit_id) => Some(json!({
+                    "limitId": limit_id,
+                    "usedPercent": row.get::<_, Option<f64>>(11)?,
+                    "windowSeconds": row.get::<_, Option<i64>>(12)?,
+                    "resetAtUnixMs": row.get::<_, Option<i64>>(13)?,
+                })),
+                None => None,
+            };
             Ok((
                 row.get::<_, String>(0)?,
                 json!({
@@ -1339,30 +1800,356 @@ fn quota_history(
                     "resetCreditCount": row.get::<_, Option<i64>>(8)?,
                     "resetCreditDetailsState": row.get::<_, String>(9)?,
                 }),
+                bucket,
             ))
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
     drop(statement);
 
-    snapshots
+    let mut snapshots: Vec<(String, Value, Vec<Value>)> = Vec::new();
+    for (snapshot_id, snapshot, bucket) in rows {
+        if snapshots
+            .last()
+            .map_or(true, |(current_id, _, _)| current_id != &snapshot_id)
+        {
+            snapshots.push((snapshot_id.clone(), snapshot, Vec::new()));
+        }
+        if let Some(bucket) = bucket {
+            if let Some((_, _, buckets)) = snapshots.last_mut() {
+                buckets.push(bucket);
+            }
+        }
+    }
+
+    Ok(snapshots
         .into_iter()
-        .map(|(snapshot_id, mut snapshot)| {
-            let mut bucket_statement = database.prepare(
-                "SELECT limit_id, used_percent, window_seconds, reset_at_unix_ms
-                 FROM chatgpt_usage_buckets WHERE snapshot_id = ?1 ORDER BY limit_id",
-            )?;
-            let buckets = bucket_statement
-                .query_map([snapshot_id], |row| {
-                    Ok(json!({
-                        "limitId": row.get::<_, String>(0)?,
-                        "usedPercent": row.get::<_, Option<f64>>(1)?,
-                        "windowSeconds": row.get::<_, Option<i64>>(2)?,
-                        "resetAtUnixMs": row.get::<_, Option<i64>>(3)?,
-                    }))
-                })?
-                .collect::<rusqlite::Result<Vec<_>>>()?;
+        .map(|(_, mut snapshot, buckets)| {
             snapshot["buckets"] = json!(buckets);
-            Ok(snapshot)
+            snapshot
         })
-        .collect()
+        .collect())
+}
+
+#[cfg(test)]
+mod benchmark_tests {
+    use std::{fs, path::PathBuf, time::Duration, time::Instant};
+
+    use serde_json::json;
+    use tokio::sync::watch;
+    use uuid::Uuid;
+
+    use crate::storage::AppStorage;
+
+    use super::{StatisticsQuery, get_statistics, get_statistics_details};
+
+    const EVENT_COUNT: i64 = 50_000;
+    const EXPORT_PAGE_SIZE: i64 = 1_000;
+    const WARM_STATISTICS_SAMPLES: usize = 7;
+
+    #[tokio::test]
+    #[ignore = "manual usage statistics and CSV page benchmark"]
+    async fn benchmarks_usage_statistics_and_csv_export() {
+        let directory = BenchmarkDirectory::new();
+        let storage = AppStorage::open_at(directory.0.clone()).expect("open benchmark storage");
+        let database = storage.connect().expect("connect benchmark storage");
+        database
+            .execute_batch(
+                "CREATE TABLE IF NOT EXISTS conversations (
+                    id TEXT PRIMARY KEY NOT NULL,
+                    title TEXT NOT NULL,
+                    created_at INTEGER NOT NULL,
+                    updated_at INTEGER NOT NULL
+                 );
+                 CREATE TABLE IF NOT EXISTS models_dev_catalog_cache (
+                    cache_id INTEGER PRIMARY KEY NOT NULL,
+                    fetched_at_unix_ms INTEGER NOT NULL,
+                    catalog_json TEXT NOT NULL
+                 );
+                 CREATE TABLE IF NOT EXISTS usage_events (
+                    event_id TEXT PRIMARY KEY NOT NULL,
+                    event_kind TEXT NOT NULL,
+                    conversation_id TEXT NOT NULL REFERENCES conversations(id),
+                    assistant_message_id TEXT,
+                    provider_id TEXT,
+                    model_id TEXT,
+                    reasoning_effort TEXT,
+                    operation TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    fast_requested INTEGER,
+                    service_tier TEXT,
+                    input_tokens INTEGER,
+                    output_tokens INTEGER,
+                    reasoning_tokens INTEGER,
+                    cached_input_tokens INTEGER,
+                    cache_write_tokens INTEGER,
+                    reported_cost_nano_usd INTEGER,
+                    cost_source TEXT,
+                    usage_source TEXT NOT NULL,
+                    started_at_unix_ms INTEGER NOT NULL,
+                    finished_at_unix_ms INTEGER,
+                    request_manifest_json TEXT,
+                    run_id TEXT
+                 );
+                 CREATE INDEX usage_events_started_idx
+                    ON usage_events(started_at_unix_ms DESC, event_id);
+                 CREATE INDEX usage_events_provider_model_idx
+                    ON usage_events(provider_id, model_id, started_at_unix_ms DESC);
+                 CREATE INDEX usage_events_conversation_idx
+                    ON usage_events(conversation_id, started_at_unix_ms DESC);
+                 CREATE INDEX usage_events_run_idx
+                    ON usage_events(run_id, started_at_unix_ms DESC);
+                 CREATE INDEX usage_events_started_desc_event_id_desc_idx
+                    ON usage_events(started_at_unix_ms DESC, event_id DESC);",
+            )
+            .expect("create isolated benchmark schema");
+        database
+            .execute_batch(&format!(
+                "INSERT INTO conversations (id, title, created_at, updated_at)
+                 VALUES ('benchmark-conversation', 'Benchmark', 1, 1);
+                 INSERT INTO models_dev_catalog_cache
+                    (cache_id, fetched_at_unix_ms, catalog_json)
+                 VALUES (1, {}, '{{\"openai\":{{\"models\":{{\"benchmark-model\":{{\"cost\":{{\"input\":1.0,\"output\":2.0}}}}}}}}}}');
+                 WITH digits(value) AS (
+                    VALUES (0),(1),(2),(3),(4),(5),(6),(7),(8),(9)
+                 ), numbers(value) AS (
+                    SELECT ones.value + tens.value * 10 + hundreds.value * 100
+                         + thousands.value * 1000 + ten_thousands.value * 10000 + 1
+                    FROM digits AS ones
+                    CROSS JOIN digits AS tens
+                    CROSS JOIN digits AS hundreds
+                    CROSS JOIN digits AS thousands
+                    CROSS JOIN digits AS ten_thousands
+                 )
+                 INSERT INTO usage_events (
+                    event_id, event_kind, conversation_id, provider_id, model_id,
+                    operation, status, fast_requested, input_tokens, output_tokens,
+                    usage_source, started_at_unix_ms, finished_at_unix_ms
+                 )
+                 SELECT 'benchmark-event-' || value, 'request',
+                    'benchmark-conversation', 'chatgpt_api', 'benchmark-model',
+                    'chat', 'completed', 0, 1000, 500, 'provider_reported', 10, 11
+                 FROM numbers WHERE value <= {EVENT_COUNT};",
+                super::now_unix_millis().expect("benchmark clock"),
+            ))
+            .expect("seed isolated usage benchmark profile");
+        drop(database);
+
+        let query = StatisticsQuery {
+            from_unix_ms: 0,
+            to_unix_ms: 100,
+            provider_id: None,
+            model_id: None,
+            operation: None,
+            reasoning_effort: None,
+            fast_mode: None,
+            offset: 0,
+            limit: 1,
+        };
+        let (_cancel_sender, mut cancellation) = watch::channel(false);
+        let started = Instant::now();
+        let cold = get_statistics(&storage, &query, &mut cancellation)
+            .await
+            .expect("cold statistics request");
+        let cold_elapsed = started.elapsed();
+        assert_eq!(cold["summary"]["totalRequests"], json!(EVENT_COUNT));
+        assert_eq!(cold["summary"]["estimatedCostRequests"], json!(EVENT_COUNT));
+        assert_eq!(cold["summary"]["totalTokens"], json!(75_000_000));
+        assert_eq!(cold["summary"]["conversationCount"], json!(1));
+        assert_eq!(cold["summary"]["successfulRequests"], json!(EVENT_COUNT));
+        assert_eq!(cold["summary"]["legacyOutputMessages"], json!(0));
+        assert_eq!(
+            cold["providerBreakdown"][0]["providerId"],
+            json!("chatgpt_api")
+        );
+        assert_eq!(cold["providerBreakdown"][0]["requests"], json!(EVENT_COUNT));
+        assert_eq!(
+            cold["modelBreakdown"][0]["modelId"],
+            json!("benchmark-model")
+        );
+        assert_eq!(
+            cold["reasoningBreakdown"][0]["reasoningEffort"],
+            json!("unspecified")
+        );
+        assert_eq!(cold["operationBreakdown"][0]["operation"], json!("chat"));
+        assert_eq!(cold["fastModeBreakdown"][0]["fastRequested"], json!(false));
+        assert!(
+            cold["serviceTierBreakdown"]
+                .as_array()
+                .is_some_and(Vec::is_empty)
+        );
+        assert_eq!(cold["dailyTrend"][0]["requests"], json!(EVENT_COUNT));
+        assert_eq!(cold["monthlyTrend"][0]["requests"], json!(EVENT_COUNT));
+        assert_eq!(
+            cold["conversationRanking"][0]["requests"],
+            json!(EVENT_COUNT)
+        );
+        assert_eq!(cold["conversationRanking"][0]["title"], json!("Benchmark"));
+        assert_eq!(cold["requestDetailCount"], json!(EVENT_COUNT));
+        assert_eq!(cold["requestDetails"].as_array().map(Vec::len), Some(1));
+        assert_eq!(cold["filterOptions"]["providers"][0], json!("chatgpt_api"));
+        assert_eq!(cold["filterOptions"]["models"][0], json!("benchmark-model"));
+        assert_eq!(
+            cold["filterOptions"]["reasoningEfforts"][0],
+            json!("unspecified")
+        );
+
+        let mut warm_samples = Vec::with_capacity(WARM_STATISTICS_SAMPLES);
+        for _ in 0..WARM_STATISTICS_SAMPLES {
+            let started = Instant::now();
+            let statistics = get_statistics(&storage, &query, &mut cancellation)
+                .await
+                .expect("warm statistics request");
+            warm_samples.push(started.elapsed());
+            assert_eq!(statistics["summary"]["totalRequests"], json!(EVENT_COUNT));
+        }
+
+        let started = Instant::now();
+        let catalog = super::models_dev_pricing::load_cached(&storage)
+            .expect("load cached pricing for phase measurements");
+        let catalog_load_elapsed = started.elapsed();
+        let mut phase_database = storage.connect().expect("connect phase benchmark storage");
+        let started = Instant::now();
+        catalog
+            .install_temporary_prices(&mut phase_database, &query, None)
+            .expect("reuse cached event prices");
+        let price_cache_elapsed = started.elapsed();
+        let started = Instant::now();
+        let aggregate = super::aggregate_usage_events(&phase_database, &query)
+            .expect("aggregate benchmark events");
+        let aggregate_elapsed = started.elapsed();
+        let started = Instant::now();
+        let _summary = aggregate.summary_json();
+        let _providers = super::sorted_breakdown(aggregate.providers, "providerId", 200);
+        let _models = super::sorted_breakdown(aggregate.models, "modelId", 200);
+        let _reasoning =
+            super::sorted_breakdown(aggregate.reasoning_efforts, "reasoningEffort", 200);
+        let _operations = super::sorted_breakdown(aggregate.operations, "operation", 200);
+        let _fast_modes = super::fast_mode_values(aggregate.fast_modes);
+        let _service_tiers = super::sorted_service_tiers(aggregate.service_tiers);
+        let _daily = super::trend_values(
+            aggregate.daily_trends,
+            aggregate.daily_trend_without_date,
+            "day",
+        );
+        let _monthly = super::trend_values(
+            aggregate.monthly_trends,
+            aggregate.monthly_trend_without_date,
+            "month",
+        );
+        let shaping_elapsed = started.elapsed();
+        let started = Instant::now();
+        let _ranking = super::conversation_ranking(&phase_database, aggregate.conversations)
+            .expect("rank benchmark conversations");
+        let ranking_elapsed = started.elapsed();
+        let started = Instant::now();
+        let _request_details = super::request_details(&phase_database, &query)
+            .expect("load benchmark request details");
+        let request_details_elapsed = started.elapsed();
+        let started = Instant::now();
+        let _filter_options =
+            super::filter_options(&phase_database).expect("load benchmark filter options");
+        let filter_options_elapsed = started.elapsed();
+        let started = Instant::now();
+        let _quota_history =
+            super::quota_history(&phase_database, &query).expect("load benchmark quota history");
+        let quota_history_elapsed = started.elapsed();
+        let started = Instant::now();
+        catalog
+            .install_temporary_prices(
+                &mut phase_database,
+                &query,
+                Some((query.limit, query.offset)),
+            )
+            .expect("install page-local event prices");
+        let page_price_elapsed = started.elapsed();
+        let started = Instant::now();
+        let _export_details = super::request_details_for_export(&phase_database, &query)
+            .expect("load benchmark export page");
+        let export_page_elapsed = started.elapsed();
+        drop(phase_database);
+
+        let page_count = (EVENT_COUNT + EXPORT_PAGE_SIZE - 1) / EXPORT_PAGE_SIZE;
+        let mut page_samples = Vec::with_capacity(page_count as usize);
+        let mut exported_rows = 0_i64;
+        for offset in (0..EVENT_COUNT).step_by(EXPORT_PAGE_SIZE as usize) {
+            let page_query = StatisticsQuery {
+                offset,
+                limit: EXPORT_PAGE_SIZE,
+                ..query.clone()
+            };
+            let started = Instant::now();
+            let include_total = offset == 0;
+            let page = get_statistics_details(&storage, &page_query, include_total)
+                .expect("statistics export page");
+            page_samples.push(started.elapsed());
+            let rows = page["requestDetails"]
+                .as_array()
+                .expect("export detail array");
+            exported_rows += rows.len() as i64;
+            if include_total {
+                assert_eq!(page["requestDetailCount"], json!(EVENT_COUNT));
+            } else {
+                assert!(page["requestDetailCount"].is_null());
+            }
+        }
+        assert_eq!(exported_rows, EVENT_COUNT);
+
+        eprintln!(
+            "statistics benchmark: events={EVENT_COUNT} cold_get={:.3}ms warm_get_{}={}",
+            cold_elapsed.as_secs_f64() * 1000.0,
+            WARM_STATISTICS_SAMPLES,
+            latency_summary(&warm_samples)
+        );
+        eprintln!(
+            "statistics CSV benchmark: rows={exported_rows} page_size={EXPORT_PAGE_SIZE} pages={page_count} per_page={}",
+            latency_summary(&page_samples)
+        );
+        eprintln!(
+            "statistics phases: catalog_load={:.3}ms cached_price_install={:.3}ms aggregate_rows={:.3}ms json_shaping={:.3}ms conversation_ranking={:.3}ms request_details={:.3}ms filter_options={:.3}ms quota_history={:.3}ms export_price_install={:.3}ms export_page={:.3}ms",
+            catalog_load_elapsed.as_secs_f64() * 1000.0,
+            price_cache_elapsed.as_secs_f64() * 1000.0,
+            aggregate_elapsed.as_secs_f64() * 1000.0,
+            shaping_elapsed.as_secs_f64() * 1000.0,
+            ranking_elapsed.as_secs_f64() * 1000.0,
+            request_details_elapsed.as_secs_f64() * 1000.0,
+            filter_options_elapsed.as_secs_f64() * 1000.0,
+            quota_history_elapsed.as_secs_f64() * 1000.0,
+            page_price_elapsed.as_secs_f64() * 1000.0,
+            export_page_elapsed.as_secs_f64() * 1000.0,
+        );
+    }
+
+    fn latency_summary(samples: &[Duration]) -> String {
+        let mut sorted = samples.to_vec();
+        sorted.sort_unstable();
+        let percentile = |fraction: f64| {
+            let index = ((sorted.len() - 1) as f64 * fraction).round() as usize;
+            sorted[index].as_secs_f64() * 1000.0
+        };
+        format!(
+            "p50={:.3}ms p95={:.3}ms p99={:.3}ms",
+            percentile(0.50),
+            percentile(0.95),
+            percentile(0.99)
+        )
+    }
+
+    struct BenchmarkDirectory(PathBuf);
+
+    impl BenchmarkDirectory {
+        fn new() -> Self {
+            let path = std::env::temp_dir().join(format!(
+                "openchat-statistics-benchmark-{}",
+                Uuid::new_v4().simple()
+            ));
+            fs::create_dir(&path).expect("create isolated benchmark directory");
+            Self(path)
+        }
+    }
+
+    impl Drop for BenchmarkDirectory {
+        fn drop(&mut self) {
+            fs::remove_dir_all(&self.0).expect("remove isolated benchmark directory");
+        }
+    }
 }

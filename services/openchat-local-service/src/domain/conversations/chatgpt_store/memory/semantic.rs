@@ -146,7 +146,15 @@ enum WorkerMessage {
         through_message_id: Option<String>,
         query: String,
         result_limit: usize,
+        backfill: bool,
         response: SyncSender<Result<Vec<ArchivedMemoryExcerpt>, SemanticMemoryError>>,
+    },
+    RerankProjectCandidates {
+        database: DatabaseQueueHandle,
+        cache_directory: PathBuf,
+        query: String,
+        candidates: Vec<String>,
+        response: SyncSender<Result<Vec<usize>, SemanticMemoryError>>,
     },
     InvalidateIndex {
         database: DatabaseQueueHandle,
@@ -269,8 +277,55 @@ pub(super) async fn search_archive(
         through_message_id,
         query,
         result_limit,
+        true,
     )
     .await
+}
+
+/// Searches only embeddings already stored for a conversation, without backfilling its history.
+pub(super) async fn search_archive_existing(
+    database: DatabaseQueueHandle,
+    cache_directory: PathBuf,
+    conversation_id: String,
+    query: String,
+    result_limit: usize,
+) -> Result<Vec<ArchivedMemoryExcerpt>, SemanticMemoryError> {
+    run_search_worker(
+        database,
+        cache_directory,
+        conversation_id,
+        None,
+        query,
+        result_limit,
+        false,
+    )
+    .await
+}
+
+pub(super) async fn rerank_project_candidates(
+    database: DatabaseQueueHandle,
+    cache_directory: PathBuf,
+    query: String,
+    candidates: Vec<String>,
+) -> Result<Vec<usize>, SemanticMemoryError> {
+    tokio::task::spawn_blocking(move || {
+        let sender = worker_sender()?;
+        let (response_sender, response_receiver) = mpsc::sync_channel(1);
+        sender
+            .send(WorkerMessage::RerankProjectCandidates {
+                database,
+                cache_directory,
+                query,
+                candidates,
+                response: response_sender,
+            })
+            .map_err(|error| SemanticMemoryError::Worker(error.to_string()))?;
+        response_receiver
+            .recv()
+            .map_err(|error| SemanticMemoryError::Worker(error.to_string()))?
+    })
+    .await
+    .map_err(|error| SemanticMemoryError::Worker(error.to_string()))?
 }
 
 async fn run_prepare_worker(
@@ -302,6 +357,7 @@ async fn run_search_worker(
     through_message_id: Option<String>,
     query: String,
     result_limit: usize,
+    backfill: bool,
 ) -> Result<Vec<ArchivedMemoryExcerpt>, SemanticMemoryError> {
     tokio::task::spawn_blocking(move || {
         let sender = worker_sender()?;
@@ -314,6 +370,7 @@ async fn run_search_worker(
                 through_message_id,
                 query,
                 result_limit,
+                backfill,
                 response: response_sender,
             })
             .map_err(|error| SemanticMemoryError::Worker(error.to_string()))?;
@@ -366,6 +423,7 @@ fn worker_loop(receiver: Receiver<WorkerMessage>) {
                 through_message_id,
                 query,
                 result_limit,
+                backfill,
                 response,
             } => {
                 let result = runtime.search(
@@ -375,6 +433,22 @@ fn worker_loop(receiver: Receiver<WorkerMessage>) {
                     through_message_id.as_deref(),
                     &query,
                     result_limit,
+                    backfill,
+                );
+                let _ = response.send(result);
+            }
+            WorkerMessage::RerankProjectCandidates {
+                database,
+                cache_directory,
+                query,
+                candidates,
+                response,
+            } => {
+                let result = runtime.rerank_project_candidates(
+                    &database,
+                    &cache_directory,
+                    &query,
+                    &candidates,
                 );
                 let _ = response.send(result);
             }
@@ -445,6 +519,7 @@ impl SemanticRuntime {
         through_message_id: Option<&str>,
         query: &str,
         result_limit: usize,
+        backfill: bool,
     ) -> Result<Vec<ArchivedMemoryExcerpt>, SemanticMemoryError> {
         let mut connection = database.connect()?;
         if !index::archive_indexing_enabled(&connection, conversation_id)? {
@@ -453,13 +528,15 @@ impl SemanticRuntime {
         self.load_model_and_index(&connection, cache_directory)?;
         self.ensure_index_current(&connection, cache_directory)?;
         let namespace = ensure_namespace(&connection, conversation_id)?;
-        self.ensure_conversation_indexed(
-            &mut connection,
-            conversation_id,
-            through_message_id,
-            namespace,
-            cache_directory,
-        )?;
+        if backfill {
+            self.ensure_conversation_indexed(
+                &mut connection,
+                conversation_id,
+                through_message_id,
+                namespace,
+                cache_directory,
+            )?;
+        }
 
         let model = self
             .model
@@ -520,6 +597,55 @@ impl SemanticRuntime {
             return Ok(Vec::new());
         }
         Ok(excerpts.into_iter().map(|(_, excerpt)| excerpt).collect())
+    }
+
+    fn rerank_project_candidates(
+        &mut self,
+        database: &DatabaseQueueHandle,
+        cache_directory: &Path,
+        query: &str,
+        candidates: &[String],
+    ) -> Result<Vec<usize>, SemanticMemoryError> {
+        if candidates.is_empty() {
+            return Ok(Vec::new());
+        }
+        let connection = database.connect()?;
+        self.load_model_and_index(&connection, cache_directory)?;
+        let model = self
+            .model
+            .as_mut()
+            .ok_or_else(|| SemanticMemoryError::Model("model is not loaded".to_owned()))?;
+        let query_text = format!("query: {query}");
+        let query_embedding = model
+            .embed([query_text.as_str()], Some(1))
+            .map_err(|error| SemanticMemoryError::Model(error.to_string()))?
+            .into_iter()
+            .next()
+            .ok_or_else(|| SemanticMemoryError::Model("query embedding is empty".to_owned()))?;
+        let candidate_texts = candidates
+            .iter()
+            .map(|candidate| format!("passage: {candidate}"))
+            .collect::<Vec<_>>();
+        let candidate_embeddings = model
+            .embed(&candidate_texts, Some(24))
+            .map_err(|error| SemanticMemoryError::Model(error.to_string()))?;
+        if candidate_embeddings.len() != candidates.len() {
+            return Err(SemanticMemoryError::Model(
+                "candidate embedding count does not match the input".to_owned(),
+            ));
+        }
+        let mut scores = candidate_embeddings
+            .iter()
+            .enumerate()
+            .map(|(index, embedding)| {
+                (
+                    index,
+                    vector_math::cosine_similarity_f32(&query_embedding, embedding),
+                )
+            })
+            .collect::<Vec<_>>();
+        scores.sort_by(|left, right| right.1.total_cmp(&left.1).then(left.0.cmp(&right.0)));
+        Ok(scores.into_iter().map(|(index, _)| index).collect())
     }
 
     fn load_model_and_index(
@@ -1686,9 +1812,9 @@ mod tests {
     };
 
     use super::{
-        INDEX_KEY_ID_BITS, ModelFile, SemanticMemoryError, SemanticRuntime, download_file_from_url,
-        embedding_content, index_key, new_index, next_backfill_messages, parse_content_range,
-        pending_messages, quantize_embedding, semantic_excerpt,
+        INDEX_KEY_ID_BITS, ModelFile, SemanticMemoryError, SemanticRuntime, StorageConnection,
+        download_file_from_url, embedding_content, index_key, new_index, next_backfill_messages,
+        parse_content_range, pending_messages, quantize_embedding, semantic_excerpt,
     };
 
     struct TemporaryDirectory(PathBuf);
@@ -2070,6 +2196,7 @@ mod tests {
                 INSERT INTO conversation_memory_embedding_pending VALUES ('included', 'pending');",
             )
             .expect("create pending and backfill archive fixture");
+        let connection = StorageConnection::standalone(connection);
 
         assert!(
             pending_messages(&connection, "excluded", None)
@@ -2156,6 +2283,7 @@ mod tests {
                 rusqlite::params![message_rowid, tool_content],
             )
             .expect("insert filtered tool archive content");
+        let connection = StorageConnection::standalone(connection);
 
         let pending = pending_messages(&connection, "conversation", None)
             .expect("read pending semantic archive message");
@@ -2175,15 +2303,13 @@ mod tests {
                 rusqlite::params![start_byte, end_byte],
             )
             .expect("insert tool excerpt offsets");
+        let last_insert_rowid = connection
+            .query_row("SELECT last_insert_rowid()", [], |row| row.get::<_, i64>(0))
+            .expect("read last inserted embedding row");
 
-        let excerpt = semantic_excerpt(
-            &connection,
-            "conversation",
-            connection.last_insert_rowid(),
-            None,
-        )
-        .expect("read semantic tool excerpt")
-        .expect("semantic tool excerpt exists");
+        let excerpt = semantic_excerpt(&connection, "conversation", last_insert_rowid, None)
+            .expect("read semantic tool excerpt")
+            .expect("semantic tool excerpt exists");
         assert_eq!(excerpt.content, tool_content);
     }
 

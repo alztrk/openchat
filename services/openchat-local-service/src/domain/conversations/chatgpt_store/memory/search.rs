@@ -331,6 +331,7 @@ pub(super) fn search_chat_history_from_connection(
            AND (?9 = 'all'
                 OR (?9 = 'messages' AND deduplicated.is_conversation_title_match = 0)
                 OR (?9 = 'conversations' AND deduplicated.is_conversation_title_match = 1))
+           AND (?12 IS NULL OR conversation.id != ?12)
          ORDER BY CASE WHEN ?10 = 'relevance' THEN deduplicated.relevance END DESC,
                   CASE WHEN ?10 = 'newest' THEN deduplicated.created_at END DESC,
                   CASE WHEN ?10 = 'oldest' THEN deduplicated.created_at END ASC,
@@ -350,7 +351,8 @@ pub(super) fn search_chat_history_from_connection(
             filters.is_archived.map(i64::from),
             filters.result_type,
             filters.sort_order,
-            result_limit
+            result_limit,
+            filters.excluded_conversation_id
         ],
         |row| {
             Ok(HistorySearchResult {

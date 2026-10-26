@@ -1351,6 +1351,7 @@ mod tests {
     use zeroize::Zeroizing;
 
     use crate::protocol::ServiceError;
+    use crate::storage::StorageConnection;
 
     use super::{
         COPILOT_PROVIDER_ID, DeviceCodeResponse, DeviceFlow, MAX_ACTIVE_DEVICE_FLOWS, PollState,
@@ -1358,7 +1359,7 @@ mod tests {
         invalid_oauth_response, refresh_expiration_for_storage, unix_seconds_for_storage,
     };
 
-    fn test_connection() -> Connection {
+    fn test_connection() -> StorageConnection<'static> {
         let connection = Connection::open_in_memory().expect("open in-memory test database");
         connection
             .execute_batch(
@@ -1379,10 +1380,10 @@ mod tests {
                  );",
             )
             .expect("create test connection tables");
-        connection
+        StorageConnection::standalone(connection)
     }
 
-    fn insert_connection(connection: &Connection, credential_reference: &str) {
+    fn insert_connection(connection: &StorageConnection<'_>, credential_reference: &str) {
         connection
             .execute(
                 "INSERT INTO copilot_oauth_connection (
@@ -1401,7 +1402,7 @@ mod tests {
             .expect("insert test model catalog");
     }
 
-    fn row_count(connection: &Connection, table: &str) -> i64 {
+    fn row_count(connection: &StorageConnection<'_>, table: &str) -> i64 {
         let query = format!("SELECT COUNT(*) FROM {table}");
         connection
             .query_row(&query, [], |row| row.get(0))

@@ -201,7 +201,8 @@ pub(crate) async fn execute_model_tool_with_workspace_roots(
         ToolOperation::ListSubagentModels
         | ToolOperation::GetSubagentResult { .. }
         | ToolOperation::CancelSubagent { .. }
-        | ToolOperation::SaveMemory { .. } => {
+        | ToolOperation::SaveMemory { .. }
+        | ToolOperation::SaveProjectMemory { .. } => {
             return json!({
                 "error": {
                     "code": "tool_execution_unavailable",

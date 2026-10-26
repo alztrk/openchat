@@ -7,13 +7,13 @@
 use std::{
     collections::HashMap,
     path::PathBuf,
-    sync::Mutex,
+    sync::{Arc, Mutex},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use futures_util::StreamExt;
 use reqwest::Client;
-use rusqlite::{OptionalExtension, params};
+use rusqlite::{OptionalExtension, params, params_from_iter};
 use serde_json::Value;
 use tokio::sync::watch;
 
@@ -22,9 +22,28 @@ use crate::{
     storage::{AppStorage, StorageConnection},
 };
 
+use super::{FILTER, StatisticsQuery, filter_params};
+
 const CATALOG_URL: &str = "https://models.dev/api.json";
 const CACHE_AGE_MS: i64 = 6 * 60 * 60 * 1000;
 const MAX_CATALOG_BYTES: usize = 16 * 1024 * 1024;
+const PRICE_BATCH_MAX_BYTES: usize = 4 * 1024 * 1024;
+
+const INSERT_PRICES_SQL: &str = "INSERT INTO models_dev_prices (
+    provider_id, model_id, context_size, input_usd_per_million,
+    output_usd_per_million, reasoning_usd_per_million,
+    cache_read_usd_per_million, cache_write_usd_per_million
+)
+SELECT
+    json_extract(price.value, '$[0]'),
+    json_extract(price.value, '$[1]'),
+    json_extract(price.value, '$[2]'),
+    json_extract(price.value, '$[3]'),
+    json_extract(price.value, '$[4]'),
+    json_extract(price.value, '$[5]'),
+    json_extract(price.value, '$[6]'),
+    json_extract(price.value, '$[7]')
+FROM json_each(?1) AS price";
 
 struct ModelImageSupportCache {
     database_path: PathBuf,
@@ -33,6 +52,15 @@ struct ModelImageSupportCache {
 }
 
 static MODEL_IMAGE_SUPPORT_CACHE: Mutex<Option<ModelImageSupportCache>> = Mutex::new(None);
+
+struct ParsedPricingCache {
+    database_path: PathBuf,
+    fetched_at_unix_ms: i64,
+    models: Arc<Vec<ModelRates>>,
+    catalog_json: Arc<str>,
+}
+
+static PARSED_PRICING_CACHE: Mutex<Option<ParsedPricingCache>> = Mutex::new(None);
 
 #[derive(Clone, Copy)]
 struct TokenRates {
@@ -53,7 +81,8 @@ struct ModelRates {
 pub(super) struct PricingCatalog {
     state: &'static str,
     fetched_at_unix_ms: Option<i64>,
-    models: Vec<ModelRates>,
+    models: Arc<Vec<ModelRates>>,
+    catalog_json: Option<Arc<str>>,
 }
 
 impl PricingCatalog {
@@ -70,12 +99,12 @@ impl PricingCatalog {
     pub(super) fn install_temporary_prices(
         &self,
         database: &mut StorageConnection<'_>,
+        query: &StatisticsQuery,
+        page: Option<(i64, i64)>,
     ) -> rusqlite::Result<()> {
         // Temporary tables survive on the service's reused SQLite connection.
         database.execute_batch(
-            "DROP TABLE IF EXISTS temp.models_dev_event_costs;
-            DROP TABLE IF EXISTS temp.models_dev_prices;
-            CREATE TEMP TABLE models_dev_prices (
+            "CREATE TEMP TABLE IF NOT EXISTS models_dev_prices (
                 provider_id TEXT NOT NULL,
                 model_id TEXT NOT NULL,
                 context_size INTEGER NOT NULL,
@@ -86,90 +115,184 @@ impl PricingCatalog {
                 cache_write_usd_per_million REAL,
                 PRIMARY KEY (provider_id, model_id, context_size)
             );
-            CREATE TEMP TABLE models_dev_event_costs (
+            CREATE TEMP TABLE IF NOT EXISTS models_dev_prices_catalog (
+                cache_id INTEGER PRIMARY KEY CHECK (cache_id = 1),
+                fetched_at_unix_ms INTEGER
+            );
+            CREATE TEMP TABLE IF NOT EXISTS models_dev_event_costs (
                 event_id TEXT PRIMARY KEY NOT NULL,
                 cost_usd REAL NOT NULL CHECK (cost_usd >= 0)
             );",
         )?;
-
-        let transaction = database.unchecked_transaction()?;
-        {
-            let mut statement = transaction.prepare_cached(
-                "INSERT INTO models_dev_prices (
-                    provider_id, model_id, context_size, input_usd_per_million,
-                    output_usd_per_million, reasoning_usd_per_million,
-                    cache_read_usd_per_million, cache_write_usd_per_million
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        if page.is_some() {
+            database.execute_batch(
+                "DROP TABLE IF EXISTS temp.models_dev_page_event_costs;
+                CREATE TEMP TABLE models_dev_page_event_costs (
+                    event_id TEXT PRIMARY KEY NOT NULL,
+                    cost_usd REAL NOT NULL CHECK (cost_usd >= 0)
+                );",
             )?;
-            for model in &self.models {
-                for (context_size, rates) in &model.tiers {
-                    statement.execute(params![
-                        model.provider_id,
-                        model.model_id,
-                        context_size,
-                        rates.input,
-                        rates.output,
-                        rates.reasoning,
-                        rates.cache_read,
-                        rates.cache_write,
-                    ])?;
-                }
-            }
         }
-        transaction.commit()?;
 
-        database.execute_batch(
-            "INSERT INTO models_dev_event_costs (event_id, cost_usd)
-             SELECT event.event_id,
+        let installed_catalog = database
+            .query_row(
+                "SELECT fetched_at_unix_ms
+                 FROM temp.models_dev_prices_catalog WHERE cache_id = 1",
+                [],
+                |row| row.get::<_, Option<i64>>(0),
+            )
+            .optional()?;
+        if installed_catalog != Some(self.fetched_at_unix_ms) {
+            let transaction = database.unchecked_transaction()?;
+            transaction.execute("DELETE FROM models_dev_prices", [])?;
+            transaction.execute("DELETE FROM models_dev_prices_catalog", [])?;
+            transaction.execute("DELETE FROM models_dev_event_costs", [])?;
+            {
+                let mut statement = transaction.prepare_cached(INSERT_PRICES_SQL)?;
+                let mut price_rows = Vec::new();
+                let mut encoded_bytes: usize = 2;
+                let mut insert_batch =
+                    |rows: &mut Vec<Value>, encoded_bytes: &mut usize| -> rusqlite::Result<()> {
+                        if rows.is_empty() {
+                            return Ok(());
+                        }
+                        let encoded = serde_json::to_string(rows).map_err(|error| {
+                            rusqlite::Error::ToSqlConversionFailure(Box::new(error))
+                        })?;
+                        statement.execute(params![encoded])?;
+                        rows.clear();
+                        *encoded_bytes = 2;
+                        Ok(())
+                    };
+                for model in self.models.iter() {
+                    for (context_size, rates) in &model.tiers {
+                        let row = serde_json::json!([
+                            model.provider_id,
+                            model.model_id,
+                            context_size,
+                            rates.input,
+                            rates.output,
+                            rates.reasoning,
+                            rates.cache_read,
+                            rates.cache_write,
+                        ]);
+                        let row_bytes = serde_json::to_vec(&row)
+                            .map_err(|error| {
+                                rusqlite::Error::ToSqlConversionFailure(Box::new(error))
+                            })?
+                            .len();
+                        if !price_rows.is_empty()
+                            && encoded_bytes.saturating_add(row_bytes).saturating_add(1)
+                                > PRICE_BATCH_MAX_BYTES
+                        {
+                            insert_batch(&mut price_rows, &mut encoded_bytes)?;
+                        }
+                        if !price_rows.is_empty() {
+                            encoded_bytes += 1;
+                        }
+                        encoded_bytes = encoded_bytes.saturating_add(row_bytes);
+                        price_rows.push(row);
+                    }
+                }
+                insert_batch(&mut price_rows, &mut encoded_bytes)?;
+                drop(insert_batch);
+            }
+            transaction.execute(
+                "INSERT INTO models_dev_prices_catalog (cache_id, fetched_at_unix_ms)
+                 VALUES (1, ?1)",
+                params![self.fetched_at_unix_ms],
+            )?;
+            transaction.commit()?;
+        }
+
+        let (selected_events, event_source, event_filter, event_cost_table) = match page {
+            Some(_) => (
+                format!(
+                    "WITH selected_events AS (
+                        SELECT e.event_id
+                        FROM usage_events AS e
+                        {FILTER}
+                        ORDER BY e.started_at_unix_ms DESC, e.event_id DESC
+                        LIMIT ?8 OFFSET ?9
+                    )"
+                ),
+                "selected_events AS selected
+                 JOIN usage_events AS e ON e.event_id = selected.event_id",
+                "WHERE 1 = 1".to_owned(),
+                "models_dev_page_event_costs",
+            ),
+            None => (
+                String::new(),
+                "usage_events AS e",
+                format!(
+                    "{FILTER}
+                     AND NOT EXISTS (
+                        SELECT 1 FROM models_dev_event_costs AS cached
+                        WHERE cached.event_id = e.event_id
+                     )"
+                ),
+                "models_dev_event_costs",
+            ),
+        };
+        let cost_sql = format!(
+            "{selected_events}
+             INSERT INTO {event_cost_table} (event_id, cost_usd)
+             SELECT e.event_id,
                 (
                     (
-                        (event.input_tokens
-                            - COALESCE(event.cached_input_tokens, 0)
-                            - COALESCE(event.cache_write_tokens, 0))
+                        (e.input_tokens
+                            - COALESCE(e.cached_input_tokens, 0)
+                            - COALESCE(e.cache_write_tokens, 0))
                             * price.input_usd_per_million
-                        + COALESCE(event.cached_input_tokens, 0)
+                        + COALESCE(e.cached_input_tokens, 0)
                             * COALESCE(price.cache_read_usd_per_million,
                                 price.input_usd_per_million)
-                        + COALESCE(event.cache_write_tokens, 0)
+                        + COALESCE(e.cache_write_tokens, 0)
                             * COALESCE(price.cache_write_usd_per_million,
                                 price.input_usd_per_million)
-                        + (event.output_tokens - COALESCE(event.reasoning_tokens, 0))
+                        + (e.output_tokens - COALESCE(e.reasoning_tokens, 0))
                             * price.output_usd_per_million
-                        + COALESCE(event.reasoning_tokens, 0)
+                        + COALESCE(e.reasoning_tokens, 0)
                             * COALESCE(price.reasoning_usd_per_million,
                                 price.output_usd_per_million)
                     ) / 1000000.0
                 )
-             FROM usage_events AS event
+             FROM {event_source}
              JOIN models_dev_prices AS price
-               ON price.provider_id = CASE event.provider_id
+               ON price.provider_id = CASE e.provider_id
                     WHEN 'chatgpt_api' THEN 'openai'
                     WHEN 'gemini' THEN 'google'
-                    ELSE event.provider_id
+                    ELSE e.provider_id
                   END
-              AND price.model_id = event.model_id
+              AND price.model_id = e.model_id
               AND price.context_size = (
                     SELECT MAX(tier.context_size)
                     FROM models_dev_prices AS tier
                     WHERE tier.provider_id = price.provider_id
                       AND tier.model_id = price.model_id
-                      AND tier.context_size <= event.input_tokens
+                      AND tier.context_size <= e.input_tokens
               )
-             WHERE event.event_kind = 'request'
-               AND event.input_tokens IS NOT NULL
-               AND event.output_tokens IS NOT NULL
-               AND event.fast_requested = 0
-               AND COALESCE(lower(event.service_tier), '') IN ('', 'default', 'standard')
-               AND event.input_tokens >=
-                    COALESCE(event.cached_input_tokens, 0)
-                    + COALESCE(event.cache_write_tokens, 0)
-               AND event.output_tokens >= COALESCE(event.reasoning_tokens, 0)
+             {event_filter}
+               AND e.event_kind = 'request'
+               AND e.input_tokens IS NOT NULL
+               AND e.output_tokens IS NOT NULL
+               AND e.fast_requested = 0
+               AND COALESCE(lower(e.service_tier), '') IN ('', 'default', 'standard')
+               AND e.input_tokens >=
+                    COALESCE(e.cached_input_tokens, 0)
+                    + COALESCE(e.cache_write_tokens, 0)
+               AND e.output_tokens >= COALESCE(e.reasoning_tokens, 0)
                AND (
                     price.reasoning_usd_per_million IS NULL
                     OR price.reasoning_usd_per_million = price.output_usd_per_million
-                    OR event.reasoning_tokens IS NOT NULL
-               );",
-        )?;
+                    OR e.reasoning_tokens IS NOT NULL
+               );"
+        );
+        let mut cost_params = filter_params(query).to_vec();
+        if let Some((limit, offset)) = page {
+            cost_params.extend([limit.into(), offset.into()]);
+        }
+        database.execute(&cost_sql, params_from_iter(cost_params.iter()))?;
         Ok(())
     }
 }
@@ -182,17 +305,17 @@ pub(super) async fn load(
     storage: &AppStorage,
     cancellation: &mut watch::Receiver<bool>,
 ) -> Result<PricingCatalog, ServiceError> {
-    let cached = load_cached_catalog(storage)?;
+    let cached = load_cached_pricing(storage)?;
     let now = current_time_millis().map_err(|_| storage_error())?;
-    if let Some((fetched_at, catalog_json)) = &cached
+    if let Some((fetched_at, models, catalog_json)) = &cached
         && now >= *fetched_at
         && now - *fetched_at < CACHE_AGE_MS
-        && let Some(models) = parse_catalog(catalog_json)
     {
         return Ok(PricingCatalog {
             state: "current",
             fetched_at_unix_ms: Some(*fetched_at),
-            models,
+            models: Arc::clone(models),
+            catalog_json: Some(Arc::clone(catalog_json)),
         });
     }
 
@@ -208,32 +331,66 @@ pub(super) async fn load(
         result = fetch_catalog() => result,
     };
 
-    if let Ok(catalog_json) = fetched
-        && let Some(models) = parse_catalog(&catalog_json)
+    if let Ok((catalog_json, catalog)) = fetched
+        && let Some(models) = parse_catalog_value(&catalog).map(Arc::new)
     {
         let fetched_at = current_time_millis().map_err(|_| storage_error())?;
         save_catalog(storage, fetched_at, &catalog_json)?;
+        let catalog_json: Arc<str> = Arc::from(catalog_json);
+        remember_pricing_models(
+            storage,
+            fetched_at,
+            Arc::clone(&models),
+            Arc::clone(&catalog_json),
+        );
         return Ok(PricingCatalog {
             state: "current",
             fetched_at_unix_ms: Some(fetched_at),
             models,
+            catalog_json: Some(catalog_json),
         });
     }
 
-    if let Some((fetched_at, catalog_json)) = cached
-        && let Some(models) = parse_catalog(&catalog_json)
-    {
+    if let Some((fetched_at, models, catalog_json)) = cached {
         return Ok(PricingCatalog {
             state: "stale",
             fetched_at_unix_ms: Some(fetched_at),
             models,
+            catalog_json: Some(catalog_json),
         });
     }
 
     Ok(PricingCatalog {
         state: "unavailable",
         fetched_at_unix_ms: None,
-        models: Vec::new(),
+        models: Arc::new(Vec::new()),
+        catalog_json: None,
+    })
+}
+
+/// Loads valid cached pricing without attempting a network refresh.
+pub(super) fn load_cached(storage: &AppStorage) -> Result<PricingCatalog, ServiceError> {
+    let cached = load_cached_pricing(storage)?;
+    let now = current_time_millis().map_err(|_| storage_error())?;
+    if let Some((fetched_at, models, catalog_json)) = cached {
+        let state = if now >= fetched_at && now - fetched_at < CACHE_AGE_MS {
+            "current"
+        } else {
+            "stale"
+        };
+        return Ok(PricingCatalog {
+            state,
+            fetched_at_unix_ms: Some(fetched_at),
+            models,
+            catalog_json: Some(catalog_json),
+        });
+    }
+
+    Ok(PricingCatalog {
+        state: "unavailable",
+        fetched_at_unix_ms: None,
+        models: Arc::new(Vec::new()),
+        catalog_json: None,
     })
 }
 
@@ -245,10 +402,11 @@ pub(super) async fn model_details(
     cancellation: &mut watch::Receiver<bool>,
 ) -> Result<Value, ServiceError> {
     let catalog = load(storage, cancellation).await?;
-    let cached = load_cached_catalog(storage)?;
-    let model = cached
-        .and_then(|(_, json)| serde_json::from_str::<Value>(&json).ok())
-        .and_then(|catalog| model_from_catalog(&catalog, provider_id, model_id));
+    let model = catalog.catalog_json.as_deref().and_then(|catalog_json| {
+        serde_json::from_str::<Value>(catalog_json)
+            .ok()
+            .and_then(|catalog| model_from_catalog(&catalog, provider_id, model_id))
+    });
 
     Ok(serde_json::json!({
         "state": catalog.state,
@@ -264,8 +422,26 @@ pub(super) async fn model_details_batch(
     cancellation: &mut watch::Receiver<bool>,
 ) -> Result<Value, ServiceError> {
     let catalog = load(storage, cancellation).await?;
-    let cached = load_cached_catalog(storage)?;
-    let cached_catalog = cached.and_then(|(_, json)| serde_json::from_str::<Value>(&json).ok());
+    Ok(model_details_batch_from_catalog(catalog, requested_models))
+}
+
+/// Returns model details from the local pricing cache without starting a refresh request.
+pub(super) fn cached_model_details_batch(
+    storage: &AppStorage,
+    requested_models: &[(String, String)],
+) -> Result<Value, ServiceError> {
+    let catalog = load_cached(storage)?;
+    Ok(model_details_batch_from_catalog(catalog, requested_models))
+}
+
+fn model_details_batch_from_catalog(
+    catalog: PricingCatalog,
+    requested_models: &[(String, String)],
+) -> Value {
+    let cached_catalog = catalog
+        .catalog_json
+        .as_deref()
+        .and_then(|catalog_json| serde_json::from_str::<Value>(catalog_json).ok());
     let models = requested_models
         .iter()
         .map(|(provider_id, model_id)| {
@@ -279,11 +455,11 @@ pub(super) async fn model_details_batch(
         })
         .collect::<Vec<_>>();
 
-    Ok(serde_json::json!({
+    serde_json::json!({
         "state": catalog.state,
         "fetchedAtUnixMs": catalog.fetched_at_unix_ms,
         "models": models,
-    }))
+    })
 }
 
 fn model_from_catalog(catalog: &Value, provider_id: &str, model_id: &str) -> Option<Value> {
@@ -500,6 +676,85 @@ fn load_cached_catalog(storage: &AppStorage) -> Result<Option<(i64, String)>, Se
         .map_err(|_| storage_error())
 }
 
+fn load_cached_pricing(
+    storage: &AppStorage,
+) -> Result<Option<(i64, Arc<Vec<ModelRates>>, Arc<str>)>, ServiceError> {
+    let fetched_at_unix_ms = storage
+        .connect()
+        .map_err(|_| storage_error())?
+        .query_row(
+            "SELECT fetched_at_unix_ms
+             FROM models_dev_catalog_cache WHERE cache_id = 1",
+            [],
+            |row| row.get::<_, i64>(0),
+        )
+        .optional()
+        .map_err(|_| storage_error())?;
+    let Some(fetched_at_unix_ms) = fetched_at_unix_ms else {
+        return Ok(None);
+    };
+    let database_path = storage.database_path().to_path_buf();
+    if let Some((models, catalog_json)) = cached_pricing(&database_path, fetched_at_unix_ms) {
+        return Ok(Some((fetched_at_unix_ms, models, catalog_json)));
+    }
+
+    let Some((fetched_at_unix_ms, catalog_json)) = load_cached_catalog(storage)? else {
+        return Ok(None);
+    };
+    let Ok(catalog) = serde_json::from_str::<Value>(&catalog_json) else {
+        return Ok(None);
+    };
+    let Some(models) = parse_catalog_value(&catalog).map(Arc::new) else {
+        return Ok(None);
+    };
+    let catalog_json: Arc<str> = Arc::from(catalog_json);
+    remember_pricing_models(
+        storage,
+        fetched_at_unix_ms,
+        Arc::clone(&models),
+        Arc::clone(&catalog_json),
+    );
+    Ok(Some((fetched_at_unix_ms, models, catalog_json)))
+}
+
+fn cached_pricing(
+    database_path: &PathBuf,
+    fetched_at_unix_ms: i64,
+) -> Option<(Arc<Vec<ModelRates>>, Arc<str>)> {
+    let cache = match PARSED_PRICING_CACHE.lock() {
+        Ok(cache) => cache,
+        Err(poisoned) => poisoned.into_inner(),
+    };
+    cache.as_ref().and_then(|snapshot| {
+        (snapshot.database_path == *database_path
+            && snapshot.fetched_at_unix_ms == fetched_at_unix_ms)
+            .then(|| {
+                (
+                    Arc::clone(&snapshot.models),
+                    Arc::clone(&snapshot.catalog_json),
+                )
+            })
+    })
+}
+
+fn remember_pricing_models(
+    storage: &AppStorage,
+    fetched_at_unix_ms: i64,
+    models: Arc<Vec<ModelRates>>,
+    catalog_json: Arc<str>,
+) {
+    let mut cache = match PARSED_PRICING_CACHE.lock() {
+        Ok(cache) => cache,
+        Err(poisoned) => poisoned.into_inner(),
+    };
+    *cache = Some(ParsedPricingCache {
+        database_path: storage.database_path().to_path_buf(),
+        fetched_at_unix_ms,
+        models,
+        catalog_json,
+    });
+}
+
 fn save_catalog(
     storage: &AppStorage,
     fetched_at_unix_ms: i64,
@@ -527,10 +782,20 @@ fn save_catalog(
     {
         *cache = None;
     }
+    let mut pricing_cache = match PARSED_PRICING_CACHE.lock() {
+        Ok(cache) => cache,
+        Err(poisoned) => poisoned.into_inner(),
+    };
+    if pricing_cache
+        .as_ref()
+        .is_some_and(|cached| cached.database_path.as_path() == storage.database_path())
+    {
+        *pricing_cache = None;
+    }
     Ok(())
 }
 
-async fn fetch_catalog() -> Result<String, ()> {
+async fn fetch_catalog() -> Result<(String, Value), ()> {
     let client = build_catalog_http_client()?;
     let response = client.get(CATALOG_URL).send().await.map_err(|_| ())?;
     if !response.status().is_success()
@@ -554,7 +819,7 @@ async fn fetch_catalog() -> Result<String, ()> {
     if !catalog.is_object() || parse_catalog_value(&catalog).is_none() {
         return Err(());
     }
-    String::from_utf8(body).map_err(|_| ())
+    Ok((String::from_utf8(body).map_err(|_| ())?, catalog))
 }
 
 /// Builds a bounded client for the fixed public pricing catalog without following redirects.
@@ -574,11 +839,6 @@ fn current_time_millis() -> std::io::Result<i64> {
         .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))?;
     i64::try_from(elapsed.as_millis())
         .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))
-}
-
-fn parse_catalog(catalog_json: &str) -> Option<Vec<ModelRates>> {
-    let catalog = serde_json::from_str::<Value>(catalog_json).ok()?;
-    parse_catalog_value(&catalog)
 }
 
 fn parse_catalog_value(catalog: &Value) -> Option<Vec<ModelRates>> {
@@ -673,8 +933,8 @@ mod tests {
     };
 
     use super::{
-        build_catalog_http_client, cached_model_supports_images, cached_models_support_images,
-        model_from_catalog,
+        build_catalog_http_client, cached_model_details_batch, cached_model_supports_images,
+        cached_models_support_images, model_from_catalog,
     };
     use crate::storage::AppStorage;
     use rusqlite::params;
@@ -701,6 +961,20 @@ mod tests {
         fn drop(&mut self) {
             fs::remove_dir_all(&self.0).expect("remove isolated test directory");
         }
+    }
+
+    fn create_test_catalog_cache(storage: &AppStorage) {
+        storage
+            .connect()
+            .expect("connect test storage")
+            .execute_batch(
+                "CREATE TABLE models_dev_catalog_cache (
+                    cache_id INTEGER PRIMARY KEY CHECK (cache_id = 1),
+                    fetched_at_unix_ms INTEGER NOT NULL CHECK (fetched_at_unix_ms >= 0),
+                    catalog_json TEXT NOT NULL
+                );",
+            )
+            .expect("create test catalog cache");
     }
 
     /// Confirms a redirected pricing request cannot reach an unrelated loopback host.
@@ -780,6 +1054,7 @@ mod tests {
     fn cached_image_support_lookup_returns_only_requested_model_flags() {
         let directory = TestDirectory::new();
         let storage = AppStorage::open_at(directory.0.clone()).expect("open test storage");
+        create_test_catalog_cache(&storage);
         let filler = "x".repeat(6 * 1024 * 1024);
         let catalog = json!({
             "openai": {
@@ -854,5 +1129,47 @@ mod tests {
         assert_eq!(details["pricing"]["reasoning"], 12.0);
         assert!(details["supportsTools"].as_bool().unwrap_or(false));
         assert!(model_from_catalog(&catalog, "chatgpt_api", "other").is_none());
+    }
+
+    #[test]
+    fn cached_model_details_batch_uses_stale_cache_without_refreshing() {
+        let directory = TestDirectory::new();
+        let storage = AppStorage::open_at(directory.0.clone()).expect("open test storage");
+        create_test_catalog_cache(&storage);
+        let catalog = json!({
+            "openai": {
+                "name": "OpenAI",
+                "models": {
+                    "gpt-example": {
+                        "name": "GPT Example",
+                        "limit": {"context": 128000, "output": 16000},
+                        "modalities": {"input": ["text", "image"], "output": ["text"]},
+                        "tool_call": true,
+                        "cost": {"input": 1.0, "output": 2.0}
+                    }
+                }
+            }
+        })
+        .to_string();
+        storage
+            .connect()
+            .expect("connect test storage")
+            .execute(
+                "INSERT INTO models_dev_catalog_cache (cache_id, fetched_at_unix_ms, catalog_json)
+                 VALUES (1, 0, ?1)",
+                params![catalog],
+            )
+            .expect("store stale pricing catalog");
+
+        let details = cached_model_details_batch(
+            &storage,
+            &[("chatgpt_api".to_owned(), "gpt-example".to_owned())],
+        )
+        .expect("load model details from cached catalog");
+
+        assert_eq!(details["state"], "stale");
+        assert_eq!(details["models"][0]["model"]["contextWindow"], 128000);
+        assert_eq!(details["models"][0]["model"]["supportsImages"], true);
+        assert_eq!(details["models"][0]["model"]["supportsTools"], true);
     }
 }

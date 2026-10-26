@@ -596,7 +596,11 @@ fn chatgpt_account_quota_status(snapshot: &Value) -> ChatGptAccountQuotaStatus {
                     .filter_map(|bucket| bucket.get("resetAtUnixMs").and_then(Value::as_i64))
                     .max()
             } else {
-                None
+                buckets
+                    .iter()
+                    .filter(|bucket| bucket.get("usedPercent").and_then(Value::as_f64).is_some())
+                    .filter_map(|bucket| bucket.get("resetAtUnixMs").and_then(Value::as_i64))
+                    .max()
             }
         });
     let state = if exhausted {

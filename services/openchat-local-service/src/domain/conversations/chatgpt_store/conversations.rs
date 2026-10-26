@@ -540,12 +540,14 @@ mod tests {
             params![conv_id],
         )
         .expect("insert conv");
+        drop(conn);
 
         assert!(!is_custom_title(&storage, conv_id).expect("is_custom"));
         // 0 completed assistant turns: should not generate
         assert!(!should_generate_automatic_title(&storage, conv_id).expect("should gen"));
 
         // Add 1 completed assistant turn
+        let conn = storage.connect().expect("connect");
         conn.execute(
             "INSERT INTO messages (id, conversation_id, role, content, status, created_at)
              VALUES ('msg-u1', ?1, 'user', 'How do I configure cargo?', 'completed', 1010)",
@@ -558,6 +560,7 @@ mod tests {
             params![conv_id],
         )
         .expect("insert assistant msg");
+        drop(conn);
 
         // 1 completed assistant turn with default title: should generate
         assert!(should_generate_automatic_title(&storage, conv_id).expect("should gen"));
@@ -567,7 +570,9 @@ mod tests {
             apply_generated_title(&storage, conv_id, "Cargo Configuration").expect("apply");
         assert!(applied);
 
-        let current_title: String = conn
+        let current_title: String = storage
+            .connect()
+            .expect("connect")
             .query_row(
                 "SELECT title FROM conversations WHERE id = ?1",
                 params![conv_id],
@@ -577,6 +582,7 @@ mod tests {
         assert_eq!(current_title, "Cargo Configuration");
 
         // Now add second turn
+        let conn = storage.connect().expect("connect");
         conn.execute(
             "INSERT INTO messages (id, conversation_id, role, content, status, created_at)
              VALUES ('msg-u2', ?1, 'user', 'What about dependencies?', 'completed', 1030)",
@@ -589,16 +595,19 @@ mod tests {
             params![conv_id],
         )
         .expect("insert assistant msg 2");
+        drop(conn);
 
         // Title is already "Cargo Configuration" (not default, not user prompt), turn count is 2: should NOT re-generate
         assert!(!should_generate_automatic_title(&storage, conv_id).expect("should not gen"));
 
         // If user manually edited the title, title_source becomes 'manual'
+        let conn = storage.connect().expect("connect");
         conn.execute(
             "UPDATE conversations SET title = 'My Custom Title', title_source = 'manual' WHERE id = ?1",
             params![conv_id],
         )
         .expect("update manual");
+        drop(conn);
 
         assert!(is_custom_title(&storage, conv_id).expect("is_custom"));
         assert!(!should_generate_automatic_title(&storage, conv_id).expect("should not gen"));
@@ -608,7 +617,9 @@ mod tests {
             apply_generated_title(&storage, conv_id, "Another Auto Title").expect("apply");
         assert!(!overwritten);
 
-        let final_title: String = conn
+        let final_title: String = storage
+            .connect()
+            .expect("connect")
             .query_row(
                 "SELECT title FROM conversations WHERE id = ?1",
                 params![conv_id],

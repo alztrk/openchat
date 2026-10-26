@@ -32,12 +32,23 @@ pub struct HistorySearchResult {
 }
 
 #[derive(Clone, Debug)]
+pub struct ProjectHistoryExcerpt {
+    pub conversation_id: String,
+    pub conversation_title: String,
+    pub message_id: String,
+    pub role: String,
+    pub excerpt: String,
+    pub created_at_unix_ms: i64,
+}
+
+#[derive(Clone, Debug)]
 pub struct HistorySearchFilters {
     pub from_unix_ms: Option<i64>,
     pub through_unix_ms: Option<i64>,
     pub provider_id: Option<String>,
     pub model_id: Option<String>,
     pub project_id: Option<String>,
+    pub excluded_conversation_id: Option<String>,
     pub is_archived: Option<bool>,
     pub result_type: String,
     pub sort_order: String,
@@ -225,6 +236,171 @@ pub async fn search_chat_history(
     })
     .await
     .map_err(worker_join_error)?
+}
+
+/// Retrieves bounded history from other conversations in one project using keyword and existing
+/// local semantic indexes. Semantic retrieval never triggers history backfill from a chat send.
+pub async fn search_project_history(
+    storage: &AppStorage,
+    project_id: &str,
+    excluded_conversation_id: &str,
+    query: &str,
+) -> rusqlite::Result<Vec<ProjectHistoryExcerpt>> {
+    let query = query
+        .chars()
+        .take(search::MAX_ARCHIVE_SEARCH_QUERY_CHARS)
+        .collect::<String>();
+    if query.trim().is_empty() {
+        return Ok(Vec::new());
+    }
+    let lexical_results = search_chat_history(
+        storage,
+        &query,
+        HistorySearchFilters {
+            from_unix_ms: None,
+            through_unix_ms: None,
+            provider_id: None,
+            model_id: None,
+            project_id: Some(project_id.to_owned()),
+            excluded_conversation_id: Some(excluded_conversation_id.to_owned()),
+            is_archived: None,
+            result_type: "messages".to_owned(),
+            sort_order: "relevance".to_owned(),
+        },
+    )
+    .await?;
+
+    let cache_directory = storage.semantic_memory_cache_directory();
+    let semantic_ready = semantic::is_ready(&cache_directory).await;
+    let project_conversations = if semantic_ready {
+        let database = storage.database_queue_handle();
+        let project_id = project_id.to_owned();
+        let excluded_conversation_id = excluded_conversation_id.to_owned();
+        tokio::task::spawn_blocking(move || {
+            let connection = database.connect()?;
+            let mut statement = connection.prepare(
+                "SELECT conversation.id, conversation.title
+                 FROM conversations AS conversation
+                 WHERE conversation.project_id = ?1 AND conversation.id != ?2
+                   AND COALESCE((
+                        SELECT included FROM conversation_memory_archive_settings
+                        WHERE conversation_id = conversation.id
+                   ), 1) = 1
+                 ORDER BY COALESCE(conversation.updated_at, conversation.created_at, 0) DESC,
+                          conversation.id
+                 LIMIT 8",
+            )?;
+            statement
+                .query_map([project_id, excluded_conversation_id], |row| {
+                    Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                })?
+                .collect::<rusqlite::Result<Vec<_>>>()
+        })
+        .await
+        .map_err(worker_join_error)??
+    } else {
+        Vec::new()
+    };
+
+    let mut candidates = Vec::<(ProjectHistoryExcerpt, u32)>::new();
+    let mut candidate_positions = std::collections::HashMap::<(String, String), usize>::new();
+    for (rank, result) in lexical_results.into_iter().enumerate() {
+        let (Some(message_id), Some(role)) = (result.message_id, result.role) else {
+            continue;
+        };
+        let excerpt = ProjectHistoryExcerpt {
+            conversation_id: result.conversation_id,
+            conversation_title: result.conversation_title,
+            message_id,
+            role,
+            excerpt: result.excerpt,
+            created_at_unix_ms: result.created_at_unix_ms,
+        };
+        merge_project_history_candidate(&mut candidates, &mut candidate_positions, excerpt, rank);
+    }
+
+    for (conversation_id, conversation_title) in project_conversations {
+        match semantic::search_archive_existing(
+            storage.database_queue_handle(),
+            cache_directory.clone(),
+            conversation_id.clone(),
+            query.clone(),
+            6,
+        )
+        .await
+        {
+            Ok(results) => {
+                for (rank, result) in results.into_iter().enumerate() {
+                    let excerpt = ProjectHistoryExcerpt {
+                        conversation_id: conversation_id.clone(),
+                        conversation_title: conversation_title.clone(),
+                        message_id: result.message_id,
+                        role: result.role,
+                        excerpt: result.content,
+                        created_at_unix_ms: result.created_at_unix_ms,
+                    };
+                    merge_project_history_candidate(
+                        &mut candidates,
+                        &mut candidate_positions,
+                        excerpt,
+                        rank,
+                    );
+                }
+            }
+            // Semantic history is an optional ranking source; keyword results remain usable.
+            Err(_) => {}
+        }
+    }
+
+    candidates.sort_by(|(left, left_score), (right, right_score)| {
+        right_score
+            .cmp(left_score)
+            .then_with(|| right.created_at_unix_ms.cmp(&left.created_at_unix_ms))
+    });
+    Ok(candidates
+        .into_iter()
+        .take(6)
+        .map(|(excerpt, _)| excerpt)
+        .collect())
+}
+
+/// Semantically reranks bounded lexical candidates when the local embedding model is available.
+pub async fn rank_project_candidates(
+    storage: &AppStorage,
+    query: &str,
+    candidates: Vec<String>,
+) -> Option<Vec<usize>> {
+    let cache_directory = storage.semantic_memory_cache_directory();
+    if candidates.is_empty() || !semantic::is_ready(&cache_directory).await {
+        return None;
+    }
+    match semantic::rerank_project_candidates(
+        storage.database_queue_handle(),
+        cache_directory,
+        query.to_owned(),
+        candidates,
+    )
+    .await
+    {
+        Ok(ranked_indices) => Some(ranked_indices),
+        Err(_) => None,
+    }
+}
+
+fn merge_project_history_candidate(
+    candidates: &mut Vec<(ProjectHistoryExcerpt, u32)>,
+    positions: &mut std::collections::HashMap<(String, String), usize>,
+    excerpt: ProjectHistoryExcerpt,
+    rank: usize,
+) {
+    let key = (excerpt.conversation_id.clone(), excerpt.message_id.clone());
+    let score = 10_000_u32 / (60 + u32::try_from(rank).unwrap_or(u32::MAX));
+    if let Some(position) = positions.get(&key).copied() {
+        candidates[position].1 = candidates[position].1.saturating_add(score);
+    } else {
+        positions.insert(key, candidates.len());
+        candidates.push((excerpt, score));
+    }
 }
 
 pub fn history_search_filter_options(

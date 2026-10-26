@@ -1,6 +1,7 @@
 import { parseToolActivities } from '@/modules/conversations/components/message/messageData';
 import { readProjectSkillIds, type ToolPermissionMode } from '@/modules/projects/data/projectPreferences';
 import type { ChatModel } from '@/modules/providers/data/chatModels';
+import { modelRouteKey, readModelPreferences } from '@/modules/providers/data/modelPreferences';
 import { personalMemoryContextForConversation } from '@/modules/settings/data/personalMemory';
 import { readSharedInstructions } from '@/modules/settings/data/sharedInstructions';
 import { LocalServiceError, localServiceClient } from '@/platform/local-service';
@@ -70,9 +71,17 @@ export async function loadContextUsageConfiguration(
       .map((value) => value.trim())
       .filter((value) => value.length > 0)
       .join('\n\n');
+    const configuredContextLimit = readModelPreferences().contextLimits[modelRouteKey(model)];
+    const contextWindow =
+      configuredContextLimit === undefined
+        ? model.contextWindow
+        : model.contextWindow === null
+          ? configuredContextLimit
+          : Math.min(configuredContextLimit, model.contextWindow);
     const response = await localServiceClient.call('chat.context.usage.estimate', {
       providerId: model.providerId,
       modelId: model.modelId,
+      contextWindow,
       supportsTools: model.supportsTools ?? null,
       ...(model.providerId === 'copilot' && model.requestProtocol ? { requestProtocol: model.requestProtocol } : {}),
       conversationId,
@@ -108,7 +117,9 @@ async function recordContextUsageFailure(operation: 'contextConfiguration' | 'me
   try {
     await invoke('record_context_usage_failure', { operation, code });
   } catch (diagnosticCause) {
-    globalThis.reportError(new Error('Context usage failure diagnostic could not be recorded.', { cause: diagnosticCause }));
+    globalThis.reportError(
+      new Error('Context usage failure diagnostic could not be recorded.', { cause: diagnosticCause }),
+    );
   }
 }
 

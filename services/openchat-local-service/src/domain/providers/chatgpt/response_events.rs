@@ -405,6 +405,18 @@ mod tests {
                 );",
             )
             .expect("create message table");
+        storage
+            .connect()
+            .expect("open database connection")
+            .execute_batch(
+                "CREATE TABLE image_generation_runs (
+                    id TEXT PRIMARY KEY NOT NULL,
+                    status TEXT NOT NULL,
+                    error_code TEXT,
+                    updated_at_unix_ms INTEGER NOT NULL
+                );",
+            )
+            .expect("create image generation recovery table");
         let service =
             ChatGptService::new(Arc::clone(&storage)).expect("initialize ChatGPT service");
         let mut content = String::new();
@@ -442,12 +454,15 @@ mod tests {
             .expect("temporary response event should be accepted");
 
         assert_eq!(content, "private temporary text");
-        let event = event_receiver
+        let mut event = event_receiver
             .recv()
             .await
             .expect("temporary response should emit a text delta");
         assert_eq!(event.event.as_deref(), Some("chat.text.delta"));
-        let data = event.data.expect("text delta should contain event data");
+        let data = event
+            .data
+            .take()
+            .expect("text delta should contain event data");
         assert_eq!(data["delta"], "private temporary text");
         assert!(data.get("content").is_none());
         let durable_messages: i64 = storage

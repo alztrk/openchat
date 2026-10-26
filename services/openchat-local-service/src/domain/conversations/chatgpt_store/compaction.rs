@@ -194,6 +194,8 @@ fn unix_time_millis() -> rusqlite::Result<i64> {
 mod tests {
     use rusqlite::Connection;
 
+    use crate::storage::StorageConnection;
+
     use super::reset_conversation_context_from_connection;
 
     #[test]
@@ -211,6 +213,7 @@ mod tests {
                 VALUES ('selected', 'summary', 1200), ('other', 'keep', 800);",
             )
             .expect("create context state");
+        let connection = StorageConnection::standalone(connection);
 
         assert!(
             reset_conversation_context_from_connection(&connection, "selected")

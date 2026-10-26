@@ -194,6 +194,7 @@ impl ChatGptService {
         let excluded_assistant_message_id = context.excluded_assistant_message_id;
         let custom_instructions = context.custom_instructions;
         let project_instructions = context.project_instructions;
+        let project_memory_context = context.project_memory_context;
         let project_skills = &context.project_skills;
         let project_root = context.project_root;
         let project_name = context.project_name;
@@ -346,7 +347,9 @@ impl ChatGptService {
                 custom: custom_instructions,
                 project: project_instructions,
                 project_skills,
+                project_memory_context,
                 project_index_context: context.project_index_context.as_deref(),
+                project_context_window_tokens: model.context_window,
                 permission_mode: context.permission_mode,
                 has_project: project_root.is_some(),
                 project_name,

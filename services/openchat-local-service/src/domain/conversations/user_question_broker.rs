@@ -372,6 +372,7 @@ mod tests {
             },
         )
         .expect("create test run");
+        drop(connection);
         (storage, root, run_id)
     }
 
@@ -458,7 +459,7 @@ mod tests {
         });
         let event = requested_event(&mut event_receiver).await;
         assert_eq!(event.event.as_deref(), Some("chat.question.requested"));
-        let data = event.data.expect("question event data");
+        let data = event.data.as_ref().expect("question event data");
         let group_id = data
             .get("groupId")
             .and_then(Value::as_str)

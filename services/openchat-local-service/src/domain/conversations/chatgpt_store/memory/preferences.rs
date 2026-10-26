@@ -392,8 +392,10 @@ mod tests {
     use super::{load, set_conversation_included, set_tool_included};
 
     fn connection_with_archive() -> StorageConnection<'static> {
-        let connection = Connection::open_in_memory().expect("open archive settings database");
-        StorageConnection::standalone(connection)
+        let connection = StorageConnection::standalone(
+            Connection::open_in_memory().expect("open archive settings database"),
+        );
+        connection
             .execute_batch(
                 "CREATE TABLE conversations (id TEXT PRIMARY KEY NOT NULL);
                  CREATE TABLE messages (

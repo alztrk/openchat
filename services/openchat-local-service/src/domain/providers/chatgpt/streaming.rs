@@ -62,6 +62,7 @@ impl ChatGptService {
             excluded_assistant_message_id,
             custom_instructions,
             project_instructions,
+            project_memory_context,
             project_skills,
             project_index_context,
             project_root,
@@ -156,6 +157,7 @@ impl ChatGptService {
             tool_permission_rules,
         )
         .with_workspace_roots(workspace_roots)
+        .with_project_memory_context(project_memory_context.map(str::to_owned))
         .with_chat_service(self.as_ref().clone())
         .with_subagent_models(available_subagent_models)
         .with_subagent_tool_definitions(tool_definitions);
@@ -236,6 +238,7 @@ impl ChatGptService {
                     custom_instructions,
                     project_instructions,
                     &project_skills,
+                    project_memory_context,
                     project_index_context.as_deref(),
                     goal.is_some(),
                 ),

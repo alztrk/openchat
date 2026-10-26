@@ -882,7 +882,12 @@ mod tests {
         }
 
         let warm_root = directory.path().join("warm");
-        drop(AppStorage::open_at(warm_root.clone()).expect("create the warm benchmark profile"));
+        let warm_storage =
+            AppStorage::open_at(warm_root.clone()).expect("create the warm benchmark profile");
+        warm_storage
+            .prepare_chat_schema_migration(crate::CHAT_SCHEMA_VERSION)
+            .expect("initialize the current benchmark schema");
+        drop(warm_storage);
         let mut warm_storage_samples = Vec::with_capacity(SAMPLES);
         for _ in 0..SAMPLES {
             let started = Instant::now();

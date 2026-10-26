@@ -8,20 +8,22 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use rusqlite::Connection;
+use rusqlite::Connection as SqliteConnection;
 use serde_json::json;
 use uuid::Uuid;
+
+use crate::storage::StorageConnection;
 
 use super::operations::*;
 use super::types::*;
 
-fn connection() -> Connection {
-    let connection = Connection::open_in_memory().expect("open in-memory database");
+fn connection() -> StorageConnection<'static> {
+    let connection = SqliteConnection::open_in_memory().expect("open in-memory database");
     prepare_connection(&connection);
-    connection
+    StorageConnection::standalone(connection)
 }
 
-fn prepare_connection(connection: &Connection) {
+fn prepare_connection(connection: &SqliteConnection) {
     connection
         .execute_batch(
             "PRAGMA foreign_keys = ON;
@@ -53,9 +55,9 @@ fn prepare_connection(connection: &Connection) {
 
 #[test]
 fn invalid_initial_checkpoint_does_not_create_a_run() {
-    let connection = connection();
+    let mut connection = connection();
     let error = create_run_with_checkpoint(
-        &connection,
+        &mut connection,
         &NewAgentRun {
             run_id: "invalid-checkpoint-run".to_owned(),
             conversation_id: "conversation".to_owned(),
@@ -77,20 +79,20 @@ fn invalid_initial_checkpoint_does_not_create_a_run() {
 
 #[test]
 fn run_summaries_include_only_recoverable_runs_and_safe_route_metadata() {
-    let connection = connection();
-    run(&connection, "active");
+    let mut connection = connection();
+    run(&mut connection, "active");
     save_checkpoint(
-        &connection,
+        &mut connection,
         "conversation",
         "active",
         0,
         &json!({"providerId": "gemini", "modelId": "model-a"}),
     )
     .expect("save run route checkpoint");
-    run(&connection, "failed");
-    mark_run_failed(&connection, "conversation", "failed").expect("fail run");
+    run(&mut connection, "failed");
+    mark_run_failed(&mut connection, "conversation", "failed").expect("fail run");
 
-    let summaries = list_run_summaries(&connection, 50).expect("list run summaries");
+    let summaries = list_run_summaries(&mut connection, 50).expect("list run summaries");
 
     assert_eq!(summaries.len(), 1);
     assert_eq!(summaries[0].run_id, "active");
@@ -110,11 +112,11 @@ fn run_summaries_include_only_recoverable_runs_and_safe_route_metadata() {
         summaries[0].updated_at_unix_ms
     );
     assert_eq!(serialized["status"], "running");
-    assert!(list_run_summaries(&connection, 0).is_err());
-    assert!(list_run_summaries(&connection, 51).is_err());
+    assert!(list_run_summaries(&mut connection, 0).is_err());
+    assert!(list_run_summaries(&mut connection, 51).is_err());
 }
 
-fn run(connection: &Connection, id: &str) {
+fn run(connection: &mut StorageConnection<'_>, id: &str) {
     create_run(
         connection,
         &NewAgentRun {
@@ -183,15 +185,15 @@ fn answers(note: &str) -> Vec<QuestionAnswer> {
 
 #[test]
 fn pause_list_and_submit_support_multiple_question_items_and_idempotent_duplicates() {
-    let connection = connection();
-    run(&connection, "run-1");
+    let mut connection = connection();
+    run(&mut connection, "run-1");
     assert_eq!(
-        next_question_sequence(&connection, "conversation", "run-1")
+        next_question_sequence(&mut connection, "conversation", "run-1")
             .expect("first question sequence"),
         1
     );
     let paused = pause_with_questions(
-        &connection,
+        &mut connection,
         "conversation",
         "run-1",
         0,
@@ -206,22 +208,30 @@ fn pause_list_and_submit_support_multiple_question_items_and_idempotent_duplicat
         Some(json!({"turn": 1, "messages": ["before pause"]}))
     );
     assert_eq!(
-        load_run(&connection, "run-1").unwrap().checkpoint_revision,
+        load_run(&mut connection, "run-1")
+            .unwrap()
+            .checkpoint_revision,
         1
     );
     assert_eq!(
-        list_pending_groups(&connection, Some("conversation"))
+        list_pending_groups(&mut connection, Some("conversation"))
             .expect("list pending groups")
             .len(),
         1
     );
 
-    let first = submit_answers(&connection, "conversation", "group-1", 0, &answers("done"))
-        .expect("submit answers");
+    let first = submit_answers(
+        &mut connection,
+        "conversation",
+        "group-1",
+        0,
+        &answers("done"),
+    )
+    .expect("submit answers");
     assert!(!first.idempotent);
     assert_eq!(first.group.status, QuestionGroupStatus::Answered);
     assert_eq!(
-        list_recoverable_question_groups(&connection, "conversation")
+        list_recoverable_question_groups(&mut connection, "conversation")
             .expect("list answered but unresumed question groups")
             .len(),
         1
@@ -229,7 +239,7 @@ fn pause_list_and_submit_support_multiple_question_items_and_idempotent_duplicat
     let mut reordered_answers = answers("done");
     reordered_answers.reverse();
     let duplicate = submit_answers(
-        &connection,
+        &mut connection,
         "conversation",
         "group-1",
         0,
@@ -239,7 +249,7 @@ fn pause_list_and_submit_support_multiple_question_items_and_idempotent_duplicat
     assert!(duplicate.idempotent);
     assert!(matches!(
         submit_answers(
-            &connection,
+            &mut connection,
             "conversation",
             "group-1",
             0,
@@ -248,9 +258,9 @@ fn pause_list_and_submit_support_multiple_question_items_and_idempotent_duplicat
         Err(UserQuestionError::Conflict(_))
     ));
 
-    mark_run_resumed(&connection, "conversation", "run-1").expect("resume after answers");
+    mark_run_resumed(&mut connection, "conversation", "run-1").expect("resume after answers");
     assert_eq!(
-        next_question_sequence(&connection, "conversation", "run-1")
+        next_question_sequence(&mut connection, "conversation", "run-1")
             .expect("next question sequence"),
         2
     );
@@ -258,7 +268,7 @@ fn pause_list_and_submit_support_multiple_question_items_and_idempotent_duplicat
     second_group.questions[0].id = "mode-2".to_owned();
     second_group.questions[1].id = "note-2".to_owned();
     let second = pause_with_questions(
-        &connection,
+        &mut connection,
         "conversation",
         "run-1",
         1,
@@ -268,7 +278,7 @@ fn pause_list_and_submit_support_multiple_question_items_and_idempotent_duplicat
     .expect("pause a consecutive question group");
     assert_eq!(second.sequence, 2);
     assert_eq!(
-        list_pending_groups(&connection, Some("conversation"))
+        list_pending_groups(&mut connection, Some("conversation"))
             .expect("list consecutive pending group")
             .iter()
             .map(|group| group.group_id.as_str())
@@ -279,11 +289,11 @@ fn pause_list_and_submit_support_multiple_question_items_and_idempotent_duplicat
 
 #[test]
 fn recoverable_question_groups_keep_only_latest_consecutive_resume_point() {
-    let connection = connection();
-    run(&connection, "run-1");
+    let mut connection = connection();
+    run(&mut connection, "run-1");
 
     pause_with_questions(
-        &connection,
+        &mut connection,
         "conversation",
         "run-1",
         0,
@@ -291,15 +301,21 @@ fn recoverable_question_groups_keep_only_latest_consecutive_resume_point() {
         &questions("group-1", "run-1", 1),
     )
     .expect("pause first question group");
-    submit_answers(&connection, "conversation", "group-1", 0, &answers("first"))
-        .expect("answer first question group");
-    mark_run_resumed(&connection, "conversation", "run-1").expect("resume after first group");
+    submit_answers(
+        &mut connection,
+        "conversation",
+        "group-1",
+        0,
+        &answers("first"),
+    )
+    .expect("answer first question group");
+    mark_run_resumed(&mut connection, "conversation", "run-1").expect("resume after first group");
 
     let mut second_group = questions("group-2", "run-1", 2);
     second_group.questions[0].id = "mode-2".to_owned();
     second_group.questions[1].id = "note-2".to_owned();
     pause_with_questions(
-        &connection,
+        &mut connection,
         "conversation",
         "run-1",
         1,
@@ -308,7 +324,7 @@ fn recoverable_question_groups_keep_only_latest_consecutive_resume_point() {
     )
     .expect("pause second question group");
 
-    let pending_recoverable = list_recoverable_question_groups(&connection, "conversation")
+    let pending_recoverable = list_recoverable_question_groups(&mut connection, "conversation")
         .expect("list current pending question group");
     assert_eq!(
         pending_recoverable
@@ -333,10 +349,16 @@ fn recoverable_question_groups_keep_only_latest_consecutive_resume_point() {
             },
         },
     ];
-    submit_answers(&connection, "conversation", "group-2", 0, &second_answers)
-        .expect("answer second question group");
+    submit_answers(
+        &mut connection,
+        "conversation",
+        "group-2",
+        0,
+        &second_answers,
+    )
+    .expect("answer second question group");
 
-    let answered_recoverable = list_recoverable_question_groups(&connection, "conversation")
+    let answered_recoverable = list_recoverable_question_groups(&mut connection, "conversation")
         .expect("list latest answered question group");
     assert_eq!(
         answered_recoverable
@@ -353,11 +375,11 @@ fn recoverable_question_groups_keep_only_latest_consecutive_resume_point() {
 
 #[test]
 fn checkpoint_rejects_credentials_and_oversized_values() {
-    let connection = connection();
-    run(&connection, "run-1");
+    let mut connection = connection();
+    run(&mut connection, "run-1");
     assert!(matches!(
         save_checkpoint(
-            &connection,
+            &mut connection,
             "conversation",
             "run-1",
             0,
@@ -367,7 +389,7 @@ fn checkpoint_rejects_credentials_and_oversized_values() {
     ));
     assert!(matches!(
         save_checkpoint(
-            &connection,
+            &mut connection,
             "conversation",
             "run-1",
             0,
@@ -376,7 +398,7 @@ fn checkpoint_rejects_credentials_and_oversized_values() {
         Err(UserQuestionError::InvalidInput(_))
     ));
     save_checkpoint(
-        &connection,
+        &mut connection,
         "conversation",
         "run-1",
         0,
@@ -386,7 +408,7 @@ fn checkpoint_rejects_credentials_and_oversized_values() {
     let oversized = "x".repeat(super::MAX_CHECKPOINT_BYTES);
     assert!(matches!(
         save_checkpoint(
-            &connection,
+            &mut connection,
             "conversation",
             "run-1",
             0,
@@ -398,18 +420,18 @@ fn checkpoint_rejects_credentials_and_oversized_values() {
 
 #[test]
 fn mutations_are_scoped_to_the_run_conversation() {
-    let connection = connection();
+    let mut connection = connection();
     connection
         .execute(
             "INSERT INTO conversations (id) VALUES ('other-conversation')",
             [],
         )
         .expect("insert second conversation");
-    run(&connection, "run-1");
+    run(&mut connection, "run-1");
 
     assert!(matches!(
         save_checkpoint(
-            &connection,
+            &mut connection,
             "other-conversation",
             "run-1",
             0,
@@ -419,7 +441,7 @@ fn mutations_are_scoped_to_the_run_conversation() {
     ));
     assert!(matches!(
         pause_with_questions(
-            &connection,
+            &mut connection,
             "other-conversation",
             "run-1",
             0,
@@ -430,7 +452,7 @@ fn mutations_are_scoped_to_the_run_conversation() {
     ));
 
     pause_with_questions(
-        &connection,
+        &mut connection,
         "conversation",
         "run-1",
         0,
@@ -440,7 +462,7 @@ fn mutations_are_scoped_to_the_run_conversation() {
     .expect("pause scoped run");
     assert!(matches!(
         submit_answers(
-            &connection,
+            &mut connection,
             "other-conversation",
             "group-1",
             0,
@@ -449,11 +471,11 @@ fn mutations_are_scoped_to_the_run_conversation() {
         Err(UserQuestionError::NotFound("question group"))
     ));
     assert!(matches!(
-        mark_run_cancelled(&connection, "other-conversation", "run-1"),
+        mark_run_cancelled(&mut connection, "other-conversation", "run-1"),
         Err(UserQuestionError::NotFound("agent run"))
     ));
     assert_eq!(
-        list_pending_groups(&connection, Some("conversation"))
+        list_pending_groups(&mut connection, Some("conversation"))
             .expect("list scoped group")
             .len(),
         1
@@ -462,8 +484,8 @@ fn mutations_are_scoped_to_the_run_conversation() {
 
 #[test]
 fn reads_reject_semantically_invalid_stored_json() {
-    let invalid_checkpoint_connection = connection();
-    run(&invalid_checkpoint_connection, "run-1");
+    let mut invalid_checkpoint_connection = connection();
+    run(&mut invalid_checkpoint_connection, "run-1");
     let invalid_checkpoint = json!({"access_token": "must not be stored"}).to_string();
     invalid_checkpoint_connection
         .execute(
@@ -475,14 +497,14 @@ fn reads_reject_semantically_invalid_stored_json() {
         )
         .expect("write syntactically valid invalid checkpoint fixture");
     assert!(matches!(
-        list_recoverable_runs(&invalid_checkpoint_connection, Some("conversation")),
+        list_recoverable_runs(&mut invalid_checkpoint_connection, Some("conversation")),
         Err(UserQuestionError::CorruptStoredData(_))
     ));
 
-    let invalid_question_connection = connection();
-    run(&invalid_question_connection, "run-1");
+    let mut invalid_question_connection = connection();
+    run(&mut invalid_question_connection, "run-1");
     pause_with_questions(
-        &invalid_question_connection,
+        &mut invalid_question_connection,
         "conversation",
         "run-1",
         0,
@@ -506,15 +528,15 @@ fn reads_reject_semantically_invalid_stored_json() {
         )
         .expect("write syntactically valid invalid question fixture");
     assert!(matches!(
-        list_pending_groups(&invalid_question_connection, Some("conversation")),
+        list_pending_groups(&mut invalid_question_connection, Some("conversation")),
         Err(UserQuestionError::CorruptStoredData(_))
     ));
 }
 
 #[test]
 fn database_byte_guards_reject_oversized_unicode_payloads() {
-    let connection = connection();
-    run(&connection, "run-1");
+    let mut connection = connection();
+    run(&mut connection, "run-1");
     let oversized_checkpoint = format!(
         "{{\"state\":\"{}\"}}",
         "é".repeat((super::MAX_CHECKPOINT_BYTES / 2) + 1)
@@ -533,26 +555,26 @@ fn database_byte_guards_reject_oversized_unicode_payloads() {
 
 #[test]
 fn restart_recovery_interrupts_running_runs_and_failed_runs_are_terminal() {
-    let connection = connection();
-    run(&connection, "run-1");
-    let recovered = interrupt_running_runs_after_restart(&connection, Some("conversation"))
+    let mut connection = connection();
+    run(&mut connection, "run-1");
+    let recovered = interrupt_running_runs_after_restart(&mut connection, Some("conversation"))
         .expect("interrupt running run after restart");
     assert_eq!(recovered.len(), 1);
     assert_eq!(recovered[0].status, super::AgentRunStatus::Interrupted);
     assert!(
-        interrupt_running_runs_after_restart(&connection, Some("conversation"))
+        interrupt_running_runs_after_restart(&mut connection, Some("conversation"))
             .expect("repeat restart recovery")
             .is_empty()
     );
-    let failed =
-        mark_run_failed(&connection, "conversation", "run-1").expect("mark interrupted run failed");
+    let failed = mark_run_failed(&mut connection, "conversation", "run-1")
+        .expect("mark interrupted run failed");
     assert_eq!(failed.status, super::AgentRunStatus::Failed);
     assert!(matches!(
-        mark_run_resumed(&connection, "conversation", "run-1"),
+        mark_run_resumed(&mut connection, "conversation", "run-1"),
         Err(UserQuestionError::Conflict(_))
     ));
     assert!(
-        list_recoverable_runs(&connection, Some("conversation"))
+        list_recoverable_runs(&mut connection, Some("conversation"))
             .expect("list recoverable runs")
             .is_empty()
     );
@@ -560,10 +582,10 @@ fn restart_recovery_interrupts_running_runs_and_failed_runs_are_terminal() {
 
 #[test]
 fn invalid_answers_and_stale_revisions_are_rejected() {
-    let connection = connection();
-    run(&connection, "run-1");
+    let mut connection = connection();
+    run(&mut connection, "run-1");
     pause_with_questions(
-        &connection,
+        &mut connection,
         "conversation",
         "run-1",
         0,
@@ -578,11 +600,23 @@ fn invalid_answers_and_stale_revisions_are_rejected() {
         },
     }];
     assert!(matches!(
-        submit_answers(&connection, "conversation", "group-1", 0, &missing_required),
+        submit_answers(
+            &mut connection,
+            "conversation",
+            "group-1",
+            0,
+            &missing_required
+        ),
         Err(UserQuestionError::InvalidInput(_))
     ));
     assert!(matches!(
-        submit_answers(&connection, "conversation", "group-1", 1, &answers("done")),
+        submit_answers(
+            &mut connection,
+            "conversation",
+            "group-1",
+            1,
+            &answers("done")
+        ),
         Err(UserQuestionError::StaleRevision { .. })
     ));
 }
@@ -591,11 +625,12 @@ fn invalid_answers_and_stale_revisions_are_rejected() {
 fn interrupted_run_and_pending_group_survive_a_restart() {
     let path = temporary_database_path();
     {
-        let connection = Connection::open(&path).expect("open durable database");
-        prepare_connection(&connection);
-        run(&connection, "run-1");
+        let mut connection = SqliteConnection::open(&path).expect("open durable database");
+        prepare_connection(&mut connection);
+        let mut connection = StorageConnection::standalone(connection);
+        run(&mut connection, "run-1");
         pause_with_questions(
-            &connection,
+            &mut connection,
             "conversation",
             "run-1",
             0,
@@ -603,19 +638,23 @@ fn interrupted_run_and_pending_group_survive_a_restart() {
             &questions("group-1", "run-1", 1),
         )
         .expect("pause durable run");
-        mark_run_interrupted(&connection, "conversation", "run-1").expect("interrupt durable run");
+        mark_run_interrupted(&mut connection, "conversation", "run-1")
+            .expect("interrupt durable run");
     }
     {
-        let connection = Connection::open(&path).expect("reopen durable database");
+        let connection = SqliteConnection::open(&path).expect("reopen durable database");
         connection
             .execute_batch("PRAGMA foreign_keys = ON;")
             .expect("enable durable foreign keys");
-        let pending = list_pending_groups(&connection, None).expect("recover pending group");
+        let mut connection = StorageConnection::standalone(connection);
+        let pending = list_pending_groups(&mut connection, None).expect("recover pending group");
         assert_eq!(pending.len(), 1);
         assert_eq!(pending[0].run_id, "run-1");
         assert_eq!(pending[0].checkpoint, Some(json!({"turn": 1})));
         assert_eq!(
-            load_run(&connection, "run-1").unwrap().checkpoint_revision,
+            load_run(&mut connection, "run-1")
+                .unwrap()
+                .checkpoint_revision,
             1
         );
     }
@@ -624,10 +663,10 @@ fn interrupted_run_and_pending_group_survive_a_restart() {
 
 #[test]
 fn cancelling_a_run_cancels_pending_groups_and_blocks_resume() {
-    let connection = connection();
-    run(&connection, "run-1");
+    let mut connection = connection();
+    run(&mut connection, "run-1");
     pause_with_questions(
-        &connection,
+        &mut connection,
         "conversation",
         "run-1",
         0,
@@ -645,24 +684,24 @@ fn cancelling_a_run_cancels_pending_groups_and_blocks_resume() {
             )
             .is_err()
     );
-    mark_run_cancelled(&connection, "conversation", "run-1").expect("cancel run");
+    mark_run_cancelled(&mut connection, "conversation", "run-1").expect("cancel run");
     assert!(
-        list_pending_groups(&connection, None)
+        list_pending_groups(&mut connection, None)
             .expect("list pending groups")
             .is_empty()
     );
     assert!(matches!(
-        mark_run_resumed(&connection, "conversation", "run-1"),
+        mark_run_resumed(&mut connection, "conversation", "run-1"),
         Err(UserQuestionError::Conflict(_))
     ));
 }
 
 #[test]
 fn cancellation_race_preserves_answer_first_and_cancels_cancel_first() {
-    let answer_first = connection();
-    run(&answer_first, "run-1");
+    let mut answer_first = connection();
+    run(&mut answer_first, "run-1");
     pause_with_questions(
-        &answer_first,
+        &mut answer_first,
         "conversation",
         "run-1",
         0,
@@ -671,7 +710,7 @@ fn cancellation_race_preserves_answer_first_and_cancels_cancel_first() {
     )
     .expect("pause answer-first run");
     submit_answers(
-        &answer_first,
+        &mut answer_first,
         "conversation",
         "group-1",
         0,
@@ -679,21 +718,21 @@ fn cancellation_race_preserves_answer_first_and_cancels_cancel_first() {
     )
     .expect("answer before cancellation");
 
-    let interrupted = mark_run_cancelled(&answer_first, "conversation", "run-1")
+    let interrupted = mark_run_cancelled(&mut answer_first, "conversation", "run-1")
         .expect("preserve answered group for resume");
     assert_eq!(interrupted.status, super::AgentRunStatus::Interrupted);
-    let recoverable = list_recoverable_question_groups(&answer_first, "conversation")
+    let recoverable = list_recoverable_question_groups(&mut answer_first, "conversation")
         .expect("list answered group after cancellation race");
     assert_eq!(recoverable.len(), 1);
     assert_eq!(recoverable[0].group_id, "group-1");
     assert_eq!(recoverable[0].status, QuestionGroupStatus::Answered);
-    mark_run_resumed(&answer_first, "conversation", "run-1")
+    mark_run_resumed(&mut answer_first, "conversation", "run-1")
         .expect("resume interrupted answer-first run");
 
-    let cancel_first = connection();
-    run(&cancel_first, "run-1");
+    let mut cancel_first = connection();
+    run(&mut cancel_first, "run-1");
     pause_with_questions(
-        &cancel_first,
+        &mut cancel_first,
         "conversation",
         "run-1",
         0,
@@ -701,17 +740,17 @@ fn cancellation_race_preserves_answer_first_and_cancels_cancel_first() {
         &questions("group-1", "run-1", 1),
     )
     .expect("pause cancel-first run");
-    let cancelled =
-        mark_run_cancelled(&cancel_first, "conversation", "run-1").expect("cancel pending group");
+    let cancelled = mark_run_cancelled(&mut cancel_first, "conversation", "run-1")
+        .expect("cancel pending group");
     assert_eq!(cancelled.status, super::AgentRunStatus::Cancelled);
     assert!(
-        list_pending_groups(&cancel_first, None)
+        list_pending_groups(&mut cancel_first, None)
             .expect("list pending groups after cancellation")
             .is_empty()
     );
     assert!(matches!(
         submit_answers(
-            &cancel_first,
+            &mut cancel_first,
             "conversation",
             "group-1",
             0,
@@ -725,11 +764,12 @@ fn cancellation_race_preserves_answer_first_and_cancels_cancel_first() {
 fn concurrent_identical_submissions_are_applied_once() {
     let path = temporary_database_path();
     {
-        let connection = Connection::open(&path).expect("open concurrent database");
-        prepare_connection(&connection);
-        run(&connection, "run-1");
+        let mut connection = SqliteConnection::open(&path).expect("open concurrent database");
+        prepare_connection(&mut connection);
+        let mut connection = StorageConnection::standalone(connection);
+        run(&mut connection, "run-1");
         pause_with_questions(
-            &connection,
+            &mut connection,
             "conversation",
             "run-1",
             0,
@@ -744,11 +784,12 @@ fn concurrent_identical_submissions_are_applied_once() {
         let path = path.clone();
         let answers = Arc::clone(&answers);
         handles.push(thread::spawn(move || {
-            let connection = Connection::open(path).expect("open concurrent connection");
+            let connection = SqliteConnection::open(path).expect("open concurrent connection");
             connection
                 .busy_timeout(std::time::Duration::from_secs(5))
                 .expect("configure concurrent timeout");
-            submit_answers(&connection, "conversation", "group-1", 0, &answers)
+            let mut connection = StorageConnection::standalone(connection);
+            submit_answers(&mut connection, "conversation", "group-1", 0, &answers)
                 .expect("submit concurrent answers")
                 .idempotent
         }));

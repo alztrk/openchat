@@ -686,6 +686,7 @@ mod tests {
         });
 
         let route = ChatRoute {
+            custom_enable_thinking: false,
             model_id: "gemini-test-model".to_owned(),
             provider_model_id: "gemini-test-model".to_owned(),
             provider_id: Some("gemini".to_owned()),
@@ -803,6 +804,7 @@ mod tests {
         });
 
         let route = ChatRoute {
+            custom_enable_thinking: false,
             model_id: "big-pickle".to_owned(),
             provider_model_id: "big-pickle".to_owned(),
             provider_id: Some("opencode".to_owned()),
@@ -863,6 +865,7 @@ mod tests {
     #[tokio::test]
     async fn opencode_free_tier_compacts_locally_within_the_summary_budget() {
         let route = ChatRoute {
+            custom_enable_thinking: false,
             model_id: "big-pickle".to_owned(),
             provider_model_id: "big-pickle".to_owned(),
             provider_id: Some("opencode".to_owned()),
@@ -907,6 +910,7 @@ mod tests {
     #[tokio::test]
     async fn opencode_free_tier_local_compaction_honors_cancellation() {
         let route = ChatRoute {
+            custom_enable_thinking: false,
             model_id: "big-pickle".to_owned(),
             provider_model_id: "big-pickle".to_owned(),
             provider_id: Some("opencode".to_owned()),
@@ -958,6 +962,7 @@ mod tests {
                 .expect("write provider restriction");
         });
         let route = ChatRoute {
+            custom_enable_thinking: false,
             model_id: "big-pickle".to_owned(),
             provider_model_id: "big-pickle".to_owned(),
             provider_id: Some("opencode".to_owned()),

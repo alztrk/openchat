@@ -155,12 +155,55 @@ fn is_permission_rule_tool(name: &str) -> bool {
             | "web_search"
             | "read_url_content"
             | "save_memory"
+            | "save_project_memory"
             | "run_project_task"
             | "delegate_task"
             | "list_subagent_models"
             | "get_subagent_result"
             | "cancel_subagent"
     )
+}
+
+fn save_project_memory(storage: &AppStorage, conversation_id: &str, note: &str) -> Value {
+    let mut connection = match storage.connect() {
+        Ok(connection) => connection,
+        Err(_) => {
+            return tool_error(
+                "project_memory_unavailable",
+                "Project memory could not be saved locally.",
+            );
+        }
+    };
+    let project_id = match connection
+        .query_row(
+            "SELECT project_id FROM conversations WHERE id = ?1",
+            [conversation_id],
+            |row| row.get::<_, Option<String>>(0),
+        )
+        .optional()
+    {
+        Ok(Some(Some(project_id))) => project_id,
+        Ok(_) => {
+            return tool_error(
+                "project_required",
+                "Project notes can only be saved from a conversation attached to a saved project.",
+            );
+        }
+        Err(_) => {
+            return tool_error(
+                "project_memory_unavailable",
+                "Project memory could not be saved locally.",
+            );
+        }
+    };
+    match crate::project_memory::add_assistant(&mut connection, &project_id, conversation_id, note)
+    {
+        Ok(snapshot) => json!({
+            "saved": true,
+            "noteCount": snapshot.items.len(),
+        }),
+        Err(error) => tool_error(error.code, &error.message),
+    }
 }
 
 fn invalid_tool_permission_rules() -> ServiceError {
@@ -338,6 +381,7 @@ impl ToolPermissionMode {
 /// Owns the request-scoped state used to validate and execute model tool calls.
 pub struct ToolExecutor {
     project_root: Option<PathBuf>,
+    project_memory_context: Option<String>,
     project_roots: Vec<PathBuf>,
     data_root: PathBuf,
     permission_mode: ToolPermissionMode,
@@ -431,6 +475,7 @@ impl ToolExecutor {
     ) -> Self {
         Self {
             project_root: project_root.map(Path::to_path_buf),
+            project_memory_context: None,
             project_roots: project_root.map(Path::to_path_buf).into_iter().collect(),
             data_root: data_root.to_path_buf(),
             permission_mode,
@@ -456,6 +501,12 @@ impl ToolExecutor {
 
     pub(crate) fn with_workspace_roots(mut self, roots: Vec<PathBuf>) -> Self {
         self.project_roots = roots;
+        self
+    }
+
+    /// Adds the parent run's bounded project-memory snapshot to delegated child runs.
+    pub(crate) fn with_project_memory_context(mut self, context: Option<String>) -> Self {
+        self.project_memory_context = context;
         self
     }
 
@@ -494,6 +545,7 @@ impl ToolExecutor {
                         | "get_subagent_result"
                         | "cancel_subagent"
                         | "save_memory"
+                        | "save_project_memory"
                         | "ask_user"
                         | crate::goals::START_GOAL_TOOL_NAME
                         | crate::goals::CONTROL_TOOL_NAME
@@ -515,6 +567,7 @@ impl ToolExecutor {
             self.permission_rules.clone(),
         )
         .with_workspace_roots(self.project_roots.clone())
+        .with_project_memory_context(self.project_memory_context.clone())
         .with_subagent_tool_definitions(definitions);
         if let Some(service) = self.chat_service.clone() {
             executor = executor.with_chat_service(service);
@@ -1004,14 +1057,16 @@ impl ToolExecutor {
             }
         };
 
-        if matches!(&prepared.operation, ToolOperation::SaveMemory { .. })
-            && snapshot.conversation_id.starts_with("tmp_")
+        if matches!(
+            &prepared.operation,
+            ToolOperation::SaveMemory { .. } | ToolOperation::SaveProjectMemory { .. }
+        ) && snapshot.conversation_id.starts_with("tmp_")
         {
             return Ok(ToolResult {
                 call_id: call.id.clone(),
                 output: tool_error(
                     "temporary_chat_memory_unavailable",
-                    "Personal memory is unavailable in temporary chats.",
+                    "Memory cannot be saved in temporary chats.",
                 ),
             });
         }
@@ -1130,6 +1185,7 @@ impl ToolExecutor {
                     | ToolOperation::WebSearch { .. }
                     | ToolOperation::ReadUrlContent { .. }
                     | ToolOperation::SaveMemory { .. }
+                    | ToolOperation::SaveProjectMemory { .. }
                     | ToolOperation::DelegateTask { .. }
                     | ToolOperation::ProjectTool { .. }
             );
@@ -1246,6 +1302,9 @@ impl ToolExecutor {
             ToolOperation::SaveMemory { fact } => {
                 save_personal_memory(storage, &snapshot.conversation_id, fact)
             }
+            ToolOperation::SaveProjectMemory { note } => {
+                save_project_memory(storage, &snapshot.conversation_id, note)
+            }
             ToolOperation::ListSubagentModels => json!({
                 "models": self.subagent_models.iter().map(|model| json!({
                     "modelKey": model.key,
@@ -1292,6 +1351,7 @@ impl ToolExecutor {
                                             call: call.clone(),
                                             task: task.clone(),
                                             additional_context: context.clone(),
+                                            project_memory_context: self.project_memory_context.clone(),
                                             parent_message_id: snapshot.message_id.clone(),
                                             project_root: self.project_root.clone(),
                                             permission_broker: permissions.clone(),

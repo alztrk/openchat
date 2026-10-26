@@ -475,11 +475,7 @@ impl StorageRow {
         I: StorageRowIndex,
         T: FromSql,
     {
-        let index = index.resolve(&self.columns)?;
-        let value = self
-            .values
-            .get(index)
-            .ok_or(Error::InvalidColumnIndex(index))?;
+        let (index, value) = self.value(index)?;
         let data_type = value.data_type();
         T::column_result(ValueRef::from(value)).map_err(|error| match error {
             FromSqlError::InvalidType => {
@@ -489,6 +485,51 @@ impl StorageRow {
             FromSqlError::Utf8Error(error) => Error::Utf8Error(index, error),
             other => Error::FromSqlConversionFailure(index, data_type, Box::new(other)),
         })
+    }
+
+    /// Borrows one non-null text column without cloning its owned value.
+    pub(crate) fn get_str<I>(&self, index: I) -> Result<&str>
+    where
+        I: StorageRowIndex,
+    {
+        let (index, value) = self.value(index)?;
+        match value {
+            Value::Text(value) => Ok(value),
+            value => Err(Error::InvalidColumnType(
+                index,
+                self.columns[index].clone(),
+                value.data_type(),
+            )),
+        }
+    }
+
+    /// Borrows one nullable text column without cloning its owned value.
+    pub(crate) fn get_optional_str<I>(&self, index: I) -> Result<Option<&str>>
+    where
+        I: StorageRowIndex,
+    {
+        let (index, value) = self.value(index)?;
+        match value {
+            Value::Null => Ok(None),
+            Value::Text(value) => Ok(Some(value)),
+            value => Err(Error::InvalidColumnType(
+                index,
+                self.columns[index].clone(),
+                value.data_type(),
+            )),
+        }
+    }
+
+    fn value<I>(&self, index: I) -> Result<(usize, &Value)>
+    where
+        I: StorageRowIndex,
+    {
+        let index = index.resolve(&self.columns)?;
+        let value = self
+            .values
+            .get(index)
+            .ok_or(Error::InvalidColumnIndex(index))?;
+        Ok((index, value))
     }
 }
 

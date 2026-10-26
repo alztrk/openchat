@@ -109,7 +109,10 @@ mod tests {
         .into_rpc(json!(1));
 
         assert_eq!(response.event.as_deref(), Some("chat.text.delta"));
-        let data = response.data.expect("text delta event should contain data");
+        let data = response
+            .data
+            .as_ref()
+            .expect("text delta event should contain data");
         assert_eq!(data["conversationId"], "conversation-id");
         assert_eq!(data["messageId"], "message-id");
         assert_eq!(data["delta"], "new text");

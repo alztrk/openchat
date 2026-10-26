@@ -1274,5 +1274,71 @@ pub(super) fn apply_agent_migrations(
         current_version = 39;
     }
 
+    if current_version < 40 && target_version >= 40 {
+        let transaction = connection.unchecked_transaction()?;
+        transaction.execute_batch(
+            "CREATE INDEX usage_events_started_desc_event_id_desc_idx
+                ON usage_events (started_at_unix_ms DESC, event_id DESC);",
+        )?;
+        transaction.execute(
+            "INSERT INTO openchat_backend_migrations (version, applied_at_unix_ms) VALUES (40, ?1)",
+            [unix_time_millis()?],
+        )?;
+        transaction.commit()?;
+        current_version = 40;
+    }
+
+    if current_version < 41 && target_version >= 41 {
+        let transaction = connection.unchecked_transaction()?;
+        transaction.execute_batch(
+            "CREATE TABLE project_memory_state (
+                project_id TEXT PRIMARY KEY NOT NULL
+                    REFERENCES projects(id) ON DELETE CASCADE,
+                enabled INTEGER NOT NULL DEFAULT 0 CHECK (enabled IN (0, 1))
+            );
+            CREATE TABLE project_memory_items (
+                id TEXT PRIMARY KEY NOT NULL CHECK (
+                    length(id) = 32 AND id NOT GLOB '*[^0-9a-f]*'
+                ),
+                project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                content TEXT NOT NULL CHECK (length(content) BETWEEN 1 AND 4096),
+                created_at_unix_ms INTEGER NOT NULL,
+                updated_at_unix_ms INTEGER NOT NULL
+            );
+            CREATE INDEX project_memory_items_project_created_idx
+                ON project_memory_items (project_id, created_at_unix_ms, id);",
+        )?;
+        transaction.execute(
+            "INSERT INTO openchat_backend_migrations (version, applied_at_unix_ms) VALUES (41, ?1)",
+            [unix_time_millis()?],
+        )?;
+        transaction.commit()?;
+        current_version = 41;
+    }
+
+    if current_version < 42 && target_version >= 42 {
+        let transaction = connection.unchecked_transaction()?;
+        transaction.execute_batch(
+            "ALTER TABLE project_memory_state
+                ADD COLUMN assistant_saves_enabled INTEGER NOT NULL DEFAULT 0
+                    CHECK (assistant_saves_enabled IN (0, 1));
+            ALTER TABLE project_memory_state
+                ADD COLUMN history_context_enabled INTEGER NOT NULL DEFAULT 0
+                    CHECK (history_context_enabled IN (0, 1));
+            ALTER TABLE project_memory_items
+                ADD COLUMN origin TEXT NOT NULL DEFAULT 'user'
+                    CHECK (origin IN ('user', 'assistant'));
+            ALTER TABLE project_memory_items
+                ADD COLUMN source_conversation_id TEXT
+                    REFERENCES conversations(id) ON DELETE SET NULL;",
+        )?;
+        transaction.execute(
+            "INSERT INTO openchat_backend_migrations (version, applied_at_unix_ms) VALUES (42, ?1)",
+            [unix_time_millis()?],
+        )?;
+        transaction.commit()?;
+        current_version = 42;
+    }
+
     Ok(current_version)
 }

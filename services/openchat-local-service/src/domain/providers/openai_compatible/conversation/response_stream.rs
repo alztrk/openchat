@@ -1897,6 +1897,7 @@ mod tests {
 
     fn route(provider_id: &str) -> ChatRoute {
         ChatRoute {
+            custom_enable_thinking: false,
             model_id: "test-model".to_owned(),
             provider_model_id: "test-model".to_owned(),
             provider_id: Some(provider_id.to_owned()),

@@ -54,6 +54,8 @@ pub(crate) mod profile_archive;
 pub(crate) mod project_index;
 #[path = "projects/project_instructions.rs"]
 pub(crate) mod project_instructions;
+#[path = "projects/project_memory.rs"]
+pub(crate) mod project_memory;
 #[path = "projects/project_skills.rs"]
 pub(crate) mod project_skills;
 #[path = "providers/credentials.rs"]

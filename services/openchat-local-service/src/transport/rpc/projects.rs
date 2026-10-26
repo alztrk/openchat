@@ -65,6 +65,97 @@ pub(super) async fn dispatch(
             crate::project_instructions::save(&project_root, instructions)?;
             Ok(json!({"saved": true}))
         }
+        "project.memory.get" => {
+            let project_id = required_string(params, "projectId")?;
+            let connection = storage
+                .connect()
+                .map_err(|_| project_memory_storage_error())?;
+            Ok(json!({"memory": crate::project_memory::snapshot(&connection, project_id)?}))
+        }
+        "project.memory.set_enabled" => {
+            let project_id = required_string(params, "projectId")?;
+            let enabled = params
+                .get("enabled")
+                .and_then(Value::as_bool)
+                .ok_or_else(invalid_request_params)?;
+            let mut connection = storage
+                .connect()
+                .map_err(|_| project_memory_storage_error())?;
+            Ok(json!({
+                "memory": crate::project_memory::set_enabled(&mut connection, project_id, enabled)?
+            }))
+        }
+        "project.memory.set_assistant_saves_enabled" => {
+            let project_id = required_string(params, "projectId")?;
+            let enabled = params
+                .get("enabled")
+                .and_then(Value::as_bool)
+                .ok_or_else(invalid_request_params)?;
+            let mut connection = storage
+                .connect()
+                .map_err(|_| project_memory_storage_error())?;
+            Ok(json!({
+                "memory": crate::project_memory::set_assistant_saves_enabled(
+                    &mut connection,
+                    project_id,
+                    enabled,
+                )?
+            }))
+        }
+        "project.memory.set_history_context_enabled" => {
+            let project_id = required_string(params, "projectId")?;
+            let enabled = params
+                .get("enabled")
+                .and_then(Value::as_bool)
+                .ok_or_else(invalid_request_params)?;
+            let mut connection = storage
+                .connect()
+                .map_err(|_| project_memory_storage_error())?;
+            Ok(json!({
+                "memory": crate::project_memory::set_history_context_enabled(
+                    &mut connection,
+                    project_id,
+                    enabled,
+                )?
+            }))
+        }
+        "project.memory.add" => {
+            let project_id = required_string(params, "projectId")?;
+            let content = params
+                .get("content")
+                .and_then(Value::as_str)
+                .ok_or_else(invalid_request_params)?;
+            let mut connection = storage
+                .connect()
+                .map_err(|_| project_memory_storage_error())?;
+            Ok(json!({
+                "memory": crate::project_memory::add(&mut connection, project_id, content)?
+            }))
+        }
+        "project.memory.update" => {
+            let project_id = required_string(params, "projectId")?;
+            let item_id = project_memory_item_id(params)?;
+            let content = params
+                .get("content")
+                .and_then(Value::as_str)
+                .ok_or_else(invalid_request_params)?;
+            let mut connection = storage
+                .connect()
+                .map_err(|_| project_memory_storage_error())?;
+            Ok(json!({
+                "memory": crate::project_memory::update(&mut connection, project_id, item_id, content)?
+            }))
+        }
+        "project.memory.delete" => {
+            let project_id = required_string(params, "projectId")?;
+            let item_id = project_memory_item_id(params)?;
+            let mut connection = storage
+                .connect()
+                .map_err(|_| project_memory_storage_error())?;
+            Ok(json!({
+                "memory": crate::project_memory::delete(&mut connection, project_id, item_id)?
+            }))
+        }
         "project.skills.list" => {
             let project_id = required_string(params, "projectId")?;
             let project_root = project_root_for_mcp(storage, project_id)?;
@@ -640,6 +731,26 @@ fn project_index_storage_error() -> ServiceError {
         "The local project index is unavailable. Retry the operation or clear the index.",
         true,
     )
+}
+
+fn project_memory_storage_error() -> ServiceError {
+    ServiceError::new(
+        "project_memory_unavailable",
+        "Project memory could not be accessed. Retry the operation.",
+        true,
+    )
+}
+
+fn project_memory_item_id(params: &Value) -> Result<&str, ServiceError> {
+    let item_id = required_string(params, "itemId")?;
+    if item_id.len() != 32
+        || !item_id
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    {
+        return Err(invalid_request_params());
+    }
+    Ok(item_id)
 }
 
 #[cfg(test)]

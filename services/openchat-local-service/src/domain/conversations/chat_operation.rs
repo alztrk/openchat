@@ -65,6 +65,8 @@ pub struct ChatSendContext<'a> {
     pub custom_instructions: Option<&'a str>,
     /// Instructions loaded from the active project.
     pub project_instructions: Option<&'a str>,
+    /// User-curated, bounded memory notes for the active project.
+    pub project_memory_context: Option<&'a str>,
     /// Validated skill content selected for the active project.
     pub project_skills: Vec<crate::project_skills::ProjectSkill>,
     /// Bounded local index excerpts available to project-aware tools.

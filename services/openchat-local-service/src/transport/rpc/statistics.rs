@@ -13,6 +13,9 @@ use super::{
     bounded_route_id, invalid_request_params, optional_bool, optional_string, required_string,
 };
 
+const MAX_STATISTICS_PAGE_SIZE: i64 = 200;
+const MAX_STATISTICS_EXPORT_PAGE_SIZE: i64 = 1000;
+
 /// Dispatches usage and pricing requests while preserving their bounded query contracts.
 pub(super) async fn dispatch(
     method: &str,
@@ -22,8 +25,13 @@ pub(super) async fn dispatch(
 ) -> Result<Value, ServiceError> {
     match method {
         "statistics.get" => {
-            let query = statistics_query(params)?;
+            let query = statistics_query(params, MAX_STATISTICS_PAGE_SIZE)?;
             usage_statistics::get_statistics(storage, &query, cancellation).await
+        }
+        "statistics.details" => {
+            let query = statistics_query(params, MAX_STATISTICS_EXPORT_PAGE_SIZE)?;
+            let include_total = optional_bool(params, "includeTotal")?.unwrap_or(true);
+            usage_statistics::get_statistics_details(storage, &query, include_total)
         }
         "models.pricing.get" => {
             let provider_id = required_string(params, "providerId")?;
@@ -55,7 +63,7 @@ pub(super) async fn dispatch(
 }
 
 /// Validates date ranges, filters, and pagination before querying usage records.
-fn statistics_query(params: &Value) -> Result<StatisticsQuery, ServiceError> {
+fn statistics_query(params: &Value, max_limit: i64) -> Result<StatisticsQuery, ServiceError> {
     let from_unix_ms = params
         .get("fromUnixMs")
         .and_then(Value::as_i64)
@@ -94,7 +102,7 @@ fn statistics_query(params: &Value) -> Result<StatisticsQuery, ServiceError> {
     let fast_mode = optional_bool(params, "fastMode")?;
     let offset = params.get("offset").and_then(Value::as_i64).unwrap_or(0);
     let limit = params.get("limit").and_then(Value::as_i64).unwrap_or(100);
-    if !(0..=100_000_000).contains(&offset) || !(1..=200).contains(&limit) {
+    if !(0..=100_000_000).contains(&offset) || !(1..=max_limit).contains(&limit) {
         return Err(invalid_request_params());
     }
     Ok(StatisticsQuery {
@@ -136,7 +144,7 @@ mod tests {
 
     use crate::storage::AppStorage;
 
-    use super::{dispatch, statistics_query};
+    use super::{MAX_STATISTICS_PAGE_SIZE, dispatch, statistics_query};
 
     #[test]
     fn statistics_query_keeps_range_filter_and_page_limits() {
@@ -151,7 +159,8 @@ mod tests {
             "offset": 5,
             "limit": 25
         });
-        let parsed = statistics_query(&valid_query).expect("valid statistics query");
+        let parsed = statistics_query(&valid_query, MAX_STATISTICS_PAGE_SIZE)
+            .expect("valid statistics query");
         assert_eq!(parsed.from_unix_ms, 10);
         assert_eq!(parsed.to_unix_ms, 20);
         assert_eq!(parsed.provider_id.as_deref(), Some("openai"));
@@ -177,7 +186,7 @@ mod tests {
                 params[key] = value.clone();
             }
             assert!(
-                statistics_query(&params).is_err(),
+                statistics_query(&params, MAX_STATISTICS_PAGE_SIZE).is_err(),
                 "accepted invalid query: {params}"
             );
         }

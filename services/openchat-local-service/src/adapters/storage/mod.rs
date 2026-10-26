@@ -1821,7 +1821,7 @@ mod tests {
         let storage = AppStorage::open_at(directory.0.clone()).expect("open storage");
         let connection = storage.connect().expect("open configured connection");
         let trusted_schema_enabled = connection
-            .pragma_query_value(None, "trusted_schema", |row| row.get::<_, bool>(0))
+            .query_row("PRAGMA trusted_schema", [], |row| row.get::<_, bool>(0))
             .expect("read trusted schema setting");
 
         assert!(!trusted_schema_enabled);

@@ -13,7 +13,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button, Card, DatePicker, SegmentedControl, Select } from '@/design-system';
-import { localServiceClient } from '@/platform/local-service';
+import { LocalServiceError, localServiceClient } from '@/platform/local-service';
 import { BreakdownCard, MetricCard, TrendChart } from './StatisticsCharts';
 import type { LoadState, StatisticsRequest, StatisticsSnapshot } from './statisticsData';
 import {
@@ -23,6 +23,7 @@ import {
   formatNumber,
   parseDateInput,
   parseStatistics,
+  parseStatisticsDetails,
   providerLabel,
   statisticsQuery,
 } from './statisticsData';
@@ -89,8 +90,11 @@ export function StatisticsSettingsSection({ onOpenConversation }: StatisticsSett
         if (requestGeneration.current !== generation) return;
         setSnapshot(loaded);
         setLoadState('loaded');
-      } catch {
-        if (requestGeneration.current === generation) setLoadState('failed');
+      } catch (error) {
+        if (requestGeneration.current !== generation) return;
+        setLoadState('failed');
+        const code = error instanceof LocalServiceError ? error.code : 'unexpected_error';
+        globalThis.reportError(new Error(`Usage statistics load failed (${code}).`));
       }
     };
     void load();
@@ -120,11 +124,11 @@ export function StatisticsSettingsSection({ onOpenConversation }: StatisticsSett
       const requestRows: StatisticsRequest[] = [];
       let total = snapshot.requestDetailCount;
       let offset = 0;
-      const pageSize = 200;
+      const pageSize = 1000;
       while (offset < total) {
-        const page = parseStatistics(
+        const page = parseStatisticsDetails(
           await localServiceClient.call(
-            'statistics.get',
+            'statistics.details',
             statisticsQuery({
               fromDate: from,
               toDate: to,
@@ -132,10 +136,11 @@ export function StatisticsSettingsSection({ onOpenConversation }: StatisticsSett
               modelId: modelId || null,
               offset,
               limit: pageSize,
+              includeTotal: offset === 0,
             }),
           ),
         );
-        total = page.requestDetailCount;
+        if (page.requestDetailCount !== null) total = page.requestDetailCount;
         if (page.requests.length === 0) break;
         requestRows.push(...page.requests);
         offset += page.requests.length;

@@ -263,11 +263,14 @@ pub(crate) fn context_usage_tool_definitions(
     reported_supports_tool_calls: Option<bool>,
     copilot_request_protocol: Option<&str>,
 ) -> Result<Vec<(String, Value)>, ServiceError> {
+    let opencode_model = match (provider_id, model_id) {
+        ("opencode", Some(model_id)) => models::route_model_metadata(storage, model_id)?,
+        _ => None,
+    };
     let uses_responses_api = if provider_id == "opencode" {
-        match model_id {
-            Some(model_id) => models::is_responses_api_model(storage, model_id)?,
-            None => false,
-        }
+        opencode_model
+            .as_ref()
+            .is_some_and(|model| model.uses_responses_api)
     } else if provider_id == "copilot" {
         copilot_request_protocol == Some("responses")
     } else {
@@ -276,10 +279,7 @@ pub(crate) fn context_usage_tool_definitions(
     let copilot_uses_messages_api =
         provider_id == "copilot" && copilot_request_protocol == Some("messages");
     let supports_tool_calls = match provider_id {
-        "opencode" => match model_id {
-            Some(model_id) => models::supports_tool_calls(storage, model_id)?,
-            None => None,
-        },
+        "opencode" => opencode_model.and_then(|model| model.supports_tool_calls),
         "chatgpt" => Some(true),
         _ => reported_supports_tool_calls,
     };
