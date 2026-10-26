@@ -951,12 +951,11 @@ Hosted sharing remains out of scope under the current product decision.
 
 ### 55. Add unified keyboard-first command palette (Ctrl+K)
 
-**Status: Windows-first command palette implemented, P1; recent-file search and full workflow coverage remain open.** The palette opens with `Ctrl+K` or its title-bar button. Fuzzy search covers recent and matching conversations, projects, models, saved assistant profiles, workspace surfaces, and settings sections. Actions start a new chat, start a project-scoped chat or a chat with a saved assistant profile, open an existing conversation, select a model, navigate to a workspace surface or settings section, and switch the theme. The modal focuses its search field, supports arrow-key selection, Enter, and Escape, and has localized labels and loading, empty, and unavailable states.
+**Status: Windows-first command palette implemented, P1; platform-specific shortcut labels and full workflow coverage remain open.** The palette opens with `Ctrl+K` or its title-bar button. Fuzzy search covers recent and matching conversations, projects, models, saved assistant profiles, workspace surfaces, and settings sections. Actions start a new chat, start a project-scoped chat or a chat with a saved assistant profile, open an existing conversation, select a model, navigate to a workspace surface or settings section, and switch the theme. The modal focuses its search field, supports arrow-key selection, Enter, and Escape, and has localized labels and loading, empty, and unavailable states.
 
-- Add recent-file search and direct export or other bounded workspace actions when their existing contracts can be reused safely.
 - Review platform-specific shortcut labels and test the complete keyboard flow on each supported desktop platform.
 
-**Exit criteria:** the remaining search and action categories are implemented and the palette provides accessible, mouse-free navigation for the supported core workflows.
+**Exit criteria:** the existing search and action categories are fully covered, and the palette provides accessible, mouse-free navigation for the supported core workflows.
 
 ### 56. Add multi-root workspace support
 
