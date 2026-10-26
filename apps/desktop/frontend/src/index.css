@@ -104,6 +104,12 @@
   border: 1px solid rgb(var(--border) / var(--border-alpha, 0.1));
 }
 
+.app-shell-main:has(.chat-workspace-layout) {
+  padding: 8px;
+  border-radius: var(--radius-card);
+  background: rgb(var(--surface));
+}
+
 .app-shell-footer {
   grid-column: 1 / -1;
   grid-row: 3;
@@ -158,12 +164,13 @@
 }
 
 .conversation-sidebar-shell {
-  --conversation-sidebar-width: min(var(--conversation-sidebar-custom-width, 280px), calc(100vw - 60px));
+  --conversation-sidebar-width: min(var(--conversation-sidebar-custom-width, 280px), calc(100% - 60px));
   display: flex;
   width: var(--conversation-sidebar-width);
   min-height: 0;
   flex-shrink: 0;
   overflow: hidden;
+  border-radius: var(--radius-card) 0 0 var(--radius-card);
   opacity: 1;
   transition:
     width 240ms cubic-bezier(0.22, 1, 0.36, 1),
@@ -383,7 +390,7 @@
 
 @media (min-width: 1440px) {
   .conversation-sidebar-shell {
-    --conversation-sidebar-width: min(var(--conversation-sidebar-custom-width, 320px), calc(100vw - 60px));
+    --conversation-sidebar-width: min(var(--conversation-sidebar-custom-width, 320px), calc(100% - 60px));
   }
 
   .conversation-sidebar {
@@ -589,6 +596,10 @@ label:has(> input:focus) .openchat-segment-label {
 
 .chat-file-changes-list {
   flex: 4 1 0%;
+}
+
+.chat-workspace-layout {
+  border-radius: 0 var(--radius-card) var(--radius-card) 0;
 }
 
 @media (max-width: 899px), (max-height: 599px) {
@@ -1402,7 +1413,7 @@ html[data-motion-input='keyboard'] .openchat-popover-enter[data-state='closed'] 
   }
 
   .conversation-sidebar-shell {
-    --conversation-sidebar-width: min(var(--conversation-sidebar-custom-width, 300px), calc(100vw - 52px));
+    --conversation-sidebar-width: min(var(--conversation-sidebar-custom-width, 300px), calc(100% - 60px));
   }
 
   .conversation-sidebar {
