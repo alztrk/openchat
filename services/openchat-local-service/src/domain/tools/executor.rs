@@ -146,6 +146,8 @@ fn is_permission_rule_tool(name: &str) -> bool {
         name,
         "list_files"
             | "search_files"
+            | "search_project_code"
+            | "query_language_server"
             | "read_file"
             | "write_file"
             | "edit_file"
@@ -1411,6 +1413,31 @@ impl ToolExecutor {
                 )
                 .await
             }
+            ToolOperation::CodeSearch { query, mode, limit } => execute_project_code_search(
+                storage,
+                &snapshot.conversation_id,
+                &prepared,
+                query,
+                mode,
+                *limit,
+            ),
+            ToolOperation::LspQuery {
+                action,
+                line,
+                character,
+                limit,
+            } => {
+                crate::tools::lsp::execute_lsp_query(
+                    &prepared.root,
+                    &prepared.relative_path,
+                    action,
+                    *line,
+                    *character,
+                    *limit,
+                    cancellation,
+                )
+                .await
+            }
             #[cfg(windows)]
             ToolOperation::ProjectTool {
                 executable,
@@ -2531,11 +2558,15 @@ mod policy_tests {
     fn permission_rule_parser_rejects_unknown_tools_and_values() {
         let valid = json!({
             "execute_command": "ask",
+            "search_project_code": "allow",
+            "query_language_server": "ask",
             "git_diff": "allow",
             "project_tool__lint": "deny"
         });
         let rules = parse_tool_permission_rules(Some(&valid)).expect("valid rules");
         assert_eq!(rules["execute_command"], ToolPermissionRule::Ask);
+        assert_eq!(rules["search_project_code"], ToolPermissionRule::Allow);
+        assert_eq!(rules["query_language_server"], ToolPermissionRule::Ask);
         assert_eq!(rules["project_tool__lint"], ToolPermissionRule::Deny);
 
         #[cfg(windows)]
@@ -2843,6 +2874,130 @@ fn image_storage_cleanup_error() -> ServiceError {
 
 fn is_image_cancellation(error: &ServiceError) -> bool {
     matches!(error.code, "operation_cancelled" | "request_cancelled")
+}
+
+fn execute_project_code_search(
+    storage: &AppStorage,
+    conversation_id: &str,
+    prepared: &PreparedToolCall,
+    query: &str,
+    mode: &str,
+    limit: usize,
+) -> Value {
+    let result = (|| -> Result<Value, ServiceError> {
+        let connection = storage.connect().map_err(|error| {
+            ServiceError::new(
+                "project_index_unavailable",
+                "The local project index could not be accessed.",
+                true,
+            )
+            .with_details(error.to_string())
+        })?;
+        let project_id = connection
+            .query_row(
+                "SELECT project_id FROM conversations WHERE id = ?1",
+                [conversation_id],
+                |row| row.get::<_, Option<String>>(0),
+            )
+            .optional()
+            .map_err(|error| {
+                ServiceError::new(
+                    "project_index_unavailable",
+                    "The local project index could not be accessed.",
+                    true,
+                )
+                .with_details(error.to_string())
+            })?
+            .flatten()
+            .ok_or_else(|| {
+                ServiceError::new(
+                    "project_required",
+                    "Project code search requires an attached project.",
+                    false,
+                )
+            })?;
+        let memory = if mode == "all" || mode == "memory" {
+            crate::project_memory::search(&connection, &project_id, query, limit)?
+                .into_iter()
+                .map(|hit| json!({"id": hit.id, "origin": hit.origin, "content": hit.content}))
+                .collect::<Vec<_>>()
+        } else {
+            Vec::new()
+        };
+        let needs_code_index = mode != "memory";
+        let state = if needs_code_index {
+            Some(crate::project_index::snapshot(&connection, &project_id)?)
+        } else {
+            None
+        };
+        if let Some(state) = state.as_ref()
+            && !state.enabled
+        {
+            return Ok(json!({
+                "status": "index_disabled",
+                "matches": [],
+                "symbols": [],
+                "memory": memory
+            }));
+        }
+        if let Some(state) = state.as_ref()
+            && state.status != "current"
+        {
+            let index_scheduled = crate::project_index::schedule_sync_on_connection(
+                &connection,
+                storage.database_queue_handle(),
+                &project_id,
+                &prepared.root,
+            )
+            .is_ok();
+            return Ok(json!({
+                "status": if index_scheduled { "indexing" } else { "stale" },
+                "indexScheduled": index_scheduled,
+                "indexedFiles": state.indexed_files,
+                "indexedSymbols": state.indexed_symbols,
+                "memory": memory
+            }));
+        }
+
+        let matches = if mode == "all" || mode == "text" {
+            crate::project_index::search_current_hits(&connection, &project_id, query)?
+                .into_iter()
+                .take(limit)
+                .map(|hit| json!({"path": hit.path, "excerpt": hit.excerpt}))
+                .collect::<Vec<_>>()
+        } else {
+            Vec::new()
+        };
+        let symbols = if mode == "all" || mode == "symbol" {
+            crate::project_index::search_symbols(&connection, &project_id, query, limit)?
+                .into_iter()
+                .map(|hit| {
+                    json!({
+                        "path": hit.path,
+                        "name": hit.name,
+                        "kind": hit.kind,
+                        "startLine": hit.start_line,
+                        "endLine": hit.end_line,
+                    })
+                })
+                .collect::<Vec<_>>()
+        } else {
+            Vec::new()
+        };
+        Ok(json!({
+            "status": if needs_code_index { "current" } else { "memory_only" },
+            "matches": matches,
+            "symbols": symbols,
+            "memory": memory
+        }))
+    })();
+    result.unwrap_or_else(|error| {
+        let mut output = tool_error(error.code, &error.message);
+        if let Some(details) = error.details {
+            output["error"]["details"] = json!(details);
+        }
+        output
+    })
 }
 
 fn tool_error(code: &str, message: &str) -> Value {

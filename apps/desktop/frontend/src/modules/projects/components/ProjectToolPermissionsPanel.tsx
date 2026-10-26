@@ -14,6 +14,8 @@ import { localServiceClient } from '@/platform/local-service';
 const standardTools = [
   'list_files',
   'search_files',
+  'search_project_code',
+  'query_language_server',
   'read_file',
   'write_file',
   'edit_file',
@@ -224,6 +226,8 @@ function toolLabel(
   const labelKey: Partial<Record<string, keyof typeof import('@/localization/locales/en.json')>> = {
     list_files: 'toolListFiles',
     search_files: 'toolSearchFiles',
+    search_project_code: 'toolSearchProjectCode',
+    query_language_server: 'toolQueryLanguageServer',
     read_file: 'toolReadFile',
     write_file: 'toolWriteFile',
     edit_file: 'toolEditFile',

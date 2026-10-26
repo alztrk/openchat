@@ -1322,3 +1322,75 @@ fn credential_redaction_migration_rebuilds_derived_indexes_only() {
     assert!(inserted_index.contains("[REDACTED]"));
     assert!(!inserted_index.contains("inserted-secret"));
 }
+
+#[test]
+fn migration_44_creates_the_project_symbol_lookup_index() {
+    let connection = memory_index_repair_fixture(42);
+    connection
+        .execute(
+            "INSERT INTO project_index_files (project_id, path, modified_ns, size, content)
+             VALUES ('project-1', 'src/lib.rs', 1, 0, '')",
+            [],
+        )
+        .expect("store an existing indexed project file");
+    connection
+        .execute(
+            "INSERT INTO project_index_state
+                (project_id, enabled, status, indexed_files, indexed_bytes)
+             VALUES ('project-1', 1, 'current', 1, 0)",
+            [],
+        )
+        .expect("store an existing project index state");
+
+    assert_eq!(
+        initialize_schema(&connection, 44).expect("add project symbol index"),
+        44
+    );
+    assert_eq!(
+        connection
+            .query_row(
+                "SELECT symbols_indexed FROM project_index_files
+                 WHERE project_id = 'project-1' AND path = 'src/lib.rs'",
+                [],
+                |row| row.get::<_, bool>(0),
+            )
+            .expect("read the symbol index state"),
+        false
+    );
+    assert_eq!(
+        connection
+            .query_row(
+                "SELECT status FROM project_index_state WHERE project_id = 'project-1'",
+                [],
+                |row| row.get::<_, String>(0),
+            )
+            .expect("read the migrated index status"),
+        "stale"
+    );
+    connection
+        .execute(
+            "INSERT INTO project_index_symbols
+                (project_id, path, name, kind, start_line, end_line)
+             VALUES ('project-1', 'src/lib.rs', 'launch', 'function', 4, 8)",
+            [],
+        )
+        .expect("store an indexed symbol");
+
+    assert_eq!(
+        connection
+            .query_row(
+                "SELECT name, start_line, end_line FROM project_index_symbols
+                 WHERE project_id = 'project-1' AND name = 'launch'",
+                [],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, i64>(1)?,
+                        row.get::<_, i64>(2)?,
+                    ))
+                },
+            )
+            .expect("read indexed symbol"),
+        ("launch".to_owned(), 4, 8)
+    );
+}

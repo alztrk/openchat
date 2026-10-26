@@ -1340,5 +1340,32 @@ pub(super) fn apply_agent_migrations(
         current_version = 42;
     }
 
+    if current_version < 44 && target_version >= 44 {
+        let transaction = connection.unchecked_transaction()?;
+        transaction.execute_batch(
+            "CREATE TABLE project_index_symbols (
+                project_id TEXT NOT NULL,
+                path TEXT NOT NULL,
+                name TEXT NOT NULL,
+                kind TEXT NOT NULL,
+                start_line INTEGER NOT NULL,
+                end_line INTEGER NOT NULL,
+                PRIMARY KEY (project_id, path, name, kind, start_line)
+            );
+            CREATE INDEX project_index_symbols_lookup_idx
+                ON project_index_symbols (project_id, name COLLATE NOCASE, path, start_line);
+            ALTER TABLE project_index_files
+                ADD COLUMN symbols_indexed INTEGER NOT NULL DEFAULT 0
+                    CHECK (symbols_indexed IN (0, 1));
+            UPDATE project_index_state SET status = 'stale' WHERE enabled = 1;",
+        )?;
+        transaction.execute(
+            "INSERT INTO openchat_backend_migrations (version, applied_at_unix_ms) VALUES (44, ?1)",
+            [unix_time_millis()?],
+        )?;
+        transaction.commit()?;
+        current_version = 44;
+    }
+
     Ok(current_version)
 }

@@ -11,6 +11,8 @@ const toolPermissionModeKey = 'tools.permission_mode';
 const projectToolRuleNames = new Set([
   'list_files',
   'search_files',
+  'search_project_code',
+  'query_language_server',
   'read_file',
   'write_file',
   'edit_file',

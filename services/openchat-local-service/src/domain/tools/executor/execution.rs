@@ -217,6 +217,18 @@ pub(crate) async fn execute_model_tool_with_workspace_roots(
                 "message": "This configured project tool is not supported by the current executor."
             }});
         }
+        ToolOperation::CodeSearch { .. } => {
+            return json!({"error": {
+                "code": "tool_execution_unavailable",
+                "message": "Project code search must run through the permission-aware executor."
+            }});
+        }
+        ToolOperation::LspQuery { .. } => {
+            return json!({"error": {
+                "code": "tool_execution_unavailable",
+                "message": "Language server queries must run through the permission-aware executor."
+            }});
+        }
         ToolOperation::Info => get_file_info(&prepared.root, &prepared.relative_path),
     };
 

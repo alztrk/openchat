@@ -244,6 +244,47 @@ remain separate Rust processes with their existing storage and RPC boundaries.
   When the selected model advertises an input limit, notes and retrieval share
   an additional budget capped at 8% of that window. The fixed byte caps apply
   when the provider does not report a limit.
+- Project creation schedules the code index on a bounded background queue. The
+  index currently covers the project's primary folder, follows `.gitignore`,
+  reads at most 20,000 files and 128 MiB per scan, indexes at most 64 MiB of
+  text, and stores up to 100,000 Tree-sitter symbols
+  across supported Bash, C, C++, C#, Go, Java, PHP, Python, Rust, JavaScript,
+  and TypeScript files. Symbol results include file paths and 1-based line
+  ranges. `search_project_code` returns bounded text excerpts and symbol
+  locations, so an agent can locate relevant code before requesting a narrow
+  `read_file` range. This avoids sending unrelated file contents into a request;
+  token savings have not been measured. The per-file index records whether
+  symbol extraction has run, including files with no declarations, so unchanged
+  files are not repeatedly parsed. Migration marks existing indexes stale for
+  one symbol-aware refresh.
+- `read_file` reads a requested range of at most 500 lines, caps the returned
+  source text at 64 KiB, and rejects files larger than 64 MiB. The response
+  also includes line-number objects and hashline anchors, so serialized JSON is
+  larger than the source-text cap. A small file can be returned in full when
+  the requested range covers it, but the tool does not read every file in full
+  by default.
+- `query_language_server` exposes read-only definition, reference, hover, and
+  diagnostic queries to the agent without adding an editor UI. It lazily starts
+  a supported server only when requested, reuses at most two project/server
+  sessions for up to five idle minutes, and never downloads a server. The
+  initial catalog includes TypeScript Language Server, Pyright, rust-analyzer,
+  gopls, clangd, csharp-ls, PHPactor, Bash Language Server, Ruby LSP, LuaLS,
+  sqls, and Biome diagnostics. TypeScript Language Server, Pyright, Bash
+  Language Server, and Biome can be launched from globally installed npm
+  packages when Node.js is on `PATH`. Dart uses `dart language-server`.
+  JavaScript/TypeScript diagnostics use
+  Biome when `biome.json` or `biome.jsonc` is present, and TypeScript Language
+  Server otherwise. Other catalog entries require their `.exe` on `PATH`;
+  npm-backed servers are resolved from global npm package directories found
+  through `PATH`, not from project-local `node_modules`.
+  The sandboxed executor currently supports Windows only and denies network
+  access.
+- Project code symbols, file text, durable notes, and prior project conversations
+  remain separate local sources. `search_project_code` can query file text,
+  symbols, and enabled durable notes together while keeping each result group
+  distinct; prior conversation search remains its own opt-in retrieval source.
+  Chat context assembly applies the existing project-memory and retrieval
+  limits, and code search returns source locations for narrow follow-up reads.
 - Read-only Git status, diff, and history use fixed arguments, bounded output,
   and a five-second process deadline. The repository-classification probe also
   has a deadline and kills its child when the task is dropped.

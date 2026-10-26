@@ -183,18 +183,44 @@ pub(super) async fn dispatch(
             let mut connection = storage
                 .connect()
                 .map_err(|_| project_index_storage_error())?;
+            crate::project_index::set_enabled(&mut connection, project_id, enabled)?;
+            drop(connection);
+            let index_scheduled = if enabled {
+                match project_root_for_mcp(storage, project_id) {
+                    Ok(root) => crate::project_index::schedule_sync(
+                        storage.database_queue_handle(),
+                        project_id,
+                        &root,
+                    )
+                    .is_ok(),
+                    Err(_) => false,
+                }
+            } else {
+                false
+            };
+            let connection = storage
+                .connect()
+                .map_err(|_| project_index_storage_error())?;
             Ok(json!({
-                "index": crate::project_index::set_enabled(&mut connection, project_id, enabled)?
+                "index": crate::project_index::snapshot(&connection, project_id)?,
+                "indexScheduled": index_scheduled
             }))
         }
         "project.index.sync" => {
             let project_id = required_string(params, "projectId")?;
             let project_root = project_root_for_mcp(storage, project_id)?;
-            let mut connection = storage
+            let index_scheduled = crate::project_index::schedule_sync(
+                storage.database_queue_handle(),
+                project_id,
+                &project_root,
+            )
+            .is_ok();
+            let connection = storage
                 .connect()
                 .map_err(|_| project_index_storage_error())?;
             Ok(json!({
-                "index": crate::project_index::sync(&mut connection, project_id, &project_root)?
+                "index": crate::project_index::snapshot(&connection, project_id)?,
+                "indexScheduled": index_scheduled
             }))
         }
         "project.index.clear" => {

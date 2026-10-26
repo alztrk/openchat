@@ -471,8 +471,23 @@ fn create_project(params: &Value, storage: &AppStorage) -> Result<Value, Service
             params![id, folder_path, now],
         )
         .map_err(storage_error)?;
+    transaction
+        .execute(
+            "INSERT INTO project_index_state
+                (project_id, enabled, status, indexed_files, indexed_bytes, updated_at_unix_ms)
+             VALUES (?1, 1, 'stale', 0, 0, NULL)",
+            [id],
+        )
+        .map_err(storage_error)?;
     transaction.commit().map_err(storage_error)?;
-    Ok(json!({"saved": true}))
+    drop(connection);
+    let index_scheduled = crate::project_index::schedule_sync(
+        storage.database_queue_handle(),
+        id,
+        Path::new(&folder_path),
+    )
+    .is_ok();
+    Ok(json!({"saved": true, "indexScheduled": index_scheduled}))
 }
 
 fn add_project_workspace_root(params: &Value, storage: &AppStorage) -> Result<Value, ServiceError> {

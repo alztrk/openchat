@@ -10,6 +10,7 @@ interface ProjectIndexState {
   status: string;
   indexedFiles: number;
   indexedBytes: number;
+  indexedSymbols: number;
   errorDetails: string | null;
 }
 
@@ -44,6 +45,32 @@ export function ProjectIndexPanel({ project, onClose }: ProjectIndexPanelProps) 
       current = false;
     };
   }, [project.id]);
+
+  useEffect(() => {
+    if (index?.status !== 'queued' && index?.status !== 'indexing') return;
+    let active = true;
+    let timeout: number | undefined;
+    const poll = async () => {
+      try {
+        const loaded = await loadIndex(project.id);
+        if (!active) return;
+        setIndex(loaded);
+        if (loaded.status === 'queued' || loaded.status === 'indexing') {
+          timeout = window.setTimeout(() => void poll(), 800);
+        }
+      } catch (cause: unknown) {
+        if (active) {
+          setError('projectIndexLoadFailed');
+          setErrorDetails(readErrorDetails(cause));
+        }
+      }
+    };
+    timeout = window.setTimeout(() => void poll(), 800);
+    return () => {
+      active = false;
+      if (timeout !== undefined) window.clearTimeout(timeout);
+    };
+  }, [index?.status, project.id]);
 
   const reload = async () => {
     setIsBusy(true);
@@ -95,7 +122,12 @@ export function ProjectIndexPanel({ project, onClose }: ProjectIndexPanelProps) 
             />
           </div>
           <p className="text-sm text-secondary-text">
-            {t('projectIndexStatus', { status: index.status, files: index.indexedFiles, bytes: index.indexedBytes })}
+            {t('projectIndexStatus', {
+              status: index.status,
+              files: index.indexedFiles,
+              symbols: index.indexedSymbols,
+              bytes: index.indexedBytes,
+            })}
           </p>
           {index.status === 'stale' ? (
             <div className="grid gap-1 text-sm text-destructive" role="alert">
@@ -153,6 +185,7 @@ function parseIndex(value: unknown): ProjectIndexState {
     typeof value.status !== 'string' ||
     !isCount(value.indexedFiles) ||
     !isCount(value.indexedBytes) ||
+    !isCount(value.indexedSymbols) ||
     (value.errorDetails !== null && typeof value.errorDetails !== 'string')
   ) {
     throw new Error('The project index state is invalid.');
@@ -162,6 +195,7 @@ function parseIndex(value: unknown): ProjectIndexState {
     status: value.status,
     indexedFiles: value.indexedFiles,
     indexedBytes: value.indexedBytes,
+    indexedSymbols: value.indexedSymbols,
     errorDetails: value.errorDetails === null ? null : value.errorDetails.slice(0, 2048),
   };
 }

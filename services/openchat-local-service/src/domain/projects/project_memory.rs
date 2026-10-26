@@ -47,6 +47,13 @@ pub(crate) struct ProjectMemorySnapshot {
     pub(crate) total_bytes: usize,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct ProjectMemorySearchHit {
+    pub(crate) id: String,
+    pub(crate) content: String,
+    pub(crate) origin: String,
+}
+
 /// Reads the current project memory without enabling it or creating state.
 pub(crate) fn snapshot(
     connection: &StorageConnection<'_>,
@@ -77,6 +84,60 @@ pub(crate) fn context_from_snapshot(snapshot: &ProjectMemorySnapshot) -> Option<
             .collect::<Vec<_>>()
             .join("\n\n"),
     )
+}
+
+/// Searches the small, opt-in project note set without mixing it into the file index.
+pub(crate) fn search(
+    connection: &StorageConnection<'_>,
+    project_id: &str,
+    query: &str,
+    limit: usize,
+) -> Result<Vec<ProjectMemorySearchHit>, ServiceError> {
+    let snapshot = snapshot(connection, project_id)?;
+    if !snapshot.enabled || query.trim().is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut seen_terms = std::collections::HashSet::new();
+    let query_terms = query
+        .split(|character: char| !character.is_alphanumeric() && character != '_')
+        .filter(|term| term.chars().count() >= 3)
+        .map(crate::chatgpt_store::turkish_search::turkish_to_ascii)
+        .filter(|term| !term.is_empty() && seen_terms.insert(term.clone()))
+        .collect::<Vec<_>>();
+    if query_terms.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let mut matches = snapshot
+        .items
+        .into_iter()
+        .filter_map(|item| {
+            let content = crate::chatgpt_store::turkish_search::turkish_to_ascii(&item.content);
+            let content_terms = content
+                .split(|character: char| !character.is_alphanumeric() && character != '_')
+                .collect::<Vec<_>>();
+            let score = query_terms
+                .iter()
+                .filter(|term| content_terms.contains(&term.as_str()))
+                .count();
+            (score > 0).then_some((score, item))
+        })
+        .collect::<Vec<_>>();
+    matches.sort_by(|(left_score, left), (right_score, right)| {
+        right_score
+            .cmp(left_score)
+            .then_with(|| right.updated_at_unix_ms.cmp(&left.updated_at_unix_ms))
+            .then_with(|| left.id.cmp(&right.id))
+    });
+    Ok(matches
+        .into_iter()
+        .take(limit.clamp(1, MAX_ITEMS))
+        .map(|(_, item)| ProjectMemorySearchHit {
+            id: item.id,
+            content: item.content,
+            origin: item.origin,
+        })
+        .collect())
 }
 
 /// Enables or disables injection of project notes in future runs.
@@ -504,7 +565,7 @@ mod tests {
     use std::{fs, path::PathBuf};
 
     use super::{
-        MAX_ITEM_BYTES, MAX_ITEMS, add, add_assistant, context, delete,
+        MAX_ITEM_BYTES, MAX_ITEMS, add, add_assistant, context, delete, search,
         set_assistant_saves_enabled, set_enabled, snapshot, update,
     };
     use crate::storage::AppStorage;
@@ -592,6 +653,40 @@ mod tests {
         assert!(!other_project.enabled);
         assert!(other_project.items.is_empty());
         assert!(enabled.enabled);
+    }
+
+    #[test]
+    fn memory_search_is_opt_in_scoped_and_ranks_matching_notes() {
+        let (_directory, storage) = test_storage();
+        let mut connection = storage.connect().expect("connect test storage");
+        add(
+            &mut connection,
+            "project-a",
+            "Use cargo test for Rust changes",
+        )
+        .expect("add Rust test note");
+        add(
+            &mut connection,
+            "project-a",
+            "Keep API errors typed and stable",
+        )
+        .expect("add API note");
+
+        assert!(
+            search(&connection, "project-a", "cargo test", 5)
+                .expect("search disabled notes")
+                .is_empty()
+        );
+        set_enabled(&mut connection, "project-a", true).expect("enable project memory");
+
+        let hits = search(&connection, "project-a", "cargo test", 5).expect("search enabled notes");
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].content, "Use cargo test for Rust changes");
+        assert!(
+            search(&connection, "project-b", "cargo test", 5)
+                .expect("search another project")
+                .is_empty()
+        );
     }
 
     #[test]
