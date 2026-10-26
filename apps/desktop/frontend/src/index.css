@@ -106,7 +106,7 @@
 
 .app-shell-main:has(.chat-workspace-layout) {
   --chat-frame-radius: 20px;
-  padding: 8px;
+  border: 0;
   background: rgb(var(--surface));
 }
 
