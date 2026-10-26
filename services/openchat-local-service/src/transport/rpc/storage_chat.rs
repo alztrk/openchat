@@ -525,7 +525,7 @@ fn add_project_workspace_root(params: &Value, storage: &AppStorage) -> Result<Va
         )
         .map_err(storage_error)?;
     transaction.commit().map_err(storage_error)?;
-    Ok(json!({"saved": true}))
+    Ok(json!({"saved": true, "rootPath": root_path}))
 }
 
 fn validate_project_folder_path(value: &str) -> Result<String, ServiceError> {
@@ -2074,4 +2074,160 @@ fn not_found(resource: &str) -> ServiceError {
         format!("The requested {resource} was not found."),
         false,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{fs, path::PathBuf};
+
+    use serde_json::{Value, json};
+    use uuid::Uuid;
+
+    use crate::storage::AppStorage;
+
+    use super::dispatch;
+
+    #[tokio::test]
+    async fn added_workspace_root_returns_canonical_path_and_can_be_removed() {
+        let directory = TestDirectory::new();
+        let storage = AppStorage::open_at(directory.0.join("data")).expect("open test storage");
+        storage
+            .prepare_chat_schema_migration(crate::CHAT_SCHEMA_VERSION)
+            .expect("prepare current chat schema");
+        storage
+            .initialize_backend_schema()
+            .expect("initialize current backend schema");
+
+        let primary_folder = directory.0.join("primary");
+        let secondary_folder = directory.0.join("secondary");
+        fs::create_dir(&primary_folder).expect("create primary workspace root");
+        fs::create_dir(&secondary_folder).expect("create secondary workspace root");
+        let primary_path = fs::canonicalize(&primary_folder)
+            .expect("canonicalize primary root")
+            .to_str()
+            .expect("primary path is valid UTF-8")
+            .to_owned();
+        let secondary_canonical_path = fs::canonicalize(&secondary_folder)
+            .expect("canonicalize secondary root")
+            .to_str()
+            .expect("secondary path is valid UTF-8")
+            .to_owned();
+        let secondary_input_path = directory
+            .0
+            .join(".")
+            .join("secondary")
+            .to_str()
+            .expect("secondary input path is valid UTF-8")
+            .to_owned();
+
+        dispatch(
+            "storage.chat.projects.create",
+            &json!({
+                "input": {
+                    "id": "test-project",
+                    "name": "Test project",
+                    "folderPath": primary_path
+                }
+            }),
+            &storage,
+        )
+        .await
+        .expect("create project with primary root");
+
+        let added = dispatch(
+            "storage.chat.projects.workspace.add",
+            &json!({
+                "input": {
+                    "projectId": "test-project",
+                    "folderPath": secondary_input_path
+                }
+            }),
+            &storage,
+        )
+        .await
+        .expect("add secondary workspace root");
+        let added_path = added["rootPath"]
+            .as_str()
+            .expect("added workspace root path");
+        assert_eq!(added_path, secondary_canonical_path);
+        assert_ne!(added_path, secondary_input_path);
+
+        let projects = dispatch("storage.chat.projects.list", &Value::Null, &storage)
+            .await
+            .expect("list project workspace roots");
+        assert_eq!(
+            projects["projects"][0]["workspaceRoots"][0],
+            json!(primary_path)
+        );
+        assert_eq!(
+            projects["projects"][0]["workspaceRoots"][1],
+            json!(added_path)
+        );
+
+        let duplicate = dispatch(
+            "storage.chat.projects.workspace.add",
+            &json!({
+                "input": {
+                    "projectId": "test-project",
+                    "folderPath": primary_path
+                }
+            }),
+            &storage,
+        )
+        .await
+        .expect_err("overlapping workspace roots are rejected");
+        assert_eq!(duplicate.code, "invalid_request_params");
+
+        let protected_primary = dispatch(
+            "storage.chat.projects.workspace.remove",
+            &json!({
+                "input": {
+                    "projectId": "test-project",
+                    "rootPath": primary_path
+                }
+            }),
+            &storage,
+        )
+        .await
+        .expect_err("primary workspace root cannot be removed");
+        assert_eq!(protected_primary.code, "storage_chat_not_found");
+
+        dispatch(
+            "storage.chat.projects.workspace.remove",
+            &json!({
+                "input": {
+                    "projectId": "test-project",
+                    "rootPath": added_path
+                }
+            }),
+            &storage,
+        )
+        .await
+        .expect("remove secondary workspace root by canonical path");
+
+        let projects = dispatch("storage.chat.projects.list", &Value::Null, &storage)
+            .await
+            .expect("list project workspace roots after removal");
+        assert_eq!(
+            projects["projects"][0]["workspaceRoots"],
+            json!([primary_path])
+        );
+    }
+
+    struct TestDirectory(PathBuf);
+
+    impl TestDirectory {
+        fn new() -> Self {
+            let path = std::env::temp_dir()
+                .join(format!("openchat-storage-chat-rpc-test-{}", Uuid::new_v4()));
+            fs::create_dir(&path).expect("create isolated test directory");
+            Self(path)
+        }
+    }
+
+    impl Drop for TestDirectory {
+        fn drop(&mut self) {
+            fs::remove_dir_all(&self.0).expect("remove isolated test directory");
+        }
+    }
 }

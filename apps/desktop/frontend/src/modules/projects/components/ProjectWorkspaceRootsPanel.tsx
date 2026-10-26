@@ -26,7 +26,7 @@ export function ProjectWorkspaceRootsPanel({ project }: ProjectWorkspaceRootsPan
 
   useEffect(() => {
     setRoots(project.workspaceRoots);
-  }, [project.id, project.workspaceRoots]);
+  }, [project.workspaceRoots]);
 
   const addRoot = async () => {
     if (isAdding || roots.length >= 8) return;
@@ -37,9 +37,9 @@ export function ProjectWorkspaceRootsPanel({ project }: ProjectWorkspaceRootsPan
       const selection = await selectProjectFolder({ title: t('projectWorkspaceRootChooseFolder') });
       if (!selection) return;
       selectionId = selection.selectionId;
-      await addProjectWorkspaceRoot(project.id, selectionId);
+      const canonicalRootPath = await addProjectWorkspaceRoot(project.id, selectionId);
       selectionId = null;
-      const updatedRoots = [...roots, selection.folderPath];
+      const updatedRoots = [...roots, canonicalRootPath];
       setRoots(updatedRoots);
       useChatStore.setState((state) => ({
         projects: state.projects.map((item) =>

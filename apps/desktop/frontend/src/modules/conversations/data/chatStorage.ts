@@ -141,16 +141,20 @@ export async function createProject(id: string, name: string, folderSelectionId:
   });
 }
 
-export async function addProjectWorkspaceRoot(projectId: string, folderSelectionId: string): Promise<void> {
+export async function addProjectWorkspaceRoot(projectId: string, folderSelectionId: string): Promise<string> {
   const folderPath: unknown = await invoke('consume_project_folder_selection_command', {
     selectionId: folderSelectionId,
   });
   if (typeof folderPath !== 'string' || folderPath.trim().length === 0) {
     throw new Error('The selected workspace folder is invalid.');
   }
-  await localServiceClient.call('storage.chat.projects.workspace.add', {
+  const result = await localServiceClient.call('storage.chat.projects.workspace.add', {
     input: { projectId, folderPath },
   });
+  if (typeof result.rootPath !== 'string' || result.rootPath.length === 0) {
+    throw new Error('The saved workspace folder path is invalid.');
+  }
+  return result.rootPath;
 }
 
 export async function removeProjectWorkspaceRoot(projectId: string, rootPath: string): Promise<void> {
