@@ -40,6 +40,8 @@ const MAX_SYMBOLS_PER_FILE: usize = 512;
 const MAX_PROJECT_SYMBOLS: usize = 100_000;
 const MAX_WORKSPACE_ROOTS: usize = 8;
 const INDEX_QUEUE_CAPACITY: usize = 16;
+const INDEX_BATCH_SIZE: usize = 32;
+const MAX_INDEX_WORKERS: usize = 8;
 
 struct IndexJob {
     database: DatabaseQueueHandle,
@@ -49,6 +51,7 @@ struct IndexJob {
 
 static INDEX_QUEUE: OnceLock<mpsc::Sender<IndexJob>> = OnceLock::new();
 static PENDING_PROJECTS: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+static PROJECT_INDEX_THREAD_POOL: OnceLock<Result<rayon::ThreadPool, String>> = OnceLock::new();
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -86,6 +89,19 @@ struct IndexedFileMetadata {
     content_len: usize,
     symbol_count: usize,
     symbols_indexed: bool,
+}
+
+struct PendingIndexFile {
+    path: String,
+    relative_path: PathBuf,
+    modified_ns: i64,
+    size: i64,
+    read_limit: u64,
+}
+
+struct IndexedFileRead {
+    bytes_read: u64,
+    result: Result<Option<IndexedFile>, std::io::Error>,
 }
 
 #[derive(Clone, Debug)]
@@ -419,8 +435,6 @@ pub(crate) fn sync_roots(
         (old_root, existing)
     };
     let reset_project = old_root.as_deref() != Some(root_signature.as_str());
-    let mut read_options = OpenOptions::new();
-    read_options.read(true);
     let mut visited = HashSet::new();
     let mut files = Vec::with_capacity(existing.len().min(MAX_FILES));
     let mut indexed_bytes = 0usize;
@@ -433,6 +447,8 @@ pub(crate) fn sync_roots(
     for root in &roots {
         let root_directory = Dir::open_ambient_dir(root, ambient_authority())
             .map_err(|error| project_unavailable_error().with_details(bounded_diagnostic(error)))?;
+        let mut pending_files = Vec::with_capacity(INDEX_BATCH_SIZE);
+        let mut pending_scanned_bytes = 0u64;
         let mut walker = WalkBuilder::new(root);
         walker
             .follow_links(false)
@@ -478,6 +494,25 @@ pub(crate) fn sync_roots(
             }
             if entry.path_is_symlink() {
                 continue;
+            }
+            if !pending_files.is_empty()
+                && files.len().saturating_add(pending_files.len()) >= MAX_FILES
+            {
+                let stop_root = process_pending_index_files(
+                    &root_directory,
+                    &mut pending_files,
+                    &mut scanned_bytes,
+                    &mut indexed_bytes,
+                    &mut indexed_symbols,
+                    &mut files,
+                    &mut truncated,
+                    &mut failed,
+                    &mut error_details,
+                )?;
+                pending_scanned_bytes = 0;
+                if stop_root {
+                    break;
+                }
             }
             if files.len() >= MAX_FILES {
                 truncated = true;
@@ -552,6 +587,23 @@ pub(crate) fn sync_roots(
                         || metadata.symbols_indexed)
             });
             if unchanged {
+                if !pending_files.is_empty() {
+                    let stop_root = process_pending_index_files(
+                        &root_directory,
+                        &mut pending_files,
+                        &mut scanned_bytes,
+                        &mut indexed_bytes,
+                        &mut indexed_symbols,
+                        &mut files,
+                        &mut truncated,
+                        &mut failed,
+                        &mut error_details,
+                    )?;
+                    pending_scanned_bytes = 0;
+                    if stop_root {
+                        break;
+                    }
+                }
                 let Some(metadata) = existing.get(&indexed_path) else {
                     record_index_failure(
                         &mut failed,
@@ -592,7 +644,29 @@ pub(crate) fn sync_roots(
             }
             // The walker does not follow links, and the opened directory capability confines
             // this read to the selected root without resolving every file through an ambient path.
-            let Some(read_limit) = bounded_index_read_limit(scanned_bytes, metadata.len()) else {
+            let mut read_limit = bounded_index_read_limit(
+                scanned_bytes.saturating_add(pending_scanned_bytes),
+                metadata.len(),
+            );
+            if read_limit.is_none() && !pending_files.is_empty() {
+                let stop_root = process_pending_index_files(
+                    &root_directory,
+                    &mut pending_files,
+                    &mut scanned_bytes,
+                    &mut indexed_bytes,
+                    &mut indexed_symbols,
+                    &mut files,
+                    &mut truncated,
+                    &mut failed,
+                    &mut error_details,
+                )?;
+                pending_scanned_bytes = 0;
+                if stop_root {
+                    break;
+                }
+                read_limit = bounded_index_read_limit(scanned_bytes, metadata.len());
+            }
+            let Some(read_limit) = read_limit else {
                 truncated = true;
                 set_first_diagnostic(
                     &mut error_details,
@@ -602,73 +676,44 @@ pub(crate) fn sync_roots(
                 );
                 break;
             };
-            let mut bytes = Vec::with_capacity(metadata.len().min(4096) as usize);
-            let read_result = crate::filesystem::open_file_from_directory(
-                &root_directory,
-                &relative_file_path,
-                &read_options,
-            )
-            .and_then(|file| {
-                let opened_metadata = file.metadata()?;
-                if opened_metadata.len() != metadata.len() {
-                    return Err(std::io::Error::other(
-                        "The project file changed while it was being indexed.",
-                    ));
-                }
-                file.take(read_limit).read_to_end(&mut bytes)
-            });
-            scanned_bytes = scanned_bytes.saturating_add(bytes.len() as u64);
-            if let Err(error) = read_result {
-                record_index_failure(&mut failed, &mut error_details, error);
-                continue;
-            }
-            if bytes.len() as u64 != metadata.len() {
-                record_index_failure(
-                    &mut failed,
-                    &mut error_details,
-                    "The file changed while the project index was reading it.",
-                );
-                continue;
-            }
-            if bytes.len() > MAX_FILE_BYTES {
-                continue;
-            }
-            let Ok(content) = String::from_utf8(bytes) else {
-                continue;
-            };
-            let content = tool_index_redaction::redact_tool_index_text(&content);
-            let mut symbols = super::code_symbols::extract_symbols(
-                Path::new(&relative_path),
-                &content,
-                MAX_SYMBOLS_PER_FILE,
-            );
-            let available_symbols = MAX_PROJECT_SYMBOLS.saturating_sub(indexed_symbols);
-            if symbols.len() > available_symbols {
-                symbols.truncate(available_symbols);
-                truncated = true;
-                set_first_diagnostic(
-                    &mut error_details,
-                    format!("The project symbol limit of {MAX_PROJECT_SYMBOLS} was reached."),
-                );
-            }
-            indexed_symbols = indexed_symbols.saturating_add(symbols.len());
-            indexed_bytes = indexed_bytes.saturating_add(content.len());
-            if indexed_bytes > MAX_INDEX_BYTES {
-                truncated = true;
-                set_first_diagnostic(
-                    &mut error_details,
-                    format!("The project index size limit of {MAX_INDEX_BYTES} bytes was reached."),
-                );
-                break;
-            }
-            files.push(IndexedFile {
+            pending_scanned_bytes = pending_scanned_bytes.saturating_add(metadata.len());
+            pending_files.push(PendingIndexFile {
                 path: indexed_path,
+                relative_path: relative_file_path,
                 modified_ns,
                 size,
-                content: Some(content),
-                symbols: Some(symbols),
-                symbols_indexed: true,
+                read_limit,
             });
+            if pending_files.len() >= INDEX_BATCH_SIZE {
+                let stop_root = process_pending_index_files(
+                    &root_directory,
+                    &mut pending_files,
+                    &mut scanned_bytes,
+                    &mut indexed_bytes,
+                    &mut indexed_symbols,
+                    &mut files,
+                    &mut truncated,
+                    &mut failed,
+                    &mut error_details,
+                )?;
+                pending_scanned_bytes = 0;
+                if stop_root {
+                    break;
+                }
+            }
+        }
+        if !pending_files.is_empty() {
+            process_pending_index_files(
+                &root_directory,
+                &mut pending_files,
+                &mut scanned_bytes,
+                &mut indexed_bytes,
+                &mut indexed_symbols,
+                &mut files,
+                &mut truncated,
+                &mut failed,
+                &mut error_details,
+            )?;
         }
         if truncated {
             break;
@@ -864,6 +909,155 @@ pub(crate) fn sync_roots(
     let mut result = snapshot(&connection, project_id)?;
     result.error_details = error_details;
     Ok(result)
+}
+
+fn process_pending_index_files(
+    root_directory: &Dir,
+    pending: &mut Vec<PendingIndexFile>,
+    scanned_bytes: &mut u64,
+    indexed_bytes: &mut usize,
+    indexed_symbols: &mut usize,
+    files: &mut Vec<IndexedFile>,
+    truncated: &mut bool,
+    failed: &mut bool,
+    error_details: &mut Option<String>,
+) -> Result<bool, ServiceError> {
+    use rayon::prelude::*;
+
+    let thread_pool = project_index_thread_pool()?;
+    let indexed_reads = thread_pool.install(|| {
+        pending
+            .par_iter()
+            .map(|file| read_and_index_file(root_directory, file))
+            .collect::<Vec<_>>()
+    });
+    *scanned_bytes = indexed_reads.iter().fold(*scanned_bytes, |total, read| {
+        total.saturating_add(read.bytes_read)
+    });
+    pending.clear();
+
+    for indexed_read in indexed_reads {
+        if files.len() >= MAX_FILES {
+            *truncated = true;
+            set_first_diagnostic(
+                error_details,
+                format!("The project index file limit of {MAX_FILES} files was reached."),
+            );
+            return Ok(true);
+        }
+        let mut file = match indexed_read.result {
+            Ok(Some(file)) => file,
+            Ok(None) => continue,
+            Err(error) => {
+                record_index_failure(failed, error_details, error);
+                continue;
+            }
+        };
+        let Some(content) = file.content.as_deref() else {
+            record_index_failure(
+                failed,
+                error_details,
+                "The project index parser returned a file without content.",
+            );
+            continue;
+        };
+        let Some(mut symbols) = file.symbols.take() else {
+            record_index_failure(
+                failed,
+                error_details,
+                "The project index parser returned a file without symbol data.",
+            );
+            continue;
+        };
+        let available_symbols = MAX_PROJECT_SYMBOLS.saturating_sub(*indexed_symbols);
+        if symbols.len() > available_symbols {
+            symbols.truncate(available_symbols);
+            *truncated = true;
+            set_first_diagnostic(
+                error_details,
+                format!("The project symbol limit of {MAX_PROJECT_SYMBOLS} was reached."),
+            );
+        }
+        *indexed_symbols = indexed_symbols.saturating_add(symbols.len());
+        file.symbols = Some(symbols);
+        let content_len = content.len();
+        *indexed_bytes = indexed_bytes.saturating_add(content_len);
+        if *indexed_bytes > MAX_INDEX_BYTES {
+            *truncated = true;
+            set_first_diagnostic(
+                error_details,
+                format!("The project index size limit of {MAX_INDEX_BYTES} bytes was reached."),
+            );
+            return Ok(true);
+        }
+        files.push(file);
+    }
+    Ok(false)
+}
+
+fn project_index_thread_pool() -> Result<&'static rayon::ThreadPool, ServiceError> {
+    match PROJECT_INDEX_THREAD_POOL.get_or_init(|| {
+        let worker_count = std::thread::available_parallelism()
+            .map_err(|error| error.to_string())?
+            .get()
+            .min(MAX_INDEX_WORKERS);
+        rayon::ThreadPoolBuilder::new()
+            .num_threads(worker_count)
+            .build()
+            .map_err(|error| error.to_string())
+    }) {
+        Ok(thread_pool) => Ok(thread_pool),
+        Err(error) => Err(unavailable_error_with_details(error)),
+    }
+}
+
+fn read_and_index_file(root_directory: &Dir, candidate: &PendingIndexFile) -> IndexedFileRead {
+    let mut bytes = Vec::with_capacity((candidate.size as usize).min(4096));
+    let mut read_options = OpenOptions::new();
+    read_options.read(true);
+    let read_result = crate::filesystem::open_file_from_directory(
+        root_directory,
+        &candidate.relative_path,
+        &read_options,
+    )
+    .and_then(|file| {
+        let opened_metadata = file.metadata()?;
+        if opened_metadata.len() != candidate.size as u64 {
+            return Err(std::io::Error::other(
+                "The project file changed while it was being indexed.",
+            ));
+        }
+        file.take(candidate.read_limit).read_to_end(&mut bytes)
+    });
+    let bytes_read = bytes.len() as u64;
+    let result = read_result.and_then(|_| {
+        if bytes_read != candidate.size as u64 {
+            return Err(std::io::Error::other(
+                "The file changed while the project index was reading it.",
+            ));
+        }
+        if bytes.len() > MAX_FILE_BYTES {
+            return Ok(None);
+        }
+        let Ok(content) = String::from_utf8(bytes) else {
+            return Ok(None);
+        };
+        let content = tool_index_redaction::redact_tool_index_text(&content);
+        let symbols = super::code_symbols::extract_symbols(
+            &candidate.relative_path,
+            &content,
+            MAX_SYMBOLS_PER_FILE,
+        );
+        Ok(Some(IndexedFile {
+            path: candidate.path.clone(),
+            modified_ns: candidate.modified_ns,
+            size: candidate.size,
+            content: Some(content),
+            symbols: Some(symbols),
+            symbols_indexed: true,
+        }))
+    });
+    IndexedFileRead { bytes_read, result }
 }
 
 fn canonicalize_workspace_roots(roots: &[PathBuf]) -> Result<Vec<PathBuf>, ServiceError> {
