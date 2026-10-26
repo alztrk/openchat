@@ -62,13 +62,13 @@ Run development tasks safely through configurable permission boundaries:
    ```bash
    cd apps/desktop/frontend
    npm ci
-   npm run desktop:dev
+   npm run tasks -- dev
    ```
 
 3. Run workspace validation:
    ```bash
    cd apps/desktop/frontend
-   npm run check:workspace
+   npm run tasks -- check
    ```
 
 ### Packaging
@@ -76,7 +76,7 @@ Run development tasks safely through configurable permission boundaries:
 To build the standalone installer:
 ```bash
 cd apps/desktop/frontend
-npm run desktop:build
+npm run tasks -- build
 ```
 
 ---
