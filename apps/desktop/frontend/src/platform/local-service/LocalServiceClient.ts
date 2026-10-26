@@ -36,7 +36,8 @@ export interface NativePermissionDialogCopy {
 
 /** Resolves native permission copy through the same i18next resources as the renderer UI. */
 export async function getNativePermissionDialogCopy(): Promise<NativePermissionDialogCopy> {
-  const { i18n } = await import('@/localization/i18n');
+  const { i18n, i18nReady } = await import('@/localization/i18n');
+  await i18nReady;
   return {
     title: i18n.t('nativePermissionTitle'),
     intro: i18n.t('nativePermissionIntro'),
@@ -511,6 +512,11 @@ export class LocalServiceClient {
       );
     }
 
+    const permissionCopyPromise =
+      method.startsWith('tools.permissions.') || method.startsWith('project.tool_permissions.')
+        ? getNativePermissionDialogCopy()
+        : Promise.resolve(null);
+
     let resolveResult: (value: JsonObject) => void = () => undefined;
     let rejectResult: (reason: LocalServiceError) => void = () => undefined;
     const result = new Promise<JsonObject>((resolve, reject) => {
@@ -536,7 +542,7 @@ export class LocalServiceClient {
         await invoke('write_local_service', {
           generation,
           line: payload,
-          permissionCopy: await getNativePermissionDialogCopy(),
+          permissionCopy: await permissionCopyPromise,
         });
       } catch (error) {
         throw nativeWriteError(error);

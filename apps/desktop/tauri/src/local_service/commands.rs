@@ -383,15 +383,17 @@ pub(crate) async fn write_local_service(
     state: State<'_, LocalServiceState>,
     generation: u64,
     line: String,
-    permission_copy: PermissionDialogCopy,
+    permission_copy: Option<PermissionDialogCopy>,
 ) -> Result<(), String> {
-    permission_copy.validate().map_err(str::to_owned)?;
     let disposition = renderer_rpc_disposition(&line, MAX_RPC_FRAME_BYTES)
         .ok_or_else(|| "The local service request frame is invalid or too large.".to_owned())?;
     if let RendererRpcDisposition::Confirm(details) = disposition {
         let _confirmation_guard = PermissionPolicyConfirmationGuard::acquire(
             &state.permission_policy_confirmation_active,
         )?;
+        let permission_copy = permission_copy
+            .ok_or_else(|| "Native permission dialog text is unavailable.".to_owned())?;
+        permission_copy.validate().map_err(str::to_owned)?;
         let confirmed = confirm_permission_with_os(app, &details, &permission_copy).await?;
         if !confirmed {
             return Err("The permission policy change requires native confirmation.".to_owned());
