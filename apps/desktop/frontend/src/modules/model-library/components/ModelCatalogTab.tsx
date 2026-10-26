@@ -20,7 +20,7 @@ import {
 import { type FormEvent, type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button, Card, Input, Select } from '@/design-system';
+import { Button, Card, Input, RadioGroup, Select } from '@/design-system';
 import type {
   HubDetails,
   HubFile,
@@ -437,7 +437,7 @@ export function ModelCatalogTab() {
         </div>
 
         <div className="model-catalog-layout grid min-h-0 min-w-0 flex-1 gap-3 p-4 sm:p-5 library:grid-cols-library">
-          <Card className="model-catalog-results-panel flex min-h-0 min-w-0 flex-col overflow-hidden p-0">
+          <Card className="model-catalog-results-panel flex min-h-0 min-w-0 flex-col overflow-hidden">
             <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
               <h2 className="font-semibold text-text">{t('models')}</h2>
               {state === 'loading' && models.length > 0 ? (
@@ -469,10 +469,10 @@ export function ModelCatalogTab() {
                     const selected = model.repoId === selectedModel?.repoId;
                     const publisher = publisherName(model.repoId);
                     return (
-                      <button
+                      <Button
                         aria-selected={selected}
                         className={[
-                          'flex w-full items-center gap-3 rounded-control border p-3 text-left transition-colors',
+                          'min-h-0 w-full justify-start gap-3 rounded-control border p-3 text-left transition-colors',
                           'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus',
                           selected
                             ? 'border-accent bg-selected'
@@ -481,7 +481,9 @@ export function ModelCatalogTab() {
                         key={model.repoId}
                         onClick={() => void openModel(model)}
                         role="option"
+                        size="small"
                         type="button"
+                        variant="ghost"
                       >
                         <PublisherAvatar publisher={publisher} />
                         <span className="min-w-0 flex-1">
@@ -503,7 +505,7 @@ export function ModelCatalogTab() {
                         {selected ? (
                           <CircleCheck aria-hidden="true" className="shrink-0 text-accent-icon" size={18} />
                         ) : null}
-                      </button>
+                      </Button>
                     );
                   })}
                 </div>
@@ -537,7 +539,7 @@ export function ModelCatalogTab() {
           </Card>
 
           <div className="model-catalog-detail-layout grid min-h-0 min-w-0 gap-3">
-            <Card className="model-catalog-details-panel min-h-0 min-w-0 overflow-hidden p-0">
+            <Card className="model-catalog-details-panel min-h-0 min-w-0 overflow-hidden">
               <div className="model-catalog-details-content flex h-full min-h-0 flex-col overflow-hidden p-5 sm:p-6">
                 {selectedModel === null ? (
                   <PanelMessage icon={<Cpu aria-hidden="true" size={24} />} text={t('modelChooseForDetails')} />
@@ -763,46 +765,38 @@ export function ModelCatalogTab() {
                       {details.downloadGroups.length === 0 ? (
                         <p className="text-sm text-secondary-text">{t('modelNoCompatibleFiles')}</p>
                       ) : (
-                        <fieldset className="grid gap-2">
-                          <legend className="sr-only">{t('modelDownloadGroupLabel')}</legend>
-                          {details.downloadGroups.map((group) => {
+                        <RadioGroup
+                          label={t('modelDownloadGroupLabel')}
+                          name="model-download-group"
+                          onValueChange={setSelectedGroupId}
+                          options={details.downloadGroups.map((group) => {
                             const firstFile = group.files[0];
-                            return (
-                              <label
-                                className="flex min-w-0 items-start gap-2 rounded-control border border-border bg-surface p-2.5 hover:bg-hover has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-60"
-                                key={group.id}
-                              >
-                                <input
-                                  checked={selectedGroupId === group.id}
-                                  className="mt-1 accent-accent"
-                                  disabled={!group.canDownload || isDownloadActive}
-                                  name="model-download-group"
-                                  onChange={() => setSelectedGroupId(group.id)}
-                                  type="radio"
-                                  value={group.id}
-                                />
-                                <span className="min-w-0 flex-1">
-                                  <span className="block break-words text-sm font-medium text-text">
-                                    {group.displayName}
-                                  </span>
-                                  <span className="mt-1 block break-all text-xs text-secondary-text">
+                            return {
+                              value: group.id,
+                              label: group.displayName,
+                              description: (
+                                <>
+                                  <span className="block break-all">
                                     {firstFile?.path ?? t('modelNoFiles')}
                                     {group.files.length > 1
                                       ? ` · ${t('fileChangesMoreFiles', { count: group.files.length - 1 })}`
                                       : ''}
                                   </span>
-                                  <span className="mt-1 block text-xs text-secondary-text">
+                                  <span className="mt-1 block">
                                     {t('modelDownloadSizeLabel')}
                                     {': '}
                                     {group.totalBytes === null
                                       ? t('modelUnknownDownloadSize')
                                       : formatBytes(group.totalBytes, i18n.language)}
                                   </span>
-                                </span>
-                              </label>
-                            );
+                                </>
+                              ),
+                              disabled: !group.canDownload || isDownloadActive,
+                            };
                           })}
-                        </fieldset>
+                          value={selectedGroupId ?? ''}
+                          variant="cards"
+                        />
                       )}
                       <p className="text-xs text-secondary-text">{t('modelSavedToFolder')}</p>
                       {!accessBlocked && selectedGroup === null ? (

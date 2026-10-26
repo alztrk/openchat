@@ -74,7 +74,7 @@ export function ShortcutsSection() {
           {t(errorCode)}
         </p>
       ) : null}
-      <Card className="divide-y divide-border p-0">
+      <Card className="divide-y divide-border">
         <div className="@container">
           <div className="appearance-setting-row p-4">
             <div>

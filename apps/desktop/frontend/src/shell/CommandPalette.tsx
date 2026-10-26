@@ -33,6 +33,8 @@ import {
 } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { Button, Input } from '@/design-system';
+
 import { Dialog } from '@/design-system/Dialog';
 import type en from '@/localization/locales/en.json';
 import { providerNameForModel } from '@/modules/conversations/components/composerUtils';
@@ -453,14 +455,18 @@ export function CommandPalette({
           <span aria-hidden="true" className="text-secondary-icon">
             <Search size={17} />
           </span>
-          <input
+          <Input
             aria-activedescendant={selectedItem ? `${listboxId}-${selectedIndex}` : undefined}
             aria-autocomplete="list"
             aria-controls={filteredItems.length > 0 ? listboxId : undefined}
             aria-expanded="true"
             aria-label={t('commandPaletteSearchLabel')}
             autoComplete="off"
-            className="min-h-12 min-w-0 flex-1 bg-transparent text-sm text-text outline-none placeholder:text-secondary-text"
+            appearance="bare"
+            className="min-w-0 flex-1 text-sm"
+            density="compact"
+            fieldClassName="min-w-0 flex-1"
+            fieldLayout="inline"
             onChange={(event) => {
               setQuery(event.target.value);
               setSelectedIndex(0);
@@ -516,9 +522,9 @@ export function CommandPalette({
                       const itemIndex = filteredItems.indexOf(item);
                       const isSelected = itemIndex === selectedIndex;
                       return (
-                        <button
+                        <Button
                           aria-selected={isSelected}
-                          className={`flex min-h-11 w-full items-center gap-3 rounded-control px-2 text-left ${
+                          className={`min-h-11 w-full justify-start gap-3 rounded-control px-2 text-left ${
                             isSelected ? 'bg-selected text-text' : 'text-secondary-text hover:bg-hover hover:text-text'
                           }`}
                           id={`${listboxId}-${itemIndex}`}
@@ -534,7 +540,9 @@ export function CommandPalette({
                           role="option"
                           aria-disabled={item.disabled || undefined}
                           disabled={item.disabled}
+                          size="small"
                           type="button"
+                          variant="ghost"
                         >
                           <span className="shrink-0">{item.icon}</span>
                           <span className="min-w-0 flex-1">
@@ -548,7 +556,7 @@ export function CommandPalette({
                               ↵
                             </span>
                           ) : null}
-                        </button>
+                        </Button>
                       );
                     })}
                   </div>

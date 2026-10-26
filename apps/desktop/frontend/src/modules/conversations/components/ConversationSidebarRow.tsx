@@ -33,7 +33,7 @@ import {
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 
-import { Button } from '@/design-system';
+import { Button, Input } from '@/design-system';
 import type { ChatConversation, ChatProject, ExportFormat } from '@/modules/conversations/data/chatStorage';
 import type { CustomSidebarFolder, SidebarViewMode } from '@/modules/conversations/data/sidebarPreferences';
 import { setSidebarDraggingConversationId } from '@/modules/conversations/data/sidebarPreferences';
@@ -477,10 +477,12 @@ export function ConversationSidebarRow({
           className="flex min-h-9 min-w-0 flex-1 items-center gap-1 px-2 py-1"
           onSubmit={(event) => void submitInlineRename(event)}
         >
-          <input
+          <Input
             aria-label={t('conversationTitle')}
-            className="h-7 min-w-0 flex-1 rounded-control border border-accent/60 bg-surface px-2 text-settings-description text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+            className="h-7 min-h-0 w-auto min-w-0 flex-1 rounded-control border-accent/60 bg-surface px-2 text-settings-description text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+            density="compact"
             disabled={isSavingTitle}
+            fieldLayout="none"
             maxLength={500}
             onBlur={() => void submitInlineRename()}
             onChange={(event) => setDraftTitle(event.target.value)}
@@ -494,25 +496,29 @@ export function ConversationSidebarRow({
             ref={inlineInputRef}
             value={draftTitle}
           />
-          <button
+          <Button
             aria-label={t('save')}
-            className="flex size-6 shrink-0 items-center justify-center rounded-control text-accent hover:bg-hover"
+            className="size-6 shrink-0 rounded-control p-0 text-accent hover:bg-hover"
             disabled={isSavingTitle}
             onMouseDown={(event) => event.preventDefault()}
+            size="icon"
             type="submit"
+            variant="ghost"
           >
             <Check aria-hidden="true" size={13} />
-          </button>
-          <button
+          </Button>
+          <Button
             aria-label={t('cancel')}
-            className="flex size-6 shrink-0 items-center justify-center rounded-control text-secondary-icon hover:bg-hover hover:text-text"
+            className="size-6 shrink-0 rounded-control p-0 text-secondary-icon hover:bg-hover hover:text-text"
             disabled={isSavingTitle}
             onClick={cancelInlineRename}
             onMouseDown={(event) => event.preventDefault()}
+            size="icon"
             type="button"
+            variant="ghost"
           >
             <X aria-hidden="true" size={13} />
-          </button>
+          </Button>
         </form>
       ) : (
         <>
@@ -730,16 +736,18 @@ export function ConversationSidebarRow({
                       </summary>
                       <div className="mt-0.5 grid max-h-40 gap-0.5 overflow-y-auto border-l border-border ml-3.5 pl-2">
                         {availableFolders.map((folder) => (
-                          <button
-                            className="min-h-7 truncate rounded-control px-2 text-left text-xs text-secondary-text transition-colors hover:bg-hover hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+                          <Button
+                            className="min-h-7 w-full justify-start truncate rounded-control px-2 text-left text-xs text-secondary-text transition-colors hover:bg-hover hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
                             disabled={disabled}
                             key={folder.id}
                             onClick={() => runAction(() => onMoveToFolder(folder.id))}
                             role="menuitem"
+                            size="small"
                             type="button"
+                            variant="ghost"
                           >
                             {folder.name}
-                          </button>
+                          </Button>
                         ))}
                       </div>
                     </details>
@@ -756,16 +764,18 @@ export function ConversationSidebarRow({
                       </summary>
                       <div className="mt-0.5 grid max-h-40 gap-0.5 overflow-y-auto border-l border-border ml-3.5 pl-2">
                         {availableProjects.map((project) => (
-                          <button
-                            className="min-h-7 truncate rounded-control px-2 text-left text-xs text-secondary-text transition-colors hover:bg-hover hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+                          <Button
+                            className="min-h-7 w-full justify-start truncate rounded-control px-2 text-left text-xs text-secondary-text transition-colors hover:bg-hover hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
                             disabled={disabled}
                             key={project.id}
                             onClick={() => runAction(() => onMoveToProject(project.id))}
                             role="menuitem"
+                            size="small"
                             type="button"
+                            variant="ghost"
                           >
                             {project.name}
-                          </button>
+                          </Button>
                         ))}
                       </div>
                     </details>
@@ -780,33 +790,39 @@ export function ConversationSidebarRow({
                       <span>{t('exportConversation')}</span>
                     </summary>
                     <div className="mt-0.5 grid max-h-40 gap-0.5 overflow-y-auto border-l border-border ml-3.5 pl-2">
-                      <button
-                        className="min-h-7 truncate rounded-control px-2 text-left text-xs text-secondary-text transition-colors hover:bg-hover hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+                      <Button
+                        className="min-h-7 w-full justify-start truncate rounded-control px-2 text-left text-xs text-secondary-text transition-colors hover:bg-hover hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
                         disabled={disabled}
                         onClick={() => runAction(() => onExport('md'))}
                         role="menuitem"
+                        size="small"
                         type="button"
+                        variant="ghost"
                       >
                         {t('exportFormatMarkdown')}
-                      </button>
-                      <button
-                        className="min-h-7 truncate rounded-control px-2 text-left text-xs text-secondary-text transition-colors hover:bg-hover hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+                      </Button>
+                      <Button
+                        className="min-h-7 w-full justify-start truncate rounded-control px-2 text-left text-xs text-secondary-text transition-colors hover:bg-hover hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
                         disabled={disabled}
                         onClick={() => runAction(() => onExport('html'))}
                         role="menuitem"
+                        size="small"
                         type="button"
+                        variant="ghost"
                       >
                         {t('exportFormatHtml')}
-                      </button>
-                      <button
-                        className="min-h-7 truncate rounded-control px-2 text-left text-xs text-secondary-text transition-colors hover:bg-hover hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+                      </Button>
+                      <Button
+                        className="min-h-7 w-full justify-start truncate rounded-control px-2 text-left text-xs text-secondary-text transition-colors hover:bg-hover hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
                         disabled={disabled}
                         onClick={() => runAction(() => onExport('json'))}
                         role="menuitem"
+                        size="small"
                         type="button"
+                        variant="ghost"
                       >
                         {t('exportFormatJson')}
-                      </button>
+                      </Button>
                     </div>
                   </details>
                   <div aria-hidden="true" className="my-0.5 border-t border-border" />
@@ -841,15 +857,17 @@ interface MenuActionProps {
 
 function MenuAction({ icon: Icon, label, disabled, destructive = false, onClick }: MenuActionProps) {
   return (
-    <button
-      className={`flex min-h-8 items-center gap-2 rounded-control px-2.5 text-left text-xs font-medium transition-colors hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus disabled:opacity-45 ${destructive ? 'text-destructive' : 'text-secondary-text hover:text-text'}`}
+    <Button
+      className={`min-h-8 w-full justify-start gap-2 rounded-control px-2.5 text-left text-xs font-medium transition-colors hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus disabled:opacity-45 ${destructive ? 'text-destructive' : 'text-secondary-text hover:text-text'}`}
       disabled={disabled}
       onClick={onClick}
       role="menuitem"
+      size="small"
       type="button"
+      variant="ghost"
     >
       <Icon aria-hidden="true" size={14} />
       {label}
-    </button>
+    </Button>
   );
 }

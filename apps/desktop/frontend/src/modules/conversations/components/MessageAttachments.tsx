@@ -1,7 +1,7 @@
 import { Download, FileText, LoaderCircle } from 'lucide-react';
 import { useEffect, useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button, Dialog } from '@/design-system';
+import { Button, Dialog, Slider } from '@/design-system';
 import type { ChatAttachmentMetadata } from '@/modules/conversations/data/chatAttachments';
 import { readMessageAttachment } from '@/modules/conversations/data/chatStorage';
 
@@ -173,17 +173,16 @@ function MessageAttachment({ attachment, conversationId, isScrollable, messageId
                 <img alt={attachment.name} src={imageUrl} style={{ width: `${imagePreviewZoom * 100}%` }} />
               </div>
               <div className="message-image-preview-zoom">
-                <label className="sr-only" htmlFor={zoomControlId}>
-                  {t('previewImage')}
-                </label>
-                <input
+                <Slider
                   id={zoomControlId}
+                  label={t('previewImage')}
                   max="6"
                   min="0.75"
                   onChange={(event) => setImagePreviewZoom(Number(event.currentTarget.value))}
                   step="0.25"
-                  type="range"
                   value={imagePreviewZoom}
+                  fieldClassName="min-w-0 flex-1"
+                  fieldLayout="inline"
                 />
                 <output className="min-w-12 text-right text-xs text-secondary-text" htmlFor={zoomControlId}>
                   {new Intl.NumberFormat(i18n.language, { style: 'percent', maximumFractionDigits: 0 }).format(

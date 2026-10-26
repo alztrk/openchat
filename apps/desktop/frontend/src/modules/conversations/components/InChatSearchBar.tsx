@@ -2,7 +2,7 @@ import { ChevronDown, ChevronUp, Search, X } from 'lucide-react';
 import { type KeyboardEvent, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button, Tooltip } from '@/design-system';
+import { Button, Input, Tooltip } from '@/design-system';
 import type { InChatFilterType, InChatMessageMatch } from '@/modules/conversations/data/inChatSearch';
 import { cn } from '@/shared/utils/cn';
 
@@ -109,9 +109,13 @@ export function InChatSearchBar({
       `}</style>
       <div className="flex items-center gap-1.5">
         <Search aria-hidden="true" className="ml-1 shrink-0 text-secondary-icon" size={16} />
-        <input
+        <Input
           aria-label={t('inChatSearchPlaceholder')}
-          className="h-8 min-w-0 flex-1 bg-transparent px-2 text-sm text-text placeholder:text-secondary-text outline-none"
+          appearance="bare"
+          className="min-w-0 flex-1 px-2 text-sm"
+          density="compact"
+          fieldClassName="min-w-0 flex-1"
+          fieldLayout="inline"
           onChange={(e) => onQueryChange(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder={t('inChatSearchPlaceholder')}
@@ -179,23 +183,21 @@ export function InChatSearchBar({
         {FILTER_KEYS.map(({ key, labelKey }) => {
           const isSelected = filter === key;
           return (
-            <button
+            <Button
               aria-pressed={isSelected}
-              className={cn(
-                'rounded-full px-2.5 py-0.5 font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus',
-                isSelected
-                  ? 'bg-accent text-accent-foreground shadow-xs'
-                  : 'text-secondary-text hover:bg-hover hover:text-text',
-              )}
+              className="min-h-10 px-2.5 py-0.5 text-xs font-medium"
               key={key}
               onClick={() => {
                 onFilterChange(key);
                 inputRef.current?.focus();
               }}
+              shape="pill"
+              size="small"
               type="button"
+              variant={isSelected ? 'primary' : 'ghost'}
             >
               {t(labelKey)}
-            </button>
+            </Button>
           );
         })}
       </div>

@@ -2,6 +2,7 @@ import { Info } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { Button } from '@/design-system';
 import { CitationSourceDialog } from './CitationSourceDialog';
 import type { CitationSource } from './messageData';
 
@@ -25,18 +26,20 @@ export function CitationSources({ onSelect, sources }: CitationSourcesProps) {
     <>
       <section aria-label={t('toolSourceDetails')} className="mt-3 flex flex-wrap gap-2">
         {sources.map((source) => (
-          <button
+          <Button
             aria-haspopup="dialog"
             aria-label={t('toolCitationSource', { sourceId: source.id })}
-            className="inline-flex max-w-full items-center gap-1 rounded-control border border-border bg-surface px-2 py-1 text-xs text-secondary-text hover:bg-hover hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+            className="max-w-full rounded-control px-2 text-xs text-secondary-text"
             key={source.id}
             onClick={() => selectSource(source)}
+            size="small"
             title={source.title}
             type="button"
+            variant="secondary"
           >
             <Info aria-hidden="true" size={13} />
             <span>{t('toolCitationSource', { sourceId: source.id })}</span>
-          </button>
+          </Button>
         ))}
       </section>
       {onSelect ? null : (

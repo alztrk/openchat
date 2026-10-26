@@ -29,7 +29,7 @@ import {
 } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button, ColorPicker, DatePicker, Dialog, Select } from '@/design-system';
+import { Button, Checkbox, ColorPicker, DatePicker, Dialog, Input, Select, Slider, Textarea } from '@/design-system';
 import type { ConversationAttachmentSummary } from '@/modules/conversations/data/chatStorage';
 import { listConversationAttachments, readMessageAttachment } from '@/modules/conversations/data/chatStorage';
 import {
@@ -982,10 +982,11 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
                 <MessageSquareText aria-hidden="true" className="text-secondary-icon" size={16} />
                 {t('designPrompt')}
               </span>
-              <textarea
+              <Textarea
                 aria-describedby="design-prompt-hint"
                 className="min-h-32 w-full resize-y rounded-control border border-control-border bg-surface px-3 py-2 text-sm font-normal leading-relaxed text-text outline-none placeholder:text-secondary-text focus-visible:ring-2 focus-visible:ring-focus disabled:cursor-not-allowed disabled:opacity-50"
                 id="design-prompt"
+                fieldLayout="none"
                 maxLength={promptCharacterLimit}
                 onChange={(event: ChangeEvent<HTMLTextAreaElement>) => setPrompt(event.target.value)}
                 placeholder={t('designPromptPlaceholder')}
@@ -1008,13 +1009,15 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
               <div className="grid gap-1">
                 {templates.map((template) => (
                   <div className="flex min-w-0 items-center gap-1" key={template.id}>
-                    <button
-                      className="min-h-9 min-w-0 flex-1 truncate rounded-control px-2 text-left text-sm text-secondary-text hover:bg-hover hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+                    <Button
+                      className="min-h-10 min-w-0 flex-1 justify-start truncate px-2 text-left text-sm text-secondary-text"
                       onClick={() => reusePrompt(template.prompt)}
+                      size="small"
                       type="button"
+                      variant="ghost"
                     >
                       {template.name}
-                    </button>
+                    </Button>
                     <Button
                       aria-label={t('designDeleteTemplate', { name: template.name })}
                       className="min-w-0"
@@ -1033,8 +1036,9 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
               </div>
               <label className="grid gap-1.5 text-xs font-medium text-secondary-text" htmlFor="design-template-name">
                 {t('designTemplateName')}
-                <input
+                <Input
                   className="min-h-9 rounded-control border border-control-border bg-surface px-2 text-sm text-text outline-none focus-visible:ring-2 focus-visible:ring-focus"
+                  fieldLayout="none"
                   id="design-template-name"
                   maxLength={80}
                   onChange={(event) => setTemplateName(event.target.value)}
@@ -1062,8 +1066,9 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
               </h2>
               <label className="grid gap-1.5 text-xs font-medium text-secondary-text" htmlFor="design-collection-name">
                 {t('designCollectionName')}
-                <input
+                <Input
                   className="min-h-9 rounded-control border border-control-border bg-surface px-2 text-sm text-text outline-none focus-visible:ring-2 focus-visible:ring-focus"
+                  fieldLayout="none"
                   id="design-collection-name"
                   maxLength={80}
                   onChange={(event) => setCollectionName(event.target.value)}
@@ -1137,9 +1142,10 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
                 <div className="grid grid-cols-2 gap-3">
                   <label className="grid gap-1.5 text-sm text-secondary-text" htmlFor="design-image-width">
                     {t('designWidth')}
-                    <input
+                    <Input
                       aria-invalid={!customResolutionValid}
                       className="min-h-10 w-full rounded-control border border-control-border bg-surface px-3 text-text outline-none focus-visible:ring-2 focus-visible:ring-focus"
+                      fieldLayout="none"
                       id="design-image-width"
                       max={3840}
                       min={256}
@@ -1151,9 +1157,10 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
                   </label>
                   <label className="grid gap-1.5 text-sm text-secondary-text" htmlFor="design-image-height">
                     {t('designHeight')}
-                    <input
+                    <Input
                       aria-invalid={!customResolutionValid}
                       className="min-h-10 w-full rounded-control border border-control-border bg-surface px-3 text-text outline-none focus-visible:ring-2 focus-visible:ring-focus"
+                      fieldLayout="none"
                       id="design-image-height"
                       max={3840}
                       min={256}
@@ -1240,22 +1247,22 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
                     value={gradientEndColor}
                   />
                 </div>
-                <label className="grid gap-2 text-sm font-medium text-text" htmlFor="design-gradient-angle">
+                <div className="grid gap-2">
+                  <label className="text-sm font-medium text-text" htmlFor="design-gradient-angle">
                   <span className="flex items-center justify-between gap-3">
                     {t('designGradientAngle')}
                     <span className="font-mono text-xs font-normal text-secondary-text">{gradientAngle}°</span>
                   </span>
-                  <input
-                    className="w-full accent-accent"
+                  </label>
+                  <Slider
                     disabled={activeOperation !== null || generationStarting}
                     id="design-gradient-angle"
                     max={360}
                     min={0}
                     onChange={(event) => setGradientAngle(Number(event.target.value))}
-                    type="range"
                     value={gradientAngle}
                   />
-                </label>
+                </div>
                 <p className="text-xs text-secondary-text">{t('designCustomBackgroundGradientHint')}</p>
               </div>
             ) : null}
@@ -1294,40 +1301,40 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
                   value={outputFormat}
                 />
                 {outputFormat !== 'png' ? (
-                  <label className="grid gap-2 text-sm font-medium text-text" htmlFor="design-compression">
+                  <div className="grid gap-2">
+                    <label className="text-sm font-medium text-text" htmlFor="design-compression">
                     {t('designCompression', { value: outputCompression })}
-                    <input
-                      className="w-full accent-accent"
+                    </label>
+                    <Slider
                       disabled={activeOperation !== null || generationStarting}
                       id="design-compression"
                       max={100}
                       min={0}
                       onChange={(event) => setOutputCompression(Number(event.target.value))}
-                      type="range"
                       value={outputCompression}
                     />
-                    <span className="text-xs font-normal text-secondary-text">{t('designCompressionHint')}</span>
-                  </label>
+                    <span className="text-xs text-secondary-text">{t('designCompressionHint')}</span>
+                  </div>
                 ) : null}
               </>
             ) : null}
-            <label className="grid gap-2 text-sm font-medium text-text" htmlFor="design-image-count">
+            <div className="grid gap-2">
+              <label className="text-sm font-medium text-text" htmlFor="design-image-count">
               <span className="flex items-center justify-between gap-3">
                 <span>{t('designImageCount')}</span>
                 <span className="text-secondary-text">{t('designImageCountOption', { count: Number(count) })}</span>
               </span>
-              <input
-                className="w-full accent-accent"
+              </label>
+              <Slider
                 disabled={activeOperation !== null || generationStarting}
                 id="design-image-count"
                 max={3}
                 min={1}
                 onChange={(event) => setCount(event.target.value)}
                 step={1}
-                type="range"
                 value={count}
               />
-            </label>
+            </div>
             {generationError ? (
               <p className="text-sm text-destructive" role="alert">
                 {generationError}
@@ -1429,8 +1436,9 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
               htmlFor="design-library-search"
             >
               {t('designSearch')}
-              <input
+              <Input
                 className="min-h-10 w-full rounded-control border border-control-border bg-surface px-3 text-sm text-text outline-none placeholder:text-secondary-text focus-visible:ring-2 focus-visible:ring-focus"
+                fieldLayout="none"
                 id="design-library-search"
                 onChange={(event) => setQueryDraft(event.target.value)}
                 placeholder={t('designSearchPlaceholder')}
@@ -1508,8 +1516,9 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
                   htmlFor="design-library-tag-filter"
                 >
                   {t('designTagFilter')}
-                  <input
+                  <Input
                     className="min-h-10 w-full rounded-control border border-control-border bg-surface px-3 text-sm text-text outline-none focus-visible:ring-2 focus-visible:ring-focus"
+                    fieldLayout="none"
                     id="design-library-tag-filter"
                     maxLength={48}
                     onChange={(event) => setTagFilterDraft(event.target.value)}
@@ -1529,11 +1538,10 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
                   className="flex min-h-10 items-center gap-2 self-end text-sm text-text"
                   htmlFor="design-favorites-only"
                 >
-                  <input
+                  <Checkbox
                     checked={favoritesOnly}
                     id="design-favorites-only"
                     onChange={(event) => setFavoritesOnly(event.target.checked)}
-                    type="checkbox"
                   />
                   {t('designFavoritesOnly')}
                 </label>
@@ -1833,23 +1841,27 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
               </div>
               <div className="flex flex-wrap gap-1">
                 {selectedImage.image.image.tags.map((tag) => (
-                  <button
+                  <Button
                     aria-label={t('designRemoveTag', { tag })}
-                    className="rounded-control bg-raised px-2 py-1 text-xs text-text hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+                    className="min-h-10 rounded-full bg-raised px-2 py-1 text-xs text-text"
                     key={tag}
                     onClick={() => void removeTag(selectedImage.image, tag)}
+                    shape="pill"
+                    size="small"
                     type="button"
+                    variant="ghost"
                   >
                     {tag} ×
-                  </button>
+                  </Button>
                 ))}
               </div>
               <div className="flex flex-wrap gap-2">
                 <label className="sr-only" htmlFor="design-tag-input">
                   {t('designAddTag')}
                 </label>
-                <input
+                <Input
                   className="min-h-9 min-w-0 flex-1 rounded-control border border-control-border bg-surface px-2 text-sm text-text outline-none focus-visible:ring-2 focus-visible:ring-focus"
+                  fieldLayout="none"
                   id="design-tag-input"
                   maxLength={48}
                   onChange={(event) => setTagDraft(event.target.value)}
@@ -2016,14 +2028,16 @@ function ImageTile({
 
   const label = galleryPrompt(entry);
   return (
-    <button
+    <Button
       aria-label={t('designOpenImage', { label: label.slice(0, 100) })}
-      className="group design-image-tile relative grid aspect-square min-w-0 overflow-hidden rounded-control border border-border bg-raised text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+      className="group design-image-tile relative min-h-0 w-full grid aspect-square min-w-0 overflow-hidden rounded-control border border-border bg-raised text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
       onClick={() => {
         if (src) onSelect(src);
       }}
       ref={tileRef}
+      size="small"
       type="button"
+      variant="ghost"
     >
       {src ? (
         <img
@@ -2052,7 +2066,7 @@ function ImageTile({
           {entry.source === 'design' ? entry.image.model : entry.image.conversationTitle}
         </span>
       </span>
-    </button>
+    </Button>
   );
 }
 

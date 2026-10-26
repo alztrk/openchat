@@ -269,12 +269,12 @@ export function ConnectorCatalogSettingsSection() {
   return (
     <section aria-labelledby="settings-page-heading" className="grid gap-5">
       <p className="text-sm text-secondary-text">{t('connectorCatalogIntro')}</p>
-      <Card className="flex gap-3 p-4" role="note">
+      <Card className="flex gap-3" padding="default" role="note">
         <Info aria-hidden="true" className="mt-0.5 shrink-0 text-info" size={18} />
         <p className="text-sm text-secondary-text">{t('connectorCatalogSecurityNotice')}</p>
       </Card>
       {activeProjectId === null ? (
-        <Card className="flex gap-3 p-4" id="connector-catalog-no-project" role="note">
+        <Card className="flex gap-3" id="connector-catalog-no-project" padding="default" role="note">
           <Info aria-hidden="true" className="mt-0.5 shrink-0 text-secondary-text" size={18} />
           <p className="text-sm text-secondary-text">{t('connectorCatalogNoProject')}</p>
         </Card>
@@ -314,7 +314,7 @@ export function ConnectorCatalogSettingsSection() {
       ) : null}
 
       {loadState === 'failed' ? (
-        <Card className="grid gap-3 p-5" role="alert">
+        <Card className="grid gap-3" padding="comfortable" role="alert">
           <p className="flex items-center gap-2 text-sm text-destructive">
             <AlertCircle aria-hidden="true" size={16} />
             {t(errorKey ?? 'connectorCatalogLoadFailed')}
@@ -338,11 +338,11 @@ export function ConnectorCatalogSettingsSection() {
               <LoaderCircle aria-hidden="true" className="animate-spin text-secondary-text" size={22} />
             </div>
           ) : entries.length === 0 ? (
-            <Card className="p-5">
+            <Card padding="comfortable">
               <p className="text-sm text-secondary-text">{t('connectorCatalogEmpty')}</p>
             </Card>
           ) : visibleEntries.length === 0 ? (
-            <Card className="p-5">
+            <Card padding="comfortable">
               <p className="text-sm text-secondary-text">{t('connectorCatalogNoResults')}</p>
             </Card>
           ) : (
@@ -456,7 +456,7 @@ function ConnectorEntryCard({
   t: TFunction;
 }) {
   return (
-    <Card className="grid gap-4 p-4 sm:p-5">
+    <Card className="grid gap-4 sm:p-5" padding="default">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <h3 className="break-words text-base font-semibold">{entry.name}</h3>

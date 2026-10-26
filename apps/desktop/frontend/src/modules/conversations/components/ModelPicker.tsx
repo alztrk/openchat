@@ -3,7 +3,7 @@ import { Bot, ChevronDown, LoaderCircle, LogIn, LogOut, RefreshCw, Search, Star,
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button, Tooltip } from '@/design-system';
+import { Button, Input, Tooltip } from '@/design-system';
 import type { ChatModelFavorite } from '@/modules/conversations/data/chatStorage';
 import { favoriteSourceConnection } from '@/modules/conversations/stores/chatStoreUtils';
 import { ProviderIcon } from '@/modules/providers/components/ProviderIcon';
@@ -285,24 +285,26 @@ export function ModelPicker({
             aria-label={t('connectedProvidersModels')}
             className="model-picker-providers openchat-scroll-area grid content-start gap-1 overflow-y-auto border-r border-border bg-navigation p-2"
           >
-            <button
+            <Button
               aria-pressed={showFavorites}
-              className={`flex min-h-10 min-w-0 items-center gap-2 rounded-control px-2.5 text-left text-sm font-medium ${showFavorites ? 'bg-selected text-text' : 'text-secondary-text hover:bg-hover'}`}
+              className={`min-h-10 w-full min-w-0 justify-start gap-2 rounded-control px-2.5 text-left text-sm font-medium ${showFavorites ? 'bg-selected text-text' : 'text-secondary-text hover:bg-hover'}`}
               onClick={() => {
                 setShowFavorites(true);
                 onQueryChange('');
               }}
+              size="small"
               type="button"
+              variant="ghost"
             >
               <Star aria-hidden="true" className="shrink-0" size={17} />
               <span className="truncate">{t('favoriteModels')}</span>
-            </button>
+            </Button>
             {providerOptions.map((provider) => {
               const selected = !showFavorites && provider.providerId === selectedProviderId;
               return (
-                <button
+                <Button
                   aria-pressed={selected}
-                  className={`flex min-h-10 min-w-0 items-center gap-2 rounded-control px-2.5 text-left text-sm font-medium ${selected ? 'bg-selected text-text' : provider.available ? 'text-secondary-text hover:bg-hover' : 'cursor-not-allowed text-secondary-text opacity-50'}`}
+                  className={`min-h-10 w-full min-w-0 justify-start gap-2 rounded-control px-2.5 text-left text-sm font-medium ${selected ? 'bg-selected text-text' : provider.available ? 'text-secondary-text hover:bg-hover' : 'cursor-not-allowed text-secondary-text opacity-50'}`}
                   disabled={!provider.available || !canSelectProvider}
                   key={provider.providerId}
                   onClick={() => {
@@ -311,11 +313,13 @@ export function ModelPicker({
                     onQueryChange('');
                     onSelectProvider(provider.providerId);
                   }}
+                  size="small"
                   type="button"
+                  variant="ghost"
                 >
                   <ProviderIcon className="shrink-0" providerId={provider.providerId} size={17} />
                   <span className="truncate">{provider.name ?? providerNameForId(provider.providerId, t)}</span>
-                </button>
+                </Button>
               );
             })}
           </nav>
@@ -332,9 +336,11 @@ export function ModelPicker({
                   className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-secondary-icon"
                   size={16}
                 />
-                <input
+                <Input
                   aria-label={t('searchModels')}
-                  className="min-h-10 w-full rounded-control border border-control-border bg-surface py-2 pl-9 pr-3 text-sm text-text outline-none focus-visible:ring-2 focus-visible:ring-focus"
+                  className="w-full py-2 pl-9 pr-3 text-sm"
+                  fieldClassName="min-w-0 w-full"
+                  fieldLayout="inline"
                   onChange={(event) => onQueryChange(event.currentTarget.value)}
                   placeholder={t('modelSearchHint')}
                   ref={searchInputRef}
@@ -392,11 +398,13 @@ export function ModelPicker({
                           className="flex min-w-0 items-center gap-1 rounded-control hover:bg-hover"
                           key={selectionKey}
                         >
-                          <button
-                            className="flex min-h-10 min-w-0 flex-1 items-center gap-2 px-2 text-left text-sm text-text"
+                          <Button
+                            className="min-h-10 min-w-0 flex-1 justify-start gap-2 px-2 text-left text-sm text-text"
                             disabled={selectingFavoriteKey === selectionKey}
                             onClick={() => void startFavoriteSelection(favorite)}
+                            size="small"
                             type="button"
+                            variant="ghost"
                           >
                             {selectingFavoriteKey === selectionKey ? (
                               <LoaderCircle
@@ -413,7 +421,7 @@ export function ModelPicker({
                                 {favoriteModelProviderName}
                               </span>
                             </span>
-                          </button>
+                          </Button>
                           <Button
                             aria-label={t('removeModelFavorite')}
                             className="size-8 shrink-0"
@@ -516,12 +524,14 @@ function ModelOption({
     <div className="flex min-w-0 items-center gap-1 rounded-control hover:bg-hover">
       <Tooltip label={disabledReason ?? ''}>
         <span className="block min-w-0 flex-1" tabIndex={disabledReason ? 0 : undefined}>
-          <button
+          <Button
             aria-pressed={isSelected}
-            className="flex min-h-14 min-w-0 w-full items-center gap-2.5 rounded-control px-2 text-left text-sm text-text disabled:cursor-not-allowed disabled:opacity-50"
+            className="min-h-14 min-w-0 w-full justify-start gap-2.5 rounded-control px-2 text-left text-sm text-text disabled:cursor-not-allowed disabled:opacity-50"
             disabled={disabledReason !== null}
             onClick={onSelect}
+            size="small"
             type="button"
+            variant="ghost"
           >
             <ProviderIcon className="shrink-0" providerId={model.providerId} size={17} />
             <span className="flex min-w-0 flex-1 flex-col gap-0.5">
@@ -571,7 +581,7 @@ function ModelOption({
                 </span>
               </span>
             </span>
-          </button>
+          </Button>
         </span>
       </Tooltip>
       {disabledReason &&

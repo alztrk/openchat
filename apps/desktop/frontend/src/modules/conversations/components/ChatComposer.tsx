@@ -1,7 +1,7 @@
 import { ArrowUp, Brain, Paperclip, Square, X } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button, Select } from '@/design-system';
+import { Button, Select, Textarea } from '@/design-system';
 import type { ChatMessage } from '@/modules/conversations/data/chatStorage';
 import { getSidebarDraggingConversationId } from '@/modules/conversations/data/sidebarPreferences';
 import { useChatStreaming } from '@/modules/conversations/hooks/useChatStreaming';
@@ -321,7 +321,7 @@ export function ChatComposer({
                 selectedIndex={slashCommandIndex}
               />
             ) : null}
-            <textarea
+            <Textarea
               aria-activedescendant={
                 slashModelMenuOpen
                   ? selectedSlashModel
@@ -345,6 +345,8 @@ export function ChatComposer({
               className="composer-message-input w-full bg-transparent text-composer-input text-text placeholder:text-secondary-text outline-none focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0 disabled:opacity-50"
               disabled={isTargetPlaceholder || pickerModels.length === 0 || isUpdatingConversationModel}
               id="chat-message"
+              appearance="bare"
+              fieldLayout="none"
               placeholder={ghostTextSuggestion ?? placeholderHint}
               onChange={(event) => {
                 const input = event.currentTarget;

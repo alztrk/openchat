@@ -105,7 +105,7 @@ export function CopilotUsageCard({ onNavigateToConnections, refreshSequence }: C
   const accountName = connection?.name?.trim() || connection?.login || t('providerNameCopilot');
 
   return (
-    <Card className="grid gap-4 p-5">
+    <Card className="grid gap-4" padding="comfortable">
       <header className="flex min-w-0 items-start gap-3">
         <ProviderIcon className="mt-1" providerId="copilot" size={22} />
         <div className="min-w-0 flex-1">
@@ -118,16 +118,14 @@ export function CopilotUsageCard({ onNavigateToConnections, refreshSequence }: C
         </div>
         <Button
           aria-label={t('copilotUsageRefresh')}
-          disabled={loading || refreshing}
+          disabled={loading}
+          loading={refreshing}
+          loadingContent={null}
           onClick={() => void load()}
           size="icon"
           variant="ghost"
         >
-          {refreshing ? (
-            <LoaderCircle aria-hidden="true" className="animate-spin" size={16} />
-          ) : (
-            <RefreshCw aria-hidden="true" size={16} />
-          )}
+          <RefreshCw aria-hidden="true" size={16} />
         </Button>
       </header>
 

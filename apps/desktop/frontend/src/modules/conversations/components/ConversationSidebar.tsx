@@ -38,6 +38,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
+  Input,
 } from '@/design-system';
 import type { ChatConversation, ChatProject } from '@/modules/conversations/data/chatStorage';
 import {
@@ -723,12 +724,14 @@ export function ConversationSidebar({
       >
         <div className="sticky top-0 z-10 flex shrink-0 items-center gap-1.5 bg-navigation/80 px-3 pt-3 pb-2 backdrop-blur-md">
           <div className="flex h-9 min-w-0 flex-1 overflow-hidden rounded-button border border-border bg-surface/80 shadow-2xs backdrop-blur-sm">
-            <button
+            <Button
               aria-label={t('newChat')}
-              className="group flex h-full min-w-0 flex-1 items-center justify-between gap-2 rounded-none border-0 bg-transparent px-3 text-left text-settings-description font-medium text-text shadow-none transition-colors duration-quick hover:bg-raised/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-focus"
+              className="group min-h-0 h-full min-w-0 flex-1 justify-between rounded-none border-0 bg-transparent px-3 text-left text-settings-description font-medium text-text shadow-none transition-colors duration-quick hover:bg-raised/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-focus"
               onClick={handleNewChat}
+              size="small"
               title={t('newChatButtonTitle')}
               type="button"
+              variant="ghost"
             >
               <span className="flex min-w-0 items-center gap-2">
                 <SquarePen
@@ -743,19 +746,21 @@ export function ConversationSidebar({
                 className="shrink-0 text-secondary-icon/70 transition-colors group-hover:text-text"
                 size={14}
               />
-            </button>
+            </Button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <button
+                <Button
                   aria-label={t('newChatWithAgent')}
-                  className="flex h-full w-9 shrink-0 items-center justify-center gap-0.5 rounded-none border-0 border-l border-l-border bg-transparent text-secondary-icon transition-colors duration-quick hover:bg-raised/90 hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-focus data-[state=open]:bg-raised data-[state=open]:text-text disabled:opacity-45"
+                  className="h-full w-9 shrink-0 rounded-none border-0 border-l border-l-border bg-transparent px-0 text-secondary-icon transition-colors duration-quick hover:bg-raised/90 hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-focus data-[state=open]:bg-raised data-[state=open]:text-text disabled:opacity-45"
                   disabled={isBusy}
+                  size="icon"
                   title={t('newChatWithAgent')}
                   type="button"
+                  variant="ghost"
                 >
                   <Bot aria-hidden="true" size={15} />
                   <ChevronDown aria-hidden="true" size={12} />
-                </button>
+                </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start" aria-label={t('newChatWithAgent')} className="min-w-60">
                 <DropdownMenuLabel>{t('newChatWithAgent')}</DropdownMenuLabel>
@@ -768,7 +773,9 @@ export function ConversationSidebar({
                   <div className="grid gap-1 px-2 py-2" role="alert">
                     <p className="text-xs text-destructive">{t('assistantProfilesLoadFailed')}</p>
                     <DropdownMenuItem asChild onSelect={retryAgentProfiles}>
-                      <button type="button">{t('retry')}</button>
+                      <Button className="w-full justify-start" size="small" type="button" variant="ghost">
+                        {t('retry')}
+                      </Button>
                     </DropdownMenuItem>
                   </div>
                 ) : agentProfiles.length > 0 ? (
@@ -781,10 +788,10 @@ export function ConversationSidebar({
                       onSelect={() => handleNewChatWithAgent(agent)}
                       textValue={agent.name}
                     >
-                      <button disabled={isBusy} type="button">
+                      <Button className="w-full justify-start" disabled={isBusy} size="small" type="button" variant="ghost">
                         <Bot aria-hidden="true" className="shrink-0 text-secondary-icon" size={15} />
                         <span className="min-w-0 flex-1 truncate text-left">{agent.name}</span>
-                      </button>
+                      </Button>
                     </DropdownMenuItem>
                   ))
                 ) : (
@@ -794,48 +801,54 @@ export function ConversationSidebar({
                 )}
                 <DropdownMenuSeparator />
                 <DropdownMenuItem asChild className="w-full min-w-0 gap-2" onSelect={handleManageAgents}>
-                  <button type="button">
+                  <Button className="w-full justify-start" size="small" type="button" variant="ghost">
                     <Bot aria-hidden="true" className="shrink-0 text-secondary-icon" size={15} />
                     <span>{t('assistantProfileManage')}</span>
-                  </button>
+                  </Button>
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
-          <button
+          <Button
             aria-label={t('createProject')}
-            className="flex size-9 shrink-0 items-center justify-center rounded-button border border-border bg-surface/80 text-secondary-icon shadow-2xs backdrop-blur-sm transition-all duration-quick hover:border-control-border hover:bg-raised/90 hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus disabled:opacity-45"
+            className="size-9 shrink-0 border-border bg-surface/80 px-0 text-secondary-icon shadow-2xs backdrop-blur-sm transition-all duration-quick hover:border-control-border hover:bg-raised/90 hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus disabled:opacity-45"
             disabled={isBusy}
             onClick={() => setCreateProjectOpen(true)}
+            size="icon"
             title={t('createProjectButtonTitle')}
             type="button"
+            variant="secondary"
           >
             <FolderPlus aria-hidden="true" size={15} />
-          </button>
-          <button
+          </Button>
+          <Button
             aria-label={temporaryChat ? t('temporaryChatEnd') : t('temporaryChatStart')}
             aria-pressed={Boolean(temporaryChat)}
-            className={`flex size-9 shrink-0 items-center justify-center rounded-button border backdrop-blur-sm transition-all duration-quick focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus ${
+            className={`size-9 shrink-0 border px-0 backdrop-blur-sm transition-all duration-quick focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus ${
               temporaryChat
                 ? 'border-accent/40 bg-accent/15 text-accent hover:bg-accent/25'
                 : 'border-border bg-surface/80 text-secondary-icon shadow-2xs hover:border-control-border hover:bg-raised/90 hover:text-text'
             }`}
             onClick={handleStartTemporaryChat}
+            size="icon"
             title={temporaryChat ? t('temporaryChatEndButtonTitle') : t('temporaryChatStartButtonTitle')}
             type="button"
+            variant="ghost"
           >
             <Clock3 aria-hidden="true" size={15} />
-          </button>
+          </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <button
+              <Button
                 aria-label={t('sidebarViewAndSortOptions')}
-                className="flex size-9 shrink-0 items-center justify-center rounded-button border border-border bg-surface/80 text-secondary-icon shadow-2xs backdrop-blur-sm transition-all duration-quick hover:border-control-border hover:bg-raised/90 hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus data-[state=open]:border-control-border data-[state=open]:bg-raised data-[state=open]:text-text"
+                className="size-9 shrink-0 border-border bg-surface/80 px-0 text-secondary-icon shadow-2xs backdrop-blur-sm transition-all duration-quick hover:border-control-border hover:bg-raised/90 hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus data-[state=open]:border-control-border data-[state=open]:bg-raised data-[state=open]:text-text"
+                size="icon"
                 title={t('sidebarViewAndSortOptions')}
                 type="button"
+                variant="secondary"
               >
                 <SlidersHorizontal aria-hidden="true" size={15} />
-              </button>
+              </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent aria-label={t('sidebarViewAndSortOptions')} className="min-w-52">
               <DropdownMenuLabel>{t('sidebarViewModeLabel')}</DropdownMenuLabel>
@@ -1011,9 +1024,11 @@ export function ConversationSidebar({
                     {isCreatingFolder ? (
                       <li className="px-1 py-0.5">
                         <form className="flex items-center gap-1" onSubmit={handleCreateCustomFolder}>
-                          <input
+                          <Input
                             aria-label={t('customFolderNamePlaceholder')}
-                            className="h-7 min-w-0 flex-1 rounded-control border border-accent/60 bg-surface px-2 text-xs text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+                            className="h-7 min-h-0 w-auto min-w-0 flex-1 rounded-control border-accent/60 bg-surface px-2 text-xs text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+                            density="compact"
+                            fieldLayout="none"
                             maxLength={80}
                             onBlur={() => handleCreateCustomFolder()}
                             onChange={(event) => setNewFolderName(event.target.value)}
@@ -1028,26 +1043,30 @@ export function ConversationSidebar({
                             ref={newFolderInputRef}
                             value={newFolderName}
                           />
-                          <button
+                          <Button
                             aria-label={t('save')}
-                            className="flex size-6 items-center justify-center rounded-control text-accent hover:bg-hover"
+                            className="size-6 rounded-control p-0 text-accent hover:bg-hover"
                             onMouseDown={(event) => event.preventDefault()}
+                            size="icon"
                             type="submit"
+                            variant="ghost"
                           >
                             <Check aria-hidden="true" size={13} />
-                          </button>
-                          <button
+                          </Button>
+                          <Button
                             aria-label={t('cancel')}
-                            className="flex size-6 items-center justify-center rounded-control text-secondary-icon hover:bg-hover hover:text-text"
+                            className="size-6 rounded-control p-0 text-secondary-icon hover:bg-hover hover:text-text"
                             onClick={() => {
                               setIsCreatingFolder(false);
                               setNewFolderName('');
                             }}
                             onMouseDown={(event) => event.preventDefault()}
+                            size="icon"
                             type="button"
+                            variant="ghost"
                           >
                             <X aria-hidden="true" size={13} />
-                          </button>
+                          </Button>
                         </form>
                       </li>
                     ) : null}
@@ -1101,9 +1120,11 @@ export function ConversationSidebar({
                                 handleRenameCustomFolder(folder.id);
                               }}
                             >
-                              <input
+                              <Input
                                 aria-label={t('customFolderNamePlaceholder')}
-                                className="h-7 min-w-0 flex-1 rounded-control border border-accent/60 bg-surface px-2 text-xs text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+                                className="h-7 min-h-0 w-auto min-w-0 flex-1 rounded-control border-accent/60 bg-surface px-2 text-xs text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+                                density="compact"
+                                fieldLayout="none"
                                 maxLength={80}
                                 onBlur={() => handleRenameCustomFolder(folder.id)}
                                 onChange={(event) => setEditingFolderName(event.target.value)}
@@ -1124,12 +1145,14 @@ export function ConversationSidebar({
                                   : 'text-text/85 hover:bg-hover/85 hover:text-text focus-within:bg-hover/85 focus-within:text-text'
                               }`}
                             >
-                              <button
+                              <Button
                                 aria-expanded={folderConversations.length > 0 ? isExpanded : undefined}
-                                className="flex min-h-9 min-w-0 flex-1 items-center gap-2.5 rounded-button px-3 py-1.5 text-left transition-all duration-quick group-focus-within/folder-item:pr-14 group-hover/folder-item:pr-14 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+                                className="min-h-9 min-w-0 flex-1 justify-start gap-2.5 rounded-button px-3 py-1.5 text-left transition-all duration-quick group-focus-within/folder-item:pr-14 group-hover/folder-item:pr-14 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
                                 data-sidebar-nav-item="true"
                                 onClick={() => toggleFolderExpanded(folder.id)}
+                                size="small"
                                 type="button"
+                                variant="ghost"
                               >
                                 <FolderIcon
                                   aria-hidden="true"
@@ -1144,7 +1167,7 @@ export function ConversationSidebar({
                                     {folderConversations.length}
                                   </span>
                                 ) : null}
-                              </button>
+                              </Button>
                               <div className="pointer-events-none absolute inset-y-0 right-1.5 flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity duration-quick group-focus-within/folder-item:pointer-events-auto group-focus-within/folder-item:opacity-100 group-hover/folder-item:pointer-events-auto group-hover/folder-item:opacity-100">
                                 <Button
                                   aria-label={t('renameCustomFolder')}
@@ -1227,17 +1250,19 @@ export function ConversationSidebar({
                         </ul>
                       )}
                       {hasMoreChats ? (
-                        <button
-                          className="mx-2 rounded-button border border-border bg-surface/60 px-3 py-1.5 text-xs font-medium text-secondary-text transition-colors hover:bg-hover hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+                        <Button
+                          className="mx-2 min-h-9 justify-start rounded-button border-border bg-surface/60 px-3 py-1.5 text-xs font-medium text-secondary-text transition-colors hover:bg-hover hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
                           onClick={() =>
                             setVisibleChatLimit((current) =>
                               Math.min(unassignedConversations.length, current + SIDEBAR_PAGE_SIZE),
                             )
                           }
+                          size="small"
                           type="button"
+                          variant="secondary"
                         >
                           {t('loadMoreChats')}
-                        </button>
+                        </Button>
                       ) : null}
                     </li>
                   </ConversationSidebarSection>

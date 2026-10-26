@@ -25,7 +25,7 @@ export function CitationSourceDialog({ open, onOpenChange, source }: CitationSou
   const safeUrl = isSafeHttpUrl(source.url) ? source.url : null;
 
   return (
-    <Dialog className="w-dialog-wide" onOpenChange={onOpenChange} open={open} title={t('toolSourceDetails')}>
+    <Dialog onOpenChange={onOpenChange} open={open} size="wide" title={t('toolSourceDetails')}>
       <div className="grid gap-4">
         <div className="grid gap-1">
           <h3 className="break-words text-base font-semibold text-text">{source.title}</h3>

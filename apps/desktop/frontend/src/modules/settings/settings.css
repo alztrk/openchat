@@ -11,3 +11,13 @@
   line-height: 20px;
   font-weight: 500;
 }
+
+.connector-source-card {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@media (min-width: 640px) {
+  .connector-source-card {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+}

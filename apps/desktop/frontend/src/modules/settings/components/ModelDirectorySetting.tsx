@@ -70,7 +70,7 @@ export function ModelDirectorySetting() {
   };
 
   return (
-    <Card className="grid gap-3 p-5">
+    <Card className="grid gap-3" padding="comfortable">
       <div>
         <h3 className="font-semibold text-text">{t('localModelDirectoryTitle')}</h3>
         <p className="mt-1 text-sm text-secondary-text">{t('localModelDirectoryDescription')}</p>

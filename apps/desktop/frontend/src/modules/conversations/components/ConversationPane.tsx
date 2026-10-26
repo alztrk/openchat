@@ -579,32 +579,38 @@ export function ConversationPane({
                       : t('inChatSearchNoMatches')}
                   </span>
                   <div className="flex items-center gap-0.5">
-                    <button
+                    <Button
                       aria-label={t('inChatPreviousMatch')}
-                      className="rounded-full p-1 text-secondary-icon transition-colors hover:bg-hover hover:text-text disabled:opacity-40"
+                      className="size-8 rounded-full p-1 text-secondary-icon"
                       disabled={searchMatchCount <= 1}
                       onClick={prevSearchMatch}
+                      size="icon"
                       type="button"
+                      variant="ghost"
                     >
                       <ChevronUp size={14} />
-                    </button>
-                    <button
+                    </Button>
+                    <Button
                       aria-label={t('inChatNextMatch')}
-                      className="rounded-full p-1 text-secondary-icon transition-colors hover:bg-hover hover:text-text disabled:opacity-40"
+                      className="size-8 rounded-full p-1 text-secondary-icon"
                       disabled={searchMatchCount <= 1}
                       onClick={nextSearchMatch}
+                      size="icon"
                       type="button"
+                      variant="ghost"
                     >
                       <ChevronDown size={14} />
-                    </button>
-                    <button
+                    </Button>
+                    <Button
                       aria-label={t('inChatCloseSearch')}
-                      className="ml-1 rounded-full p-1 text-secondary-icon transition-colors hover:bg-hover hover:text-text"
+                      className="ml-1 size-8 rounded-full p-1 text-secondary-icon"
                       onClick={clearSearchHighlight}
+                      size="icon"
                       type="button"
+                      variant="ghost"
                     >
                       <X size={13} />
-                    </button>
+                    </Button>
                   </div>
                 </div>
               ) : null}

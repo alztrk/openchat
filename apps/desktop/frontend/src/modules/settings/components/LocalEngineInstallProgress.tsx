@@ -69,7 +69,7 @@ export function InstallProgressCard({
 }) {
   const { t } = useTranslation();
   return (
-    <Card aria-live="polite" className="grid gap-3 p-4">
+    <Card aria-live="polite" className="grid gap-3" padding="default">
       <InstallProgressInline assetProgress={assetProgress} locale={locale} progress={progress} />
       <div className="flex justify-end">
         <Button disabled={cancelling} onClick={onCancel} size="small" variant="secondary">

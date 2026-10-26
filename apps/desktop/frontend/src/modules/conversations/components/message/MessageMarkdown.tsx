@@ -1,6 +1,8 @@
 import { Check, Copy } from 'lucide-react';
 import { Fragment, type ReactNode, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+
+import { Button } from '@/design-system';
 import { isWithinRichMarkdownBudget } from '@/modules/conversations/data/messageMarkdownBudget';
 import { withStableKeys } from '@/shared/utils/reactKeys';
 import { CitationSourceDialog } from './CitationSourceDialog';
@@ -50,16 +52,17 @@ function CodeBlock({ code, language }: CodeBlockProps) {
     <div className="relative my-3 overflow-hidden rounded-control border border-border/40 bg-composer">
       <div className="flex items-center justify-between border-b border-border/40 px-3 py-1.5 text-xs text-secondary-text select-none">
         <span className="font-code font-medium">{language || 'text'}</span>
-        <button
-          type="button"
+        <Button
+          size="small"
+          variant="ghost"
           onClick={handleCopy}
-          className="flex items-center gap-1.5 rounded px-2 py-0.5 text-xs text-secondary-text transition-colors hover:bg-surface hover:text-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+          className="px-2 py-0.5 text-xs"
           title={copyLabel}
           aria-label={copyLabel}
         >
           {copied ? <Check className="size-3.5 text-green-500" /> : <Copy className="size-3.5" />}
           <span>{copyLabel}</span>
-        </button>
+        </Button>
       </div>
       <pre className="max-w-full overflow-x-auto p-3 text-sm">
         <code className="font-code whitespace-pre-wrap break-words">{code}</code>

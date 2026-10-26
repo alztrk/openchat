@@ -1,7 +1,7 @@
 import { type FormEvent, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button, Dialog, Input, Select } from '@/design-system';
+import { Button, Dialog, Input, Select, Textarea } from '@/design-system';
 import {
   type ConnectorCatalogEntry,
   type ConnectorTransport,
@@ -224,17 +224,15 @@ function MultilineField({
   value: string;
 }) {
   return (
-    <label className="grid gap-2 text-sm font-medium text-text">
-      {label}
-      <textarea
-        className="min-h-24 w-full resize-y rounded-control border border-border bg-raised px-3 py-2 text-text outline-none placeholder:text-secondary-text focus-visible:ring-2 focus-visible:ring-focus disabled:cursor-not-allowed disabled:opacity-50"
-        maxLength={maxLength}
-        onChange={(event) => onChange(event.target.value)}
-        required={required}
-        rows={rows}
-        value={value}
-      />
-    </label>
+    <Textarea
+      className="bg-raised"
+      label={label}
+      maxLength={maxLength}
+      onChange={(event) => onChange(event.target.value)}
+      required={required}
+      rows={rows}
+      value={value}
+    />
   );
 }
 

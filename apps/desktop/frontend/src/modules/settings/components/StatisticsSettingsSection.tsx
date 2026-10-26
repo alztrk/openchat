@@ -260,21 +260,15 @@ export function StatisticsSettingsSection({ onOpenConversation }: StatisticsSett
           </Button>
           <Button
             disabled={
-              isExporting ||
-              snapshot === null ||
-              snapshot.requestDetailCount === 0 ||
-              loadState === 'loading' ||
-              dateRangeInvalid
+              snapshot === null || snapshot.requestDetailCount === 0 || loadState === 'loading' || dateRangeInvalid
             }
+            loading={isExporting}
+            loadingContent={t('statisticsExporting')}
             onClick={() => void exportCsv()}
             variant="secondary"
           >
-            {isExporting ? (
-              <LoaderCircle aria-hidden="true" className="animate-spin" size={16} />
-            ) : (
-              <Download aria-hidden="true" size={16} />
-            )}
-            {t(isExporting ? 'statisticsExporting' : 'statisticsExportCsv')}
+            <Download aria-hidden="true" size={16} />
+            {t('statisticsExportCsv')}
           </Button>
         </div>
       </div>
@@ -285,7 +279,7 @@ export function StatisticsSettingsSection({ onOpenConversation }: StatisticsSett
         </p>
       ) : null}
       {loadState === 'failed' && snapshot === null && !dateRangeInvalid ? (
-        <Card className="grid justify-items-center gap-3 p-6 text-center" role="alert">
+        <Card className="grid justify-items-center gap-3 text-center" padding="spacious" role="alert">
           <ChartNoAxesCombined aria-hidden="true" className="text-secondary-icon" size={36} />
           <p className="text-sm text-destructive">{t('statisticsLoadFailed')}</p>
           <Button
@@ -369,7 +363,7 @@ export function StatisticsSettingsSection({ onOpenConversation }: StatisticsSett
             />
           </div>
 
-          <Card className="grid gap-4 p-4">
+          <Card className="grid gap-4" padding="default">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <h3 className="font-semibold">{t('statisticsUsageTrend')}</h3>
               <SegmentedControl
@@ -401,7 +395,7 @@ export function StatisticsSettingsSection({ onOpenConversation }: StatisticsSett
             <BreakdownCard items={snapshot.models} title={t('statisticsModels')} language={i18n.language} t={t} />
           </div>
 
-          <Card className="overflow-hidden p-0">
+          <Card className="overflow-hidden">
             <div className="border-b border-border px-4 py-3">
               <h3 className="font-semibold">{t('statisticsConversations')}</h3>
             </div>
@@ -427,11 +421,12 @@ export function StatisticsSettingsSection({ onOpenConversation }: StatisticsSett
                     .filter((part): part is string => part !== null)
                     .join(', ');
                   return (
-                    <button
+                    <Button
                       aria-label={accessibleLabel}
-                      className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-focus"
+                      className="w-full justify-start gap-3 rounded-none px-4 py-3 text-left"
                       key={conversation.conversationId}
                       onClick={() => onOpenConversation(conversation.conversationId)}
+                      variant="ghost"
                       type="button"
                     >
                       <span className="grid min-w-0 flex-1 gap-1">
@@ -446,7 +441,7 @@ export function StatisticsSettingsSection({ onOpenConversation }: StatisticsSett
                       </span>
                       <span className="shrink-0 text-xs font-semibold tabular-nums text-text">{tokensLabel}</span>
                       <ChevronRight aria-hidden="true" className="shrink-0 text-secondary-icon" size={16} />
-                    </button>
+                    </Button>
                   );
                 })}
               </div>

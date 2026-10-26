@@ -2,7 +2,7 @@ import { Download, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button, Switch } from '@/design-system';
+import { Button, Switch, Textarea } from '@/design-system';
 import type { ChatProject } from '@/modules/conversations/data/chatStorage';
 import { LocalServiceError, localServiceClient } from '@/platform/local-service';
 
@@ -243,9 +243,10 @@ export function ProjectMemoryPanel({ project, onClose }: ProjectMemoryPanelProps
                           {t(item.origin === 'assistant' ? 'projectMemoryAssistantOrigin' : 'projectMemoryUserOrigin')}
                         </span>
                       </span>
-                      <textarea
+                      <Textarea
                         aria-label={t('projectMemoryNoteLabel', { index: index + 1 })}
                         className="min-h-24 resize-y rounded-control border border-border bg-raised p-3 font-ui text-sm text-text outline-none focus-visible:ring-2 focus-visible:ring-focus disabled:cursor-not-allowed disabled:opacity-50"
+                        fieldLayout="none"
                         disabled={isBusy}
                         onChange={(event) => setDrafts((current) => ({ ...current, [item.id]: event.target.value }))}
                         value={content}
@@ -303,9 +304,10 @@ export function ProjectMemoryPanel({ project, onClose }: ProjectMemoryPanelProps
           <div className="grid gap-2 rounded-card border border-border p-3">
             <label className="grid gap-2 text-sm font-medium text-text">
               {t('projectMemoryNewNote')}
-              <textarea
+              <Textarea
                 aria-label={t('projectMemoryNewNote')}
                 className="min-h-24 resize-y rounded-control border border-border bg-raised p-3 font-ui text-sm text-text outline-none focus-visible:ring-2 focus-visible:ring-focus disabled:cursor-not-allowed disabled:opacity-50"
+                fieldLayout="none"
                 disabled={isBusy}
                 onChange={(event) => setNewNote(event.target.value)}
                 placeholder={t('projectMemoryHint')}

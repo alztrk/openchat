@@ -2,7 +2,7 @@ import { Bot, Pencil, Plus, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button, Card, Dialog, Input, Select, Switch } from '@/design-system';
+import { Button, Card, Checkbox, Dialog, Input, Select, Switch, Textarea } from '@/design-system';
 import { useChatStore } from '@/modules/conversations/stores/chatStore';
 import { type ProjectMcpServer, parseProjectMcpCatalog } from '@/modules/projects/data/projectMcp';
 import type {
@@ -273,14 +273,14 @@ export function AssistantProfilesSettingsSection({ showReadyAgents = false }: { 
             </p>
           ) : null}
           {profiles.length === 0 ? (
-            <Card className="flex items-center gap-3 p-4" role="status">
+            <Card className="flex items-center gap-3" padding="default" role="status">
               <Bot aria-hidden="true" className="text-secondary-icon" size={18} />
               <p className="text-sm text-secondary-text">{t('assistantProfilesEmpty')}</p>
             </Card>
           ) : (
             <div className="grid gap-2">
               {profiles.map((profile) => (
-                <Card className="flex min-w-0 flex-wrap items-center gap-3 p-3" key={profile.id}>
+                <Card className="flex min-w-0 flex-wrap items-center gap-3" key={profile.id} padding="compact">
                   <div className="min-w-0 flex-1">
                     <p className="truncate font-medium text-text">{profile.name}</p>
                     <p className="mt-1 text-xs text-secondary-text">
@@ -314,7 +314,7 @@ export function AssistantProfilesSettingsSection({ showReadyAgents = false }: { 
           )}
 
           {draft ? (
-            <Card className="grid gap-4 p-4">
+            <Card className="grid gap-4" padding="default">
               <h2 className="text-lg font-semibold">
                 {t(draft.id ? 'assistantProfileEdit' : 'assistantProfileCreate')}
               </h2>
@@ -328,25 +328,18 @@ export function AssistantProfilesSettingsSection({ showReadyAgents = false }: { 
                 }}
                 value={draft.name}
               />
-              <div className="grid gap-2">
-                <label className="text-sm font-medium text-text" htmlFor="assistant-profile-instructions">
-                  {t('assistantProfileInstructions')}
-                </label>
-                <textarea
-                  aria-describedby="assistant-profile-instructions-help"
-                  className="min-h-32 max-h-64 w-full resize-y rounded-control border border-border bg-composer px-3 py-2 text-sm text-text outline-none focus-visible:ring-2 focus-visible:ring-focus"
-                  id="assistant-profile-instructions"
-                  maxLength={16 * 1024}
-                  onChange={(event) => {
-                    setDraft((current) => (current ? { ...current, instructions: event.target.value } : current));
-                    setFormError(null);
-                  }}
-                  value={draft.instructions}
-                />
-                <p className="text-xs text-secondary-text" id="assistant-profile-instructions-help">
-                  {t('assistantProfileInstructionsHelp')}
-                </p>
-              </div>
+              <Textarea
+                className="min-h-32 max-h-64 resize-y bg-composer text-sm"
+                description={t('assistantProfileInstructionsHelp')}
+                id="assistant-profile-instructions"
+                label={t('assistantProfileInstructions')}
+                maxLength={16 * 1024}
+                onChange={(event) => {
+                  setDraft((current) => (current ? { ...current, instructions: event.target.value } : current));
+                  setFormError(null);
+                }}
+                value={draft.instructions}
+              />
               <Select
                 label={t('assistantResponseStyle')}
                 onChange={(event) => {
@@ -361,29 +354,37 @@ export function AssistantProfilesSettingsSection({ showReadyAgents = false }: { 
                 value={draft.responseStyle}
               />
               <div className="grid gap-2">
-                <label className="flex items-center justify-between gap-3 text-sm font-medium text-text">
-                  <span>{t('assistantProfileRestrictTools')}</span>
+                <div className="flex items-center justify-between gap-3 text-sm font-medium text-text">
+                  <span id="assistant-profile-restrict-tools-label">{t('assistantProfileRestrictTools')}</span>
                   <Switch
                     aria-label={t('assistantProfileRestrictTools')}
+                    aria-describedby="assistant-profile-restrict-tools-help"
+                    aria-labelledby="assistant-profile-restrict-tools-label"
                     checked={draft.restrictTools}
                     onCheckedChange={(checked) =>
                       setDraft((current) => (current ? { ...current, restrictTools: checked } : current))
                     }
                   />
-                </label>
-                <p className="text-xs text-secondary-text">{t('assistantProfileRestrictToolsHelp')}</p>
+                </div>
+                <p className="text-xs text-secondary-text" id="assistant-profile-restrict-tools-help">
+                  {t('assistantProfileRestrictToolsHelp')}
+                </p>
               </div>
               {draft.restrictTools ? (
                 <fieldset className="grid gap-2 rounded-control border border-border p-3">
                   <legend className="px-1 text-sm font-medium text-text">{t('assistantProfileRestrictTools')}</legend>
                   <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                     {builtInToolNames.map((toolName) => (
-                      <label className="flex min-w-0 items-start gap-2 text-sm text-text" key={toolName}>
-                        <input
+                      <label
+                        className="flex min-w-0 items-start gap-2 text-sm text-text"
+                        htmlFor={`assistant-profile-tool-${toolName}`}
+                        key={toolName}
+                      >
+                        <Checkbox
                           checked={draft.toolAllowlist.includes(toolName)}
-                          className="mt-0.5 accent-accent"
+                          className="mt-0.5"
+                          id={`assistant-profile-tool-${toolName}`}
                           onChange={() => toggleTool(toolName)}
-                          type="checkbox"
                         />
                         <span>
                           {toolName === 'run_project_task' ? t('assistantProfileProjectTasks') : null}
@@ -540,7 +541,7 @@ export function AssistantProfilesSettingsSection({ showReadyAgents = false }: { 
               );
               const buttonLabel = t(alreadyExists ? 'assistantReadyAgentAlreadyExists' : 'assistantReadyAgentAdd');
               return (
-                <Card className="grid content-start gap-3 p-4" key={template.id}>
+                <Card className="grid content-start gap-3" key={template.id} padding="default">
                   <div className="flex min-w-0 items-center gap-2">
                     <Bot aria-hidden="true" className="shrink-0 text-secondary-icon" size={17} />
                     <h3 className="min-w-0 truncate font-medium text-text">{name}</h3>
@@ -567,7 +568,7 @@ export function AssistantProfilesSettingsSection({ showReadyAgents = false }: { 
         </div>
       ) : null}
       <Dialog
-        className="w-dialog-wide"
+        size="wide"
         onOpenChange={(open) => {
           if (!open) setViewingReadyTemplate(null);
         }}
@@ -642,9 +643,11 @@ function ProfileToolCheckbox({
   name: string;
   onChange(): void;
 }) {
+  const checkboxId = `assistant-profile-tool-${name}`;
+
   return (
-    <label className="flex min-w-0 items-start gap-2 text-sm text-text">
-      <input checked={checked} className="mt-0.5 accent-accent" onChange={onChange} type="checkbox" />
+    <label className="flex min-w-0 items-start gap-2 text-sm text-text" htmlFor={checkboxId}>
+      <Checkbox checked={checked} className="mt-0.5" id={checkboxId} onChange={onChange} />
       <span className="min-w-0">
         <span>{label}</span>
         {label === name ? null : <code className="ml-1 break-all text-xs text-secondary-text">{name}</code>}

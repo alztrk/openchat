@@ -146,7 +146,13 @@ export function ComposerContextRow({
                       onSelect={() => onSelectProject(project.id)}
                       textValue={project.name}
                     >
-                      <button aria-current={isSelected ? 'true' : undefined} type="button">
+                      <Button
+                        aria-current={isSelected ? 'true' : undefined}
+                        className="min-h-8 w-full justify-start gap-2 px-2 py-1 text-left text-xs"
+                        size="small"
+                        type="button"
+                        variant="ghost"
+                      >
                         <Folder aria-hidden="true" className="shrink-0 text-secondary-icon" size={14} />
                         <span className="min-w-0 flex-1 truncate">{project.name}</span>
                         {project.workspaceRoots.length > 1 ? (
@@ -158,7 +164,7 @@ export function ComposerContextRow({
                           </span>
                         ) : null}
                         {isSelected ? <Check aria-hidden="true" className="shrink-0 text-accent" size={14} /> : null}
-                      </button>
+                      </Button>
                     </DropdownMenuItem>
                   );
                 })
@@ -178,10 +184,10 @@ export function ComposerContextRow({
               className="w-full min-h-8 gap-2 px-2 py-1 text-left text-xs"
               onSelect={() => setCreateProjectOpen(true)}
             >
-              <button type="button">
+              <Button className="min-h-8 w-full justify-start gap-2 px-2 py-1 text-left text-xs" size="small" type="button" variant="ghost">
                 <FolderPlus aria-hidden="true" className="shrink-0 text-secondary-icon" size={14} />
                 <span>{t('createProject')}</span>
-              </button>
+              </Button>
             </DropdownMenuItem>
             <DropdownMenuItem
               asChild

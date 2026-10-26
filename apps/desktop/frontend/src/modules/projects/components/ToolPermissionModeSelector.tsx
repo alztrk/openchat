@@ -1,6 +1,8 @@
 import { Check, ChevronDown, Hand, ShieldAlert, ShieldCheck } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+
+import { Button } from '@/design-system';
 import { loadToolPermissionMode, saveToolPermissionMode } from '@/modules/projects/data/projectPermissionSettings';
 import type { ToolPermissionMode } from '@/modules/projects/data/projectPreferences';
 import { useTransitionPresence } from '@/shared/hooks/useTransitionPresence';
@@ -99,7 +101,7 @@ export function ToolPermissionModeSelector({ onModeChange }: { onModeChange?(mod
 
   return (
     <div className="relative w-48 max-w-full shrink-0" ref={rootRef}>
-      <button
+      <Button
         aria-expanded={isOpen}
         aria-haspopup="listbox"
         aria-label={t('toolPermissions')}
@@ -132,8 +134,10 @@ export function ToolPermissionModeSelector({ onModeChange }: { onModeChange?(mod
             setIsOpen(false);
           }
         }}
+        size="small"
         title={t(permissionDescriptions[mode])}
         type="button"
+        variant="ghost"
       >
         <selectedOption.icon
           aria-hidden="true"
@@ -146,7 +150,7 @@ export function ToolPermissionModeSelector({ onModeChange }: { onModeChange?(mod
           className={`openchat-select-chevron shrink-0 ${isOpen ? 'rotate-180' : ''}`}
           size={15}
         />
-      </button>
+      </Button>
       {isPresent ? (
         <div
           aria-hidden={!isOpen}
@@ -170,18 +174,20 @@ export function ToolPermissionModeSelector({ onModeChange }: { onModeChange?(mod
           role="listbox"
         >
           {options.map(({ value, labelKey, descriptionKey, icon: Icon }, index) => (
-            <button
+            <Button
               aria-selected={mode === value}
-              className={`flex min-h-12 w-full items-center gap-2.5 rounded-button px-2.5 text-left transition-colors ${mode === value ? 'bg-selected text-text' : 'text-secondary-text hover:bg-hover hover:text-text'} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus`}
+              className={`min-h-12 w-full justify-start gap-2.5 rounded-button px-2.5 text-left transition-colors ${mode === value ? 'bg-selected text-text' : 'text-secondary-text hover:bg-hover hover:text-text'} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus`}
               key={value}
               onClick={() => void saveMode(value)}
               ref={(element) => {
                 optionRefs.current[index] = element;
               }}
               role="option"
+              size="small"
               tabIndex={index === activeIndex ? 0 : -1}
               title={t(permissionDescriptions[value])}
               type="button"
+              variant="ghost"
             >
               <Icon
                 aria-hidden="true"
@@ -193,7 +199,7 @@ export function ToolPermissionModeSelector({ onModeChange }: { onModeChange?(mod
                 <span className="block truncate text-xs text-secondary-text">{t(descriptionKey)}</span>
               </span>
               {mode === value ? <Check aria-hidden="true" className="shrink-0 text-accent-icon" size={15} /> : null}
-            </button>
+            </Button>
           ))}
         </div>
       ) : null}

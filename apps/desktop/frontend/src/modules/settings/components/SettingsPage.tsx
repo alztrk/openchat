@@ -17,6 +17,8 @@ import type { ReactNode } from 'react';
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { Button } from '@/design-system';
+
 import type { ThemePreference } from './GeneralSettingsSection';
 
 const loadGeneralSettings = () =>
@@ -419,16 +421,18 @@ function SettingsNavigationGroup({ children, label }: { children: ReactNode; lab
 
 function SettingsNavigationButton({ active, icon, label, onClick }: SettingsNavigationButtonProps) {
   return (
-    <button
+    <Button
       aria-current={active ? 'page' : undefined}
       aria-label={label}
-      className={`settings-navigation-button flex min-h-11 items-center gap-3 rounded-button px-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus ${active ? 'bg-selected font-semibold text-text' : 'text-secondary-text hover:bg-hover'}`}
+      className={`settings-navigation-button min-h-11 w-full justify-start gap-3 px-3 text-left ${active ? 'font-semibold text-text' : 'text-secondary-text'}`}
       onClick={onClick}
+      size="small"
       title={label}
       type="button"
+      variant={active ? 'elevated' : 'ghost'}
     >
       {icon}
       <span className="settings-navigation-label">{label}</span>
-    </button>
+    </Button>
   );
 }

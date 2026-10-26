@@ -165,7 +165,7 @@ export function ConnectorCatalogSourcesPanel({
           {t('connectorSourceAdd')}
         </Button>
       </div>
-      <Card className="flex gap-3 p-4" role="note">
+      <Card className="flex gap-3" padding="default" role="note">
         <p className="text-sm text-secondary-text">{t('connectorSourceIdentityWarning')}</p>
       </Card>
 
@@ -181,7 +181,7 @@ export function ConnectorCatalogSourcesPanel({
       ) : (
         <div className="grid gap-3">
           {sources.map((source) => (
-            <Card className="grid gap-3 p-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center" key={source.id}>
+            <Card className="connector-source-card grid gap-3 sm:items-center" key={source.id} padding="default">
               <div className="min-w-0">
                 <p className="font-medium text-text">{source.name}</p>
                 <p className="mt-1 break-all text-xs text-secondary-text">{source.url}</p>
@@ -237,7 +237,7 @@ export function ConnectorCatalogSourcesPanel({
             );
             const wasImported = importedIds.includes(entry.id);
             return (
-              <Card className="flex flex-wrap items-center justify-between gap-3 p-4" key={entry.id}>
+              <Card className="flex flex-wrap items-center justify-between gap-3" key={entry.id} padding="default">
                 <div className="min-w-0">
                   <p className="font-medium text-text">{entry.name}</p>
                   <p className="mt-1 text-xs text-secondary-text">

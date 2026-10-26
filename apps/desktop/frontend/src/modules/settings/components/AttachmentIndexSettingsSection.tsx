@@ -72,7 +72,7 @@ export function AttachmentIndexSettingsSection() {
   const locale = i18n.resolvedLanguage ?? i18n.language;
 
   return (
-    <Card className="grid gap-4 p-4">
+    <Card className="grid gap-4" padding="default">
       <div>
         <h3 className="font-medium text-text">{t('attachmentIndexTitle')}</h3>
         <p className="mt-1 text-sm text-secondary-text">{t('attachmentIndexDescription')}</p>
@@ -101,12 +101,14 @@ export function AttachmentIndexSettingsSection() {
             <p className="text-sm text-destructive" role="alert">{t('attachmentIndexFailed')}</p>
           ) : null}
           <div className="flex flex-wrap gap-2">
-            <Button disabled={isWorking} onClick={() => void rebuild()} size="small" variant="secondary">
-              {isWorking ? (
-                <LoaderCircle aria-hidden="true" className="animate-spin" size={16} />
-              ) : (
-                <RefreshCw aria-hidden="true" size={16} />
-              )}
+            <Button
+              loading={isWorking}
+              loadingContent={t('attachmentIndexWorking')}
+              onClick={() => void rebuild()}
+              size="small"
+              variant="secondary"
+            >
+              <RefreshCw aria-hidden="true" size={16} />
               {t(status?.enabled ? 'attachmentIndexRebuild' : 'attachmentIndexBuild')}
             </Button>
             {status && (status.enabled || status.indexedFileCount > 0) ? (

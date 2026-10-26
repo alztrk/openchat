@@ -2,7 +2,7 @@ import { KeyRound, Pencil, Plus, Radio, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button, Input, Select, Switch } from '@/design-system';
+import { Button, Input, Select, Switch, Textarea } from '@/design-system';
 import type { ChatProject } from '@/modules/conversations/data/chatStorage';
 import {
   type ProjectMcpServer,
@@ -624,8 +624,9 @@ function ProjectMcpServerEditor({ server, permission, onSave, onCancel }: Projec
           ) : null}
           <label className="grid gap-2 text-sm font-medium text-text">
             {t('projectMcpArguments')}
-            <textarea
+            <Textarea
               className="min-h-20 rounded-control border border-border bg-raised px-3 py-2 text-text outline-none focus-visible:ring-2 focus-visible:ring-focus"
+              fieldLayout="none"
               onChange={(event) => setArgumentsText(event.target.value)}
               value={argumentsText}
             />
@@ -633,8 +634,9 @@ function ProjectMcpServerEditor({ server, permission, onSave, onCancel }: Projec
           </label>
           <label className="grid gap-2 text-sm font-medium text-text">
             {t('projectMcpEnvironmentVariables')}
-            <textarea
+            <Textarea
               className="min-h-16 rounded-control border border-border bg-raised px-3 py-2 text-text outline-none focus-visible:ring-2 focus-visible:ring-focus"
+              fieldLayout="none"
               onChange={(event) => setEnvironmentText(event.target.value)}
               value={environmentText}
             />

@@ -1,7 +1,7 @@
 import { Archive, ArchiveRestore, ShieldCheck } from 'lucide-react';
 import { type FormEvent, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button, Card, Dialog, Input } from '@/design-system';
+import { Button, Card, Checkbox, Dialog, Input, RadioGroup } from '@/design-system';
 import type { ChatConversation } from '@/modules/conversations/data/chatStorage';
 import { useChatStore } from '@/modules/conversations/stores/chatStore';
 import {
@@ -169,7 +169,7 @@ export function ConversationArchiveSettingsSection({ enabled }: { enabled: boole
   };
 
   return (
-    <Card className="grid gap-4 bg-composer p-4 sm:p-5">
+    <Card className="grid gap-4 bg-composer sm:p-5" padding="default">
       <div className="flex items-start gap-3">
         <ShieldCheck aria-hidden="true" className="mt-0.5 shrink-0 text-accent" size={19} />
         <div className="grid gap-1">
@@ -385,11 +385,13 @@ function ConversationSelectionDialog({
             filtered.map((conversation) => (
               <label
                 className="flex min-h-12 cursor-pointer items-start gap-3 border-b border-border px-3 py-2 last:border-b-0 hover:bg-hover"
+                htmlFor={`archive-conversation-${conversation.id}`}
                 key={conversation.id}
               >
-                <input
+                <Checkbox
                   checked={selectedIds.has(conversation.id)}
                   className="mt-1 size-4 accent-accent"
+                  id={`archive-conversation-${conversation.id}`}
                   onChange={(event) =>
                     setSelectedIds((current) => {
                       const next = new Set(current);
@@ -398,7 +400,6 @@ function ConversationSelectionDialog({
                       return next;
                     })
                   }
-                  type="checkbox"
                 />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm text-text">{conversation.title}</span>
@@ -500,27 +501,19 @@ function ArchiveRestoreDialog({
             value={String(summary.duplicateConversationCount)}
           />
         ) : null}
-        <fieldset className="grid gap-2 border-t border-border pt-3">
-          <legend className="sr-only">{t('conversationArchivePreviewTitle')}</legend>
-          <label className="flex min-h-10 items-start gap-3 text-sm">
-            <input
-              checked={policy === 'skip_existing'}
-              className="mt-1 size-4 accent-accent"
-              onChange={() => setPolicy('skip_existing')}
-              type="radio"
-            />
-            <span>{t('conversationArchiveSkipDuplicates')}</span>
-          </label>
-          <label className="flex min-h-10 items-start gap-3 text-sm">
-            <input
-              checked={policy === 'import_as_copy'}
-              className="mt-1 size-4 accent-accent"
-              onChange={() => setPolicy('import_as_copy')}
-              type="radio"
-            />
-            <span>{t('conversationArchiveImportCopies')}</span>
-          </label>
-        </fieldset>
+        <div className="border-t border-border pt-3">
+          <RadioGroup
+            label={t('conversationArchivePreviewTitle')}
+            onValueChange={(value) => {
+              if (value === 'skip_existing' || value === 'import_as_copy') setPolicy(value);
+            }}
+            options={[
+              { value: 'skip_existing', label: t('conversationArchiveSkipDuplicates') },
+              { value: 'import_as_copy', label: t('conversationArchiveImportCopies') },
+            ]}
+            value={policy}
+          />
+        </div>
         <p className="text-sm text-secondary-text">{t('conversationArchiveRestoreNotice')}</p>
         <div className="flex flex-wrap justify-end gap-2 border-t border-border pt-3">
           <Button onClick={onCancel}>{t('cancel')}</Button>

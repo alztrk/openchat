@@ -2,6 +2,8 @@ import { Bot, Clock, File, LoaderCircle, MessageSquare, Pin, Search, Trash2, Use
 import { type KeyboardEvent, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { Button, Input } from '@/design-system';
+
 import {
   type ChatConversation,
   normalizeSearchText,
@@ -431,11 +433,14 @@ export function TitleBarSearch({ onSelectConversation }: TitleBarSearchProps) {
     >
       <div className="relative flex w-full items-center">
         <Search aria-hidden="true" className="pointer-events-none absolute left-2.5 text-secondary-icon" size={14} />
-        <input
+        <Input
           aria-autocomplete="list"
           aria-expanded={isOpen}
           aria-label={t('searchChats')}
-          className="h-7.5 w-full rounded-control border border-border/70 bg-surface/80 pl-8 pr-12 text-xs text-text placeholder:text-secondary-text transition-colors duration-150 hover:border-border focus:bg-surface focus:outline-none focus:ring-1 focus:ring-accent"
+          className="w-full border-border/70 bg-surface/80 pl-8 pr-12 text-xs transition-colors duration-150 hover:border-border focus:bg-surface focus:ring-1 focus:ring-accent"
+          density="compact"
+          fieldClassName="w-full"
+          fieldLayout="inline"
           onChange={(event) => {
             const nextValue = event.target.value;
             setQuery(nextValue);
@@ -458,14 +463,16 @@ export function TitleBarSearch({ onSelectConversation }: TitleBarSearchProps) {
             <LoaderCircle aria-hidden="true" className="animate-spin text-secondary-icon" size={13} />
           ) : null}
           {query ? (
-            <button
+            <Button
               aria-label={t('settingsSearchClear')}
-              className="text-secondary-icon transition-colors hover:text-text focus:outline-none"
+              className="size-6 text-secondary-icon transition-colors hover:text-text focus:outline-none"
               onClick={handleClear}
+              size="icon"
+              variant="ghost"
               type="button"
             >
               <X aria-hidden="true" size={13} />
-            </button>
+            </Button>
           ) : null}
         </div>
       </div>
@@ -478,14 +485,16 @@ export function TitleBarSearch({ onSelectConversation }: TitleBarSearchProps) {
         >
           <div className="flex items-center justify-between px-2 py-1.5 text-caption font-medium text-secondary-text">
             <span>{t('recentSearches')}</span>
-            <button
-              className="flex items-center gap-1 text-caption text-secondary-text transition-colors hover:text-destructive"
+            <Button
+              className="min-h-0 gap-1 px-1 text-caption text-secondary-text transition-colors hover:text-destructive"
               onClick={handleClearAllRecent}
+              size="small"
+              variant="ghost"
               type="button"
             >
               <Trash2 size={11} />
               <span>{t('clearRecentSearches')}</span>
-            </button>
+            </Button>
           </div>
           <div className="flex flex-col gap-0.5">
             {recentSearches.map((term) => (
@@ -503,14 +512,16 @@ export function TitleBarSearch({ onSelectConversation }: TitleBarSearchProps) {
                   <Clock aria-hidden="true" className="shrink-0 text-secondary-icon" size={12} />
                   <span className="truncate">{term}</span>
                 </div>
-                <button
+                <Button
                   aria-label={t('deleteRecentSearch')}
-                  className="opacity-0 group-hover:opacity-100 p-0.5 text-secondary-icon transition-opacity hover:text-text"
+                  className="size-6 p-0.5 text-secondary-icon opacity-0 transition-opacity hover:text-text group-hover:opacity-100"
                   onClick={(e) => handleDeleteRecentSearch(term, e)}
+                  size="icon"
+                  variant="ghost"
                   type="button"
                 >
                   <X size={12} />
-                </button>
+                </Button>
               </div>
             ))}
           </div>
@@ -555,9 +566,9 @@ export function TitleBarSearch({ onSelectConversation }: TitleBarSearchProps) {
 
                 return (
                   <div className="flex flex-col rounded-button transition-colors" key={group.conversationId}>
-                    <button
+                    <Button
                       aria-selected={isConversationSelected}
-                      className={`flex w-full items-center justify-between gap-2.5 rounded-button px-2.5 py-1.5 text-left text-xs transition-colors duration-100 ${
+                      className={`min-h-0 w-full justify-between gap-2.5 rounded-button px-2.5 py-1.5 text-left text-xs transition-colors duration-100 ${
                         isConversationSelected
                           ? 'bg-accent/15 font-medium text-text'
                           : 'text-text/90 hover:bg-hover active:bg-active'
@@ -565,7 +576,9 @@ export function TitleBarSearch({ onSelectConversation }: TitleBarSearchProps) {
                       onClick={() => handleSelectConversation(group.conversationId)}
                       onMouseEnter={() => setSelectedIndex(conversationTargetIndex)}
                       role="option"
+                      size="small"
                       type="button"
+                      variant="ghost"
                     >
                       <div className="flex min-w-0 flex-1 items-center gap-2">
                         {group.isPinned ? (
@@ -584,7 +597,7 @@ export function TitleBarSearch({ onSelectConversation }: TitleBarSearchProps) {
                         ) : null}
                         {dateText ? <span>{dateText}</span> : null}
                       </div>
-                    </button>
+                    </Button>
 
                     {group.messages.length > 0 ? (
                       <div className="relative my-0.5 ml-4.5 flex flex-col gap-1 border-l-2 border-border/70 pl-2.5 transition-all duration-150">
@@ -593,9 +606,9 @@ export function TitleBarSearch({ onSelectConversation }: TitleBarSearchProps) {
                           const isMessageSelected = messageTargetIndex === selectedIndex;
 
                           return (
-                            <button
+                            <Button
                               aria-selected={isMessageSelected}
-                              className={`group flex w-full items-start gap-2 rounded-button px-2 py-1.5 text-left text-xs transition-all duration-100 ease-out hover:translate-x-0.5 ${
+                              className={`group min-h-0 w-full items-start gap-2 rounded-button px-2 py-1.5 text-left text-xs transition-all duration-100 ease-out hover:translate-x-0.5 ${
                                 isMessageSelected
                                   ? 'bg-accent/15 font-medium text-text'
                                   : 'text-secondary-text hover:bg-hover hover:text-text'
@@ -604,7 +617,9 @@ export function TitleBarSearch({ onSelectConversation }: TitleBarSearchProps) {
                               onClick={() => handleSelectMessage(group.conversationId, msg.messageId)}
                               onMouseEnter={() => setSelectedIndex(messageTargetIndex)}
                               role="option"
+                              size="small"
                               type="button"
+                              variant="ghost"
                             >
                               <span className="mt-0.5 shrink-0 text-secondary-icon transition-colors group-hover:text-accent">
                                 {msg.isAttachment ? (
@@ -620,7 +635,7 @@ export function TitleBarSearch({ onSelectConversation }: TitleBarSearchProps) {
                                   {renderHighlightedExcerpt(msg.excerpt, parsedQuery.cleanQuery || query.trim())}
                                 </p>
                               </div>
-                            </button>
+                            </Button>
                           );
                         })}
                       </div>

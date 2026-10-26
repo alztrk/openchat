@@ -298,7 +298,7 @@ export function UsageQuotasSection({ onNavigateToConnections }: UsageQuotasSecti
           <LoaderCircle aria-hidden="true" className="animate-spin text-secondary-icon" size={22} />
         </div>
       ) : loadState === 'failed' ? (
-        <Card className="flex flex-wrap items-center justify-between gap-3 p-5" role="alert">
+        <Card className="flex flex-wrap items-center justify-between gap-3" padding="comfortable" role="alert">
           <CircleAlert aria-hidden="true" className="shrink-0 text-destructive" size={22} />
           <p className="text-sm text-destructive">{t('usageQuotasLoadFailed')}</p>
           <Button onClick={() => void loadAll(true)} size="small" variant="secondary">
@@ -306,7 +306,7 @@ export function UsageQuotasSection({ onNavigateToConnections }: UsageQuotasSecti
           </Button>
         </Card>
       ) : connections.length === 0 ? (
-        <Card className="grid justify-items-center gap-3 p-6 text-center">
+        <Card className="grid justify-items-center gap-3 text-center" padding="spacious">
           <ChartNoAxesCombined aria-hidden="true" className="text-secondary-icon" size={36} />
           <div className="grid gap-1">
             <h3 className="font-semibold">{t('noChatGptAccountsForQuota')}</h3>
@@ -321,7 +321,11 @@ export function UsageQuotasSection({ onNavigateToConnections }: UsageQuotasSecti
           {connections.map((connection) => {
             const accountName = connection.email ?? connection.displayName ?? connection.id;
             return (
-              <Card className={`grid gap-4 p-5 ${connection.isSelected ? 'border-accent' : ''}`} key={connection.id}>
+              <Card
+                className={connection.isSelected ? 'grid gap-4 border-accent' : 'grid gap-4'}
+                key={connection.id}
+                padding="comfortable"
+              >
                 <header className="flex min-w-0 items-start gap-3">
                   <ProviderIcon className="mt-1" providerId="chatgpt" size={22} />
                   <div className="min-w-0 flex-1">

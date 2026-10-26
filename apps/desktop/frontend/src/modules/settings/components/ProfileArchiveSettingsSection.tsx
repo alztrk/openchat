@@ -154,7 +154,7 @@ export function ProfileArchiveSettingsSection({ enabled }: { enabled: boolean })
   };
 
   return (
-    <Card className="grid gap-4 bg-composer p-4 sm:p-5">
+    <Card className="grid gap-4 bg-composer sm:p-5" padding="default">
       <div className="flex items-start gap-3">
         <Shield aria-hidden="true" className="mt-0.5 shrink-0 text-accent" size={19} />
         <div className="grid gap-1">

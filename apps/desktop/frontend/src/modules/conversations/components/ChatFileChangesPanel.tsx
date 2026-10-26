@@ -478,10 +478,10 @@ export function ChatFileChangesPanel({
                 className={`workspace-tab-item flex h-9 max-w-64 min-w-0 shrink-0 items-center rounded-control px-1 ${selected ? 'bg-raised' : ''}`}
                 key={tab.id}
               >
-                <button
+                <Button
                   aria-controls={`${workspaceId}-panel`}
                   aria-selected={selected}
-                  className={`workspace-tab-select flex h-full min-w-0 items-center gap-2 rounded-control px-2 text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus ${
+                  className={`workspace-tab-select min-h-0 h-full min-w-0 justify-start gap-2 rounded-control px-2 text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus ${
                     selected ? 'text-text' : 'text-secondary-text hover:text-text'
                   }`}
                   id={`${workspaceId}-tab-${tab.id}`}
@@ -508,8 +508,10 @@ export function ChatFileChangesPanel({
                     );
                   }}
                   role="tab"
+                  size="small"
                   tabIndex={selected ? 0 : -1}
                   type="button"
+                  variant="ghost"
                 >
                   {tab.kind === 'file' ? (
                     <FileCode2 aria-hidden="true" className="shrink-0 text-accent" size={14} />
@@ -531,16 +533,18 @@ export function ChatFileChangesPanel({
                       {pendingApprovalChanges.length}
                     </span>
                   ) : null}
-                </button>
-                <button
+                </Button>
+                <Button
                   aria-label={t('workspaceCloseTab', { name: label })}
-                  className="workspace-tab-close grid size-6 shrink-0 place-items-center rounded-control text-secondary-icon hover:bg-hover hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+                  className="workspace-tab-close size-6 shrink-0 rounded-control p-0 text-secondary-icon hover:bg-hover hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
                   onClick={() => closeWorkspaceTab(tab.id)}
+                  size="icon"
                   title={t('workspaceCloseTab', { name: label })}
                   type="button"
+                  variant="ghost"
                 >
                   <X aria-hidden="true" size={12} />
-                </button>
+                </Button>
               </div>
             );
           })}
@@ -717,32 +721,36 @@ export function ChatFileChangesPanel({
                       {selectedDiff?.path ?? selectedChangePath(changes, selectedChangeId) ?? t('fileChangesDiffTitle')}
                     </h3>
                     <div className="flex shrink-0 items-center gap-1">
-                      <button
+                      <Button
                         aria-pressed={diffViewMode === 'unified'}
-                        className={`inline-flex items-center gap-1 rounded-control px-2 py-0.5 text-caption font-medium transition-colors ${
+                        className={`min-h-0 gap-1 rounded-control px-2 py-0.5 text-caption font-medium transition-colors ${
                           diffViewMode === 'unified'
                             ? 'bg-accent text-white'
                             : 'bg-raised text-secondary-text hover:text-text'
                         }`}
                         onClick={() => setDiffViewMode('unified')}
+                        size="small"
                         type="button"
+                        variant="ghost"
                       >
                         <Rows3 aria-hidden="true" size={12} />
                         <span>{t('fileChangesViewUnified')}</span>
-                      </button>
-                      <button
+                      </Button>
+                      <Button
                         aria-pressed={diffViewMode === 'split'}
-                        className={`inline-flex items-center gap-1 rounded-control px-2 py-0.5 text-caption font-medium transition-colors ${
+                        className={`min-h-0 gap-1 rounded-control px-2 py-0.5 text-caption font-medium transition-colors ${
                           diffViewMode === 'split'
                             ? 'bg-accent text-white'
                             : 'bg-raised text-secondary-text hover:text-text'
                         }`}
                         onClick={() => setDiffViewMode('split')}
+                        size="small"
                         type="button"
+                        variant="ghost"
                       >
                         <Columns2 aria-hidden="true" size={12} />
                         <span>{t('fileChangesViewSplit')}</span>
-                      </button>
+                      </Button>
                     </div>
                   </div>
                   <DiffContent
@@ -880,11 +888,13 @@ function DiffContent({
             <div className="flex items-center justify-between gap-2 border-b border-border/60 bg-raised px-2.5 py-1 text-caption">
               <span className="truncate font-code text-secondary-text">{hunk.header}</span>
               {canRevertHunks ? (
-                <button
-                  className="inline-flex shrink-0 items-center gap-1 rounded-control border border-border bg-surface px-2 py-0.5 text-caption font-medium text-secondary-text transition-colors hover:bg-hover hover:text-destructive disabled:opacity-50"
+                <Button
+                  className="min-h-0 shrink-0 gap-1 rounded-control border-border bg-surface px-2 py-0.5 text-caption font-medium text-secondary-text transition-colors hover:bg-hover hover:text-destructive disabled:opacity-50"
                   disabled={mutatingHunkIndex !== null}
                   onClick={() => onRevertHunk(hunk.index)}
+                  size="small"
                   type="button"
+                  variant="secondary"
                 >
                   {mutatingHunkIndex === hunk.index ? (
                     <LoaderCircle aria-hidden="true" className="animate-spin" size={11} />
@@ -892,7 +902,7 @@ function DiffContent({
                     <Undo2 aria-hidden="true" size={11} />
                   )}
                   <span>{t('fileChangesRejectHunk')}</span>
-                </button>
+                </Button>
               ) : null}
             </div>
             {viewMode === 'unified' ? (
@@ -984,12 +994,14 @@ function FileChangeRow({
         isSelected ? 'border border-accent bg-composer' : 'border border-transparent hover:bg-hover'
       }`}
     >
-      <button
+      <Button
         aria-pressed={isSelected}
-        className="flex min-w-0 flex-1 items-center gap-2 py-1 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+        className="min-h-0 min-w-0 flex-1 justify-start gap-2 py-1 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
         onClick={onSelect}
+        size="small"
         title={change.path}
         type="button"
+        variant="ghost"
       >
         <FileKindIcon kind={change.kind} />
         <span className="min-w-0 flex-1">
@@ -1018,7 +1030,7 @@ function FileChangeRow({
             {change.removedLines !== null ? <span className="text-destructive">-{change.removedLines}</span> : null}
           </span>
         ) : null}
-      </button>
+      </Button>
       {change.status === 'active' && !change.approved ? (
         <div className="flex shrink-0 items-center gap-1">
           <Button

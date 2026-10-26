@@ -2,7 +2,7 @@ import { Pencil, Plus, Send, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button, Card, Dialog, Input } from '@/design-system';
+import { Button, Card, Dialog, Input, Textarea } from '@/design-system';
 import {
   expandPromptTemplate,
   isPromptTemplateNameAvailable,
@@ -130,7 +130,7 @@ export function PromptTemplatesTab({ onUsePrompt }: PromptTemplatesTabProps) {
       </header>
 
       {draft ? (
-        <Card className="grid gap-4 p-4">
+        <Card className="grid gap-4" padding="default">
           <h3 className="text-base font-semibold text-text">{t(draft.id ? 'promptTemplateEdit' : 'promptTemplateCreate')}</h3>
           <Input
             autoFocus
@@ -144,9 +144,10 @@ export function PromptTemplatesTab({ onUsePrompt }: PromptTemplatesTabProps) {
           />
           <div className="grid gap-2">
             <label className="text-sm font-medium text-text" htmlFor="prompt-template-content">{t('promptTemplateContent')}</label>
-            <textarea
+            <Textarea
               className="min-h-40 max-h-64 w-full resize-y rounded-control border border-control-border bg-surface px-3 py-2 text-sm text-text outline-none placeholder:text-secondary-text focus-visible:ring-2 focus-visible:ring-focus"
               id="prompt-template-content"
+              fieldLayout="none"
               maxLength={promptTemplateLimits.maximumPromptBytes}
               onChange={(event) => {
                 setDraft((current) => current ? { ...current, prompt: event.target.value } : current);
@@ -166,7 +167,7 @@ export function PromptTemplatesTab({ onUsePrompt }: PromptTemplatesTabProps) {
       ) : null}
 
       {activeTemplate ? (
-        <Card className="grid gap-4 p-4">
+        <Card className="grid gap-4" padding="default">
           <div>
             <h3 className="text-base font-semibold text-text">{t('promptTemplateFillTitle', { name: activeTemplate.name })}</h3>
             <p className="mt-1 text-xs text-secondary-text">{t('promptTemplateFillHelp')}</p>
@@ -200,12 +201,14 @@ export function PromptTemplatesTab({ onUsePrompt }: PromptTemplatesTabProps) {
       ) : null}
 
       {templates.length === 0 && !draft ? (
-        <Card className="p-5 text-sm text-secondary-text">{t('promptTemplatesEmpty')}</Card>
+        <Card className="text-sm text-secondary-text" padding="comfortable">
+          {t('promptTemplatesEmpty')}
+        </Card>
       ) : (
         <ul className="grid gap-3 sm:grid-cols-2">
           {templates.map((template) => (
             <li key={template.id}>
-              <Card className="grid h-full min-w-0 gap-3 p-4">
+              <Card className="grid h-full min-w-0 gap-3" padding="default">
                 <div className="min-w-0">
                   <h3 className="truncate font-semibold text-text">{template.name}</h3>
                   <p className="mt-1 line-clamp-3 whitespace-pre-wrap break-words text-sm text-secondary-text">{template.prompt}</p>

@@ -146,15 +146,17 @@ export function SubagentsPanel({ conversationId }: SubagentsPanelProps) {
             >
               {runs.map((run) => (
                 <li key={run.runId}>
-                  <button
+                  <Button
                     aria-pressed={run.runId === selectedRunId}
-                    className={`flex w-full items-start gap-2 rounded-control px-2.5 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus ${
+                    className={`min-h-0 w-full items-start justify-start gap-2 rounded-control px-2.5 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus ${
                       run.runId === selectedRunId
                         ? 'bg-hover text-text'
                         : 'text-secondary-text hover:bg-hover hover:text-text'
                     }`}
                     onClick={() => setSelectedRunId(run.runId)}
+                    size="small"
                     type="button"
+                    variant="ghost"
                   >
                     <SubagentStatusIcon status={run.status} />
                     <span className="min-w-0 flex-1">
@@ -170,7 +172,7 @@ export function SubagentsPanel({ conversationId }: SubagentsPanelProps) {
                         {run.progress?.toolName ?? run.progress?.phase ?? run.objective ?? ''}
                       </span>
                     </span>
-                  </button>
+                  </Button>
                 </li>
               ))}
             </ul>

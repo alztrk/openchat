@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { Checkbox } from '@/design-system';
+
 import { Button } from '@/design-system';
 import type { ChatProject } from '@/modules/conversations/data/chatStorage';
 import { readProjectSkillIds, writeProjectSkillIds } from '@/modules/projects/data/projectPreferences';
@@ -118,13 +120,12 @@ export function ProjectSkillsPanel({ project, onClose }: ProjectSkillsPanelProps
           {skills.map((skill) => (
             <details className="openchat-native-disclosure rounded-card border border-border p-3" key={skill.id}>
               <summary className="flex cursor-pointer list-none items-center gap-3 [&::-webkit-details-marker]:hidden">
-                <input
+                <Checkbox
                   aria-label={skill.id}
                   checked={selectedIds.has(skill.id)}
                   disabled={isSaving}
                   onChange={(event) => toggleSkill(skill.id, event.target.checked)}
                   onClick={(event) => event.stopPropagation()}
-                  type="checkbox"
                 />
                 <span className="font-code text-sm font-medium text-text">{skill.id}</span>
               </summary>
@@ -135,11 +136,10 @@ export function ProjectSkillsPanel({ project, onClose }: ProjectSkillsPanelProps
           ))}
           {staleIds.map((id) => (
             <label className="flex items-start gap-3 rounded-card border border-warning p-3 text-sm" key={id}>
-              <input
+              <Checkbox
                 checked
                 disabled={isSaving}
                 onChange={(event) => toggleSkill(id, event.target.checked)}
-                type="checkbox"
               />
               <span>
                 <span className="font-code text-text">{id}</span>

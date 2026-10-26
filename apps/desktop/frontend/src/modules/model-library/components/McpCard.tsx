@@ -36,7 +36,7 @@ export function McpCard({
   };
 
   return (
-    <Card className="mcp-server-card grid min-w-0 content-start gap-4 p-4 sm:p-5">
+    <Card className="mcp-server-card grid min-w-0 content-start gap-4 sm:p-5" padding="default">
       <div className="mcp-server-card-heading flex min-w-0 flex-wrap items-start gap-3">
         <span
           aria-hidden="true"

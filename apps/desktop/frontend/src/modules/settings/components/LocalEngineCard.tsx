@@ -98,13 +98,15 @@ export function EngineCard({
         : t(runtimeStatusKey(engine.runtimeStatus));
   const channelKey = channelStatusKey(engine.channel);
   return (
-    <Card className="overflow-hidden p-0">
-      <button
+    <Card className="overflow-hidden">
+      <Button
         aria-controls={`local-engine-panel-${engine.engineId}`}
         aria-expanded={expanded}
-        className="flex w-full flex-wrap items-start justify-between gap-3 px-5 py-4 text-left transition-colors hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-focus"
+        className="min-h-0 w-full flex-wrap items-start justify-between gap-3 rounded-none px-5 py-4 text-left transition-colors hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-focus"
         onClick={onToggle}
+        size="small"
         type="button"
+        variant="ghost"
       >
         <div className="flex min-w-0 items-start gap-3">
           <LocalEngineIcon className="mt-1" engineId={engine.engineId} size={24} tone="accent" />
@@ -137,7 +139,7 @@ export function EngineCard({
           data-collapsed={!expanded}
           size={18}
         />
-      </button>
+      </Button>
       {expanded ? (
         <div
           className="openchat-disclosure-enter grid gap-4 border-t border-border p-5"

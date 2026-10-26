@@ -440,7 +440,7 @@ export function LocalEnginesSection() {
       {loadState === 'ready' && catalog ? (
         <>
           {catalog.engines.length === 0 ? (
-            <Card className="flex items-center justify-between gap-3 p-4">
+            <Card className="flex items-center justify-between gap-3" padding="default">
               <p className="text-sm text-secondary-text">{t('localEnginesEmpty')}</p>
               <Button onClick={() => void loadCatalog()} size="small" variant="secondary">
                 {t('localEnginesReload')}

@@ -848,7 +848,7 @@ function TitleGenerationSettings({
   };
 
   return (
-    <Card className="grid gap-2 p-4">
+    <Card className="grid gap-2" padding="default">
       {preferenceLoadFailed ? (
         <div className="flex flex-wrap items-center justify-between gap-3 px-3 py-2" role="alert">
           <p className="text-sm text-secondary-text">{t('titlePreferenceLoadFailed')}</p>
@@ -967,12 +967,14 @@ interface TitleModeButtonProps {
 
 function TitleModeButton({ description, disabled, icon, onClick, selected, title }: TitleModeButtonProps) {
   return (
-    <button
+    <Button
       aria-pressed={selected}
-      className={`flex w-full items-start gap-3 rounded-button border px-3 py-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus disabled:cursor-not-allowed disabled:opacity-50 ${selected ? 'border-accent bg-selected' : 'border-transparent hover:bg-hover'}`}
+      className={`min-h-0 w-full items-start justify-start gap-3 rounded-button border px-3 py-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus disabled:cursor-not-allowed disabled:opacity-50 ${selected ? 'border-accent bg-selected' : 'border-transparent hover:bg-hover'}`}
       disabled={disabled}
       onClick={onClick}
+      size="small"
       type="button"
+      variant="ghost"
     >
       <span className={`mt-0.5 shrink-0 ${selected ? 'text-accent' : 'text-secondary-icon'}`}>{icon}</span>
       <span className="min-w-0 flex-1">
@@ -984,7 +986,7 @@ function TitleModeButton({ description, disabled, icon, onClick, selected, title
       ) : (
         <Circle aria-hidden="true" className="mt-0.5 shrink-0 text-secondary-icon" size={15} />
       )}
-    </button>
+    </Button>
   );
 }
 

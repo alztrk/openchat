@@ -136,9 +136,9 @@ export function ProjectSidebarSection({
                         : 'text-text/85 hover:bg-hover/85 hover:text-text focus-within:bg-hover/85 focus-within:text-text'
                     }`}
                   >
-                    <button
+                    <Button
                       aria-expanded={projectConversations.length > 0 ? isProjectExpanded : undefined}
-                      className="flex min-h-9 min-w-0 flex-1 items-center gap-2.5 rounded-button px-3 py-1.5 text-left transition-all duration-quick group-focus-within:pr-16 group-hover:pr-16 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+                      className="min-h-9 min-w-0 flex-1 justify-start gap-2.5 px-3 py-1.5 text-left transition-all duration-quick group-focus-within:pr-16 group-hover:pr-16"
                       data-sidebar-nav-item="true"
                       onClick={() => {
                         if (projectConversations.length > 0) {
@@ -153,6 +153,7 @@ export function ProjectSidebarSection({
                           : t('projectNewChatButtonTitle', { name: project.name })
                       }
                       type="button"
+                      variant="ghost"
                     >
                       <ProjectFolderIcon
                         aria-hidden="true"
@@ -168,7 +169,7 @@ export function ProjectSidebarSection({
                           +{project.workspaceRoots.length - 1}
                         </span>
                       ) : null}
-                    </button>
+                    </Button>
                     <div className="project-sidebar-actions pointer-events-none absolute inset-y-0 right-1.5 flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity duration-quick group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100">
                       <Button
                         aria-label={`${t('newChat')}: ${project.name}`}

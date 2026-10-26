@@ -2,7 +2,7 @@ import { BellOff, BellRing, LoaderCircle, Play, RefreshCw, Send } from 'lucide-r
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button, Switch } from '@/design-system';
+import { Button, Slider, Switch } from '@/design-system';
 import type en from '@/localization/locales/en.json';
 import {
   type NotificationPreferences,
@@ -347,17 +347,15 @@ function VolumeRow({
         <span className="text-sm text-secondary-text">{description}</span>
       </div>
       <div className="flex items-center gap-3">
-        <input
+        <Slider
           aria-label={label}
-          aria-valuemax={100}
-          aria-valuemin={0}
-          aria-valuenow={Math.round(value * 100)}
-          className="h-1.5 w-28 cursor-pointer accent-accent disabled:cursor-not-allowed disabled:opacity-50"
+          className="h-1.5 w-full"
           disabled={disabled}
+          fieldClassName="w-28"
+          fieldLayout="inline"
           max="1"
           min="0"
           step="0.05"
-          type="range"
           value={value}
           onChange={(event) => {
             const next = Number.parseFloat(event.target.value);

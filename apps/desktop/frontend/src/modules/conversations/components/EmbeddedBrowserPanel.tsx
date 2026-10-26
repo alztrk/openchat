@@ -2,7 +2,7 @@ import { ArrowLeft, ArrowRight, Globe, RotateCw } from 'lucide-react';
 import { type FormEvent, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button } from '@/design-system';
+import { Button, Input } from '@/design-system';
 
 export interface EmbeddedBrowserPanelProps {
   initialUrl?: string;
@@ -104,9 +104,12 @@ export function EmbeddedBrowserPanel({ initialUrl }: EmbeddedBrowserPanelProps) 
           </Button>
           <div className="relative flex min-w-0 flex-1 items-center">
             <Globe aria-hidden="true" className="pointer-events-none absolute left-2.5 text-secondary-icon" size={13} />
-            <input
+            <Input
               aria-label={t('browserPanelAddressLabel')}
-              className="h-8 w-full rounded-control border border-border bg-composer pl-7 pr-2.5 text-xs text-text focus:outline-none"
+              className="w-full border-border bg-composer pl-7 pr-2.5 text-xs"
+              density="compact"
+              fieldClassName="min-w-0 w-full"
+              fieldLayout="inline"
               onChange={(event) => setAddressInput(event.currentTarget.value)}
               placeholder={t('browserPanelUrlPlaceholder')}
               type="text"

@@ -1,7 +1,7 @@
 import { RefreshCw, RotateCcw, Save } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button } from '@/design-system';
+import { Button, Textarea } from '@/design-system';
 import {
   clearSharedInstructions,
   countSharedInstructionsCharacters,
@@ -141,25 +141,21 @@ export function SharedInstructionsSection() {
               {t('defaultInstructionsLoadFailed')}
             </p>
           ) : null}
-          <div className="grid gap-2">
-            <label className="font-medium" htmlFor="shared-instructions-input">
-              {t('sharedInstructions')}
-            </label>
-            <textarea
-              aria-describedby="shared-instructions-description shared-instructions-count"
-              className="min-h-32 max-h-56 w-full resize-y rounded-control border border-border bg-composer px-4 py-3.5 text-base text-text outline-none focus-visible:ring-2 focus-visible:ring-focus disabled:opacity-60"
-              id="shared-instructions-input"
-              maxLength={maximumSharedInstructionsCharacters}
-              onChange={(event) => {
-                setInstructions(event.target.value);
-                setErrorKey(null);
-                setFeedbackKey(null);
-              }}
-              placeholder={t('sharedInstructionsHint')}
-              rows={4}
-              value={instructions}
-            />
-          </div>
+          <Textarea
+            aria-describedby="shared-instructions-description shared-instructions-count"
+            className="min-h-32 max-h-56 resize-y bg-composer px-4 py-3.5 text-base disabled:opacity-60"
+            id="shared-instructions-input"
+            label={t('sharedInstructions')}
+            maxLength={maximumSharedInstructionsCharacters}
+            onChange={(event) => {
+              setInstructions(event.target.value);
+              setErrorKey(null);
+              setFeedbackKey(null);
+            }}
+            placeholder={t('sharedInstructionsHint')}
+            rows={4}
+            value={instructions}
+          />
           {tooManyCharacters ? (
             <p className="text-sm text-destructive" role="alert">
               {t('sharedInstructionsTooLong')}

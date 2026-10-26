@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button } from '@/design-system';
+import { Button, Textarea } from '@/design-system';
 import type { ChatProject } from '@/modules/conversations/data/chatStorage';
 import { localServiceClient } from '@/platform/local-service';
 
@@ -85,9 +85,10 @@ export function ProjectInstructionsPanel({ project, onClose }: ProjectInstructio
         <>
           <label className="grid gap-2 text-sm font-medium text-text">
             {t('projectInstructionsTitle')}
-            <textarea
+            <Textarea
               aria-label={t('projectInstructionsTitle')}
               className="min-h-40 resize-y rounded-control border border-border bg-raised p-3 font-ui text-sm text-text outline-none focus-visible:ring-2 focus-visible:ring-focus disabled:cursor-not-allowed disabled:opacity-50"
+              fieldLayout="none"
               disabled={isSaving || loadFailed}
               onChange={(event) => setInstructions(event.target.value)}
               placeholder={t('projectInstructionsHint')}

@@ -72,7 +72,7 @@ export function CredentialCard({
 }: CredentialCardProps) {
   const { t } = useTranslation();
   return (
-    <Card className="grid min-w-0 content-start gap-4 p-5">
+    <Card className="grid min-w-0 content-start gap-4" padding="comfortable">
       <div className="flex min-w-0 items-start gap-3">
         <ProviderIcon className="mt-0.5" providerId={providerId} />
         <div className="min-w-0">

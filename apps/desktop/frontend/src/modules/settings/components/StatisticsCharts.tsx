@@ -17,7 +17,7 @@ export function MetricCard({
   value: string;
 }) {
   return (
-    <Card className="grid min-h-28 gap-2 p-4">
+    <Card className="grid min-h-28 gap-2" padding="default">
       <div className="flex items-center gap-2">
         <Icon aria-hidden="true" className="text-accent" size={16} />
         <p className="text-sm text-secondary-text">{label}</p>
@@ -201,7 +201,7 @@ export function BreakdownCard({
 }) {
   const maxTokens = Math.max(0, ...items.map((item) => item.inputTokens + item.outputTokens));
   return (
-    <Card className="overflow-hidden p-0">
+      <Card className="overflow-hidden">
       <div className="border-b border-border px-4 py-3">
         <h3 className="font-semibold">{title}</h3>
       </div>

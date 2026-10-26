@@ -2,6 +2,8 @@ import type { LucideIcon } from 'lucide-react';
 import { ChevronDown } from 'lucide-react';
 import { type DragEvent, type ReactNode, useState } from 'react';
 
+import { Button } from '@/design-system';
+
 interface ConversationSidebarSectionProps {
   title: string;
   icon: LucideIcon;
@@ -59,12 +61,14 @@ export function ConversationSidebarSection({
       onDrop={handleDrop}
     >
       <div className="group/sidebar-heading flex min-h-7 items-center justify-between gap-1 px-1">
-        <button
+        <Button
           aria-expanded={!collapsed}
-          className="flex min-h-7 min-w-0 flex-1 items-center gap-1.5 rounded-control px-1.5 text-left text-xs font-medium text-secondary-text/80 transition-colors duration-quick hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+          className="min-h-7 min-w-0 flex-1 justify-start gap-1.5 rounded-control px-1.5 text-left text-xs font-medium text-secondary-text/80 transition-colors duration-quick hover:text-text"
           onClick={onToggle}
+          size="small"
           title={title}
           type="button"
+          variant="ghost"
         >
           <Icon aria-hidden="true" className="shrink-0 text-secondary-icon/80" size={13} />
           <span className="min-w-0 flex-1 truncate">{title}</span>
@@ -81,7 +85,7 @@ export function ConversationSidebarSection({
           {isDropTarget && DropIndicator ? (
             <DropIndicator aria-hidden="true" className="shrink-0 text-accent" size={14} />
           ) : null}
-        </button>
+        </Button>
         {action ? (
           <div className="sidebar-section-action pointer-events-none flex shrink-0 items-center opacity-0 transition-opacity duration-quick group-focus-within/sidebar-section:pointer-events-auto group-focus-within/sidebar-section:opacity-100 group-hover/sidebar-section:pointer-events-auto group-hover/sidebar-section:opacity-100">
             {action}

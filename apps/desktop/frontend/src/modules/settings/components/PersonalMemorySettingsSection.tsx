@@ -86,7 +86,7 @@ export function PersonalMemorySettingsSection() {
   };
 
   return (
-    <Card className="grid gap-4 p-4 sm:p-5">
+    <Card className="grid gap-4 sm:p-5" padding="default">
       <div className="flex items-start gap-3">
         <Brain aria-hidden="true" className="mt-0.5 shrink-0 text-accent" size={19} />
         <div className="grid gap-1">

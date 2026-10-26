@@ -32,7 +32,7 @@ export function LlamaRuntimeSetting({
   const { t } = useTranslation();
 
   return (
-    <Card className="grid gap-3 bg-composer p-4">
+    <Card className="grid gap-3 bg-composer" padding="default">
       <section className="grid gap-2">
         <div>
           <h4 className="font-semibold text-text">{t('localEngineExecutable')}</h4>

@@ -141,13 +141,15 @@ interface ProjectOptionButtonProps {
 
 function ProjectOptionButton({ icon: Icon, label, onClick }: ProjectOptionButtonProps) {
   return (
-    <button
-      className="flex min-h-11 items-center gap-3 rounded-button px-3 text-left text-sm text-text hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+    <Button
+      className="min-h-11 w-full justify-start gap-3 px-3 text-left text-sm text-text"
       onClick={onClick}
+      size="small"
       type="button"
+      variant="ghost"
     >
       <Icon aria-hidden="true" className="text-secondary-icon" size={17} />
       <span className="min-w-0 flex-1">{label}</span>
-    </button>
+    </Button>
   );
 }

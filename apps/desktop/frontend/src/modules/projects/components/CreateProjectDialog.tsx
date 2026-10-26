@@ -138,8 +138,8 @@ export function CreateProjectDialog({ open: isOpen, onOpenChange, onCreate }: Cr
 
         <div className="grid gap-2">
           <span className="text-sm font-medium text-text">{t('projectFolder')}</span>
-          <button
-            className={`group flex min-h-12 w-full items-center justify-between gap-3 rounded-button border px-3 py-2.5 text-left transition-all duration-quick focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus disabled:cursor-not-allowed disabled:opacity-50 ${
+          <Button
+            className={`group min-h-12 w-full justify-between gap-3 border px-3 py-2.5 text-left transition-all duration-quick ${
               folderPath
                 ? 'border-accent/40 bg-accent/5 hover:border-accent/60 hover:bg-accent/10'
                 : 'border-control-border bg-surface hover:border-accent/40 hover:bg-hover/60'
@@ -148,6 +148,7 @@ export function CreateProjectDialog({ open: isOpen, onOpenChange, onCreate }: Cr
             onClick={() => void selectFolder()}
             title={folderPath ?? t('chooseProjectFolder')}
             type="button"
+            variant="secondary"
           >
             <div className="flex min-w-0 flex-1 items-center gap-2.5">
               <span
@@ -179,7 +180,7 @@ export function CreateProjectDialog({ open: isOpen, onOpenChange, onCreate }: Cr
             <span className="shrink-0 rounded-control border border-border bg-raised px-2.5 py-1 text-xs font-medium text-text shadow-2xs transition-colors group-hover:border-control-border">
               {folderPath ? t('changeProjectFolder') : t('chooseProjectFolder')}
             </span>
-          </button>
+          </Button>
         </div>
 
         {error ? (

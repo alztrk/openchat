@@ -196,7 +196,7 @@ export function ModelsSettingsSection() {
 
   return (
     <section aria-labelledby="settings-page-heading" className="grid gap-6">
-      <Card className="grid gap-4 p-4">
+      <Card className="grid gap-4" padding="default">
         <ModelSettingRow description={t('composerGhostTextEnabledDescription')} label={t('composerGhostTextEnabled')}>
           <Switch
             aria-label={t('composerGhostTextEnabled')}
@@ -307,20 +307,20 @@ export function ModelsSettingsSection() {
           {t('modelsLoading')}
         </p>
       ) : modelStatus === 'error' ? (
-        <Card className="flex flex-wrap items-center justify-between gap-3 p-5" role="alert">
+        <Card className="flex flex-wrap items-center justify-between gap-3" padding="comfortable" role="alert">
           <p className="text-sm text-destructive">{t('modelCatalogUnavailable')}</p>
           <Button onClick={() => void refreshModels(true)} size="small" variant="secondary">
             {t('retry')}
           </Button>
         </Card>
       ) : groups.length === 0 ? (
-        <Card className="p-6 text-center text-sm text-secondary-text">
+        <Card className="text-center text-sm text-secondary-text" padding="spacious">
           {query.trim() ? t('noModelsFound') : t('noConnectedProviders')}
         </Card>
       ) : (
         <div className="grid gap-4">
           {groups.map(([providerId, providerModels]) => (
-            <Card className="overflow-hidden p-0" key={providerId}>
+            <Card className="overflow-hidden" key={providerId}>
               <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
                 <div className="flex min-w-0 items-center gap-2.5">
                   <ProviderIcon providerId={providerId} size={20} />

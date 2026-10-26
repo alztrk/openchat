@@ -33,6 +33,7 @@ export function AttachmentLibraryDialog({
   const [loadAttempt, setLoadAttempt] = useState(0);
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: loadAttempt deliberately retriggers the request when the user retries.
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
@@ -125,14 +126,14 @@ export function AttachmentLibraryDialog({
           </p>
         ) : null}
         {items.length === 0 && !loading && !error ? (
-          <Card className="p-4" role="status">
+          <Card padding="default" role="status">
             <p className="text-sm text-secondary-text">{t('attachmentLibraryEmpty')}</p>
           </Card>
         ) : null}
         {items.length > 0 ? (
           <div className="grid gap-2">
             {items.map((item) => (
-              <Card className="flex min-w-0 flex-wrap items-center justify-between gap-3 p-3" key={`${item.conversationId}:${item.messageId}:${item.attachmentId}`}>
+              <Card className="flex min-w-0 flex-wrap items-center justify-between gap-3" key={`${item.conversationId}:${item.messageId}:${item.attachmentId}`} padding="compact">
                 <div className="flex min-w-0 items-start gap-2">
                   <File aria-hidden="true" className="mt-0.5 shrink-0 text-secondary-icon" size={16} />
                   <div className="min-w-0">

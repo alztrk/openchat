@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button, Dialog } from '@/design-system';
+import { Button, Dialog, Textarea } from '@/design-system';
 import type { ChatMessage } from '@/modules/conversations/data/chatStorage';
 
 interface EditMessageBranchDialogProps {
@@ -32,11 +32,12 @@ export function EditMessageBranchDialog({ busy, message, onOpenChange, onSubmit,
       <div className="grid gap-4">
         <label className="grid gap-2 text-sm font-medium text-text" htmlFor="conversation-branch-message">
           {t('conversationBranchEditLabel')}
-          <textarea
+          <Textarea
             autoFocus
             className="min-h-32 w-full resize-y rounded-control border border-border bg-background px-3 py-2 text-sm text-text outline-none focus-visible:ring-2 focus-visible:ring-focus"
             disabled={busy}
             id="conversation-branch-message"
+            fieldLayout="none"
             onChange={(event) => setContent(event.target.value)}
             value={content}
           />

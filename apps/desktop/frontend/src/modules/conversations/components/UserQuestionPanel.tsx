@@ -1,7 +1,7 @@
 import { Check, ChevronLeft, ChevronRight, MessagesSquare, Send, X } from 'lucide-react';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button, Card } from '@/design-system';
+import { Button, Card, Checkbox, Textarea } from '@/design-system';
 import {
   type AgentQuestionAnswer,
   type AgentQuestionGroup,
@@ -355,13 +355,15 @@ function QuestionCard({ group, answers, busy, onAnswerChange, onCollapse, onSubm
               return (
                 <label
                   className={`flex min-h-9 cursor-pointer items-center gap-3 rounded-control px-2 text-base font-medium text-text transition-colors hover:bg-hover focus-within:ring-2 focus-within:ring-focus ${isSelected ? 'bg-selected' : ''}`}
+                  htmlFor={`question-answer-${group.id}-${question.id}-${option.id}`}
                   key={option.id}
                 >
-                  <input
+                  <Checkbox
                     aria-label={option.label}
                     checked={isSelected}
                     className="sr-only"
                     data-question-answer
+                    id={`question-answer-${group.id}-${question.id}-${option.id}`}
                     name={`question-${group.id}-${question.id}`}
                     onChange={(event) => {
                       const nextOptionIds = event.currentTarget.checked
@@ -369,7 +371,6 @@ function QuestionCard({ group, answers, busy, onAnswerChange, onCollapse, onSubm
                         : selectedOptionIds.filter((optionId) => optionId !== option.id);
                       onAnswerChange(question.id, nextOptionIds);
                     }}
-                    type="checkbox"
                     value={option.id}
                   />
                   <span
@@ -384,7 +385,7 @@ function QuestionCard({ group, answers, busy, onAnswerChange, onCollapse, onSubm
             })}
           </div>
         ) : (
-          <textarea
+          <Textarea
             aria-label={question.title}
             className="min-h-10 w-full resize-y rounded-control border border-border bg-raised px-3 py-2 text-base text-text outline-none focus-visible:ring-2 focus-visible:ring-focus disabled:opacity-60"
             data-question-answer
@@ -393,6 +394,7 @@ function QuestionCard({ group, answers, busy, onAnswerChange, onCollapse, onSubm
             placeholder={question.placeholder ?? undefined}
             rows={1}
             value={singleValue}
+            fieldLayout="none"
           />
         )}
       </fieldset>
