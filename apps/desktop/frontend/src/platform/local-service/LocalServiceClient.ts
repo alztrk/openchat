@@ -5,7 +5,6 @@
  */
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-import { i18n } from '@/localization/i18n';
 
 const requestTimeoutMs = 15_000;
 const maximumMessageBytes = 24 * 1024 * 1024;
@@ -36,7 +35,8 @@ export interface NativePermissionDialogCopy {
 }
 
 /** Resolves native permission copy through the same i18next resources as the renderer UI. */
-export function getNativePermissionDialogCopy(): NativePermissionDialogCopy {
+export async function getNativePermissionDialogCopy(): Promise<NativePermissionDialogCopy> {
+  const { i18n } = await import('@/localization/i18n');
   return {
     title: i18n.t('nativePermissionTitle'),
     intro: i18n.t('nativePermissionIntro'),
@@ -235,7 +235,7 @@ export class LocalServiceClient {
       generation,
       approvalRequestId,
       approved,
-      permissionCopy: getNativePermissionDialogCopy(),
+      permissionCopy: await getNativePermissionDialogCopy(),
     });
     if (typeof result !== 'boolean') {
       throw new LocalServiceError(
@@ -536,7 +536,7 @@ export class LocalServiceClient {
         await invoke('write_local_service', {
           generation,
           line: payload,
-          permissionCopy: getNativePermissionDialogCopy(),
+          permissionCopy: await getNativePermissionDialogCopy(),
         });
       } catch (error) {
         throw nativeWriteError(error);
