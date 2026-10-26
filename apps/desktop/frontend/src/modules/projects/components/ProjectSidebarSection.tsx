@@ -168,11 +168,6 @@ export function ProjectSidebarSection({
                           +{project.workspaceRoots.length - 1}
                         </span>
                       ) : null}
-                      {projectConversations.length > 0 ? (
-                        <span className="shrink-0 text-xs text-secondary-text/70 transition-opacity duration-quick group-focus-within:opacity-0 group-hover:opacity-0">
-                          {projectConversations.length}
-                        </span>
-                      ) : null}
                     </button>
                     <div className="project-sidebar-actions pointer-events-none absolute inset-y-0 right-1.5 flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity duration-quick group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100">
                       <Button

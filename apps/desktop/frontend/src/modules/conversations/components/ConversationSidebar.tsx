@@ -7,6 +7,7 @@ import {
   Folder,
   FolderOpen,
   FolderPlus,
+  MessageSquare,
   Pencil,
   Pin,
   Plus,
@@ -17,7 +18,6 @@ import {
   X,
 } from 'lucide-react';
 import {
-  type DragEvent,
   type FormEvent,
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
@@ -180,7 +180,6 @@ export function ConversationSidebar({
   const [editingFolderId, setEditingFolderId] = useState<string | null>(null);
   const [editingFolderName, setEditingFolderName] = useState('');
   const [legacyHiddenConversationIds] = useState(readLegacyHiddenConversationIds);
-  const [isChatsDropTarget, setIsChatsDropTarget] = useState(false);
   const [visibleChatLimit, setVisibleChatLimit] = useState(SIDEBAR_PAGE_SIZE);
 
   const drawerRef = useRef<HTMLElement | null>(null);
@@ -1190,70 +1189,58 @@ export function ConversationSidebar({
                 ) : null}
 
                 {showChats ? (
-                  <section
-                    aria-label={t('chats')}
-                    className={`grid gap-3 rounded-card transition-shadow ${isChatsDropTarget ? 'ring-1 ring-accent/60' : ''}`}
-                    onDragLeave={(event: DragEvent<HTMLElement>) => {
-                      if (event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget))
-                        return;
-                      setIsChatsDropTarget(false);
-                    }}
-                    onDragOver={(event: DragEvent<HTMLElement>) => {
-                      if (!event.dataTransfer.types.includes('application/x-openchat-conversation')) return;
-                      event.preventDefault();
-                      event.dataTransfer.dropEffect = 'move';
-                      setIsChatsDropTarget(true);
-                    }}
-                    onDrop={(event: DragEvent<HTMLElement>) => {
-                      const conversationId = event.dataTransfer.getData('application/x-openchat-conversation');
-                      if (!conversationId) return;
-                      event.preventDefault();
-                      setIsChatsDropTarget(false);
-                      dropConversationToChats(conversationId);
-                    }}
+                  <ConversationSidebarSection
+                    childrenClassName="grid gap-3"
+                    collapsed={collapsedSections.has('chats')}
+                    icon={MessageSquare}
+                    onDropConversation={dropConversationToChats}
+                    onToggle={() => toggleSection('chats')}
+                    title={t('chats')}
                   >
-                    {visibleChats.length === 0 ? (
-                      <div className="px-3 py-2 text-xs text-secondary-text">{t('noChatsTitle')}</div>
-                    ) : recencyBuckets.length > 0 ? (
-                      <ul className="grid gap-3.5">
-                        {recencyBuckets.map((bucket) => (
-                          <li className="grid gap-0.5" key={bucket.id}>
-                            <div className="px-3 pb-1 text-xs font-medium text-secondary-text/70 select-none">
-                              {t(bucket.labelKey)}
-                            </div>
-                            <ul className="grid gap-0.5">
-                              {renderRows(bucket.conversations, {
-                                archived: false,
-                                currentProjectId: null,
-                                allowMove: true,
-                              })}
-                            </ul>
-                          </li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <ul className="grid gap-0.5">
-                        {renderRows(visibleChats, {
-                          archived: false,
-                          currentProjectId: null,
-                          allowMove: true,
-                        })}
-                      </ul>
-                    )}
-                    {hasMoreChats ? (
-                      <button
-                        className="mx-2 rounded-button border border-border bg-surface/60 px-3 py-1.5 text-xs font-medium text-secondary-text transition-colors hover:bg-hover hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
-                        onClick={() =>
-                          setVisibleChatLimit((current) =>
-                            Math.min(unassignedConversations.length, current + SIDEBAR_PAGE_SIZE),
-                          )
-                        }
-                        type="button"
-                      >
-                        {t('loadMoreChats')}
-                      </button>
-                    ) : null}
-                  </section>
+                    <li className="grid gap-3">
+                      {visibleChats.length === 0 ? (
+                        <div className="px-3 py-2 text-xs text-secondary-text">{t('noChatsTitle')}</div>
+                      ) : recencyBuckets.length > 0 ? (
+                        <ul className="grid gap-3.5">
+                          {recencyBuckets.map((bucket) => (
+                            <li className="grid gap-0.5" key={bucket.id}>
+                              <div className="px-3 pb-1 text-xs font-medium text-secondary-text/70 select-none">
+                                {t(bucket.labelKey)}
+                              </div>
+                              <ul className="grid gap-0.5">
+                                {renderRows(bucket.conversations, {
+                                  archived: false,
+                                  currentProjectId: null,
+                                  allowMove: true,
+                                })}
+                              </ul>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <ul className="grid gap-0.5">
+                          {renderRows(visibleChats, {
+                            archived: false,
+                            currentProjectId: null,
+                            allowMove: true,
+                          })}
+                        </ul>
+                      )}
+                      {hasMoreChats ? (
+                        <button
+                          className="mx-2 rounded-button border border-border bg-surface/60 px-3 py-1.5 text-xs font-medium text-secondary-text transition-colors hover:bg-hover hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+                          onClick={() =>
+                            setVisibleChatLimit((current) =>
+                              Math.min(unassignedConversations.length, current + SIDEBAR_PAGE_SIZE),
+                            )
+                          }
+                          type="button"
+                        >
+                          {t('loadMoreChats')}
+                        </button>
+                      ) : null}
+                    </li>
+                  </ConversationSidebarSection>
                 ) : null}
 
                 {showArchived ? (
