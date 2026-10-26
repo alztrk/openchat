@@ -395,11 +395,17 @@ impl AppContainerSandbox {
                         .collect::<Vec<_>>(),
                 ),
             );
-        } else if !variables.contains_key("LOCALAPPDATA") {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "The storage broker base environment is incomplete.",
-            ));
+        } else {
+            // The broker verifies this value against its AppContainer profile identity.
+            variables.insert(
+                "LOCALAPPDATA".to_owned(),
+                Zeroizing::new(
+                    isolated_localappdata
+                        .as_os_str()
+                        .encode_wide()
+                        .collect::<Vec<_>>(),
+                ),
+            );
         }
         variables.insert(
             "TEMP".to_owned(),
