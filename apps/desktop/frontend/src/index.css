@@ -38,6 +38,49 @@
   grid-template-rows: 48px minmax(0, 1fr) 20px;
 }
 
+.startup-loading-page {
+  display: grid;
+  min-block-size: 100%;
+  place-content: center;
+  justify-items: center;
+  gap: 0.5rem;
+  padding: 1rem;
+  background: rgb(var(--background));
+  color: rgb(var(--text));
+}
+
+.startup-loading-page__brand {
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+
+.startup-loading-page__message {
+  color: rgb(var(--secondary-text));
+  font-size: 0.875rem;
+}
+
+.startup-loading-page__indicator {
+  inline-size: 1.25rem;
+  block-size: 1.25rem;
+  margin-block-start: 0.5rem;
+  border: 2px solid rgb(var(--border) / var(--border-alpha, 0.1));
+  border-inline-end-color: rgb(var(--accent));
+  border-radius: 50%;
+  animation: openchat-startup-spin 800ms linear infinite;
+}
+
+@keyframes openchat-startup-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .startup-loading-page__indicator {
+    animation: none;
+  }
+}
+
 .app-shell-chrome {
   background: rgb(var(--surface));
 }
