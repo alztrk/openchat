@@ -58,20 +58,17 @@ Run development tasks safely through configurable permission boundaries:
    cd OpenChat
    ```
 
-2. Compile the backend service:
-   ```powershell
-   cargo build -p openchat-local-service --release
-   New-Item -ItemType Directory -Force apps/desktop/tauri/binaries
-   Copy-Item -LiteralPath target/release/openchat-local-service.exe -Destination apps/desktop/tauri/binaries/openchat-local-service-x86_64-pc-windows-msvc.exe -Force
-   ```
-
-   The full Windows sidecar and installer sequence is also available as `.\scripts\windows\build.ps1`.
-
-3. Install frontend dependencies and start development mode:
+2. Install frontend dependencies and start development mode:
    ```bash
    cd apps/desktop/frontend
-   npm install
-   npm run tauri:dev
+   npm ci
+   npm run desktop:dev
+   ```
+
+3. Run workspace validation:
+   ```bash
+   cd apps/desktop/frontend
+   npm run check:workspace
    ```
 
 ### Packaging
@@ -79,7 +76,7 @@ Run development tasks safely through configurable permission boundaries:
 To build the standalone installer:
 ```bash
 cd apps/desktop/frontend
-npm run tauri:build
+npm run desktop:build
 ```
 
 ---

@@ -1,22 +1,25 @@
 # Developer scripts
 
-Platform-specific scripts live in a directory named for their target operating system. The current Windows scripts are under `scripts/windows/`:
+Developer task logic is implemented in Node.js and exposed through npm scripts, without platform-specific shell syntax:
 
 | Script | Purpose |
 | --- | --- |
-| `build.ps1` | Builds the Windows local-service sidecar and Tauri installer. |
-| `check.ps1` | Runs frontend and Rust formatting, build, and test checks. |
-| `clean.ps1` | Removes generated build and bundle output directories. |
-| `dev.ps1` | Builds the Windows sidecar and starts the desktop development app. |
-| `maintain-target.ps1` | Reports Cargo target sizes and optionally cleans oversized targets. |
+| `build.mjs` | Builds the host local-service sidecar and Tauri bundle. |
+| `check.mjs` | Runs frontend and Rust formatting, build, and test checks. |
+| `clean.mjs` | Removes generated build and bundle output directories. |
+| `dev.mjs` | Builds the host sidecar and starts the desktop development app. |
+| `maintain-target.mjs` | Reports Cargo target sizes and can clean oversized targets. |
 
-Run these commands from the repository root, for example:
+Run these commands from `apps/desktop/frontend`:
 
-```powershell
-.\scripts\windows\dev.ps1
-.\scripts\windows\check.ps1
+```bash
+npm run desktop:dev
+npm run desktop:build
+npm run check:workspace
+npm run clean:workspace
+npm run maintain-target -- --max-gib 20
 ```
 
-When Linux support is implemented, add Linux-specific entry points under `scripts/linux/`. Keep operating-system paths, executable names, packaging steps, and cleanup behavior in the matching platform directory. Continue using Cargo, npm, and Tauri directly for cross-platform operations; introduce shared orchestration only if the platform scripts develop duplicated behavior that needs one source of truth.
+Cargo target selection and sidecar naming use the Rust host target triple, so the same task commands can prepare a sidecar on Windows or Linux. Linux packaging still requires enabling a Linux Tauri bundle target, adding its build dependencies and CI job, and implementing the platform-specific sandbox support.
 
-Tauri's `externalBin` requires a sidecar binary named with its target triple. Each platform build must place the service in `apps/desktop/tauri/binaries/` using the matching target-specific name before packaging.
+`npm run maintain-target -- --max-gib 20` previews target usage. Add `--apply` only when you want Cargo to clean those target directories.

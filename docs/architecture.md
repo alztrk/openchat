@@ -15,7 +15,8 @@ Cargo.lock               # single Rust workspace lockfile
 rust-toolchain.toml
 docs/
 scripts/
-  windows/               # Windows development, validation, and packaging scripts
+  *.mjs                  # Cross-platform development, validation, and packaging tasks
+  task-utils.mjs         # Shared command and sidecar operations
   README.md              # Script layout and platform support notes
 apps/
   desktop/

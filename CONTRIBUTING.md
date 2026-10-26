@@ -61,12 +61,13 @@ The development profile keeps line tables for the workspace and omits debug
 symbols from dependencies. Use `cargo build --profile debugging` when full
 debug symbols are needed.
 
-Use `.\scripts\maintain-target.ps1` to report the size of Cargo-marked target
-directories. It only previews by default. Passing `-Apply` cleans those listed
-directories when their combined size exceeds 20 GiB, after checking that no
-`cargo` or `rustc` process is running and previewing Cargo's cleanup. The
-scheduled weekly task is configured per Windows user and is not installed by
-cloning the repository.
+Use `npm --prefix apps/desktop/frontend run maintain-target -- --max-gib 20` to
+report the size of Cargo-marked target directories. It only previews by
+default. Add `--apply` to clean those listed directories when their combined
+size exceeds 20 GiB, after checking that no `cargo` or `rustc` process is
+running and previewing Cargo's cleanup. Any scheduled task is configured per
+user and is not installed by cloning the repository; update its command if it
+still points to an older script.
 
 ## Validation and packaging
 
