@@ -149,6 +149,7 @@ export class LocalServiceClient {
   private startup: Promise<void> | undefined;
   private processStartup: Promise<void> | undefined;
   private initialized = false;
+  private initializationSettings: JsonObject | undefined;
   private broadcastListeners = new Set<(event: ServiceEvent) => void>();
 
   /** Subscribes to broadcast and progress events emitted by the local service process. */
@@ -201,6 +202,20 @@ export class LocalServiceClient {
     } finally {
       if (this.startup === startup) this.startup = undefined;
     }
+  }
+
+  /** Returns the application settings included in the one-time service startup response. */
+  getStartupSettings(): JsonObject {
+    const settings = this.initializationSettings;
+    if (!settings) {
+      throw new LocalServiceError('startup_settings_unavailable', 'The local service startup settings are unavailable.');
+    }
+    return settings;
+  }
+
+  /** Releases startup settings after the storage adapter has completed initialization. */
+  clearStartupSettings(): void {
+    this.initializationSettings = undefined;
   }
 
   /** Sends a bounded request after storage and service initialization has completed. */
@@ -321,6 +336,7 @@ export class LocalServiceClient {
         'Local conversation storage could not be initialized.',
       );
     }
+    this.initializationSettings = initialization;
     this.initialized = true;
   }
 
@@ -419,6 +435,7 @@ export class LocalServiceClient {
     if (this.processGeneration !== generation) return;
     this.processGeneration = undefined;
     this.initialized = false;
+    this.initializationSettings = undefined;
     this.writeQueue = Promise.resolve();
     this.processFailure = undefined;
     this.lastProcessFailure = new LocalServiceError(

@@ -237,6 +237,7 @@ pub(crate) async fn dispatch(context: RpcDispatchContext<'_>) -> Result<Value, S
                 )
                 .with_details(error.to_string())
             })?;
+            crate::image_library::recover_incomplete_generations(storage)?;
             service.schedule_pending_credential_cleanup();
             usage_statistics::mark_interrupted_requests(storage).map_err(|_| {
                 ServiceError::new(
@@ -274,10 +275,12 @@ pub(crate) async fn dispatch(context: RpcDispatchContext<'_>) -> Result<Value, S
                     false,
                 )
             })?;
+            let settings = storage_settings::get_all_settings(storage)?;
             Ok(json!({
                 "status": "ready",
                 "schema_version": schema_version,
                 "backupCreated": backup_created,
+                "settings": settings,
             }))
         }
         "chat.temporary.send" => {

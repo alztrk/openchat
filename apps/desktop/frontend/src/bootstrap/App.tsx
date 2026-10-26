@@ -13,16 +13,14 @@ import {
 } from 'react';
 import { flushSync } from 'react-dom';
 import { useTranslation } from 'react-i18next';
-import {
-  ChatFileChangesPanel,
-  type RightWorkspaceTab,
-  type WorkspaceFileRequest,
-  type WorkspaceFileSelection,
-  type WorkspacePanelRequest,
+import type {
+  RightWorkspaceTab,
+  WorkspaceFileRequest,
+  WorkspaceFileSelection,
+  WorkspacePanelRequest,
 } from '@/modules/conversations/components/ChatFileChangesPanel';
 import { ConversationPane } from '@/modules/conversations/components/ConversationPane';
 import { ConversationSidebar } from '@/modules/conversations/components/ConversationSidebar';
-import { TemporaryChatExitDialog } from '@/modules/conversations/components/TemporaryChatExitDialog';
 import { parseAgentQuestionGroup } from '@/modules/conversations/data/agentQuestions';
 import { getMessages } from '@/modules/conversations/data/chatStorage';
 import { setPendingComposerDraft } from '@/modules/conversations/data/pendingComposerDraft';
@@ -55,13 +53,25 @@ import { localServiceClient } from '@/platform/local-service';
 import { unifiedStorage } from '@/platform/storage/unifiedStorage';
 import { getCurrentWindow, getVersion, invoke, isTauri, listen } from '@/platform/tauri';
 import { BrandMark } from '@/shell/BrandMark';
-import { CommandPalette } from '@/shell/CommandPalette';
 import { ConversationActionsHeader } from '@/shell/ConversationActionsHeader';
 import { type AppSurface, NavigationRail } from '@/shell/NavigationRail';
 import { TitleBar } from '@/shell/TitleBar';
 
 const LibraryPage = lazy(() =>
   import('@/modules/model-library/components/LibraryPage').then((module) => ({ default: module.LibraryPage })),
+);
+const ChatFileChangesPanel = lazy(() =>
+  import('@/modules/conversations/components/ChatFileChangesPanel').then((module) => ({
+    default: module.ChatFileChangesPanel,
+  })),
+);
+const TemporaryChatExitDialog = lazy(() =>
+  import('@/modules/conversations/components/TemporaryChatExitDialog').then((module) => ({
+    default: module.TemporaryChatExitDialog,
+  })),
+);
+const CommandPalette = lazy(() =>
+  import('@/shell/CommandPalette').then((module) => ({ default: module.CommandPalette })),
 );
 const DesignPage = lazy(() =>
   import('@/modules/design/components/DesignPage').then((module) => ({ default: module.DesignPage })),
@@ -1100,41 +1110,47 @@ export function App() {
                     ref={rightPanelShellRef}
                     style={isRightPanelOpen ? { flex: `${100 - workspaceRatio} 1 0%` } : undefined}
                   >
-                    <ChatFileChangesPanel
-                      conversationId={activeConversationId}
-                      conversations={conversations}
-                      conversationListReady={serviceStatus === 'ready'}
-                      fileRequest={workspaceFileRequest?.request ?? null}
-                      initialTab={null}
-                      panelRequest={workspacePanelRequest}
-                      renderConversation={(panelConversationId) => (
-                        <ConversationPane
-                          conversationId={panelConversationId}
-                          key={panelConversationId}
-                          header={() => (
-                            <ConversationActionsHeader
-                              activeConversationId={panelConversationId}
-                              conversations={conversations}
-                              isPanelConversation
+                    {isRightPanelOpen || workspaceFileRequest !== null || workspacePanelRequest !== null ? (
+                      <Suspense fallback={null}>
+                        <ChatFileChangesPanel
+                          conversationId={activeConversationId}
+                          conversations={conversations}
+                          conversationListReady={serviceStatus === 'ready'}
+                          fileRequest={workspaceFileRequest?.request ?? null}
+                          initialTab={null}
+                          panelRequest={workspacePanelRequest}
+                          renderConversation={(panelConversationId) => (
+                            <ConversationPane
+                              conversationId={panelConversationId}
+                              key={panelConversationId}
+                              header={() => (
+                                <ConversationActionsHeader
+                                  activeConversationId={panelConversationId}
+                                  conversations={conversations}
+                                  isPanelConversation
+                                />
+                              )}
+                              hideInternalRightPanel
+                              isLargeText={appearance.conversationTextSize === 'large'}
+                              isRightPanelOpen={isRightPanelOpen}
+                              notificationFeedbackKey={null}
+                              onDismissNotificationFeedback={() => undefined}
+                              onOpenRightPanel={(tab) =>
+                                handleOpenRightPanelForConversation(panelConversationId, tab)
+                              }
+                              onOpenWorkspaceFile={(file) =>
+                                handleOpenWorkspaceFileForConversation(panelConversationId, file)
+                              }
+                              onOpenSettings={() => navigate('settings')}
+                              onQuestionFocusHandled={() => undefined}
+                              onRequestTemporaryExit={requestTemporaryChatExit}
+                              onToggleRightPanel={() => setIsRightPanelOpen(false)}
+                              questionFocusTarget={null}
                             />
                           )}
-                          hideInternalRightPanel
-                          isLargeText={appearance.conversationTextSize === 'large'}
-                          isRightPanelOpen={isRightPanelOpen}
-                          notificationFeedbackKey={null}
-                          onDismissNotificationFeedback={() => undefined}
-                          onOpenRightPanel={(tab) => handleOpenRightPanelForConversation(panelConversationId, tab)}
-                          onOpenWorkspaceFile={(file) =>
-                            handleOpenWorkspaceFileForConversation(panelConversationId, file)
-                          }
-                          onOpenSettings={() => navigate('settings')}
-                          onQuestionFocusHandled={() => undefined}
-                          onRequestTemporaryExit={requestTemporaryChatExit}
-                          onToggleRightPanel={() => setIsRightPanelOpen(false)}
-                          questionFocusTarget={null}
                         />
-                      )}
-                    />
+                      </Suspense>
+                    ) : null}
                   </div>
 
                   {activeDropZone !== null ? (
@@ -1239,47 +1255,55 @@ export function App() {
           <span>{t('appTitle')}</span>
         </span>
       </footer>
-      <TemporaryChatExitDialog
-        canSave={temporaryChatMessageCount > 0 && temporaryChat?.route !== null}
-        errorMessage={
-          temporaryChatErrorCode === 'temporaryChatSaveFailed' ||
-          temporaryChatErrorCode === 'temporaryChatSaveCleanupFailed'
-            ? t(temporaryChatErrorCode)
-            : null
-        }
-        isBusy={isSavingTemporaryChat}
-        onDiscard={discardTemporaryChatAndContinue}
-        onOpenChange={closeTemporaryChatExitDialog}
-        onSave={() => void saveTemporaryChatAndContinue()}
-        open={temporaryExitIntent !== null}
-      />
-      <CommandPalette
-        isDark={isDark}
-        onNewChat={startWorkspaceChat}
-        onNavigate={navigate}
-        onOpenAgents={openAgentLibrary}
-        onSelectModel={(modelKey) => {
-          const chat = useChatStore.getState();
-          void chat.selectConversationModel(modelKey, chat.activeConversationId ?? undefined);
-        }}
-        onStartChatWithAgent={startWorkspaceAgentChat}
-        onOpenChange={setIsCommandPaletteOpen}
-        onOpenSettingsSection={(section) => {
-          requestTemporaryChatExit(() => {
-            setSettingsSectionRequest((current) => ({ section, requestId: current.requestId + 1 }));
-            if (activeSurface !== 'settings') navigateSurface('settings');
-          });
-        }}
-        onSelectConversation={(conversationId) => openSearchConversation(conversationId)}
-        onStartProjectChat={(projectId) => {
-          requestTemporaryChatExit(() => {
-            navigateSurface('chats');
-            useChatStore.getState().startNewChat(projectId);
-          });
-        }}
-        onToggleTheme={toggleTheme}
-        open={isCommandPaletteOpen}
-      />
+      {temporaryExitIntent !== null ? (
+        <Suspense fallback={null}>
+          <TemporaryChatExitDialog
+            canSave={temporaryChatMessageCount > 0 && temporaryChat?.route !== null}
+            errorMessage={
+              temporaryChatErrorCode === 'temporaryChatSaveFailed' ||
+              temporaryChatErrorCode === 'temporaryChatSaveCleanupFailed'
+                ? t(temporaryChatErrorCode)
+                : null
+            }
+            isBusy={isSavingTemporaryChat}
+            onDiscard={discardTemporaryChatAndContinue}
+            onOpenChange={closeTemporaryChatExitDialog}
+            onSave={() => void saveTemporaryChatAndContinue()}
+            open
+          />
+        </Suspense>
+      ) : null}
+      {isCommandPaletteOpen ? (
+        <Suspense fallback={null}>
+          <CommandPalette
+            isDark={isDark}
+            onNewChat={startWorkspaceChat}
+            onNavigate={navigate}
+            onOpenAgents={openAgentLibrary}
+            onSelectModel={(modelKey) => {
+              const chat = useChatStore.getState();
+              void chat.selectConversationModel(modelKey, chat.activeConversationId ?? undefined);
+            }}
+            onStartChatWithAgent={startWorkspaceAgentChat}
+            onOpenChange={setIsCommandPaletteOpen}
+            onOpenSettingsSection={(section) => {
+              requestTemporaryChatExit(() => {
+                setSettingsSectionRequest((current) => ({ section, requestId: current.requestId + 1 }));
+                if (activeSurface !== 'settings') navigateSurface('settings');
+              });
+            }}
+            onSelectConversation={(conversationId) => openSearchConversation(conversationId)}
+            onStartProjectChat={(projectId) => {
+              requestTemporaryChatExit(() => {
+                navigateSurface('chats');
+                useChatStore.getState().startNewChat(projectId);
+              });
+            }}
+            onToggleTheme={toggleTheme}
+            open
+          />
+        </Suspense>
+      ) : null}
     </div>
   );
 }

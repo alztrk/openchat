@@ -1,49 +1,47 @@
-import React from 'react';
-import ReactDOM from 'react-dom/client';
-import '../index.css';
-import { unifiedStorage } from '@/platform/storage/unifiedStorage';
-import { StartupErrorPage } from '@/shell/StartupErrorPage';
+import type { Root } from 'react-dom/client';
 
-const rootElement = document.getElementById('root');
-
-const startupMessages: Readonly<Record<string, string>> = {
-  de: 'OpenChat wird gestartet…',
-  en: 'Starting OpenChat…',
-  es: 'Iniciando OpenChat…',
-  fr: 'OpenChat démarre…',
-  tr: 'OpenChat başlatılıyor…',
-};
-
-if (!rootElement) {
-  throw new Error('The OpenChat application root element is missing.');
+function requireRootElement(): HTMLElement {
+  const rootElement = document.getElementById('root');
+  if (!rootElement) throw new Error('The OpenChat application root element is missing.');
+  return rootElement;
 }
-const reactRoot = ReactDOM.createRoot(rootElement);
 
-function StartupLoadingPage() {
-  const language = navigator.language.toLowerCase().split(/[-_]/, 1)[0] ?? 'en';
-  const message = startupMessages[language] ?? startupMessages.en ?? 'Starting OpenChat…';
+const rootElement = requireRootElement();
+let reactRoot: Root | undefined;
+let appStylesPromise: Promise<unknown> | undefined;
 
-  return (
-    <main aria-live="polite" className="startup-loading-page" role="status">
-      <span className="startup-loading-page__brand">OpenChat</span>
-      <span className="startup-loading-page__message">{message}</span>
-      <span aria-hidden="true" className="startup-loading-page__indicator" />
-    </main>
-  );
+function loadAppStyles(): Promise<unknown> {
+  appStylesPromise ??= import('../index.css');
+  return appStylesPromise;
+}
+
+async function getReactRoot(): Promise<[typeof import('react'), Root]> {
+  const [React, ReactDOM] = await Promise.all([import('react'), import('react-dom/client')]);
+  reactRoot ??= ReactDOM.createRoot(rootElement);
+  return [React, reactRoot];
 }
 
 async function startApplication(options: { startWithEmptyStorage?: boolean } = {}): Promise<void> {
   if (new URLSearchParams(location.search).get('computerUseOverlay') === '1') {
-    const { ComputerUseOverlay } = await import('./ComputerUseOverlay');
-    reactRoot.render(<ComputerUseOverlay />);
+    const [{ ComputerUseOverlay }, [React, root]] = await Promise.all([
+      import('./ComputerUseOverlay'),
+      getReactRoot(),
+    ]);
+    root.render(React.createElement(ComputerUseOverlay));
     return;
   }
 
-  reactRoot.render(<StartupLoadingPage />);
-
+  const appStylesPromise = loadAppStyles();
   const appImportPromise = import('./App');
+  const storageModulePromise = import('@/platform/storage/unifiedStorage');
+  const { unifiedStorage } = await storageModulePromise;
   await unifiedStorage.initialize(options);
-  const [{ App }, { i18n, i18nReady }] = await Promise.all([appImportPromise, import('../localization/i18n')]);
+  await appStylesPromise;
+  const [{ App }, { i18n, i18nReady }, [React, root]] = await Promise.all([
+    appImportPromise,
+    import('../localization/i18n'),
+    getReactRoot(),
+  ]);
   await i18nReady;
 
   document.documentElement.lang = i18n.language;
@@ -51,19 +49,24 @@ async function startApplication(options: { startWithEmptyStorage?: boolean } = {
     document.documentElement.lang = language;
   });
 
-  reactRoot.render(
-    <React.StrictMode>
-      <App />
-    </React.StrictMode>,
-  );
+  root.render(React.createElement(React.StrictMode, null, React.createElement(App)));
 }
 
-void startApplication().catch((error: unknown) => {
-  reactRoot.render(
-    <StartupErrorPage
-      error={error}
-      onRetry={() => startApplication()}
-      onStartWithEmptyProfile={() => startApplication({ startWithEmptyStorage: true })}
-    />,
+void startApplication().catch(async (error: unknown) => {
+  try {
+    await loadAppStyles();
+  } catch (stylesError) {
+    globalThis.reportError(new Error('The application styles could not be loaded.', { cause: stylesError }));
+  }
+  const [{ StartupErrorPage }, [React, root]] = await Promise.all([
+    import('@/shell/StartupErrorPage'),
+    getReactRoot(),
+  ]);
+  root.render(
+    React.createElement(StartupErrorPage, {
+      error,
+      onRetry: () => startApplication(),
+      onStartWithEmptyProfile: () => startApplication({ startWithEmptyStorage: true }),
+    }),
   );
 });

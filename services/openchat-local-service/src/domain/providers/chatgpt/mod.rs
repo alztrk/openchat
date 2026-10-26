@@ -123,7 +123,6 @@ impl ChatGptService {
     }
 
     pub fn new(storage: Arc<AppStorage>) -> Result<Self, ServiceError> {
-        crate::image_library::recover_incomplete_generations(&storage)?;
         let http = build_http_client()?;
         Ok(Self {
             storage,

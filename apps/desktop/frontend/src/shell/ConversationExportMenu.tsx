@@ -13,7 +13,7 @@ import {
   Tooltip,
 } from '@/design-system';
 import type { ChatConversation } from '@/modules/conversations/data/chatStorage';
-import { type ExportFormat, exportConversationToFile } from '@/modules/conversations/data/conversationExport';
+import type { ExportFormat } from '@/modules/conversations/data/conversationExport';
 import { conversationMarkdownLabels } from '@/modules/conversations/data/conversationMarkdownLabels';
 
 export interface ConversationExportMenuProps {
@@ -29,6 +29,7 @@ export function ConversationExportMenu({ conversation, disabled = false }: Conve
     setExporting(true);
     try {
       const labels = conversationMarkdownLabels(conversation, t, i18n.language);
+      const { exportConversationToFile } = await import('@/modules/conversations/data/conversationExport');
       await exportConversationToFile(conversation, format, labels, t('exportConversation'));
     } finally {
       setExporting(false);

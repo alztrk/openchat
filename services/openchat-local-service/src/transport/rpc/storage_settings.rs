@@ -43,7 +43,9 @@ pub(super) async fn dispatch(
 ) -> Result<Value, ServiceError> {
     match method {
         "storage.settings.get" => get_setting(params, storage),
-        "storage.settings.get_all" => get_all_settings(storage),
+        "storage.settings.get_all" => {
+            get_all_settings(storage).map(|settings| json!({"settings": settings}))
+        }
         "storage.settings.set" => set_setting(params, storage, events).await,
         "storage.settings.set_batch" => set_settings_batch(params, storage, events).await,
         "storage.settings.delete" => delete_setting(params, storage, events).await,
@@ -98,7 +100,7 @@ fn validate_workspace_setting(params: &Value) -> Result<Value, ServiceError> {
     Ok(json!({"path": path}))
 }
 
-fn get_all_settings(storage: &AppStorage) -> Result<Value, ServiceError> {
+pub(super) fn get_all_settings(storage: &AppStorage) -> Result<Map<String, Value>, ServiceError> {
     let connection = storage
         .connect()
         .map_err(|error| settings_sqlite_error(error))?;
@@ -115,7 +117,7 @@ fn get_all_settings(storage: &AppStorage) -> Result<Value, ServiceError> {
         let (key, value) = row.map_err(settings_sqlite_error)?;
         settings.insert(key, Value::String(value));
     }
-    Ok(json!({"settings": settings}))
+    Ok(settings)
 }
 
 async fn set_setting(

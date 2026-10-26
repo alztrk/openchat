@@ -11,7 +11,7 @@ import {
   setConversationPinned,
   setConversationsArchived,
 } from '@/modules/conversations/data/chatStorage';
-import { type ExportFormat, exportConversationToFile } from '@/modules/conversations/data/conversationExport';
+import type { ExportFormat } from '@/modules/conversations/data/conversationExport';
 import { conversationMarkdownLabels } from '@/modules/conversations/data/conversationMarkdownLabels';
 import { useChatStore } from '@/modules/conversations/stores/chatStore';
 import { localServiceClient } from '@/platform/local-service';
@@ -98,6 +98,7 @@ export function useConversationSidebarActions() {
     if (!beginAction()) return;
     try {
       const labels = conversationMarkdownLabels(conversation, t, i18n.language);
+      const { exportConversationToFile } = await import('@/modules/conversations/data/conversationExport');
       const saved = await exportConversationToFile(conversation, format, labels, t('exportConversation'));
       if (!saved) return;
       const feedbackKey: TranslationKey =

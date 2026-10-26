@@ -1,5 +1,5 @@
 import { ChevronDown, ChevronUp, Clock3, FileDiff, FileUp, MessageSquare, X } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Button, Dialog, Toast } from '@/design-system';
@@ -13,19 +13,18 @@ import { isSameRoute, upsertMessage } from '@/modules/conversations/stores/chatS
 import { modelRouteKey } from '@/modules/providers/data/modelPreferences';
 import { isObject } from '@/shared/utils/json';
 import { ChatComposer } from './ChatComposer';
-import {
-  ChatFileChangesPanel,
-  type RightWorkspaceTab,
-  type WorkspaceFileRequest,
-  type WorkspaceFileSelection,
-} from './ChatFileChangesPanel';
+import type { RightWorkspaceTab, WorkspaceFileRequest, WorkspaceFileSelection } from './ChatFileChangesPanel';
 import { ConversationEmptyState } from './ConversationEmptyState';
 import { EditMessageBranchDialog } from './EditMessageBranchDialog';
 import { GoalStatusBar } from './GoalStatusBar';
 import { InChatSearchBar } from './InChatSearchBar';
-import { MessageList } from './MessageList';
 import { parseToolActivities } from './message/messageData';
 import { ToolPermissionCard } from './ToolPermissionCard';
+
+const MessageList = lazy(() => import('./MessageList').then((module) => ({ default: module.MessageList })));
+const ChatFileChangesPanel = lazy(() =>
+  import('./ChatFileChangesPanel').then((module) => ({ default: module.ChatFileChangesPanel })),
+);
 
 function isChatMessage(value: unknown): value is ChatMessage {
   return isObject(value) && typeof value.id === 'string' && typeof value.conversationId === 'string';
@@ -641,33 +640,35 @@ export function ConversationPane({
                   </Button>
                 </div>
               ) : messages.length > 0 || isLoadingMessages || isSending ? (
-                <MessageList
-                  assistantModelFallback={assistantModelFallback}
-                  assistantProviderFallback={assistantProviderFallback}
-                  conversationIdOverride={activeConversationId ?? undefined}
-                  inChatSearchQuery={isSearchOpen ? searchQuery : ''}
-                  inChatTargetMessageId={isSearchOpen ? (activeMatch?.messageId ?? null) : null}
-                  isLoadingMessagesOverride={isConversationOverride && !isStoreActive ? secondaryLoading : undefined}
-                  latestFileChanges={latestFileChanges}
-                  messagesOverride={isConversationOverride && !isStoreActive ? secondaryMessages : undefined}
-                  onEditMessage={!isTemporaryChat ? (message) => setEditingMessage(message) : undefined}
-                  onOpenConnections={onOpenSettings}
-                  onOpenFileChanges={
-                    activeConversationId && !isTemporaryChat
-                      ? () => {
-                          if (onOpenRightPanel) {
-                            onOpenRightPanel('changes');
-                          } else {
-                            setRightPanelTab('changes');
-                            setIsFileChangesPanelOpen(true);
+                <Suspense fallback={null}>
+                  <MessageList
+                    assistantModelFallback={assistantModelFallback}
+                    assistantProviderFallback={assistantProviderFallback}
+                    conversationIdOverride={activeConversationId ?? undefined}
+                    inChatSearchQuery={isSearchOpen ? searchQuery : ''}
+                    inChatTargetMessageId={isSearchOpen ? (activeMatch?.messageId ?? null) : null}
+                    isLoadingMessagesOverride={isConversationOverride && !isStoreActive ? secondaryLoading : undefined}
+                    latestFileChanges={latestFileChanges}
+                    messagesOverride={isConversationOverride && !isStoreActive ? secondaryMessages : undefined}
+                    onEditMessage={!isTemporaryChat ? (message) => setEditingMessage(message) : undefined}
+                    onOpenConnections={onOpenSettings}
+                    onOpenFileChanges={
+                      activeConversationId && !isTemporaryChat
+                        ? () => {
+                            if (onOpenRightPanel) {
+                              onOpenRightPanel('changes');
+                            } else {
+                              setRightPanelTab('changes');
+                              setIsFileChangesPanelOpen(true);
+                            }
                           }
-                        }
-                      : undefined
-                  }
-                  onOpenWorkspaceFile={openWorkspaceFile}
-                  onRetryMessage={!isTemporaryChat ? (message) => void retryMessage(message.id) : undefined}
-                  showAssistantLoading={isSending}
-                />
+                        : undefined
+                    }
+                    onOpenWorkspaceFile={openWorkspaceFile}
+                    onRetryMessage={!isTemporaryChat ? (message) => void retryMessage(message.id) : undefined}
+                    showAssistantLoading={isSending}
+                  />
+                </Suspense>
               ) : (
                 <ConversationEmptyState
                   hasAvailableModels={visibleModels.length > 0}
@@ -842,14 +843,18 @@ export function ConversationPane({
           data-open={isFileChangesPanelOpen ? 'true' : 'false'}
           inert={!isFileChangesPanelOpen}
         >
-          <ChatFileChangesPanel
-            conversationId={activeConversationId}
-            initialTab={rightPanelTab}
-            fileRequest={workspaceFileRequest}
-            key={activeConversationId ?? 'workspace-panel'}
-            onChangesUpdated={updateConversationFileChanges}
-            refreshRevision={latestToolActivitiesJson}
-          />
+          {isFileChangesPanelOpen || workspaceFileRequest !== null ? (
+            <Suspense fallback={null}>
+              <ChatFileChangesPanel
+                conversationId={activeConversationId}
+                initialTab={rightPanelTab}
+                fileRequest={workspaceFileRequest}
+                key={activeConversationId ?? 'workspace-panel'}
+                onChangesUpdated={updateConversationFileChanges}
+                refreshRevision={latestToolActivitiesJson}
+              />
+            </Suspense>
+          ) : null}
         </div>
       ) : null}
       {isDraggingOver ? (

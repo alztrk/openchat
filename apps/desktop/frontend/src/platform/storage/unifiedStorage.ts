@@ -45,7 +45,10 @@ class UnifiedStorage {
       return;
     }
 
-    await localServiceClient.initialize({ startWithEmptyStorage: options.startWithEmptyStorage });
+    await localServiceClient.initialize({
+      startWithEmptyStorage: options.startWithEmptyStorage,
+    });
+    const initialization = localServiceClient.getStartupSettings();
     if (options.startWithEmptyStorage) {
       await localServiceClient.call('storage.settings.set', {
         key: skipLegacyLocalStorageImportSetting,
@@ -53,8 +56,11 @@ class UnifiedStorage {
       });
     }
 
-    // Read current settings and keep the legacy localStorage decision private to this adapter.
-    const existingSettings = parseSettingsResponse(await localServiceClient.call('storage.settings.get_all'));
+    // Keep the legacy localStorage decision private to this adapter.
+    const existingSettings = parseSettingsResponse(initialization);
+    if (options.startWithEmptyStorage) {
+      existingSettings[skipLegacyLocalStorageImportSetting] = '1';
+    }
     const skipLegacyLocalStorageImport = existingSettings[skipLegacyLocalStorageImportSetting] === '1';
     delete existingSettings[skipLegacyLocalStorageImportSetting];
     for (const [key, val] of Object.entries(existingSettings)) {
@@ -122,6 +128,7 @@ class UnifiedStorage {
       }
     }
 
+    localServiceClient.clearStartupSettings();
     this.initialized = true;
   }
 

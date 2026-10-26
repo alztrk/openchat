@@ -1,8 +1,9 @@
 import { Check, File, FileText, Folder, FolderOpen, Search } from 'lucide-react';
+import { lazy, Suspense } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/design-system';
-import { detectFileLanguage, highlightFileLines } from './FileSyntaxHighlight';
 import type { ToolActivity } from './messageData';
+import { ReadCodeLines } from './ReadCodeLines';
 import { PathHeading, PreviewBlock, ResultFootnote, ToolResultNotice } from './ToolSharedComponents';
 import {
   asRecord,
@@ -14,6 +15,10 @@ import {
   stringValue,
   type ToolRecord,
 } from './toolResultUtils';
+
+const HighlightedReadLines = lazy(() =>
+  import('./HighlightedReadLines').then((module) => ({ default: module.HighlightedReadLines })),
+);
 
 export function FileListingResult({
   activity,
@@ -157,11 +162,7 @@ export function ReadResult({
     return item && number !== null && number > 0 && typeof item.text === 'string' ? [{ number, text: item.text }] : [];
   });
   if (lines.length !== output.lines.length) return <ToolResultNotice message={t('toolOperationUnavailable')} />;
-  const language = detectFileLanguage(path);
-  const highlightedLines = highlightFileLines(
-    language,
-    lines.map((line) => line.text || ' '),
-  );
+  const plainTextLines = lines.map((line) => line.text || ' ');
   return (
     <div className="grid gap-2 pb-2">
       <p className="flex min-w-0 items-center gap-2 text-xs text-secondary-text">
@@ -186,14 +187,9 @@ export function ReadResult({
       {lines.length === 0 ? (
         <ToolResultNotice message={t('toolReadNoLines')} />
       ) : (
-        <ol className="max-h-64 overflow-auto rounded-control border border-border bg-surface py-1">
-          {lines.map((line, index) => (
-            <li className="grid grid-cols-tool-lines gap-2 px-2.5 py-0.5 font-code text-xs leading-5" key={line.number}>
-              <span className="text-right text-secondary-text">{line.number}</span>
-              <span className="whitespace-pre-wrap break-words text-text">{highlightedLines[index]}</span>
-            </li>
-          ))}
-        </ol>
+        <Suspense fallback={<ReadCodeLines contents={plainTextLines} lines={lines} />}>
+          <HighlightedReadLines lines={lines} path={path} />
+        </Suspense>
       )}
       <p className="text-xs text-secondary-text">{t('toolReadLineCount', { count: lines.length })}</p>
       {isNonNegativeInteger(output.nextLine) ? <ResultFootnote message={t('toolReadMoreLines')} /> : null}
