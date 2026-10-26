@@ -3,7 +3,7 @@
 //! Title requests use explicit route credentials, cancellation, and response
 //! limits so they do not alter the main chat response lifecycle.
 
-use std::time::Duration;
+use std::{path::Path, time::Duration};
 
 use futures_util::StreamExt;
 use reqwest::Method;
@@ -22,8 +22,11 @@ use crate::{
 };
 
 use super::{
-    CustomProviderConfig, OPENAI_RESPONSES_URL, api_compatible_provider, apply_opencode_headers,
-    client, copilot, opencode_project_id, opencode_session_id_for_conversation,
+    CustomProviderConfig, OPENAI_RESPONSES_URL, api_compatible_provider,
+    apply_opencode_free_request_shape, apply_opencode_headers, client, copilot,
+    opencode_free_headers, opencode_free_transport, opencode_project_id,
+    opencode_session_id_for_conversation,
+    stream::{SseLine, parse_sse_line, pop_sse_line},
 };
 
 struct TitleRoute {
@@ -264,6 +267,27 @@ async fn generate_title(
     if prompt.is_empty() {
         return;
     }
+    // The free tier rejects the reqwest client's TLS fingerprint, non-streaming
+    // requests, and requests without an environment block and a `read` tool, so
+    // it needs the dedicated transport and a streamed reply.
+    if route.opencode && route.is_free {
+        let project_id = opencode_project_id(storage, conversation_id);
+        let workspace =
+            crate::workspace_settings::conversation_workspace_path(storage, conversation_id);
+        if let Some(title) = generate_free_opencode_title(
+            storage,
+            conversation_id,
+            &route,
+            project_id.as_deref(),
+            &prompt,
+            workspace.as_deref(),
+        )
+        .await
+        {
+            apply_title(storage, conversation_id, &title, events).await;
+        }
+        return;
+    }
     let Ok(client) = (if route.copilot {
         copilot::client()
     } else {
@@ -359,7 +383,11 @@ async fn generate_title(
     let Some(title) = extract_title(&body, route.responses_api, route.anthropic) else {
         return;
     };
-    let Ok(true) = chatgpt_store::apply_generated_title(storage, conversation_id, &title) else {
+    apply_title(storage, conversation_id, &title, events).await;
+}
+
+async fn apply_title(storage: &AppStorage, conversation_id: &str, title: &str, events: EventSink) {
+    let Ok(true) = chatgpt_store::apply_generated_title(storage, conversation_id, title) else {
         return;
     };
     let _ = events
@@ -369,6 +397,78 @@ async fn generate_title(
             json!({"conversationId": conversation_id, "title": title}),
         ))
         .await;
+}
+
+/// Streams a title through the OpenCode free tier and assembles its text.
+async fn generate_free_opencode_title(
+    storage: &AppStorage,
+    conversation_id: &str,
+    route: &TitleRoute,
+    project_id: Option<&str>,
+    prompt: &str,
+    workspace: Option<&Path>,
+) -> Option<String> {
+    let mut body = json!({
+        "model": route.model_id,
+        "messages": [
+            {"role": "system", "content": "Generate a concise title for the conversation. Return only the title, without quotes."},
+            {"role": "user", "content": prompt}
+        ],
+        // Reasoning models spend part of the completion budget on hidden
+        // reasoning, so a small cap can leave the visible title empty.
+        "max_tokens": 512,
+        "tool_choice": "none"
+    });
+    apply_opencode_free_request_shape(&mut body, "opencode", true, workspace);
+    let body = serde_json::to_vec(&body).ok()?;
+    let session_id = opencode_session_id_for_conversation(conversation_id, 0);
+    let headers = opencode_free_headers(Some(&session_id), project_id);
+    // Free models are served by the chat-completions endpoint even when the
+    // catalog marks a model as using the Responses API.
+    let url = super::models::inference_url(storage, &route.model_id, false)
+        .unwrap_or_else(|_| route.url.clone());
+    let Ok(Ok(mut response)) = tokio::time::timeout(
+        Duration::from_secs(30),
+        opencode_free_transport::send(&url, headers, body),
+    )
+    .await
+    else {
+        return None;
+    };
+    if response.status != http::StatusCode::OK {
+        return None;
+    }
+
+    let mut pending = Vec::new();
+    let mut content = String::new();
+    while let Some(chunk) = response.body.next().await {
+        let Ok(chunk) = chunk else {
+            return None;
+        };
+        if pending.len().saturating_add(chunk.len()) > MAX_TITLE_RESPONSE_BYTES {
+            return None;
+        }
+        pending.extend_from_slice(&chunk);
+        while let Some(line) = pop_sse_line(&mut pending, false) {
+            append_title_delta(&mut content, &line);
+        }
+    }
+    while let Some(line) = pop_sse_line(&mut pending, true) {
+        append_title_delta(&mut content, &line);
+    }
+    normalize_title(&content)
+}
+
+fn append_title_delta(content: &mut String, line: &[u8]) {
+    let Ok(SseLine::Data(value)) = parse_sse_line(line) else {
+        return;
+    };
+    if let Some(delta) = value
+        .pointer("/choices/0/delta/content")
+        .and_then(Value::as_str)
+    {
+        content.push_str(delta);
+    }
 }
 
 fn title_prompt(messages: &[StoredMessage], excluded_id: Option<&str>) -> String {
@@ -430,6 +530,10 @@ fn extract_title(body: &Value, responses_api: bool, anthropic: bool) -> Option<S
             .as_str()?
             .to_owned()
     };
+    normalize_title(&text)
+}
+
+fn normalize_title(text: &str) -> Option<String> {
     let title = text.trim().trim_matches(['"', '\'', '`']).trim();
     if title.is_empty() || title.chars().any(char::is_control) {
         return None;

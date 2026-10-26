@@ -111,6 +111,7 @@ pub(crate) struct CopilotCatalogFilterSummary {
 /// Owns a user's local OpenChat database and its verified migration/restore state.
 pub struct AppStorage {
     root: PathBuf,
+    image_files_root: PathBuf,
     database_path: PathBuf,
     database_had_data_on_open: bool,
     schema_version: AtomicI64,
@@ -175,6 +176,7 @@ impl AppStorage {
 
         let database_path = database_directory.join("openchat.sqlite3");
         let broker = BrokerConnection::connect()?;
+        let image_files_root = appcontainer_image_files_root()?;
         let import_status = broker.legacy_import_status()?;
         let mut preserve_legacy_sources = matches!(
             import_status,
@@ -255,6 +257,7 @@ impl AppStorage {
         let database_queue = DatabaseQueueHandle::remote();
         Ok(Self {
             root,
+            image_files_root,
             database_path,
             database_had_data_on_open: false,
             schema_version: AtomicI64::new(schema_version),
@@ -342,6 +345,7 @@ impl AppStorage {
         ensure_service_metadata(&connection)?;
         let database_queue = DatabaseQueueHandle::new(connection);
         Ok(Self {
+            image_files_root: root.clone(),
             root,
             database_path,
             database_had_data_on_open,
@@ -357,6 +361,11 @@ impl AppStorage {
     /// Returns the canonical root used for this storage instance.
     pub fn root(&self) -> &Path {
         &self.root
+    }
+
+    /// Returns the verified profile root used for persisted image files.
+    pub(crate) fn image_files_root(&self) -> &Path {
+        &self.image_files_root
     }
 
     /// Returns the SQLite database path owned by this storage instance.
@@ -445,6 +454,51 @@ impl AppStorage {
     ) -> io::Result<()> {
         self.append_diagnostic("rpc", "request_failed", |entry| {
             write!(entry, " operation={operation} code={code}")
+        })
+    }
+
+    /// Records a bounded image-library storage failure without paths or image contents.
+    ///
+    /// # Errors
+    /// Returns an I/O error if the diagnostic log cannot be updated or the stage is invalid.
+    pub(crate) fn log_image_library_failure(
+        &self,
+        stage: &'static str,
+        error_kind: Option<io::ErrorKind>,
+    ) -> io::Result<()> {
+        if !matches!(
+            stage,
+            "root_canonicalize"
+                | "directory_inspect"
+                | "directory_create"
+                | "directory_reinspect"
+                | "directory_missing"
+                | "directory_canonicalize"
+                | "directory_validation"
+                | "file_create"
+                | "file_write"
+                | "file_sync"
+                | "file_metadata"
+                | "file_validation"
+                | "file_canonicalize"
+                | "file_path_validation"
+                | "read_metadata_validation"
+                | "file_open"
+                | "file_signature_read"
+                | "file_signature_validation"
+                | "file_seek"
+                | "read_length_conversion"
+                | "file_read"
+        ) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "image-library diagnostic stage is invalid",
+            ));
+        }
+        let error_kind =
+            error_kind.map_or_else(|| "validation".to_owned(), |kind| format!("{kind:?}"));
+        self.append_diagnostic("image_library", "storage_failed", |entry| {
+            write!(entry, " stage={stage} error_kind={error_kind}")
         })
     }
 
@@ -1702,6 +1756,28 @@ fn local_app_data_root() -> rusqlite::Result<PathBuf> {
             "The OpenChat local service currently supports Windows only".into(),
         ))
     }
+}
+
+#[cfg(windows)]
+fn appcontainer_image_files_root() -> rusqlite::Result<PathBuf> {
+    let storage_root = crate::sandbox::storage_broker_data_root().map_err(filesystem_error)?;
+    let profile_root = storage_root.parent().ok_or_else(|| {
+        rusqlite::Error::InvalidPath("The OpenChat storage profile is unavailable.".into())
+    })?;
+    let canonical_profile_root = fs::canonicalize(profile_root).map_err(filesystem_error)?;
+    let metadata = fs::symlink_metadata(&storage_root).map_err(filesystem_error)?;
+    if metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 || !metadata.is_dir() {
+        return Err(rusqlite::Error::InvalidPath(
+            "The OpenChat image storage root is unsafe.".into(),
+        ));
+    }
+    let canonical_storage_root = fs::canonicalize(&storage_root).map_err(filesystem_error)?;
+    if !canonical_storage_root.starts_with(&canonical_profile_root) {
+        return Err(rusqlite::Error::InvalidPath(
+            "The OpenChat image storage root is outside its profile.".into(),
+        ));
+    }
+    Ok(canonical_storage_root)
 }
 
 #[cfg(test)]

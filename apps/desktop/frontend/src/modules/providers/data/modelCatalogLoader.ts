@@ -173,7 +173,24 @@ export async function loadLocalModels(client: LocalServiceClient): Promise<ChatM
     });
 }
 
-export async function loadApiKeyModels(client: LocalServiceClient, forceRefresh: boolean): Promise<ModelCatalogBatch> {
+export async function loadApiKeyModels(
+  client: LocalServiceClient,
+  forceRefresh: boolean,
+  onProgress?: (batch: ModelCatalogBatch) => void,
+): Promise<ModelCatalogBatch> {
+  const copilotStatusPromise = Promise.resolve()
+    .then(() => client.call('copilot.oauth.status'))
+    .then(
+      (copilotStatus) => ({
+        connected:
+          copilotStatus.connected === true &&
+          isObject(copilotStatus.connection) &&
+          copilotStatus.connection.authStatus === 'active',
+        failed: false,
+      }),
+      () => ({ connected: false, failed: true }),
+    );
+
   let status: ProviderCredentialSnapshot;
   try {
     status = await loadProviderCredentialStatus();
@@ -186,23 +203,14 @@ export async function loadApiKeyModels(client: LocalServiceClient, forceRefresh:
       needsChatGptWorkspaceSelection: false,
     };
   }
+  const copilotStatus = await copilotStatusPromise;
+  const copilotConnected = copilotStatus.connected;
   const hasConfiguredProvider =
     status.chatgptApiKeys.length > 0 ||
     status.compatibleProviders.some((provider) => provider.isConfigured) ||
     status.customProviders.some((provider) => provider.isConfigured) ||
     status.openCodeConfigured;
   const tasks: Array<Promise<{ models: ChatModel[]; failed: boolean }>> = [];
-  let copilotConnected = false;
-  let copilotStatusFailed = false;
-  try {
-    const copilotStatus = await client.call('copilot.oauth.status');
-    copilotConnected =
-      copilotStatus.connected === true &&
-      isObject(copilotStatus.connection) &&
-      copilotStatus.connection.authStatus === 'active';
-  } catch {
-    copilotStatusFailed = true;
-  }
   const kiloConfigured =
     status.compatibleProviders.find((provider) => provider.providerId === 'kilo')?.isConfigured ?? false;
   const providers: ChatModelProvider[] = [
@@ -276,14 +284,27 @@ export async function loadApiKeyModels(client: LocalServiceClient, forceRefresh:
   if (!kiloConfigured) {
     tasks.push(loadKiloFreeCatalog(client, forceRefresh));
   }
-  const results = await Promise.all(tasks);
-  return {
+  const settledResults: Array<{ models: ChatModel[]; failed: boolean } | null> = tasks.map(() => null);
+  const getSettledResults = () => settledResults.flatMap((result) => (result === null ? [] : [result]));
+  const toBatch = (results: readonly { models: ChatModel[]; failed: boolean }[]): ModelCatalogBatch => ({
     models: results.flatMap((result) => result.models),
     providers,
-    hasUnavailableSources: copilotStatusFailed || results.some((result) => result.failed),
+    hasUnavailableSources: copilotStatus.failed || results.some((result) => result.failed),
     hasConfiguredProvider: hasConfiguredProvider || copilotConnected,
     needsChatGptWorkspaceSelection: false,
-  };
+  });
+
+  onProgress?.(toBatch([]));
+  const results = await Promise.all(
+    tasks.map((task, index) =>
+      task.then((result) => {
+        settledResults[index] = result;
+        onProgress?.(toBatch(getSettledResults()));
+        return result;
+      }),
+    ),
+  );
+  return toBatch(results);
 }
 
 async function loadProviderCatalog(

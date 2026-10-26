@@ -15,6 +15,11 @@ mod security_acl;
 #[cfg(windows)]
 mod types;
 
+#[cfg(windows)]
+pub(crate) fn storage_broker_data_root() -> std::io::Result<PathBuf> {
+    appcontainer::AppContainerSandbox::storage_broker_data_root()
+}
+
 #[cfg(all(windows, test))]
 mod tests;
 

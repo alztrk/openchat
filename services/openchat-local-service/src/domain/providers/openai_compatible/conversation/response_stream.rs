@@ -4,8 +4,10 @@
 //! tool-call, and completion state to conversation orchestration.
 
 use std::collections::BTreeMap;
+use std::pin::Pin;
 
-use futures_util::StreamExt;
+use bytes::Bytes;
+use futures_util::{Stream, StreamExt};
 use reqwest::{StatusCode, header::ACCEPT};
 use serde_json::Value;
 
@@ -18,9 +20,10 @@ use crate::{
 };
 
 use super::super::{
-    MAX_EVENT_BYTES, apply_opencode_headers, cancelled_error,
+    MAX_EVENT_BYTES, MAX_PROVIDER_ERROR_BYTES, apply_opencode_headers, cancelled_error,
     chat_request_http_error_with_retry_after, client, copilot, invalid_response_error,
-    network_error, opencode_free_usage_limit_error, protocol_error,
+    network_error, opencode_free_headers, opencode_free_transport, opencode_free_usage_limit_error,
+    protocol_error,
     stream::{
         ProviderRequestUsage, ResponsesStreamEffect, SseLine, StreamedToolCall,
         append_tool_call_deltas, finish_reason, handle_responses_api_event, parse_sse_line,
@@ -29,6 +32,10 @@ use super::super::{
     },
 };
 use super::{ResponseStreamRequest, think_tag_filter::ThinkTagFilter};
+
+/// Response body stream where failures are reduced to a diagnostic string so
+/// both the `reqwest` and OpenSSL transports can share one code path.
+type ProviderBody = Pin<Box<dyn Stream<Item = Result<Bytes, String>> + Send>>;
 
 pub(super) struct StreamedTurn {
     pub(super) round_content: String,
@@ -225,84 +232,151 @@ pub(super) async fn receive(
     receive_with_client(request, &client).await
 }
 
+struct ProviderResponse {
+    status: StatusCode,
+    retry_after: Option<u64>,
+    body: ProviderBody,
+}
+
+impl ProviderResponse {
+    fn from_reqwest(response: reqwest::Response) -> Self {
+        let status = response.status();
+        let retry_after = retry_after_seconds(response.headers());
+        let body = response
+            .bytes_stream()
+            .map(|chunk| chunk.map_err(|error| error.without_url().to_string()));
+        Self {
+            status,
+            retry_after,
+            body: Box::pin(body),
+        }
+    }
+
+    fn from_free(response: opencode_free_transport::FreeResponse) -> Self {
+        Self {
+            status: response.status,
+            retry_after: response.retry_after,
+            body: response.body,
+        }
+    }
+}
+
+fn retry_after_seconds(headers: &reqwest::header::HeaderMap) -> Option<u64> {
+    headers
+        .get(reqwest::header::RETRY_AFTER)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.parse::<u64>().ok())
+        .filter(|seconds| (1..=86_400).contains(seconds))
+}
+
+async fn read_error_body(body: &mut ProviderBody) -> Option<Value> {
+    let mut collected = Vec::new();
+    while collected.len() < MAX_PROVIDER_ERROR_BYTES {
+        let Some(Ok(chunk)) = body.next().await else {
+            break;
+        };
+        let remaining = MAX_PROVIDER_ERROR_BYTES - collected.len();
+        collected.extend_from_slice(&chunk[..chunk.len().min(remaining)]);
+    }
+    serde_json::from_slice::<Value>(&collected).ok()
+}
+
 async fn receive_with_client(
     mut request: ResponseStreamRequest<'_>,
     client: &reqwest::Client,
 ) -> Result<StreamedTurn, ServiceError> {
-    let mut provider_request = client.post(request.route.chat_url.as_str());
-    if request.route.is_copilot {
-        let Some(api_key) = request.api_key else {
-            return Err(super::super::provider_authentication_required_error(
-                "copilot",
-            ));
-        };
-        provider_request = copilot::authorize_inference(
-            provider_request,
-            api_key,
-            copilot::RequestIntent::Conversation,
-        );
-    } else if request.route.is_opencode {
-        if let Some(session_id) = request.session_id {
-            provider_request = apply_opencode_headers(
-                provider_request,
-                session_id,
-                request.route.project_id.as_deref(),
-            );
+    let response = if request.route.is_opencode && request.route.is_free {
+        // The free tier requires a TLS profile only OpenSSL can produce.
+        let headers =
+            opencode_free_headers(request.session_id, request.route.project_id.as_deref());
+        let body = serde_json::to_vec(request.body).map_err(|_| invalid_response_error())?;
+        tokio::select! {
+            changed = request.cancellation.changed() => {
+                let _ = changed;
+                return Err(cancelled_error());
+            }
+            response = opencode_free_transport::send(
+                request.route.chat_url.as_str(),
+                headers,
+                body,
+            ) => ProviderResponse::from_free(response?),
         }
-        if request.route.is_free {
-            provider_request = provider_request.bearer_auth("public");
-        } else if let Some(api_key) = request.api_key {
+    } else {
+        let mut provider_request = client.post(request.route.chat_url.as_str());
+        if request.route.is_copilot {
+            let Some(api_key) = request.api_key else {
+                return Err(super::super::provider_authentication_required_error(
+                    "copilot",
+                ));
+            };
+            provider_request = copilot::authorize_inference(
+                provider_request,
+                api_key,
+                copilot::RequestIntent::Conversation,
+            );
+        } else if request.route.is_opencode {
+            if let Some(session_id) = request.session_id {
+                provider_request = apply_opencode_headers(
+                    provider_request,
+                    session_id,
+                    request.route.project_id.as_deref(),
+                );
+            }
+            if request.route.is_free {
+                provider_request = provider_request.bearer_auth("public");
+            } else if let Some(api_key) = request.api_key {
+                provider_request = provider_request.bearer_auth(api_key);
+            }
+        } else if request.route.is_anthropic()
+            && let Some(api_key) = request.api_key
+        {
+            provider_request = provider_request
+                .header(
+                    "x-api-key",
+                    sensitive_api_key_header(api_key).map_err(|_| {
+                        ServiceError::new(
+                            "invalid_provider_credential",
+                            "The configured provider API key is invalid.",
+                            false,
+                        )
+                    })?,
+                )
+                .header("anthropic-version", "2023-06-01");
+        } else if let Some(api_key) = request.route.local_api_key.as_deref() {
+            provider_request = provider_request.bearer_auth(api_key.as_str());
+        } else if !request.route.is_free
+            && let Some(api_key) = request.api_key
+        {
             provider_request = provider_request.bearer_auth(api_key);
         }
-    } else if request.route.is_anthropic()
-        && let Some(api_key) = request.api_key
-    {
-        provider_request = provider_request
-            .header(
-                "x-api-key",
-                sensitive_api_key_header(api_key).map_err(|_| {
-                    ServiceError::new(
-                        "invalid_provider_credential",
-                        "The configured provider API key is invalid.",
-                        false,
-                    )
+        let response = tokio::select! {
+            changed = request.cancellation.changed() => {
+                let _ = changed;
+                return Err(cancelled_error());
+            }
+                response = provider_request
+                .header(ACCEPT, "text/event-stream")
+                .json(request.body)
+                .send() => response.map_err(|error| {
+                    connection_error(request.route, error.without_url().to_string())
                 })?,
-            )
-            .header("anthropic-version", "2023-06-01");
-    } else if let Some(api_key) = request.route.local_api_key.as_deref() {
-        provider_request = provider_request.bearer_auth(api_key.as_str());
-    } else if !request.route.is_free
-        && let Some(api_key) = request.api_key
-    {
-        provider_request = provider_request.bearer_auth(api_key);
-    }
-    let response = tokio::select! {
-        changed = request.cancellation.changed() => {
-            let _ = changed;
-            return Err(cancelled_error());
-        }
-            response = provider_request
-            .header(ACCEPT, "text/event-stream")
-            .json(request.body)
-            .send() => response.map_err(|error| {
-                connection_error(request.route, error.without_url().to_string())
-            })?,
+        };
+        ProviderResponse::from_reqwest(response)
     };
-    let retry_after_seconds = response
-        .headers()
-        .get(reqwest::header::RETRY_AFTER)
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.parse::<u64>().ok())
-        .filter(|seconds| (1..=86_400).contains(seconds));
-    if !response.status().is_success() {
-        let status = response.status();
+    let ProviderResponse {
+        status,
+        retry_after: retry_after_value,
+        body: mut stream,
+    } = response;
+    let retry_after_seconds = retry_after_value;
+    if !status.is_success() {
         if request.route.is_opencode
             && request.route.is_free
             && matches!(
                 status,
                 StatusCode::FORBIDDEN | StatusCode::TOO_MANY_REQUESTS
             )
-            && let Some(error_body) = super::super::read_opencode_error_body(response).await
+            && let Some(error_body) = read_error_body(&mut stream).await
         {
             if status == StatusCode::FORBIDDEN
                 && super::super::contains_free_tier_error(&error_body)
@@ -327,12 +401,10 @@ async fn receive_with_client(
             retry_after_seconds,
         ));
     }
-
-    let mut stream = response.bytes_stream();
     let mut pending = Vec::new();
     let mut round_content = String::new();
     let mut tool_calls = BTreeMap::<usize, StreamedToolCall>::new();
-    let mut think_filter = ThinkTagFilter::default();
+    let mut think_filter = ThinkTagFilter::new();
     let supports_provider_citations = matches!(
         request.route.provider_id.as_deref(),
         Some(
@@ -361,9 +433,7 @@ async fn receive_with_client(
             chunk = stream.next() => chunk,
         };
         if let Some(chunk) = chunk {
-            let chunk = chunk.map_err(|error| {
-                connection_error(request.route, error.without_url().to_string())
-            })?;
+            let chunk = chunk.map_err(|details| connection_error(request.route, details))?;
             request.response_budget.consume(chunk.len())?;
             pending.extend_from_slice(&chunk);
             if pending.len() > MAX_EVENT_BYTES {
@@ -467,6 +537,14 @@ async fn receive_with_client(
                                         .await?;
                                 }
                             }
+                            Some("thinking_delta") => {
+                                if let Some(reasoning) = delta
+                                    .and_then(|delta| delta.get("thinking"))
+                                    .and_then(Value::as_str)
+                                {
+                                    append_legacy_reasoning(&mut request, reasoning).await?;
+                                }
+                            }
                             Some("input_json_delta") => {
                                 let index = value
                                     .get("index")
@@ -556,14 +634,7 @@ async fn receive_with_client(
                         append_think_output(&mut request, &mut round_content, output).await?;
                     }
                     ResponsesStreamEffect::ReasoningDelta(reasoning) => {
-                        let is_custom_provider = request
-                            .route
-                            .provider_id
-                            .as_deref()
-                            .is_some_and(|provider_id| provider_id.starts_with("custom_"));
-                        if request.route.provider_id.as_deref() != Some("chatgpt_api")
-                            && !is_custom_provider
-                        {
+                        if request.route.provider_id.as_deref() != Some("chatgpt_api") {
                             append_legacy_reasoning(&mut request, &reasoning).await?;
                         }
                     }
@@ -633,9 +704,15 @@ async fn receive_with_client(
             saw_finish_reason |= finish_reason(&value).is_some();
             let is_mistral = request.route.provider_id.as_deref() == Some("mistral");
             let mistral_delta = is_mistral.then(|| mistral_content_delta(&value));
+            let gemini_delta = gemini_content_delta(&value);
             let text = mistral_delta
                 .as_ref()
                 .and_then(|delta| (!delta.text.is_empty()).then_some(delta.text.as_str()))
+                .or_else(|| {
+                    gemini_delta
+                        .as_ref()
+                        .and_then(|(_, text)| (!text.is_empty()).then_some(text.as_str()))
+                })
                 .or_else(|| {
                     (!is_mistral)
                         .then(|| value.pointer("/choices/0/delta/content"))
@@ -658,47 +735,23 @@ async fn receive_with_client(
                 }
             }
             append_visible_text(&mut request, &mut round_content, &visible_delta).await?;
-            let is_custom_provider = request
-                .route
-                .provider_id
-                .as_deref()
-                .is_some_and(|provider_id| provider_id.starts_with("custom_"));
-            if !is_custom_provider {
-                let reasoning = mistral_delta
-                    .as_ref()
-                    .and_then(|delta| {
-                        (!delta.reasoning.is_empty()).then_some(delta.reasoning.as_str())
+            let reasoning = mistral_delta
+                .as_ref()
+                .and_then(|delta| (!delta.reasoning.is_empty()).then_some(delta.reasoning.as_str()))
+                .or_else(|| {
+                    gemini_delta.as_ref().and_then(|(reasoning, _)| {
+                        (!reasoning.is_empty()).then_some(reasoning.as_str())
                     })
-                    .or_else(|| {
-                        value
-                            .pointer("/choices/0/delta/reasoning_content")
-                            .or_else(|| value.pointer("/choices/0/delta/reasoning"))
-                            .and_then(Value::as_str)
-                    });
-                if let Some(reasoning) = reasoning {
-                    request.reasoning_content.push_str(reasoning);
-                    let summary = ReasoningSummary {
-                        id: format!("reasoning_{}", request.message_id),
-                        content: request.reasoning_content.clone(),
-                        elapsed_microseconds: request.started.elapsed().as_micros() as i64,
-                        is_complete: false,
-                    };
-                    let _ = request
-                        .events
-                        .send(
-                            &ChatStreamEvent::ReasoningSummariesUpdated {
-                                snapshot: ChatStreamSnapshot::new(
-                                    request.conversation_id,
-                                    request.message_id,
-                                    request.content,
-                                    request.created_at,
-                                ),
-                                summaries: vec![summary],
-                            }
-                            .into_rpc(request.request_id.clone()),
-                        )
-                        .await;
-                }
+                })
+                .or_else(|| {
+                    value
+                        .pointer("/choices/0/delta/reasoning_content")
+                        .or_else(|| value.pointer("/choices/0/delta/reasoning"))
+                        .or_else(|| value.pointer("/choices/0/delta/thinking"))
+                        .and_then(Value::as_str)
+                });
+            if let Some(reasoning) = reasoning {
+                append_legacy_reasoning(&mut request, reasoning).await?;
             }
             update_chat_completion_usage(&value, request.input_tokens, request.output_tokens);
             update_provider_request_usage(
@@ -1040,6 +1093,26 @@ struct MistralContentDelta {
     text: String,
     reasoning: String,
     reference_ids: Vec<usize>,
+}
+
+fn gemini_content_delta(value: &Value) -> Option<(String, String)> {
+    let parts = value
+        .pointer("/candidates/0/content/parts")
+        .or_else(|| value.pointer("/candidate/content/parts"))?
+        .as_array()?;
+    let mut reasoning = String::new();
+    let mut text = String::new();
+    for part in parts {
+        let Some(part_text) = part.get("text").and_then(Value::as_str) else {
+            continue;
+        };
+        if part.get("thought").and_then(Value::as_bool) == Some(true) {
+            reasoning.push_str(part_text);
+        } else {
+            text.push_str(part_text);
+        }
+    }
+    Some((reasoning, text))
 }
 
 fn mistral_content_delta(value: &Value) -> MistralContentDelta {

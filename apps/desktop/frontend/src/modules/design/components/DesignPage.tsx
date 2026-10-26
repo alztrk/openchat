@@ -208,19 +208,31 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
   const generationInProgress = generationStarting || activeOperation !== null;
   const generationPlaceholderCount = Number(count);
   const selectedBackgroundMode = customBackgroundMode === 'none' ? background : customBackgroundMode;
-  const backgroundPromptInstruction =
+  const backgroundConfiguration =
     customBackgroundMode === 'solid'
-      ? t('designSolidBackgroundPromptInstruction', { color: backgroundColor })
+      ? t('designPromptConfigSolidBackground', { color: backgroundColor })
       : customBackgroundMode === 'gradient'
-        ? t('designGradientBackgroundPromptInstruction', {
+        ? t('designPromptConfigGradientBackground', {
             angle: gradientAngle,
             endColor: gradientEndColor,
             startColor: backgroundColor,
           })
-        : '';
-  const generationPrompt = backgroundPromptInstruction
-    ? `${prompt.trim()}\n\n${backgroundPromptInstruction}`
-    : prompt.trim();
+        : t('designPromptConfigBackground', { background: t(imageBackgroundLabelKey(background)) });
+  const systemPromptConfigs = [
+    t('designPromptConfigIntro'),
+    t('designPromptConfigResolution', {
+      resolution:
+        size === 'custom'
+          ? `${customWidth}x${customHeight}`
+          : t(sizeOptions.find((option) => option.value === size)?.labelKey ?? 'designResolutionAuto'),
+    }),
+    t('designPromptConfigQuality', { quality: t(imageQualityLabelKey(quality)) }),
+    backgroundConfiguration,
+    t('designPromptConfigOutputFormat', { format: outputFormat.toUpperCase() }),
+    t('designPromptConfigImageCount', { count }),
+  ].join('\n');
+  const generationPrompt = buildStructuredImagePrompt(prompt.trim(), systemPromptConfigs);
+  const promptCharacterLimit = structuredPromptCharacterLimit(systemPromptConfigs);
   const generationPromptTooLong = Array.from(generationPrompt).length > 10_000;
 
   const loadTargets = useCallback(async () => {
@@ -618,7 +630,7 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
   };
 
   const reusePrompt = (value: string) => {
-    setPrompt(value);
+    setPrompt(extractUserPrompt(value));
     setSelectedImage(null);
     promptRef.current?.focus();
   };
@@ -836,7 +848,7 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
     const savedModeration = run.moderation ?? '';
     const savedFormat = run.outputFormat ?? '';
     const options: ImageGenerationOptions = {
-      prompt: run.prompt,
+      prompt: extractUserPrompt(run.prompt),
       model: run.model,
       size: run.size ?? 'auto',
       quality: isImageQuality(savedQuality) ? savedQuality : 'auto',
@@ -974,14 +986,14 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
                 aria-describedby="design-prompt-hint"
                 className="min-h-32 w-full resize-y rounded-control border border-control-border bg-surface px-3 py-2 text-sm font-normal leading-relaxed text-text outline-none placeholder:text-secondary-text focus-visible:ring-2 focus-visible:ring-focus disabled:cursor-not-allowed disabled:opacity-50"
                 id="design-prompt"
-                maxLength={10_000}
+                maxLength={promptCharacterLimit}
                 onChange={(event: ChangeEvent<HTMLTextAreaElement>) => setPrompt(event.target.value)}
                 placeholder={t('designPromptPlaceholder')}
                 ref={promptRef}
                 value={prompt}
               />
               <span className="text-xs font-normal text-secondary-text" id="design-prompt-hint">
-                {t('designPromptHint', { count: prompt.length })}
+                {t('designPromptHint', { count: prompt.length, max: promptCharacterLimit })}
               </span>
             </label>
 
@@ -1599,7 +1611,7 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
                 key={run.id}
               >
                 <div className="min-w-0">
-                  <p className="truncate text-sm text-text">{run.prompt}</p>
+                  <p className="truncate text-sm text-text">{extractUserPrompt(run.prompt)}</p>
                   <p className="text-xs text-secondary-text">
                     {t(run.status === 'failed' ? 'designGenerationFailed' : 'designGenerationCancelled')}
                   </p>
@@ -2066,6 +2078,57 @@ function bytesToDataUrl(mimeType: string, bytes: Uint8Array): string {
   return `data:${mimeType};base64,${window.btoa(binary)}`;
 }
 
+function buildStructuredImagePrompt(userPrompt: string, systemPromptConfigs: string): string {
+  return `User Prompt: ${JSON.stringify(userPrompt)}\nSystem Prompt / Configs: ${JSON.stringify(systemPromptConfigs)}`;
+}
+
+function structuredPromptCharacterLimit(systemPromptConfigs: string): number {
+  let low = 0;
+  let high = 10_000;
+  while (low < high) {
+    const middle = Math.ceil((low + high) / 2);
+    if (buildStructuredImagePrompt('a'.repeat(middle), systemPromptConfigs).length <= 10_000) low = middle;
+    else high = middle - 1;
+  }
+  return low;
+}
+
+function imageBackgroundLabelKey(
+  background: ImageBackground,
+): 'designBackgroundTransparent' | 'designBackgroundOpaque' | 'designBackgroundAuto' {
+  if (background === 'transparent') return 'designBackgroundTransparent';
+  if (background === 'opaque') return 'designBackgroundOpaque';
+  return 'designBackgroundAuto';
+}
+
+function imageQualityLabelKey(
+  quality: ImageQuality,
+): 'designQualityAuto' | 'designQualityLow' | 'designQualityMedium' | 'designQualityHigh' | 'designQualityXhigh' | 'designQualityMax' {
+  const keys = {
+    auto: 'designQualityAuto',
+    low: 'designQualityLow',
+    medium: 'designQualityMedium',
+    high: 'designQualityHigh',
+    xhigh: 'designQualityXhigh',
+    max: 'designQualityMax',
+  } as const;
+  return keys[quality];
+}
+
+function extractUserPrompt(prompt: string): string {
+  const prefix = 'User Prompt: ';
+  const separator = '\nSystem Prompt / Configs: ';
+  if (!prompt.startsWith(prefix)) return prompt;
+  const separatorIndex = prompt.indexOf(separator, prefix.length);
+  if (separatorIndex < 0) return prompt;
+  try {
+    const parsed: unknown = JSON.parse(prompt.slice(prefix.length, separatorIndex));
+    return typeof parsed === 'string' ? parsed : prompt;
+  } catch {
+    return prompt;
+  }
+}
+
 function mergeUniqueImages(current: GalleryImage[], next: GalleryImage[], sort: 'newest' | 'oldest'): GalleryImage[] {
   const images = new Map(current.map((image) => [image.key, image]));
   for (const image of next) images.set(image.key, image);
@@ -2092,7 +2155,9 @@ function galleryVariants(images: GalleryImage[], selected: GalleryImage): Galler
 }
 
 function galleryPrompt(entry: GalleryImage): string {
-  return entry.source === 'design' ? entry.image.prompt : (entry.image.prompt ?? entry.image.conversationTitle);
+  return entry.source === 'design'
+    ? extractUserPrompt(entry.image.prompt)
+    : (entry.image.prompt ? extractUserPrompt(entry.image.prompt) : entry.image.conversationTitle);
 }
 
 function withAnnotations(entry: GalleryImage, annotations: { isFavorite: boolean; tags: string[] }): GalleryImage {
@@ -2132,11 +2197,13 @@ function extensionFromMime(mimeType: string): string {
 }
 
 function galleryImageAlt(entry: GalleryImage): string {
-  return entry.source === 'design' ? entry.image.prompt : entry.image.fileName;
+  return entry.source === 'design' ? extractUserPrompt(entry.image.prompt) : entry.image.fileName;
 }
 
 function galleryImageCaption(entry: GalleryImage): string {
-  return entry.source === 'design' ? entry.image.prompt : (entry.image.prompt ?? entry.image.conversationTitle);
+  return entry.source === 'design'
+    ? extractUserPrompt(entry.image.prompt)
+    : (entry.image.prompt ? extractUserPrompt(entry.image.prompt) : entry.image.conversationTitle);
 }
 
 function galleryImageExtension(entry: GalleryImage): string {

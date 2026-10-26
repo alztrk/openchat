@@ -6,8 +6,8 @@
 use std::{
     collections::HashSet,
     fs::{self, File, OpenOptions},
-    io::{Read, Seek, SeekFrom, Write},
-    path::{Path, PathBuf},
+    io::{self, Read, Seek, SeekFrom, Write},
+    path::PathBuf,
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -388,7 +388,7 @@ pub(crate) fn save_generation(
         .map(|output| format_name(&output.mime_type).ok_or_else(invalid_image_data))
         .collect::<Result<Vec<_>, _>>()?;
 
-    let directory = image_directory(storage.root(), true)?;
+    let directory = image_directory(storage, true)?;
     let created_at = current_time_millis()?;
     let mut items = Vec::with_capacity(result.outputs.len());
     let mut paths = Vec::with_capacity(result.outputs.len());
@@ -397,15 +397,31 @@ pub(crate) fn save_generation(
         let path = directory.join(format!("{id}.data"));
         let mut file = match OpenOptions::new().write(true).create_new(true).open(&path) {
             Ok(file) => file,
-            Err(_) => {
+            Err(error) => {
                 cleanup_files(&paths);
-                return Err(image_storage_unavailable());
+                return Err(image_storage_failure(
+                    storage,
+                    "file_create",
+                    Some(error.kind()),
+                ));
             }
         };
         paths.push(path);
-        if file.write_all(&output.bytes).is_err() || file.sync_all().is_err() {
+        if let Err(error) = file.write_all(&output.bytes) {
             cleanup_files(&paths);
-            return Err(image_storage_unavailable());
+            return Err(image_storage_failure(
+                storage,
+                "file_write",
+                Some(error.kind()),
+            ));
+        }
+        if let Err(error) = file.sync_all() {
+            cleanup_files(&paths);
+            return Err(image_storage_failure(
+                storage,
+                "file_sync",
+                Some(error.kind()),
+            ));
         }
         items.push(ImageLibraryItem {
             id,
@@ -639,26 +655,36 @@ pub(crate) fn read_chunk(
             rusqlite::Error::QueryReturnedNoRows => not_found(),
             _ => storage_error(error),
         })?;
-    let total_bytes = u64::try_from(size_bytes).map_err(|_| image_storage_unavailable())?;
+    let total_bytes = u64::try_from(size_bytes)
+        .map_err(|_| image_storage_failure(storage, "read_metadata_validation", None))?;
     if total_bytes == 0 || total_bytes > MAX_IMAGE_BYTES as u64 || offset > total_bytes {
-        return Err(image_storage_unavailable());
+        return Err(image_storage_failure(
+            storage,
+            "read_metadata_validation",
+            None,
+        ));
     }
     let path = image_file_path(storage, id, total_bytes)?;
-    let mut file = File::open(path).map_err(|_| image_storage_unavailable())?;
+    let mut file = File::open(path)
+        .map_err(|error| image_storage_failure(storage, "file_open", Some(error.kind())))?;
     let mut header = [0_u8; 12];
-    let header_len = file
-        .read(&mut header)
-        .map_err(|_| image_storage_unavailable())?;
+    let header_len = file.read(&mut header).map_err(|error| {
+        image_storage_failure(storage, "file_signature_read", Some(error.kind()))
+    })?;
     if signature_mime(&header[..header_len]) != Some(mime_type.as_str()) {
-        return Err(image_storage_unavailable());
+        return Err(image_storage_failure(
+            storage,
+            "file_signature_validation",
+            None,
+        ));
     }
     file.seek(SeekFrom::Start(offset))
-        .map_err(|_| image_storage_unavailable())?;
+        .map_err(|error| image_storage_failure(storage, "file_seek", Some(error.kind())))?;
     let chunk_len = usize::try_from(length.min(total_bytes - offset))
-        .map_err(|_| image_storage_unavailable())?;
+        .map_err(|_| image_storage_failure(storage, "read_length_conversion", None))?;
     let mut bytes = vec![0; chunk_len];
     file.read_exact(&mut bytes)
-        .map_err(|_| image_storage_unavailable())?;
+        .map_err(|error| image_storage_failure(storage, "file_read", Some(error.kind())))?;
     Ok((mime_type, total_bytes, bytes))
 }
 
@@ -1234,48 +1260,70 @@ fn image_file_path(
     id: &str,
     size_bytes: u64,
 ) -> Result<PathBuf, ServiceError> {
-    let directory = image_directory(storage.root(), false)?;
+    let directory = image_directory(storage, false)?;
     let path = directory.join(format!("{id}.data"));
-    let metadata = fs::symlink_metadata(&path).map_err(|_| image_storage_unavailable())?;
+    let metadata = fs::symlink_metadata(&path)
+        .map_err(|error| image_storage_failure(storage, "file_metadata", Some(error.kind())))?;
     if metadata.file_type().is_symlink() || !metadata.is_file() || metadata.len() != size_bytes {
-        return Err(image_storage_unavailable());
+        return Err(image_storage_failure(storage, "file_validation", None));
     }
-    let canonical = fs::canonicalize(&path).map_err(|_| image_storage_unavailable())?;
+    let canonical = fs::canonicalize(&path)
+        .map_err(|error| image_storage_failure(storage, "file_canonicalize", Some(error.kind())))?;
     if canonical != path || !canonical.starts_with(&directory) {
-        return Err(image_storage_unavailable());
+        return Err(image_storage_failure(storage, "file_path_validation", None));
     }
     Ok(canonical)
 }
 
-fn image_directory(root: &Path, create: bool) -> Result<PathBuf, ServiceError> {
-    let root = fs::canonicalize(root).map_err(|_| image_storage_unavailable())?;
+fn image_directory(storage: &AppStorage, create: bool) -> Result<PathBuf, ServiceError> {
+    let root = fs::canonicalize(storage.image_files_root())
+        .map_err(|error| image_storage_failure(storage, "root_canonicalize", Some(error.kind())))?;
     let path = root.join(IMAGE_DIRECTORY);
     match fs::symlink_metadata(&path) {
         Ok(metadata) if metadata.file_type().is_symlink() || !metadata.is_dir() => {
-            return Err(image_storage_unavailable());
+            return Err(image_storage_failure(storage, "directory_validation", None));
         }
         Ok(_) => {}
         Err(error) if error.kind() == std::io::ErrorKind::NotFound && create => {
             match fs::create_dir(&path) {
                 Ok(()) => {}
                 Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
-                    let metadata =
-                        fs::symlink_metadata(&path).map_err(|_| image_storage_unavailable())?;
+                    let metadata = fs::symlink_metadata(&path).map_err(|error| {
+                        image_storage_failure(storage, "directory_reinspect", Some(error.kind()))
+                    })?;
                     if metadata.file_type().is_symlink() || !metadata.is_dir() {
-                        return Err(image_storage_unavailable());
+                        return Err(image_storage_failure(storage, "directory_validation", None));
                     }
                 }
-                Err(_) => return Err(image_storage_unavailable()),
+                Err(error) => {
+                    return Err(image_storage_failure(
+                        storage,
+                        "directory_create",
+                        Some(error.kind()),
+                    ));
+                }
             }
         }
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            return Err(image_storage_unavailable());
+            return Err(image_storage_failure(
+                storage,
+                "directory_missing",
+                Some(error.kind()),
+            ));
         }
-        Err(_) => return Err(image_storage_unavailable()),
+        Err(error) => {
+            return Err(image_storage_failure(
+                storage,
+                "directory_inspect",
+                Some(error.kind()),
+            ));
+        }
     }
-    let canonical = fs::canonicalize(&path).map_err(|_| image_storage_unavailable())?;
+    let canonical = fs::canonicalize(&path).map_err(|error| {
+        image_storage_failure(storage, "directory_canonicalize", Some(error.kind()))
+    })?;
     if canonical != path || !canonical.starts_with(&root) {
-        return Err(image_storage_unavailable());
+        return Err(image_storage_failure(storage, "directory_validation", None));
     }
     Ok(canonical)
 }
@@ -1386,4 +1434,81 @@ fn image_storage_unavailable() -> ServiceError {
         "The Design image could not be saved or read from local storage.",
         true,
     )
+}
+
+fn image_storage_failure(
+    storage: &AppStorage,
+    stage: &'static str,
+    error_kind: Option<io::ErrorKind>,
+) -> ServiceError {
+    if storage
+        .log_image_library_failure(stage, error_kind)
+        .is_err()
+    {
+        eprintln!("image_library_failure_diagnostic_write_failed");
+    }
+    let error_kind = error_kind.map_or_else(|| "validation".to_owned(), |kind| format!("{kind:?}"));
+    image_storage_unavailable()
+        .with_details(format!("storage_stage={stage}; error_kind={error_kind}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{fs, io, path::PathBuf};
+
+    use uuid::Uuid;
+
+    use crate::storage::AppStorage;
+
+    use super::{image_directory, image_storage_failure};
+
+    struct TestDirectory(PathBuf);
+
+    impl TestDirectory {
+        fn new() -> Self {
+            let path = std::env::temp_dir().join(format!(
+                "openchat-image-library-test-{}",
+                Uuid::new_v4().simple()
+            ));
+            fs::create_dir(&path).expect("create isolated test directory");
+            Self(path)
+        }
+    }
+
+    impl Drop for TestDirectory {
+        fn drop(&mut self) {
+            fs::remove_dir_all(&self.0).expect("remove isolated test directory");
+        }
+    }
+
+    #[test]
+    fn storage_failure_diagnostics_include_only_stage_and_error_kind() {
+        let directory = TestDirectory::new();
+        let storage = AppStorage::open_at(directory.0.clone()).expect("open isolated storage");
+
+        let error =
+            image_storage_failure(&storage, "file_sync", Some(io::ErrorKind::PermissionDenied));
+
+        assert_eq!(error.code, "image_library_storage_failed");
+        assert_eq!(
+            error.details.as_deref(),
+            Some("storage_stage=file_sync; error_kind=PermissionDenied")
+        );
+        let log = fs::read_to_string(directory.0.join("logs/openchat-service.log"))
+            .expect("read isolated diagnostic log");
+        assert!(log.contains("component=image_library event=storage_failed"));
+        assert!(log.contains("stage=file_sync error_kind=PermissionDenied"));
+        assert!(!log.contains(&directory.0.to_string_lossy().to_string()));
+    }
+
+    #[test]
+    fn image_directory_uses_the_active_storage_file_root() {
+        let directory = TestDirectory::new();
+        let storage = AppStorage::open_at(directory.0.clone()).expect("open isolated storage");
+
+        let image_directory = image_directory(&storage, true).expect("create image directory");
+
+        assert!(image_directory.starts_with(&directory.0));
+        assert!(image_directory.is_dir());
+    }
 }

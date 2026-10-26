@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { SegmentedControl, Select } from '@/design-system';
+import { Button, Input, SegmentedControl, Select } from '@/design-system';
 import {
   changeLocalePreference,
   getLocalePreference,
@@ -16,7 +16,9 @@ import {
   writeConversationTextSizePreference,
   writeConversationWidthPreference,
 } from '@/modules/settings/data/appearancePreferences';
+import { localServiceClient } from '@/platform/local-service';
 import { unifiedStorage } from '@/platform/storage/unifiedStorage';
+import { open } from '@/platform/tauri';
 
 export type ThemePreference = 'system' | 'light' | 'dark';
 
@@ -45,6 +47,8 @@ const fontOptions: ReadonlyArray<{ value: AppFontPreference; label: string }> = 
   { value: 'georgia', label: 'Georgia' },
 ];
 
+const defaultWorkspaceSettingKey = 'openchat.defaultWorkspacePath';
+
 export function GeneralSettingsSection({
   appearance,
   onAppearanceChange,
@@ -53,8 +57,11 @@ export function GeneralSettingsSection({
 }: GeneralSettingsSectionProps) {
   const { t } = useTranslation();
   const [localePreference, setLocalePreference] = useState<LocalePreference>(getLocalePreference);
-  const [saveError, setSaveError] = useState<'language' | 'theme' | 'appearance' | null>(null);
-
+  const [defaultWorkspacePath, setDefaultWorkspacePath] = useState(
+    () => unifiedStorage.getItem(defaultWorkspaceSettingKey) ?? '',
+  );
+  const [workspaceDraft, setWorkspaceDraft] = useState(defaultWorkspacePath);
+  const [saveError, setSaveError] = useState<'language' | 'theme' | 'appearance' | 'workspace' | null>(null);
   const changeLocale = async (preference: LocalePreference) => {
     try {
       await changeLocalePreference(preference);
@@ -73,6 +80,49 @@ export function GeneralSettingsSection({
       setSaveError(null);
     } catch {
       setSaveError('theme');
+    }
+  };
+
+  const saveDefaultWorkspace = async (value: string) => {
+    const trimmed = value.trim();
+    try {
+      if (!trimmed) {
+        await localServiceClient.call('storage.settings.delete', {
+          key: defaultWorkspaceSettingKey,
+        });
+        unifiedStorage.removeItem(defaultWorkspaceSettingKey, false);
+        setDefaultWorkspacePath('');
+        setWorkspaceDraft('');
+        setSaveError(null);
+        return;
+      }
+      const validated = await localServiceClient.call('storage.settings.validate_workspace', {
+        path: trimmed,
+      });
+      const canonical = typeof validated.path === 'string' ? validated.path : '';
+      if (!canonical) throw new Error('The workspace path is invalid.');
+      await localServiceClient.call('storage.settings.set', {
+        key: defaultWorkspaceSettingKey,
+        valueJson: canonical,
+      });
+      unifiedStorage.setItem(defaultWorkspaceSettingKey, canonical, false);
+      setDefaultWorkspacePath(canonical);
+      setWorkspaceDraft(canonical);
+      setSaveError(null);
+    } catch {
+      setSaveError('workspace');
+    }
+  };
+
+  const chooseDefaultWorkspace = async () => {
+    try {
+      const selected = await open({ directory: true, multiple: false });
+      if (typeof selected === 'string') {
+        setWorkspaceDraft(selected);
+        setSaveError(null);
+      }
+    } catch {
+      setSaveError('workspace');
     }
   };
 
@@ -119,7 +169,9 @@ export function GeneralSettingsSection({
       ? 'languageSaveFailed'
       : saveError === 'theme'
         ? 'themeSaveFailed'
-        : 'appearancePreferenceSaveFailed';
+        : saveError === 'workspace'
+          ? 'defaultWorkspaceSaveFailed'
+          : 'appearancePreferenceSaveFailed';
 
   return (
     <section aria-labelledby="settings-page-heading" className="grid gap-5">
@@ -150,6 +202,33 @@ export function GeneralSettingsSection({
           value={localePreference}
           visuallyHiddenLabel
         />
+      </SettingRow>
+      <SettingRow
+        description={t('defaultWorkspaceDescription')}
+        label={t('defaultWorkspace')}
+      >
+        <div className="grid min-w-0 gap-2">
+          <Input
+            aria-label={t('defaultWorkspace')}
+            className="font-mono text-xs"
+            onChange={(event) => setWorkspaceDraft(event.target.value)}
+            placeholder={t('defaultWorkspacePlaceholder')}
+            value={workspaceDraft}
+          />
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={() => void chooseDefaultWorkspace()} variant="secondary">
+              {t('defaultWorkspaceChooseFolder')}
+            </Button>
+            <Button onClick={() => void saveDefaultWorkspace(workspaceDraft)} variant="secondary">
+              {t('save')}
+            </Button>
+            {defaultWorkspacePath ? (
+              <Button onClick={() => void saveDefaultWorkspace('')} variant="ghost">
+                {t('defaultWorkspaceClear')}
+              </Button>
+            ) : null}
+          </div>
+        </div>
       </SettingRow>
       <SettingRow description={t('conversationWidthDescription')} label={t('conversationWidth')}>
         <SegmentedControl

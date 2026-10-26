@@ -4,6 +4,7 @@
 //! focused modules while this layer owns request orchestration and persistence.
 
 use std::{
+    path::Path,
     sync::Arc,
     time::{Instant, SystemTime, UNIX_EPOCH},
 };
@@ -28,8 +29,9 @@ use crate::{
 };
 
 use super::{
-    log_send_storage_failure, opencode_session_id_for_conversation, protocol_error, request, route,
-    route_error, save_message, storage_error, terminal_result,
+    apply_opencode_free_request_shape, log_send_storage_failure,
+    opencode_session_id_for_conversation, protocol_error, request, route, route_error,
+    save_message, storage_error, terminal_result,
 };
 
 mod response_stream;
@@ -130,6 +132,11 @@ pub(crate) async fn send_temporary_message(
         error
     })?;
     let provider_id = route.provider_id.as_deref().ok_or_else(route_error)?;
+    // Temporary conversations have no project, so only the configured default
+    // folder applies.
+    let opencode_free_workspace = (provider_id == "opencode" && route.is_free)
+        .then(|| crate::workspace_settings::default_workspace_path(storage))
+        .flatten();
     if !route.supports_images
         && provider_messages
             .iter()
@@ -166,6 +173,12 @@ pub(crate) async fn send_temporary_message(
             route.custom_enable_thinking,
         )
     };
+    apply_opencode_free_request_shape(
+        &mut body,
+        provider_id,
+        route.is_free,
+        opencode_free_workspace.as_deref(),
+    );
     if route.is_copilot && route.uses_responses_api {
         body["store"] = serde_json::json!(false);
     }
@@ -323,6 +336,17 @@ pub async fn send_message(
         error
     })?;
     let provider_id = route.provider_id.as_deref().ok_or_else(route_error)?;
+    // Resolved once per send so retries and tool-loop iterations reuse the same
+    // environment value without re-reading settings.
+    let opencode_free_workspace = (provider_id == "opencode" && route.is_free)
+        .then(|| {
+            crate::workspace_settings::resolve_chat_workspace(
+                storage,
+                project_root,
+                &workspace_roots,
+            )
+        })
+        .flatten();
     #[cfg(windows)]
     let mcp_registry = if route.supports_tool_calls != Some(false)
         && permission_mode != crate::tools::ToolPermissionMode::Plan
@@ -645,6 +669,12 @@ pub async fn send_message(
                 route.custom_enable_thinking,
             )
         };
+        apply_opencode_free_request_shape(
+            &mut request_body,
+            provider_id,
+            route.is_free,
+            opencode_free_workspace.as_deref(),
+        );
         if route.is_copilot && route.uses_responses_api {
             request_body["store"] = serde_json::json!(false);
         }
@@ -831,6 +861,7 @@ pub async fn send_message(
         cancellation,
         events: &events,
         request_sources: &request_sources,
+        opencode_free_workspace: opencode_free_workspace.as_deref(),
     })
     .await;
 
@@ -1020,6 +1051,7 @@ struct StreamConversationContext<'a> {
     cancellation: &'a mut tokio::sync::watch::Receiver<bool>,
     events: &'a crate::protocol::EventSink,
     request_sources: &'a RequestDataSources,
+    opencode_free_workspace: Option<&'a Path>,
 }
 
 async fn stream_conversation(context: StreamConversationContext<'_>) -> Result<(), ServiceError> {
@@ -1051,6 +1083,12 @@ async fn stream_conversation(context: StreamConversationContext<'_>) -> Result<(
                 route.custom_enable_thinking,
             )
         };
+        apply_opencode_free_request_shape(
+            &mut body,
+            provider_id,
+            route.is_free,
+            context.opencode_free_workspace,
+        );
         if route.is_copilot && route.uses_responses_api {
             body["store"] = serde_json::json!(false);
         }

@@ -70,3 +70,5 @@ pub(crate) mod tools;
 pub(crate) mod usage_statistics;
 #[path = "conversations/user_question_broker.rs"]
 pub(crate) mod user_question_broker;
+#[path = "settings/workspace.rs"]
+pub(crate) mod workspace_settings;

@@ -4,6 +4,7 @@
 //! Copilot integration, and title generation are separated into child modules.
 
 use std::{
+    path::Path,
     sync::OnceLock,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -23,6 +24,7 @@ use crate::{
 
 mod copilot;
 mod models;
+mod opencode_free_transport;
 mod provider_models;
 mod request;
 mod route;
@@ -541,6 +543,204 @@ pub(super) fn apply_opencode_headers(
         request = request.header("x-opencode-project", project_id);
     }
     request
+}
+
+/// Header map for anonymous OpenCode free-tier inference.
+///
+/// The free tier rejects requests that do not carry a session header whose
+/// value uses OpenCode's `ses_` plus descending-timestamp shape. One header is
+/// enough; the echoes and `x-opencode-project` are optional.
+pub(super) fn opencode_free_headers(
+    session_id: Option<&str>,
+    project_id: Option<&str>,
+) -> http::HeaderMap {
+    use http::{HeaderName, HeaderValue, header};
+
+    let mut headers = http::HeaderMap::new();
+    headers.insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("application/json"),
+    );
+    headers.insert(
+        header::ACCEPT,
+        HeaderValue::from_static("text/event-stream"),
+    );
+    headers.insert(
+        header::AUTHORIZATION,
+        HeaderValue::from_static("Bearer public"),
+    );
+    if let Ok(value) = HeaderValue::from_str(&opencode_user_agent()) {
+        headers.insert(header::USER_AGENT, value);
+    }
+    headers.insert(
+        HeaderName::from_static("x-opencode-client"),
+        HeaderValue::from_static(OPENCODE_CLIENT_NAME),
+    );
+    // The gate requires one timestamp-shaped session header. Every free call
+    // site supplies one, but a fallback keeps the request well formed if a new
+    // call site forgets.
+    let session_id = session_id
+        .map(str::to_owned)
+        .unwrap_or_else(|| opencode_session_id_for_conversation("", 0));
+    for name in [
+        "x-opencode-session",
+        "x-opencode-session-id",
+        "x-session-affinity",
+        "x-session-id",
+    ] {
+        if let Ok(value) = HeaderValue::from_str(&session_id) {
+            headers.insert(HeaderName::from_static(name), value);
+        }
+    }
+    if let Some(project_id) = project_id
+        && let Ok(value) = HeaderValue::from_str(project_id)
+    {
+        headers.insert(HeaderName::from_static("x-opencode-project"), value);
+    }
+    headers
+}
+
+/// Environment block the free tier requires in the first `<env>` pair.
+///
+/// The tier does not check that the system prompt belongs to OpenCode; it only
+/// requires the first `<env>...</env>` pair to contain a `Working directory:`
+/// line. The value is not validated by the tier, but OpenChat reports the real
+/// project (or the configured default folder) when one is available. The block
+/// must stay first: a stale pair above it shadows the real one and is rejected.
+const OPENCODE_FREE_ENV_PREFIX: &str = "<env>\n  Working directory: ";
+const OPENCODE_FREE_ENV_SUFFIX: &str = "\n</env>";
+const OPENCODE_FREE_ENV_PLACEHOLDER: &str = "/workspace";
+
+/// Keeps the placeholder workspace from leaking into the model's answers.
+const OPENCODE_FREE_ENV_NOTE: &str = "The environment metadata above is a compatibility \
+marker, not the user's real workspace. Ignore it and follow the OpenChat instructions below.";
+
+/// Builds the environment block and reports whether it names a real folder.
+fn opencode_free_env_block(workspace: Option<&Path>) -> (String, bool) {
+    match workspace.and_then(crate::workspace_settings::prompt_workspace_path) {
+        Some(path) => (
+            format!("{OPENCODE_FREE_ENV_PREFIX}{path}{OPENCODE_FREE_ENV_SUFFIX}"),
+            true,
+        ),
+        None => (
+            format!(
+                "{OPENCODE_FREE_ENV_PREFIX}{OPENCODE_FREE_ENV_PLACEHOLDER}{OPENCODE_FREE_ENV_SUFFIX}"
+            ),
+            false,
+        ),
+    }
+}
+
+/// Detects an environment block that already leads the system prompt.
+fn opencode_free_env_present(content: &str) -> bool {
+    let Some(rest) = content.strip_prefix("<env>") else {
+        return false;
+    };
+    let Some((first, _)) = rest.split_once("</env>") else {
+        return false;
+    };
+    first.contains("Working directory:")
+}
+
+/// Prepends the environment block that the free tier requires.
+///
+/// Idempotent: a system prompt that already starts with a complete environment
+/// pair is left untouched, so retries do not stack copies. The explanatory note
+/// is only added for the placeholder value, where the path is not real.
+pub(super) fn apply_opencode_free_env(body: &mut Value, workspace: Option<&Path>) {
+    let Some(messages) = body.get_mut("messages").and_then(Value::as_array_mut) else {
+        return;
+    };
+    let (block, is_real) = opencode_free_env_block(workspace);
+    let position = messages
+        .iter()
+        .position(|message| message.get("role").and_then(Value::as_str) == Some("system"));
+    let Some(position) = position else {
+        messages.insert(0, json!({"role": "system", "content": block}));
+        return;
+    };
+    let content = messages[position].get("content").and_then(Value::as_str);
+    match content {
+        Some(content) if opencode_free_env_present(content) => {}
+        Some("") => {
+            messages[position]["content"] = json!(block);
+        }
+        Some(content) if is_real => {
+            messages[position]["content"] = json!(format!("{block}\n\n{content}"));
+        }
+        Some(content) => {
+            messages[position]["content"] =
+                json!(format!("{block}\n\n{OPENCODE_FREE_ENV_NOTE}\n\n{content}"));
+        }
+        // Multi-part system content cannot be prefixed in place, so add a
+        // dedicated system message in front of it instead of dropping content.
+        None => messages.insert(position, json!({"role": "system", "content": block})),
+    }
+}
+
+/// The free tier only serves requests that include a tool named `read`.
+pub(super) fn ensure_opencode_free_read_tool(body: &mut Value) {
+    match body.get_mut("tools").and_then(Value::as_array_mut) {
+        Some(tools) => {
+            let has_read = tools.iter().any(|tool| {
+                tool.pointer("/function/name")
+                    .and_then(Value::as_str)
+                    .is_some_and(|name| name == "read")
+            });
+            if !has_read {
+                tools.push(opencode_free_read_tool());
+            }
+        }
+        None => {
+            body["tools"] = json!([opencode_free_read_tool()]);
+            // The dummy tool exists only to satisfy the gate, so keep the model
+            // from calling it when the caller had no tools of its own.
+            if body.get("tool_choice").is_none() {
+                body["tool_choice"] = json!("none");
+            }
+        }
+    }
+}
+
+fn opencode_free_read_tool() -> Value {
+    json!({
+        "type": "function",
+        "function": {
+            "name": "read",
+            // Only the name satisfies the gate. The wording keeps models from
+            // calling a tool OpenChat did not actually offer.
+            "description": "Not available. Never call this tool.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Path of the file to read.",
+                    }
+                },
+                "required": ["path"],
+            },
+        },
+    })
+}
+
+/// Reshapes a request so the OpenCode free tier accepts it.
+///
+/// The tier requires a `read` tool, a complete `<env>` block with a
+/// `Working directory:` line in the first system message, and streaming.
+/// Session headers and the TLS cipher list are applied by the transport.
+pub(super) fn apply_opencode_free_request_shape(
+    body: &mut Value,
+    provider_id: &str,
+    is_free: bool,
+    workspace: Option<&Path>,
+) {
+    if provider_id != "opencode" || !is_free {
+        return;
+    }
+    apply_opencode_free_env(body, workspace);
+    ensure_opencode_free_read_tool(body);
+    body["stream"] = Value::Bool(true);
 }
 
 async fn read_opencode_error_body(response: reqwest::Response) -> Option<Value> {
@@ -1319,6 +1519,201 @@ mod tests {
     }
 
     #[test]
+    fn opencode_session_id_encodes_a_descending_timestamp_and_counter() {
+        let timestamp = 1_700_000_000_000_u64;
+        let session_id = super::opencode_session_id_for_conversation("conv_123", timestamp as i64);
+        let encoded = u64::from_str_radix(&session_id[4..16], 16).expect("hex timestamp");
+
+        // OpenCode stores the low 48 bits of `~((timestamp * 0x1000) + counter)`.
+        let expected = (!(timestamp * 0x1000 + 1)) & 0xffff_ffff_ffff;
+        assert_eq!(encoded, expected);
+        assert_eq!(
+            (!encoded) & 0xfff,
+            1,
+            "the first id in a millisecond uses counter 1"
+        );
+    }
+
+    #[test]
+    fn opencode_free_shape_adds_env_read_tool_and_streaming() {
+        let mut body = json!({
+            "messages": [{"role": "system", "content": "OpenChat system prompt"}],
+            "tools": [],
+            "stream": false
+        });
+
+        super::apply_opencode_free_request_shape(&mut body, "opencode", true, None);
+
+        let content = body["messages"][0]["content"]
+            .as_str()
+            .expect("system content");
+        assert!(content.starts_with("<env>\n  Working directory: /workspace\n</env>"));
+        assert!(content.ends_with("OpenChat system prompt"));
+        assert_eq!(body["stream"], true);
+        assert!(
+            body["tools"]
+                .as_array()
+                .expect("tools")
+                .iter()
+                .any(|tool| tool.pointer("/function/name").and_then(Value::as_str) == Some("read"))
+        );
+
+        // Reapplying must not stack environment blocks.
+        super::apply_opencode_free_request_shape(&mut body, "opencode", true, None);
+        assert_eq!(
+            body["messages"][0]["content"]
+                .as_str()
+                .expect("system content")
+                .matches("<env>")
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn opencode_free_shape_reports_a_real_workspace_path() {
+        let workspace = std::env::temp_dir();
+        let mut body = json!({
+            "messages": [{"role": "system", "content": "OpenChat system prompt"}]
+        });
+
+        super::apply_opencode_free_request_shape(
+            &mut body,
+            "opencode",
+            true,
+            Some(workspace.as_path()),
+        );
+
+        let content = body["messages"][0]["content"]
+            .as_str()
+            .expect("system content");
+        let expected =
+            crate::workspace_settings::prompt_workspace_path(&workspace).expect("prompt workspace");
+        assert!(content.starts_with(&format!("<env>\n  Working directory: {expected}\n</env>")));
+        // A real path is not described as a compatibility marker.
+        assert!(!content.contains(super::OPENCODE_FREE_ENV_NOTE));
+        assert!(content.ends_with("OpenChat system prompt"));
+
+        // Reapplying must not stack a second block, even for a different path.
+        super::apply_opencode_free_request_shape(
+            &mut body,
+            "opencode",
+            true,
+            Some(std::path::Path::new("relative")),
+        );
+        assert_eq!(
+            body["messages"][0]["content"]
+                .as_str()
+                .expect("system content")
+                .matches("<env>")
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn opencode_free_shape_prepends_above_an_incomplete_env_pair() {
+        let mut body = json!({
+            "messages": [{
+                "role": "system",
+                "content": "<env>\n  Platform: stale\n</env>\n\nOpenChat system prompt"
+            }]
+        });
+
+        super::apply_opencode_free_request_shape(&mut body, "opencode", true, None);
+
+        let content = body["messages"][0]["content"]
+            .as_str()
+            .expect("system content");
+        assert!(content.starts_with("<env>\n  Working directory: /workspace\n</env>"));
+        assert!(content.contains("Platform: stale"));
+    }
+
+    #[test]
+    fn opencode_free_shape_ignores_unsafe_workspace_paths() {
+        let mut body = json!({
+            "messages": [{"role": "system", "content": "OpenChat system prompt"}]
+        });
+
+        super::apply_opencode_free_request_shape(
+            &mut body,
+            "opencode",
+            true,
+            Some(std::path::Path::new("relative/folder")),
+        );
+
+        let content = body["messages"][0]["content"]
+            .as_str()
+            .expect("system content");
+        assert!(content.starts_with("<env>\n  Working directory: /workspace\n</env>"));
+        assert!(content.contains(super::OPENCODE_FREE_ENV_NOTE));
+    }
+
+    #[test]
+    fn opencode_free_shape_inserts_a_system_message_when_missing() {
+        let mut body = json!({
+            "messages": [{"role": "user", "content": "hi"}]
+        });
+
+        super::apply_opencode_free_request_shape(&mut body, "opencode", true, None);
+
+        assert_eq!(body["messages"][0]["role"], "system");
+        assert!(
+            body["messages"][0]["content"]
+                .as_str()
+                .expect("system content")
+                .contains("Working directory:")
+        );
+    }
+
+    #[test]
+    fn opencode_free_shape_preserves_multi_part_system_content() {
+        let original = json!([{"type": "text", "text": "OpenChat system prompt"}]);
+        let mut body = json!({
+            "messages": [{"role": "system", "content": original.clone()}]
+        });
+
+        super::apply_opencode_free_request_shape(&mut body, "opencode", true, None);
+
+        assert!(
+            body["messages"][0]["content"]
+                .as_str()
+                .expect("system content")
+                .starts_with("<env>\n  Working directory: ")
+        );
+        assert_eq!(body["messages"][1]["content"], original);
+    }
+
+    #[test]
+    fn opencode_free_shape_keeps_an_explicit_tool_choice() {
+        let mut body = json!({
+            "messages": [{"role": "user", "content": "hi"}],
+            "tool_choice": "none"
+        });
+
+        super::apply_opencode_free_request_shape(&mut body, "opencode", true, None);
+
+        assert_eq!(body["tool_choice"], "none");
+    }
+
+    #[test]
+    fn opencode_free_shape_leaves_other_providers_untouched() {
+        let original = json!({
+            "messages": [{"role": "system", "content": "OpenChat system prompt"}],
+            "tools": [],
+            "stream": false
+        });
+        for (provider, is_free) in [("opencode", false), ("openai", true)] {
+            let mut body = original.clone();
+            super::apply_opencode_free_request_shape(&mut body, provider, is_free, None);
+            assert_eq!(
+                body, original,
+                "{provider} free={is_free} must be unchanged"
+            );
+        }
+    }
+
+    #[test]
     fn incomplete_or_malformed_streams_do_not_count_as_completed() {
         assert!(!stream_is_complete(false, false));
         assert!(stream_is_complete(true, false));
@@ -1347,37 +1742,30 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn live_opencode_free_tier_smoke_test() {
-        use reqwest::header::ACCEPT;
-
-        let client = super::client().expect("client");
         let session_id = super::opencode_session_id();
-        let body = json!({
-            "model": "big-pickle",
+        let mut body = json!({
+            "model": "deepseek-v4.1-flash-free",
             "messages": [
                 {"role": "system", "content": "You are a concise assistant."},
                 {"role": "user", "content": "Reply with 'pong' only."}
             ],
-            "stream": true,
             "tools": crate::tools::opencode_wire_tools(&crate::tools::definitions()),
             "tool_choice": "none"
         });
-        let response = client
-            .post(super::CHAT_URL)
-            .header("x-opencode-session", session_id)
-            .bearer_auth("public")
-            .header(ACCEPT, "text/event-stream")
-            .json(&body)
-            .send()
-            .await
-            .expect("send live request");
+        super::apply_opencode_free_request_shape(&mut body, "opencode", true, None);
+        let headers = super::opencode_free_headers(Some(&session_id), None);
+        let response = super::opencode_free_transport::send(
+            super::CHAT_URL,
+            headers,
+            serde_json::to_vec(&body).expect("serialize body"),
+        )
+        .await
+        .expect("send live request");
 
-        let status = response.status();
-        let body_text = response.text().await.unwrap_or_default();
-        assert!(
-            status.is_success(),
-            "Expected HTTP 200 OK from OpenCode, got: {} - body: {}",
-            status,
-            body_text
+        assert_eq!(
+            response.status,
+            http::StatusCode::OK,
+            "Expected HTTP 200 OK from OpenCode"
         );
     }
 

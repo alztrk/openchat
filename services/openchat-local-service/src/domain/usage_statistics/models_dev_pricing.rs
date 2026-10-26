@@ -6,6 +6,8 @@
 
 use std::{
     collections::HashMap,
+    path::PathBuf,
+    sync::Mutex,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
@@ -23,6 +25,14 @@ use crate::{
 const CATALOG_URL: &str = "https://models.dev/api.json";
 const CACHE_AGE_MS: i64 = 6 * 60 * 60 * 1000;
 const MAX_CATALOG_BYTES: usize = 16 * 1024 * 1024;
+
+struct ModelImageSupportCache {
+    database_path: PathBuf,
+    fetched_at_unix_ms: i64,
+    models_by_provider: HashMap<String, HashMap<String, bool>>,
+}
+
+static MODEL_IMAGE_SUPPORT_CACHE: Mutex<Option<ModelImageSupportCache>> = Mutex::new(None);
 
 #[derive(Clone, Copy)]
 struct TokenRates {
@@ -342,12 +352,9 @@ pub(super) fn cached_model_supports_images(
     provider_id: &str,
     model_id: &str,
 ) -> Option<bool> {
-    load_cached_catalog(storage)
-        .ok()
-        .flatten()
-        .and_then(|(_, catalog)| serde_json::from_str::<Value>(&catalog).ok())
-        .and_then(|catalog| model_from_catalog(&catalog, provider_id, model_id))
-        .and_then(|model| model.get("supportsImages").and_then(Value::as_bool))
+    let model_ids = [model_id.to_owned()];
+    let mut support = cached_models_support_images(storage, provider_id, &model_ids);
+    support.remove(model_id)
 }
 
 pub(super) fn cached_models_support_images(
@@ -355,16 +362,90 @@ pub(super) fn cached_models_support_images(
     provider_id: &str,
     model_ids: &[String],
 ) -> HashMap<String, bool> {
-    let Some((_, catalog_json)) = load_cached_catalog(storage).ok().flatten() else {
+    if model_ids.is_empty() {
+        return HashMap::new();
+    }
+    let Ok(database) = storage.connect() else {
         return HashMap::new();
     };
-    let Ok(catalog) = serde_json::from_str::<Value>(&catalog_json) else {
+
+    let fetched_at_unix_ms = database
+        .query_row(
+            "SELECT fetched_at_unix_ms
+             FROM models_dev_catalog_cache WHERE cache_id = 1",
+            [],
+            |row| row.get::<_, i64>(0),
+        )
+        .optional()
+        .ok()
+        .flatten();
+    let Some(fetched_at_unix_ms) = fetched_at_unix_ms else {
         return HashMap::new();
     };
-    let Some(models) = catalog
+    let database_path = storage.database_path().to_path_buf();
+    let mut cache = match MODEL_IMAGE_SUPPORT_CACHE.lock() {
+        Ok(cache) => cache,
+        Err(poisoned) => poisoned.into_inner(),
+    };
+
+    let catalog_provider_id = catalog_provider_id(provider_id);
+    let cache_matches_catalog = cache.as_ref().is_some_and(|snapshot| {
+        snapshot.database_path == database_path && snapshot.fetched_at_unix_ms == fetched_at_unix_ms
+    });
+    if !cache_matches_catalog {
+        *cache = Some(ModelImageSupportCache {
+            database_path,
+            fetched_at_unix_ms,
+            models_by_provider: HashMap::new(),
+        });
+    }
+
+    if let Some(snapshot) = cache.as_ref()
+        && snapshot
+            .models_by_provider
+            .contains_key(catalog_provider_id)
+    {
+        return model_image_support_for_ids(snapshot, provider_id, model_ids);
+    }
+
+    let Ok(rows) = database.query_map(
+        "SELECT model.key,
+                EXISTS (
+                    SELECT 1
+                    FROM json_each(model.value, '$.modalities.input') AS modality
+                    WHERE modality.value = 'image'
+                ) AS supports_images
+         FROM models_dev_catalog_cache AS cache
+         CROSS JOIN json_each(cache.catalog_json) AS provider
+         CROSS JOIN json_each(provider.value, '$.models') AS model
+         WHERE cache.cache_id = 1 AND provider.key = ?1",
+        [catalog_provider_id],
+        |row| Ok((row.get::<_, String>(0)?, row.get::<_, bool>(1)?)),
+    ) else {
+        return HashMap::new();
+    };
+    let Ok(rows) = rows.collect::<rusqlite::Result<Vec<_>>>() else {
+        return HashMap::new();
+    };
+    let provider_models: HashMap<_, _> = rows.into_iter().collect();
+
+    let Some(snapshot) = cache.as_mut() else {
+        return HashMap::new();
+    };
+    snapshot
+        .models_by_provider
+        .insert(catalog_provider_id.to_owned(), provider_models);
+    model_image_support_for_ids(snapshot, provider_id, model_ids)
+}
+
+fn model_image_support_for_ids(
+    cache: &ModelImageSupportCache,
+    provider_id: &str,
+    model_ids: &[String],
+) -> HashMap<String, bool> {
+    let Some(provider_models) = cache
+        .models_by_provider
         .get(catalog_provider_id(provider_id))
-        .and_then(|provider| provider.get("models"))
-        .and_then(Value::as_object)
     else {
         return HashMap::new();
     };
@@ -372,16 +453,9 @@ pub(super) fn cached_models_support_images(
     model_ids
         .iter()
         .filter_map(|model_id| {
-            let model = models.get(model_id)?;
-            let supports_images = model
-                .pointer("/modalities/input")
-                .and_then(Value::as_array)
-                .is_some_and(|modalities| {
-                    modalities
-                        .iter()
-                        .any(|modality| modality.as_str() == Some("image"))
-                });
-            Some((model_id.clone(), supports_images))
+            provider_models
+                .get(model_id)
+                .map(|supports_images| (model_id.clone(), *supports_images))
         })
         .collect()
 }
@@ -443,6 +517,16 @@ fn save_catalog(
             params![fetched_at_unix_ms, catalog_json],
         )
         .map_err(|_| storage_error())?;
+    let mut cache = match MODEL_IMAGE_SUPPORT_CACHE.lock() {
+        Ok(cache) => cache,
+        Err(poisoned) => poisoned.into_inner(),
+    };
+    if cache
+        .as_ref()
+        .is_some_and(|cached| cached.database_path.as_path() == storage.database_path())
+    {
+        *cache = None;
+    }
     Ok(())
 }
 
@@ -581,14 +665,43 @@ fn storage_error() -> ServiceError {
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
+    use std::{
+        collections::HashMap,
+        fs,
+        path::PathBuf,
+        time::{Duration, Instant},
+    };
 
-    use super::{build_catalog_http_client, model_from_catalog};
+    use super::{
+        build_catalog_http_client, cached_model_supports_images, cached_models_support_images,
+        model_from_catalog,
+    };
+    use crate::storage::AppStorage;
+    use rusqlite::params;
     use serde_json::json;
     use tokio::{
         io::{AsyncReadExt, AsyncWriteExt},
         net::TcpListener,
     };
+
+    struct TestDirectory(PathBuf);
+
+    impl TestDirectory {
+        fn new() -> Self {
+            let path = std::env::temp_dir().join(format!(
+                "openchat-models-dev-cache-test-{}",
+                uuid::Uuid::new_v4().simple()
+            ));
+            fs::create_dir(&path).expect("create isolated test directory");
+            Self(path)
+        }
+    }
+
+    impl Drop for TestDirectory {
+        fn drop(&mut self) {
+            fs::remove_dir_all(&self.0).expect("remove isolated test directory");
+        }
+    }
 
     /// Confirms a redirected pricing request cannot reach an unrelated loopback host.
     #[tokio::test]
@@ -661,6 +774,57 @@ mod tests {
             assert_ne!(read, 0, "client closed before sending request headers");
             request.push(byte[0]);
         }
+    }
+
+    #[test]
+    fn cached_image_support_lookup_returns_only_requested_model_flags() {
+        let directory = TestDirectory::new();
+        let storage = AppStorage::open_at(directory.0.clone()).expect("open test storage");
+        let filler = "x".repeat(6 * 1024 * 1024);
+        let catalog = json!({
+            "openai": {
+                "models": {
+                    "gpt-image": {
+                        "description": filler,
+                        "modalities": {"input": ["text", "image"]}
+                    },
+                    "gpt-text": {"modalities": {"input": ["text"]}}
+                }
+            }
+        })
+        .to_string();
+        let catalog_bytes = catalog.len();
+        storage
+            .connect()
+            .expect("connect to test storage")
+            .execute(
+                "INSERT INTO models_dev_catalog_cache (cache_id, fetched_at_unix_ms, catalog_json)
+                 VALUES (1, 0, ?1)",
+                params![catalog],
+            )
+            .expect("store test catalog");
+
+        let model_ids = [
+            "gpt-image".to_owned(),
+            "gpt-text".to_owned(),
+            "missing".to_owned(),
+        ];
+        let started = Instant::now();
+        let mut image_support = HashMap::new();
+        for _ in 0..5 {
+            image_support = cached_models_support_images(&storage, "chatgpt", &model_ids);
+        }
+        let average_ms = started.elapsed().as_secs_f64() * 1000.0 / 5.0;
+
+        assert_eq!(image_support.get("gpt-image"), Some(&true));
+        assert_eq!(image_support.get("gpt-text"), Some(&false));
+        assert!(!image_support.contains_key("missing"));
+        assert_eq!(
+            cached_model_supports_images(&storage, "chatgpt", "gpt-image"),
+            Some(true)
+        );
+        eprintln!("6 MiB model capability lookup average: {average_ms:.2} ms");
+        assert!(catalog_bytes >= 6 * 1024 * 1024);
     }
 
     #[test]

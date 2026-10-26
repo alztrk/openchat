@@ -38,6 +38,10 @@ use super::{
     },
 };
 
+const STORAGE_BROKER_PROFILE_NAME: &str = "OpenChatStorageBrokerV1";
+const STORAGE_BROKER_PROFILE_DISPLAY_NAME: &str = "OpenChat storage broker";
+const STORAGE_BROKER_PROFILE_DESCRIPTION: &str = "Persistent isolated storage for OpenChat.";
+
 /// Owns an AppContainer profile, its ACL grants, and temporary runtime files.
 pub(crate) struct AppContainerSandbox {
     /// NUL-terminated unique profile name used to remove the profile on drop.
@@ -212,9 +216,9 @@ impl AppContainerSandbox {
                 "The storage broker executable is unavailable.",
             ));
         }
-        let name = wide_null("OpenChatStorageBrokerV1");
-        let display_name = wide_null("OpenChat storage broker");
-        let description = wide_null("Persistent isolated storage for OpenChat.");
+        let name = wide_null(STORAGE_BROKER_PROFILE_NAME);
+        let display_name = wide_null(STORAGE_BROKER_PROFILE_DISPLAY_NAME);
+        let description = wide_null(STORAGE_BROKER_PROFILE_DESCRIPTION);
         let (sid, sid_string, profile_root) =
             create_profile_identity(&name, &display_name, &description)?;
         let temp_directory = profile_root.join("Temp");
@@ -269,6 +273,21 @@ impl AppContainerSandbox {
         }
         sandbox.working_directory = shell_path(&fs::canonicalize(&runtime_directory)?);
         Ok((sandbox, staged_executable))
+    }
+
+    /// Returns the persistent storage root owned by the storage broker AppContainer profile.
+    pub(crate) fn storage_broker_data_root() -> io::Result<PathBuf> {
+        let name = wide_null(STORAGE_BROKER_PROFILE_NAME);
+        let display_name = wide_null(STORAGE_BROKER_PROFILE_DISPLAY_NAME);
+        let description = wide_null(STORAGE_BROKER_PROFILE_DESCRIPTION);
+        let (sid, sid_string, profile_root) =
+            create_profile_identity(&name, &display_name, &description)?;
+        // SAFETY: create_profile_identity returned these owned allocations for this profile.
+        unsafe {
+            FreeSid(sid);
+            LocalFree(sid_string as _);
+        }
+        Ok(profile_root.join("OpenChatStorage"))
     }
 
     /// Builds a sorted, NUL-terminated environment containing only the allowed base variables.

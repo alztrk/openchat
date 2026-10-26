@@ -17,7 +17,7 @@ pub(crate) use domain::{
     local_engines, oauth, openai_api, openai_compatible, pending_archive_export, permissions,
     profile_archive, project_index, project_instructions, project_skills, provider_credentials,
     provider_schema, response_budget, temporary_conversation, tools, usage_statistics,
-    user_question_broker,
+    user_question_broker, workspace_settings,
 };
 
 #[path = "adapters/filesystem.rs"]

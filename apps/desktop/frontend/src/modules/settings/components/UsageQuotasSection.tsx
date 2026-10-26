@@ -15,6 +15,7 @@ interface UsageWorkspace {
 
 interface UsageConnection {
   id: string;
+  authStatus: ConnectionAuthStatus;
   email: string | null;
   displayName: string | null;
   planType: string | null;
@@ -54,6 +55,7 @@ interface PendingCredit {
 }
 
 type LoadState = 'loading' | 'loaded' | 'failed';
+type ConnectionAuthStatus = 'active' | 'reauth_required' | 'revoked';
 type ResetOutcomeKey =
   | 'resetCreditApplied'
   | 'resetCreditAlreadyUsed'
@@ -126,8 +128,17 @@ export function UsageQuotasSection({ onNavigateToConnections }: UsageQuotasSecti
             return next;
           });
         }
-      } catch {
+      } catch (error) {
         if (!requestIsCurrent()) return;
+        if (
+          error instanceof LocalServiceError &&
+          (error.code === 'authentication_required' || error.code === 'refresh_rejected')
+        ) {
+          setConnections((current) =>
+            current.map((item) => (item.id === connection.id ? { ...item, authStatus: 'reauth_required' } : item)),
+          );
+          return;
+        }
         setErrors((current) => ({ ...current, [key]: 'usageLoadFailed' }));
       } finally {
         if (requestIsCurrent()) {
@@ -155,7 +166,9 @@ export function UsageQuotasSection({ onNavigateToConnections }: UsageQuotasSecti
         setLoadState('loaded');
         await Promise.all(
           loadedConnections.flatMap((connection) =>
-            connection.workspaces.map((workspace) => loadWorkspaceUsage(connection, workspace, forceRefresh)),
+            connection.authStatus === 'active'
+              ? connection.workspaces.map((workspace) => loadWorkspaceUsage(connection, workspace, forceRefresh))
+              : [],
           ),
         );
       } catch {
@@ -321,41 +334,53 @@ export function UsageQuotasSection({ onNavigateToConnections }: UsageQuotasSecti
                       ) : null}
                     </div>
                     <p className="mt-1 text-sm text-secondary-text">
-                      {t('accountUsage', { plan: connection.planType ?? t('planUnavailable') })}
+                      {connection.authStatus === 'active'
+                        ? t('accountUsage', { plan: connection.planType ?? t('planUnavailable') })
+                        : t('connectionNeedsSignIn')}
                     </p>
                   </div>
-                  <Button
-                    aria-label={t('refreshUsage')}
-                    disabled={connection.workspaces.some((workspace) =>
-                      loadingKeys.has(workspaceKey(connection.id, workspace.id)),
-                    )}
-                    onClick={() => refreshWorkspace(connection)}
-                    size="icon"
-                    variant="ghost"
-                  >
-                    <RefreshCw aria-hidden="true" size={16} />
-                  </Button>
+                  {connection.authStatus === 'active' ? (
+                    <Button
+                      aria-label={t('refreshUsage')}
+                      disabled={connection.workspaces.some((workspace) =>
+                        loadingKeys.has(workspaceKey(connection.id, workspace.id)),
+                      )}
+                      onClick={() => refreshWorkspace(connection)}
+                      size="icon"
+                      variant="ghost"
+                    >
+                      <RefreshCw aria-hidden="true" size={16} />
+                    </Button>
+                  ) : null}
                 </header>
 
-                <div className="grid gap-4 border-t border-border pt-4">
-                  {connection.workspaces.map((workspace, index) => (
-                    <WorkspaceUsage
-                      connection={connection}
-                      errors={errors}
-                      index={index}
-                      key={workspace.id}
-                      locale={locale}
-                      loadingKeys={loadingKeys}
-                      onOpenCredit={setPendingCredit}
-                      onRetry={() => void loadWorkspaceUsage(connection, workspace, true)}
-                      outcomes={outcomes}
-                      refreshRequiredKeys={refreshRequiredKeys}
-                      snapshot={snapshots[workspaceKey(connection.id, workspace.id)] ?? null}
-                      t={t}
-                      workspace={workspace}
-                    />
-                  ))}
-                </div>
+                {connection.authStatus === 'active' ? (
+                  <div className="grid gap-4 border-t border-border pt-4">
+                    {connection.workspaces.map((workspace, index) => (
+                      <WorkspaceUsage
+                        connection={connection}
+                        errors={errors}
+                        index={index}
+                        key={workspace.id}
+                        locale={locale}
+                        loadingKeys={loadingKeys}
+                        onOpenCredit={setPendingCredit}
+                        onRetry={() => void loadWorkspaceUsage(connection, workspace, true)}
+                        outcomes={outcomes}
+                        refreshRequiredKeys={refreshRequiredKeys}
+                        snapshot={snapshots[workspaceKey(connection.id, workspace.id)] ?? null}
+                        t={t}
+                        workspace={workspace}
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <div className="flex justify-end border-t border-border pt-4">
+                    <Button onClick={onNavigateToConnections} size="small" variant="secondary">
+                      {t('goToConnections')}
+                    </Button>
+                  </div>
+                )}
               </Card>
             );
           })}
@@ -473,7 +498,8 @@ function WorkspaceUsage({
               t={t}
             />
           ))}
-          {snapshot.resetCredits.length > 0 || snapshot.resetCreditCount !== null ? (
+          {snapshot.resetCreditCount !== 0 &&
+          (snapshot.resetCredits.length > 0 || snapshot.resetCreditCount !== null) ? (
             <ResetCreditsView
               connection={connection}
               onOpenCredit={onOpenCredit}
@@ -651,13 +677,14 @@ function parseConnections(value: unknown): UsageConnection[] {
     if (
       !isObject(item) ||
       !isNonEmptyString(item.id) ||
-      typeof item.authStatus !== 'string' ||
+      !isConnectionAuthStatus(item.authStatus) ||
       !Array.isArray(item.workspaces)
     ) {
       throw new Error('A ChatGPT connection was invalid.');
     }
     return {
       id: item.id,
+      authStatus: item.authStatus,
       email: optionalString(item.email),
       displayName: optionalString(item.displayName),
       planType: optionalString(item.planType),
@@ -777,6 +804,10 @@ function isNullableString(value: unknown): value is string | null | undefined {
 
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0;
+}
+
+function isConnectionAuthStatus(value: unknown): value is ConnectionAuthStatus {
+  return value === 'active' || value === 'reauth_required' || value === 'revoked';
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {

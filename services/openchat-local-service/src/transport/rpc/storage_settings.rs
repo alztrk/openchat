@@ -47,6 +47,7 @@ pub(super) async fn dispatch(
         "storage.settings.set" => set_setting(params, storage, events).await,
         "storage.settings.set_batch" => set_settings_batch(params, storage, events).await,
         "storage.settings.delete" => delete_setting(params, storage, events).await,
+        "storage.settings.validate_workspace" => validate_workspace_setting(params),
         "storage.personal_memory.list" => list_personal_memory_facts(storage),
         "storage.personal_memory.save" => save_personal_memory_fact(params, storage),
         "storage.personal_memory.delete" => delete_personal_memory_fact(params, storage),
@@ -78,6 +79,23 @@ fn get_setting(params: &Value, storage: &AppStorage) -> Result<Value, ServiceErr
         .optional()
         .map_err(settings_sqlite_error)?;
     Ok(json!({"valueJson": value}))
+}
+
+/// Validates a renderer-selected fallback working directory.
+///
+/// The returned value is the prompt-safe form, so the renderer stores the same
+/// path the service would report to a provider.
+fn validate_workspace_setting(params: &Value) -> Result<Value, ServiceError> {
+    let value = params
+        .get("path")
+        .and_then(Value::as_str)
+        .ok_or_else(invalid_request_params)?;
+    let workspace =
+        crate::workspace_settings::validated_workspace_path(std::path::Path::new(value.trim()))
+            .ok_or_else(invalid_request_params)?;
+    let path = crate::workspace_settings::prompt_workspace_path(&workspace)
+        .ok_or_else(invalid_request_params)?;
+    Ok(json!({"path": path}))
 }
 
 fn get_all_settings(storage: &AppStorage) -> Result<Value, ServiceError> {

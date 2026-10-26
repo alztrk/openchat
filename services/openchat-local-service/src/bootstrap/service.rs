@@ -631,6 +631,7 @@ fn rpc_failure_diagnostic_operation(request: &Request) -> Option<&'static str> {
         "chat.send" => Some("chat.send"),
         "chat.temporary.send" => Some("chat.temporary.send"),
         "chat.memory.inspect" => Some("chat.memory.inspect"),
+        "chatgpt.images.generate" => Some("chatgpt.images.generate"),
         "chatgpt.connections.delete" => Some("chatgpt.connections.delete"),
         "chat.context.usage.estimate" => Some("chat.context.usage.estimate"),
         "compatible.models.list"
