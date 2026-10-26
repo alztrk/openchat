@@ -62,13 +62,13 @@ Run development tasks safely through configurable permission boundaries:
    ```bash
    cd apps/desktop/frontend
    npm ci
-   npm run tasks -- dev
+   npm run openchat -- dev
    ```
 
 3. Run workspace validation:
    ```bash
    cd apps/desktop/frontend
-   npm run tasks -- check
+   npm run openchat -- check
    ```
 
 ### Packaging
@@ -76,7 +76,7 @@ Run development tasks safely through configurable permission boundaries:
 To build the standalone installer:
 ```bash
 cd apps/desktop/frontend
-npm run tasks -- build
+npm run openchat -- build
 ```
 
 ---

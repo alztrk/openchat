@@ -197,7 +197,7 @@ function parseMaintainTargetOptions(args) {
     const argument = args[index];
     if (argument === '--help' || argument === '-h') {
       process.stdout.write(
-        'Usage: npm run tasks -- maintain-target [--max-gib 1..1024] [--apply]\n' +
+        'Usage: npm run openchat -- maintain-target [--max-gib 1..1024] [--apply]\n' +
           'Without --apply, this command only reports target sizes.\n',
       );
       return null;
@@ -388,7 +388,7 @@ function maintainTarget(args) {
 
 function printHelp() {
   process.stdout.write(
-    'Usage: npm run tasks -- <dev|build|check|clean|maintain-target> [options]\n' +
+    'Usage: npm run openchat -- <dev|build|check|clean|maintain-target> [options]\n' +
       'Run from apps/desktop/frontend. Use --help after a task for its options.\n',
   );
 }
@@ -409,7 +409,7 @@ function main() {
   };
   const task = tasks[taskName];
   if (!task) {
-    throw new Error('Unknown task: ' + taskName + '. Run npm run tasks -- --help for usage.');
+    throw new Error('Unknown task: ' + taskName + '. Run npm run openchat -- --help for usage.');
   }
 
   task(args);

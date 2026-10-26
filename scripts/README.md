@@ -1,14 +1,14 @@
 # Developer tasks
 
-All developer tasks use the single cross-platform CLI in `scripts/tasks.mjs`. Run
+All developer tasks use the single cross-platform CLI in `scripts/openchat-cli.mjs`. Run
 it through the frontend npm script from `apps/desktop/frontend`:
 
 ```bash
-npm run tasks -- dev
-npm run tasks -- build
-npm run tasks -- check
-npm run tasks -- clean
-npm run tasks -- maintain-target --max-gib 20
+npm run openchat -- dev
+npm run openchat -- build
+npm run openchat -- check
+npm run openchat -- clean
+npm run openchat -- maintain-target --max-gib 20
 ```
 
 `dev` builds the debug local-service sidecar and starts Tauri. `build` builds the

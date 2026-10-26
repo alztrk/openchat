@@ -15,7 +15,7 @@ Cargo.lock               # single Rust workspace lockfile
 rust-toolchain.toml
 docs/
 scripts/
-  tasks.mjs              # Unified cross-platform developer task CLI
+  openchat-cli.mjs       # Unified cross-platform developer task CLI
   README.md              # Script layout and platform support notes
 apps/
   desktop/

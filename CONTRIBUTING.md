@@ -35,7 +35,7 @@ supported workflows.
 
 Install frontend dependencies from the repository root with
 `npm ci --prefix apps/desktop/frontend`. Start the desktop development app with
-`npm --prefix apps/desktop/frontend run tasks -- dev`. Build the frontend with
+`npm --prefix apps/desktop/frontend run openchat -- dev`. Build the frontend with
 `npm run build --prefix apps/desktop/frontend`. Run the required UI design lint
 from the frontend directory with `npx biome check`.
 
@@ -64,7 +64,7 @@ debug symbols are needed.
 Use this command to report the size of Cargo-marked target directories:
 
 ```bash
-npm --prefix apps/desktop/frontend run tasks -- maintain-target --max-gib 20
+npm --prefix apps/desktop/frontend run openchat -- maintain-target --max-gib 20
 ```
 
 It previews by default. Add `--apply` to clean those directories when their
