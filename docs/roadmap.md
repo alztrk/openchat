@@ -26,10 +26,9 @@ additional local-provider connections (priority 12) are later work.
 
 - React desktop UI hosted by Tauri, with a local Rust service and SQLite conversation storage under `%LOCALAPPDATA%\OpenChat`.
 - ChatGPT OAuth connections, account/workspace selection, model catalog, account and quota information, streamed Responses, cancellation, and background conversation titles.
-- OpenCode Console through its OpenAI Chat Completions endpoint. Other OpenCode protocol families are not supported.
 - API-key providers: Gemini, Groq, Cerebras, OpenRouter, Mistral, DeepSeek, xAI, Perplexity, Together AI, SambaNova, Fireworks AI, DeepInfra, DashScope (Qwen), and Cohere, plus custom OpenAI- and Anthropic-compatible endpoints. Dedicated Ollama and LM Studio provider connections are planned. Mistral exposes context, vision, and documented reasoning capabilities; OpenRouter models are filtered to current zero-price text-chat entries that advertise tool support.
 - Anthropic Claude Messages API adapter (`/messages`), supporting context limits up to 200K, vision, tools, and model-dependent reasoning controls.
-- Shared provider request, tool, and stream event types across ChatGPT, OpenCode, Anthropic, and all compatible cloud and local providers, plus local shared instructions.
+- Shared provider request, tool, and stream event types across ChatGPT, Anthropic, and all compatible cloud and local providers, plus local shared instructions.
 - Embedded release catalogs and a verified, cancellable installer for llama.cpp on Windows x64. Settings supports one llama.cpp model folder and bounded discovery of unregistered GGUF files, with explicit confirmation before registration. The managed llama.cpp path starts selected GGUF models on demand, waits for health readiness, streams chat through the shared route, and stops individual processes on cancellation or service shutdown. Manual Windows CPU and NVIDIA CUDA checks used real GGUF files; CUDA verification reported the RTX 3060, generated a text answer, and handled an attached PNG with its matching vision projector. These were manual runtime checks, not automated release tests. CUDA offload is recommended only when the detected driver meets the pinned catalog floor. llama.cpp is the only OpenChat-managed local inference engine. Runtime diagnostics record bounded, safe lifecycle fields. GGUF-declared and runtime-active context windows, projector pairing, and reported image and tool-template capabilities are implemented.
 - Local workspace tools for file listing, search, reading, metadata, writing, and editing, plus web search, URL reading, and terminal command/session tools. Tool calls, arguments, progress, and results are stored with assistant messages and shown in the conversation UI.
 - Global `Ask for approval`, `Approve safe operations`, and `Full access` settings govern built-in tool approvals. Filesystem calls use canonical path checks. Sensitive configuration files (`.git/hooks`, IDE configs) strictly require explicit user approval (`Ask`). On Windows, terminal, configured project-tool, project-task, and chat-scoped project MCP processes use a temporary AppContainer in approval and safe-operation modes. Full access runs those chat tools without AppContainer or WSL `bwrap`, under the current operating-system account; it does not elevate privileges or bypass OS ACLs and UAC. Global MCP catalog discovery remains sandboxed. Non-Windows terminal execution uses process isolation.
@@ -45,12 +44,12 @@ These bullets describe code present in the repository. They do not mean that eve
 
 ### Confirm the Windows baseline
 
-**Status: verified by the user.** The Windows app, ChatGPT, and OpenCode have been exercised repeatedly and are currently working. Do not treat baseline release validation as an open implementation task.
+**Status: verified by the user.** The Windows app and ChatGPT have been exercised repeatedly and are currently working. Do not treat baseline release validation as an open implementation task.
 
 - Recheck these workflows as regression coverage when a change affects them.
 - Validate API-key providers with live accounts when credentials become available; that work remains in the provider-specific stage below and does not block the confirmed Windows baseline.
 
-**Exit criteria:** met for the current Windows, ChatGPT, and OpenCode baseline. Reopen this baseline only if a regression or release-specific change requires it.
+**Exit criteria:** met for the current Windows and ChatGPT baseline. Reopen this baseline only if a regression or release-specific change requires it.
 
 ### Stabilize the provider contract
 
@@ -266,7 +265,7 @@ These bullets describe code present in the repository. They do not mean that eve
 
 ### 10. Add citations and request-data visibility
 
-**Status: implemented in source; live-provider validation remains open.** Built-in web-search and page-read results include local source IDs, retrieval times, and source cards linked from valid assistant citations. All providers execute `web_search` and `read_url_content` through OpenChat's local web tool engine. ChatGPT OAuth Responses URL annotations, OpenAI API-key Chat Completions URL annotations, OpenCode Responses API completed-output URL annotations, and OpenRouter URL citation annotations are stored per assistant message and linked to source cards with provider-supplied titles and URLs. Valid provider text end offsets place source links after the cited text; missing or invalid offsets place links at the end of the response. No retrieval time is shown because the responses do not provide one. Groq URL citations are stored as provider-native sources. The Gemini stream parser recognizes Google `groundingMetadata` web chunks and maps byte-based grounding segment offsets to visible source anchors when such metadata is present. Request records keep a privacy-preserving manifest of message-role counts, image/tool-result counts, instruction byte counts/source categories, tool names, cache-control field names, included message IDs, archived message IDs, the compaction boundary, and bounded attachment name/type/ID metadata. Exact request contents and attachment bytes are not retained. Usage request details and CSV exports include the durable run ID when available, including child-run attribution. Other provider formats are connected only when their documented response shapes are supported by deterministic parser tests.
+**Status: implemented in source; live-provider validation remains open.** Built-in web-search and page-read results include local source IDs, retrieval times, and source cards linked from valid assistant citations. All providers execute `web_search` and `read_url_content` through OpenChat's local web tool engine. ChatGPT OAuth Responses URL annotations, OpenAI API-key Chat Completions URL annotations, and OpenRouter URL citation annotations are stored per assistant message and linked to source cards with provider-supplied titles and URLs. Valid provider text end offsets place source links after the cited text; missing or invalid offsets place links at the end of the response. No retrieval time is shown because the responses do not provide one. Groq URL citations are stored as provider-native sources. The Gemini stream parser recognizes Google `groundingMetadata` web chunks and maps byte-based grounding segment offsets to visible source anchors when such metadata is present. Request records keep a privacy-preserving manifest of message-role counts, image/tool-result counts, instruction byte counts/source categories, tool names, cache-control field names, included message IDs, archived message IDs, the compaction boundary, and bounded attachment name/type/ID metadata. Exact request contents and attachment bytes are not retained. Usage request details and CSV exports include the durable run ID when available, including child-run attribution. Other provider formats are connected only when their documented response shapes are supported by deterministic parser tests.
 
 - Store web and provider-returned sources as structured records linked to the response that used them.
 - Add citation anchors in assistant output and let users open the source card with title, domain, URL, and retrieval time.
@@ -379,7 +378,7 @@ four-step connection, provider catalog verification, model selection, and
 message guide. Its active step advances as a provider is configured, a catalog
 loads, and a model is selected; completed steps are announced accessibly.
 Loading, catalog failure, and missing-model states have direct recovery actions.
-API-compatible and OpenCode Console connection cards distinguish a saved key
+API-compatible connection cards distinguish a saved key
 from successful provider authentication and a usable model catalog.
 Authentication rejection, rate limits, network failures, and empty catalogs
 have separate recovery copy; cached catalogs never count as successful
@@ -387,7 +386,7 @@ verification, and quota is marked unavailable in OpenChat where no quota query
 exists. ChatGPT OAuth verification forces a model-catalog refresh for the
 selected account and workspace; each saved ChatGPT API key can also be checked
 against a freshly requested model catalog without displaying its secret.
-API-compatible and OpenCode Console checks now retain their result and check
+API-compatible provider checks now retain their result and check
 time in local settings; changing or removing their saved key clears the old
 result. ChatGPT OAuth results are scoped to the account and workspace, while
 ChatGPT API-key results are scoped to each saved connection. Removing either
@@ -409,8 +408,7 @@ available route is stale. Focused route-selection tests cover both cases. The
 fourth “send” step stays visible after model selection until a completed
 assistant response exists in durable history. Returning profiles with an
 earlier completed response keep the direct-to-chat welcome state; temporary
-chat responses do not alter that history. The default OpenCode route no longer
-counts as a configured credential by itself. Repository and ChatScreen tests
+chat responses do not alter that history. Repository and ChatScreen tests
 cover new profiles, returning profiles, and the step's accessibility at 320 px
 with 200% text scaling in all five supported locales.
 Assistant failures caused by rejected credentials now include a direct action
@@ -976,7 +974,6 @@ Hosted sharing remains out of scope under the current product decision.
 - No centralized account, message, or credential service; OpenChat remains local-first and self-hostable in its app model.
 - Windows terminal execution uses AppContainer or WSL2 `bwrap` isolation in approval and safe-operation modes; Full access disables those sandboxes for chat tool execution while retaining current-account OS permissions and process resource limits. Non-Windows terminal execution uses process isolation.
 - No automatic use of ChatGPT reset credits.
-- No additional OpenCode wire protocols until the shared provider contract is complete.
 - GitHub Copilot is an explicit experimental exception requested by Alican: use the Copilot CLI public OAuth client ID with Device Flow, keep per-account OAuth tokens in Windows Credential Manager, and call Copilot's private user/model/inference endpoints directly. Multiple GitHub accounts can be connected; the selected account supplies Copilot chat, model catalog, and usage requests. Do not ask for a PAT or import gh credentials. The account settings show only plan, access SKU, and recognized quota fields returned by the private user endpoint; no allowance or remaining balance is inferred. GitHub does not document third-party reuse of the CLI OAuth client or a stable external contract for these endpoints, so this display remains best-effort and may change.
 - OAuth rate-limit handling disables ChatGPT models for the affected account/workspace when a fresh usage snapshot reports the limit exhausted, and disables all Copilot models for the selected account when its recognized chat quota is exhausted. A depleted Copilot premium-interaction quota disables only a model that receives a corresponding rate-limit response because the provider snapshot does not identify which catalog models use that quota. A rate-limit response during a request immediately marks the affected OAuth route; a numeric `Retry-After` value is honored for Copilot model-specific limits. Hover or keyboard focus on a disabled model explains the reason and known reset time. Copilot's service-level limits may apply to individual models and can be temporary; those temporary locks can be manually cleared when GitHub does not return a retry interval. Quota checks use provider-reported fields only and do not infer allowances from plan names.
 

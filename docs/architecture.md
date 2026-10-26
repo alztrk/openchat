@@ -98,8 +98,8 @@ remain separate Rust processes with their existing storage and RPC boundaries.
 - Usage statistics and model-pricing routes are dispatched by
   `services/openchat-local-service/src/transport/rpc/statistics.rs`. Date ranges,
   filters, pagination, and batch size are validated at the RPC boundary.
-- ChatGPT and Copilot account/authentication routes, plus OpenCode and
-  OpenAI-compatible model discovery, are dispatched by
+- ChatGPT and Copilot account/authentication routes plus OpenAI-compatible model
+  discovery are dispatched by
   `services/openchat-local-service/src/transport/rpc/providers.rs`. Provider secrets
   continue to resolve from saved credential references inside the service. Copilot
   connections are keyed by GitHub user ID, keep per-account credentials in Windows

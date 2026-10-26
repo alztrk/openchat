@@ -243,7 +243,7 @@ Focused revalidation covered noncanonical numeric and hexadecimal IPv4 URL forms
 
 ### Resolved: provider catalog responses were unbounded
 
-OpenAI, compatible-provider, Gemini, Cerebras, OpenCode Zen, and OpenCode metadata catalog requests decoded provider JSON without a response-body limit. Checking the number of models after JSON parsing did not bound network buffering or parse allocations. Catalog responses are now streamed through a shared 8 MiB limit before JSON decoding; both the declared content length and the actual streamed bytes are checked. The `models.opencode.ai/api.json` payload measured 5,803,928 bytes on 2026-10-18, below the chosen limit. Tests cover exact-limit acceptance, declared-length rejection, and chunked-body rejection.
+OpenAI, compatible-provider, Gemini, and Cerebras catalog requests decoded provider JSON without a response-body limit. Checking the number of models after JSON parsing did not bound network buffering or parse allocations. Catalog responses are now streamed through a shared 8 MiB limit before JSON decoding; both the declared content length and the actual streamed bytes are checked. Tests cover exact-limit acceptance, declared-length rejection, and chunked-body rejection.
 
 ### Resolved: provider redirects could forward custom API-key headers
 
