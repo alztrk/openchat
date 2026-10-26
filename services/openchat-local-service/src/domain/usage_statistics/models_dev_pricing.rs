@@ -61,8 +61,11 @@ impl PricingCatalog {
         &self,
         database: &mut StorageConnection<'_>,
     ) -> rusqlite::Result<()> {
+        // Temporary tables survive on the service's reused SQLite connection.
         database.execute_batch(
-            "CREATE TEMP TABLE models_dev_prices (
+            "DROP TABLE IF EXISTS temp.models_dev_event_costs;
+            DROP TABLE IF EXISTS temp.models_dev_prices;
+            CREATE TEMP TABLE models_dev_prices (
                 provider_id TEXT NOT NULL,
                 model_id TEXT NOT NULL,
                 context_size INTEGER NOT NULL,
