@@ -9,7 +9,7 @@ param (
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
-$workspaceRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+$workspaceRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $manifestPath = Join-Path $workspaceRoot 'Cargo.toml'
 $workspacePrefix = [System.IO.Path]::GetFullPath($workspaceRoot).TrimEnd('\') + '\'
 $relativeTargets = @(

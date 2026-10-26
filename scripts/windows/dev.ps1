@@ -1,7 +1,7 @@
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
-$root = Split-Path -Parent $PSScriptRoot
+$root = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $frontend = Join-Path $root 'apps\desktop\frontend'
 $binaries = Join-Path $root 'apps\desktop\tauri\binaries'
 

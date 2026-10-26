@@ -65,7 +65,7 @@ Run development tasks safely through configurable permission boundaries:
    Copy-Item -LiteralPath target/release/openchat-local-service.exe -Destination apps/desktop/tauri/binaries/openchat-local-service-x86_64-pc-windows-msvc.exe -Force
    ```
 
-   The full sidecar and installer sequence is also available as `.\scripts\build.ps1`.
+   The full Windows sidecar and installer sequence is also available as `.\scripts\windows\build.ps1`.
 
 3. Install frontend dependencies and start development mode:
    ```bash

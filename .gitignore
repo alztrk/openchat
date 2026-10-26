@@ -36,6 +36,8 @@ migrate_working_dir/
 /scripts/
 !/scripts/
 /scripts/*
+!/scripts/README.md
+!/scripts/*/
 !/scripts/opencode_probe.py
 /reports/
 /.opencode_probe/

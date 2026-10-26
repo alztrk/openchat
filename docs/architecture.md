@@ -15,6 +15,8 @@ Cargo.lock               # single Rust workspace lockfile
 rust-toolchain.toml
 docs/
 scripts/
+  windows/               # Windows development, validation, and packaging scripts
+  README.md              # Script layout and platform support notes
 apps/
   desktop/
     assets/
