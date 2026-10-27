@@ -2,6 +2,18 @@
 
 This roadmap reflects the current product implementation and has no calendar estimates. Some validation notes below record evidence collected for the retired Flutter client; they are historical and do not validate the current React/Tauri UI. The Windows desktop experience remains the first release target. Confirmed baseline and implemented milestones are listed separately. The numbered priorities are ordered from highest to lowest by product value, safety, and dependencies; a priority does not block unrelated work unless its dependency is stated.
 
+## High-urgency manual audit follow-up
+
+**Status: planned, P1 (high urgency).** The 2026-10-27 manual source review recorded 28 findings. P1 sets roadmap delivery urgency; it does not reclassify each finding's technical severity. Schedule this work ahead of deferred product expansion.
+
+- **Privacy, local data, and project indexing (A-001, A-012, A-017, A-025, A-026, A-027):** Explain provider and web-search data flows, including project snippets; define at-rest protection for chat data; cover common secret names in DLP; align deletion claims with migration-backup retention; honor Git global and repository-local exclude rules; and prevent stale index content from entering later provider requests.
+- **Approval, sandbox, and file safety (A-009, A-011, A-014, A-016, A-022, A-023, A-029):** Restore or justify the reduced WebView2 protections; establish user-consent provenance for legacy elevated permissions; close the AppContainer ACL and file snapshot path races; keep native approval meaning and target details under host control; bind project grants to the exact tool/server definition; and render bidirectional control characters visibly in approval prompts.
+- **Resource and cancellation bounds (A-010, A-020, A-024, A-028):** Stream or tightly bound archive attachment imports; add response and error-body deadlines with cancellation to custom provider transports; cap per-file snapshot hashing work; and limit `.gitignore` size, line length, and rule count before indexing begins.
+- **Provider, disclosure, and credential documentation (A-005, A-013, A-018, A-019):** Document the Copilot endpoint contract and its failure modes; record why legacy HTTP providers were approved and require renewed consent where provenance is missing; correct credential-flow and privacy statements; and publish a clear vulnerability reporting channel.
+- **Product consistency and maintainability (A-002, A-003, A-004, A-006, A-007, A-008, A-015):** Derive search locale from user settings; consolidate provider IDs and attachment bounds; localize technical error details; format numbers with the selected UI locale; use shared design tokens; and make Windows profile-restore controls match service capabilities.
+
+**Exit criteria:** all 28 findings have an implementation or documentation change with focused verification, data-disclosure and permission behavior is explicit, and the audit notes are updated to reflect resolved, accepted, or still-open risks.
+
 ## Alican's current product focus
 
 Prioritize making the core desktop experience useful and reliable:
