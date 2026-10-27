@@ -1,7 +1,7 @@
 import { Check, Eye, EyeOff, Info, KeyRound, LoaderCircle, Network, Pencil, Plus, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button, Card, Input } from '@/design-system';
+import { Button, Input } from '@/design-system';
 import type {
   ChatGptApiKeySummary,
   CompatibleProviderId,
@@ -25,7 +25,6 @@ export interface ProviderRequestOutcomeView {
 
 export interface CredentialCardProps {
   configured: boolean;
-  description: string;
   documentationUrl: string;
   draft: string;
   feedback: CredentialFeedback | null;
@@ -49,7 +48,6 @@ export interface CredentialCardProps {
 
 export function CredentialCard({
   configured,
-  description,
   documentationUrl,
   draft,
   feedback,
@@ -71,64 +69,75 @@ export function CredentialCard({
   verification,
 }: CredentialCardProps) {
   const { t } = useTranslation();
+  const documentationHost = new URL(documentationUrl).hostname;
   return (
-    <Card className="grid min-w-0 content-start gap-4" padding="comfortable">
-      <div className="flex min-w-0 items-start gap-3">
-        <ProviderIcon className="mt-0.5" providerId={providerId} />
-        <div className="min-w-0">
-          <h3 className="truncate font-semibold">{label}</h3>
-          <p className="mt-1 text-sm text-secondary-text">{description}</p>
-          <a
-            className="mt-1 inline-block break-all text-xs text-secondary-text underline underline-offset-2 hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
-            href={documentationUrl}
-            rel="noreferrer"
-            target="_blank"
-          >
-            {documentationUrl}
-          </a>
+    <div className="grid min-w-0 gap-3 p-3 sm:flex sm:items-center sm:justify-between sm:gap-5 sm:p-4">
+      <div className="flex min-w-0 items-center gap-3 sm:flex-1">
+        <ProviderIcon className="shrink-0" providerId={providerId} />
+        <div className="grid min-w-0 gap-1">
+          <h3 className="truncate text-sm font-medium">{label}</h3>
+          <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
+            <CredentialStatus configured={configured} keySuffix={keySuffix} text={statusText} />
+            <a
+              aria-label={`${label}: ${documentationHost}`}
+              className="truncate text-xs text-secondary-text underline underline-offset-2 hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+              href={documentationUrl}
+              rel="noreferrer"
+              target="_blank"
+            >
+              {documentationHost}
+            </a>
+          </div>
         </div>
       </div>
-      {showGeminiNotice ? (
-        <div className="flex items-start gap-2 text-xs leading-5 text-secondary-text">
+      <div className="flex flex-wrap gap-2 sm:shrink-0 sm:justify-end">
+        <Button disabled={loading || saving} onClick={onToggleForm} size="small" variant="secondary">
+          {configured ? <Pencil aria-hidden="true" size={15} /> : <Plus aria-hidden="true" size={15} />}
+          {configured ? t('edit') : t('add')}
+        </Button>
+        {configured ? (
+          <Button disabled={removing || loading || saving} onClick={onRemove} size="small" variant="ghost">
+            {removing ? (
+              <LoaderCircle aria-hidden="true" className="animate-spin" size={15} />
+            ) : (
+              <Trash2 aria-hidden="true" size={15} />
+            )}
+            {t('apiKeyRemoveAction')}
+          </Button>
+        ) : null}
+      </div>
+      {showGeminiNotice && formOpen ? (
+        <div className="flex items-start gap-2 text-xs leading-5 text-secondary-text sm:basis-full">
           <Info aria-hidden="true" className="mt-0.5 shrink-0 text-secondary-icon" size={16} />
           <p>{t('geminiUnpaidDataNotice')}</p>
         </div>
       ) : null}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <CredentialStatus configured={configured} keySuffix={keySuffix} text={statusText} />
-        <div className="flex flex-wrap gap-2">
-          <Button disabled={loading || saving} onClick={onToggleForm} size="small" variant="secondary">
-            {configured ? <Pencil aria-hidden="true" size={15} /> : <Plus aria-hidden="true" size={15} />}
-            {configured ? t('edit') : t('add')}
-          </Button>
-          {configured ? (
-            <Button disabled={removing || loading || saving} onClick={onRemove} size="small" variant="ghost">
-              {removing ? (
-                <LoaderCircle aria-hidden="true" className="animate-spin" size={15} />
-              ) : (
-                <Trash2 aria-hidden="true" size={15} />
-              )}
-              {t('apiKeyRemoveAction')}
-            </Button>
-          ) : null}
+      {configured ? (
+        <div className="sm:basis-full">
+          <ProviderVerificationStatus requestOutcome={requestOutcome} value={verification} />
         </div>
-      </div>
-      {configured ? <ProviderVerificationStatus requestOutcome={requestOutcome} value={verification} /> : null}
-      {formOpen ? (
-        <CredentialInput
-          draft={draft}
-          inputLabel={inputLabel}
-          label={label}
-          loading={loading}
-          onChange={onChange}
-          onSave={onSave}
-          onCancel={onToggleForm}
-          saving={saving}
-          saveLabel={t(configured ? 'apiKeyReplaceAction' : 'apiKeySaveAction')}
-        />
       ) : null}
-      {feedback ? <FeedbackMessage feedback={feedback} /> : null}
-    </Card>
+      {formOpen ? (
+        <div className="sm:basis-full">
+          <CredentialInput
+            draft={draft}
+            inputLabel={inputLabel}
+            label={label}
+            loading={loading}
+            onChange={onChange}
+            onSave={onSave}
+            onCancel={onToggleForm}
+            saving={saving}
+            saveLabel={t(configured ? 'apiKeyReplaceAction' : 'apiKeySaveAction')}
+          />
+        </div>
+      ) : null}
+      {feedback ? (
+        <div className="sm:basis-full">
+          <FeedbackMessage feedback={feedback} />
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -316,13 +325,20 @@ function CredentialStatus({
   text?: string;
 }) {
   const { t } = useTranslation();
+  if (!configured) return null;
+
+  const statusLabel = text ?? (keySuffix ? t('apiKeySavedWithSuffix', { suffix: keySuffix }) : t('apiKeyConfigured'));
+
   return (
-    <p className="mt-1 text-sm text-secondary-text">
-      {text ??
-        (configured && keySuffix
-          ? t('apiKeySavedWithSuffix', { suffix: keySuffix })
-          : t(configured ? 'apiKeyConfigured' : 'apiKeyNotConfigured'))}
-    </p>
+    <span
+      aria-label={statusLabel}
+      className="inline-flex items-center gap-1 text-xs text-success"
+      role="status"
+      title={statusLabel}
+    >
+      <Check aria-hidden="true" size={14} />
+      {keySuffix ? <span>••{keySuffix}</span> : null}
+    </span>
   );
 }
 

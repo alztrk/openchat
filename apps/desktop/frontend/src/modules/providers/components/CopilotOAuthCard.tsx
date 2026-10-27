@@ -324,7 +324,6 @@ export function CopilotOAuthCard({ serviceReady, onChanged }: CopilotOAuthCardPr
           <ProviderIcon className="mt-0.5" providerId="copilot" size={28} />
           <div className="min-w-0">
             <h3 className="font-semibold">{t('providerNameCopilot')}</h3>
-            <p className="mt-1 max-w-2xl text-sm text-secondary-text">{t('copilotOAuthDescription')}</p>
           </div>
         </div>
         <div className="flex flex-wrap gap-2">

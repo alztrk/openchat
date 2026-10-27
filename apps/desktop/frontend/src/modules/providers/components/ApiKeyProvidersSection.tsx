@@ -89,43 +89,6 @@ const providerNameKeys: Record<CompatibleProviderId, CompatibleProviderNameKey> 
   kilo: 'providerNameKilo',
 };
 
-type CompatibleProviderDescriptionKey =
-  | 'geminiApiDescription'
-  | 'groqApiDescription'
-  | 'cerebrasApiDescription'
-  | 'openRouterApiDescription'
-  | 'mistralApiDescription'
-  | 'deepSeekApiDescription'
-  | 'xAiApiDescription'
-  | 'perplexityApiDescription'
-  | 'togetherApiDescription'
-  | 'sambaNovaApiDescription'
-  | 'anthropicApiDescription'
-  | 'fireworksApiDescription'
-  | 'deepInfraApiDescription'
-  | 'dashScopeApiDescription'
-  | 'cohereApiDescription'
-  | 'kiloApiDescription';
-
-const providerDescriptionKeys: Record<CompatibleProviderId, CompatibleProviderDescriptionKey> = {
-  gemini: 'geminiApiDescription',
-  groq: 'groqApiDescription',
-  cerebras: 'cerebrasApiDescription',
-  openrouter: 'openRouterApiDescription',
-  mistral: 'mistralApiDescription',
-  deepseek: 'deepSeekApiDescription',
-  xai: 'xAiApiDescription',
-  perplexity: 'perplexityApiDescription',
-  together: 'togetherApiDescription',
-  sambanova: 'sambaNovaApiDescription',
-  anthropic: 'anthropicApiDescription',
-  fireworks: 'fireworksApiDescription',
-  deepinfra: 'deepInfraApiDescription',
-  dashscope: 'dashScopeApiDescription',
-  cohere: 'cohereApiDescription',
-  kilo: 'kiloApiDescription',
-};
-
 const providerDocumentationUrls: Record<CompatibleProviderId, string> = {
   gemini: 'https://ai.google.dev/gemini-api/docs',
   groq: 'https://console.groq.com/docs',
@@ -524,11 +487,10 @@ export function ApiKeyProvidersSection({
 
   const modelProviderCards =
     snapshot && !loading ? (
-      <div className="grid gap-8">
-        <div className="grid min-w-0 gap-4 lg:grid-cols-2">
+      <div className="grid gap-6">
+        <div className="grid min-w-0 divide-y divide-border overflow-hidden rounded-card border border-border bg-surface">
           <CredentialCard
             configured={openCodeConfigured}
-            description={t('openCodeConsoleDescription')}
             documentationUrl="https://opencode.ai/zen"
             draft={drafts.opencode ?? ''}
             feedback={feedback?.key === routeKey(openCodeRoute) ? feedback : null}
@@ -562,7 +524,6 @@ export function ApiKeyProvidersSection({
             return (
               <CredentialCard
                 configured={credential?.isConfigured === true}
-                description={t(providerDescriptionKeys[providerId])}
                 documentationUrl={providerDocumentationUrls[providerId]}
                 draft={drafts[key] ?? ''}
                 feedback={feedback?.key === key ? feedback : null}
@@ -594,12 +555,9 @@ export function ApiKeyProvidersSection({
           })}
         </div>
 
-        <div className="grid min-w-0 gap-4">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <h3 className="font-semibold">{t('customProvidersHeading')}</h3>
-              <p className="mt-1 text-sm text-secondary-text">{t('customProvidersDescription')}</p>
-            </div>
+        <div className="grid min-w-0 gap-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h3 className="font-semibold">{t('customProvidersHeading')}</h3>
             <Button
               disabled={savingCustomProvider}
               onClick={() => {

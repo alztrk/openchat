@@ -444,11 +444,9 @@ export function ProviderSettingsSection({
 
   return (
     <section aria-labelledby="settings-connections-heading" className="grid gap-6">
-      <div>
-        <h2 className="text-xl font-semibold leading-7" id="settings-connections-heading">
-          {t('settingsAccountConnectionsHeading')}
-        </h2>
-      </div>
+      <h2 className="sr-only" id="settings-connections-heading">
+        {t('settingsAccountConnectionsHeading')}
+      </h2>
 
       <CopilotOAuthCard onChanged={refreshModels} serviceReady={serviceStatus === 'ready'} />
 
