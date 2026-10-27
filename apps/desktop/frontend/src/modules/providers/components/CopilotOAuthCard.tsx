@@ -353,7 +353,7 @@ export function CopilotOAuthCard({ serviceReady, onChanged }: CopilotOAuthCardPr
             const needsSignIn = item.authStatus === 'reauth_required';
             return (
               <li
-                className={`rounded-card border p-3 ${selected ? 'border-accent bg-selected' : 'border-border bg-raised'}`}
+                className={`rounded-card border p-3 ${selected ? 'border-border bg-raised' : 'border-transparent bg-surface'}`}
                 key={item.id}
               >
                 <div className="flex flex-wrap items-start justify-between gap-3">

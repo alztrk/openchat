@@ -443,7 +443,7 @@ export function ProviderSettingsSection({
   const selectedWorkspace = selectedConnection?.workspaces.find((workspace) => workspace.isSelected);
 
   return (
-    <section aria-labelledby="settings-connections-heading" className="grid gap-6">
+    <section aria-labelledby="settings-connections-heading" className="grid w-full max-w-6xl gap-6">
       <h2 className="sr-only" id="settings-connections-heading">
         {t('settingsAccountConnectionsHeading')}
       </h2>
@@ -532,7 +532,7 @@ export function ProviderSettingsSection({
         )}
 
         {request !== 'loading' && request !== 'error' && selectedConnection && selectedWorkspace ? (
-          <div className="px-5 pb-3">
+          <div className="border-t border-border px-5 py-3">
             <ProviderVerificationStatus
               requestOutcome={{
                 record: lastRequestOutcome,
@@ -675,7 +675,7 @@ function ConnectionRow({
   const selectedWorkspace = connection.workspaces.find((workspace) => workspace.isSelected);
 
   return (
-    <li className={`rounded-card border p-3 ${selected ? 'border-accent bg-selected' : 'border-border bg-raised'}`}>
+    <li className={`rounded-card border p-3 ${selected ? 'border-border bg-raised' : 'border-transparent bg-surface'}`}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex min-w-0 items-start gap-3">
           <CircleUserRound aria-hidden="true" className="mt-0.5 shrink-0 text-secondary-icon" size={20} />
@@ -846,9 +846,9 @@ function TitleGenerationSettings({
   };
 
   return (
-    <Card className="grid gap-2" padding="default">
+    <Card className="grid gap-2 lg:grid-cols-3" padding="default">
       {preferenceLoadFailed ? (
-        <div className="flex flex-wrap items-center justify-between gap-3 px-3 py-2" role="alert">
+        <div className="flex flex-wrap items-center justify-between gap-3 px-3 py-2 lg:col-span-3" role="alert">
           <p className="text-sm text-secondary-text">{t('titlePreferenceLoadFailed')}</p>
           <Button onClick={onPreferenceRetry} size="small" variant="ghost">
             <RefreshCw aria-hidden="true" size={15} />
@@ -856,12 +856,12 @@ function TitleGenerationSettings({
           </Button>
         </div>
       ) : (modelStatus === 'loading' || modelStatus === 'idle') && models.length === 0 ? (
-        <div aria-live="polite" className="flex items-center gap-3 px-3 py-2">
+        <div aria-live="polite" className="flex items-center gap-3 px-3 py-2 lg:col-span-3">
           <LoaderCircle aria-hidden="true" className="animate-spin text-accent-icon" size={16} />
           <p className="text-sm text-secondary-text">{t('modelsLoading')}</p>
         </div>
       ) : modelError && models.length === 0 ? (
-        <div className="flex flex-wrap items-center justify-between gap-3 px-3 py-2" role="alert">
+        <div className="flex flex-wrap items-center justify-between gap-3 px-3 py-2 lg:col-span-3" role="alert">
           <p className="text-sm text-secondary-text">{t('modelCatalogUnavailable')}</p>
           <Button onClick={onRetry} size="small" variant="ghost">
             <RefreshCw aria-hidden="true" size={15} />
@@ -895,12 +895,12 @@ function TitleGenerationSettings({
             title={t('titleUseLightweightModel')}
           />
           {modelError ? (
-            <p className="px-3 py-2 text-sm text-warning" role="status">
+            <p className="px-3 py-2 text-sm text-warning lg:col-span-3" role="status">
               {t('modelCatalogSourcesUnavailable')}
             </p>
           ) : null}
           {preference.mode === 'selectedModel' ? (
-            <div className="mt-2 rounded-card border border-border bg-raised p-3">
+            <div className="mt-2 rounded-card border border-border bg-raised p-3 lg:col-span-3">
               <div className="flex min-w-0 items-end gap-2">
                 {selectedModel ? (
                   <ProviderIcon
@@ -926,7 +926,7 @@ function TitleGenerationSettings({
           ) : null}
           {preference.mode === 'lightweight' ? (
             <p
-              className={`mt-2 flex items-start gap-2 rounded-card border p-3 text-sm ${lightweightModel ? 'border-success/30 bg-success/10 text-secondary-text' : 'border-warning/30 bg-warning/10 text-secondary-text'}`}
+              className={`mt-2 flex items-start gap-2 rounded-card border p-3 text-sm lg:col-span-3 ${lightweightModel ? 'border-success/30 bg-success/10 text-secondary-text' : 'border-warning/30 bg-warning/10 text-secondary-text'}`}
             >
               {lightweightModel ? (
                 <CircleCheck aria-hidden="true" className="mt-0.5 shrink-0 text-success" size={16} />
@@ -941,10 +941,14 @@ function TitleGenerationSettings({
             </p>
           ) : null}
           {saving ? (
-            <div aria-label={t('saving')} className="mt-2 h-0.5 animate-pulse rounded-full bg-accent" role="status" />
+            <div
+              aria-label={t('saving')}
+              className="mt-2 h-0.5 animate-pulse rounded-full bg-accent lg:col-span-3"
+              role="status"
+            />
           ) : null}
           {error ? (
-            <p className="px-3 text-sm text-destructive" role="alert">
+            <p className="px-3 text-sm text-destructive lg:col-span-3" role="alert">
               {t(error)}
             </p>
           ) : null}
@@ -967,7 +971,7 @@ function TitleModeButton({ description, disabled, icon, onClick, selected, title
   return (
     <Button
       aria-pressed={selected}
-      className={`min-h-0 w-full items-start justify-start gap-3 rounded-button border px-3 py-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus disabled:cursor-not-allowed disabled:opacity-50 ${selected ? 'border-accent bg-selected' : 'border-transparent hover:bg-hover'}`}
+      className={`h-full min-h-0 w-full items-start justify-start gap-3 rounded-button border px-3 py-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus disabled:cursor-not-allowed disabled:opacity-50 ${selected ? 'border-border bg-raised' : 'border-transparent hover:bg-hover'}`}
       disabled={disabled}
       onClick={onClick}
       size="small"
