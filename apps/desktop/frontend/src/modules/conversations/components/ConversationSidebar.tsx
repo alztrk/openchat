@@ -933,7 +933,7 @@ export function ConversationSidebar({
               <DropdownMenuTrigger asChild>
                 <Button
                   aria-label={t('newChatWithAgent')}
-                  className="conversation-sidebar-agent-button h-full w-9 shrink-0 rounded-none border-0 border-l border-l-border bg-transparent px-0 text-secondary-icon transition-colors duration-quick hover:bg-raised/90 hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-focus data-[state=open]:bg-raised data-[state=open]:text-text disabled:opacity-45"
+                  className="conversation-sidebar-agent-button h-full w-9 shrink-0 gap-1 rounded-none border-0 border-l border-l-border bg-transparent pl-1 pr-0 text-secondary-icon transition-colors duration-quick hover:bg-raised/90 hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-focus data-[state=open]:bg-raised data-[state=open]:text-text disabled:opacity-45"
                   disabled={isBusy}
                   size="icon"
                   title={t('newChatWithAgent')}
