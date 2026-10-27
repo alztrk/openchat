@@ -9,6 +9,7 @@ import { useChatStore } from '@/modules/conversations/stores/chatStore';
 import { ToolPermissionModeSelector } from '@/modules/projects/components/ToolPermissionModeSelector';
 import { modelRouteKey } from '@/modules/providers/data/modelPreferences';
 import { rateLimitForModel, useOAuthRateLimits } from '@/modules/providers/data/oauthRateLimits';
+import { formatKeyboardShortcut, useKeyboardShortcutsStore } from '@/modules/settings/stores/keyboardShortcutsStore';
 import { AttachmentLibraryDialog } from './AttachmentLibraryDialog';
 import { ChatSlashCommandMenu } from './ChatSlashCommandMenu';
 import { ChatSlashModelMenu } from './ChatSlashModelMenu';
@@ -53,6 +54,10 @@ export function ChatComposer({
 }: ChatComposerProps) {
   const { t } = useTranslation();
   const formRef = useRef<HTMLFormElement>(null);
+  const sendMessageBinding = useKeyboardShortcutsStore((state) => state.bindings.sendMessage);
+  const sendShortcutLabel = sendMessageBinding
+    ? formatKeyboardShortcut(sendMessageBinding)
+    : '';
 
   const {
     inputRef,
@@ -100,7 +105,6 @@ export function ChatComposer({
     isSendBlocked,
     isSending,
     isAnyConversationSending,
-    submissionMode,
     ghostTextSuggestion,
   } = useComposerState({
     droppedFiles,
@@ -151,11 +155,13 @@ export function ChatComposer({
   const isTargetPlaceholder = targetConversationId === null;
   const placeholderHint = isTargetPlaceholder
     ? t('conversationUnavailable')
-    : submissionMode === 'ctrlEnter'
-      ? t('composerPlaceholderCtrlEnter')
-      : t('composerPlaceholderEnter');
+    : !sendMessageBinding
+      ? t('composerPlaceholderNoShortcut')
+      : t('composerPlaceholderShortcut', { shortcut: sendShortcutLabel });
   const sendTooltip =
-    submissionMode === 'ctrlEnter' ? t('composerSendTooltipCtrlEnter') : t('composerSendTooltipEnter');
+    !sendMessageBinding
+      ? t('composerSendTooltipNoShortcut')
+      : t('composerSendTooltipShortcut', { shortcut: sendShortcutLabel });
 
   const [isComposerDraggingOver, setIsComposerDraggingOver] = useState(false);
   const [isAttachmentLibraryOpen, setIsAttachmentLibraryOpen] = useState(false);
@@ -498,7 +504,6 @@ export function ChatComposer({
           chatErrorCode={chatErrorCode}
           opencodeRetryAtUnixMs={opencodeRetryAtUnixMs}
           commandFeedbackKey={commandFeedbackKey}
-          modelError={modelError}
           successFeedback={successFeedback}
         />
       </div>

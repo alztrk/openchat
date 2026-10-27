@@ -39,7 +39,6 @@ export interface ComposerFeedbackListProps {
   successFeedback: boolean;
   chatErrorCode: ChatErrorCode | null;
   opencodeRetryAtUnixMs: number | null;
-  modelError: boolean;
 }
 
 export function ComposerFeedbackList({
@@ -48,7 +47,6 @@ export function ComposerFeedbackList({
   successFeedback,
   chatErrorCode,
   opencodeRetryAtUnixMs,
-  modelError,
 }: ComposerFeedbackListProps) {
   const { t, i18n } = useTranslation();
 
@@ -81,11 +79,6 @@ export function ComposerFeedbackList({
             </p>
           ) : null}
         </div>
-      ) : null}
-      {modelError ? (
-        <p className="mt-2 text-sm text-warning" role="status">
-          {t('modelCatalogSourcesUnavailable')}
-        </p>
       ) : null}
     </>
   );
