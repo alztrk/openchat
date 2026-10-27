@@ -372,12 +372,10 @@ impl AppContainerSandbox {
         }
         let isolated_profile = self.temp_directory.parent().unwrap_or(&self.temp_directory);
         let isolated_appdata = isolated_profile.join("AppData").join("Roaming");
-        let isolated_localappdata = if self.persistent_profile {
-            isolated_profile.to_path_buf()
-        } else {
-            isolated_profile.join("AppData").join("Local")
-        };
+        let isolated_localappdata = isolated_profile.join("AppData").join("Local");
         fs::create_dir_all(&self.temp_directory)?;
+        // For persistent profiles, let Windows map inherited LOCALAPPDATA to the AppContainer root.
+        // Setting the mapped profile path explicitly makes Windows append the profile suffix twice.
         if !self.persistent_profile {
             let _ = fs::create_dir_all(&isolated_appdata);
             let _ = fs::create_dir_all(&isolated_localappdata);
@@ -399,17 +397,6 @@ impl AppContainerSandbox {
                         .collect::<Vec<_>>(),
                 ),
             );
-            variables.insert(
-                "LOCALAPPDATA".to_owned(),
-                Zeroizing::new(
-                    isolated_localappdata
-                        .as_os_str()
-                        .encode_wide()
-                        .collect::<Vec<_>>(),
-                ),
-            );
-        } else {
-            // The broker verifies this value against its AppContainer profile identity.
             variables.insert(
                 "LOCALAPPDATA".to_owned(),
                 Zeroizing::new(
