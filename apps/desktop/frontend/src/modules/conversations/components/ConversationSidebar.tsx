@@ -186,6 +186,21 @@ export function ConversationSidebar({
   const drawerRef = useRef<HTMLElement | null>(null);
   const scrollAreaRef = useRef<HTMLDivElement | null>(null);
   const newFolderInputRef = useRef<HTMLInputElement | null>(null);
+  const [isCompactSidebar, setIsCompactSidebar] = useState(() => sidebarWidth <= SIDEBAR_MIN_WIDTH + 36);
+
+  useEffect(() => {
+    const sidebar = drawerRef.current;
+    if (!sidebar) return;
+
+    const updateCompactLayout = () => {
+      setIsCompactSidebar(sidebar.clientWidth <= SIDEBAR_MIN_WIDTH + 36);
+    };
+
+    updateCompactLayout();
+    const observer = new ResizeObserver(updateCompactLayout);
+    observer.observe(sidebar);
+    return () => observer.disconnect();
+  }, []);
 
   const conversations = useChatStore((state) => state.conversations);
   const projects = useChatStore((state) => state.projects);
@@ -722,11 +737,11 @@ export function ConversationSidebar({
         role={isDrawer ? 'dialog' : 'complementary'}
         tabIndex={isDrawer ? -1 : undefined}
       >
-        <div className="sticky top-0 z-10 flex shrink-0 items-center gap-1.5 bg-navigation/80 px-3 pt-3 pb-2 backdrop-blur-md">
-          <div className="flex h-9 min-w-0 flex-1 overflow-hidden rounded-button border border-border bg-surface/80 shadow-2xs backdrop-blur-sm">
+        <div className="conversation-sidebar-toolbar sticky top-0 z-10 flex shrink-0 items-center gap-1.5 bg-navigation/80 px-3 pt-3 pb-2 backdrop-blur-md">
+          <div className="conversation-sidebar-new-chat-group flex h-9 min-w-0 flex-1 overflow-hidden rounded-button border border-border bg-surface/80 shadow-2xs backdrop-blur-sm">
             <Button
               aria-label={t('newChat')}
-              className="group min-h-0 h-full min-w-0 flex-1 justify-between rounded-none border-0 bg-transparent px-3 text-left text-settings-description font-medium text-text shadow-none transition-colors duration-quick hover:bg-raised/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-focus"
+              className="conversation-sidebar-new-chat-main group min-h-0 h-full min-w-0 flex-1 justify-between rounded-none border-0 bg-transparent px-3 text-left text-settings-description font-medium text-text shadow-none transition-colors duration-quick hover:bg-raised/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-focus"
               onClick={handleNewChat}
               size="small"
               title={t('newChatButtonTitle')}
@@ -739,11 +754,11 @@ export function ConversationSidebar({
                   className="shrink-0 text-secondary-icon transition-colors group-hover:text-text"
                   size={15}
                 />
-                <span className="truncate">{t('newChat')}</span>
+                <span className="conversation-sidebar-new-chat-label truncate">{t('newChat')}</span>
               </span>
               <Plus
                 aria-hidden="true"
-                className="shrink-0 text-secondary-icon/70 transition-colors group-hover:text-text"
+                className="conversation-sidebar-new-chat-plus shrink-0 text-secondary-icon/70 transition-colors group-hover:text-text"
                 size={14}
               />
             </Button>
@@ -751,7 +766,7 @@ export function ConversationSidebar({
               <DropdownMenuTrigger asChild>
                 <Button
                   aria-label={t('newChatWithAgent')}
-                  className="h-full w-9 shrink-0 rounded-none border-0 border-l border-l-border bg-transparent px-0 text-secondary-icon transition-colors duration-quick hover:bg-raised/90 hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-focus data-[state=open]:bg-raised data-[state=open]:text-text disabled:opacity-45"
+                  className="conversation-sidebar-agent-button h-full w-9 shrink-0 rounded-none border-0 border-l border-l-border bg-transparent px-0 text-secondary-icon transition-colors duration-quick hover:bg-raised/90 hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-focus data-[state=open]:bg-raised data-[state=open]:text-text disabled:opacity-45"
                   disabled={isBusy}
                   size="icon"
                   title={t('newChatWithAgent')}
@@ -759,7 +774,7 @@ export function ConversationSidebar({
                   variant="ghost"
                 >
                   <Bot aria-hidden="true" size={15} />
-                  <ChevronDown aria-hidden="true" size={12} />
+                  <ChevronDown aria-hidden="true" className="conversation-sidebar-agent-chevron" size={12} />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start" aria-label={t('newChatWithAgent')} className="min-w-60">
@@ -811,7 +826,7 @@ export function ConversationSidebar({
           </div>
           <Button
             aria-label={t('createProject')}
-            className="size-9 shrink-0 border-border bg-surface/80 px-0 text-secondary-icon shadow-2xs backdrop-blur-sm transition-all duration-quick hover:border-control-border hover:bg-raised/90 hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus disabled:opacity-45"
+            className="conversation-sidebar-toolbar-button size-9 shrink-0 border-border bg-surface/80 px-0 text-secondary-icon shadow-2xs backdrop-blur-sm transition-all duration-quick hover:border-control-border hover:bg-raised/90 hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus disabled:opacity-45"
             disabled={isBusy}
             onClick={() => setCreateProjectOpen(true)}
             size="icon"
@@ -824,7 +839,7 @@ export function ConversationSidebar({
           <Button
             aria-label={temporaryChat ? t('temporaryChatEnd') : t('temporaryChatStart')}
             aria-pressed={Boolean(temporaryChat)}
-            className={`size-9 shrink-0 border px-0 backdrop-blur-sm transition-all duration-quick focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus ${
+            className={`conversation-sidebar-toolbar-button size-9 shrink-0 border px-0 backdrop-blur-sm transition-all duration-quick focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus ${
               temporaryChat
                 ? 'border-accent/40 bg-accent/15 text-accent hover:bg-accent/25'
                 : 'border-border bg-surface/80 text-secondary-icon shadow-2xs hover:border-control-border hover:bg-raised/90 hover:text-text'
@@ -841,7 +856,7 @@ export function ConversationSidebar({
             <DropdownMenuTrigger asChild>
               <Button
                 aria-label={t('sidebarViewAndSortOptions')}
-                className="size-9 shrink-0 border-border bg-surface/80 px-0 text-secondary-icon shadow-2xs backdrop-blur-sm transition-all duration-quick hover:border-control-border hover:bg-raised/90 hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus data-[state=open]:border-control-border data-[state=open]:bg-raised data-[state=open]:text-text"
+                className="conversation-sidebar-toolbar-button size-9 shrink-0 border-border bg-surface/80 px-0 text-secondary-icon shadow-2xs backdrop-blur-sm transition-all duration-quick hover:border-control-border hover:bg-raised/90 hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus data-[state=open]:border-control-border data-[state=open]:bg-raised data-[state=open]:text-text"
                 size="icon"
                 title={t('sidebarViewAndSortOptions')}
                 type="button"
@@ -971,6 +986,7 @@ export function ConversationSidebar({
                   <ProjectSidebarSection
                     activeConversationId={activeConversationId}
                     collapsed={collapsedSections.has('projects')}
+                    compactSidebar={isCompactSidebar}
                     conversations={filteredProjectConversations}
                     customFolders={customFolders}
                     isBusy={isBusy}

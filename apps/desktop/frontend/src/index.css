@@ -154,9 +154,43 @@
 }
 
 .conversation-sidebar {
+  container-name: conversation-sidebar;
+  container-type: inline-size;
   width: var(--conversation-sidebar-width, min(280px, calc(100vw - 60px)));
   transform: translateX(0);
   transition: transform 240ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@container conversation-sidebar (max-width: 256px) {
+  .conversation-sidebar-toolbar {
+    gap: 4px;
+    padding-inline: 8px;
+  }
+
+  .conversation-sidebar-new-chat-group {
+    width: auto;
+    height: 32px;
+    flex: 0 0 auto;
+  }
+
+  .conversation-sidebar-new-chat-main {
+    width: 32px;
+    flex: 0 0 32px;
+    justify-content: center;
+    padding-inline: 0;
+  }
+
+  .conversation-sidebar-new-chat-label,
+  .conversation-sidebar-new-chat-plus,
+  .conversation-sidebar-agent-chevron {
+    display: none;
+  }
+
+  .conversation-sidebar-agent-button,
+  .conversation-sidebar-toolbar-button {
+    width: 32px;
+    height: 32px;
+  }
 }
 
 .conversation-sidebar-shell[data-open='false'] > .conversation-sidebar {
@@ -185,6 +219,18 @@
   .conversation-sidebar-overflow-action {
     opacity: 1;
     pointer-events: auto;
+  }
+
+  .project-sidebar-item [data-sidebar-nav-item] {
+    padding-right: 4rem;
+  }
+
+  .conversation-sidebar-virtual-row:has(.conversation-sidebar-pin-action) [data-sidebar-nav-item] {
+    padding-right: 5.5rem;
+  }
+
+  .conversation-sidebar-virtual-row:not(:has(.conversation-sidebar-pin-action)) [data-sidebar-nav-item] {
+    padding-right: 4rem;
   }
 }
 

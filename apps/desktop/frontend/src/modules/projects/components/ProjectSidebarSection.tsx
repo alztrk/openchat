@@ -14,6 +14,7 @@ interface ProjectSidebarSectionProps {
   conversations: readonly ChatConversation[];
   status: 'idle' | 'loading' | 'ready' | 'error';
   collapsed: boolean;
+  compactSidebar?: boolean;
   activeConversationId: string | null;
   viewMode?: SidebarViewMode;
   isBusy: boolean;
@@ -42,6 +43,7 @@ export function ProjectSidebarSection({
   conversations,
   status,
   collapsed,
+  compactSidebar = false,
   activeConversationId,
   viewMode = 'compact',
   isBusy,
@@ -66,6 +68,7 @@ export function ProjectSidebarSection({
   const { t } = useTranslation();
   const [dropTargetId, setDropTargetId] = useState<string | null>(null);
   const [collapsedProjectIds, setCollapsedProjectIds] = useState<ReadonlySet<string>>(() => new Set());
+  const [expandedCompactProjectIds, setExpandedCompactProjectIds] = useState<ReadonlySet<string>>(() => new Set());
   const emptyMessage =
     status === 'loading' ? (
       <span aria-live="polite" className="flex items-center gap-2" role="status">
@@ -77,6 +80,16 @@ export function ProjectSidebarSection({
     ) : undefined;
 
   const toggleProjectExpanded = (projectId: string) => {
+    if (compactSidebar) {
+      setExpandedCompactProjectIds((current) => {
+        const next = new Set(current);
+        if (next.has(projectId)) next.delete(projectId);
+        else next.add(projectId);
+        return next;
+      });
+      return;
+    }
+
     setCollapsedProjectIds((current) => {
       const next = new Set(current);
       if (next.has(projectId)) next.delete(projectId);
@@ -110,7 +123,9 @@ export function ProjectSidebarSection({
                 (conversation) => conversation.projectId === project.id && !conversation.isPinned,
               );
               const selected = projectConversations.some((conversation) => conversation.id === activeConversationId);
-              const isProjectExpanded = !collapsedProjectIds.has(project.id);
+              const isProjectExpanded = compactSidebar
+                ? expandedCompactProjectIds.has(project.id)
+                : !collapsedProjectIds.has(project.id);
               const ProjectFolderIcon = isProjectExpanded && projectConversations.length > 0 ? FolderOpen : Folder;
               return (
                 <li
