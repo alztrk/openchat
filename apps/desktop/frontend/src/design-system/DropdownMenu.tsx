@@ -6,6 +6,16 @@ import { cn } from '@/shared/utils/cn';
 export const DropdownMenu = DropdownMenuPrimitive.Root;
 export const DropdownMenuTrigger = DropdownMenuPrimitive.Trigger;
 export const DropdownMenuGroup = DropdownMenuPrimitive.Group;
+export const DropdownMenuSub = DropdownMenuPrimitive.Sub;
+
+export const DropdownMenuSubTrigger = forwardRef<
+  ElementRef<typeof DropdownMenuPrimitive.SubTrigger>,
+  ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.SubTrigger>
+>(function DropdownMenuSubTrigger({ className, ...props }, ref) {
+  return (
+    <DropdownMenuPrimitive.SubTrigger className={cn('openchat-dropdown-menu-item', className)} ref={ref} {...props} />
+  );
+});
 
 export const DropdownMenuContent = forwardRef<
   ElementRef<typeof DropdownMenuPrimitive.Content>,
@@ -15,6 +25,22 @@ export const DropdownMenuContent = forwardRef<
     <DropdownMenuPrimitive.Portal>
       <DropdownMenuPrimitive.Content
         align="end"
+        className={cn('openchat-dropdown-surface openchat-dropdown-menu min-w-48', className)}
+        ref={ref}
+        sideOffset={sideOffset}
+        {...props}
+      />
+    </DropdownMenuPrimitive.Portal>
+  );
+});
+
+export const DropdownMenuSubContent = forwardRef<
+  ElementRef<typeof DropdownMenuPrimitive.SubContent>,
+  ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.SubContent>
+>(function DropdownMenuSubContent({ className, sideOffset = 6, ...props }, ref) {
+  return (
+    <DropdownMenuPrimitive.Portal>
+      <DropdownMenuPrimitive.SubContent
         className={cn('openchat-dropdown-surface openchat-dropdown-menu min-w-48', className)}
         ref={ref}
         sideOffset={sideOffset}

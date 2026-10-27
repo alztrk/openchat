@@ -3,10 +3,12 @@ import {
   Bot,
   Check,
   ChevronDown,
+  ChevronRight,
   Clock3,
   Folder,
   FolderOpen,
   FolderPlus,
+  Menu,
   MessageSquare,
   Pencil,
   Pin,
@@ -37,6 +39,9 @@ import {
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
   Input,
 } from '@/design-system';
@@ -79,6 +84,7 @@ import { ConversationSidebarRow } from './ConversationSidebarRow';
 import { ConversationSidebarSection } from './ConversationSidebarSection';
 
 const SIDEBAR_PAGE_SIZE = 50;
+const SIDEBAR_COMPACT_WIDTH = 256;
 
 export type RecencyBucketKey = 'today' | 'yesterday' | 'previous7Days' | 'previous30Days' | 'older';
 
@@ -186,14 +192,15 @@ export function ConversationSidebar({
   const drawerRef = useRef<HTMLElement | null>(null);
   const scrollAreaRef = useRef<HTMLDivElement | null>(null);
   const newFolderInputRef = useRef<HTMLInputElement | null>(null);
-  const [isCompactSidebar, setIsCompactSidebar] = useState(() => sidebarWidth <= SIDEBAR_MIN_WIDTH + 36);
+  const [isCompactSidebar, setIsCompactSidebar] = useState(() => sidebarWidth <= SIDEBAR_COMPACT_WIDTH);
 
   useEffect(() => {
     const sidebar = drawerRef.current;
     if (!sidebar) return;
 
     const updateCompactLayout = () => {
-      setIsCompactSidebar(sidebar.clientWidth <= SIDEBAR_MIN_WIDTH + 36);
+      const width = sidebar.clientWidth;
+      setIsCompactSidebar(width <= SIDEBAR_COMPACT_WIDTH);
     };
 
     updateCompactLayout();
@@ -724,6 +731,100 @@ export function ConversationSidebar({
   const showChats = (sectionFilter === 'all' || sectionFilter === 'chats') && sectionIsVisible(visibleChats, true);
   const showArchived =
     (sectionFilter === 'all' || sectionFilter === 'chats') && sectionIsVisible(visibleArchived, false);
+  const agentMenuItems = (
+    <>
+      {agentProfilesLoadState === 'idle' || agentProfilesLoadState === 'loading' ? (
+        <p aria-live="polite" className="px-2 py-2 text-xs text-secondary-text" role="status">
+          {t('modelsLoading')}
+        </p>
+      ) : agentProfilesLoadState === 'error' ? (
+        <div className="grid gap-1 px-2 py-2" role="alert">
+          <p className="text-xs text-destructive">{t('assistantProfilesLoadFailed')}</p>
+          <DropdownMenuItem asChild onSelect={retryAgentProfiles}>
+            <Button className="w-full justify-start" size="small" type="button" variant="ghost">
+              {t('retry')}
+            </Button>
+          </DropdownMenuItem>
+        </div>
+      ) : agentProfiles.length > 0 ? (
+        agentProfiles.map((agent) => (
+          <DropdownMenuItem
+            asChild
+            className="w-full min-w-0 gap-2"
+            disabled={isBusy}
+            key={agent.id}
+            onSelect={() => handleNewChatWithAgent(agent)}
+            textValue={agent.name}
+          >
+            <Button className="w-full justify-start" disabled={isBusy} size="small" type="button" variant="ghost">
+              <Bot aria-hidden="true" className="shrink-0 text-secondary-icon" size={15} />
+              <span className="min-w-0 flex-1 truncate text-left">{agent.name}</span>
+            </Button>
+          </DropdownMenuItem>
+        ))
+      ) : (
+        <p className="px-2 py-2 text-xs text-secondary-text" role="status">
+          {t('assistantProfilesEmpty')}
+        </p>
+      )}
+      <DropdownMenuSeparator />
+      <DropdownMenuItem asChild className="w-full min-w-0 gap-2" onSelect={handleManageAgents}>
+        <Button className="w-full justify-start" size="small" type="button" variant="ghost">
+          <Bot aria-hidden="true" className="shrink-0 text-secondary-icon" size={15} />
+          <span>{t('assistantProfileManage')}</span>
+        </Button>
+      </DropdownMenuItem>
+    </>
+  );
+  const viewAndSortMenuItems = (
+    <>
+      <DropdownMenuLabel>{t('sidebarViewModeLabel')}</DropdownMenuLabel>
+      {(['compact', 'detailed'] as const).map((mode) => (
+        <DropdownMenuItem
+          aria-checked={viewMode === mode}
+          className="justify-between"
+          key={mode}
+          onSelect={() => {
+            setViewMode(mode);
+            writeSidebarViewMode(mode);
+          }}
+          role="menuitemradio"
+        >
+          <span>{t(mode === 'compact' ? 'sidebarViewCompact' : 'sidebarViewDetailed')}</span>
+          {viewMode === mode ? <Check aria-hidden="true" className="text-accent" size={13} /> : null}
+        </DropdownMenuItem>
+      ))}
+      <DropdownMenuSeparator />
+      <DropdownMenuLabel>{t('sidebarSortByLabel')}</DropdownMenuLabel>
+      {(
+        [
+          { id: 'updatedAt', labelKey: 'sidebarSortUpdatedAt' },
+          { id: 'createdAt', labelKey: 'sidebarSortCreatedAt' },
+          { id: 'alphabetical', labelKey: 'sidebarSortAlphabetical' },
+          { id: 'manual', labelKey: 'sidebarSortManual' },
+        ] as const
+      ).map((option) => (
+        <DropdownMenuItem
+          aria-checked={sortMode === option.id}
+          className="justify-between"
+          key={option.id}
+          onSelect={() => {
+            setSortMode(option.id);
+            writeSidebarSortMode(option.id);
+          }}
+          role="menuitemradio"
+        >
+          <span>{t(option.labelKey)}</span>
+          {sortMode === option.id ? <Check aria-hidden="true" className="text-accent" size={13} /> : null}
+        </DropdownMenuItem>
+      ))}
+      <DropdownMenuSeparator />
+      <DropdownMenuItem onSelect={() => setIsCreatingFolder(true)}>
+        <Folder aria-hidden="true" size={14} />
+        <span>{t('createCustomFolder')}</span>
+      </DropdownMenuItem>
+    </>
+  );
 
   return (
     <>
@@ -738,6 +839,72 @@ export function ConversationSidebar({
         tabIndex={isDrawer ? -1 : undefined}
       >
         <div className="conversation-sidebar-toolbar sticky top-0 z-10 flex shrink-0 items-center gap-1.5 bg-navigation/80 px-3 pt-3 pb-2 backdrop-blur-md">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                aria-label={t('moreOptions')}
+                className="conversation-sidebar-minimal-menu-trigger size-9 shrink-0 border-border bg-surface/80 px-0 text-secondary-icon shadow-2xs backdrop-blur-sm transition-all duration-quick hover:border-control-border hover:bg-raised/90 hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+                size="icon"
+                title={t('moreOptions')}
+                type="button"
+                variant="secondary"
+              >
+                <Menu aria-hidden="true" size={16} />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" aria-label={t('moreOptions')} className="min-w-56">
+              <DropdownMenuItem onSelect={handleNewChat}>
+                <SquarePen aria-hidden="true" size={14} />
+                <span>{t('newChat')}</span>
+              </DropdownMenuItem>
+              <DropdownMenuSub>
+                <DropdownMenuSubTrigger className="justify-between" disabled={isBusy}>
+                  <span className="flex min-w-0 items-center gap-3">
+                    <Bot aria-hidden="true" size={14} />
+                    <span className="truncate">{t('newChatWithAgent')}</span>
+                  </span>
+                  <ChevronRight aria-hidden="true" size={14} />
+                </DropdownMenuSubTrigger>
+                <DropdownMenuSubContent aria-label={t('newChatWithAgent')} className="min-w-60">
+                  <DropdownMenuLabel>{t('newChatWithAgent')}</DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  {agentMenuItems}
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem disabled={isBusy} onSelect={() => setCreateProjectOpen(true)}>
+                <FolderPlus aria-hidden="true" size={14} />
+                <span>{t('createProject')}</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                aria-checked={Boolean(temporaryChat)}
+                className="justify-between"
+                onSelect={handleStartTemporaryChat}
+                role="menuitemcheckbox"
+              >
+                <span className="flex min-w-0 items-center gap-3">
+                  <Clock3 aria-hidden="true" size={14} />
+                  <span className="truncate">
+                    {t(temporaryChat ? 'temporaryChatEndButtonTitle' : 'temporaryChatStartButtonTitle')}
+                  </span>
+                </span>
+                {temporaryChat ? <Check aria-hidden="true" className="text-accent" size={13} /> : null}
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuSub>
+                <DropdownMenuSubTrigger className="justify-between">
+                  <span className="flex min-w-0 items-center gap-3">
+                    <SlidersHorizontal aria-hidden="true" size={14} />
+                    <span className="truncate">{t('sidebarViewAndSortOptions')}</span>
+                  </span>
+                  <ChevronRight aria-hidden="true" size={14} />
+                </DropdownMenuSubTrigger>
+                <DropdownMenuSubContent aria-label={t('sidebarViewAndSortOptions')} className="min-w-52">
+                  {viewAndSortMenuItems}
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <div className="conversation-sidebar-new-chat-group flex h-9 min-w-0 flex-1 overflow-hidden rounded-button border border-border bg-surface/80 shadow-2xs backdrop-blur-sm">
             <Button
               aria-label={t('newChat')}
@@ -780,47 +947,7 @@ export function ConversationSidebar({
               <DropdownMenuContent align="start" aria-label={t('newChatWithAgent')} className="min-w-60">
                 <DropdownMenuLabel>{t('newChatWithAgent')}</DropdownMenuLabel>
                 <DropdownMenuSeparator />
-                {agentProfilesLoadState === 'idle' || agentProfilesLoadState === 'loading' ? (
-                  <p aria-live="polite" className="px-2 py-2 text-xs text-secondary-text" role="status">
-                    {t('modelsLoading')}
-                  </p>
-                ) : agentProfilesLoadState === 'error' ? (
-                  <div className="grid gap-1 px-2 py-2" role="alert">
-                    <p className="text-xs text-destructive">{t('assistantProfilesLoadFailed')}</p>
-                    <DropdownMenuItem asChild onSelect={retryAgentProfiles}>
-                      <Button className="w-full justify-start" size="small" type="button" variant="ghost">
-                        {t('retry')}
-                      </Button>
-                    </DropdownMenuItem>
-                  </div>
-                ) : agentProfiles.length > 0 ? (
-                  agentProfiles.map((agent) => (
-                    <DropdownMenuItem
-                      asChild
-                      className="w-full min-w-0 gap-2"
-                      disabled={isBusy}
-                      key={agent.id}
-                      onSelect={() => handleNewChatWithAgent(agent)}
-                      textValue={agent.name}
-                    >
-                      <Button className="w-full justify-start" disabled={isBusy} size="small" type="button" variant="ghost">
-                        <Bot aria-hidden="true" className="shrink-0 text-secondary-icon" size={15} />
-                        <span className="min-w-0 flex-1 truncate text-left">{agent.name}</span>
-                      </Button>
-                    </DropdownMenuItem>
-                  ))
-                ) : (
-                  <p className="px-2 py-2 text-xs text-secondary-text" role="status">
-                    {t('assistantProfilesEmpty')}
-                  </p>
-                )}
-                <DropdownMenuSeparator />
-                <DropdownMenuItem asChild className="w-full min-w-0 gap-2" onSelect={handleManageAgents}>
-                  <Button className="w-full justify-start" size="small" type="button" variant="ghost">
-                    <Bot aria-hidden="true" className="shrink-0 text-secondary-icon" size={15} />
-                    <span>{t('assistantProfileManage')}</span>
-                  </Button>
-                </DropdownMenuItem>
+                {agentMenuItems}
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
@@ -866,55 +993,7 @@ export function ConversationSidebar({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent aria-label={t('sidebarViewAndSortOptions')} className="min-w-52">
-              <DropdownMenuLabel>{t('sidebarViewModeLabel')}</DropdownMenuLabel>
-              {(['compact', 'detailed'] as const).map((mode) => (
-                <DropdownMenuItem
-                  aria-checked={viewMode === mode}
-                  className="justify-between"
-                  key={mode}
-                  onSelect={() => {
-                    setViewMode(mode);
-                    writeSidebarViewMode(mode);
-                  }}
-                  role="menuitemradio"
-                >
-                  <span>{t(mode === 'compact' ? 'sidebarViewCompact' : 'sidebarViewDetailed')}</span>
-                  {viewMode === mode ? <Check aria-hidden="true" className="text-accent" size={13} /> : null}
-                </DropdownMenuItem>
-              ))}
-              <DropdownMenuSeparator />
-              <DropdownMenuLabel>{t('sidebarSortByLabel')}</DropdownMenuLabel>
-              {(
-                [
-                  { id: 'updatedAt', labelKey: 'sidebarSortUpdatedAt' },
-                  { id: 'createdAt', labelKey: 'sidebarSortCreatedAt' },
-                  { id: 'alphabetical', labelKey: 'sidebarSortAlphabetical' },
-                  { id: 'manual', labelKey: 'sidebarSortManual' },
-                ] as const
-              ).map((option) => (
-                <DropdownMenuItem
-                  aria-checked={sortMode === option.id}
-                  className="justify-between"
-                  key={option.id}
-                  onSelect={() => {
-                    setSortMode(option.id);
-                    writeSidebarSortMode(option.id);
-                  }}
-                  role="menuitemradio"
-                >
-                  <span>{t(option.labelKey)}</span>
-                  {sortMode === option.id ? <Check aria-hidden="true" className="text-accent" size={13} /> : null}
-                </DropdownMenuItem>
-              ))}
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                onSelect={() => {
-                  setIsCreatingFolder(true);
-                }}
-              >
-                <Folder aria-hidden="true" size={14} />
-                <span>{t('createCustomFolder')}</span>
-              </DropdownMenuItem>
+              {viewAndSortMenuItems}
             </DropdownMenuContent>
           </DropdownMenu>
         </div>

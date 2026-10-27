@@ -13,7 +13,7 @@ export interface CustomSidebarFolder {
 }
 
 export const SIDEBAR_DEFAULT_WIDTH = 280;
-export const SIDEBAR_MIN_WIDTH = 220;
+export const SIDEBAR_MIN_WIDTH = 152;
 export const SIDEBAR_MAX_WIDTH = 420;
 export const WORKSPACE_PANEL_DEFAULT_RATIO = 50;
 export const WORKSPACE_PANEL_MIN_RATIO = 30;
