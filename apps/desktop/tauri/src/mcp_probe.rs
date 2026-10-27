@@ -393,6 +393,8 @@ async fn probe_tools(
             additional_read_only_paths: &invocation.read_only_paths,
             additional_workspace_paths: &[],
             base_environment: Some(&base_environment),
+            path_override: None,
+            working_directory_state_file: None,
             internet_client: true,
             job_limits: Some(SandboxJobLimits {
                 active_process_limit: MAXIMUM_ACTIVE_PROBE_PROCESSES,

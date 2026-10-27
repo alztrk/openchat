@@ -512,10 +512,7 @@ export class LocalServiceClient {
       );
     }
 
-    const permissionCopyPromise =
-      method.startsWith('tools.permissions.') || method.startsWith('project.tool_permissions.')
-        ? getNativePermissionDialogCopy()
-        : Promise.resolve(null);
+    const permissionCopyPromise = getNativePermissionDialogCopy();
 
     let resolveResult: (value: JsonObject) => void = () => undefined;
     let rejectResult: (reason: LocalServiceError) => void = () => undefined;
