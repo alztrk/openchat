@@ -300,6 +300,7 @@ impl AppContainerSandbox {
         working_directory: &Path,
         additional_environment: &[(String, Zeroizing<String>)],
         base_environment: Option<&[(String, Zeroizing<String>)]>,
+        path_override: Option<&std::ffi::OsStr>,
     ) -> io::Result<Vec<u16>> {
         let mut variables = BTreeMap::new();
         if let Some(base_environment) = base_environment {
@@ -339,6 +340,18 @@ impl AppContainerSandbox {
                     );
                 }
             }
+        }
+        if let Some(path) = path_override {
+            if path.encode_wide().any(|unit| unit == 0) {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "The refreshed PATH contains a NUL character.",
+                ));
+            }
+            variables.insert(
+                "PATH".to_owned(),
+                Zeroizing::new(path.encode_wide().collect::<Vec<_>>()),
+            );
         }
         let working_directory = shell_path(working_directory);
         let working_directory_text = working_directory.to_string_lossy();

@@ -76,7 +76,10 @@ impl SandboxedProcess {
             options.additional_read_only_paths,
         )?;
         let workdir = sandbox.working_directory.clone();
-        let (application, arguments) = shell_invocation(command, &workdir);
+        let (application, arguments) = options
+            .working_directory_state_file
+            .map(|state_file| shell_invocation_with_state(command, &workdir, Some(state_file)))
+            .unwrap_or_else(|| shell_invocation(command, &workdir));
         Self::spawn_process(Some(sandbox), application, arguments, workdir, &[], options)
     }
 
@@ -87,7 +90,10 @@ impl SandboxedProcess {
         options: SandboxOptions<'_>,
     ) -> io::Result<Self> {
         validate_win32_string(OsStr::new(command))?;
-        let (application, arguments) = shell_invocation(command, workdir);
+        let (application, arguments) = options
+            .working_directory_state_file
+            .map(|state_file| shell_invocation_with_state(command, workdir, Some(state_file)))
+            .unwrap_or_else(|| shell_invocation(command, workdir));
         Self::spawn_process(
             None,
             application,
@@ -338,8 +344,12 @@ impl SandboxedProcess {
                 &workdir,
                 additional_environment,
                 options.base_environment,
+                options.path_override,
             )?)),
-            None => Some(inherited_environment_block(additional_environment)?),
+            None => Some(inherited_environment_block(
+                additional_environment,
+                options.path_override,
+            )?),
         };
         // SAFETY: All Win32 strings are NUL-terminated; startup, environment, and output structures stay live and writable for the call.
         let created = unsafe {
@@ -595,6 +605,14 @@ pub(crate) fn shell_invocation(
     command: &str,
     working_directory: &Path,
 ) -> (PathBuf, Vec<std::ffi::OsString>) {
+    shell_invocation_with_state(command, working_directory, None)
+}
+
+fn shell_invocation_with_state(
+    command: &str,
+    working_directory: &Path,
+    state_file: Option<&Path>,
+) -> (PathBuf, Vec<std::ffi::OsString>) {
     let pwsh = Path::new(r"C:\Program Files\PowerShell\7\pwsh.exe");
     if pwsh.exists() {
         return (
@@ -603,7 +621,7 @@ pub(crate) fn shell_invocation(
                 "-NoProfile".into(),
                 "-NonInteractive".into(),
                 "-Command".into(),
-                powershell_command(command, working_directory).into(),
+                powershell_command_with_state(command, working_directory, state_file).into(),
             ],
         );
     }
@@ -615,22 +633,18 @@ pub(crate) fn shell_invocation(
                 "-NoProfile".into(),
                 "-NonInteractive".into(),
                 "-Command".into(),
-                powershell_command(command, working_directory).into(),
+                powershell_command_with_state(command, working_directory, state_file).into(),
             ],
         );
     }
+    // The cmd.exe fallback cannot report its final directory without changing command semantics.
+    let command = format!(
+        "cd /D {} && {command}",
+        quote_windows_argument(working_directory.as_os_str())
+    );
     (
         PathBuf::from(r"C:\Windows\System32\cmd.exe"),
-        vec![
-            "/D".into(),
-            "/S".into(),
-            "/C".into(),
-            format!(
-                "cd /D {} && {command}",
-                quote_windows_argument(working_directory.as_os_str())
-            )
-            .into(),
-        ],
+        vec!["/D".into(), "/S".into(), "/C".into(), command.into()],
     )
 }
 
@@ -642,8 +656,24 @@ pub(crate) fn powershell_command(command: &str, working_directory: &Path) -> Str
     )
 }
 
+fn powershell_command_with_state(
+    command: &str,
+    working_directory: &Path,
+    state_file: Option<&Path>,
+) -> String {
+    let Some(state_file) = state_file else {
+        return powershell_command(command, working_directory);
+    };
+    let initial_command = powershell_command("", working_directory);
+    let state_file = state_file.to_string_lossy().replace('\'', "''");
+    format!(
+        "{initial_command} try {{ {command}; $commandSucceeded = $?; $nativeExitCode = $LASTEXITCODE; $commandExitCode = if ($commandSucceeded) {{ 0 }} elseif ($null -ne $nativeExitCode -and $nativeExitCode -ne 0) {{ $nativeExitCode }} else {{ 1 }} }} finally {{ $location = Get-Location; if ($location.Provider.Name -eq 'FileSystem') {{ [System.IO.File]::WriteAllText('{state_file}', $location.ProviderPath, [System.Text.UTF8Encoding]::new($false)) }} }}; if ($null -ne $commandExitCode) {{ exit $commandExitCode }}"
+    )
+}
+
 fn inherited_environment_block(
     additional_environment: &[(String, Zeroizing<String>)],
+    path_override: Option<&OsStr>,
 ) -> io::Result<Zeroizing<Vec<u16>>> {
     let mut variables = std::env::vars_os().collect::<Vec<_>>();
     for (name, value) in additional_environment {
@@ -660,6 +690,22 @@ fn inherited_environment_block(
             *existing_value = value.as_str().into();
         } else {
             variables.push((name.into(), value.as_str().into()));
+        }
+    }
+    if let Some(path) = path_override {
+        if path.encode_wide().any(|unit| unit == 0) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "The refreshed PATH contains a NUL character.",
+            ));
+        }
+        if let Some((_, value)) = variables
+            .iter_mut()
+            .find(|(name, _)| name.to_string_lossy().eq_ignore_ascii_case("PATH"))
+        {
+            *value = path.to_owned();
+        } else {
+            variables.push((OsStr::new("PATH").to_owned(), path.to_owned()));
         }
     }
     variables.sort_unstable_by(|(left, _), (right, _)| {

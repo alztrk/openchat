@@ -427,6 +427,16 @@ remain separate Rust processes with their existing storage and RPC boundaries.
   physical memory, clamped between 512 MiB and 8 GiB. If Windows cannot report
   physical memory, command startup fails closed. Project-scoped MCP stdio
   servers retain their separate, stricter limits documented above.
+- Each terminal command starts a new shell process. The terminal manager carries
+  the final filesystem directory between commands for the owning conversation,
+  only while it remains inside an approved workspace root. A small private
+  state file is created for the command and removed after process cleanup; the
+  restricted AppContainer receives a separate write grant for that private
+  state directory.
+  New Windows terminal processes receive the current machine and user `PATH`
+  from the environment registry. A process already running keeps its original
+  environment, and shell variables other than `PATH` are not carried between
+  commands.
 - Conversation attachments are bounded by count, type, and size before storage
   or provider use. Tauri and service attachment reads and writes reject symbolic
   links or reparse-point redirection at the attachment root and conversation or

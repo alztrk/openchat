@@ -7,6 +7,8 @@
 #[cfg(windows)]
 mod appcontainer;
 #[cfg(windows)]
+mod environment;
+#[cfg(windows)]
 mod job_objects;
 #[cfg(windows)]
 mod process;
@@ -23,6 +25,8 @@ pub(crate) fn storage_broker_data_root() -> std::io::Result<PathBuf> {
 #[cfg(all(windows, test))]
 mod tests;
 
+#[cfg(windows)]
+pub(crate) use environment::fresh_path;
 #[cfg(windows)]
 pub use process::SandboxedProcess;
 #[cfg(windows)]

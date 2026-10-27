@@ -683,7 +683,7 @@ pub fn opencode_wire_tool(tool: &ToolDefinition) -> Value {
                 },
                 "additionalProperties": false
             }),
-            "Execute a shell command or interact with an active terminal session. Supports sending input when waiting for user response.",
+            "Execute a shell command or interact with an active terminal session. Each command runs in a fresh process. A successful working-directory change persists within this conversation and its approved workspace roots; new Windows commands use the current system and user PATH. Other shell variables do not persist. Supports sending input when waiting for user response.",
         ),
         "send_terminal_input" => (
             json!({
@@ -1189,7 +1189,7 @@ pub fn definitions() -> Vec<ToolDefinition> {
         ),
         (
             "execute_command",
-            "Execute a shell command or interact with an active terminal session. Runs in the project folder by default. In approval mode, requires user approval.",
+            "Execute a shell command or interact with an active terminal session. Runs in the project folder by default, with successful working-directory changes carried between commands in this conversation. Each command starts a fresh process and new Windows commands use the current system and user PATH. Other shell variables do not persist. In approval mode, requires user approval.",
             json!({
                 "type": "object",
                 "properties": {

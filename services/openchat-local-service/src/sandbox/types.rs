@@ -31,6 +31,10 @@ pub struct SandboxOptions<'a> {
     pub additional_workspace_paths: &'a [PathBuf],
     /// Explicit base variables for launchers that must not inherit the host profile.
     pub base_environment: Option<&'a [(String, Zeroizing<String>)]>,
+    /// Current host PATH to use for a newly spawned process, when available.
+    pub path_override: Option<&'a OsStr>,
+    /// Optional private file where shell wrappers report their final filesystem directory.
+    pub working_directory_state_file: Option<&'a Path>,
     /// Grants only the Windows `internetClient` capability.
     pub internet_client: bool,
     /// Optional limits applied to the entire child process tree.

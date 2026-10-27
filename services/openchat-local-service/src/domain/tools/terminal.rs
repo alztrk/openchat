@@ -4,10 +4,13 @@
 //! conversation that created it so one conversation cannot control another's process.
 use std::{
     collections::HashMap,
-    io,
+    fs, io,
     path::{Path, PathBuf},
     process::ExitStatus,
-    sync::{Arc, OnceLock},
+    sync::{
+        Arc, OnceLock,
+        atomic::{AtomicU64, Ordering},
+    },
     time::{Duration, Instant},
 };
 
@@ -40,6 +43,7 @@ const MAX_WAIT_MS: u64 = 30000;
 const QUIET_PERIOD_MS: u64 = 50;
 const MAX_BUFFER_BYTES: usize = 128 * 1024;
 const MAX_ACTIVE_TERMINAL_SESSIONS: usize = 16;
+const MAX_WORKING_DIRECTORY_STATES: usize = 512;
 const INTERNAL_TERMINAL_OWNER: &str = "openchat-internal";
 
 #[derive(Debug)]
@@ -112,6 +116,230 @@ fn same_path(left: &Path, right: &Path) -> bool {
         .eq_ignore_ascii_case(&right.to_string_lossy().replace('\\', "/"))
 }
 
+fn shell_quote_posix(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\\''"))
+}
+
+#[cfg(windows)]
+fn path_is_within(path: &Path, root: &Path) -> bool {
+    let path = path.to_string_lossy().replace('/', "\\");
+    let root = root.to_string_lossy().replace('/', "\\");
+    let root = root.trim_end_matches('\\');
+    path.eq_ignore_ascii_case(root)
+        || path
+            .get(..root.len())
+            .is_some_and(|prefix| prefix.eq_ignore_ascii_case(root))
+            && path
+                .as_bytes()
+                .get(root.len())
+                .is_some_and(|separator| *separator == b'\\')
+}
+
+#[cfg(not(windows))]
+fn path_is_within(path: &Path, root: &Path) -> bool {
+    path.starts_with(root)
+}
+
+#[derive(Clone)]
+struct WorkingDirectoryState {
+    workspace_root: PathBuf,
+    current_directory: PathBuf,
+    command_sequence: u64,
+    last_used: Instant,
+}
+
+enum CapturedWorkingDirectory {
+    Missing,
+    Valid(PathBuf),
+    OutsideAllowedRoots,
+}
+
+struct WorkingDirectoryCapture {
+    directory: PathBuf,
+    report_file: PathBuf,
+    workspace_root: PathBuf,
+    allowed_roots: Vec<PathBuf>,
+    command_sequence: u64,
+}
+
+impl WorkingDirectoryCapture {
+    async fn create(
+        workspace_root: PathBuf,
+        allowed_roots: Vec<PathBuf>,
+        command_sequence: u64,
+    ) -> io::Result<Self> {
+        let directory =
+            std::env::temp_dir().join(format!("OpenChatTerminalState-{}", Uuid::new_v4().simple()));
+        tokio::fs::create_dir(&directory).await?;
+        let report_file = directory.join("working-directory");
+        Ok(Self {
+            directory,
+            report_file,
+            workspace_root,
+            allowed_roots,
+            command_sequence,
+        })
+    }
+
+    fn read(&self) -> CapturedWorkingDirectory {
+        let Ok(metadata) = fs::metadata(&self.report_file) else {
+            return CapturedWorkingDirectory::Missing;
+        };
+        if metadata.len() > 32 * 1024 {
+            return CapturedWorkingDirectory::Missing;
+        }
+        let Ok(contents) = fs::read_to_string(&self.report_file) else {
+            return CapturedWorkingDirectory::Missing;
+        };
+        let directory = PathBuf::from(contents);
+        let Ok(directory) = fs::canonicalize(directory) else {
+            return CapturedWorkingDirectory::Missing;
+        };
+        if !directory.is_dir() {
+            return CapturedWorkingDirectory::Missing;
+        }
+        if self
+            .allowed_roots
+            .iter()
+            .any(|root| path_is_within(&directory, root))
+        {
+            CapturedWorkingDirectory::Valid(directory)
+        } else {
+            CapturedWorkingDirectory::OutsideAllowedRoots
+        }
+    }
+}
+
+impl Drop for WorkingDirectoryCapture {
+    fn drop(&mut self) {
+        if fs::remove_dir_all(&self.directory).is_err() {
+            eprintln!("terminal_state_cleanup_failed");
+        }
+    }
+}
+
+struct WorkingDirectoryUpdate {
+    current_directory: Option<PathBuf>,
+    reset_to_workspace_root: bool,
+}
+
+fn store_working_directory(
+    states: &mut HashMap<String, WorkingDirectoryState>,
+    owner_conversation_id: &str,
+    workspace_root: PathBuf,
+    current_directory: PathBuf,
+    command_sequence: u64,
+) {
+    if states
+        .get(owner_conversation_id)
+        .is_some_and(|state| state.command_sequence > command_sequence)
+    {
+        return;
+    }
+    if states.len() >= MAX_WORKING_DIRECTORY_STATES
+        && !states.contains_key(owner_conversation_id)
+        && let Some(oldest_owner) = states
+            .iter()
+            .min_by_key(|(_, state)| state.last_used)
+            .map(|(owner, _)| owner.clone())
+    {
+        states.remove(&oldest_owner);
+    }
+    states.insert(
+        owner_conversation_id.to_owned(),
+        WorkingDirectoryState {
+            workspace_root,
+            current_directory,
+            command_sequence,
+            last_used: Instant::now(),
+        },
+    );
+}
+
+async fn finalize_session_working_directory(
+    states: &Mutex<HashMap<String, WorkingDirectoryState>>,
+    session: &TerminalSession,
+) -> WorkingDirectoryUpdate {
+    let capture = session.working_directory_capture.lock().await.take();
+    let Some(capture) = capture else {
+        let current_directory =
+            current_working_directory(states, &session.owner_conversation_id).await;
+        return WorkingDirectoryUpdate {
+            current_directory,
+            reset_to_workspace_root: false,
+        };
+    };
+
+    let result = capture.read();
+    let mut states = states.lock().await;
+    if states
+        .get(&session.owner_conversation_id)
+        .is_some_and(|state| state.command_sequence > capture.command_sequence)
+    {
+        let current_directory = states.get_mut(&session.owner_conversation_id).map(|state| {
+            state.last_used = Instant::now();
+            state.current_directory.clone()
+        });
+        return WorkingDirectoryUpdate {
+            current_directory,
+            reset_to_workspace_root: false,
+        };
+    }
+    match result {
+        CapturedWorkingDirectory::Missing => {
+            let current_directory = states.get_mut(&session.owner_conversation_id).map(|state| {
+                state.last_used = Instant::now();
+                state.current_directory.clone()
+            });
+            WorkingDirectoryUpdate {
+                current_directory,
+                reset_to_workspace_root: false,
+            }
+        }
+        CapturedWorkingDirectory::Valid(current_directory) => {
+            store_working_directory(
+                &mut states,
+                &session.owner_conversation_id,
+                capture.workspace_root.clone(),
+                current_directory.clone(),
+                capture.command_sequence,
+            );
+            WorkingDirectoryUpdate {
+                current_directory: Some(current_directory),
+                reset_to_workspace_root: false,
+            }
+        }
+        CapturedWorkingDirectory::OutsideAllowedRoots => {
+            let workspace_root = capture.workspace_root.clone();
+            store_working_directory(
+                &mut states,
+                &session.owner_conversation_id,
+                workspace_root.clone(),
+                workspace_root.clone(),
+                capture.command_sequence,
+            );
+            WorkingDirectoryUpdate {
+                current_directory: Some(workspace_root),
+                reset_to_workspace_root: true,
+            }
+        }
+    }
+}
+
+async fn current_working_directory(
+    states: &Mutex<HashMap<String, WorkingDirectoryState>>,
+    owner_conversation_id: &str,
+) -> Option<PathBuf> {
+    states
+        .lock()
+        .await
+        .get_mut(owner_conversation_id)
+        .map(|state| {
+            state.last_used = Instant::now();
+            state.current_directory.clone()
+        })
+}
+
 /// A running command process with bounded, asynchronously captured output.
 pub struct TerminalSession {
     /// Random identifier returned to the owning conversation while the process is running.
@@ -129,13 +357,24 @@ pub struct TerminalSession {
     stdin: Arc<Mutex<Option<TerminalStdin>>>,
     output_buffer: Arc<Mutex<Vec<u8>>>,
     last_activity: Arc<Mutex<Instant>>,
+    working_directory_capture: Mutex<Option<WorkingDirectoryCapture>>,
     _session_slot: OwnedSemaphorePermit,
 }
 
 #[cfg(not(windows))]
-fn build_shell_command(command_str: &str) -> Command {
+fn build_shell_command(command_str: &str, state_file: Option<&Path>) -> Command {
     let mut cmd = Command::new("sh");
-    cmd.args(["-c", command_str]);
+    let command = match state_file {
+        Some(state_file) => {
+            let state_file = shell_quote_posix(&state_file.to_string_lossy());
+            let exit_trap = format!(
+                "__openchat_exit_code=$?; trap - EXIT; printf '%s' \"$PWD\" > {state_file}; exit \"$__openchat_exit_code\""
+            );
+            format!("trap {} EXIT\n{command_str}", shell_quote_posix(&exit_trap))
+        }
+        None => command_str.to_owned(),
+    };
+    cmd.args(["-c", &command]);
     cmd
 }
 
@@ -312,6 +551,8 @@ impl TerminalSession {
 /// Creates and controls process sessions while enforcing conversation ownership.
 pub struct TerminalSessionManager {
     sessions: Arc<Mutex<HashMap<String, Arc<TerminalSession>>>>,
+    working_directories: Arc<Mutex<HashMap<String, WorkingDirectoryState>>>,
+    next_working_directory_sequence: AtomicU64,
     session_slots: Arc<Semaphore>,
     backend: Arc<Mutex<SandboxBackend>>,
 }
@@ -331,6 +572,8 @@ impl TerminalSessionManager {
     fn with_session_limit(session_limit: usize) -> Self {
         let manager = Self {
             sessions: Arc::new(Mutex::new(HashMap::new())),
+            working_directories: Arc::new(Mutex::new(HashMap::new())),
+            next_working_directory_sequence: AtomicU64::new(0),
             session_slots: Arc::new(Semaphore::new(session_limit)),
             backend: Arc::new(Mutex::new(SandboxBackend::Native)),
         };
@@ -358,6 +601,7 @@ impl TerminalSessionManager {
 
     fn start_reaper(&self) {
         let sessions = Arc::clone(&self.sessions);
+        let working_directories = Arc::clone(&self.working_directories);
         tokio::spawn(async move {
             loop {
                 sleep(Duration::from_secs(10)).await;
@@ -375,7 +619,10 @@ impl TerminalSessionManager {
                         };
 
                     match session.is_running().await {
-                        Ok(false) => to_remove.push(id.clone()),
+                        Ok(false) => {
+                            finalize_session_working_directory(&working_directories, session).await;
+                            to_remove.push(id.clone());
+                        }
                         Ok(true) if expired || idle => {
                             if session.kill().await.is_err() {
                                 eprintln!("terminal_session_cleanup_failed");
@@ -400,6 +647,106 @@ impl TerminalSessionManager {
         });
     }
 
+    async fn resolve_working_directory(
+        &self,
+        workspace_root: &Path,
+        workspace_roots: &[PathBuf],
+        owner_conversation_id: &str,
+    ) -> Result<(PathBuf, PathBuf, Vec<PathBuf>, bool, u64), ToolRuntimeError> {
+        let command_sequence = self
+            .next_working_directory_sequence
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |sequence| {
+                sequence.checked_add(1)
+            })
+            .map(|previous| previous + 1)
+            .map_err(|_| {
+                ToolRuntimeError::new(
+                    "terminal_state_sequence_exhausted",
+                    "The terminal working-directory session could not be advanced.",
+                )
+            })?;
+        let workspace_root = tokio::fs::canonicalize(workspace_root)
+            .await
+            .map_err(|error| {
+                ToolRuntimeError::new(
+                    "terminal_workdir_unavailable",
+                    "The project working directory is unavailable.",
+                )
+                .with_details(error.to_string())
+            })?;
+        if !workspace_root.is_dir() {
+            return Err(ToolRuntimeError::new(
+                "terminal_workdir_unavailable",
+                "The project working directory is unavailable.",
+            ));
+        }
+
+        let mut allowed_roots = vec![workspace_root.clone()];
+        for root in workspace_roots {
+            let root = tokio::fs::canonicalize(root).await.map_err(|error| {
+                ToolRuntimeError::new(
+                    "terminal_workspace_unavailable",
+                    "An approved terminal workspace directory is unavailable.",
+                )
+                .with_details(error.to_string())
+            })?;
+            if !allowed_roots
+                .iter()
+                .any(|existing| same_path(existing, &root))
+            {
+                allowed_roots.push(root);
+            }
+        }
+
+        let previous = self
+            .working_directories
+            .lock()
+            .await
+            .get(owner_conversation_id)
+            .cloned();
+        let mut reset_to_workspace_root = false;
+        let current_directory = if let Some(previous) = previous {
+            if same_path(&previous.workspace_root, &workspace_root) {
+                match tokio::fs::canonicalize(&previous.current_directory).await {
+                    Ok(current_directory)
+                        if current_directory.is_dir()
+                            && allowed_roots
+                                .iter()
+                                .any(|root| path_is_within(&current_directory, root)) =>
+                    {
+                        current_directory
+                    }
+                    _ => {
+                        reset_to_workspace_root = true;
+                        workspace_root.clone()
+                    }
+                }
+            } else {
+                reset_to_workspace_root = true;
+                workspace_root.clone()
+            }
+        } else {
+            workspace_root.clone()
+        };
+
+        let mut directory_states = self.working_directories.lock().await;
+        store_working_directory(
+            &mut directory_states,
+            owner_conversation_id,
+            workspace_root.clone(),
+            current_directory.clone(),
+            command_sequence,
+        );
+        drop(directory_states);
+        Ok((
+            workspace_root,
+            current_directory,
+            allowed_roots,
+            reset_to_workspace_root,
+            command_sequence,
+        ))
+    }
+
     /// Starts a session owned by one conversation.
     ///
     /// The owner identifier is supplied by trusted execution context, not tool arguments.
@@ -420,6 +767,7 @@ impl TerminalSessionManager {
             &[],
             false,
             Some(Duration::from_secs(120)),
+            None,
         )
         .await
         .map_err(|error| error.message)
@@ -434,6 +782,7 @@ impl TerminalSessionManager {
         workspace_roots: &[PathBuf],
         full_access: bool,
         idle_timeout: Option<Duration>,
+        working_directory_capture: Option<WorkingDirectoryCapture>,
     ) -> Result<Arc<TerminalSession>, ToolRuntimeError> {
         let session_slot = Arc::clone(&self.session_slots)
             .try_acquire_owned()
@@ -457,6 +806,14 @@ impl TerminalSessionManager {
             Option<TerminalOutputReader>,
             Option<TerminalOutputReader>,
         ) = {
+            #[cfg(windows)]
+            let fresh_path = crate::sandbox::fresh_path().map_err(|error| {
+                ToolRuntimeError::new(
+                    "terminal_environment_refresh_failed",
+                    "Windows could not refresh PATH for the new terminal command.",
+                )
+                .with_details(error.to_string())
+            })?;
             let active_backend = *self.backend.lock().await;
             if active_backend == SandboxBackend::Wsl2 {
                 if !crate::sandbox::SandboxPolicy::is_wsl2_available() {
@@ -468,7 +825,13 @@ impl TerminalSessionManager {
                 let win_path = workdir.to_string_lossy().replace('\\', "/");
                 let escaped_workdir = win_path.replace('\'', "'\\''");
                 let mut cmd = tokio::process::Command::new("wsl.exe");
-                let additional_binds = workspace_roots
+                #[cfg(windows)]
+                cmd.env("PATH", &fresh_path);
+                let mut process_workspace_roots = workspace_roots.to_vec();
+                if let Some(capture) = &working_directory_capture {
+                    process_workspace_roots.push(capture.directory.clone());
+                }
+                let additional_binds = process_workspace_roots
                     .iter()
                     .filter(|root| !same_path(root, workdir))
                     .map(|root| {
@@ -479,8 +842,19 @@ impl TerminalSessionManager {
                         )
                     })
                     .collect::<String>();
-                // Escape single quotes safely for POSIX shell
-                let escaped_command = command_str.replace('\'', "'\\''");
+                let shell_command = match &working_directory_capture {
+                    Some(capture) => {
+                        let report_path = capture.report_file.to_string_lossy().replace('\\', "/");
+                        let report_path = shell_quote_posix(&report_path);
+                        let exit_trap = format!(
+                            "__openchat_exit_code=$?; trap - EXIT; __openchat_windows_pwd=\"$(wslpath -w \"$PWD\" 2>/dev/null)\" && printf '%s' \"$__openchat_windows_pwd\" > \"$(wslpath -u {report_path})\"; exit \"$__openchat_exit_code\""
+                        );
+                        format!("trap {} EXIT\n{command_str}", shell_quote_posix(&exit_trap))
+                    }
+                    None => command_str.to_owned(),
+                };
+                // Escape single quotes safely for the outer POSIX shell.
+                let escaped_command = shell_command.replace('\'', "'\\''");
                 let script = if full_access {
                     format!(
                         r#"WORKDIR="$(wslpath -u '{escaped_workdir}')" && cd "$WORKDIR" && sh -c '{escaped_command}'"#
@@ -505,6 +879,11 @@ impl TerminalSessionManager {
                 (TerminalChild::Process(proc), stdin, stdout, stderr)
             } else if full_access {
                 let options = command_sandbox_options(&[])?;
+                let mut options = options;
+                options.path_override = Some(&fresh_path);
+                options.working_directory_state_file = working_directory_capture
+                    .as_ref()
+                    .map(|capture| capture.report_file.as_path());
                 let mut child =
                     SandboxedProcess::spawn_without_sandbox(command_str, workdir, options)
                         .map_err(|error| ToolRuntimeError::process_start(error, "command"))?;
@@ -515,12 +894,19 @@ impl TerminalSessionManager {
                     child.take_stderr().map(|stream| Box::new(stream) as _);
                 (TerminalChild::Managed(child), stdin, stdout, stderr)
             } else {
-                let additional_roots = workspace_roots
+                let mut additional_roots = workspace_roots
                     .iter()
                     .filter(|root| !same_path(root, workdir))
                     .cloned()
                     .collect::<Vec<_>>();
-                let options = command_sandbox_options(&additional_roots)?;
+                if let Some(capture) = &working_directory_capture {
+                    additional_roots.push(capture.directory.clone());
+                }
+                let mut options = command_sandbox_options(&additional_roots)?;
+                options.path_override = Some(&fresh_path);
+                options.working_directory_state_file = working_directory_capture
+                    .as_ref()
+                    .map(|capture| capture.report_file.as_path());
                 let mut child = SandboxedProcess::spawn_with_options(command_str, workdir, options)
                     .map_err(|error| ToolRuntimeError::process_start(error, "sandboxed command"))?;
                 let stdin = child.take_stdin().map(TerminalStdin::Managed);
@@ -534,7 +920,12 @@ impl TerminalSessionManager {
 
         #[cfg(not(windows))]
         let (child, stdin, stdout, stderr) = {
-            let mut cmd = build_shell_command(command_str);
+            let mut cmd = build_shell_command(
+                command_str,
+                working_directory_capture
+                    .as_ref()
+                    .map(|capture| capture.report_file.as_path()),
+            );
             cmd.current_dir(workdir)
                 .stdin(std::process::Stdio::piped())
                 .stdout(std::process::Stdio::piped())
@@ -620,6 +1011,7 @@ impl TerminalSessionManager {
             stdin: Arc::new(Mutex::new(stdin)),
             output_buffer,
             last_activity,
+            working_directory_capture: Mutex::new(working_directory_capture),
             _session_slot: session_slot,
         });
 
@@ -682,21 +1074,45 @@ impl TerminalSessionManager {
         let wait_duration =
             Duration::from_millis(wait_ms.unwrap_or(DEFAULT_WAIT_MS).clamp(100, MAX_WAIT_MS));
 
+        let (workspace_root, workdir, allowed_roots, reset_to_workspace_root, command_sequence) =
+            self.resolve_working_directory(workdir, workspace_roots, owner_conversation_id)
+                .await?;
+        let capture =
+            WorkingDirectoryCapture::create(workspace_root, allowed_roots, command_sequence)
+                .await
+                .map_err(|error| {
+                    ToolRuntimeError::new(
+                        "terminal_state_initialization_failed",
+                        "The terminal working-directory state could not be initialized.",
+                    )
+                    .with_details(error.to_string())
+                })?;
+        let mut process_workspace_roots = workspace_roots.to_vec();
+        process_workspace_roots.push(capture.directory.clone());
+
         let session = self
             .create_session_with_workspace_roots(
                 command_str,
-                workdir,
+                &workdir,
                 owner_conversation_id,
                 timeout_seconds,
-                workspace_roots,
+                &process_workspace_roots,
                 full_access,
                 Some(Duration::from_secs(120)),
+                Some(capture),
             )
             .await?;
         let (output, _offset, truncated) = session.wait_for_output(0, wait_duration).await?;
         let status = session.process_status().await?;
 
         if let Some(status) = status {
+            let directory_update =
+                finalize_session_working_directory(&self.working_directories, &session).await;
+            let final_working_directory = directory_update
+                .current_directory
+                .unwrap_or_else(|| workdir.clone())
+                .to_string_lossy()
+                .into_owned();
             // Process completed within wait window; clean up session
             self.remove_session(&session.id).await;
             Ok(json!({
@@ -704,7 +1120,9 @@ impl TerminalSessionManager {
                 "is_running": false,
                 "exit_code": status.code(),
                 "output": output,
-                "truncated": truncated
+                "truncated": truncated,
+                "working_directory": final_working_directory,
+                "working_directory_reset": reset_to_workspace_root || directory_update.reset_to_workspace_root
             }))
         } else {
             // Process is still running (e.g. interactive prompt, server, long build)
@@ -716,6 +1134,8 @@ impl TerminalSessionManager {
                 "exit_code": Value::Null,
                 "output": output,
                 "truncated": truncated,
+                "working_directory": workdir.to_string_lossy(),
+                "working_directory_reset": reset_to_workspace_root,
                 "message": "The command is still running and may be waiting for input. Use send_terminal_input with this terminal_id to send input or read more output."
             }))
         }
@@ -750,6 +1170,7 @@ impl TerminalSessionManager {
                 Some(timeout_seconds),
                 &[],
                 full_access,
+                None,
                 None,
             )
             .await?;
@@ -946,22 +1367,33 @@ impl TerminalSessionManager {
         let status = session.process_status().await?;
 
         if let Some(status) = status {
+            let directory_update =
+                finalize_session_working_directory(&self.working_directories, &session).await;
+            let working_directory = directory_update
+                .current_directory
+                .map(|directory| directory.to_string_lossy().into_owned());
             self.remove_session(terminal_id).await;
             Ok(json!({
                 "terminal_id": terminal_id,
                 "is_running": false,
                 "exit_code": status.code(),
                 "output": output,
-                "truncated": truncated
+                "truncated": truncated,
+                "working_directory": working_directory,
+                "working_directory_reset": directory_update.reset_to_workspace_root
             }))
         } else {
+            let working_directory =
+                current_working_directory(&self.working_directories, owner_conversation_id).await;
             Ok(json!({
                 "terminal_id": terminal_id,
                 "is_running": true,
                 "waiting_for_input": true,
                 "exit_code": Value::Null,
                 "output": output,
-                "truncated": truncated
+                "truncated": truncated,
+                "working_directory": working_directory
+                    .map(|directory| directory.to_string_lossy().into_owned())
             }))
         }
     }
@@ -982,16 +1414,33 @@ impl TerminalSessionManager {
         let (output, _offset, truncated) = session.wait_for_output(0, wait_duration).await?;
         let status = session.process_status().await?;
 
-        if status.is_some() {
+        let directory_update = if status.is_some() {
+            let update =
+                finalize_session_working_directory(&self.working_directories, &session).await;
             self.remove_session(terminal_id).await;
-        }
+            update
+        } else {
+            WorkingDirectoryUpdate {
+                current_directory: current_working_directory(
+                    &self.working_directories,
+                    owner_conversation_id,
+                )
+                .await,
+                reset_to_workspace_root: false,
+            }
+        };
+        let working_directory = directory_update
+            .current_directory
+            .map(|directory| directory.to_string_lossy().into_owned());
 
         Ok(json!({
             "terminal_id": terminal_id,
             "is_running": status.is_none(),
             "exit_code": status.and_then(|status| status.code()),
             "output": output,
-            "truncated": truncated
+            "truncated": truncated,
+            "working_directory": working_directory,
+            "working_directory_reset": directory_update.reset_to_workspace_root
         }))
     }
 
@@ -1016,6 +1465,7 @@ impl TerminalSessionManager {
 
     pub async fn stop_all(&self) -> Result<(), String> {
         let sessions = std::mem::take(&mut *self.sessions.lock().await);
+        self.working_directories.lock().await.clear();
         let mut first_error = None;
 
         for session in sessions.into_values() {
