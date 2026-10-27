@@ -33,12 +33,10 @@
 }
 
 .app-shell {
+  --app-shell-radius: 20px;
   display: grid;
   grid-template-columns: 60px minmax(0, 1fr);
   grid-template-rows: 48px minmax(0, 1fr) 20px;
-}
-
-.app-shell:has(.chat-workspace-layout) {
   background: rgb(var(--surface));
 }
 
@@ -61,15 +59,15 @@
   grid-row: 2;
   min-height: 0;
   min-width: 0;
+  margin-inline-end: 5px;
   overflow: hidden;
   border: 1px solid rgb(var(--border) / var(--border-alpha, 0.1));
+  border-radius: var(--app-shell-radius);
+  background: rgb(var(--surface));
 }
 
 .app-shell-main:has(.chat-workspace-layout) {
-  --chat-frame-radius: 20px;
-  border: 1px solid rgb(var(--border) / var(--border-alpha, 0.1));
-  margin-inline-end: 5px;
-  background: rgb(var(--surface));
+  --chat-frame-radius: var(--app-shell-radius);
 }
 
 .app-shell-footer {
