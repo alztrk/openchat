@@ -83,6 +83,20 @@ remain separate Rust processes with their existing storage and RPC boundaries.
   worktrees, and named-task operations are dispatched by
   `services/openchat-local-service/src/transport/rpc/projects.rs`. The transport
   dispatcher routes the `project.*` namespace to this domain module.
+- Security scans have a dedicated renderer module and persistent
+  `security.scans.*` RPC records. Each record binds one project, selected
+  canonical workspace roots, provider route, conversation, and durable
+  lifecycle state. Scan runs use a fixed English instruction set and an exact
+  read-only allowlist (`list_files`, `search_files`, `read_file`,
+  `get_file_info`, `web_search`, `read_url_content`, and `goal_update`) with an
+  empty project context; the scan cannot inherit project instructions, Skills,
+  MCP tools, or ordinary chat tool permissions. The local service enforces the
+  selected-root boundary for filesystem calls. The dedicated page displays
+  each scan's streamed assistant messages, actual tool activity, model-updated
+  goal checklist, status, elapsed time, quota wait, and stop/resume
+  controls. Independent records and runtimes support parallel scans. Retry
+  deadlines and state are persisted; restart-safe automatic retry still needs
+  end-to-end validation.
 - Local engine and model catalog routes, including Hugging Face model search
   and downloads, are dispatched by
   `services/openchat-local-service/src/transport/rpc/local_engine_models.rs`. The
