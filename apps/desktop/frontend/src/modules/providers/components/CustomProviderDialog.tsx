@@ -56,6 +56,7 @@ export function CustomProviderDialog({
   const [errorKey, setErrorKey] = useState<
     | 'customProviderInvalid'
     | 'customProviderUrlInvalid'
+    | 'customProviderHttpLoopbackRequired'
     | 'customProviderHttpApprovalRequired'
     | 'customProviderReasoningLevelRequired'
     | 'apiKeyInvalidFormat'
@@ -91,6 +92,10 @@ export function CustomProviderDialog({
     }
     if (!isValidBaseUrl(normalizedUrl)) {
       setErrorKey('customProviderUrlInvalid');
+      return;
+    }
+    if (isHttpUrl(normalizedUrl) && !isLoopbackHttpUrl(normalizedUrl)) {
+      setErrorKey('customProviderHttpLoopbackRequired');
       return;
     }
     if (isHttpUrl(normalizedUrl) && !allowInsecureHttp) {
@@ -294,6 +299,20 @@ function isValidBaseUrl(value: string): boolean {
 function isHttpUrl(value: string): boolean {
   try {
     return new URL(value.trim()).protocol === 'http:';
+  } catch {
+    return false;
+  }
+}
+
+/** Restricts unencrypted HTTP providers to endpoints on this device. */
+function isLoopbackHttpUrl(value: string): boolean {
+  try {
+    const hostname = new URL(value.trim()).hostname.toLowerCase();
+    return (
+      hostname === 'localhost' ||
+      hostname === '[::1]' ||
+      /^127(?:\.(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$/.test(hostname)
+    );
   } catch {
     return false;
   }

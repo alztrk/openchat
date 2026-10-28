@@ -100,6 +100,12 @@ const settingsSections: Array<{
     icon: <SlidersHorizontal aria-hidden="true" size={17} />,
   },
   {
+    section: 'appWindow',
+    translationKey: 'settingsAppWindowTitle',
+    searchTerms: ['startup', 'window', 'launch', 'workspace'],
+    icon: <Settings aria-hidden="true" size={17} />,
+  },
+  {
     section: 'appearance',
     translationKey: 'appearance',
     searchTerms: ['theme', 'font', 'accessibility'],

@@ -18,6 +18,7 @@ const skipLegacyLocalStorageImportSetting = 'internal.storage.skipLegacyLocalSto
 
 class UnifiedStorage {
   private cache = new Map<string, string>();
+  private persistedWrites = new Map<string, Promise<void>>();
   private initialized = false;
 
   /**
@@ -136,6 +137,34 @@ class UnifiedStorage {
     return this.cache.get(key) ?? null;
   }
 
+  /** Writes user-visible preferences durably before publishing the value in the cache. */
+  setPersistedItem(key: string, value: string): Promise<void> {
+    if (!isTauri()) {
+      this.cache.set(key, value);
+      return Promise.resolve();
+    }
+
+    return this.serializePersistedWrite(key, async () => {
+      const response = await localServiceClient.call('storage.settings.set', { key, valueJson: value });
+      assertServiceFlag(response, 'saved', `setting '${key}' persistence`);
+      this.cache.set(key, value);
+    });
+  }
+
+  /** Deletes a user-visible preference durably before removing it from the cache. */
+  removePersistedItem(key: string): Promise<void> {
+    if (!isTauri()) {
+      this.cache.delete(key);
+      return Promise.resolve();
+    }
+
+    return this.serializePersistedWrite(key, async () => {
+      const response = await localServiceClient.call('storage.settings.delete', { key });
+      assertServiceBoolean(response, 'deleted', `setting '${key}' deletion`);
+      this.cache.delete(key);
+    });
+  }
+
   setItem(key: string, value: string, persist = true): void {
     this.cache.set(key, value);
     if (isTauri() && persist) {
@@ -177,6 +206,17 @@ class UnifiedStorage {
 
   getAll(): Record<string, string> {
     return Object.fromEntries(this.cache.entries());
+  }
+
+  private serializePersistedWrite(key: string, write: () => Promise<void>): Promise<void> {
+    const previous = this.persistedWrites.get(key) ?? Promise.resolve();
+    const current = previous.catch(() => undefined).then(write);
+    let tracked: Promise<void>;
+    tracked = current.finally(() => {
+      if (this.persistedWrites.get(key) === tracked) this.persistedWrites.delete(key);
+    });
+    this.persistedWrites.set(key, tracked);
+    return tracked;
   }
 }
 

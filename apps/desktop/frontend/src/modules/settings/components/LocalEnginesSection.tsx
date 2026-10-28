@@ -318,7 +318,7 @@ export function LocalEnginesSection() {
     try {
       const selected = await open({ directory: true, multiple: false });
       if (typeof selected !== 'string') return;
-      if (!setDirectoryFor(engine.engineId, selected)) {
+      if (!(await setDirectoryFor(engine.engineId, selected))) {
         setErrorKey('localModelActionError');
         return;
       }
@@ -331,7 +331,7 @@ export function LocalEnginesSection() {
 
   const restoreEngineDefaultDirectory = async (engine: LocalEngine) => {
     if (activeAction !== null) return;
-    if (!resetDirectoryFor(engine.engineId)) {
+    if (!(await resetDirectoryFor(engine.engineId))) {
       setErrorKey('localModelActionError');
       return;
     }

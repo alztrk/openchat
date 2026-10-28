@@ -10,6 +10,10 @@ export interface NotificationPreferences {
   soundMuted: boolean;
   soundVolume: number;
   failureSoundEnabled: boolean;
+  quietHoursEnabled: boolean;
+  quietHoursStart: string;
+  quietHoursEnd: string;
+  mutedProjectIds: string[];
 }
 
 export type WindowsNotificationStatus =
@@ -49,6 +53,10 @@ const preferenceKeys: Record<keyof NotificationPreferences, string> = {
   soundMuted: 'notifications.sound_muted',
   soundVolume: 'notifications.sound_volume',
   failureSoundEnabled: 'notifications.failure_sound_enabled',
+  quietHoursEnabled: 'notifications.quiet_hours_enabled',
+  quietHoursStart: 'notifications.quiet_hours_start',
+  quietHoursEnd: 'notifications.quiet_hours_end',
+  mutedProjectIds: 'notifications.muted_project_ids',
 };
 
 const defaultPreferences: NotificationPreferences = {
@@ -60,6 +68,10 @@ const defaultPreferences: NotificationPreferences = {
   soundMuted: false,
   soundVolume: 0.7,
   failureSoundEnabled: true,
+  quietHoursEnabled: false,
+  quietHoursStart: '22:00',
+  quietHoursEnd: '08:00',
+  mutedProjectIds: [],
 };
 
 export function readNotificationPreferences(): NotificationPreferences {
@@ -72,18 +84,68 @@ export function readNotificationPreferences(): NotificationPreferences {
     soundMuted: readBooleanPreference('soundMuted'),
     soundVolume: readNumberPreference('soundVolume'),
     failureSoundEnabled: readBooleanPreference('failureSoundEnabled'),
+    quietHoursEnabled: readBooleanPreference('quietHoursEnabled'),
+    quietHoursStart: readTimePreference('quietHoursStart'),
+    quietHoursEnd: readTimePreference('quietHoursEnd'),
+    mutedProjectIds: readStringArrayPreference('mutedProjectIds'),
   };
 }
 
 export function writeNotificationPreference<K extends keyof NotificationPreferences>(
   key: K,
   value: NotificationPreferences[K],
-): void {
+): Promise<void> {
   try {
-    unifiedStorage.setItem(preferenceKeys[key], String(value));
+    if (key === 'soundVolume') {
+      if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 1) {
+        throw new Error('Notification sound volume is invalid.');
+      }
+    }
+    if (key === 'quietHoursStart' || key === 'quietHoursEnd') {
+      if (typeof value !== 'string' || !/^([01]\d|2[0-3]):[0-5]\d$/.test(value)) {
+        throw new Error('Notification quiet hours are invalid.');
+      }
+    }
+    if (key === 'mutedProjectIds') {
+      if (
+        !Array.isArray(value) ||
+        value.length > 1000 ||
+        !value.every((id: unknown) => typeof id === 'string' && id.length > 0 && id.length <= 128)
+      ) {
+        throw new Error('Muted project identifiers are invalid.');
+      }
+    }
+    if (
+      key !== 'soundVolume' &&
+      key !== 'quietHoursStart' &&
+      key !== 'quietHoursEnd' &&
+      key !== 'mutedProjectIds' &&
+      typeof value !== 'boolean'
+    ) {
+      throw new Error('Notification preference is invalid.');
+    }
+    return unifiedStorage.setPersistedItem(
+      preferenceKeys[key],
+      Array.isArray(value) ? JSON.stringify(value) : String(value),
+    );
   } catch {
     throw new Error('Notification preferences could not be saved.');
   }
+}
+
+export function shouldSuppressNotification(
+  preferences: NotificationPreferences,
+  projectId: string | null,
+  now: Date = new Date(),
+): boolean {
+  if (projectId !== null && preferences.mutedProjectIds.includes(projectId)) return true;
+  if (!preferences.quietHoursEnabled || preferences.quietHoursStart === preferences.quietHoursEnd) return false;
+  const currentMinute = now.getHours() * 60 + now.getMinutes();
+  const startMinute = timeToMinutes(preferences.quietHoursStart);
+  const endMinute = timeToMinutes(preferences.quietHoursEnd);
+  return startMinute < endMinute
+    ? currentMinute >= startMinute && currentMinute < endMinute
+    : currentMinute >= startMinute || currentMinute < endMinute;
 }
 
 export function readWindowsNotificationStatus(): Promise<WindowsNotificationStatus> {
@@ -130,7 +192,8 @@ type BooleanPreferenceKey =
   | 'quickReply'
   | 'soundEnabled'
   | 'soundMuted'
-  | 'failureSoundEnabled';
+  | 'failureSoundEnabled'
+  | 'quietHoursEnabled';
 
 function readBooleanPreference(key: BooleanPreferenceKey): boolean {
   let value: string | null;
@@ -159,4 +222,40 @@ function readNumberPreference(key: 'soundVolume'): number {
     throw new Error('Notification preferences are invalid.');
   }
   return parsed;
+}
+
+function readTimePreference(key: 'quietHoursStart' | 'quietHoursEnd'): string {
+  let value: string | null;
+  try {
+    value = unifiedStorage.getItem(preferenceKeys[key]);
+  } catch {
+    throw new Error('Notification preferences could not be read.');
+  }
+  if (value === null) return defaultPreferences[key];
+  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(value)) throw new Error('Notification preferences are invalid.');
+  return value;
+}
+
+function readStringArrayPreference(key: 'mutedProjectIds'): string[] {
+  let value: string | null;
+  try {
+    value = unifiedStorage.getItem(preferenceKeys[key]);
+  } catch {
+    throw new Error('Notification preferences could not be read.');
+  }
+  if (value === null) return defaultPreferences[key];
+  const parsed: unknown = JSON.parse(value);
+  if (
+    !Array.isArray(parsed) ||
+    parsed.length > 1000 ||
+    !parsed.every((item: unknown) => typeof item === 'string' && item.length > 0 && item.length <= 128)
+  ) {
+    throw new Error('Notification preferences are invalid.');
+  }
+  return [...new Set(parsed.filter((item: unknown): item is string => typeof item === 'string'))];
+}
+
+function timeToMinutes(value: string): number {
+  const [hours, minutes] = value.split(':').map(Number);
+  return (hours ?? 0) * 60 + (minutes ?? 0);
 }

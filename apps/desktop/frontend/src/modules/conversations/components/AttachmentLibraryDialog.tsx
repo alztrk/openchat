@@ -4,8 +4,8 @@ import { useTranslation } from 'react-i18next';
 
 import { Button, Card, Dialog, Input } from '@/design-system';
 import {
-  listConversationAttachments,
   type ConversationAttachmentSummary,
+  listConversationAttachments,
 } from '@/modules/conversations/data/chatStorage';
 
 const pageSize = 30;
@@ -17,12 +17,7 @@ interface AttachmentLibraryDialogProps {
   onSelect(item: ConversationAttachmentSummary): Promise<boolean>;
 }
 
-export function AttachmentLibraryDialog({
-  open,
-  disabled,
-  onOpenChange,
-  onSelect,
-}: AttachmentLibraryDialogProps) {
+export function AttachmentLibraryDialog({ open, disabled, onOpenChange, onSelect }: AttachmentLibraryDialogProps) {
   const { t } = useTranslation();
   const [query, setQuery] = useState('');
   const [items, setItems] = useState<ConversationAttachmentSummary[]>([]);
@@ -42,20 +37,23 @@ export function AttachmentLibraryDialog({
     setSelectionFailed(false);
     setItems([]);
     setNextOffset(null);
-    const timeoutId = window.setTimeout(() => {
-      void listConversationAttachments(0, pageSize, query, 'available')
-        .then((page) => {
-          if (cancelled) return;
-          setItems(page.items);
-          setNextOffset(page.nextOffset);
-        })
-        .catch(() => {
-          if (!cancelled) setError(true);
-        })
-        .finally(() => {
-          if (!cancelled) setLoading(false);
-        });
-    }, query.trim() ? 180 : 0);
+    const timeoutId = window.setTimeout(
+      () => {
+        void listConversationAttachments(0, pageSize, query, 'available')
+          .then((page) => {
+            if (cancelled) return;
+            setItems(page.items);
+            setNextOffset(page.nextOffset);
+          })
+          .catch(() => {
+            if (!cancelled) setError(true);
+          })
+          .finally(() => {
+            if (!cancelled) setLoading(false);
+          });
+      },
+      query.trim() ? 180 : 0,
+    );
     return () => {
       cancelled = true;
       window.clearTimeout(timeoutId);
@@ -117,7 +115,9 @@ export function AttachmentLibraryDialog({
           </div>
         ) : null}
         {selectionFailed ? (
-          <p className="text-sm text-destructive" role="alert">{t('attachmentLibraryAddFailed')}</p>
+          <p className="text-sm text-destructive" role="alert">
+            {t('attachmentLibraryAddFailed')}
+          </p>
         ) : null}
         {loading && items.length === 0 && !error ? (
           <p aria-live="polite" className="flex items-center gap-2 text-sm text-secondary-text" role="status">
@@ -133,7 +133,11 @@ export function AttachmentLibraryDialog({
         {items.length > 0 ? (
           <div className="grid gap-2">
             {items.map((item) => (
-              <Card className="flex min-w-0 flex-wrap items-center justify-between gap-3" key={`${item.conversationId}:${item.messageId}:${item.attachmentId}`} padding="compact">
+              <Card
+                className="flex min-w-0 flex-wrap items-center justify-between gap-3"
+                key={`${item.conversationId}:${item.messageId}:${item.attachmentId}`}
+                padding="compact"
+              >
                 <div className="flex min-w-0 items-start gap-2">
                   <File aria-hidden="true" className="mt-0.5 shrink-0 text-secondary-icon" size={16} />
                   <div className="min-w-0">
@@ -157,7 +161,13 @@ export function AttachmentLibraryDialog({
           </div>
         ) : null}
         {nextOffset !== null ? (
-          <Button className="justify-self-center" disabled={loading || disabled} onClick={() => void loadMore()} size="small" variant="secondary">
+          <Button
+            className="justify-self-center"
+            disabled={loading || disabled}
+            onClick={() => void loadMore()}
+            size="small"
+            variant="secondary"
+          >
             {loading ? <LoaderCircle aria-hidden="true" className="animate-spin" size={15} /> : null}
             {loading ? t('attachmentLibraryLoading') : t('loadMore')}
           </Button>

@@ -21,6 +21,7 @@ import type { ChatGoal } from '@/modules/conversations/data/chatGoals';
 import {
   clearHiddenModelKeys,
   clearModelContextLimits,
+  clearModelReasoningEfforts,
   type DefaultModelPreference,
   defaultPreferenceForModel,
   formatModelRouteKey,
@@ -30,6 +31,7 @@ import {
   writeHiddenModelKeys,
   writeLastSelectedModelPreference,
   writeModelContextLimit,
+  writeModelReasoningEffort,
 } from '@/modules/providers/data/modelPreferences';
 import type { AssistantAgentSnapshot } from '@/modules/settings/data/assistantProfiles';
 import { LocalServiceError, localServiceClient, type ServiceOperation } from '@/platform/local-service';
@@ -80,6 +82,8 @@ export type ChatErrorCode =
   | 'userQuestionUnavailable'
   | 'searchMessageUnavailable'
   | 'projectDefaultModelLoadFailed'
+  | 'assistantPreferencesLoadFailed'
+  | 'assistantProfileDefaultUnavailable'
   | 'projectToolRulesLoadFailed'
   | 'projectSkillsLoadFailed'
   | 'toolPermissionModeLoadFailed'
@@ -140,9 +144,11 @@ export interface ChatState {
   hiddenModelKeys: string[];
   defaultModel: DefaultModelPreference | null;
   modelContextLimits: Record<string, number>;
+  modelReasoningEfforts: Record<string, string>;
   defaultModelPreferenceInvalid: boolean;
   hiddenModelPreferencesInvalid: boolean;
   modelContextLimitsInvalid: boolean;
+  modelReasoningEffortsInvalid: boolean;
   personalMemoryExcludedForNewConversation: boolean;
   selectedModelKey: string | null;
   isLoadingMessages: boolean;
@@ -167,6 +173,8 @@ export interface ChatState {
   toggleHiddenModel(model: ChatModel): boolean;
   clearHiddenModelPreferences(): boolean;
   setModelContextLimit(routeKey: string, limit: number | null): boolean;
+  setModelReasoningEffort(routeKey: string, effort: string | null): boolean;
+  clearModelReasoningPreferences(): boolean;
   setPersonalMemoryExcludedForNewConversation(excluded: boolean): void;
   clearModelContextPreferences(): boolean;
   setPendingQuestionSendBlock(conversationId: string | null, blocked: boolean): void;
@@ -185,7 +193,7 @@ export interface ChatState {
   selectReasoningEffort(effort: string | null): void;
   selectConversation(id: string, targetMessageId?: string | null, targetQuery?: string | null): Promise<void>;
   refreshActiveGoal(conversationId: string): Promise<void>;
-  pauseActiveGoal(): Promise<void>;
+  pauseActiveGoal(reason?: 'user_paused' | 'budget_exceeded'): Promise<void>;
   stopActiveGoal(): Promise<void>;
   updateMessage(message: ChatMessage): void;
   clearSearchTarget(found: boolean): void;
@@ -250,9 +258,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
   hiddenModelKeys: [],
   defaultModel: null,
   modelContextLimits: {},
+  modelReasoningEfforts: {},
   defaultModelPreferenceInvalid: false,
   hiddenModelPreferencesInvalid: false,
   modelContextLimitsInvalid: false,
+  modelReasoningEffortsInvalid: false,
   personalMemoryExcludedForNewConversation: false,
   selectedModelKey: null,
   isLoadingMessages: false,
@@ -356,7 +366,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
             },
           }
         : {}),
-      selectedReasoningEffort: current.selectedModelKey === key ? current.selectedReasoningEffort : null,
+      selectedReasoningEffort:
+        current.selectedModelKey === key
+          ? current.selectedReasoningEffort
+          : model === null
+            ? null
+            : defaultReasoningEffort(model, current.modelReasoningEfforts),
       errorCode: null,
       errorMessage: null,
       opencodeRetryAtUnixMs: null,
@@ -403,7 +418,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
         ...(latest.activeConversationId === conversationId
           ? {
               selectedModelKey: key,
-              selectedReasoningEffort: current.selectedModelKey === key ? current.selectedReasoningEffort : null,
+              selectedReasoningEffort:
+                current.selectedModelKey === key
+                  ? current.selectedReasoningEffort
+                  : defaultReasoningEffort(model, latest.modelReasoningEfforts),
             }
           : {}),
       });
@@ -527,6 +545,39 @@ export const useChatStore = create<ChatState>((set, get) => ({
         else modelContextLimits[routeKey] = limit;
         return { modelContextLimits, modelContextLimitsInvalid: false };
       });
+      return true;
+    } catch {
+      return false;
+    }
+  },
+
+  setModelReasoningEffort(routeKey, effort) {
+    const model = get().models.find((item) => modelRouteKey(item) === routeKey);
+    if (!model?.supportsReasoning || (effort !== null && !model.reasoningLevels.includes(effort))) return false;
+    try {
+      writeModelReasoningEffort(routeKey, effort);
+      set((current) => {
+        const modelReasoningEfforts = { ...current.modelReasoningEfforts };
+        if (effort === null) delete modelReasoningEfforts[routeKey];
+        else modelReasoningEfforts[routeKey] = effort;
+        return {
+          modelReasoningEfforts,
+          modelReasoningEffortsInvalid: false,
+          ...(current.activeConversationId === null && current.selectedModelKey === model.key
+            ? { selectedReasoningEffort: effort }
+            : {}),
+        };
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  },
+
+  clearModelReasoningPreferences() {
+    try {
+      clearModelReasoningEfforts();
+      set({ modelReasoningEfforts: {}, modelReasoningEffortsInvalid: false });
       return true;
     } catch {
       return false;
@@ -657,8 +708,16 @@ function mapModelPreferences(preferences: ReturnType<typeof readModelPreferences
     defaultModel: preferences.defaultModel,
     hiddenModelKeys: preferences.hiddenModelKeys,
     modelContextLimits: preferences.contextLimits,
+    modelReasoningEfforts: preferences.reasoningEfforts,
     defaultModelPreferenceInvalid: preferences.defaultModelInvalid,
     hiddenModelPreferencesInvalid: preferences.hiddenModelKeysInvalid,
     modelContextLimitsInvalid: preferences.contextLimitsInvalid,
+    modelReasoningEffortsInvalid: preferences.reasoningEffortsInvalid,
   };
+}
+
+function defaultReasoningEffort(model: ChatModel, preferences: Readonly<Record<string, string>>): string | null {
+  if (!model.supportsReasoning) return null;
+  const effort = preferences[modelRouteKey(model)];
+  return effort && model.reasoningLevels.includes(effort) ? effort : null;
 }

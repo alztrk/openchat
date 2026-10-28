@@ -1,3 +1,4 @@
+import type { TFunction } from 'i18next';
 import {
   Activity,
   ChartNoAxesCombined,
@@ -15,7 +16,7 @@ import { useTranslation } from 'react-i18next';
 import { Button, Card, DatePicker, SegmentedControl, Select } from '@/design-system';
 import { LocalServiceError, localServiceClient } from '@/platform/local-service';
 import { BreakdownCard, MetricCard, TrendChart } from './StatisticsCharts';
-import type { LoadState, StatisticsRequest, StatisticsSnapshot } from './statisticsData';
+import type { LoadState, StatisticsQuotaSnapshot, StatisticsRequest, StatisticsSnapshot } from './statisticsData';
 import {
   createStatisticsCsv,
   dateInputValue,
@@ -172,11 +173,27 @@ export function StatisticsSettingsSection({ onOpenConversation }: StatisticsSett
     setModelId('');
   };
   const activeFilterCount = Number(providerId !== '') + Number(modelId !== '');
-  const dateRangeInvalid = !parseDateInput(fromDate) || !parseDateInput(toDate) || fromDate > toDate;
+  const parsedFromDate = parseDateInput(fromDate);
+  const parsedToDate = parseDateInput(toDate);
+  const dateRangeInvalid = !parsedFromDate || !parsedToDate || fromDate > toDate;
+  const aggregationWindow =
+    dateRangeInvalid || !parsedFromDate || !parsedToDate
+      ? null
+      : t('statisticsAggregationWindow', {
+          from: new Intl.DateTimeFormat(i18n.language, { dateStyle: 'medium' }).format(parsedFromDate),
+          to: new Intl.DateTimeFormat(i18n.language, { dateStyle: 'medium' }).format(parsedToDate),
+        });
+  const localMeasurements = snapshot?.localModelMeasurements;
+  const showLocalMeasurements =
+    (providerId === '' || providerId === 'llama_cpp') &&
+    (providerId === 'llama_cpp' || snapshot?.providers.some((provider) => provider.key === 'llama_cpp') === true);
+  const showQuotaHistory =
+    providerId === 'chatgpt_api' || snapshot?.quotaHistory.some((item) => item.source === 'provider_response') === true;
 
   return (
     <section aria-labelledby="settings-page-heading" className="grid gap-5">
-      <div className="flex justify-end">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        {aggregationWindow ? <p className="text-xs text-secondary-text">{aggregationWindow}</p> : null}
         <div className="flex flex-wrap items-center gap-2">
           <details className="statistics-filter-menu relative">
             <summary
@@ -384,6 +401,40 @@ export function StatisticsSettingsSection({ onOpenConversation }: StatisticsSett
             />
           </Card>
 
+          {showLocalMeasurements ? (
+            <Card className="grid gap-3" padding="default">
+              <h3 className="font-semibold">{t('statisticsLocalMeasurementsTitle')}</h3>
+              {localMeasurements?.outputTokensPerSecond === null || localMeasurements === undefined ? (
+                <p className="text-sm text-secondary-text">{t('statisticsLocalMeasurementsUnavailable')}</p>
+              ) : (
+                <>
+                  <p className="text-2xl font-semibold tabular-nums">
+                    {new Intl.NumberFormat(i18n.language, { maximumFractionDigits: 1 }).format(
+                      localMeasurements.outputTokensPerSecond,
+                    )}{' '}
+                    {t('statisticsTokensPerSecond')}
+                  </p>
+                  <p className="text-sm text-secondary-text">
+                    {t('statisticsLocalMeasurementsCoverage', {
+                      measured: formatNumber(localMeasurements.measuredRequests, i18n.language),
+                      total: formatNumber(localMeasurements.localRequests, i18n.language),
+                    })}
+                  </p>
+                </>
+              )}
+              <p className="text-xs text-secondary-text">{t('statisticsLocalMeasurementsMethod')}</p>
+            </Card>
+          ) : null}
+
+          {showQuotaHistory ? (
+            <StatisticsQuotaHistory
+              conversationDateFormat={conversationDateFormat}
+              language={i18n.language}
+              snapshots={snapshot.quotaHistory}
+              t={t}
+            />
+          ) : null}
+
           <div className="grid gap-4 xl:grid-cols-2">
             <BreakdownCard
               items={snapshot.providers}
@@ -460,5 +511,118 @@ export function StatisticsSettingsSection({ onOpenConversation }: StatisticsSett
         </>
       ) : null}
     </section>
+  );
+}
+
+function StatisticsQuotaHistory({
+  conversationDateFormat,
+  language,
+  snapshots,
+  t,
+}: {
+  conversationDateFormat: Intl.DateTimeFormat;
+  language: string;
+  snapshots: StatisticsQuotaSnapshot[];
+  t: TFunction;
+}) {
+  if (snapshots.length === 0) {
+    return (
+      <Card className="grid gap-2" padding="default">
+        <h3 className="font-semibold">{t('statisticsQuotaHistory')}</h3>
+        <p className="text-xs text-secondary-text">{t('statisticsQuotaHistoryLimit')}</p>
+        <p className="text-sm text-secondary-text">{t('statisticsNoQuotaHistory')}</p>
+      </Card>
+    );
+  }
+
+  return (
+    <Card className="grid gap-3" padding="default">
+      <h3 className="font-semibold">{t('statisticsQuotaHistory')}</h3>
+      <p className="text-xs text-secondary-text">{t('statisticsQuotaHistoryLimit')}</p>
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        {snapshots.map((snapshot) => {
+          const usageState =
+            snapshot.ordinaryUsageAllowed === true
+              ? t('statisticsQuotaAllowed')
+              : snapshot.ordinaryUsageAllowed === false
+                ? t('statisticsQuotaBlocked')
+                : t('statisticsQuotaUnknown');
+          const freshness = t(
+            snapshot.freshness === 'current'
+              ? 'statisticsQuotaFreshnessCurrent'
+              : snapshot.freshness === 'stale'
+                ? 'statisticsQuotaFreshnessStale'
+                : 'statisticsQuotaFreshnessUnknown',
+          );
+          const workspaceLabel =
+            snapshot.source === 'provider_response'
+              ? [snapshot.providerId === null ? null : providerLabel(snapshot.providerId, t), snapshot.modelId]
+                  .filter((part): part is string => part !== null)
+                  .join(' · ') || t('statisticsNotReported')
+              : snapshot.workspaceName?.trim() || snapshot.connectionName?.trim() || t('statisticsNotReported');
+          return (
+            <article
+              className="grid content-start gap-2 rounded-control border border-border bg-raised p-3"
+              key={`${snapshot.source}:${snapshot.providerId ?? snapshot.connectionId ?? ''}:${snapshot.modelId ?? snapshot.workspaceId ?? ''}:${snapshot.fetchedAtUnixMs}`}
+            >
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div className="grid min-w-0 gap-1">
+                  <h4 className="truncate text-sm font-semibold" title={workspaceLabel}>
+                    {workspaceLabel}
+                  </h4>
+                  <time
+                    className="text-xs text-secondary-text"
+                    dateTime={new Date(snapshot.fetchedAtUnixMs).toISOString()}
+                  >
+                    {conversationDateFormat.format(snapshot.fetchedAtUnixMs)}
+                  </time>
+                </div>
+                <span className="text-xs text-secondary-text">{freshness}</span>
+              </div>
+              {snapshot.source === 'chatgpt' ? <p className="text-sm">{usageState}</p> : null}
+              {snapshot.buckets.length === 0 ? (
+                <p className="text-sm text-secondary-text">{t('statisticsNotReported')}</p>
+              ) : (
+                <ul className="grid gap-2">
+                  {snapshot.buckets.map((bucket) => (
+                    <li className="grid gap-1 border-t border-border pt-2" key={bucket.limitId}>
+                      <div className="flex flex-wrap items-baseline justify-between gap-2 text-sm">
+                        <span className="break-all">
+                          {bucket.limitId === 'requests'
+                            ? t('statisticsRequests')
+                            : bucket.limitId === 'tokens'
+                              ? t('statisticsTotalTokens')
+                              : bucket.limitId}
+                        </span>
+                        <span className="font-medium tabular-nums">
+                          {bucket.usedPercent === null
+                            ? t('statisticsNotReported')
+                            : new Intl.NumberFormat(language, { style: 'percent', maximumFractionDigits: 1 }).format(
+                                bucket.usedPercent / 100,
+                              )}
+                        </span>
+                      </div>
+                      {bucket.limit !== null && bucket.remaining !== null ? (
+                        <p className="text-xs text-secondary-text">
+                          {t('statisticsQuotaRemaining', {
+                            remaining: formatNumber(bucket.remaining, language),
+                            limit: formatNumber(bucket.limit, language),
+                          })}
+                        </p>
+                      ) : null}
+                      {bucket.resetAtUnixMs !== null ? (
+                        <p className="text-xs text-secondary-text">
+                          {t('statisticsResetAt')}: {conversationDateFormat.format(bucket.resetAtUnixMs)}
+                        </p>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </article>
+          );
+        })}
+      </div>
+    </Card>
   );
 }

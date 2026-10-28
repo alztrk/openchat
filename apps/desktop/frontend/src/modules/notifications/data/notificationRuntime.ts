@@ -1,11 +1,12 @@
 import { i18n } from '@/localization/i18n';
 import { parseAgentQuestionGroup } from '@/modules/conversations/data/agentQuestions';
-import type { ChatConversation, ChatMessage } from '@/modules/conversations/data/chatStorage';
+import { type ChatConversation, type ChatMessage, getConversation } from '@/modules/conversations/data/chatStorage';
 import {
   readNotificationPreferences,
   readWindowsNotificationStatus,
   sendAssistantResponseNotification,
   sendUserQuestionNotification,
+  shouldSuppressNotification,
 } from './notificationPreferences';
 
 type WindowFocusState = 'unknown' | 'focused' | 'backgrounded';
@@ -24,6 +25,7 @@ export async function notifyAssistantResponse(conversation: ChatConversation, me
   if (windowFocusState !== 'backgrounded') return false;
   const preferences = readNotificationPreferences();
   if (!preferences.responses) return false;
+  if (shouldSuppressNotification(preferences, conversation.projectId)) return false;
   if ((await readWindowsNotificationStatus()) !== 'enabled') return false;
   const title = conversation.title.trim();
   const content = message.content.trim();
@@ -45,8 +47,18 @@ export async function notifyAssistantResponse(conversation: ChatConversation, me
 export async function notifyPendingQuestion(rawGroup: unknown): Promise<boolean> {
   const preferences = readNotificationPreferences();
   if (!preferences.questions) return false;
-  if ((await readWindowsNotificationStatus()) !== 'enabled') return false;
   const group = parseAgentQuestionGroup(rawGroup);
+  let projectId: string | null = null;
+  if (preferences.mutedProjectIds.length > 0) {
+    try {
+      projectId = (await getConversation(group.conversationId))?.projectId ?? null;
+    } catch (cause) {
+      globalThis.reportError(new Error('The notification project could not be determined.', { cause }));
+      return false;
+    }
+  }
+  if (shouldSuppressNotification(preferences, projectId)) return false;
+  if ((await readWindowsNotificationStatus()) !== 'enabled') return false;
   return sendUserQuestionNotification({
     groupId: group.id,
     conversationId: group.conversationId,

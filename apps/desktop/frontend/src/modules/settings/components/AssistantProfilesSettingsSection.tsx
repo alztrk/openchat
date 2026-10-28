@@ -65,6 +65,7 @@ export function AssistantProfilesSettingsSection({ showReadyAgents = false }: { 
   const { t } = useTranslation();
   const profiles = useAssistantProfilesStore((state) => state.profiles);
   const loadState = useAssistantProfilesStore((state) => state.loadState);
+  const saveState = useAssistantProfilesStore((state) => state.saveState);
   const errorKey = useAssistantProfilesStore((state) => state.errorKey);
   const initialize = useAssistantProfilesStore((state) => state.initialize);
   const retry = useAssistantProfilesStore((state) => state.retry);
@@ -102,6 +103,7 @@ export function AssistantProfilesSettingsSection({ showReadyAgents = false }: { 
 
   useEffect(() => initialize(), [initialize]);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: The attempt counter intentionally retriggers this load effect.
   useEffect(() => {
     const generation = ++projectGenerationRef.current;
     activeProjectIdRef.current = activeProjectId;
@@ -165,7 +167,7 @@ export function AssistantProfilesSettingsSection({ showReadyAgents = false }: { 
     });
   };
 
-  const saveDraft = () => {
+  const saveDraft = async () => {
     if (!draft) return;
     const name = draft.name.trim();
     if (!name) {
@@ -190,15 +192,15 @@ export function AssistantProfilesSettingsSection({ showReadyAgents = false }: { 
       toolAllowlist: draft.restrictTools ? [...new Set(draft.toolAllowlist)] : null,
     };
 
-    if (saveProfile(profile)) {
+    if (await saveProfile(profile)) {
       setDraft(null);
       setFormError(null);
     }
   };
 
-  const addReadyAgent = (template: (typeof readyAssistantAgentTemplates)[number]) => {
+  const addReadyAgent = async (template: (typeof readyAssistantAgentTemplates)[number]) => {
     if (loadState !== 'ready') return;
-    saveProfile({
+    await saveProfile({
       id: crypto.randomUUID(),
       templateId: template.id,
       name: t(template.nameKey),
@@ -244,9 +246,7 @@ export function AssistantProfilesSettingsSection({ showReadyAgents = false }: { 
     setMcpToolNames([...new Set(names)].sort((left, right) => left.localeCompare(right)));
     const failed = results.some((result) => result.status === 'rejected');
     const firstFailure = results.find((result) => result.status === 'rejected');
-    setMcpToolsErrorDetails(
-      firstFailure?.status === 'rejected' ? readServiceErrorDetails(firstFailure.reason) : null,
-    );
+    setMcpToolsErrorDetails(firstFailure?.status === 'rejected' ? readServiceErrorDetails(firstFailure.reason) : null);
     setMcpToolsPartialFailure(failed && names.length > 0);
     setMcpToolsState(failed && names.length === 0 ? 'error' : 'ready');
   };
@@ -495,10 +495,10 @@ export function AssistantProfilesSettingsSection({ showReadyAgents = false }: { 
                 </p>
               ) : null}
               <div className="flex flex-wrap justify-end gap-2">
-                <Button onClick={() => setDraft(null)} variant="secondary">
+                <Button disabled={saveState === 'saving'} onClick={() => setDraft(null)} variant="secondary">
                   {t('cancel')}
                 </Button>
-                <Button onClick={saveDraft} variant="primary">
+                <Button loading={saveState === 'saving'} onClick={() => void saveDraft()} variant="primary">
                   {t('save')}
                 </Button>
               </div>
@@ -506,7 +506,7 @@ export function AssistantProfilesSettingsSection({ showReadyAgents = false }: { 
           ) : (
             <Button
               className="justify-self-start"
-              disabled={profiles.length >= 20}
+              disabled={profiles.length >= 20 || saveState === 'saving'}
               onClick={() => {
                 setFormError(null);
                 setDraft(emptyDraft);
@@ -553,8 +553,11 @@ export function AssistantProfilesSettingsSection({ showReadyAgents = false }: { 
                     </Button>
                     <Button
                       aria-label={`${buttonLabel}: ${name}`}
-                      disabled={loadState !== 'ready' || profiles.length >= 20 || alreadyExists}
-                      onClick={() => addReadyAgent(template)}
+                      disabled={
+                        loadState !== 'ready' || profiles.length >= 20 || alreadyExists || saveState === 'saving'
+                      }
+                      loading={saveState === 'saving'}
+                      onClick={() => void addReadyAgent(template)}
                       size="small"
                       variant="secondary"
                     >
@@ -612,7 +615,11 @@ export function AssistantProfilesSettingsSection({ showReadyAgents = false }: { 
             </Button>
             <Button
               onClick={() => {
-                if (pendingRemoval && removeProfile(pendingRemoval.id)) setPendingRemoval(null);
+                if (pendingRemoval) {
+                  void removeProfile(pendingRemoval.id).then((removed) => {
+                    if (removed) setPendingRemoval(null);
+                  });
+                }
               }}
               variant="destructive"
             >

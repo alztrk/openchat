@@ -1,0 +1,99 @@
+.design-vector-editor {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  flex-direction: column;
+  overflow: hidden;
+  background: rgb(var(--background));
+}
+
+.design-vector-layout {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  grid-template-columns: minmax(0, 1fr);
+  overflow: auto;
+}
+
+.design-vector-main {
+  display: flex;
+  min-width: 0;
+  min-height: 22rem;
+  flex-direction: column;
+}
+
+.design-vector-prompt-row {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.design-vector-canvas {
+  position: relative;
+  min-height: 20rem;
+  flex: 1;
+  overflow: hidden;
+  background-color: rgb(var(--navigation));
+  background-image: radial-gradient(rgb(var(--border) / 0.32) 1px, transparent 1px);
+  background-position: 0 0;
+  background-size: 24px 24px;
+  cursor: grab;
+  touch-action: none;
+}
+
+.design-vector-canvas:active {
+  cursor: grabbing;
+}
+
+.design-vector-frame {
+  border-color: rgb(var(--border));
+  border-radius: var(--radius-card);
+  box-shadow: 0 12px 28px rgb(0 0 0 / 0.16);
+  cursor: grab;
+  touch-action: none;
+}
+
+.design-vector-frame[aria-pressed='true'] {
+  border-color: rgb(var(--accent));
+  box-shadow: 0 0 0 2px rgb(var(--accent) / 0.35), 0 12px 28px rgb(0 0 0 / 0.16);
+}
+
+.design-vector-frame:active {
+  cursor: grabbing;
+}
+
+.design-vector-sidebar {
+  display: grid;
+  min-width: 0;
+  max-height: 20rem;
+  align-content: start;
+  gap: 1rem;
+  overflow: auto;
+  border-top: 1px solid rgb(var(--border) / var(--border-alpha, 0.1));
+  background: rgb(var(--navigation));
+  padding: 1rem;
+}
+
+@media (min-width: 80rem) {
+  .design-vector-layout {
+    grid-template-columns: minmax(0, 1fr) 22rem;
+    overflow: hidden;
+  }
+
+  .design-vector-main {
+    min-height: 0;
+  }
+
+  .design-vector-sidebar {
+    max-height: none;
+    border-top: 0;
+    border-left: 1px solid rgb(var(--border) / var(--border-alpha, 0.1));
+    padding: 1.25rem;
+  }
+}
+
+@media (min-width: 40rem) {
+  .design-vector-prompt-row {
+    grid-template-columns: minmax(0, 1fr) 19rem;
+  }
+}

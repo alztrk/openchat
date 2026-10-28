@@ -33,7 +33,8 @@ type ErrorKey =
   | 'profileArchiveCloseFailed';
 
 export function ProfileArchiveSettingsSection({ enabled }: { enabled: boolean }) {
-  const { t } = useTranslation();
+  const { i18n, t } = useTranslation();
+  const locale = i18n.resolvedLanguage ?? i18n.language;
   const [isWorking, setIsWorking] = useState(false);
   const [restorePath, setRestorePath] = useState<string | null>(null);
   const [restorePassphrase, setRestorePassphrase] = useState<string | null>(null);
@@ -202,9 +203,9 @@ export function ProfileArchiveSettingsSection({ enabled }: { enabled: boolean })
       {feedback ? (
         <p aria-live="polite" className="text-sm text-success">
           {t('profileArchiveExportSuccess', {
-            conversationCount: new Intl.NumberFormat().format(feedback.conversationCount),
-            messageCount: new Intl.NumberFormat().format(feedback.messageCount),
-            attachmentCount: new Intl.NumberFormat().format(feedback.attachmentCount),
+            conversationCount: new Intl.NumberFormat(locale).format(feedback.conversationCount),
+            messageCount: new Intl.NumberFormat(locale).format(feedback.messageCount),
+            attachmentCount: new Intl.NumberFormat(locale).format(feedback.attachmentCount),
           })}
         </p>
       ) : null}
@@ -264,9 +265,9 @@ export function ProfileArchiveSettingsSection({ enabled }: { enabled: boolean })
               <CircleCheckBig aria-hidden="true" className="mt-0.5 shrink-0 text-success" size={20} />
               <p className="text-sm text-secondary-text">
                 {t('profileArchiveRestoreReady', {
-                  conversationCount: new Intl.NumberFormat().format(restoreReady.conversationCount),
-                  messageCount: new Intl.NumberFormat().format(restoreReady.messageCount),
-                  attachmentCount: new Intl.NumberFormat().format(restoreReady.attachmentCount),
+                  conversationCount: new Intl.NumberFormat(locale).format(restoreReady.conversationCount),
+                  messageCount: new Intl.NumberFormat(locale).format(restoreReady.messageCount),
+                  attachmentCount: new Intl.NumberFormat(locale).format(restoreReady.attachmentCount),
                 })}
               </p>
             </div>

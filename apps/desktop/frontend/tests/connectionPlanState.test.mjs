@@ -44,7 +44,10 @@ test('a late plan refresh cannot restore a connection removed after its snapshot
 
   const merged = mergeConnectionPlanUpdates(current, refreshed);
 
-  assert.deepEqual(merged.map((connection) => connection.id), ['remaining']);
+  assert.deepEqual(
+    merged.map((connection) => connection.id),
+    ['remaining'],
+  );
   assert.equal(merged[0].planType, 'updated-plan');
   assert.equal(merged[0].workspaces[0].displayName, 'Workspace A');
   assert.equal(merged[0].workspaces[0].planType, 'updated-plan');

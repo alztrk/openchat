@@ -66,12 +66,7 @@ export function formatToolPath(path: string): string {
   return path;
 }
 
-/**
- * Translates known tool errors and preserves the backend's redacted message for unknown codes.
- *
- * Tool output is also sent to the model. Known codes use localized copy; an unknown code keeps
- * its actual backend message so the rendered activity does not replace a failure with a generic one.
- */
+/** Translates known tool errors and keeps unknown backend messages out of the UI. */
 export function translateToolError(output: ToolRecord | null, t: TFunction): string | null {
   if (!output || !Object.hasOwn(output, 'error')) return null;
 
@@ -79,12 +74,8 @@ export function translateToolError(output: ToolRecord | null, t: TFunction): str
   const code = stringValue(error?.code);
   const translationKey = code ? toolErrorTranslationKeys[code] : undefined;
   const genericMessage = t('toolOperationFailed');
-  const reportedMessage = stringValue(error?.message)?.trim().slice(0, 500);
-  const message = translationKey
-    ? t(translationKey, { defaultValue: genericMessage })
-    : reportedMessage || genericMessage;
-  const details = stringValue(error?.details)?.trim().slice(0, 1000);
-  return details ? `${message} ${t('toolErrorDetails')}: ${details}` : message;
+  const message = translationKey ? t(translationKey, { defaultValue: genericMessage }) : genericMessage;
+  return message;
 }
 
 /** Stable backend tool error codes mapped to UI translation keys. */

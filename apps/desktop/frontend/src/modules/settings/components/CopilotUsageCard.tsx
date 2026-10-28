@@ -17,10 +17,15 @@ import { LocalServiceError } from '@/platform/local-service';
 
 interface CopilotUsageCardProps {
   onNavigateToConnections(): void;
+  quotaWarningAtPercent: number;
   refreshSequence: number;
 }
 
-export function CopilotUsageCard({ onNavigateToConnections, refreshSequence }: CopilotUsageCardProps) {
+export function CopilotUsageCard({
+  onNavigateToConnections,
+  quotaWarningAtPercent,
+  refreshSequence,
+}: CopilotUsageCardProps) {
   const { i18n, t } = useTranslation();
   const [connection, setConnection] = useState<CopilotOAuthConnection | null>(null);
   const [snapshot, setSnapshot] = useState<CopilotUsageSnapshot | null>(null);
@@ -169,7 +174,12 @@ export function CopilotUsageCard({ onNavigateToConnections, refreshSequence }: C
           ) : (
             <div className="grid gap-4">
               {snapshot.quotas.map((quota) => (
-                <CopilotQuotaView key={quota.id} locale={locale} quota={quota} />
+                <CopilotQuotaView
+                  key={quota.id}
+                  locale={locale}
+                  quota={quota}
+                  warningAtPercent={quotaWarningAtPercent}
+                />
               ))}
             </div>
           )}
@@ -191,7 +201,15 @@ export function CopilotUsageCard({ onNavigateToConnections, refreshSequence }: C
   );
 }
 
-function CopilotQuotaView({ locale, quota }: { locale: string; quota: CopilotQuotaSnapshot }) {
+function CopilotQuotaView({
+  locale,
+  quota,
+  warningAtPercent,
+}: {
+  locale: string;
+  quota: CopilotQuotaSnapshot;
+  warningAtPercent: number;
+}) {
   const { t } = useTranslation();
   const label = quotaLabel(quota, t);
   const remainingPercent = quota.unlimited === true ? null : quota.percentRemaining;
@@ -240,6 +258,14 @@ function CopilotQuotaView({ locale, quota }: { locale: string; quota: CopilotQuo
       {quota.resetAtUnixMs !== null ? (
         <span className="text-xs text-secondary-text">
           {t('copilotQuotaResetsAt', { time: formatTimestamp(quota.resetAtUnixMs, locale) })}
+        </span>
+      ) : null}
+      {remainingPercent !== null && 100 - remainingPercent >= warningAtPercent ? (
+        <span className="text-xs text-warning" role="status">
+          {t('quotaWarningReached', {
+            percent: Math.round(100 - remainingPercent),
+            threshold: warningAtPercent,
+          })}
         </span>
       ) : null}
     </section>

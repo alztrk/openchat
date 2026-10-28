@@ -1,7 +1,6 @@
 import type { ReactNode } from 'react';
-
-import { cn } from '@/shared/utils/cn';
 import { useId } from 'react';
+import { cn } from '@/shared/utils/cn';
 
 export interface RadioOption {
   value: string;

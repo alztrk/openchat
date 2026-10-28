@@ -7,6 +7,7 @@ const defaultModelKey = 'models.default_model';
 const lastSelectedModelKey = 'models.last_selected_model';
 const hiddenModelKeysKey = 'models.hidden_keys';
 const modelContextLimitsKey = 'models.context_limits';
+const modelReasoningEffortsKey = 'models.default_reasoning_efforts';
 const apiKeyProviderIds = new Set([
   'chatgpt_api',
   'gemini',
@@ -39,18 +40,22 @@ export interface ModelPreferencesSnapshot {
   defaultModel: DefaultModelPreference | null;
   hiddenModelKeys: string[];
   contextLimits: Record<string, number>;
+  reasoningEfforts: Record<string, string>;
   defaultModelInvalid: boolean;
   hiddenModelKeysInvalid: boolean;
   contextLimitsInvalid: boolean;
+  reasoningEffortsInvalid: boolean;
 }
 
 export function readModelPreferences(): ModelPreferencesSnapshot {
   let defaultModel: DefaultModelPreference | null = null;
   let hiddenModelKeys: string[] = [];
   let contextLimits: Record<string, number> = {};
+  let reasoningEfforts: Record<string, string> = {};
   let defaultModelInvalid = false;
   let hiddenModelKeysInvalid = false;
   let contextLimitsInvalid = false;
+  let reasoningEffortsInvalid = false;
 
   try {
     const raw = unifiedStorage.getItem(defaultModelKey);
@@ -73,13 +78,22 @@ export function readModelPreferences(): ModelPreferencesSnapshot {
     contextLimitsInvalid = true;
   }
 
+  try {
+    const raw = unifiedStorage.getItem(modelReasoningEffortsKey);
+    reasoningEfforts = raw === null ? {} : parseModelReasoningEfforts(JSON.parse(raw));
+  } catch {
+    reasoningEffortsInvalid = true;
+  }
+
   return {
     defaultModel,
     hiddenModelKeys,
     contextLimits,
+    reasoningEfforts,
     defaultModelInvalid,
     hiddenModelKeysInvalid,
     contextLimitsInvalid,
+    reasoningEffortsInvalid,
   };
 }
 
@@ -135,6 +149,22 @@ export function writeModelContextLimit(routeKey: string, limit: number | null): 
 
 export function clearModelContextLimits(): void {
   unifiedStorage.removeItem(modelContextLimitsKey);
+}
+
+export function writeModelReasoningEffort(routeKey: string, effort: string | null): void {
+  validateModelRouteKey(routeKey);
+  const current = readModelPreferences().reasoningEfforts;
+  if (effort === null) delete current[routeKey];
+  else {
+    if (!isValidReasoningEffort(effort)) throw new Error('The model reasoning preference is invalid.');
+    current[routeKey] = effort;
+  }
+  if (Object.keys(current).length === 0) unifiedStorage.removeItem(modelReasoningEffortsKey);
+  else unifiedStorage.setItem(modelReasoningEffortsKey, JSON.stringify(current));
+}
+
+export function clearModelReasoningEfforts(): void {
+  unifiedStorage.removeItem(modelReasoningEffortsKey);
 }
 
 export function modelRouteKey(model: ChatModel): string {
@@ -228,6 +258,29 @@ function parseContextLimits(value: unknown): Record<string, number> {
     limits[key] = limit;
   }
   return limits;
+}
+
+function parseModelReasoningEfforts(value: unknown): Record<string, string> {
+  if (!isObject(value) || Object.keys(value).length > 10_000) {
+    throw new Error('The saved model reasoning preferences are invalid.');
+  }
+  const efforts: Record<string, string> = {};
+  for (const [key, effort] of Object.entries(value)) {
+    validateModelRouteKey(key);
+    if (!isValidReasoningEffort(effort)) throw new Error('The saved model reasoning preferences are invalid.');
+    efforts[key] = effort;
+  }
+  return efforts;
+}
+
+function validateModelRouteKey(routeKey: string): void {
+  if (!routeKey || routeKey.trim() !== routeKey || routeKey.length > 1024 || routeKey.includes('\0')) {
+    throw new Error('The model route is invalid.');
+  }
+}
+
+function isValidReasoningEffort(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0 && value.length <= 64 && !containsAsciiControlCharacters(value);
 }
 
 function optionalString(value: unknown): string | null {

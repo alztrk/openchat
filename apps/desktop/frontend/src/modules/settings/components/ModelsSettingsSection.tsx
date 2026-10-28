@@ -3,12 +3,13 @@ import { type ReactNode, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Button, Card, Dialog, Input, Select, Switch } from '@/design-system';
-import { providerNameForModel } from '@/modules/conversations/components/composerUtils';
+import { providerNameForModel, reasoningLevelLabel } from '@/modules/conversations/components/composerUtils';
 import { useComposerPreferencesStore } from '@/modules/conversations/data/composerPreferences';
 import { useChatStore } from '@/modules/conversations/stores/chatStore';
 import { ProviderIcon } from '@/modules/providers/components/ProviderIcon';
 import type { ChatModel } from '@/modules/providers/data/chatModels';
 import { formatModelRouteKey, modelRouteKey } from '@/modules/providers/data/modelPreferences';
+import { SettingsPreferenceRow } from './SettingsPreferenceRow';
 
 type FeedbackKey =
   | 'defaultModelUpdated'
@@ -59,9 +60,11 @@ export function ModelsSettingsSection() {
   const hiddenModelKeys = useChatStore((state) => state.hiddenModelKeys);
   const defaultModel = useChatStore((state) => state.defaultModel);
   const modelContextLimits = useChatStore((state) => state.modelContextLimits);
+  const modelReasoningEfforts = useChatStore((state) => state.modelReasoningEfforts);
   const defaultModelPreferenceInvalid = useChatStore((state) => state.defaultModelPreferenceInvalid);
   const hiddenModelPreferencesInvalid = useChatStore((state) => state.hiddenModelPreferencesInvalid);
   const modelContextLimitsInvalid = useChatStore((state) => state.modelContextLimitsInvalid);
+  const modelReasoningEffortsInvalid = useChatStore((state) => state.modelReasoningEffortsInvalid);
   const refreshModels = useChatStore((state) => state.refreshModels);
   const refreshModelFavorites = useChatStore((state) => state.refreshModelFavorites);
   const setDefaultModel = useChatStore((state) => state.setDefaultModel);
@@ -71,6 +74,8 @@ export function ModelsSettingsSection() {
   const clearHiddenModelPreferences = useChatStore((state) => state.clearHiddenModelPreferences);
   const setModelContextLimit = useChatStore((state) => state.setModelContextLimit);
   const clearModelContextPreferences = useChatStore((state) => state.clearModelContextPreferences);
+  const setModelReasoningEffort = useChatStore((state) => state.setModelReasoningEffort);
+  const clearModelReasoningPreferences = useChatStore((state) => state.clearModelReasoningPreferences);
   const toggleFavoriteModel = useChatStore((state) => state.toggleFavoriteModel);
   const [query, setQuery] = useState('');
   const [contextModel, setContextModel] = useState<ChatModel | null>(null);
@@ -245,6 +250,13 @@ export function ModelsSettingsSection() {
           onAction={() => setFeedbackKey(clearModelContextPreferences() ? null : 'modelPreferencesSaveFailed')}
         />
       ) : null}
+      {modelReasoningEffortsInvalid ? (
+        <PreferenceNotice
+          action={t('clearModelReasoningPreferences')}
+          message={t('modelReasoningPreferencesInvalid')}
+          onAction={() => setFeedbackKey(clearModelReasoningPreferences() ? null : 'modelPreferencesSaveFailed')}
+        />
+      ) : null}
       {modelError ? (
         <p className="text-sm text-warning" role="status">
           {t('modelCatalogUnavailable')}
@@ -343,6 +355,7 @@ export function ModelsSettingsSection() {
                   );
                   const favoriteBusy = busyFavoriteKeys.has(routeKey);
                   const contextLimit = modelContextLimits[routeKey];
+                  const reasoningEffort = modelReasoningEfforts[routeKey];
                   return (
                     <li className="flex flex-wrap items-start justify-between gap-3 px-4 py-3" key={routeKey}>
                       <div className="min-w-0 flex-1">
@@ -387,6 +400,26 @@ export function ModelsSettingsSection() {
                             ? t('modelContextAutomatic')
                             : t('modelContextCustom', { count: formatTokenCount(contextLimit) })}
                         </Button>
+                        {model.supportsReasoning ? (
+                          <Select
+                            className="mt-1 min-h-8 text-xs"
+                            label={t('modelDefaultReasoning', { model: model.displayName })}
+                            onChange={(event) => {
+                              const value = event.target.value;
+                              const saved = setModelReasoningEffort(routeKey, value.length === 0 ? null : value);
+                              setFeedbackKey(saved ? null : 'modelPreferencesSaveFailed');
+                            }}
+                            options={[
+                              { value: '', label: t('modelReasoningDefault') },
+                              ...model.reasoningLevels.map((level) => ({
+                                value: level,
+                                label: reasoningLevelLabel(level, (key) => t(key)),
+                              })),
+                            ]}
+                            value={reasoningEffort ?? ''}
+                            visuallyHiddenLabel
+                          />
+                        ) : null}
                       </div>
                       <div className="flex flex-wrap items-center gap-1">
                         <Button
@@ -489,15 +522,9 @@ function ModelSettingRow({
   label: string;
 }) {
   return (
-    <div className="@container">
-      <div className="appearance-setting-row">
-        <div>
-          <h3 className="font-medium">{label}</h3>
-          <p className="mt-1 text-sm text-secondary-text">{description}</p>
-        </div>
-        <div className="min-w-0">{children}</div>
-      </div>
-    </div>
+    <SettingsPreferenceRow description={description} label={label}>
+      {children}
+    </SettingsPreferenceRow>
   );
 }
 

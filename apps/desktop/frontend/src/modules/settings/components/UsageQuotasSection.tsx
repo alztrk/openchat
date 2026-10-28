@@ -2,11 +2,19 @@ import type { TFunction } from 'i18next';
 import { ChartNoAxesCombined, CircleAlert, LoaderCircle, RefreshCw, RotateCcw } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button, Card, Dialog } from '@/design-system';
+import { Button, Card, Dialog, Input, Select } from '@/design-system';
 import { ProviderIcon } from '@/modules/providers/components/ProviderIcon';
 import { subscribeToOAuthPlanUpdates } from '@/modules/providers/data/oauthPlanMonitor';
+import {
+  defaultUsageAlertPreferences,
+  readUsageAlertPreferences,
+  type UsageAlertPreferences,
+  writeUsageAlertPreferences,
+} from '@/modules/settings/data/usageAlertPreferences';
 import { LocalServiceError, localServiceClient } from '@/platform/local-service';
 import { CopilotUsageCard } from './CopilotUsageCard';
+import { SettingsPreferenceRow } from './SettingsPreferenceRow';
+import { parseStatistics, type StatisticsSnapshot, statisticsQuery } from './statisticsData';
 
 interface UsageWorkspace {
   id: string;
@@ -82,6 +90,14 @@ export function UsageQuotasSection({ onNavigateToConnections }: UsageQuotasSecti
   const [pendingCredit, setPendingCredit] = useState<PendingCredit | null>(null);
   const [redeemingCreditId, setRedeemingCreditId] = useState<string | null>(null);
   const [copilotRefreshSequence, setCopilotRefreshSequence] = useState(0);
+  const [alertPreferences, setAlertPreferences] = useState<UsageAlertPreferences>(defaultUsageAlertPreferences);
+  const [alertPreferencesLoaded, setAlertPreferencesLoaded] = useState(false);
+  const [alertPreferencesLoadFailed, setAlertPreferencesLoadFailed] = useState(false);
+  const [alertPreferencesSaveFailed, setAlertPreferencesSaveFailed] = useState(false);
+  const [alertPreferencesSaving, setAlertPreferencesSaving] = useState(false);
+  const [costLimitDraft, setCostLimitDraft] = useState('');
+  const [monthlyCostSnapshot, setMonthlyCostSnapshot] = useState<StatisticsSnapshot | null>(null);
+  const [monthlyCostLoadState, setMonthlyCostLoadState] = useState<'idle' | 'loading' | 'loaded' | 'failed'>('idle');
   const isMounted = useRef(false);
   const connectionLoadVersion = useRef(0);
   const workspaceLoadVersions = useRef(new Map<string, number>());
@@ -203,6 +219,50 @@ export function UsageQuotasSection({ onNavigateToConnections }: UsageQuotasSecti
     };
   }, [loadAll]);
 
+  useEffect(() => {
+    try {
+      const preferences = readUsageAlertPreferences();
+      setAlertPreferences(preferences);
+      setCostLimitDraft(preferences.monthlyEstimatedCostLimitUsd?.toString() ?? '');
+      setAlertPreferencesLoaded(true);
+      setAlertPreferencesLoadFailed(false);
+    } catch {
+      setAlertPreferencesLoadFailed(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    const limit = alertPreferences.monthlyEstimatedCostLimitUsd;
+    if (!alertPreferencesLoaded || limit === null) {
+      setMonthlyCostSnapshot(null);
+      setMonthlyCostLoadState('idle');
+      return;
+    }
+    let active = true;
+    const today = new Date();
+    const fromDate = new Date(today.getFullYear(), today.getMonth(), 1);
+    const toDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    setMonthlyCostLoadState('loading');
+    void localServiceClient
+      .call(
+        'statistics.get',
+        statisticsQuery({ fromDate, toDate, providerId: null, modelId: null, offset: 0, limit: 1 }),
+      )
+      .then((response) => {
+        if (!active) return;
+        setMonthlyCostSnapshot(parseStatistics(response));
+        setMonthlyCostLoadState('loaded');
+      })
+      .catch(() => {
+        if (!active) return;
+        setMonthlyCostSnapshot(null);
+        setMonthlyCostLoadState('failed');
+      });
+    return () => {
+      active = false;
+    };
+  }, [alertPreferences.monthlyEstimatedCostLimitUsd, alertPreferencesLoaded]);
+
   const redeemCredit = async () => {
     const pending = pendingCredit;
     if (!pending || redeemingCreditId !== null) return;
@@ -272,9 +332,169 @@ export function UsageQuotasSection({ onNavigateToConnections }: UsageQuotasSecti
   const refreshWorkspace = (connection: UsageConnection) => {
     void Promise.all(connection.workspaces.map((workspace) => loadWorkspaceUsage(connection, workspace, true)));
   };
+  const saveAlertPreferences = async (next: UsageAlertPreferences) => {
+    if (alertPreferencesSaving) return;
+    setAlertPreferencesSaving(true);
+    setAlertPreferencesSaveFailed(false);
+    try {
+      await writeUsageAlertPreferences(next);
+      setAlertPreferences(next);
+      setAlertPreferencesLoaded(true);
+      setAlertPreferencesLoadFailed(false);
+      setAlertPreferencesSaveFailed(false);
+    } catch {
+      setAlertPreferencesSaveFailed(true);
+    } finally {
+      setAlertPreferencesSaving(false);
+    }
+  };
+  const saveCostLimit = async () => {
+    const value = costLimitDraft.trim();
+    if (value.length > 0 && (!/^\d+(\.\d{1,2})?$/.test(value) || Number(value) <= 0 || Number(value) > 100_000)) {
+      setAlertPreferencesSaveFailed(true);
+      return;
+    }
+    await saveAlertPreferences({
+      ...alertPreferences,
+      monthlyEstimatedCostLimitUsd: value.length === 0 ? null : Number(value),
+    });
+  };
+  const costWarningReached =
+    alertPreferences.monthlyEstimatedCostLimitUsd !== null &&
+    monthlyCostSnapshot !== null &&
+    monthlyCostSnapshot.summary.estimatedCostRequests > 0 &&
+    monthlyCostSnapshot.summary.estimatedCostUsd >=
+      alertPreferences.monthlyEstimatedCostLimitUsd * (alertPreferences.monthlyCostWarningAtPercent / 100);
 
   return (
     <section aria-labelledby="settings-page-heading" className="grid gap-6">
+      <Card className="grid gap-4" padding="default">
+        <div className="grid gap-1">
+          <h2 className="font-semibold">{t('usageAlertSettings')}</h2>
+          <p className="text-sm text-secondary-text">{t('usageAlertSettingsDescription')}</p>
+        </div>
+        {alertPreferencesLoadFailed ? (
+          <div className="flex flex-wrap items-center justify-between gap-3" role="alert">
+            <p className="text-sm text-destructive">{t('usageAlertPreferencesLoadFailed')}</p>
+            <Button
+              disabled={alertPreferencesSaving}
+              loading={alertPreferencesSaving}
+              onClick={() => void saveAlertPreferences(defaultUsageAlertPreferences)}
+              size="small"
+              variant="secondary"
+            >
+              {t('usageAlertPreferencesReset')}
+            </Button>
+          </div>
+        ) : null}
+        <div className="grid gap-3 @container">
+          <SettingsPreferenceRow
+            description={t('monthlyCostWarningThresholdDescription')}
+            id="setting-monthly-cost-warning-threshold"
+            label={t('monthlyCostWarningThreshold')}
+          >
+            {(descriptionId) => (
+              <Select
+                aria-describedby={descriptionId}
+                disabled={!alertPreferencesLoaded || alertPreferencesSaving}
+                label={t('monthlyCostWarningThreshold')}
+                onChange={(event) => {
+                  const value = Number(event.target.value);
+                  if ([50, 75, 80, 90, 95].includes(value)) {
+                    void saveAlertPreferences({ ...alertPreferences, monthlyCostWarningAtPercent: value });
+                  }
+                }}
+                options={[50, 75, 80, 90, 95].map((percent) => ({
+                  value: String(percent),
+                  label: t('usageUsedPercent', { percent }),
+                }))}
+                value={String(alertPreferences.monthlyCostWarningAtPercent)}
+                visuallyHiddenLabel
+              />
+            )}
+          </SettingsPreferenceRow>
+          <SettingsPreferenceRow
+            description={t('quotaWarningThresholdDescription')}
+            id="setting-quota-warning-threshold"
+            label={t('quotaWarningThreshold')}
+          >
+            {(descriptionId) => (
+              <Select
+                aria-describedby={descriptionId}
+                disabled={!alertPreferencesLoaded || alertPreferencesSaving}
+                label={t('quotaWarningThreshold')}
+                onChange={(event) => {
+                  const value = Number(event.target.value);
+                  if ([50, 75, 80, 90, 95].includes(value)) {
+                    void saveAlertPreferences({ ...alertPreferences, quotaWarningAtPercent: value });
+                  }
+                }}
+                options={[50, 75, 80, 90, 95].map((percent) => ({
+                  value: String(percent),
+                  label: t('usageUsedPercent', { percent }),
+                }))}
+                value={String(alertPreferences.quotaWarningAtPercent)}
+                visuallyHiddenLabel
+              />
+            )}
+          </SettingsPreferenceRow>
+          <SettingsPreferenceRow
+            description={t('monthlyEstimatedCostLimitDescription')}
+            id="setting-monthly-estimated-cost-limit"
+            label={t('monthlyEstimatedCostLimit')}
+          >
+            {(descriptionId) => (
+              <div className="flex flex-wrap items-end gap-2">
+                <Input
+                  aria-describedby={descriptionId}
+                  disabled={!alertPreferencesLoaded || alertPreferencesSaving}
+                  label={t('monthlyEstimatedCostLimit')}
+                  min={0.01}
+                  max={100_000}
+                  onChange={(event) => setCostLimitDraft(event.target.value)}
+                  placeholder={t('usageCostAlertDisabled')}
+                  step={0.01}
+                  type="number"
+                  value={costLimitDraft}
+                />
+                <Button
+                  disabled={!alertPreferencesLoaded || alertPreferencesSaving}
+                  loading={alertPreferencesSaving}
+                  onClick={() => void saveCostLimit()}
+                  size="small"
+                  variant="secondary"
+                  aria-describedby={descriptionId}
+                >
+                  {t('save')}
+                </Button>
+              </div>
+            )}
+          </SettingsPreferenceRow>
+        </div>
+        {alertPreferences.monthlyEstimatedCostLimitUsd !== null ? (
+          monthlyCostLoadState === 'failed' ||
+          (monthlyCostLoadState === 'loaded' &&
+            (monthlyCostSnapshot === null || monthlyCostSnapshot.summary.estimatedCostRequests === 0)) ? (
+            <p className="text-sm text-secondary-text" role="status">
+              {t('usageCostAlertUnavailable')}
+            </p>
+          ) : null
+        ) : null}
+        {alertPreferencesSaveFailed ? (
+          <p className="text-sm text-destructive" role="alert">
+            {t('usageAlertPreferencesSaveFailed')}
+          </p>
+        ) : null}
+      </Card>
+      {costWarningReached ? (
+        <Card className="border-warning bg-warning/10" padding="default" role="status">
+          {t('monthlyCostWarningReached', {
+            cost: monthlyCostSnapshot?.summary.estimatedCostUsd.toFixed(2) ?? '',
+            limit: alertPreferences.monthlyEstimatedCostLimitUsd?.toFixed(2) ?? '',
+            percent: alertPreferences.monthlyCostWarningAtPercent,
+          })}
+        </Card>
+      ) : null}
       <div className="flex justify-end">
         <Button
           disabled={isRefreshingAll || loadState === 'loading'}
@@ -373,6 +593,7 @@ export function UsageQuotasSection({ onNavigateToConnections }: UsageQuotasSecti
                         outcomes={outcomes}
                         refreshRequiredKeys={refreshRequiredKeys}
                         snapshot={snapshots[workspaceKey(connection.id, workspace.id)] ?? null}
+                        quotaWarningAtPercent={alertPreferences.quotaWarningAtPercent}
                         t={t}
                         workspace={workspace}
                       />
@@ -391,7 +612,11 @@ export function UsageQuotasSection({ onNavigateToConnections }: UsageQuotasSecti
         </div>
       )}
 
-      <CopilotUsageCard onNavigateToConnections={onNavigateToConnections} refreshSequence={copilotRefreshSequence} />
+      <CopilotUsageCard
+        onNavigateToConnections={onNavigateToConnections}
+        quotaWarningAtPercent={alertPreferences.quotaWarningAtPercent}
+        refreshSequence={copilotRefreshSequence}
+      />
 
       <Dialog
         onOpenChange={(open) => {
@@ -432,6 +657,7 @@ interface WorkspaceUsageProps {
   outcomes: Record<string, ResetOutcomeKey>;
   refreshRequiredKeys: Set<string>;
   snapshot: UsageSnapshot | null;
+  quotaWarningAtPercent: number;
   t: TFunction;
   workspace: UsageWorkspace;
 }
@@ -447,6 +673,7 @@ function WorkspaceUsage({
   outcomes,
   refreshRequiredKeys,
   snapshot,
+  quotaWarningAtPercent,
   t,
   workspace,
 }: WorkspaceUsageProps) {
@@ -499,6 +726,7 @@ function WorkspaceUsage({
               bucket={bucket}
               key={`${bucket.limitId}:${bucket.windowSeconds ?? 'unknown'}:${bucket.resetAtUnixMs ?? 'unknown'}`}
               locale={locale}
+              warningAtPercent={quotaWarningAtPercent}
               t={t}
             />
           ))}
@@ -536,7 +764,17 @@ function UsagePermissionStatus({ value, t }: { value: boolean | null; t: Workspa
   return <span className={`font-medium ${color}`}>{label}</span>;
 }
 
-function UsageBucketView({ bucket, locale, t }: { bucket: UsageBucket; locale: string; t: WorkspaceUsageProps['t'] }) {
+function UsageBucketView({
+  bucket,
+  locale,
+  warningAtPercent,
+  t,
+}: {
+  bucket: UsageBucket;
+  locale: string;
+  warningAtPercent: number;
+  t: WorkspaceUsageProps['t'];
+}) {
   const label = bucketLabel(bucket, t);
   const percent = bucket.usedPercent;
   const displayedPercent = percent === null ? null : Math.round(percent);
@@ -572,6 +810,11 @@ function UsageBucketView({ bucket, locale, t }: { bucket: UsageBucket; locale: s
       {bucket.resetAtUnixMs !== null ? (
         <span className="text-xs text-secondary-text">
           {t('quotaResetsAt', { time: formatTimestamp(bucket.resetAtUnixMs, locale) })}
+        </span>
+      ) : null}
+      {percent !== null && percent >= warningAtPercent ? (
+        <span className="text-xs text-warning" role="status">
+          {t('quotaWarningReached', { percent: Math.round(percent), threshold: warningAtPercent })}
         </span>
       ) : null}
     </div>

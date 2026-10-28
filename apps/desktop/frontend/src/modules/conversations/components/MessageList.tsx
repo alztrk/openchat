@@ -7,6 +7,7 @@ import { useInChatSearchHighlight } from '@/modules/conversations/hooks/useInCha
 import { useVirtualMessageList } from '@/modules/conversations/hooks/useVirtualMessageList';
 import { useChatStore } from '@/modules/conversations/stores/chatStore';
 import { ProviderIcon } from '@/modules/providers/components/ProviderIcon';
+import { useChatDisplayPreferencesStore } from '@/modules/settings/data/chatDisplayPreferences';
 import type { WorkspaceFileSelection } from './ChatFileChangesPanel';
 import { MessageItem } from './MessageItem';
 import { parseToolActivities } from './message/messageData';
@@ -22,6 +23,7 @@ export interface MessageListProps {
   onOpenFileChanges?: () => void;
   onOpenWorkspaceFile?: (file: WorkspaceFileSelection) => void;
   onOpenConnections?: () => void;
+  onCheckpointRestored?: () => void;
   inChatTargetMessageId?: string | null;
   inChatSearchQuery?: string;
   messagesOverride?: ChatMessage[];
@@ -40,6 +42,7 @@ export function MessageList({
   onOpenFileChanges,
   onOpenWorkspaceFile,
   onOpenConnections,
+  onCheckpointRestored,
   inChatTargetMessageId = null,
   inChatSearchQuery = '',
   messagesOverride,
@@ -60,6 +63,7 @@ export function MessageList({
   const activeConversationId =
     conversationIdOverride !== undefined ? conversationIdOverride : storeActiveConversationId;
   const skipBottomScroll = useRef(false);
+  const skippedCompletedResponseScroll = useRef(false);
   const responseGroups = useMemo(() => groupResponses(messages), [messages]);
   const [selectedResponseVersions, setSelectedResponseVersions] = useState<Record<string, number>>({});
   const displayRows = useMemo(
@@ -88,6 +92,7 @@ export function MessageList({
     );
   const shouldShowAssistantLoading = showAssistantLoading && !hasStreamingAssistant && !isWaitingForUserAnswer;
   const virtualList = useVirtualMessageList(visibleMessages, activeConversationId);
+  const autoFollowResponses = useChatDisplayPreferencesStore((state) => state.preferences.autoFollowResponses);
 
   const effectiveHighlightQuery = inChatSearchQuery || searchHighlightQuery || '';
   const effectiveTargetId = inChatTargetMessageId || searchHighlightMessageId || searchTargetMessageId;
@@ -179,10 +184,22 @@ export function MessageList({
       skipBottomScroll.current = false;
       return;
     }
+    if (hasStreamingAssistant) {
+      if (!autoFollowResponses) {
+        skippedCompletedResponseScroll.current = true;
+        return;
+      }
+      skippedCompletedResponseScroll.current = false;
+    } else if (skippedCompletedResponseScroll.current) {
+      skippedCompletedResponseScroll.current = false;
+      return;
+    }
     if (!virtualList.isFollowingLatest()) return;
     virtualList.scrollToBottom();
   }, [
     activeConversationId,
+    autoFollowResponses,
+    hasStreamingAssistant,
     inChatTargetMessageId,
     isLoadingMessages,
     messages.length,
@@ -252,6 +269,7 @@ export function MessageList({
                 message={message}
                 latestFileChanges={latestFileChanges}
                 onOpenConnections={onOpenConnections}
+                onCheckpointRestored={onCheckpointRestored}
                 onOpenFileChanges={onOpenFileChanges}
                 onOpenWorkspaceFile={onOpenWorkspaceFile}
                 onEditMessage={onEditMessage}

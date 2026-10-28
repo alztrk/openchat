@@ -1,47 +1,9 @@
 /** @file Maps provider credential operations to Tauri and exposes only redacted status to React. */
-import { i18n } from '@/localization/i18n';
+import { getNativeDialogLocale } from '@/platform/local-service/LocalServiceClient';
 import { invoke } from '@/platform/tauri';
 
-interface NativeHttpProviderDialogCopy {
-  title: string;
-  intro: string;
-  warning: string;
-  allow: string;
-  cancel: string;
-}
-
-function getNativeHttpProviderDialogCopy(): NativeHttpProviderDialogCopy {
-  return {
-    title: i18n.t('nativeProviderHttpTitle'),
-    intro: i18n.t('nativeProviderHttpIntro'),
-    warning: i18n.t('nativeProviderHttpWarning'),
-    allow: i18n.t('nativeProviderHttpAllow'),
-    cancel: i18n.t('nativeProviderHttpCancel'),
-  };
-}
-
-/** Provider identifiers accepted by the native credential commands. */
-export const compatibleProviderIds = [
-  'gemini',
-  'groq',
-  'cerebras',
-  'openrouter',
-  'mistral',
-  'deepseek',
-  'xai',
-  'perplexity',
-  'together',
-  'sambanova',
-  'anthropic',
-  'fireworks',
-  'deepinfra',
-  'dashscope',
-  'cohere',
-  'kilo',
-] as const;
-
-/** A supported provider whose API key is stored by the native host. */
-export type CompatibleProviderId = (typeof compatibleProviderIds)[number];
+/** Provider IDs returned by the native host's canonical compatible-provider catalog. */
+export type CompatibleProviderId = string;
 
 /** Redacted status for one saved ChatGPT API connection key. */
 export interface ChatGptApiKeySummary {
@@ -150,7 +112,10 @@ export async function loadProviderCredentialStatus(): Promise<ProviderCredential
   if (typeof value.openCodeConfigured !== 'boolean' || !isNullableString(value.openCodeKeySuffix)) {
     throw new Error('The provider credential status is invalid.');
   }
-  if (compatibleProviders.length !== compatibleProviderIds.length) {
+  if (compatibleProviders.length !== value.compatibleProviders.length) {
+    throw new Error('The provider credential catalog is invalid.');
+  }
+  if (new Set(compatibleProviders.map((provider) => provider.providerId)).size !== compatibleProviders.length) {
     throw new Error('The provider credential catalog is incomplete.');
   }
   if (customProviders.length !== value.customProviders.length) {
@@ -221,7 +186,7 @@ export async function saveCustomProvider(input: {
       ...input,
       reasoningEfforts: input.reasoningEfforts.join(','),
       apiKey: input.apiKey.trim().length > 0 ? input.apiKey : null,
-      dialogCopy: getNativeHttpProviderDialogCopy(),
+      dialogLocale: await getNativeDialogLocale(),
     },
   });
   if (
@@ -275,7 +240,7 @@ export async function deleteOpenCodeApiKey(): Promise<void> {
 
 /** Narrows an untrusted string to the built-in provider identifier union. */
 function isCompatibleProviderId(value: string): value is CompatibleProviderId {
-  return compatibleProviderIds.some((providerId) => providerId === value);
+  return value.length <= 64 && /^[a-z][a-z0-9_]*$/.test(value);
 }
 
 /** Checks the identifier format used for persisted custom-provider routes. */

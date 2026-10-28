@@ -3,15 +3,17 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 
-test('kilo provider is registered in compatibleProviderIds and provider documentation URLs', () => {
-  const credsPath = path.resolve('src/modules/providers/data/providerCredentials.ts');
-  const credsContent = fs.readFileSync(credsPath, 'utf8');
-  assert.match(credsContent, /'kilo'/);
+test('compatible providers come from the native catalog and have UI documentation', () => {
+  const catalogPath = path.resolve(
+    '../../../services/openchat-local-service/src/domain/providers/openai_compatible/mod.rs',
+  );
+  const catalogContent = fs.readFileSync(catalogPath, 'utf8');
+  assert.match(catalogContent, /id: "kilo"/);
 
   const sectionPath = path.resolve('src/modules/providers/components/ApiKeyProvidersSection.tsx');
   const sectionContent = fs.readFileSync(sectionPath, 'utf8');
+  assert.match(sectionContent, /snapshot\.compatibleProviders\.map/);
   assert.match(sectionContent, /kilo:\s*'providerNameKilo'/);
-  assert.match(sectionContent, /kilo:\s*'kiloApiDescription'/);
   assert.match(sectionContent, /kilo:\s*'https:\/\/kilo\.ai\/docs'/);
 });
 

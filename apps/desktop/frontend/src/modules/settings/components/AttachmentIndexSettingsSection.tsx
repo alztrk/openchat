@@ -4,10 +4,10 @@ import { useTranslation } from 'react-i18next';
 
 import { Button, Card } from '@/design-system';
 import {
+  type AttachmentTextIndexStatus,
   clearAttachmentTextIndex,
   getAttachmentTextIndexStatus,
   rebuildAttachmentTextIndex,
-  type AttachmentTextIndexStatus,
 } from '@/modules/conversations/data/chatStorage';
 
 type LoadState = 'loading' | 'ready' | 'error';
@@ -20,6 +20,7 @@ export function AttachmentIndexSettingsSection() {
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: The attempt counter intentionally retriggers this load effect.
   useEffect(() => {
     let cancelled = false;
     setLoadState('loading');
@@ -98,7 +99,9 @@ export function AttachmentIndexSettingsSection() {
           </p>
           {status?.truncated ? <p className="text-sm text-secondary-text">{t('attachmentIndexTruncated')}</p> : null}
           {failed ? (
-            <p className="text-sm text-destructive" role="alert">{t('attachmentIndexFailed')}</p>
+            <p className="text-sm text-destructive" role="alert">
+              {t('attachmentIndexFailed')}
+            </p>
           ) : null}
           <div className="flex flex-wrap gap-2">
             <Button

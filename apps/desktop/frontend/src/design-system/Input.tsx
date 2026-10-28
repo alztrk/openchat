@@ -56,18 +56,18 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
   ref,
 ) {
   const renderInput = (controlProps: InputControlProps) => (
-        <input
-          {...props}
-          {...controlProps}
-          className={cn(
-            'w-full text-text outline-none placeholder:text-secondary-text focus-visible:ring-2 focus-visible:ring-focus disabled:cursor-not-allowed disabled:opacity-50',
-            appearanceClasses[appearance],
-            densityClasses[density],
-            error && 'border-destructive',
-            className,
-          )}
-          ref={ref}
-        />
+    <input
+      {...props}
+      {...controlProps}
+      className={cn(
+        'w-full text-text outline-none placeholder:text-secondary-text focus-visible:ring-2 focus-visible:ring-focus disabled:cursor-not-allowed disabled:opacity-50',
+        appearanceClasses[appearance],
+        densityClasses[density],
+        error && 'border-destructive',
+        className,
+      )}
+      ref={ref}
+    />
   );
 
   if (fieldLayout === 'none') {

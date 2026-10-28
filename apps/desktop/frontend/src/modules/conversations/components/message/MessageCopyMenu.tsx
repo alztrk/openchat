@@ -1,7 +1,6 @@
 import { Check, ChevronDown, Code, Copy, FileText, Type } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-
 import { Button, DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/design-system';
 import {
   cleanMarkdown,
@@ -9,6 +8,7 @@ import {
   hasCodeBlocks,
   markdownToPlainText,
 } from '@/modules/conversations/data/messageCopyUtils';
+import { useChatDisplayPreferencesStore } from '@/modules/settings/data/chatDisplayPreferences';
 
 export interface MessageCopyMenuProps {
   content: string;
@@ -18,9 +18,11 @@ type CopyMode = 'clean-markdown' | 'code-blocks' | 'plain-text';
 
 export function MessageCopyMenu({ content }: MessageCopyMenuProps) {
   const { t } = useTranslation();
+  const copyFormat = useChatDisplayPreferencesStore((state) => state.preferences.copyFormat);
   const [copyResult, setCopyResult] = useState<'idle' | 'copied' | 'failed'>('idle');
   const resetTimer = useRef<number | undefined>(undefined);
   const containsCode = hasCodeBlocks(content);
+  const defaultCopyMode: CopyMode = copyFormat === 'markdown' ? 'clean-markdown' : 'plain-text';
 
   useEffect(
     () => () => {
@@ -55,11 +57,23 @@ export function MessageCopyMenu({ content }: MessageCopyMenuProps) {
   return (
     <div className="relative inline-flex items-center rounded-button">
       <Button
-        aria-label={t(copyResult === 'copied' ? 'messageCopied' : 'copyCleanMarkdown')}
+        aria-label={t(
+          copyResult === 'copied'
+            ? 'messageCopied'
+            : defaultCopyMode === 'clean-markdown'
+              ? 'copyCleanMarkdown'
+              : 'copyPlainText',
+        )}
         className="size-8 opacity-70 group-hover:opacity-100"
-        onClick={() => void performCopy('clean-markdown')}
+        onClick={() => void performCopy(defaultCopyMode)}
         size="icon"
-        title={t(copyResult === 'copied' ? 'messageCopied' : 'copyCleanMarkdown')}
+        title={t(
+          copyResult === 'copied'
+            ? 'messageCopied'
+            : defaultCopyMode === 'clean-markdown'
+              ? 'copyCleanMarkdown'
+              : 'copyPlainText',
+        )}
         variant="ghost"
       >
         {copyResult === 'copied' ? (

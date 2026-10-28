@@ -14,10 +14,10 @@ interface ModelDirectoryState extends StoredDirectory {
   directories: Record<string, string | null>;
   directoryAvailability: Record<string, boolean>;
   hydrateDirectoryFor(engineId: string): void;
-  setDirectoryFor(engineId: string, directory: string): boolean;
-  resetDirectoryFor(engineId: string): boolean;
-  setDirectory(directory: string): boolean;
-  resetDirectory(): boolean;
+  setDirectoryFor(engineId: string, directory: string): Promise<boolean>;
+  resetDirectoryFor(engineId: string): Promise<boolean>;
+  setDirectory(directory: string): Promise<boolean>;
+  resetDirectory(): Promise<boolean>;
 }
 
 const savedDirectory = readDirectory(llamaCppEngineId);
@@ -36,13 +36,13 @@ export const useModelDirectoryStore = create<ModelDirectoryState>((set, get) => 
       ...(engineId === llamaCppEngineId ? { directory: saved.directory, available: saved.available } : {}),
     }));
   },
-  setDirectoryFor: (engineId, directory) => {
+  setDirectoryFor: async (engineId, directory) => {
     if (!isValidEngineId(engineId)) return false;
     const value = directory.trim();
     if (value.length > 4096 || containsAsciiControlCharacters(value)) return false;
     try {
-      if (value.length === 0) unifiedStorage.removeItem(preferenceKey(engineId));
-      else unifiedStorage.setItem(preferenceKey(engineId), value);
+      if (value.length === 0) await unifiedStorage.removePersistedItem(preferenceKey(engineId));
+      else await unifiedStorage.setPersistedItem(preferenceKey(engineId), value);
       set((current) => ({
         directories: { ...current.directories, [engineId]: value.length > 0 ? value : null },
         directoryAvailability: { ...current.directoryAvailability, [engineId]: true },
@@ -57,10 +57,10 @@ export const useModelDirectoryStore = create<ModelDirectoryState>((set, get) => 
       return false;
     }
   },
-  resetDirectoryFor: (engineId) => {
+  resetDirectoryFor: async (engineId) => {
     if (!isValidEngineId(engineId)) return false;
     try {
-      unifiedStorage.removeItem(preferenceKey(engineId));
+      await unifiedStorage.removePersistedItem(preferenceKey(engineId));
       set((current) => ({
         directories: { ...current.directories, [engineId]: null },
         directoryAvailability: { ...current.directoryAvailability, [engineId]: true },
@@ -75,8 +75,8 @@ export const useModelDirectoryStore = create<ModelDirectoryState>((set, get) => 
       return false;
     }
   },
-  setDirectory: (directory) => get().setDirectoryFor(llamaCppEngineId, directory),
-  resetDirectory: () => get().resetDirectoryFor(llamaCppEngineId),
+  setDirectory: async (directory) => get().setDirectoryFor(llamaCppEngineId, directory),
+  resetDirectory: async () => get().resetDirectoryFor(llamaCppEngineId),
 }));
 
 function preferenceKey(engineId: string): string {

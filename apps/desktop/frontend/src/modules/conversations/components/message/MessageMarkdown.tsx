@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 
 import { Button } from '@/design-system';
 import { isWithinRichMarkdownBudget } from '@/modules/conversations/data/messageMarkdownBudget';
+import { useChatDisplayPreferencesStore } from '@/modules/settings/data/chatDisplayPreferences';
 import { withStableKeys } from '@/shared/utils/reactKeys';
 import { CitationSourceDialog } from './CitationSourceDialog';
 import { CitationSources } from './CitationSources';
@@ -34,6 +35,7 @@ interface CodeBlockProps {
 
 function CodeBlock({ code, language }: CodeBlockProps) {
   const { t } = useTranslation();
+  const wrapCode = useChatDisplayPreferencesStore((state) => state.preferences.wrapCode);
   const [copied, setCopied] = useState(false);
 
   const handleCopy = async () => {
@@ -65,7 +67,7 @@ function CodeBlock({ code, language }: CodeBlockProps) {
         </Button>
       </div>
       <pre className="max-w-full overflow-x-auto p-3 text-sm">
-        <code className="font-code whitespace-pre-wrap break-words">{code}</code>
+        <code className={`font-code ${wrapCode ? 'whitespace-pre-wrap break-words' : 'whitespace-pre'}`}>{code}</code>
       </pre>
     </div>
   );

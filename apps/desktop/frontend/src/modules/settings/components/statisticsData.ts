@@ -21,6 +21,9 @@ export interface StatisticsBreakdown {
   reasoningTokens: number;
   cachedInputTokens: number;
   cacheWriteTokens: number;
+  cacheShareInputTokens: number;
+  cacheShareCachedTokens: number;
+  cacheShareRequests: number;
   estimatedCostUsd: number;
   estimatedCostRequests: number;
 }
@@ -45,15 +48,60 @@ export interface StatisticsConversation {
   lastRequestAtUnixMs: number;
 }
 
+export interface StatisticsQuotaBucket {
+  limitId: string;
+  limit: number | null;
+  remaining: number | null;
+  usedPercent: number | null;
+  windowSeconds: number | null;
+  resetAtUnixMs: number | null;
+}
+
+export interface StatisticsQuotaSnapshot {
+  source: 'chatgpt' | 'provider_response';
+  providerId: string | null;
+  modelId: string | null;
+  connectionId: string | null;
+  workspaceId: string | null;
+  connectionName: string | null;
+  workspaceName: string | null;
+  fetchedAtUnixMs: number;
+  freshness: 'current' | 'stale' | 'unknown';
+  ordinaryUsageAllowed: boolean | null;
+  buckets: StatisticsQuotaBucket[];
+}
+
+export interface LocalModelMeasurements {
+  localRequests: number;
+  measuredRequests: number;
+  outputTokens: number;
+  generationTimeMs: number;
+  outputTokensPerSecond: number | null;
+}
+
 export interface StatisticsRequest {
   eventKind: string;
   startedAtUnixMs: number;
+  elapsedTimeMs: number | null;
+  firstOutputLatencyMs: number | null;
+  providerFirstTokenLatencyMs: number | null;
+  providerProcessingMs: number | null;
+  providerQueueTimeMs: number | null;
+  providerInputProcessingMs: number | null;
+  providerOutputProcessingMs: number | null;
+  providerOutputTokensPerSecond: number | null;
+  conversationId: string;
   conversationTitle: string;
+  connectionId: string | null;
+  workspaceId: string | null;
+  projectId: string | null;
+  parentRunId: string | null;
   providerId: string | null;
   modelId: string | null;
   reasoningEffort: string | null;
   operation: string;
   status: string;
+  completionReason: string | null;
   fastRequested: boolean | null;
   inputTokens: number | null;
   outputTokens: number | null;
@@ -72,6 +120,8 @@ export interface StatisticsSnapshot {
   dailyTrend: StatisticsTrend[];
   monthlyTrend: StatisticsTrend[];
   conversations: StatisticsConversation[];
+  localModelMeasurements: LocalModelMeasurements;
+  quotaHistory: StatisticsQuotaSnapshot[];
   requestDetailCount: number;
   requests: StatisticsRequest[];
   filterOptions: { providers: string[]; models: string[] };
@@ -130,10 +180,100 @@ export function parseStatistics(value: JsonObject): StatisticsSnapshot {
     dailyTrend: parseTrends(value.dailyTrend, 'day'),
     monthlyTrend: parseTrends(value.monthlyTrend, 'month'),
     conversations: parseConversations(value.conversationRanking),
+    localModelMeasurements: parseLocalModelMeasurements(value.localModelMeasurements),
+    quotaHistory: parseQuotaHistory(value.quotaHistory),
     requestDetailCount: requiredInteger(value, 'requestDetailCount'),
     requests: parseRequests(value.requestDetails),
     filterOptions: parseFilterOptions(value.filterOptions),
   };
+}
+
+export function parseQuotaHistory(value: unknown): StatisticsQuotaSnapshot[] {
+  if (!Array.isArray(value)) throw new Error('Statistics quota history is invalid.');
+  return value.map((entry) => {
+    const item = objectValue(entry, 'quota snapshot');
+    const source = item.source;
+    if (source !== 'chatgpt' && source !== 'provider_response') {
+      throw new Error('The statistics quota source is invalid.');
+    }
+    const providerId = nullableString(item.providerId);
+    const modelId = nullableString(item.modelId);
+    if (
+      (source === 'chatgpt' && (providerId !== null || modelId !== null)) ||
+      (source === 'provider_response' && providerId !== 'openai' && providerId !== 'groq')
+    ) {
+      throw new Error('The statistics quota provider is invalid.');
+    }
+    const fetchedAtUnixMs = requiredInteger(item, 'fetchedAtUnixMs');
+    if (fetchedAtUnixMs < 0 || fetchedAtUnixMs > 8_640_000_000_000_000) {
+      throw new Error('The statistics quota timestamp is invalid.');
+    }
+    const freshness = item.freshness === 'current' ? 'current' : item.freshness === 'stale' ? 'stale' : 'unknown';
+    return {
+      source,
+      providerId,
+      modelId,
+      connectionId: source === 'chatgpt' ? requiredString(item, 'connectionId') : nullableString(item.connectionId),
+      workspaceId: source === 'chatgpt' ? requiredString(item, 'workspaceId') : nullableString(item.workspaceId),
+      connectionName: nullableString(item.connectionName),
+      workspaceName: nullableString(item.workspaceName),
+      fetchedAtUnixMs,
+      freshness,
+      ordinaryUsageAllowed: nullableBoolean(item.ordinaryUsageAllowed),
+      buckets: parseQuotaBuckets(item.buckets),
+    };
+  });
+}
+
+export function parseLocalModelMeasurements(value: unknown): LocalModelMeasurements {
+  const item = objectValue(value, 'local model measurements');
+  const localRequests = requiredInteger(item, 'localRequests');
+  const measuredRequests = requiredInteger(item, 'measuredRequests');
+  const outputTokens = requiredInteger(item, 'outputTokens');
+  const generationTimeMs = requiredInteger(item, 'generationTimeMs');
+  const outputTokensPerSecond = nullableNumber(item.outputTokensPerSecond);
+  if (
+    localRequests < 0 ||
+    measuredRequests < 0 ||
+    measuredRequests > localRequests ||
+    outputTokens < 0 ||
+    generationTimeMs < 0 ||
+    (outputTokensPerSecond !== null && outputTokensPerSecond < 0) ||
+    (measuredRequests === 0 && outputTokensPerSecond !== null) ||
+    (measuredRequests > 0 && (outputTokens === 0 || generationTimeMs === 0 || outputTokensPerSecond === null))
+  ) {
+    throw new Error('Local model measurement values are invalid.');
+  }
+  return { localRequests, measuredRequests, outputTokens, generationTimeMs, outputTokensPerSecond };
+}
+
+function parseQuotaBuckets(value: unknown): StatisticsQuotaBucket[] {
+  if (!Array.isArray(value)) throw new Error('Statistics quota buckets are invalid.');
+  return value.map((entry) => {
+    const item = objectValue(entry, 'quota bucket');
+    const limit = nullableInteger(item.limit);
+    const remaining = nullableInteger(item.remaining);
+    const usedPercent = nullableNumber(item.usedPercent);
+    const windowSeconds = nullableInteger(item.windowSeconds);
+    const resetAtUnixMs = nullableInteger(item.resetAtUnixMs);
+    if (
+      (usedPercent !== null && (usedPercent < 0 || usedPercent > 100)) ||
+      (limit !== null && limit < 0) ||
+      (remaining !== null && remaining < 0) ||
+      (windowSeconds !== null && windowSeconds < 0) ||
+      (resetAtUnixMs !== null && resetAtUnixMs < 0)
+    ) {
+      throw new Error('A statistics quota bucket value is invalid.');
+    }
+    return {
+      limitId: requiredString(item, 'limitId'),
+      limit,
+      remaining,
+      usedPercent,
+      windowSeconds,
+      resetAtUnixMs,
+    };
+  });
 }
 
 export function parseStatisticsDetails(value: JsonObject): {
@@ -164,8 +304,17 @@ export function parseBreakdowns(value: unknown, keyName: string): StatisticsBrea
       reasoningTokens: requiredInteger(item, 'reasoningTokens'),
       cachedInputTokens: requiredInteger(item, 'cachedInputTokens'),
       cacheWriteTokens: requiredInteger(item, 'cacheWriteTokens'),
+      cacheShareInputTokens: requiredInteger(item, 'cacheShareInputTokens'),
+      cacheShareCachedTokens: requiredInteger(item, 'cacheShareCachedTokens'),
+      cacheShareRequests: requiredInteger(item, 'cacheShareRequests'),
     };
   });
+}
+
+export function reportedCacheReadShare(item: StatisticsBreakdown): number | null {
+  if (item.cacheShareRequests <= 0 || item.cacheShareInputTokens <= 0) return null;
+  if (item.cacheShareCachedTokens < 0 || item.cacheShareCachedTokens > item.cacheShareInputTokens) return null;
+  return item.cacheShareCachedTokens / item.cacheShareInputTokens;
 }
 
 export function parseTrends(value: unknown, bucketKey: string): StatisticsTrend[] {
@@ -208,18 +357,66 @@ export function parseRequests(value: unknown): StatisticsRequest[] {
   if (!Array.isArray(value)) throw new Error('Statistics request details are invalid.');
   return value.map((entry) => {
     const item = objectValue(entry, 'request');
+    const startedAtUnixMs = requiredInteger(item, 'startedAtUnixMs');
+    const finishedAtUnixMs = nullableInteger(item.finishedAtUnixMs);
+    const firstOutputLatencyMs = nullableInteger(item.firstOutputLatencyMs);
+    const providerProcessingMs = nullableInteger(item.providerProcessingMs);
+    const providerQueueTimeMs = nullableInteger(item.providerQueueTimeMs);
+    const providerInputProcessingMs = nullableInteger(item.providerInputProcessingMs);
+    const providerOutputProcessingMs = nullableInteger(item.providerOutputProcessingMs);
+    const outputTokens = nullableInteger(item.outputTokens);
+    const providerFirstTokenLatencyTotal =
+      providerQueueTimeMs !== null && providerInputProcessingMs !== null
+        ? providerQueueTimeMs + providerInputProcessingMs
+        : null;
+    if (finishedAtUnixMs !== null && finishedAtUnixMs < startedAtUnixMs) {
+      throw new Error('The statistics request finish time is invalid.');
+    }
+    if (firstOutputLatencyMs !== null && firstOutputLatencyMs < 0) {
+      throw new Error('The first output latency is invalid.');
+    }
+    if (
+      [providerProcessingMs, providerQueueTimeMs, providerInputProcessingMs, providerOutputProcessingMs].some(
+        (value) => value !== null && value < 0,
+      )
+    ) {
+      throw new Error('A provider timing value is invalid.');
+    }
     return {
       eventKind: requiredString(item, 'eventKind'),
-      startedAtUnixMs: requiredInteger(item, 'startedAtUnixMs'),
+      startedAtUnixMs,
+      elapsedTimeMs: finishedAtUnixMs === null ? null : finishedAtUnixMs - startedAtUnixMs,
+      firstOutputLatencyMs,
+      providerFirstTokenLatencyMs:
+        providerFirstTokenLatencyTotal !== null && Number.isSafeInteger(providerFirstTokenLatencyTotal)
+          ? providerFirstTokenLatencyTotal
+          : null,
+      providerProcessingMs,
+      providerQueueTimeMs,
+      providerInputProcessingMs,
+      providerOutputProcessingMs,
+      providerOutputTokensPerSecond:
+        outputTokens !== null &&
+        outputTokens >= 0 &&
+        providerOutputProcessingMs !== null &&
+        providerOutputProcessingMs > 0
+          ? (outputTokens * 1_000) / providerOutputProcessingMs
+          : null,
+      conversationId: requiredString(item, 'conversationId'),
       conversationTitle: requiredString(item, 'conversationTitle'),
+      connectionId: nullableString(item.connectionId),
+      workspaceId: nullableString(item.workspaceId),
+      projectId: nullableString(item.projectId),
+      parentRunId: nullableString(item.parentRunId),
       providerId: nullableString(item.providerId),
       modelId: nullableString(item.modelId),
       reasoningEffort: nullableString(item.reasoningEffort),
       operation: requiredString(item, 'operation'),
       status: requiredString(item, 'status'),
+      completionReason: nullableString(item.completionReason),
       fastRequested: nullableBoolean(item.fastRequested),
       inputTokens: nullableInteger(item.inputTokens),
-      outputTokens: nullableInteger(item.outputTokens),
+      outputTokens,
       reasoningTokens: nullableInteger(item.reasoningTokens),
       cachedInputTokens: nullableInteger(item.cachedInputTokens),
       cacheWriteTokens: nullableInteger(item.cacheWriteTokens),
@@ -247,13 +444,27 @@ export function createStatisticsCsv(requests: readonly StatisticsRequest[], t: T
   const rows = [
     [
       t('statisticsRequestTime'),
+      t('statisticsOpenChatElapsedTime'),
+      t('statisticsFirstOutputLatency'),
+      t('statisticsProviderFirstTokenLatency'),
+      t('statisticsProviderProcessingTime'),
+      t('statisticsProviderQueueTime'),
+      t('statisticsProviderInputProcessingTime'),
+      t('statisticsProviderOutputProcessingTime'),
+      t('statisticsProviderOutputRate'),
+      t('statisticsConversationId'),
       t('statisticsConversationTitle'),
+      t('statisticsConnectionId'),
+      t('statisticsWorkspaceId'),
+      t('statisticsProjectId'),
+      t('statisticsParentRunId'),
       t('statisticsProvider'),
       t('statisticsModel'),
       t('statisticsOperation'),
       t('statisticsReasoningEffort'),
       t('statisticsFastModeFilter'),
       t('statisticsStatus'),
+      t('statisticsProviderCompletionReason'),
       t('statisticsInputTokens'),
       t('statisticsOutputTokens'),
       t('statisticsReasoningTokens'),
@@ -267,7 +478,20 @@ export function createStatisticsCsv(requests: readonly StatisticsRequest[], t: T
   for (const request of requests) {
     rows.push([
       new Intl.DateTimeFormat(language, { dateStyle: 'short', timeStyle: 'medium' }).format(request.startedAtUnixMs),
+      request.elapsedTimeMs === null ? '' : String(request.elapsedTimeMs),
+      request.firstOutputLatencyMs === null ? '' : String(request.firstOutputLatencyMs),
+      request.providerFirstTokenLatencyMs === null ? '' : String(request.providerFirstTokenLatencyMs),
+      request.providerProcessingMs === null ? '' : String(request.providerProcessingMs),
+      request.providerQueueTimeMs === null ? '' : String(request.providerQueueTimeMs),
+      request.providerInputProcessingMs === null ? '' : String(request.providerInputProcessingMs),
+      request.providerOutputProcessingMs === null ? '' : String(request.providerOutputProcessingMs),
+      request.providerOutputTokensPerSecond === null ? '' : request.providerOutputTokensPerSecond.toFixed(2),
+      request.conversationId,
       request.conversationTitle,
+      request.connectionId ?? '',
+      request.workspaceId ?? '',
+      request.projectId ?? '',
+      request.parentRunId ?? '',
       request.providerId === null ? t('statisticsNotReported') : providerLabel(request.providerId, t),
       request.modelId ?? t('statisticsNotReported'),
       operationLabel(request.operation, t),
@@ -282,6 +506,7 @@ export function createStatisticsCsv(requests: readonly StatisticsRequest[], t: T
           ? t('statisticsRequested')
           : t('statisticsNotRequested'),
       statusLabel(request, t),
+      request.completionReason ?? '',
       request.inputTokens === null ? '' : String(request.inputTokens),
       request.outputTokens === null ? '' : String(request.outputTokens),
       request.reasoningTokens === null ? '' : String(request.reasoningTokens),

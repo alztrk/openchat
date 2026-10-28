@@ -1,5 +1,5 @@
 import { detectFileLanguage, highlightFileLines } from './FileSyntaxHighlight';
-import { ReadCodeLines, type ReadCodeLine } from './ReadCodeLines';
+import { type ReadCodeLine, ReadCodeLines } from './ReadCodeLines';
 
 export function HighlightedReadLines({ lines, path }: { lines: ReadCodeLine[]; path: string }) {
   const highlightedLines = highlightFileLines(

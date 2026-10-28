@@ -4,7 +4,9 @@ import { useTranslation } from 'react-i18next';
 import { Button, Dialog } from '@/design-system';
 import type { ChatFileChange } from '@/modules/conversations/data/chatFileChanges';
 import type { ChatMessage } from '@/modules/conversations/data/chatStorage';
+import { cleanMarkdown, markdownToPlainText } from '@/modules/conversations/data/messageCopyUtils';
 import { ProviderIcon } from '@/modules/providers/components/ProviderIcon';
+import { useChatDisplayPreferencesStore } from '@/modules/settings/data/chatDisplayPreferences';
 import { parsePersonalMemoryFactIds, readPersonalMemoryFacts } from '@/modules/settings/data/personalMemory';
 import type { WorkspaceFileSelection } from './ChatFileChangesPanel';
 import { MessageAttachments } from './MessageAttachments';
@@ -36,6 +38,7 @@ export interface MessageItemProps {
   onOpenFileChanges?: () => void;
   onOpenWorkspaceFile?: (file: WorkspaceFileSelection) => void;
   onOpenConnections?: () => void;
+  onCheckpointRestored?: () => void;
 }
 
 export function MessageItem({
@@ -52,9 +55,11 @@ export function MessageItem({
   onOpenFileChanges,
   onOpenWorkspaceFile,
   onOpenConnections,
+  onCheckpointRestored,
 }: MessageItemProps) {
   const { i18n, t } = useTranslation();
   const locale = i18n.resolvedLanguage ?? i18n.language;
+  const copyFormat = useChatDisplayPreferencesStore((state) => state.preferences.copyFormat);
   const [copyResult, setCopyResult] = useState<'idle' | 'copied' | 'failed'>('idle');
   const [memorySourcesOpen, setMemorySourcesOpen] = useState(false);
   const [memorySources, setMemorySources] = useState<PersonalMemorySource[]>([]);
@@ -99,7 +104,11 @@ export function MessageItem({
 
   const copyMessage = async () => {
     try {
-      await navigator.clipboard.writeText(inBandReasoning.visibleContent);
+      const text =
+        copyFormat === 'markdown'
+          ? cleanMarkdown(inBandReasoning.visibleContent)
+          : markdownToPlainText(inBandReasoning.visibleContent);
+      await navigator.clipboard.writeText(text);
       setCopyResult('copied');
     } catch {
       setCopyResult('failed');
@@ -167,7 +176,11 @@ export function MessageItem({
             {toolActivities.map((activity) => (
               <ToolActivityAccordion
                 activity={activity}
+                conversationId={message.conversationId}
+                isResponseInProgress={message.status === 'streaming'}
                 key={activity.callId}
+                onCheckpointRestored={onCheckpointRestored}
+                onOpenFileChanges={onOpenFileChanges}
                 onOpenFile={(path, content) => onOpenWorkspaceFile?.({ path, content })}
               />
             ))}

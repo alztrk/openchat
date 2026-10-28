@@ -6,10 +6,10 @@ import { Button, Input } from '@/design-system';
 
 import {
   type ChatConversation,
+  listConversationAttachments,
   normalizeSearchText,
   parseSearchQuery,
   type StoredSearchMessageResult,
-  listConversationAttachments,
   searchStoredMessages,
 } from '@/modules/conversations/data/chatStorage';
 import { useChatStore } from '@/modules/conversations/stores/chatStore';
@@ -143,6 +143,15 @@ export function TitleBarSearch({ onSelectConversation }: TitleBarSearchProps) {
     setRecentSearches(loadRecentSearches());
   }, []);
 
+  useEffect(() => {
+    const openSearch = () => {
+      setIsOpen(true);
+      window.requestAnimationFrame(() => inputRef.current?.focus());
+    };
+    window.addEventListener('openchat-open-title-search', openSearch);
+    return () => window.removeEventListener('openchat-open-title-search', openSearch);
+  }, []);
+
   const projectMap = useMemo(() => {
     const map = new Map<string, string>();
     for (const project of projects) {
@@ -180,9 +189,10 @@ export function TitleBarSearch({ onSelectConversation }: TitleBarSearchProps) {
         roleFilter: parsedQuery.roleFilter,
         hasCodeOnly: parsedQuery.hasCodeOnly,
       });
-      const attachmentSearch = normalizedCleanQuery.length >= 2 && !parsedQuery.roleFilter && !parsedQuery.hasCodeOnly
-        ? listConversationAttachments(0, 30, parsedQuery.cleanQuery, 'all')
-        : Promise.resolve({ items: [], nextOffset: null });
+      const attachmentSearch =
+        normalizedCleanQuery.length >= 2 && !parsedQuery.roleFilter && !parsedQuery.hasCodeOnly
+          ? listConversationAttachments(0, 30, parsedQuery.cleanQuery, 'all')
+          : Promise.resolve({ items: [], nextOffset: null });
       void Promise.all([messageSearch, attachmentSearch])
         .then(([messages, attachments]) => {
           if (!isCancelled) {

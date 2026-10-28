@@ -1,5 +1,5 @@
 import { Download, Trash2 } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Button, Switch, Textarea } from '@/design-system';
@@ -39,6 +39,7 @@ interface ProjectMemoryPanelProps {
 
 export function ProjectMemoryPanel({ project, onClose }: ProjectMemoryPanelProps) {
   const { t } = useTranslation();
+  const newNoteId = useId();
   const activeProjectId = useRef<string | null>(project.id);
   const [memory, setMemory] = useState<ProjectMemoryState | null>(null);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
@@ -230,13 +231,14 @@ export function ProjectMemoryPanel({ project, onClose }: ProjectMemoryPanelProps
           {memory.items.length > 0 ? (
             <div className="grid gap-3">
               {memory.items.map((item, index) => {
+                const noteId = `project-memory-note-${item.id}`;
                 const content = drafts[item.id] ?? item.content;
                 const bytes = byteLength(content);
                 const totalBytes = memory.totalBytes - byteLength(item.content) + bytes;
                 const changed = content !== item.content;
                 return (
                   <section className="grid gap-2 rounded-card border border-border p-3" key={item.id}>
-                    <label className="grid gap-2 text-sm font-medium text-text">
+                    <label className="grid gap-2 text-sm font-medium text-text" htmlFor={noteId}>
                       <span className="flex flex-wrap items-center justify-between gap-2">
                         <span>{t('projectMemoryNoteLabel', { index: index + 1 })}</span>
                         <span className="text-xs font-normal text-secondary-text">
@@ -244,10 +246,10 @@ export function ProjectMemoryPanel({ project, onClose }: ProjectMemoryPanelProps
                         </span>
                       </span>
                       <Textarea
-                        aria-label={t('projectMemoryNoteLabel', { index: index + 1 })}
                         className="min-h-24 resize-y rounded-control border border-border bg-raised p-3 font-ui text-sm text-text outline-none focus-visible:ring-2 focus-visible:ring-focus disabled:cursor-not-allowed disabled:opacity-50"
                         fieldLayout="none"
                         disabled={isBusy}
+                        id={noteId}
                         onChange={(event) => setDrafts((current) => ({ ...current, [item.id]: event.target.value }))}
                         value={content}
                       />
@@ -302,13 +304,13 @@ export function ProjectMemoryPanel({ project, onClose }: ProjectMemoryPanelProps
             </p>
           )}
           <div className="grid gap-2 rounded-card border border-border p-3">
-            <label className="grid gap-2 text-sm font-medium text-text">
+            <label className="grid gap-2 text-sm font-medium text-text" htmlFor={newNoteId}>
               {t('projectMemoryNewNote')}
               <Textarea
-                aria-label={t('projectMemoryNewNote')}
                 className="min-h-24 resize-y rounded-control border border-border bg-raised p-3 font-ui text-sm text-text outline-none focus-visible:ring-2 focus-visible:ring-focus disabled:cursor-not-allowed disabled:opacity-50"
                 fieldLayout="none"
                 disabled={isBusy}
+                id={newNoteId}
                 onChange={(event) => setNewNote(event.target.value)}
                 placeholder={t('projectMemoryHint')}
                 value={newNote}

@@ -1,4 +1,4 @@
-import { Download, FileDown, LoaderCircle, RefreshCw } from 'lucide-react';
+import { Download, FileDown, RefreshCw } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button, Dialog } from '@/design-system';
@@ -117,13 +117,14 @@ export function SupportDiagnosticsSettingsSection() {
           <h3 className="font-semibold">{t('supportDiagnosticsTitle')}</h3>
           <p className="mt-1 text-sm text-secondary-text">{t('supportDiagnosticsDescription')}</p>
         </div>
-        <Button className="w-full" disabled={isPreparing || isExporting} onClick={() => void preparePreview()}>
-          {isPreparing || isExporting ? (
-            <LoaderCircle aria-hidden="true" className="animate-spin" size={16} />
-          ) : (
-            <FileDown aria-hidden="true" size={16} />
-          )}
-          {t(isPreparing ? 'supportDiagnosticsPreparing' : isExporting ? 'saving' : 'reviewSupportDiagnostics')}
+        <Button
+          className="w-full"
+          loading={isPreparing || isExporting}
+          loadingContent={t(isPreparing ? 'supportDiagnosticsPreparing' : 'saving')}
+          onClick={() => void preparePreview()}
+        >
+          <FileDown aria-hidden="true" size={16} />
+          {t('reviewSupportDiagnostics')}
         </Button>
       </div>
       {errorKey ? (
@@ -178,13 +179,14 @@ export function SupportDiagnosticsSettingsSection() {
               >
                 {t('cancel')}
               </Button>
-              <Button disabled={isExporting} onClick={() => void exportPreview()} variant="primary">
-                {isExporting ? (
-                  <LoaderCircle aria-hidden="true" className="animate-spin" size={16} />
-                ) : (
-                  <Download aria-hidden="true" size={16} />
-                )}
-                {t(isExporting ? 'saving' : 'supportDiagnosticsExportAction')}
+              <Button
+                loading={isExporting}
+                loadingContent={t('saving')}
+                onClick={() => void exportPreview()}
+                variant="primary"
+              >
+                <Download aria-hidden="true" size={16} />
+                {t('supportDiagnosticsExportAction')}
               </Button>
             </div>
           </div>

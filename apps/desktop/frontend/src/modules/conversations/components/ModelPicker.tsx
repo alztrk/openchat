@@ -514,11 +514,12 @@ function ModelOption({
   rateLimitState,
 }: ModelOptionProps) {
   const { i18n, t } = useTranslation();
+  const locale = i18n.resolvedLanguage ?? i18n.language;
   const pricing = pricingLoad?.snapshot?.model?.pricing;
-  const inputPrice = pricing ? `$${formatPriceAmount(pricing.input, i18n.language)}` : '—';
-  const outputPrice = pricing ? `$${formatPriceAmount(pricing.output, i18n.language)}` : '—';
+  const inputPrice = pricing ? `$${formatPriceAmount(pricing.input, locale)}` : '—';
+  const outputPrice = pricing ? `$${formatPriceAmount(pricing.output, locale)}` : '—';
   const contextWindow = pricingLoad?.snapshot?.model?.contextWindow ?? model.contextWindow;
-  const contextLabel = contextWindow && contextWindow > 0 ? formatModelTokenCount(contextWindow) : '—';
+  const contextLabel = contextWindow && contextWindow > 0 ? formatModelTokenCount(contextWindow, locale) : '—';
   const isPricingLoading = model.providerId !== 'llama_cpp' && pricingLoad?.snapshot === null;
   return (
     <div className="flex min-w-0 items-center gap-1 rounded-control hover:bg-hover">
@@ -756,10 +757,11 @@ function formatPriceAmount(value: number, locale: string): string {
   return new Intl.NumberFormat(locale, { maximumFractionDigits: 6 }).format(value);
 }
 
-function formatModelTokenCount(value: number): string {
-  if (value >= 1_000_000) return `${(value / 1_000_000).toLocaleString(undefined, { maximumFractionDigits: 1 })}M`;
-  if (value >= 1_000) return `${Math.round(value / 1_000).toLocaleString()}K`;
-  return value.toLocaleString();
+function formatModelTokenCount(value: number, locale: string): string {
+  const formatter = new Intl.NumberFormat(locale, { maximumFractionDigits: 1 });
+  if (value >= 1_000_000) return `${formatter.format(value / 1_000_000)}M`;
+  if (value >= 1_000) return `${formatter.format(Math.round(value / 1_000))}K`;
+  return formatter.format(value);
 }
 
 function groupModels(

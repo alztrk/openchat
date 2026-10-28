@@ -3,7 +3,7 @@ import type { LucideIcon } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { Card } from '@/design-system';
 import type { StatisticsBreakdown, StatisticsTrend } from './statisticsData';
-import { formatCost, formatNumber, formatTrendDate } from './statisticsData';
+import { formatCost, formatNumber, formatTrendDate, reportedCacheReadShare } from './statisticsData';
 
 export function MetricCard({
   detail,
@@ -201,7 +201,7 @@ export function BreakdownCard({
 }) {
   const maxTokens = Math.max(0, ...items.map((item) => item.inputTokens + item.outputTokens));
   return (
-      <Card className="overflow-hidden">
+    <Card className="overflow-hidden">
       <div className="border-b border-border px-4 py-3">
         <h3 className="font-semibold">{title}</h3>
       </div>
@@ -246,10 +246,24 @@ export function BreakdownRow({
           `${t('statisticsEstimatedCost')}: ${formatCost(item.estimatedCostUsd, language)} · ${t('statisticsEstimatedCostCoverage', { priced: formatNumber(item.estimatedCostRequests, language), total: formatNumber(item.requests, language) })}`,
         ]
       : [];
+  const cacheShare = reportedCacheReadShare(item);
+  const cacheShareLabel =
+    item.cacheShareRequests > 0
+      ? t('statisticsReportedCacheReadShare', {
+          share:
+            cacheShare === null
+              ? t('unavailableValue')
+              : new Intl.NumberFormat(language, { style: 'percent', maximumFractionDigits: 1 }).format(cacheShare),
+          cached: formatNumber(item.cacheShareCachedTokens, language),
+          input: formatNumber(item.cacheShareInputTokens, language),
+          covered: formatNumber(item.cacheShareRequests, language),
+          total: formatNumber(item.requests, language),
+        })
+      : null;
   return (
     <li
       className="grid gap-1 px-4 py-3"
-      aria-label={`${label}, ${formatNumber(tokens, language)} ${t('statisticsTotalTokens')}, ${formatNumber(item.requests, language)} ${t('statisticsRequests')}${costLabels.length > 0 ? `, ${costLabels.join(', ')}` : ''}`}
+      aria-label={`${label}, ${formatNumber(tokens, language)} ${t('statisticsTotalTokens')}, ${formatNumber(item.requests, language)} ${t('statisticsRequests')}${costLabels.length > 0 ? `, ${costLabels.join(', ')}` : ''}${cacheShareLabel ? `, ${cacheShareLabel}` : ''}`}
     >
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
         <span className="min-w-0 break-all font-medium">{label}</span>
@@ -272,6 +286,7 @@ export function BreakdownRow({
         <span>
           {t('statisticsOutputTokens')}: {formatNumber(item.outputTokens, language)}
         </span>
+        {cacheShareLabel ? <span>{cacheShareLabel}</span> : null}
         {costLabels.map((costLabel) => (
           <span key={costLabel}>{costLabel}</span>
         ))}

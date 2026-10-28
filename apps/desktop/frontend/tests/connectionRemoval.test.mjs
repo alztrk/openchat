@@ -42,16 +42,11 @@ test('connection removal reconciles a failed RPC while its database deletion fin
 test('connection removal reports the original RPC failure when the row remains', async () => {
   const rpcError = new Error('RPC failed');
   await assert.rejects(
-    waitForConnectionRemoval(
-      'connection-1',
-      Promise.reject(rpcError),
-      async () => true,
-      {
-        intervalMs: 1,
-        failedOperationReconciliationMs: 5,
-        onCheckFailure: () => assert.fail('The connection state query should succeed.'),
-      },
-    ),
+    waitForConnectionRemoval('connection-1', Promise.reject(rpcError), async () => true, {
+      intervalMs: 1,
+      failedOperationReconciliationMs: 5,
+      onCheckFailure: () => assert.fail('The connection state query should succeed.'),
+    }),
     (error) => error === rpcError,
   );
 });

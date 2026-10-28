@@ -4,9 +4,9 @@ import { useTranslation } from 'react-i18next';
 import { Button, Dialog, Input } from '@/design-system';
 import type { McpServerRecord } from '@/modules/model-library/data/mcpCatalog';
 import {
-  mcpStorageErrorDetails,
   type GlobalMcpSecretStatus,
   type GlobalMcpSecretUpdate,
+  mcpStorageErrorDetails,
 } from '@/modules/model-library/data/mcpStorage';
 
 interface McpEnvModalProps {

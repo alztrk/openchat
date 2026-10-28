@@ -658,6 +658,7 @@ export function ConversationPane({
                     messagesOverride={isConversationOverride && !isStoreActive ? secondaryMessages : undefined}
                     onEditMessage={!isTemporaryChat ? (message) => setEditingMessage(message) : undefined}
                     onOpenConnections={onOpenSettings}
+                    onCheckpointRestored={() => setFileChangesLoadRevision((revision) => revision + 1)}
                     onOpenFileChanges={
                       activeConversationId && !isTemporaryChat
                         ? () => {

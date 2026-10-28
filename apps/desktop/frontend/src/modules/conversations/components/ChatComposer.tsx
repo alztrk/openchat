@@ -55,9 +55,7 @@ export function ChatComposer({
   const { t } = useTranslation();
   const formRef = useRef<HTMLFormElement>(null);
   const sendMessageBinding = useKeyboardShortcutsStore((state) => state.bindings.sendMessage);
-  const sendShortcutLabel = sendMessageBinding
-    ? formatKeyboardShortcut(sendMessageBinding)
-    : '';
+  const sendShortcutLabel = sendMessageBinding ? formatKeyboardShortcut(sendMessageBinding) : '';
 
   const {
     inputRef,
@@ -158,10 +156,9 @@ export function ChatComposer({
     : !sendMessageBinding
       ? t('composerPlaceholderNoShortcut')
       : t('composerPlaceholderShortcut', { shortcut: sendShortcutLabel });
-  const sendTooltip =
-    !sendMessageBinding
-      ? t('composerSendTooltipNoShortcut')
-      : t('composerSendTooltipShortcut', { shortcut: sendShortcutLabel });
+  const sendTooltip = !sendMessageBinding
+    ? t('composerSendTooltipNoShortcut')
+    : t('composerSendTooltipShortcut', { shortcut: sendShortcutLabel });
 
   const [isComposerDraggingOver, setIsComposerDraggingOver] = useState(false);
   const [isAttachmentLibraryOpen, setIsAttachmentLibraryOpen] = useState(false);

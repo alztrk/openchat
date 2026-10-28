@@ -44,19 +44,21 @@ export function GoalStatusBar({ goal }: GoalStatusBarProps) {
   const canResume = goal.status === 'paused' || goal.status === 'interrupted';
   const isBusy = isSending || isChangingGoal;
   const pauseDescription =
-    goal.pauseReason === 'quota'
-      ? t('goalPausedForQuota')
-      : goal.pauseReason === 'blocked'
-        ? t('goalPausedForBlocker')
-        : goal.pauseReason === 'needs_user'
-          ? t('goalPausedForUserInput')
-          : goal.pauseReason === 'user_paused'
-            ? t('goalPausedByUser')
-            : goal.pauseReason === 'interrupted'
-              ? t('goalInterrupted')
-              : goal.pauseReason === 'request_failed'
-                ? t('goalPausedAfterError')
-                : null;
+    goal.pauseReason === 'budget_exceeded'
+      ? t('goalPausedForBudget')
+      : goal.pauseReason === 'quota'
+        ? t('goalPausedForQuota')
+        : goal.pauseReason === 'blocked'
+          ? t('goalPausedForBlocker')
+          : goal.pauseReason === 'needs_user'
+            ? t('goalPausedForUserInput')
+            : goal.pauseReason === 'user_paused'
+              ? t('goalPausedByUser')
+              : goal.pauseReason === 'interrupted'
+                ? t('goalInterrupted')
+                : goal.pauseReason === 'request_failed'
+                  ? t('goalPausedAfterError')
+                  : null;
   const detail = pauseDescription ?? (goal.progress.trim() || goal.objective);
 
   useEffect(() => {

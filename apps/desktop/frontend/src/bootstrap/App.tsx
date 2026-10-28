@@ -19,8 +19,6 @@ import type {
   WorkspaceFileSelection,
   WorkspacePanelRequest,
 } from '@/modules/conversations/components/ChatFileChangesPanel';
-import { ConversationPane } from '@/modules/conversations/components/ConversationPane';
-import { ConversationSidebar } from '@/modules/conversations/components/ConversationSidebar';
 import { parseAgentQuestionGroup } from '@/modules/conversations/data/agentQuestions';
 import { getMessages } from '@/modules/conversations/data/chatStorage';
 import { setPendingComposerDraft } from '@/modules/conversations/data/pendingComposerDraft';
@@ -32,6 +30,7 @@ import {
   writeWorkspacePanelRatio,
 } from '@/modules/conversations/data/sidebarPreferences';
 import { useChatStore } from '@/modules/conversations/stores/chatStore';
+import { useDesignPreferencesStore } from '@/modules/design/data/designPreferences';
 import {
   resetNotificationWindowFocus,
   setNotificationWindowFocus,
@@ -41,6 +40,7 @@ import {
   refreshOAuthPlans,
   shouldRefreshOAuthPlansOnFocus,
 } from '@/modules/providers/data/oauthPlanMonitor';
+import { initializeActiveSecurityScans } from '@/modules/security-scans/data/securityScanRuntime';
 import type { ThemePreference } from '@/modules/settings/components/GeneralSettingsSection';
 import type { SettingsSection } from '@/modules/settings/components/SettingsPage';
 import {
@@ -48,7 +48,21 @@ import {
   getAppearanceCssValues,
   readAppearancePreferences,
 } from '@/modules/settings/data/appearancePreferences';
+import {
+  readCloseWindowBehavior,
+  readInitialSurface,
+  writeCloseWindowBehavior,
+  writeLastSurface,
+} from '@/modules/settings/data/appPreferences';
+import { useAssistantExecutionPreferencesStore } from '@/modules/settings/data/assistantExecutionPreferences';
 import type { AssistantAgentSnapshot } from '@/modules/settings/data/assistantProfiles';
+import { useChatDisplayPreferencesStore } from '@/modules/settings/data/chatDisplayPreferences';
+import {
+  keyboardShortcutActions,
+  keyboardShortcutMatches,
+  keyboardShortcutRequiresModifier,
+  useKeyboardShortcutsStore,
+} from '@/modules/settings/stores/keyboardShortcutsStore';
 import { localServiceClient } from '@/platform/local-service';
 import { unifiedStorage } from '@/platform/storage/unifiedStorage';
 import { getCurrentWindow, getVersion, invoke, isTauri, listen } from '@/platform/tauri';
@@ -59,6 +73,16 @@ import { TitleBar } from '@/shell/TitleBar';
 
 const LibraryPage = lazy(() =>
   import('@/modules/model-library/components/LibraryPage').then((module) => ({ default: module.LibraryPage })),
+);
+const ConversationPane = lazy(() =>
+  import('@/modules/conversations/components/ConversationPane').then((module) => ({
+    default: module.ConversationPane,
+  })),
+);
+const ConversationSidebar = lazy(() =>
+  import('@/modules/conversations/components/ConversationSidebar').then((module) => ({
+    default: module.ConversationSidebar,
+  })),
 );
 const ChatFileChangesPanel = lazy(() =>
   import('@/modules/conversations/components/ChatFileChangesPanel').then((module) => ({
@@ -75,6 +99,11 @@ const CommandPalette = lazy(() =>
 );
 const DesignPage = lazy(() =>
   import('@/modules/design/components/DesignPage').then((module) => ({ default: module.DesignPage })),
+);
+const SecurityScanPage = lazy(() =>
+  import('@/modules/security-scans/components/SecurityScanPage').then((module) => ({
+    default: module.SecurityScanPage,
+  })),
 );
 const SettingsPage = lazy(() =>
   import('@/modules/settings/components/SettingsPage').then((module) => ({ default: module.SettingsPage })),
@@ -131,7 +160,7 @@ function readThemePreference(): ThemePreference {
 export function App() {
   const { t } = useTranslation();
   const [surfaceHistory, setSurfaceHistory] = useState<SurfaceHistory>({
-    surfaces: ['chats'],
+    surfaces: [readInitialSurface()],
     index: 0,
   });
   const [libraryTabRequest, setLibraryTabRequest] = useState<{
@@ -146,6 +175,8 @@ export function App() {
   const [appVersion, setAppVersion] = useState<string | null>(null);
   const activeSurface = surfaceHistory.surfaces[surfaceHistory.index] ?? 'chats';
   const [theme, setTheme] = useState<ThemePreference>(readThemePreference);
+  const [themeSaving, setThemeSaving] = useState(false);
+  const [themeSaveFailed, setThemeSaveFailed] = useState(false);
   const [appearance, setAppearance] = useState<AppearancePreferences>(readAppearancePreferences);
   const [notificationFeedback, setNotificationFeedback] = useState<NotificationFeedbackKey | null>(null);
   const [questionFocusTarget, setQuestionFocusTarget] = useState<{ conversationId: string; groupId: string } | null>(
@@ -162,10 +193,19 @@ export function App() {
   const rightPanelShellRef = useRef<HTMLDivElement>(null);
   const surfaceHeadingRef = useRef<HTMLElement>(null);
   const lastInteractionMethod = useRef<'keyboard' | 'pointer'>('pointer');
+  const goalBudgetPauseAttemptKey = useRef<string | null>(null);
   const initializeChat = useChatStore((state) => state.initialize);
+  const keyboardBindings = useKeyboardShortcutsStore((state) => state.bindings);
+  const initializeKeyboardShortcuts = useKeyboardShortcutsStore((state) => state.initialize);
+  const initializeAssistantExecutionPreferences = useAssistantExecutionPreferencesStore((state) => state.initialize);
+  const maxGoalRuntimeMinutes = useAssistantExecutionPreferencesStore(
+    (state) => state.preferences.maxGoalRuntimeMinutes,
+  );
   const serviceStatus = useChatStore((state) => state.serviceStatus);
   const conversations = useChatStore((state) => state.conversations);
   const activeConversationId = useChatStore((state) => state.activeConversationId);
+  const activeGoal = useChatStore((state) => state.activeGoal);
+  const isChangingGoal = useChatStore((state) => state.isChangingGoal);
   const startNewChat = useChatStore((state) => state.startNewChat);
   const startTemporaryChat = useChatStore((state) => state.startTemporaryChat);
   const temporaryChat = useChatStore((state) => state.temporaryChat);
@@ -285,15 +325,44 @@ export function App() {
   }, [isDark]);
 
   useEffect(() => {
+    initializeKeyboardShortcuts();
+    useChatDisplayPreferencesStore.getState().initialize();
+    initializeAssistantExecutionPreferences();
+    useDesignPreferencesStore.getState().initialize();
+  }, [initializeAssistantExecutionPreferences, initializeKeyboardShortcuts]);
+
+  useEffect(() => {
+    if (activeGoal?.status !== 'running' || maxGoalRuntimeMinutes === 0) {
+      goalBudgetPauseAttemptKey.current = null;
+      return;
+    }
+    if (isChangingGoal) return;
+    const attemptKey = `${activeGoal.runId}:${maxGoalRuntimeMinutes}`;
+    if (goalBudgetPauseAttemptKey.current === attemptKey) return;
+    const budgetMs = maxGoalRuntimeMinutes * 60_000;
+    const remainingMs = budgetMs - (Date.now() - activeGoal.startedAtUnixMs);
+    const timer = window.setTimeout(
+      () => {
+        const current = useChatStore.getState();
+        if (
+          current.activeGoal?.runId === activeGoal.runId &&
+          current.activeGoal.status === 'running' &&
+          Date.now() - current.activeGoal.startedAtUnixMs >= budgetMs
+        ) {
+          goalBudgetPauseAttemptKey.current = attemptKey;
+          void current.pauseActiveGoal('budget_exceeded');
+        }
+      },
+      Math.max(0, remainingMs),
+    );
+    return () => window.clearTimeout(timer);
+  }, [activeGoal, isChangingGoal, maxGoalRuntimeMinutes]);
+
+  useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if ((event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === 'k') {
-        event.preventDefault();
-        setIsCommandPaletteOpen(true);
-        return;
-      }
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'b') {
         const target = event.target;
-        if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) return;
+        if (isEditableShortcutTarget(target) || isDialogShortcutTarget(target)) return;
         event.preventDefault();
         setIsSidebarOpen((open) => !open);
       }
@@ -302,17 +371,52 @@ export function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
+  useEffect(() => {
+    void writeCloseWindowBehavior(readCloseWindowBehavior()).catch((cause: unknown) => {
+      globalThis.reportError(new Error('The window close behavior could not be applied.', { cause }));
+    });
+  }, []);
+
   useLayoutEffect(() => {
     const root = document.documentElement;
     const values = getAppearanceCssValues(appearance);
     root.style.setProperty('--conversation-reading-width', values.conversationWidth);
     root.style.setProperty('--app-text-scale', values.textScale);
+    root.style.fontSize = values.appScale;
+    root.style.setProperty('--spacing', values.appSpacing);
     root.style.setProperty('--app-font-family', values.fontFamily);
   }, [appearance]);
 
   useEffect(() => {
     if (isTauri()) void initializeChat();
   }, [initializeChat]);
+
+  useEffect(() => {
+    if (!isTauri() || serviceStatus !== 'ready') return;
+    let disposed = false;
+    let retryTimer: number | undefined;
+    const retryDelaysMs = [1000, 5000] as const;
+
+    const initializeScans = async (attempt: number): Promise<void> => {
+      try {
+        await initializeActiveSecurityScans();
+      } catch (error) {
+        if (disposed) return;
+        const retryDelay = retryDelaysMs[attempt];
+        if (retryDelay !== undefined) {
+          retryTimer = window.setTimeout(() => void initializeScans(attempt + 1), retryDelay);
+          return;
+        }
+        globalThis.reportError(new Error('Persisted security scans could not be restored.', { cause: error }));
+      }
+    };
+
+    void initializeScans(0);
+    return () => {
+      disposed = true;
+      if (retryTimer !== undefined) window.clearTimeout(retryTimer);
+    };
+  }, [serviceStatus]);
 
   useEffect(() => {
     if (!isTauri() || serviceStatus !== 'ready') return;
@@ -419,6 +523,11 @@ export function App() {
   }, [theme]);
 
   const navigateSurface = useCallback((surface: AppSurface) => {
+    try {
+      writeLastSurface(surface);
+    } catch (cause: unknown) {
+      globalThis.reportError(new Error('The last active workspace could not be saved.', { cause }));
+    }
     setSurfaceHistory((current) => {
       if (current.surfaces[current.index] === surface) return current;
       const surfaces = [...current.surfaces.slice(0, current.index + 1), surface];
@@ -485,12 +594,12 @@ export function App() {
     [activeSurface, navigateSurface, requestTemporaryChatExit],
   );
 
-  const startWorkspaceChat = () => {
+  const startWorkspaceChat = useCallback(() => {
     requestTemporaryChatExit(() => {
       navigateSurface('chats');
       startNewChat();
     });
-  };
+  }, [navigateSurface, requestTemporaryChatExit, startNewChat]);
 
   const startWorkspaceAgentChat = (agent: AssistantAgentSnapshot) => {
     requestTemporaryChatExit(() => {
@@ -725,10 +834,12 @@ export function App() {
     chats: t('chats'),
     design: t('design'),
     models: t('modelLibrary'),
+    security: t('securityScansTitle'),
     settings: t('settings'),
   }[activeSurface];
 
   const changeThemePreference = (nextTheme: ThemePreference) => {
+    setThemeSaveFailed(false);
     const nextIsDark = nextTheme === 'dark' || (nextTheme === 'system' && systemIsDark);
     updateThemeWithTransition(
       () => setTheme(nextTheme),
@@ -736,14 +847,19 @@ export function App() {
     );
   };
 
-  const toggleTheme = () => {
+  const toggleTheme = async () => {
+    if (themeSaving) return;
     const nextTheme: ThemePreference = isDark ? 'light' : 'dark';
+    setThemeSaving(true);
+    setThemeSaveFailed(false);
     try {
-      unifiedStorage.setItem('openchat.theme', nextTheme);
+      await unifiedStorage.setPersistedItem('openchat.theme', nextTheme);
+      changeThemePreference(nextTheme);
     } catch {
-      // The selected theme still applies for this session when storage is unavailable.
+      setThemeSaveFailed(true);
+    } finally {
+      setThemeSaving(false);
     }
-    changeThemePreference(nextTheme);
   };
 
   const [isRightPanelOpen, setIsRightPanelOpen] = useState(false);
@@ -771,6 +887,75 @@ export function App() {
     }
     setIsRightPanelOpen(true);
   }, [isRightPanelOpen]);
+
+  useEffect(() => {
+    const handleGlobalShortcut = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.repeat) return;
+      if (isDialogShortcutTarget(event.target)) return;
+
+      const action = keyboardShortcutActions.find((candidate) => {
+        const binding = keyboardBindings[candidate];
+        if (
+          binding === null ||
+          (keyboardShortcutRequiresModifier(candidate) && !event.ctrlKey && !event.altKey && !event.metaKey)
+        ) {
+          return false;
+        }
+        return keyboardShortcutMatches(event, binding);
+      });
+      if (!action || action === 'sendMessage' || action === 'insertNewLine' || action === 'stopResponse') return;
+      if (isEditableShortcutTarget(event.target) && action !== 'openCommandPalette') return;
+
+      event.preventDefault();
+      switch (action) {
+        case 'newChat':
+          startWorkspaceChat();
+          break;
+        case 'openSearch':
+          window.dispatchEvent(new Event('openchat-open-title-search'));
+          break;
+        case 'openModelPicker':
+          requestTemporaryChatExit(() => {
+            navigateSurface('chats');
+            window.dispatchEvent(new Event('openchat-open-model-picker'));
+          });
+          break;
+        case 'openCommandPalette':
+          setIsCommandPaletteOpen(true);
+          break;
+        case 'toggleRightPanel':
+          if (activeSurface === 'chats') handleTogglePrimaryRightPanel();
+          break;
+        case 'previousConversation':
+        case 'nextConversation': {
+          const available = conversations.filter((conversation) => !conversation.isArchived);
+          const index = available.findIndex((conversation) => conversation.id === activeConversationId);
+          const offset = action === 'previousConversation' ? -1 : 1;
+          const target = index >= 0 ? available[index + offset] : undefined;
+          if (target) {
+            requestTemporaryChatExit(async () => {
+              navigateSurface('chats');
+              await useChatStore.getState().selectConversation(target.id);
+            });
+          }
+          break;
+        }
+        default:
+          break;
+      }
+    };
+    window.addEventListener('keydown', handleGlobalShortcut, true);
+    return () => window.removeEventListener('keydown', handleGlobalShortcut, true);
+  }, [
+    activeConversationId,
+    activeSurface,
+    conversations,
+    handleTogglePrimaryRightPanel,
+    keyboardBindings,
+    navigateSurface,
+    requestTemporaryChatExit,
+    startWorkspaceChat,
+  ]);
 
   const handleOpenRightPanelForConversation = useCallback(
     (conversationId: string | null, tab: RightWorkspaceTab = 'changes') => {
@@ -1007,6 +1192,14 @@ export function App() {
         document.documentElement.dataset.motionInput = 'pointer';
       }}
     >
+      {themeSaveFailed ? (
+        <p
+          className="absolute right-4 top-14 z-overlay rounded-control border border-destructive bg-raised px-3 py-2 text-sm text-destructive"
+          role="alert"
+        >
+          {t('themeSaveFailed')}
+        </p>
+      ) : null}
       <TitleBar
         canGoBack={surfaceHistory.index > 0}
         canGoForward={surfaceHistory.index < surfaceHistory.surfaces.length - 1}
@@ -1035,14 +1228,24 @@ export function App() {
                 data-open={isSidebarOpen ? 'true' : 'false'}
                 inert={!isSidebarOpen}
               >
-                <ConversationSidebar
-                  onCloseMobile={() => setIsSidebarOpen(false)}
-                  onManageAgents={openAgentLibrary}
-                  onNewAgentChat={startWorkspaceAgentChat}
-                  onNewChat={startWorkspaceChat}
-                  onRequestTemporaryExit={requestTemporaryChatExit}
-                  onStartTemporaryChat={startWorkspaceTemporaryChat}
-                />
+                <Suspense
+                  fallback={
+                    <div className="flex h-full min-h-0 w-full items-center justify-center px-4 py-8">
+                      <p aria-live="polite" className="text-center text-xs text-secondary-text" role="status">
+                        {t('conversationsLoading')}
+                      </p>
+                    </div>
+                  }
+                >
+                  <ConversationSidebar
+                    onCloseMobile={() => setIsSidebarOpen(false)}
+                    onManageAgents={openAgentLibrary}
+                    onNewAgentChat={startWorkspaceAgentChat}
+                    onNewChat={startWorkspaceChat}
+                    onRequestTemporaryExit={requestTemporaryChatExit}
+                    onStartTemporaryChat={startWorkspaceTemporaryChat}
+                  />
+                </Suspense>
               </div>
               <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
                 <section
@@ -1058,28 +1261,42 @@ export function App() {
                     className="chat-primary-pane relative flex min-h-0 min-w-0 flex-col overflow-hidden"
                     style={isRightPanelOpen ? { flex: `${workspaceRatio} 1 0%` } : { flex: '1 1 0%' }}
                   >
-                    <ConversationPane
-                      header={({ isRightPanelOpen, toggleRightPanel }) => (
-                        <ConversationActionsHeader
-                          activeConversationId={activeConversationId}
-                          conversations={conversations}
-                          isRightPanelOpen={isRightPanelOpen}
-                          onToggleRightPanel={toggleRightPanel}
-                        />
-                      )}
-                      hideInternalRightPanel
-                      isLargeText={appearance.conversationTextSize === 'large'}
-                      isRightPanelOpen={isRightPanelOpen}
-                      notificationFeedbackKey={notificationFeedback}
-                      onDismissNotificationFeedback={() => setNotificationFeedback(null)}
-                      onOpenRightPanel={(tab) => handleOpenRightPanelForConversation(activeConversationId, tab)}
-                      onOpenWorkspaceFile={(file) => handleOpenWorkspaceFileForConversation(activeConversationId, file)}
-                      onOpenSettings={() => navigate('settings')}
-                      onQuestionFocusHandled={clearQuestionFocusTarget}
-                      onRequestTemporaryExit={requestTemporaryChatExit}
-                      onToggleRightPanel={handleTogglePrimaryRightPanel}
-                      questionFocusTarget={questionFocusTarget}
-                    />
+                    <Suspense
+                      fallback={
+                        <p
+                          aria-live="polite"
+                          className="flex min-h-0 flex-1 items-center justify-center px-6 py-8 text-sm text-secondary-text"
+                          role="status"
+                        >
+                          {t('messageHistoryLoading')}
+                        </p>
+                      }
+                    >
+                      <ConversationPane
+                        header={({ isRightPanelOpen, toggleRightPanel }) => (
+                          <ConversationActionsHeader
+                            activeConversationId={activeConversationId}
+                            conversations={conversations}
+                            isRightPanelOpen={isRightPanelOpen}
+                            onToggleRightPanel={toggleRightPanel}
+                          />
+                        )}
+                        hideInternalRightPanel
+                        isLargeText={appearance.conversationTextSize === 'large'}
+                        isRightPanelOpen={isRightPanelOpen}
+                        notificationFeedbackKey={notificationFeedback}
+                        onDismissNotificationFeedback={() => setNotificationFeedback(null)}
+                        onOpenRightPanel={(tab) => handleOpenRightPanelForConversation(activeConversationId, tab)}
+                        onOpenWorkspaceFile={(file) =>
+                          handleOpenWorkspaceFileForConversation(activeConversationId, file)
+                        }
+                        onOpenSettings={() => navigate('settings')}
+                        onQuestionFocusHandled={clearQuestionFocusTarget}
+                        onRequestTemporaryExit={requestTemporaryChatExit}
+                        onToggleRightPanel={handleTogglePrimaryRightPanel}
+                        questionFocusTarget={questionFocusTarget}
+                      />
+                    </Suspense>
                   </div>
 
                   {isRightPanelOpen ? (
@@ -1135,9 +1352,7 @@ export function App() {
                               isRightPanelOpen={isRightPanelOpen}
                               notificationFeedbackKey={null}
                               onDismissNotificationFeedback={() => undefined}
-                              onOpenRightPanel={(tab) =>
-                                handleOpenRightPanelForConversation(panelConversationId, tab)
-                              }
+                              onOpenRightPanel={(tab) => handleOpenRightPanelForConversation(panelConversationId, tab)}
                               onOpenWorkspaceFile={(file) =>
                                 handleOpenWorkspaceFileForConversation(panelConversationId, file)
                               }
@@ -1213,6 +1428,16 @@ export function App() {
                 <DesignPage onOpenSettings={() => navigate('settings')} />
               </Suspense>
             </div>
+          ) : activeSurface === 'security' ? (
+            <Suspense
+              fallback={
+                <p aria-live="polite" className="px-6 py-8 text-sm text-secondary-text" role="status">
+                  {t('securityScansLoading')}
+                </p>
+              }
+            >
+              <SecurityScanPage />
+            </Suspense>
           ) : (
             <div className="min-w-0 flex-1 overflow-hidden">
               <Suspense
@@ -1355,4 +1580,16 @@ function isNotificationIdentifier(value: unknown): value is string {
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isEditableShortcutTarget(target: EventTarget | null): boolean {
+  return (
+    target instanceof HTMLElement &&
+    (target.isContentEditable ||
+      target.closest('input, textarea, select, [role="textbox"], [contenteditable="true"]') !== null)
+  );
+}
+
+function isDialogShortcutTarget(target: EventTarget | null): boolean {
+  return target instanceof HTMLElement && target.closest('[role="dialog"], dialog') !== null;
 }

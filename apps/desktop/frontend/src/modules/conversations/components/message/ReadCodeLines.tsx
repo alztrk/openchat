@@ -5,13 +5,7 @@ export interface ReadCodeLine {
   text: string;
 }
 
-export function ReadCodeLines({
-  contents,
-  lines,
-}: {
-  contents: readonly ReactNode[];
-  lines: readonly ReadCodeLine[];
-}) {
+export function ReadCodeLines({ contents, lines }: { contents: readonly ReactNode[]; lines: readonly ReadCodeLine[] }) {
   return (
     <ol className="max-h-64 overflow-auto rounded-control border border-border bg-surface py-1">
       {lines.map((line, index) => (

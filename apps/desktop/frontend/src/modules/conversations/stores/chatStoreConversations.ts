@@ -8,13 +8,18 @@ import {
   renameConversation as renameConversationStorage,
 } from '@/modules/conversations/data/chatStorage';
 import { readProjectDefaultModelPreference } from '@/modules/projects/data/projectPreferences';
-import type { AssistantAgentSnapshot } from '@/modules/settings/data/assistantProfiles';
 import {
   type DefaultModelPreference,
   formatModelRouteKey,
   modelRouteKey,
   readLastSelectedModelPreference,
 } from '@/modules/providers/data/modelPreferences';
+import { readAssistantExecutionPreferences } from '@/modules/settings/data/assistantExecutionPreferences';
+import {
+  type AssistantAgentSnapshot,
+  readAssistantProfiles,
+  snapshotAssistantProfile,
+} from '@/modules/settings/data/assistantProfiles';
 import { LocalServiceError, localServiceClient } from '@/platform/local-service';
 import type { ChatState } from './chatStore';
 import { isSameRoute, upsertMessage } from './chatStoreUtils';
@@ -51,11 +56,23 @@ export function createConversationsActions(set: StoreSet, get: StoreGet) {
     } catch (cause) {
       globalThis.reportError(new Error('The last selected model preference could not be read.', { cause }));
     }
+    let selectedAgent = agent;
+    let assistantProfileError: 'assistantPreferencesLoadFailed' | 'assistantProfileDefaultUnavailable' | null = null;
+    if (selectedAgent === null) {
+      try {
+        const defaultProfileId = readAssistantExecutionPreferences().defaultProfileId;
+        if (defaultProfileId !== null) {
+          const profile = readAssistantProfiles().profiles.find((item) => item.id === defaultProfileId);
+          if (profile) selectedAgent = snapshotAssistantProfile(profile);
+          else assistantProfileError = 'assistantProfileDefaultUnavailable';
+        }
+      } catch {
+        assistantProfileError = 'assistantPreferencesLoadFailed';
+      }
+    }
     const preservedModel = preserveSelectedModel
       ? current.models.find(
-          (model) =>
-            model.key === current.selectedModelKey &&
-            !current.hiddenModelKeys.includes(modelRouteKey(model)),
+          (model) => model.key === current.selectedModelKey && !current.hiddenModelKeys.includes(modelRouteKey(model)),
         )
       : undefined;
     const defaultPreference = projectPreferenceInvalid
@@ -68,23 +85,30 @@ export function createConversationsActions(set: StoreSet, get: StoreGet) {
             !current.hiddenModelKeys.includes(modelRouteKey(model)),
         )
       : undefined;
+    const selectedModel = preservedModel ?? defaultModel ?? null;
+    const savedReasoningEffort = selectedModel?.supportsReasoning
+      ? current.modelReasoningEfforts[modelRouteKey(selectedModel)]
+      : undefined;
     set({
       activeConversationId: null,
       temporaryChat: null,
-      selectedReasoningEffort: null,
+      selectedReasoningEffort:
+        savedReasoningEffort && selectedModel?.reasoningLevels.includes(savedReasoningEffort)
+          ? savedReasoningEffort
+          : null,
       activeGoal: null,
       goalStatus: 'ready',
       isChangingGoal: false,
       pendingProjectId: projectId,
-      pendingAgentSnapshot: agent,
+      pendingAgentSnapshot: selectedAgent,
       messages: [],
       personalMemoryExcludedForNewConversation: false,
       searchTargetMessageId: null,
       searchHighlightMessageId: null,
       searchHighlightQuery: null,
       isLoadingMessages: false,
-      selectedModelKey: preservedModel?.key ?? defaultModel?.key ?? null,
-      errorCode: projectPreferenceInvalid ? 'projectDefaultModelLoadFailed' : null,
+      selectedModelKey: selectedModel?.key ?? null,
+      errorCode: projectPreferenceInvalid ? 'projectDefaultModelLoadFailed' : assistantProfileError,
       errorMessage: null,
       opencodeRetryAtUnixMs: null,
     });
@@ -286,8 +310,16 @@ export function createConversationsActions(set: StoreSet, get: StoreGet) {
 
       const selectedConversation = conversation;
       if (!selectedConversation) return;
+      const selectedModel = get().models.find((model) => isSameRoute(model, selectedConversation));
+      const savedReasoningEffort = selectedModel?.supportsReasoning
+        ? get().modelReasoningEfforts[modelRouteKey(selectedModel)]
+        : undefined;
       set({
-        selectedModelKey: get().models.find((model) => isSameRoute(model, selectedConversation))?.key ?? null,
+        selectedModelKey: selectedModel?.key ?? null,
+        selectedReasoningEffort:
+          savedReasoningEffort && selectedModel?.reasoningLevels.includes(savedReasoningEffort)
+            ? savedReasoningEffort
+            : null,
       });
       try {
         const messages = await getMessages(id);

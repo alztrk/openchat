@@ -69,11 +69,11 @@ export async function changeSupportedLocale(locale: SupportedLocale): Promise<vo
 export async function changeLocalePreference(preference: LocalePreference): Promise<void> {
   await i18nReady;
   if (preference === 'system') {
-    unifiedStorage.removeItem('openchat.language');
+    await unifiedStorage.removePersistedItem('openchat.language');
     await changeSupportedLocale(getSystemLocale());
     return;
   }
-  unifiedStorage.setItem('openchat.language', preference);
+  await unifiedStorage.setPersistedItem('openchat.language', preference);
   await changeSupportedLocale(preference);
 }
 

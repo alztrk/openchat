@@ -87,7 +87,7 @@ export interface ChatFileChangesPanelProps {
   onChangesUpdated?(conversationId: string, changes: ChatFileChange[]): void;
 }
 
-type FileChangeError = 'load' | 'diff' | 'conflict' | 'revert';
+type FileChangeError = 'load' | 'diff' | 'conflict' | 'applied' | 'revertAll' | 'revert';
 interface ParsedDiffHunk {
   index: number;
   header: string;
@@ -263,7 +263,7 @@ export function ChatFileChangesPanel({
         onChangesUpdated?.(targetConversationId, updated);
       } catch {
         if (request !== changesRequestRef.current) return;
-        setError('load');
+        if (!keepError) setError('load');
       } finally {
         if (request === changesRequestRef.current) setIsLoading(false);
       }
@@ -350,8 +350,10 @@ export function ChatFileChangesPanel({
       setDiffRevision((revision) => revision + 1);
     } catch (failure) {
       const isConflict = failure instanceof LocalServiceError && failure.code === 'file_change_conflict';
-      setError(isConflict ? 'conflict' : 'revert');
-      if (isConflict) void loadChanges(change.id, true);
+      const wasApplied =
+        failure instanceof LocalServiceError && failure.code === 'file_change_applied_response_unavailable';
+      setError(isConflict ? 'conflict' : wasApplied ? 'applied' : 'revert');
+      if (isConflict || wasApplied) void loadChanges(change.id, true);
     } finally {
       setMutatingChangeId(null);
     }
@@ -368,8 +370,10 @@ export function ChatFileChangesPanel({
       setDiffRevision((revision) => revision + 1);
     } catch (failure) {
       const isConflict = failure instanceof LocalServiceError && failure.code === 'file_change_conflict';
-      setError(isConflict ? 'conflict' : 'revert');
-      if (isConflict) void loadChanges(change.id, true);
+      const wasApplied =
+        failure instanceof LocalServiceError && failure.code === 'file_change_applied_response_unavailable';
+      setError(isConflict ? 'conflict' : wasApplied ? 'applied' : 'revert');
+      if (isConflict || wasApplied) void loadChanges(change.id, true);
     } finally {
       setMutatingChangeId(null);
     }
@@ -400,8 +404,11 @@ export function ChatFileChangesPanel({
       setChanges(updated);
       onChangesUpdated?.(panelConversationId, updated);
       setDiffRevision((revision) => revision + 1);
-    } catch {
-      setError('revert');
+    } catch (failure) {
+      const wasApplied =
+        failure instanceof LocalServiceError && failure.code === 'file_change_applied_response_unavailable';
+      setError(wasApplied ? 'applied' : 'revertAll');
+      void loadChanges(undefined, true);
     } finally {
       setMutatingChangeId(null);
     }
@@ -418,8 +425,10 @@ export function ChatFileChangesPanel({
       setDiffRevision((revision) => revision + 1);
     } catch (failure) {
       const isConflict = failure instanceof LocalServiceError && failure.code === 'file_change_conflict';
-      setError(isConflict ? 'conflict' : 'revert');
-      if (isConflict) void loadChanges(selectedChangeId, true);
+      const wasApplied =
+        failure instanceof LocalServiceError && failure.code === 'file_change_applied_response_unavailable';
+      setError(isConflict ? 'conflict' : wasApplied ? 'applied' : 'revert');
+      if (isConflict || wasApplied) void loadChanges(selectedChangeId, true);
     } finally {
       setMutatingHunkIndex(null);
     }
@@ -449,9 +458,13 @@ export function ChatFileChangesPanel({
         ? 'fileChangesDiffFailed'
         : error === 'conflict'
           ? 'fileChangesConflict'
-          : error === 'revert'
-            ? 'fileChangesRevertFailed'
-            : null;
+          : error === 'applied'
+            ? 'fileChangesAppliedRefresh'
+            : error === 'revertAll'
+              ? 'fileChangesRevertAllFailed'
+              : error === 'revert'
+                ? 'fileChangesRevertFailed'
+                : null;
 
   return (
     <aside

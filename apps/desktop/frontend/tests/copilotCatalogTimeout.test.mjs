@@ -7,8 +7,5 @@ const source = fs.readFileSync(path.resolve('src/modules/providers/data/modelCat
 
 test('Copilot catalog RPC waits longer than the service catalog HTTP request budget', () => {
   assert.match(source, /const copilotModelCatalogTimeoutMs = 95_000;/);
-  assert.match(
-    source,
-    /client\.call\(\s*'compatible\.models\.list'[\s\S]*?copilotModelCatalogTimeoutMs\s*,\s*\)/,
-  );
+  assert.match(source, /client\.call\(\s*'compatible\.models\.list'[\s\S]*?copilotModelCatalogTimeoutMs\s*,\s*\)/);
 });

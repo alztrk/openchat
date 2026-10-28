@@ -96,7 +96,9 @@ export function isPromptTemplateNameAvailable(
   currentId: string | null,
 ): boolean {
   const normalizedName = name.trim().toLocaleLowerCase('en-US');
-  return !templates.some((template) => template.id !== currentId && template.name.toLocaleLowerCase('en-US') === normalizedName);
+  return !templates.some(
+    (template) => template.id !== currentId && template.name.toLocaleLowerCase('en-US') === normalizedName,
+  );
 }
 
 export const promptTemplateLimits = {

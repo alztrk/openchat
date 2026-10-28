@@ -592,56 +592,56 @@ export function ConversationSidebarRow({
             onMouseDown={(event) => event.stopPropagation()}
             onPointerDown={(event) => event.stopPropagation()}
           >
-                {!archived ? (
-                  <Button
-                    aria-label={conversation.isPinned ? t('unpinConversation') : t('pinConversation')}
-                    className="conversation-sidebar-pin-action size-7 shrink-0 rounded-control text-secondary-icon hover:bg-surface/80 hover:text-text"
-                    disabled={disabled}
-                    onClick={onTogglePinned}
-                    size="icon"
-                    title={conversation.isPinned ? t('unpinConversationButtonTitle') : t('pinConversationButtonTitle')}
-                    variant="ghost"
-                  >
-                    {conversation.isPinned ? (
-                      <Pin aria-hidden="true" size={13.5} />
-                    ) : (
-                      <PinOff aria-hidden="true" size={13.5} />
-                    )}
-                  </Button>
-                ) : null}
-                <Button
-                  aria-label={archived ? t('restoreConversation') : t('archiveConversation')}
-                  className="size-7 shrink-0 rounded-control text-secondary-icon hover:bg-surface/80 hover:text-text"
-                  disabled={disabled}
-                  onClick={onArchive}
-                  size="icon"
-                  title={archived ? t('restoreConversation') : t('archiveConversation')}
-                  variant="ghost"
-                >
-                  {archived ? (
-                    <ArchiveRestore aria-hidden="true" size={13.5} />
-                  ) : (
-                    <Archive aria-hidden="true" size={13.5} />
-                  )}
-                </Button>
-                <Button
-                  aria-expanded={menuOpen}
-                  aria-haspopup="menu"
-                  aria-label={t('moreOptions')}
-                  className={`conversation-sidebar-overflow-action size-7 shrink-0 rounded-control hover:bg-surface/80 hover:text-text ${
-                    menuOpen ? 'bg-surface/90 text-text' : 'text-secondary-icon'
-                  }`}
-                  data-conversation-menu-trigger="true"
-                  onClick={() => {
-                    if (menuOpen) setMenuOpen(false);
-                    else openMenu({ kind: 'trigger' });
-                  }}
-                  size="icon"
-                  title={t('conversationMoreOptionsButtonTitle')}
-                  variant="ghost"
-                >
-                  <MoreHorizontal aria-hidden="true" size={14} />
-                </Button>
+            {!archived ? (
+              <Button
+                aria-label={conversation.isPinned ? t('unpinConversation') : t('pinConversation')}
+                className="conversation-sidebar-pin-action size-7 shrink-0 rounded-control text-secondary-icon hover:bg-surface/80 hover:text-text"
+                disabled={disabled}
+                onClick={onTogglePinned}
+                size="icon"
+                title={conversation.isPinned ? t('unpinConversationButtonTitle') : t('pinConversationButtonTitle')}
+                variant="ghost"
+              >
+                {conversation.isPinned ? (
+                  <Pin aria-hidden="true" size={13.5} />
+                ) : (
+                  <PinOff aria-hidden="true" size={13.5} />
+                )}
+              </Button>
+            ) : null}
+            <Button
+              aria-label={archived ? t('restoreConversation') : t('archiveConversation')}
+              className="size-7 shrink-0 rounded-control text-secondary-icon hover:bg-surface/80 hover:text-text"
+              disabled={disabled}
+              onClick={onArchive}
+              size="icon"
+              title={archived ? t('restoreConversation') : t('archiveConversation')}
+              variant="ghost"
+            >
+              {archived ? (
+                <ArchiveRestore aria-hidden="true" size={13.5} />
+              ) : (
+                <Archive aria-hidden="true" size={13.5} />
+              )}
+            </Button>
+            <Button
+              aria-expanded={menuOpen}
+              aria-haspopup="menu"
+              aria-label={t('moreOptions')}
+              className={`conversation-sidebar-overflow-action size-7 shrink-0 rounded-control hover:bg-surface/80 hover:text-text ${
+                menuOpen ? 'bg-surface/90 text-text' : 'text-secondary-icon'
+              }`}
+              data-conversation-menu-trigger="true"
+              onClick={() => {
+                if (menuOpen) setMenuOpen(false);
+                else openMenu({ kind: 'trigger' });
+              }}
+              size="icon"
+              title={t('conversationMoreOptionsButtonTitle')}
+              variant="ghost"
+            >
+              <MoreHorizontal aria-hidden="true" size={14} />
+            </Button>
           </div>
         </>
       )}
@@ -666,179 +666,179 @@ export function ConversationSidebarRow({
                 visibility: menuPosition === null ? 'hidden' : 'visible',
               }}
             >
-                  {!archived ? (
-                    <>
-                      <MenuAction
-                        disabled={disabled}
-                        icon={PanelRight}
-                        label={t('openInWorkspacePanel')}
-                        onClick={() =>
-                          runAction(() => {
-                            window.dispatchEvent(
-                              new CustomEvent('openchat-open-panel-conversation', {
-                                detail: { conversationId: conversation.id },
-                              }),
-                            );
-                          })
-                        }
-                      />
-                      <MenuAction
-                        disabled={disabled}
-                        icon={conversation.isPinned ? PinOff : Pin}
-                        label={conversation.isPinned ? t('unpinConversation') : t('pinConversation')}
-                        onClick={() => runAction(onTogglePinned)}
-                      />
-                    </>
-                  ) : null}
+              {!archived ? (
+                <>
                   <MenuAction
                     disabled={disabled}
-                    icon={Pencil}
-                    label={t('renameConversation')}
-                    onClick={() => {
-                      setMenuOpen(false);
-                      startInlineRename();
-                    }}
+                    icon={PanelRight}
+                    label={t('openInWorkspacePanel')}
+                    onClick={() =>
+                      runAction(() => {
+                        window.dispatchEvent(
+                          new CustomEvent('openchat-open-panel-conversation', {
+                            detail: { conversationId: conversation.id },
+                          }),
+                        );
+                      })
+                    }
                   />
-                  {onDuplicate ? (
-                    <MenuAction
-                      disabled={disabled}
-                      icon={Copy}
-                      label={t('duplicateConversation')}
-                      onClick={() => runAction(onDuplicate)}
-                    />
-                  ) : null}
-                  <div aria-hidden="true" className="my-0.5 border-t border-border" />
-                  {allowMove && currentProjectId ? (
-                    <MenuAction
-                      disabled={disabled}
-                      icon={MessageCircle}
-                      label={t('moveToChats')}
-                      onClick={() => runAction(onMoveToChats)}
-                    />
-                  ) : null}
-                  {allowMove && onMoveToFolder && currentFolderId ? (
-                    <MenuAction
-                      disabled={disabled}
-                      icon={FolderMinus}
-                      label={t('removeFromFolder')}
-                      onClick={() => runAction(() => onMoveToFolder(null))}
-                    />
-                  ) : null}
-                  {allowMove && onMoveToFolder && availableFolders.length > 0 ? (
-                    <details className="openchat-native-disclosure group/folder relative">
-                      <summary
-                        className="flex min-h-8 cursor-pointer list-none items-center gap-2 rounded-control px-2.5 text-left text-xs font-medium text-secondary-text transition-colors hover:bg-hover hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus [&::-webkit-details-marker]:hidden"
-                        role="menuitem"
-                        tabIndex={0}
-                      >
-                        <Folder aria-hidden="true" size={14} />
-                        <span>{t('moveConversationToFolder')}</span>
-                      </summary>
-                      <div className="mt-0.5 grid max-h-40 gap-0.5 overflow-y-auto border-l border-border ml-3.5 pl-2">
-                        {availableFolders.map((folder) => (
-                          <Button
-                            className="min-h-7 w-full justify-start truncate rounded-control px-2 text-left text-xs text-secondary-text transition-colors hover:bg-hover hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
-                            disabled={disabled}
-                            key={folder.id}
-                            onClick={() => runAction(() => onMoveToFolder(folder.id))}
-                            role="menuitem"
-                            size="small"
-                            type="button"
-                            variant="ghost"
-                          >
-                            {folder.name}
-                          </Button>
-                        ))}
-                      </div>
-                    </details>
-                  ) : null}
-                  {allowMove && availableProjects.length > 0 ? (
-                    <details className="openchat-native-disclosure group/move relative">
-                      <summary
-                        className="flex min-h-8 cursor-pointer list-none items-center gap-2 rounded-control px-2.5 text-left text-xs font-medium text-secondary-text transition-colors hover:bg-hover hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus [&::-webkit-details-marker]:hidden"
-                        role="menuitem"
-                        tabIndex={0}
-                      >
-                        <FolderInput aria-hidden="true" size={14} />
-                        <span>{t('moveConversationToProject')}</span>
-                      </summary>
-                      <div className="mt-0.5 grid max-h-40 gap-0.5 overflow-y-auto border-l border-border ml-3.5 pl-2">
-                        {availableProjects.map((project) => (
-                          <Button
-                            className="min-h-7 w-full justify-start truncate rounded-control px-2 text-left text-xs text-secondary-text transition-colors hover:bg-hover hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
-                            disabled={disabled}
-                            key={project.id}
-                            onClick={() => runAction(() => onMoveToProject(project.id))}
-                            role="menuitem"
-                            size="small"
-                            type="button"
-                            variant="ghost"
-                          >
-                            {project.name}
-                          </Button>
-                        ))}
-                      </div>
-                    </details>
-                  ) : null}
-                  <details className="openchat-native-disclosure group/export relative">
-                    <summary
-                      className="flex min-h-8 cursor-pointer list-none items-center gap-2 rounded-control px-2.5 text-left text-xs font-medium text-secondary-text transition-colors hover:bg-hover hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus [&::-webkit-details-marker]:hidden"
-                      role="menuitem"
-                      tabIndex={0}
-                    >
-                      <Download aria-hidden="true" size={14} />
-                      <span>{t('exportConversation')}</span>
-                    </summary>
-                    <div className="mt-0.5 grid max-h-40 gap-0.5 overflow-y-auto border-l border-border ml-3.5 pl-2">
+                  <MenuAction
+                    disabled={disabled}
+                    icon={conversation.isPinned ? PinOff : Pin}
+                    label={conversation.isPinned ? t('unpinConversation') : t('pinConversation')}
+                    onClick={() => runAction(onTogglePinned)}
+                  />
+                </>
+              ) : null}
+              <MenuAction
+                disabled={disabled}
+                icon={Pencil}
+                label={t('renameConversation')}
+                onClick={() => {
+                  setMenuOpen(false);
+                  startInlineRename();
+                }}
+              />
+              {onDuplicate ? (
+                <MenuAction
+                  disabled={disabled}
+                  icon={Copy}
+                  label={t('duplicateConversation')}
+                  onClick={() => runAction(onDuplicate)}
+                />
+              ) : null}
+              <div aria-hidden="true" className="my-0.5 border-t border-border" />
+              {allowMove && currentProjectId ? (
+                <MenuAction
+                  disabled={disabled}
+                  icon={MessageCircle}
+                  label={t('moveToChats')}
+                  onClick={() => runAction(onMoveToChats)}
+                />
+              ) : null}
+              {allowMove && onMoveToFolder && currentFolderId ? (
+                <MenuAction
+                  disabled={disabled}
+                  icon={FolderMinus}
+                  label={t('removeFromFolder')}
+                  onClick={() => runAction(() => onMoveToFolder(null))}
+                />
+              ) : null}
+              {allowMove && onMoveToFolder && availableFolders.length > 0 ? (
+                <details className="openchat-native-disclosure group/folder relative">
+                  <summary
+                    className="flex min-h-8 cursor-pointer list-none items-center gap-2 rounded-control px-2.5 text-left text-xs font-medium text-secondary-text transition-colors hover:bg-hover hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus [&::-webkit-details-marker]:hidden"
+                    role="menuitem"
+                    tabIndex={0}
+                  >
+                    <Folder aria-hidden="true" size={14} />
+                    <span>{t('moveConversationToFolder')}</span>
+                  </summary>
+                  <div className="mt-0.5 grid max-h-40 gap-0.5 overflow-y-auto border-l border-border ml-3.5 pl-2">
+                    {availableFolders.map((folder) => (
                       <Button
                         className="min-h-7 w-full justify-start truncate rounded-control px-2 text-left text-xs text-secondary-text transition-colors hover:bg-hover hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
                         disabled={disabled}
-                        onClick={() => runAction(() => onExport('md'))}
+                        key={folder.id}
+                        onClick={() => runAction(() => onMoveToFolder(folder.id))}
                         role="menuitem"
                         size="small"
                         type="button"
                         variant="ghost"
                       >
-                        {t('exportFormatMarkdown')}
+                        {folder.name}
                       </Button>
+                    ))}
+                  </div>
+                </details>
+              ) : null}
+              {allowMove && availableProjects.length > 0 ? (
+                <details className="openchat-native-disclosure group/move relative">
+                  <summary
+                    className="flex min-h-8 cursor-pointer list-none items-center gap-2 rounded-control px-2.5 text-left text-xs font-medium text-secondary-text transition-colors hover:bg-hover hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus [&::-webkit-details-marker]:hidden"
+                    role="menuitem"
+                    tabIndex={0}
+                  >
+                    <FolderInput aria-hidden="true" size={14} />
+                    <span>{t('moveConversationToProject')}</span>
+                  </summary>
+                  <div className="mt-0.5 grid max-h-40 gap-0.5 overflow-y-auto border-l border-border ml-3.5 pl-2">
+                    {availableProjects.map((project) => (
                       <Button
                         className="min-h-7 w-full justify-start truncate rounded-control px-2 text-left text-xs text-secondary-text transition-colors hover:bg-hover hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
                         disabled={disabled}
-                        onClick={() => runAction(() => onExport('html'))}
+                        key={project.id}
+                        onClick={() => runAction(() => onMoveToProject(project.id))}
                         role="menuitem"
                         size="small"
                         type="button"
                         variant="ghost"
                       >
-                        {t('exportFormatHtml')}
+                        {project.name}
                       </Button>
-                      <Button
-                        className="min-h-7 w-full justify-start truncate rounded-control px-2 text-left text-xs text-secondary-text transition-colors hover:bg-hover hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
-                        disabled={disabled}
-                        onClick={() => runAction(() => onExport('json'))}
-                        role="menuitem"
-                        size="small"
-                        type="button"
-                        variant="ghost"
-                      >
-                        {t('exportFormatJson')}
-                      </Button>
-                    </div>
-                  </details>
-                  <div aria-hidden="true" className="my-0.5 border-t border-border" />
-                  <MenuAction
+                    ))}
+                  </div>
+                </details>
+              ) : null}
+              <details className="openchat-native-disclosure group/export relative">
+                <summary
+                  className="flex min-h-8 cursor-pointer list-none items-center gap-2 rounded-control px-2.5 text-left text-xs font-medium text-secondary-text transition-colors hover:bg-hover hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus [&::-webkit-details-marker]:hidden"
+                  role="menuitem"
+                  tabIndex={0}
+                >
+                  <Download aria-hidden="true" size={14} />
+                  <span>{t('exportConversation')}</span>
+                </summary>
+                <div className="mt-0.5 grid max-h-40 gap-0.5 overflow-y-auto border-l border-border ml-3.5 pl-2">
+                  <Button
+                    className="min-h-7 w-full justify-start truncate rounded-control px-2 text-left text-xs text-secondary-text transition-colors hover:bg-hover hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
                     disabled={disabled}
-                    icon={archived ? ArchiveRestore : Archive}
-                    label={archived ? t('restoreConversation') : t('archiveConversation')}
-                    onClick={() => runAction(onArchive)}
-                  />
-                  <MenuAction
-                    destructive
+                    onClick={() => runAction(() => onExport('md'))}
+                    role="menuitem"
+                    size="small"
+                    type="button"
+                    variant="ghost"
+                  >
+                    {t('exportFormatMarkdown')}
+                  </Button>
+                  <Button
+                    className="min-h-7 w-full justify-start truncate rounded-control px-2 text-left text-xs text-secondary-text transition-colors hover:bg-hover hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
                     disabled={disabled}
-                    icon={Trash2}
-                    label={t('deleteConversation')}
-                    onClick={() => runAction(onDelete)}
-                  />
+                    onClick={() => runAction(() => onExport('html'))}
+                    role="menuitem"
+                    size="small"
+                    type="button"
+                    variant="ghost"
+                  >
+                    {t('exportFormatHtml')}
+                  </Button>
+                  <Button
+                    className="min-h-7 w-full justify-start truncate rounded-control px-2 text-left text-xs text-secondary-text transition-colors hover:bg-hover hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+                    disabled={disabled}
+                    onClick={() => runAction(() => onExport('json'))}
+                    role="menuitem"
+                    size="small"
+                    type="button"
+                    variant="ghost"
+                  >
+                    {t('exportFormatJson')}
+                  </Button>
+                </div>
+              </details>
+              <div aria-hidden="true" className="my-0.5 border-t border-border" />
+              <MenuAction
+                disabled={disabled}
+                icon={archived ? ArchiveRestore : Archive}
+                label={archived ? t('restoreConversation') : t('archiveConversation')}
+                onClick={() => runAction(onArchive)}
+              />
+              <MenuAction
+                destructive
+                disabled={disabled}
+                icon={Trash2}
+                label={t('deleteConversation')}
+                onClick={() => runAction(onDelete)}
+              />
             </div>,
             document.body,
           )

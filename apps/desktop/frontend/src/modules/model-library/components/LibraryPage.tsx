@@ -3,10 +3,10 @@ import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Button } from '@/design-system';
+import { AssistantProfilesSettingsSection } from '@/modules/settings/components/AssistantProfilesSettingsSection';
 import { McpCatalogTab } from './McpCatalogTab';
 import { ModelCatalogTab } from './ModelCatalogTab';
 import { PromptTemplatesTab } from './PromptTemplatesTab';
-import { AssistantProfilesSettingsSection } from '@/modules/settings/components/AssistantProfilesSettingsSection';
 
 type LibraryPageTab = 'models' | 'mcp' | 'agents' | 'prompts';
 
@@ -16,11 +16,7 @@ interface LibraryPageProps {
   onUsePrompt(prompt: string): void;
 }
 
-export function LibraryPage({
-  initialTab = 'models',
-  initialTabRequestId = 0,
-  onUsePrompt,
-}: LibraryPageProps) {
+export function LibraryPage({ initialTab = 'models', initialTabRequestId = 0, onUsePrompt }: LibraryPageProps) {
   const { t } = useTranslation();
   const [page, setPage] = useState<LibraryPageTab>(initialTab);
   const [visitedPages, setVisitedPages] = useState<ReadonlySet<LibraryPageTab>>(() => new Set([initialTab]));
@@ -36,6 +32,7 @@ export function LibraryPage({
   }, []);
 
   useEffect(() => {
+    void initialTabRequestId;
     setPage(initialTab);
     setVisitedPages((current) => (current.has(initialTab) ? current : new Set([...current, initialTab])));
   }, [initialTab, initialTabRequestId]);

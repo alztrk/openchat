@@ -15,7 +15,7 @@ export function readSharedInstructions(): string | null {
   return unifiedStorage.getItem(sharedInstructionsStorageKey);
 }
 
-export function writeSharedInstructions(value: string): void {
+export function writeSharedInstructions(value: string): Promise<void> {
   if (countCharacters(value) > maximumSharedInstructionsCharacters) {
     throw new SharedInstructionsStorageError('too_many_characters');
   }
@@ -24,14 +24,13 @@ export function writeSharedInstructions(value: string): void {
   }
 
   if (value.trim().length === 0) {
-    unifiedStorage.removeItem(sharedInstructionsStorageKey);
-    return;
+    return unifiedStorage.removePersistedItem(sharedInstructionsStorageKey);
   }
-  unifiedStorage.setItem(sharedInstructionsStorageKey, value);
+  return unifiedStorage.setPersistedItem(sharedInstructionsStorageKey, value);
 }
 
-export function clearSharedInstructions(): void {
-  unifiedStorage.removeItem(sharedInstructionsStorageKey);
+export function clearSharedInstructions(): Promise<void> {
+  return unifiedStorage.removePersistedItem(sharedInstructionsStorageKey);
 }
 
 export function countSharedInstructionsCharacters(value: string): number {

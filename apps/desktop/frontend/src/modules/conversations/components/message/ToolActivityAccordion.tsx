@@ -21,10 +21,18 @@ import {
   Save,
   Search,
   Terminal,
+  Undo2,
   Wrench,
 } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { Button } from '@/design-system';
+import {
+  getConversationFileCheckpointRecoveryStatus,
+  revertConversationFileCheckpointOperation,
+} from '@/modules/conversations/data/chatFileChanges';
+import { LocalServiceError } from '@/platform/local-service';
 import { formatJsonValue, type ToolActivity, type ToolActivityStatus } from './messageData';
 import { formatToolPath, getRequestedToolPath, ToolActivityResults } from './ToolActivityResults';
 import { isTerminalTool } from './toolResultUtils';
@@ -73,11 +81,33 @@ const statusKeys: Record<ToolActivityStatus, TranslationKey> = {
 
 interface ToolActivityAccordionProps {
   activity: ToolActivity;
+  conversationId: string | null;
+  isResponseInProgress: boolean;
+  onCheckpointRestored?: () => void;
+  onOpenFileChanges?: () => void;
   onOpenFile?(path: string, content: string): void;
 }
 
-export function ToolActivityAccordion({ activity, onOpenFile }: ToolActivityAccordionProps) {
+export function ToolActivityAccordion({
+  activity,
+  conversationId,
+  isResponseInProgress,
+  onCheckpointRestored,
+  onOpenFileChanges,
+  onOpenFile,
+}: ToolActivityAccordionProps) {
   const { t } = useTranslation();
+  const recoveryCheckpointId = activity.recoveryCheckpointId;
+  const canCheckRecovery =
+    conversationId !== null &&
+    recoveryCheckpointId !== null &&
+    activity.fileChanges.length > 0 &&
+    !isResponseInProgress &&
+    (activity.status === 'failed' || activity.status === 'cancelled');
+  const [recoveryStatus, setRecoveryStatus] = useState<
+    'idle' | 'checking' | 'available' | 'alreadyRestored' | 'conflict' | 'checkFailed' | 'failed' | 'partial'
+  >('idle');
+  const [isRestoring, setIsRestoring] = useState(false);
   const statusLabel = t(statusKeys[activity.status]);
   const toolLabel = toolName(activity.name, t);
   const requestedPath =
@@ -86,6 +116,48 @@ export function ToolActivityAccordion({ activity, onOpenFile }: ToolActivityAcco
   const ToolIcon = toolIcon(activity.name);
   const isOpen =
     activity.status === 'awaitingApproval' || activity.status === 'waitingForUser' || activity.status === 'running';
+
+  useEffect(() => {
+    if (!canCheckRecovery || conversationId === null || recoveryCheckpointId === null) {
+      setRecoveryStatus('idle');
+      return;
+    }
+    let current = true;
+    setRecoveryStatus('checking');
+    void getConversationFileCheckpointRecoveryStatus(conversationId, recoveryCheckpointId)
+      .then((state) => {
+        if (current) setRecoveryStatus(state);
+      })
+      .catch(() => {
+        if (current) setRecoveryStatus('checkFailed');
+      });
+    return () => {
+      current = false;
+    };
+  }, [canCheckRecovery, conversationId, recoveryCheckpointId]);
+
+  const restoreFailedOperation = async () => {
+    if (!conversationId || !recoveryCheckpointId || isRestoring) return;
+    setIsRestoring(true);
+    try {
+      await revertConversationFileCheckpointOperation(conversationId, recoveryCheckpointId);
+      setRecoveryStatus('alreadyRestored');
+      onCheckpointRestored?.();
+    } catch (error) {
+      if (error instanceof LocalServiceError && error.code === 'file_checkpoint_conflict') {
+        setRecoveryStatus('conflict');
+      } else if (error instanceof LocalServiceError && error.code === 'file_checkpoint_already_restored') {
+        setRecoveryStatus('alreadyRestored');
+      } else if (error instanceof LocalServiceError && error.code === 'file_checkpoint_rollback_failed') {
+        setRecoveryStatus('partial');
+      } else {
+        setRecoveryStatus('failed');
+      }
+    } finally {
+      setIsRestoring(false);
+    }
+  };
+
   return (
     <details className="openchat-native-disclosure rounded-card border border-border bg-surface" open={isOpen}>
       <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-sm text-text [&::-webkit-details-marker]:hidden">
@@ -110,8 +182,96 @@ export function ToolActivityAccordion({ activity, onOpenFile }: ToolActivityAcco
         <ToolActivityResults activity={activity} onOpenFile={onOpenFile} />
         {activity.fileChangesError ? (
           <p className="text-sm text-destructive" role="alert">
-            {t('fileChangesTrackingFailed')}
+            {t(
+              activity.fileChangesError === 'recovery_unavailable'
+                ? 'fileChangesRecoveryUnavailable'
+                : 'fileChangesTrackingFailed',
+            )}
           </p>
+        ) : null}
+        {canCheckRecovery ? (
+          <section className="grid gap-2 rounded-control border border-border bg-background p-3">
+            <p className="text-sm text-text">
+              {t('fileChangesRecoveryPrompt', { count: activity.fileChanges.length })}
+            </p>
+            <ul aria-label={t('fileChangesRecoveryFiles')} className="grid gap-1 text-xs text-secondary-text">
+              {activity.fileChanges.slice(0, 3).map((change) => (
+                <li className="truncate" key={change.id} title={change.path}>
+                  {change.path}
+                </li>
+              ))}
+            </ul>
+            {activity.fileChanges.length > 3 ? (
+              <p className="text-xs text-secondary-text">
+                {t('fileChangesRecoveryMore', { count: activity.fileChanges.length - 3 })}
+              </p>
+            ) : null}
+            {recoveryStatus === 'checking' ? (
+              <p className="text-xs text-secondary-text" role="status">
+                {t('fileChangesRecoveryChecking')}
+              </p>
+            ) : null}
+            {recoveryStatus === 'available' ? (
+              <Button
+                className="w-fit"
+                disabled={isRestoring}
+                onClick={() => void restoreFailedOperation()}
+                size="small"
+                variant="secondary"
+              >
+                <Undo2 aria-hidden="true" size={14} />
+                <span>{t(isRestoring ? 'fileChangesRecoveryRunning' : 'fileChangesRecoveryAction')}</span>
+              </Button>
+            ) : null}
+            {recoveryStatus === 'alreadyRestored' ? (
+              <p className="text-xs text-success" role="status">
+                {t('fileChangesRecoveryDone')}
+              </p>
+            ) : null}
+            {recoveryStatus === 'conflict' ? (
+              <p className="text-xs text-destructive" role="alert">
+                {t('fileChangesRecoveryConflict')}
+              </p>
+            ) : null}
+            {recoveryStatus === 'failed' ? (
+              <div className="grid justify-items-start gap-2" role="alert">
+                <p className="text-xs text-destructive">{t('fileChangesRecoveryFailed')}</p>
+                {onOpenFileChanges ? (
+                  <Button onClick={onOpenFileChanges} size="small" variant="secondary">
+                    {t('fileChangesOpenButton')}
+                  </Button>
+                ) : null}
+              </div>
+            ) : null}
+            {recoveryStatus === 'partial' ? (
+              <div className="grid justify-items-start gap-2" role="alert">
+                <p className="text-xs text-destructive">{t('fileChangesRecoveryPartial')}</p>
+                {onOpenFileChanges ? (
+                  <Button onClick={onOpenFileChanges} size="small" variant="secondary">
+                    {t('fileChangesOpenButton')}
+                  </Button>
+                ) : null}
+              </div>
+            ) : null}
+            {recoveryStatus === 'checkFailed' ? (
+              <div className="grid justify-items-start gap-2" role="alert">
+                <p className="text-xs text-destructive">{t('fileChangesRecoveryCheckFailed')}</p>
+                <Button
+                  onClick={() => {
+                    if (!conversationId || !recoveryCheckpointId) return;
+                    setRecoveryStatus('checking');
+                    void getConversationFileCheckpointRecoveryStatus(conversationId, recoveryCheckpointId)
+                      .then(setRecoveryStatus)
+                      .catch(() => setRecoveryStatus('checkFailed'));
+                  }}
+                  size="small"
+                  variant="secondary"
+                >
+                  {t('retry')}
+                </Button>
+              </div>
+            ) : null}
+          </section>
         ) : null}
       </div>
     </details>

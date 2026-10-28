@@ -1,4 +1,7 @@
-import { readNotificationPreferences } from '@/modules/notifications/data/notificationPreferences';
+import {
+  readNotificationPreferences,
+  shouldSuppressNotification,
+} from '@/modules/notifications/data/notificationPreferences';
 
 declare global {
   interface Window {
@@ -141,10 +144,14 @@ export async function playFailureAlert(volume = 0.7): Promise<void> {
 /**
  * Plays audio feedback according to current user preferences and status.
  */
-export async function playAssistantResponseAudio(status: 'completed' | 'failed'): Promise<void> {
+export async function playAssistantResponseAudio(
+  status: 'completed' | 'failed',
+  projectId: string | null = null,
+): Promise<void> {
   try {
     const preferences = readNotificationPreferences();
     if (preferences.soundMuted) return;
+    if (shouldSuppressNotification(preferences, projectId)) return;
     if (preferences.soundVolume <= 0) return;
 
     if (status === 'completed') {

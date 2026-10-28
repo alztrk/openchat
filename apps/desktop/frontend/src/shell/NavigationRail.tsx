@@ -1,11 +1,11 @@
-import { Library, MessageCircle, Moon, Settings, Sun, WandSparkles } from 'lucide-react';
+import { Library, MessageCircle, Moon, Settings, ShieldCheck, Sun, WandSparkles } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Button } from '@/design-system';
 import { Tooltip } from '@/design-system/Tooltip';
 
-export type AppSurface = 'chats' | 'design' | 'models' | 'settings';
+export type AppSurface = 'chats' | 'design' | 'models' | 'security' | 'settings';
 
 export interface NavigationRailProps {
   activeSurface: AppSurface;
@@ -40,6 +40,12 @@ export function NavigationRail({ activeSurface, isDark, onNavigate, onToggleThem
           icon={<WandSparkles aria-hidden="true" size={20} />}
           label={t('design')}
           onClick={() => onNavigate('design')}
+        />
+        <RailButton
+          active={activeSurface === 'security'}
+          icon={<ShieldCheck aria-hidden="true" size={20} />}
+          label={t('securityScansTitle')}
+          onClick={() => onNavigate('security')}
         />
       </div>
       <div className="mt-auto flex flex-col gap-2">

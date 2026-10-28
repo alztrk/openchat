@@ -1,4 +1,15 @@
-import { Brain, ChevronLeft, FolderTree, GitBranch, Hand, NotebookPen, Search, Server, Sparkles, Star } from 'lucide-react';
+import {
+  Brain,
+  ChevronLeft,
+  FolderTree,
+  GitBranch,
+  Hand,
+  NotebookPen,
+  Search,
+  Server,
+  Sparkles,
+  Star,
+} from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -7,12 +18,12 @@ import type { ChatProject } from '@/modules/conversations/data/chatStorage';
 import { ProjectDefaultModelPanel } from './ProjectDefaultModelPanel';
 import { ProjectIndexPanel } from './ProjectIndexPanel';
 import { ProjectInstructionsPanel } from './ProjectInstructionsPanel';
-import { ProjectMemoryPanel } from './ProjectMemoryPanel';
 import { ProjectMcpPanel } from './ProjectMcpPanel';
+import { ProjectMemoryPanel } from './ProjectMemoryPanel';
 import { ProjectSkillsPanel } from './ProjectSkillsPanel';
 import { ProjectToolPermissionsPanel } from './ProjectToolPermissionsPanel';
-import { ProjectWorktreesPanel } from './ProjectWorktreesPanel';
 import { ProjectWorkspaceRootsPanel } from './ProjectWorkspaceRootsPanel';
+import { ProjectWorktreesPanel } from './ProjectWorktreesPanel';
 
 type ProjectOptionId =
   | 'workspaceRoots'

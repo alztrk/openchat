@@ -17,11 +17,7 @@ import type {
   ConversationAttachmentSummary,
 } from '@/modules/conversations/data/chatStorage';
 import { readMessageAttachment, renameConversation } from '@/modules/conversations/data/chatStorage';
-import {
-  shouldInsertNewlineFromKeyboard,
-  shouldSendFromKeyboard,
-  useComposerPreferencesStore,
-} from '@/modules/conversations/data/composerPreferences';
+import { useComposerPreferencesStore } from '@/modules/conversations/data/composerPreferences';
 import {
   readConversationComposerDraft,
   writeConversationComposerDraft,
@@ -102,7 +98,6 @@ export function useComposerState({
     'loading',
   );
   const temporaryDisclosureProviderIdRef = useRef<string | null>(null);
-  const submissionMode = useComposerPreferencesStore((state) => state.submissionMode);
   const keyboardShortcuts = useKeyboardShortcutsStore((state) => state.bindings);
   const models = useChatStore((state) => state.models);
   const conversations = useChatStore((state) => state.conversations);
@@ -370,8 +365,15 @@ export function useComposerState({
   }, [activeConversationId]);
 
   useEffect(() => {
+    const openModelPicker = () => setModelPickerOpen(true);
+    window.addEventListener('openchat-open-model-picker', openModelPicker);
+    return () => window.removeEventListener('openchat-open-model-picker', openModelPicker);
+  }, []);
+
+  useEffect(() => {
     if (!isSending) return;
     const stopWithShortcut = (event: globalThis.KeyboardEvent) => {
+      if (event.defaultPrevented || event.repeat) return;
       const target = event.target;
       if (!(target instanceof HTMLElement) || !formRef.current?.contains(target)) return;
       if (!keyboardShortcutMatches(event, keyboardShortcuts.stopResponse)) return;
@@ -980,12 +982,12 @@ export function useComposerState({
       if (selectedCommand) selectSlashCommand(selectedCommand);
       return;
     }
-    if (shouldSendFromKeyboard(event, submissionMode)) {
+    if (keyboardShortcutMatches(event, keyboardShortcuts.sendMessage)) {
       event.preventDefault();
       event.currentTarget.form?.requestSubmit();
       return;
     }
-    if (shouldInsertNewlineFromKeyboard(event, submissionMode)) {
+    if (keyboardShortcutMatches(event, keyboardShortcuts.insertNewLine)) {
       event.preventDefault();
       const input = event.currentTarget;
       input.setRangeText('\n', input.selectionStart, input.selectionEnd, 'end');
@@ -1090,7 +1092,6 @@ export function useComposerState({
     isSendBlocked,
     isSending,
     isAnyConversationSending,
-    submissionMode,
     ghostTextSuggestion,
   };
 }

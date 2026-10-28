@@ -31,7 +31,7 @@ export function createGoalsActions(set: StoreSet, get: StoreGet) {
       }
     },
 
-    async pauseActiveGoal(): Promise<void> {
+    async pauseActiveGoal(reason: 'user_paused' | 'budget_exceeded' = 'user_paused'): Promise<void> {
       const current = get();
       const goal = current.activeGoal;
       if (goal?.status !== 'running' || current.isChangingGoal) return;
@@ -41,6 +41,7 @@ export function createGoalsActions(set: StoreSet, get: StoreGet) {
         await localServiceClient.call('chat.goal.pause', {
           conversationId: goal.conversationId,
           runId: goal.runId,
+          reason,
         });
         if (
           generation !== goalChangeGeneration ||

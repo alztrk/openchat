@@ -122,6 +122,14 @@ function isProjectToolRuleName(name: string): boolean {
   if (name.startsWith('project_tool__')) {
     return /^[a-z0-9_-]{1,48}$/.test(name.slice('project_tool__'.length));
   }
+  if (name.startsWith('mcpv1__')) {
+    if (name.length > 128) return false;
+    const suffix = name.slice('mcpv1__'.length);
+    return (
+      /^[a-z0-9_]{1,24}__\*__[a-f0-9]{32}$/.test(suffix) ||
+      /^[a-z0-9_]{1,24}__[A-Za-z0-9_-]+__[a-f0-9]{32}$/.test(suffix)
+    );
+  }
   if (!name.startsWith('mcp__') || name.length > 64) return false;
   const suffix = name.slice('mcp__'.length);
   if (suffix.endsWith('__*')) return /^[a-z0-9_]{1,24}$/.test(suffix.slice(0, -3));

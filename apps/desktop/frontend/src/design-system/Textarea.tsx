@@ -56,18 +56,18 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(function 
   ref,
 ) {
   const renderTextarea = (controlProps: TextareaControlProps) => (
-        <textarea
-          {...props}
-          {...controlProps}
-          className={cn(
-            'w-full resize-y text-text outline-none placeholder:text-secondary-text focus-visible:ring-2 focus-visible:ring-focus disabled:cursor-not-allowed disabled:opacity-50',
-            appearanceClasses[appearance],
-            densityClasses[density],
-            error && 'border-destructive',
-            className,
-          )}
-          ref={ref}
-        />
+    <textarea
+      {...props}
+      {...controlProps}
+      className={cn(
+        'w-full resize-y text-text outline-none placeholder:text-secondary-text focus-visible:ring-2 focus-visible:ring-focus disabled:cursor-not-allowed disabled:opacity-50',
+        appearanceClasses[appearance],
+        densityClasses[density],
+        error && 'border-destructive',
+        className,
+      )}
+      ref={ref}
+    />
   );
 
   if (fieldLayout === 'none') {

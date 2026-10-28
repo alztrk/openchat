@@ -33,6 +33,7 @@ export interface ToolActivity {
   targetPath: string | null;
   fileChanges: ChatFileChange[];
   fileChangesError: string | null;
+  recoveryCheckpointId: string | null;
   status: ToolActivityStatus;
 }
 
@@ -136,6 +137,10 @@ export function parseToolActivities(encoded: string): ToolActivity[] {
           })
         : [],
       fileChangesError: typeof item.fileChangesError === 'string' ? item.fileChangesError : null,
+      recoveryCheckpointId:
+        typeof item.recoveryCheckpointId === 'string' && /^[0-9a-f]{32}$/.test(item.recoveryCheckpointId)
+          ? item.recoveryCheckpointId
+          : null,
       status,
     });
   }

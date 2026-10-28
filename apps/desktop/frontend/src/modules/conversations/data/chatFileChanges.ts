@@ -2,6 +2,7 @@ import { type JsonObject, LocalServiceError, localServiceClient } from '@/platfo
 
 export type ChatFileChangeKind = 'added' | 'modified' | 'deleted';
 export type ChatFileChangeStatus = 'active' | 'reverted' | 'conflict';
+export type ChatFileCheckpointRecoveryStatus = 'available' | 'alreadyRestored' | 'conflict';
 
 export interface ChatFileChange {
   id: string;
@@ -100,6 +101,31 @@ export async function revertConversationFileChange(
   const response: JsonObject = await localServiceClient.call('chat.file_changes.revert', {
     conversationId,
     changeId,
+  });
+  return parseChatFileChanges(response);
+}
+
+export async function getConversationFileCheckpointRecoveryStatus(
+  conversationId: string,
+  checkpointId: string,
+): Promise<ChatFileCheckpointRecoveryStatus> {
+  const response = await localServiceClient.call('chat.file_changes.checkpoints.recovery_status', {
+    conversationId,
+    checkpointId,
+  });
+  if (response.status !== 'available' && response.status !== 'alreadyRestored' && response.status !== 'conflict') {
+    throw invalidFileChangeResponse();
+  }
+  return response.status;
+}
+
+export async function revertConversationFileCheckpointOperation(
+  conversationId: string,
+  checkpointId: string,
+): Promise<ChatFileChange[]> {
+  const response: JsonObject = await localServiceClient.call('chat.file_changes.checkpoints.revert_operation', {
+    conversationId,
+    checkpointId,
   });
   return parseChatFileChanges(response);
 }

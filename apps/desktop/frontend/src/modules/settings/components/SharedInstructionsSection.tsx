@@ -31,6 +31,8 @@ export function SharedInstructionsSection() {
   const [defaultLoadFailed, setDefaultLoadFailed] = useState(false);
   const [errorKey, setErrorKey] = useState<SettingsErrorKey | null>(null);
   const [feedbackKey, setFeedbackKey] = useState<FeedbackKey | null>(null);
+  const [savingAction, setSavingAction] = useState<'save' | 'restore' | null>(null);
+  const isSaving = savingAction !== null;
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: loadAttempt is incremented to retry reading saved instructions.
   useEffect(() => {
@@ -84,12 +86,13 @@ export function SharedInstructionsSection() {
   const tooManyBytes = new TextEncoder().encode(instructions).byteLength > maximumCustomInstructionsBytes;
   const isDirty = instructions !== savedInstructions;
 
-  const save = () => {
-    if (loadState !== 'ready' || !isDirty || tooManyCharacters || tooManyBytes) return;
+  const save = async () => {
+    if (isSaving || loadState !== 'ready' || !isDirty || tooManyCharacters || tooManyBytes) return;
     setErrorKey(null);
     setFeedbackKey(null);
+    setSavingAction('save');
     try {
-      writeSharedInstructions(instructions);
+      await writeSharedInstructions(instructions);
       setSavedInstructions(instructions);
       setFeedbackKey('sharedInstructionsSaved');
     } catch (error) {
@@ -100,20 +103,25 @@ export function SharedInstructionsSection() {
       } else {
         setErrorKey('sharedInstructionsSaveFailed');
       }
+    } finally {
+      setSavingAction(null);
     }
   };
 
-  const restoreDefaults = () => {
-    if (!defaultInstructions) return;
+  const restoreDefaults = async () => {
+    if (!defaultInstructions || isSaving) return;
     setErrorKey(null);
     setFeedbackKey(null);
+    setSavingAction('restore');
     try {
-      clearSharedInstructions();
+      await clearSharedInstructions();
       setInstructions(defaultInstructions);
       setSavedInstructions(defaultInstructions);
       setFeedbackKey('sharedInstructionsRestored');
     } catch {
       setErrorKey('sharedInstructionsSaveFailed');
+    } finally {
+      setSavingAction(null);
     }
   };
 
@@ -181,14 +189,20 @@ export function SharedInstructionsSection() {
             </span>
             <div className="flex flex-wrap justify-end gap-2">
               <Button
-                disabled={!defaultInstructions || instructions === defaultInstructions}
+                disabled={isSaving || !defaultInstructions || instructions === defaultInstructions}
+                loading={savingAction === 'restore'}
                 onClick={restoreDefaults}
                 variant="ghost"
               >
                 <RotateCcw aria-hidden="true" size={16} />
                 {t('restoreDefaults')}
               </Button>
-              <Button disabled={!isDirty || tooManyCharacters || tooManyBytes} onClick={save} variant="primary">
+              <Button
+                disabled={isSaving || !isDirty || tooManyCharacters || tooManyBytes}
+                loading={savingAction === 'save'}
+                onClick={() => void save()}
+                variant="primary"
+              >
                 <Save aria-hidden="true" size={16} />
                 {t('save')}
               </Button>

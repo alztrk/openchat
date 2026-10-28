@@ -5,7 +5,6 @@ import { Button, Dialog } from '@/design-system';
 import {
   type CompatibleProviderId,
   type CustomProviderSummary,
-  compatibleProviderIds,
   deleteChatGptApiKey,
   deleteCompatibleProviderApiKey,
   deleteCustomProvider,
@@ -70,7 +69,7 @@ type CompatibleProviderNameKey =
   | 'providerNameCohere'
   | 'providerNameKilo';
 
-const providerNameKeys: Record<CompatibleProviderId, CompatibleProviderNameKey> = {
+const providerNameKeys: Partial<Record<CompatibleProviderId, CompatibleProviderNameKey>> = {
   gemini: 'providerNameGemini',
   groq: 'providerNameGroq',
   cerebras: 'providerNameCerebras',
@@ -89,7 +88,7 @@ const providerNameKeys: Record<CompatibleProviderId, CompatibleProviderNameKey> 
   kilo: 'providerNameKilo',
 };
 
-const providerDocumentationUrls: Record<CompatibleProviderId, string> = {
+const providerDocumentationUrls: Partial<Record<CompatibleProviderId, string>> = {
   gemini: 'https://ai.google.dev/gemini-api/docs',
   groq: 'https://console.groq.com/docs',
   cerebras: 'https://docs.cerebras.ai/',
@@ -388,13 +387,15 @@ export function ApiKeyProvidersSection({
         t(
           code === 'custom_provider_key_required_for_endpoint_change'
             ? 'customProviderKeyRequiredForEndpointChange'
-            : code === 'custom_provider_http_approval_required'
-              ? 'customProviderHttpApprovalRequired'
-              : code === 'custom_provider_http_approval_denied'
-                ? 'customProviderHttpApprovalDenied'
-                : code === 'provider_credential_invalid'
-                  ? 'customProviderInvalid'
-                  : 'apiKeyStorageSaveFailed',
+            : code === 'custom_provider_http_loopback_required'
+              ? 'customProviderHttpLoopbackRequired'
+              : code === 'custom_provider_http_approval_required'
+                ? 'customProviderHttpApprovalRequired'
+                : code === 'custom_provider_http_approval_denied'
+                  ? 'customProviderHttpApprovalDenied'
+                  : code === 'provider_credential_invalid'
+                    ? 'customProviderInvalid'
+                    : 'apiKeyStorageSaveFailed',
         ),
       );
     } finally {
@@ -517,9 +518,14 @@ export function ApiKeyProvidersSection({
             verification={verificationRecords[routeKey(openCodeRoute)]}
           />
 
-          {compatibleProviderIds.map((providerId) => {
-            const credential = snapshot.compatibleProviders.find((item) => item.providerId === providerId);
-            const route: CredentialRoute = { kind: 'compatible', providerId, label: t(providerNameKeys[providerId]) };
+          {snapshot.compatibleProviders.map((credential) => {
+            const providerId = credential.providerId;
+            const nameKey = providerNameKeys[providerId];
+            const route: CredentialRoute = {
+              kind: 'compatible',
+              providerId,
+              label: nameKey ? t(nameKey) : providerId,
+            };
             const key = routeKey(route);
             return (
               <CredentialCard

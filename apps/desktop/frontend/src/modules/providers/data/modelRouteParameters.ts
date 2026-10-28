@@ -1,6 +1,5 @@
 import { type JsonObject, LocalServiceError } from '@/platform/local-service';
 import type { ChatModel } from './chatModels';
-import { type CompatibleProviderId, compatibleProviderIds } from './providerCredentials';
 
 export function loadRouteParameters(model: ChatModel): JsonObject {
   if (model.providerId === 'copilot') {
@@ -13,8 +12,8 @@ export function loadRouteParameters(model: ChatModel): JsonObject {
     }
     return { apiKeyConnectionId: connectionId };
   }
-  if (isCompatibleProviderId(model.providerId)) {
-    return { apiKeyConnectionId: model.providerId };
+  if (model.apiKeyConnectionId) {
+    return { apiKeyConnectionId: model.apiKeyConnectionId };
   }
   if (model.customProvider) {
     return {
@@ -22,8 +21,4 @@ export function loadRouteParameters(model: ChatModel): JsonObject {
     };
   }
   return {};
-}
-
-function isCompatibleProviderId(value: string): value is CompatibleProviderId {
-  return compatibleProviderIds.some((providerId) => providerId === value);
 }

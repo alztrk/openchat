@@ -167,7 +167,10 @@ export function useConversationSidebarActions() {
     }
 
     if (actionGenerationRef.current === actionGeneration) {
-      showFeedback(cleanupFailed ? 'conversationDeletedFileChangesCleanupFailed' : 'conversationDeleted', !cleanupFailed);
+      showFeedback(
+        cleanupFailed ? 'conversationDeletedFileChangesCleanupFailed' : 'conversationDeleted',
+        !cleanupFailed,
+      );
     }
     void localServiceClient.call('chat.file_changes.delete', { conversationId }).catch(() => {
       if (actionGenerationRef.current === actionGeneration) {

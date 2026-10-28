@@ -17,6 +17,7 @@ export interface ProjectMcpServer {
   endpoint?: string;
   authEnvironmentVariable?: string;
   package?: ProjectMcpPackage;
+  catalogToolNames?: string[];
 }
 
 export interface ProjectMcpCatalog {
@@ -58,6 +59,8 @@ export function parseProjectMcpServer(value: unknown): ProjectMcpServer {
   const endpoint = value.endpoint;
   const authEnvironmentVariable = value.authEnvironmentVariable;
   const packageReference = value.package === undefined ? undefined : parseProjectMcpPackage(value.package);
+  const catalogToolNames =
+    value.catalogToolNames === undefined ? undefined : parseCatalogToolNames(value.catalogToolNames);
   if (
     (program !== undefined && typeof program !== 'string') ||
     (endpoint !== undefined && typeof endpoint !== 'string') ||
@@ -75,6 +78,7 @@ export function parseProjectMcpServer(value: unknown): ProjectMcpServer {
     ...(endpoint === undefined ? {} : { endpoint }),
     ...(authEnvironmentVariable === undefined ? {} : { authEnvironmentVariable }),
     ...(packageReference === undefined ? {} : { package: packageReference }),
+    ...(catalogToolNames === undefined ? {} : { catalogToolNames }),
   };
   validateProjectMcpServer(server);
   return server;
@@ -82,6 +86,7 @@ export function parseProjectMcpServer(value: unknown): ProjectMcpServer {
 
 export function validateProjectMcpServer(server: ProjectMcpServer): void {
   if (!/^[a-z0-9_]{1,24}$/.test(server.id)) throw new Error('invalid_id');
+  if (server.catalogToolNames !== undefined) parseCatalogToolNames(server.catalogToolNames);
   if (server.transport === 'stdio') {
     if (server.package === undefined) {
       if (!server.program || !isAbsoluteProgramPath(server.program)) throw new Error('program_required');
@@ -110,6 +115,19 @@ export function validateProjectMcpServer(server: ProjectMcpServer): void {
   if (server.authEnvironmentVariable !== undefined && !isEnvironmentName(server.authEnvironmentVariable)) {
     throw new Error('environment_variables_invalid');
   }
+}
+
+function parseCatalogToolNames(value: unknown): string[] {
+  if (
+    !Array.isArray(value) ||
+    value.length > 128 ||
+    !value.every((name: unknown) => typeof name === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(name))
+  ) {
+    throw new Error('invalid_server');
+  }
+  const normalized = value.map((name: string) => name.toLocaleLowerCase('en-US'));
+  if (new Set(normalized).size !== normalized.length) throw new Error('invalid_server');
+  return [...value];
 }
 
 function parseProjectMcpPackage(value: unknown): ProjectMcpPackage {

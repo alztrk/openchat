@@ -339,21 +339,26 @@ export function ProviderSettingsSection({
           throw cause;
         },
       );
-      await waitForConnectionRemoval(target.id, tracedOperationResult, async (connectionId) => {
-        const exists = await chatGptConnectionExists(connectionId);
-        if (lastObservedPresence !== exists) {
-          recordConnectionRemovalDiagnostic(exists ? 'reconcile_present' : 'reconcile_absent');
-          lastObservedPresence = exists;
-        }
-        return exists;
-      }, {
-        intervalMs: CONNECTION_REMOVE_RECONCILE_INTERVAL_MS,
-        failedOperationReconciliationMs: CONNECTION_REMOVE_FAILURE_RECONCILIATION_MS,
-        onCheckFailure: (cause) => {
-          recordConnectionRemovalDiagnostic('reconcile_check_failed', safeServiceErrorCode(cause));
-          globalThis.reportError(new Error('The ChatGPT connection removal state could not be checked.', { cause }));
+      await waitForConnectionRemoval(
+        target.id,
+        tracedOperationResult,
+        async (connectionId) => {
+          const exists = await chatGptConnectionExists(connectionId);
+          if (lastObservedPresence !== exists) {
+            recordConnectionRemovalDiagnostic(exists ? 'reconcile_present' : 'reconcile_absent');
+            lastObservedPresence = exists;
+          }
+          return exists;
         },
-      });
+        {
+          intervalMs: CONNECTION_REMOVE_RECONCILE_INTERVAL_MS,
+          failedOperationReconciliationMs: CONNECTION_REMOVE_FAILURE_RECONCILIATION_MS,
+          onCheckFailure: (cause) => {
+            recordConnectionRemovalDiagnostic('reconcile_check_failed', safeServiceErrorCode(cause));
+            globalThis.reportError(new Error('The ChatGPT connection removal state could not be checked.', { cause }));
+          },
+        },
+      );
     } catch (cause) {
       const removalErrorDetails = localServiceErrorDetails(cause);
       const latestConnections = await loadConnections();
@@ -367,7 +372,9 @@ export function ProviderSettingsSection({
         try {
           await refreshModels();
         } catch (refreshCause) {
-          globalThis.reportError(new Error('Provider models did not refresh after connection removal.', { cause: refreshCause }));
+          globalThis.reportError(
+            new Error('Provider models did not refresh after connection removal.', { cause: refreshCause }),
+          );
         }
         return;
       }

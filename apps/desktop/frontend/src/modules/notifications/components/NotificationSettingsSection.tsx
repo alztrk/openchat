@@ -2,8 +2,9 @@ import { BellOff, BellRing, LoaderCircle, Play, RefreshCw, Send } from 'lucide-r
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button, Slider, Switch } from '@/design-system';
+import { Button, Input, Slider, Switch } from '@/design-system';
 import type en from '@/localization/locales/en.json';
+import { type ChatProject, listProjects } from '@/modules/conversations/data/chatStorage';
 import {
   type NotificationPreferences,
   openWindowsNotificationSettings,
@@ -30,7 +31,13 @@ export function NotificationSettingsSection() {
     soundMuted: false,
     soundVolume: 0.7,
     failureSoundEnabled: true,
+    quietHoursEnabled: false,
+    quietHoursStart: '22:00',
+    quietHoursEnd: '08:00',
+    mutedProjectIds: [],
   });
+  const [projects, setProjects] = useState<ChatProject[]>([]);
+  const [projectsLoadFailed, setProjectsLoadFailed] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saveFailed, setSaveFailed] = useState(false);
   const [status, setStatus] = useState<WindowsNotificationStatus | null>(null);
@@ -75,6 +82,19 @@ export function NotificationSettingsSection() {
     loadPreferences();
   }, [loadPreferences]);
   useEffect(() => {
+    let active = true;
+    void listProjects()
+      .then((nextProjects) => {
+        if (active) setProjects(nextProjects);
+      })
+      .catch(() => {
+        if (active) setProjectsLoadFailed(true);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+  useEffect(() => {
     void loadDeliveryStatus();
     const onWindowFocus = () => {
       void loadDeliveryStatus();
@@ -91,19 +111,26 @@ export function NotificationSettingsSection() {
     };
   }, [loadDeliveryStatus]);
 
-  const save = <K extends keyof NotificationPreferences>(key: K, value: NotificationPreferences[K]) => {
+  const save = async <K extends keyof NotificationPreferences>(key: K, value: NotificationPreferences[K]) => {
     if (isSaving || loadState !== 'loaded') return;
     const updated = { ...preferences, [key]: value };
     setIsSaving(true);
     setSaveFailed(false);
     try {
-      writeNotificationPreference(key, value);
+      await writeNotificationPreference(key, value);
       setPreferences(updated);
     } catch {
       setSaveFailed(true);
     } finally {
       setIsSaving(false);
     }
+  };
+
+  const toggleMutedProject = (projectId: string, muted: boolean) => {
+    const mutedProjectIds = muted
+      ? [...new Set([...preferences.mutedProjectIds, projectId])]
+      : preferences.mutedProjectIds.filter((id) => id !== projectId);
+    void save('mutedProjectIds', mutedProjectIds);
   };
 
   const openSettings = async () => {
@@ -228,28 +255,28 @@ export function NotificationSettingsSection() {
             disabled={isSaving}
             label={t('notificationResponses')}
             checked={preferences.responses}
-            onCheckedChange={(value) => save('responses', value)}
+            onCheckedChange={(value) => void save('responses', value)}
           />
           <PreferenceRow
             description={t('notificationQuestionsDescription')}
             disabled={isSaving}
             label={t('notificationQuestions')}
             checked={preferences.questions}
-            onCheckedChange={(value) => save('questions', value)}
+            onCheckedChange={(value) => void save('questions', value)}
           />
           <PreferenceRow
             description={t('notificationResponsePreviewDescription')}
             disabled={isSaving || !preferences.responses}
             label={t('notificationResponsePreview')}
             checked={preferences.responsePreview}
-            onCheckedChange={(value) => save('responsePreview', value)}
+            onCheckedChange={(value) => void save('responsePreview', value)}
           />
           <PreferenceRow
             description={t('notificationQuickReplyDescription')}
             disabled={isSaving || !preferences.responses}
             label={t('notificationQuickReply')}
             checked={preferences.quickReply}
-            onCheckedChange={(value) => save('quickReply', value)}
+            onCheckedChange={(value) => void save('quickReply', value)}
           />
 
           <PreferenceRow
@@ -257,21 +284,21 @@ export function NotificationSettingsSection() {
             disabled={isSaving}
             label={t('notificationSoundEnabled')}
             checked={preferences.soundEnabled}
-            onCheckedChange={(value) => save('soundEnabled', value)}
+            onCheckedChange={(value) => void save('soundEnabled', value)}
           />
           <PreferenceRow
             description={t('notificationFailureSoundEnabledDescription')}
             disabled={isSaving}
             label={t('notificationFailureSoundEnabled')}
             checked={preferences.failureSoundEnabled}
-            onCheckedChange={(value) => save('failureSoundEnabled', value)}
+            onCheckedChange={(value) => void save('failureSoundEnabled', value)}
           />
           <PreferenceRow
             description={t('notificationSoundMutedDescription')}
             disabled={isSaving}
             label={t('notificationSoundMuted')}
             checked={preferences.soundMuted}
-            onCheckedChange={(value) => save('soundMuted', value)}
+            onCheckedChange={(value) => void save('soundMuted', value)}
           />
           <VolumeRow
             description={t('notificationSoundVolumeDescription')}
@@ -281,10 +308,72 @@ export function NotificationSettingsSection() {
             isTesting={isTestingChime}
             label={t('notificationSoundVolume')}
             onTest={() => void testChime()}
-            onValueChange={(value) => save('soundVolume', value)}
+            onValueChange={(value) => void save('soundVolume', value)}
             testLabel={t('notificationTestChime')}
             value={preferences.soundVolume}
           />
+
+          <section
+            className="grid gap-3 border-t border-border pt-4"
+            aria-labelledby="notification-quiet-hours-heading"
+          >
+            <div className="grid gap-1">
+              <h3 className="font-medium" id="notification-quiet-hours-heading">
+                {t('notificationQuietHours')}
+              </h3>
+              <p className="text-sm text-secondary-text">{t('notificationQuietHoursDescription')}</p>
+            </div>
+            <PreferenceRow
+              description={t('notificationQuietHoursEnabledDescription')}
+              disabled={isSaving}
+              label={t('notificationQuietHoursEnabled')}
+              checked={preferences.quietHoursEnabled}
+              onCheckedChange={(value) => void save('quietHoursEnabled', value)}
+            />
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Input
+                disabled={isSaving || !preferences.quietHoursEnabled}
+                label={t('notificationQuietHoursStart')}
+                onChange={(event) => void save('quietHoursStart', event.target.value)}
+                type="time"
+                value={preferences.quietHoursStart}
+              />
+              <Input
+                disabled={isSaving || !preferences.quietHoursEnabled}
+                label={t('notificationQuietHoursEnd')}
+                onChange={(event) => void save('quietHoursEnd', event.target.value)}
+                type="time"
+                value={preferences.quietHoursEnd}
+              />
+            </div>
+          </section>
+
+          <section className="grid gap-3 border-t border-border pt-4" aria-labelledby="notification-projects-heading">
+            <div className="grid gap-1">
+              <h3 className="font-medium" id="notification-projects-heading">
+                {t('notificationMutedProjects')}
+              </h3>
+              <p className="text-sm text-secondary-text">{t('notificationMutedProjectsDescription')}</p>
+            </div>
+            {projectsLoadFailed ? (
+              <p className="text-sm text-warning" role="status">
+                {t('notificationProjectsLoadFailed')}
+              </p>
+            ) : projects.length === 0 ? (
+              <p className="text-sm text-secondary-text">{t('notificationNoProjects')}</p>
+            ) : (
+              projects.map((project) => (
+                <PreferenceRow
+                  checked={preferences.mutedProjectIds.includes(project.id)}
+                  description={t('notificationMuteProjectDescription')}
+                  disabled={isSaving}
+                  key={project.id}
+                  label={project.name}
+                  onCheckedChange={(value) => toggleMutedProject(project.id, value)}
+                />
+              ))
+            )}
+          </section>
 
           {saveFailed ? (
             <p className="text-sm text-destructive" role="alert">

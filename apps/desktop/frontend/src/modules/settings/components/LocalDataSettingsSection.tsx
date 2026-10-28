@@ -8,6 +8,7 @@ import { historyStorageStatusForInitialization } from '@/modules/settings/data/h
 import { AttachmentIndexSettingsSection } from './AttachmentIndexSettingsSection';
 import { ConversationArchiveSettingsSection } from './ConversationArchiveSettingsSection';
 import { ProfileArchiveSettingsSection } from './ProfileArchiveSettingsSection';
+import { SettingsPreferenceRow } from './SettingsPreferenceRow';
 import { SupportDiagnosticsSettingsSection } from './SupportDiagnosticsSettingsSection';
 
 export function LocalDataSettingsSection() {
@@ -57,33 +58,27 @@ export function LocalDataSettingsSection() {
 
   return (
     <section aria-labelledby="settings-page-heading" className="grid gap-5">
-      <div className="@container">
-        <div className="appearance-setting-row">
-          <div>
-            <h3 className="font-medium">{t('conversationHistory')}</h3>
-            <p className="mt-1 text-sm text-secondary-text">{t(descriptionKey)}</p>
-          </div>
-          <span
-            className={`mt-1 w-36 justify-self-start rounded-control border px-2 py-1 text-center text-xs ${available ? 'border-success text-success' : 'border-border text-secondary-text'}`}
-          >
-            {t(statusKey)}
-          </span>
-        </div>
-      </div>
+      <SettingsPreferenceRow description={t(descriptionKey)} label={t('conversationHistory')}>
+        <span
+          className={`mt-1 w-36 justify-self-start rounded-control border px-2 py-1 text-center text-xs ${available ? 'border-success text-success' : 'border-border text-secondary-text'}`}
+        >
+          {t(statusKey)}
+        </span>
+      </SettingsPreferenceRow>
 
       <ConversationArchiveSettingsSection enabled={available} />
       <ProfileArchiveSettingsSection enabled={available} />
       <AttachmentIndexSettingsSection />
       <SupportDiagnosticsSettingsSection />
 
-      <div className="@container">
-        <div className="appearance-setting-row">
-          <div>
-            <h3 className="font-medium">{t('clearConversationHistory')}</h3>
-            <p className="mt-1 text-sm text-secondary-text">{t('clearConversationHistoryDescription')}</p>
-          </div>
+      <SettingsPreferenceRow
+        description={t('clearConversationHistoryDescription')}
+        label={t('clearConversationHistory')}
+      >
+        {(descriptionId) => (
           <div className="grid justify-items-start gap-2">
             <Button
+              aria-describedby={descriptionId}
               className="w-full max-w-44 border-destructive text-destructive hover:bg-destructive/10"
               disabled={!available || conversations.length === 0 || isSending || isClearing}
               onClick={() => {
@@ -112,8 +107,8 @@ export function LocalDataSettingsSection() {
               </p>
             ) : null}
           </div>
-        </div>
-      </div>
+        )}
+      </SettingsPreferenceRow>
 
       <Dialog onOpenChange={setIsConfirmingClear} open={isConfirmingClear} title={t('confirmClearHistoryTitle')}>
         <div className="grid gap-4">

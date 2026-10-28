@@ -21,8 +21,10 @@ import {
 } from 'lucide-react';
 import {
   type FormEvent,
+  lazy,
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
+  Suspense,
   useCallback,
   useEffect,
   useMemo,
@@ -47,20 +49,15 @@ import {
 } from '@/design-system';
 import type { ChatConversation, ChatProject } from '@/modules/conversations/data/chatStorage';
 import {
-  snapshotAssistantProfile,
-  type AssistantAgentSnapshot,
-} from '@/modules/settings/data/assistantProfiles';
-import { useAssistantProfilesStore } from '@/modules/settings/stores/assistantProfilesStore';
-import {
   type CustomSidebarFolder,
   clampSidebarWidth,
   readCollapsedSidebarSections,
   readCustomSidebarFolders,
+  readLegacyHiddenConversationIds,
   readSidebarManualOrder,
   readSidebarSortMode,
   readSidebarViewMode,
   readSidebarWidth,
-  readLegacyHiddenConversationIds,
   SIDEBAR_DEFAULT_WIDTH,
   SIDEBAR_MAX_WIDTH,
   SIDEBAR_MIN_WIDTH,
@@ -77,11 +74,24 @@ import {
 } from '@/modules/conversations/data/sidebarPreferences';
 import { useConversationSidebarActions } from '@/modules/conversations/hooks/useConversationSidebarActions';
 import { useChatStore } from '@/modules/conversations/stores/chatStore';
-import { CreateProjectDialog, ProjectOptionsDialog, ProjectSidebarSection } from '@/modules/projects/components';
+import { ProjectSidebarSection } from '@/modules/projects/components/ProjectSidebarSection';
+import { type AssistantAgentSnapshot, snapshotAssistantProfile } from '@/modules/settings/data/assistantProfiles';
+import { useAssistantProfilesStore } from '@/modules/settings/stores/assistantProfilesStore';
 import { discardProjectFolderSelection, selectProjectFolder } from '@/platform/tauri';
 import { ConversationSidebarEditDialog } from './ConversationSidebarEditDialog';
 import { ConversationSidebarRow } from './ConversationSidebarRow';
 import { ConversationSidebarSection } from './ConversationSidebarSection';
+
+const CreateProjectDialog = lazy(() =>
+  import('@/modules/projects/components/CreateProjectDialog').then((module) => ({
+    default: module.CreateProjectDialog,
+  })),
+);
+const ProjectOptionsDialog = lazy(() =>
+  import('@/modules/projects/components/ProjectOptionsDialog').then((module) => ({
+    default: module.ProjectOptionsDialog,
+  })),
+);
 
 const SIDEBAR_PAGE_SIZE = 50;
 const SIDEBAR_COMPACT_WIDTH = 256;
@@ -166,9 +176,7 @@ export function ConversationSidebar({
   const { t } = useTranslation();
   const [createProjectOpen, setCreateProjectOpen] = useState(false);
   const [projectOptionsTarget, setProjectOptionsTarget] = useState<ChatProject | null>(null);
-  const [editTarget, setEditTarget] = useState<{ conversation: ChatConversation; mode: 'rename' } | null>(
-    null,
-  );
+  const [editTarget, setEditTarget] = useState<{ conversation: ChatConversation; mode: 'rename' } | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ChatConversation | null>(null);
   const [sidebarPreferences] = useState(readCollapsedSidebarSections);
   const [collapsedSections, setCollapsedSections] = useState<ReadonlySet<SidebarSectionId>>(
@@ -243,8 +251,7 @@ export function ConversationSidebar({
   } = useConversationSidebarActions();
 
   const isConversationAiWorking = useCallback(
-    (conversationId: string) =>
-      sendingConversationId === conversationId || compactingConversationId === conversationId,
+    (conversationId: string) => sendingConversationId === conversationId || compactingConversationId === conversationId,
     [compactingConversationId, sendingConversationId],
   );
 
@@ -1411,40 +1418,82 @@ export function ConversationSidebar({
           </div>
         ) : null}
 
-        <CreateProjectDialog onCreate={createProject} onOpenChange={setCreateProjectOpen} open={createProjectOpen} />
-        <ProjectOptionsDialog
-          onOpenChange={(open) => {
-            if (!open) setProjectOptionsTarget(null);
-          }}
-          onUseWorktree={async (path, branch) => {
-            if (!projectOptionsTarget) return;
-            onRequestTemporaryExit(async () => {
-              const existing = useChatStore
-                .getState()
-                .projects.find((project) => normalizeProjectPath(project.folderPath) === normalizeProjectPath(path));
-              if (existing) {
-                startNewChat(existing.id);
-                return;
-              }
-              const folder = await selectProjectFolder({ title: t('chooseProjectFolder'), initialPath: path });
-              if (!folder) return;
-              try {
-                await createProject(`${projectOptionsTarget.name} (${branch})`, folder.selectionId);
-              } finally {
-                await discardProjectFolderSelection(folder.selectionId);
-              }
-              const created = useChatStore
-                .getState()
-                .projects.find(
-                  (project) => normalizeProjectPath(project.folderPath) === normalizeProjectPath(folder.folderPath),
-                );
-              if (!created) throw new Error('The worktree project could not be loaded.');
-              startNewChat(created.id);
-            });
-          }}
-          open={projectOptionsTarget !== null}
-          project={projectOptionsTarget}
-        />
+        {createProjectOpen ? (
+          <Suspense
+            fallback={
+              <Dialog
+                onOpenChange={(open) => {
+                  if (!open) setCreateProjectOpen(false);
+                }}
+                open
+                title={t('createProject')}
+              >
+                <p aria-live="polite" className="py-8 text-center text-sm text-secondary-text" role="status">
+                  {t('projectLoading')}
+                </p>
+              </Dialog>
+            }
+          >
+            <CreateProjectDialog
+              onCreate={createProject}
+              onOpenChange={setCreateProjectOpen}
+              open={createProjectOpen}
+            />
+          </Suspense>
+        ) : null}
+        {projectOptionsTarget ? (
+          <Suspense
+            fallback={
+              <Dialog
+                onOpenChange={(open) => {
+                  if (!open) setProjectOptionsTarget(null);
+                }}
+                open
+                title={t('projectOptionsTitle')}
+              >
+                <p aria-live="polite" className="py-8 text-center text-sm text-secondary-text" role="status">
+                  {t('projectLoading')}
+                </p>
+              </Dialog>
+            }
+          >
+            <ProjectOptionsDialog
+              onOpenChange={(open) => {
+                if (!open) setProjectOptionsTarget(null);
+              }}
+              onUseWorktree={async (path, branch) => {
+                if (!projectOptionsTarget) return;
+                onRequestTemporaryExit(async () => {
+                  const existing = useChatStore
+                    .getState()
+                    .projects.find(
+                      (project) => normalizeProjectPath(project.folderPath) === normalizeProjectPath(path),
+                    );
+                  if (existing) {
+                    startNewChat(existing.id);
+                    return;
+                  }
+                  const folder = await selectProjectFolder({ title: t('chooseProjectFolder'), initialPath: path });
+                  if (!folder) return;
+                  try {
+                    await createProject(`${projectOptionsTarget.name} (${branch})`, folder.selectionId);
+                  } finally {
+                    await discardProjectFolderSelection(folder.selectionId);
+                  }
+                  const created = useChatStore
+                    .getState()
+                    .projects.find(
+                      (project) => normalizeProjectPath(project.folderPath) === normalizeProjectPath(folder.folderPath),
+                    );
+                  if (!created) throw new Error('The worktree project could not be loaded.');
+                  startNewChat(created.id);
+                });
+              }}
+              open
+              project={projectOptionsTarget}
+            />
+          </Suspense>
+        ) : null}
         <ConversationSidebarEditDialog
           conversation={editTarget?.conversation ?? null}
           mode={editTarget?.mode ?? null}

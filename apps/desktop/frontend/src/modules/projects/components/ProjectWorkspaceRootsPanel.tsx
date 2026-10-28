@@ -5,8 +5,8 @@ import { useTranslation } from 'react-i18next';
 import { Button } from '@/design-system';
 import {
   addProjectWorkspaceRoot,
-  removeProjectWorkspaceRoot,
   type ChatProject,
+  removeProjectWorkspaceRoot,
 } from '@/modules/conversations/data/chatStorage';
 import { useChatStore } from '@/modules/conversations/stores/chatStore';
 import { discardProjectFolderSelection, selectProjectFolder } from '@/platform/tauri';
@@ -52,9 +52,11 @@ export function ProjectWorkspaceRootsPanel({ project }: ProjectWorkspaceRootsPan
         try {
           await discardProjectFolderSelection(selectionId);
         } catch (cleanupError) {
-          globalThis.reportError(new Error('The unused workspace folder selection could not be released.', {
-            cause: cleanupError,
-          }));
+          globalThis.reportError(
+            new Error('The unused workspace folder selection could not be released.', {
+              cause: cleanupError,
+            }),
+          );
         }
       }
     } finally {
@@ -92,7 +94,10 @@ export function ProjectWorkspaceRootsPanel({ project }: ProjectWorkspaceRootsPan
       </div>
       <ul className="grid gap-2">
         {roots.map((rootPath, index) => (
-          <li className="flex min-w-0 items-center gap-2 rounded-control border border-border bg-surface px-3 py-2" key={rootPath}>
+          <li
+            className="flex min-w-0 items-center gap-2 rounded-control border border-border bg-surface px-3 py-2"
+            key={rootPath}
+          >
             <Folder aria-hidden="true" className="shrink-0 text-secondary-icon" size={15} />
             <span className="min-w-0 flex-1 truncate font-code text-xs text-text" title={rootPath}>
               {rootPath}
@@ -117,7 +122,11 @@ export function ProjectWorkspaceRootsPanel({ project }: ProjectWorkspaceRootsPan
           </li>
         ))}
       </ul>
-      {error ? <p className="text-sm text-destructive" role="alert">{t(error)}</p> : null}
+      {error ? (
+        <p className="text-sm text-destructive" role="alert">
+          {t(error)}
+        </p>
+      ) : null}
       <Button
         className="justify-self-start"
         disabled={isAdding || removingPath !== null || roots.length >= 8}

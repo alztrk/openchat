@@ -1,5 +1,5 @@
-import { unifiedStorage } from '@/platform/storage/unifiedStorage';
 import { localServiceClient } from '@/platform/local-service';
+import { unifiedStorage } from '@/platform/storage/unifiedStorage';
 import { isTauri } from '@/platform/tauri';
 
 export const maxPersonalMemoryFacts = 100;

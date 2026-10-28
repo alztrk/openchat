@@ -6,19 +6,25 @@ import { Button, Card, Dialog, Input, Textarea } from '@/design-system';
 import {
   expandPromptTemplate,
   isPromptTemplateNameAvailable,
+  type PromptTemplate,
+  type PromptTemplateDraft,
   promptParameterNames,
   promptTemplateLimits,
   readPromptTemplates,
   writePromptTemplates,
-  type PromptTemplate,
-  type PromptTemplateDraft,
 } from '@/modules/model-library/data/promptTemplates';
 
 interface PromptTemplatesTabProps {
   onUsePrompt(prompt: string): void;
 }
 
-type FormError = 'nameRequired' | 'nameExists' | 'promptRequired' | 'promptTooLong' | 'tooManyParameters' | 'saveFailed';
+type FormError =
+  | 'nameRequired'
+  | 'nameExists'
+  | 'promptRequired'
+  | 'promptTooLong'
+  | 'tooManyParameters'
+  | 'saveFailed';
 
 export function PromptTemplatesTab({ onUsePrompt }: PromptTemplatesTabProps) {
   const { t } = useTranslation();
@@ -100,18 +106,28 @@ export function PromptTemplatesTab({ onUsePrompt }: PromptTemplatesTabProps) {
   };
 
   if (!isLoaded) {
-    return <p aria-live="polite" className="p-6 text-sm text-secondary-text" role="status">{t('modelsLoading')}</p>;
+    return (
+      <p aria-live="polite" className="p-6 text-sm text-secondary-text" role="status">
+        {t('modelsLoading')}
+      </p>
+    );
   }
 
   if (loadFailed) {
-    return <p className="m-6 text-sm text-destructive" role="alert">{t('promptTemplatesLoadFailed')}</p>;
+    return (
+      <p className="m-6 text-sm text-destructive" role="alert">
+        {t('promptTemplatesLoadFailed')}
+      </p>
+    );
   }
 
   return (
     <section aria-labelledby="prompt-templates-heading" className="mx-auto grid w-full max-w-5xl gap-5 p-5 sm:p-8">
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold text-text" id="prompt-templates-heading">{t('promptTemplatesTitle')}</h2>
+          <h2 className="text-lg font-semibold text-text" id="prompt-templates-heading">
+            {t('promptTemplatesTitle')}
+          </h2>
           <p className="mt-1 max-w-2xl text-sm text-secondary-text">{t('promptTemplatesDescription')}</p>
         </div>
         <Button
@@ -131,26 +147,30 @@ export function PromptTemplatesTab({ onUsePrompt }: PromptTemplatesTabProps) {
 
       {draft ? (
         <Card className="grid gap-4" padding="default">
-          <h3 className="text-base font-semibold text-text">{t(draft.id ? 'promptTemplateEdit' : 'promptTemplateCreate')}</h3>
+          <h3 className="text-base font-semibold text-text">
+            {t(draft.id ? 'promptTemplateEdit' : 'promptTemplateCreate')}
+          </h3>
           <Input
             autoFocus
             label={t('promptTemplateName')}
             maxLength={promptTemplateLimits.maximumNameLength}
             onChange={(event) => {
-              setDraft((current) => current ? { ...current, name: event.target.value } : current);
+              setDraft((current) => (current ? { ...current, name: event.target.value } : current));
               setFormError(null);
             }}
             value={draft.name}
           />
           <div className="grid gap-2">
-            <label className="text-sm font-medium text-text" htmlFor="prompt-template-content">{t('promptTemplateContent')}</label>
+            <label className="text-sm font-medium text-text" htmlFor="prompt-template-content">
+              {t('promptTemplateContent')}
+            </label>
             <Textarea
               className="min-h-40 max-h-64 w-full resize-y rounded-control border border-control-border bg-surface px-3 py-2 text-sm text-text outline-none placeholder:text-secondary-text focus-visible:ring-2 focus-visible:ring-focus"
               id="prompt-template-content"
               fieldLayout="none"
               maxLength={promptTemplateLimits.maximumPromptBytes}
               onChange={(event) => {
-                setDraft((current) => current ? { ...current, prompt: event.target.value } : current);
+                setDraft((current) => (current ? { ...current, prompt: event.target.value } : current));
                 setFormError(null);
               }}
               placeholder={t('promptTemplateContentPlaceholder')}
@@ -158,10 +178,24 @@ export function PromptTemplatesTab({ onUsePrompt }: PromptTemplatesTabProps) {
             />
             <p className="text-xs text-secondary-text">{t('promptTemplateParametersHelp')}</p>
           </div>
-          {formError ? <p className="text-sm text-destructive" role="alert">{t(formErrorTranslationKey(formError))}</p> : null}
+          {formError ? (
+            <p className="text-sm text-destructive" role="alert">
+              {t(formErrorTranslationKey(formError))}
+            </p>
+          ) : null}
           <div className="flex flex-wrap justify-end gap-2">
-            <Button onClick={() => { setDraft(null); setFormError(null); }} variant="secondary">{t('cancel')}</Button>
-            <Button onClick={saveDraft} variant="primary">{t('save')}</Button>
+            <Button
+              onClick={() => {
+                setDraft(null);
+                setFormError(null);
+              }}
+              variant="secondary"
+            >
+              {t('cancel')}
+            </Button>
+            <Button onClick={saveDraft} variant="primary">
+              {t('save')}
+            </Button>
           </div>
         </Card>
       ) : null}
@@ -169,7 +203,9 @@ export function PromptTemplatesTab({ onUsePrompt }: PromptTemplatesTabProps) {
       {activeTemplate ? (
         <Card className="grid gap-4" padding="default">
           <div>
-            <h3 className="text-base font-semibold text-text">{t('promptTemplateFillTitle', { name: activeTemplate.name })}</h3>
+            <h3 className="text-base font-semibold text-text">
+              {t('promptTemplateFillTitle', { name: activeTemplate.name })}
+            </h3>
             <p className="mt-1 text-xs text-secondary-text">{t('promptTemplateFillHelp')}</p>
           </div>
           {activeParameters.length > 0 ? (
@@ -178,21 +214,25 @@ export function PromptTemplatesTab({ onUsePrompt }: PromptTemplatesTabProps) {
                 <Input
                   key={parameter}
                   label={parameter}
-                  onChange={(event) => setParameterValues((current) => ({ ...current, [parameter]: event.target.value }))}
+                  onChange={(event) =>
+                    setParameterValues((current) => ({ ...current, [parameter]: event.target.value }))
+                  }
                   value={parameterValues[parameter] ?? ''}
                 />
               ))}
             </div>
           ) : null}
           <div className="flex flex-wrap justify-end gap-2">
-            <Button onClick={() => setActiveTemplate(null)} variant="secondary">{t('cancel')}</Button>
-              <Button
-                onClick={() => {
-                  const expanded = expandPromptTemplate(activeTemplate.prompt, parameterValues);
-                  onUsePrompt(expanded);
-                }}
-                variant="primary"
-              >
+            <Button onClick={() => setActiveTemplate(null)} variant="secondary">
+              {t('cancel')}
+            </Button>
+            <Button
+              onClick={() => {
+                const expanded = expandPromptTemplate(activeTemplate.prompt, parameterValues);
+                onUsePrompt(expanded);
+              }}
+              variant="primary"
+            >
               <Send aria-hidden="true" size={15} />
               {t('promptTemplateUse')}
             </Button>
@@ -211,7 +251,9 @@ export function PromptTemplatesTab({ onUsePrompt }: PromptTemplatesTabProps) {
               <Card className="grid h-full min-w-0 gap-3" padding="default">
                 <div className="min-w-0">
                   <h3 className="truncate font-semibold text-text">{template.name}</h3>
-                  <p className="mt-1 line-clamp-3 whitespace-pre-wrap break-words text-sm text-secondary-text">{template.prompt}</p>
+                  <p className="mt-1 line-clamp-3 whitespace-pre-wrap break-words text-sm text-secondary-text">
+                    {template.prompt}
+                  </p>
                   {promptParameterNames(template.prompt).length > 0 ? (
                     <p className="mt-2 text-xs text-secondary-text">
                       {t('promptTemplateParameterCount', { count: promptParameterNames(template.prompt).length })}
@@ -240,7 +282,9 @@ export function PromptTemplatesTab({ onUsePrompt }: PromptTemplatesTabProps) {
                     }}
                     size="icon"
                     variant="ghost"
-                  ><Pencil aria-hidden="true" size={15} /></Button>
+                  >
+                    <Pencil aria-hidden="true" size={15} />
+                  </Button>
                   <Button
                     aria-label={t('promptTemplateDelete')}
                     onClick={() => {
@@ -266,11 +310,21 @@ export function PromptTemplatesTab({ onUsePrompt }: PromptTemplatesTabProps) {
         title={t('promptTemplateDeleteTitle')}
       >
         <div className="grid gap-4">
-          <p className="text-sm text-secondary-text">{t('promptTemplateDeleteConfirmation', { name: pendingRemoval?.name ?? '' })}</p>
-          {formError === 'saveFailed' ? <p className="text-sm text-destructive" role="alert">{t('promptTemplateErrorSaveFailed')}</p> : null}
+          <p className="text-sm text-secondary-text">
+            {t('promptTemplateDeleteConfirmation', { name: pendingRemoval?.name ?? '' })}
+          </p>
+          {formError === 'saveFailed' ? (
+            <p className="text-sm text-destructive" role="alert">
+              {t('promptTemplateErrorSaveFailed')}
+            </p>
+          ) : null}
           <div className="flex justify-end gap-2">
-            <Button onClick={() => setPendingRemoval(null)} variant="secondary">{t('cancel')}</Button>
-            <Button onClick={removeTemplate} variant="destructive">{t('promptTemplateDelete')}</Button>
+            <Button onClick={() => setPendingRemoval(null)} variant="secondary">
+              {t('cancel')}
+            </Button>
+            <Button onClick={removeTemplate} variant="destructive">
+              {t('promptTemplateDelete')}
+            </Button>
           </div>
         </div>
       </Dialog>
@@ -278,7 +332,9 @@ export function PromptTemplatesTab({ onUsePrompt }: PromptTemplatesTabProps) {
   );
 }
 
-function formErrorTranslationKey(error: FormError):
+function formErrorTranslationKey(
+  error: FormError,
+):
   | 'promptTemplateErrorNameRequired'
   | 'promptTemplateErrorNameExists'
   | 'promptTemplateErrorPromptRequired'

@@ -1,8 +1,9 @@
 import { Bot, Check, ChevronDown, Folder, FolderMinus, FolderPlus, Search } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Button,
+  Dialog,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -14,10 +15,15 @@ import type { PendingChatAttachment } from '@/modules/conversations/data/chatAtt
 import type { ChatMessage } from '@/modules/conversations/data/chatStorage';
 import { useConversationSidebarActions } from '@/modules/conversations/hooks/useConversationSidebarActions';
 import { useChatStore } from '@/modules/conversations/stores/chatStore';
-import { CreateProjectDialog } from '@/modules/projects/components/CreateProjectDialog';
 import type { ToolPermissionMode } from '@/modules/projects/data/projectPreferences';
 import type { ChatModel } from '@/modules/providers/data/chatModels';
 import { ContextUsageIndicator } from './ContextUsageIndicator';
+
+const CreateProjectDialog = lazy(() =>
+  import('@/modules/projects/components/CreateProjectDialog').then((module) => ({
+    default: module.CreateProjectDialog,
+  })),
+);
 
 export interface ComposerContextRowProps {
   isTemporaryChat: boolean;
@@ -184,7 +190,12 @@ export function ComposerContextRow({
               className="w-full min-h-8 gap-2 px-2 py-1 text-left text-xs"
               onSelect={() => setCreateProjectOpen(true)}
             >
-              <Button className="min-h-8 w-full justify-start gap-2 px-2 py-1 text-left text-xs" size="small" type="button" variant="ghost">
+              <Button
+                className="min-h-8 w-full justify-start gap-2 px-2 py-1 text-left text-xs"
+                size="small"
+                type="button"
+                variant="ghost"
+              >
                 <FolderPlus aria-hidden="true" className="shrink-0 text-secondary-icon" size={14} />
                 <span>{t('createProject')}</span>
               </Button>
@@ -195,10 +206,16 @@ export function ComposerContextRow({
               disabled={contextProjectId === null}
               onSelect={() => onSelectProject(null)}
             >
-              <button disabled={contextProjectId === null} type="button">
+              <Button
+                className="min-h-8 w-full justify-start gap-2 px-2 py-1 text-left text-xs"
+                disabled={contextProjectId === null}
+                size="small"
+                type="button"
+                variant="ghost"
+              >
                 <FolderMinus aria-hidden="true" className="shrink-0 text-secondary-icon" size={14} />
                 <span>{t('workWithoutProject')}</span>
-              </button>
+              </Button>
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -230,14 +247,26 @@ export function ComposerContextRow({
           {t('toolPermissionSettingsLoadFailed')}
         </p>
       ) : null}
-      <CreateProjectDialog
-        onCreate={async (name, folderSelectionId) => {
-          const projectId = await createProject(name, folderSelectionId);
-          onSelectProject(projectId);
-        }}
-        onOpenChange={setCreateProjectOpen}
-        open={createProjectOpen}
-      />
+      {createProjectOpen ? (
+        <Suspense
+          fallback={
+            <Dialog onOpenChange={setCreateProjectOpen} open title={t('createProject')}>
+              <p aria-live="polite" className="py-8 text-center text-sm text-secondary-text" role="status">
+                {t('projectLoading')}
+              </p>
+            </Dialog>
+          }
+        >
+          <CreateProjectDialog
+            onCreate={async (name, folderSelectionId) => {
+              const projectId = await createProject(name, folderSelectionId);
+              onSelectProject(projectId);
+            }}
+            onOpenChange={setCreateProjectOpen}
+            open
+          />
+        </Suspense>
+      ) : null}
     </div>
   );
 }

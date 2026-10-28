@@ -1430,13 +1430,13 @@ html[data-motion-input='keyboard'] .openchat-popover-enter[data-state='closed'] 
   }
 }
 
-.appearance-setting-row {
+.settings-preference-row {
   display: grid;
   gap: 12px;
 }
 
 @container (min-width: 560px) {
-  .appearance-setting-row {
+  .settings-preference-row {
     align-items: center;
     gap: 24px;
     grid-template-columns: minmax(0, 1fr) 264px;

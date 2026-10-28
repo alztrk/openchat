@@ -915,7 +915,10 @@ function InlineNotice({ details, icon, text, tone = 'default' }: InlineNoticePro
           ? 'text-destructive'
           : 'text-secondary-text';
   return (
-    <div className={['flex items-start gap-2 text-sm', toneClass].join(' ')} role={tone === 'error' ? 'alert' : 'status'}>
+    <div
+      className={['flex items-start gap-2 text-sm', toneClass].join(' ')}
+      role={tone === 'error' ? 'alert' : 'status'}
+    >
       <span className="mt-0.5 shrink-0">{icon}</span>
       <span className="grid min-w-0 gap-1">
         <span>{text}</span>

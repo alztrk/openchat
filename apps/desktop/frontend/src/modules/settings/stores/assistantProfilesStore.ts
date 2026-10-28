@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-
+import { useAssistantExecutionPreferencesStore } from '@/modules/settings/data/assistantExecutionPreferences';
 import {
   type AssistantProfile,
   type AssistantProfilesSnapshot,
@@ -17,17 +17,19 @@ type ErrorKey =
 
 interface AssistantProfilesState extends AssistantProfilesSnapshot {
   loadState: LoadState;
+  saveState: 'idle' | 'saving' | 'error';
   errorKey: ErrorKey | null;
   initialize(): void;
   retry(): void;
-  saveProfile(profile: AssistantProfile): boolean;
-  removeProfile(profileId: string): boolean;
+  saveProfile(profile: AssistantProfile): Promise<boolean>;
+  removeProfile(profileId: string): Promise<boolean>;
   clearError(): void;
 }
 
 export const useAssistantProfilesStore = create<AssistantProfilesState>((set, get) => ({
   profiles: [],
   loadState: 'idle',
+  saveState: 'idle',
   errorKey: null,
 
   initialize() {
@@ -46,11 +48,12 @@ export const useAssistantProfilesStore = create<AssistantProfilesState>((set, ge
     get().initialize();
   },
 
-  saveProfile(profile) {
-    if (get().loadState !== 'ready') return false;
+  async saveProfile(profile) {
+    if (get().loadState !== 'ready' || get().saveState === 'saving') return false;
     const current = get();
     const isNameDuplicate = current.profiles.some(
-      (item) => item.id !== profile.id && item.name.toLocaleLowerCase('en-US') === profile.name.toLocaleLowerCase('en-US'),
+      (item) =>
+        item.id !== profile.id && item.name.toLocaleLowerCase('en-US') === profile.name.toLocaleLowerCase('en-US'),
     );
     if (isNameDuplicate) {
       set({ errorKey: 'assistantProfileNameExists' });
@@ -67,9 +70,16 @@ export const useAssistantProfilesStore = create<AssistantProfilesState>((set, ge
     return persist({ profiles }, set);
   },
 
-  removeProfile(profileId) {
-    if (get().loadState !== 'ready') return false;
+  async removeProfile(profileId) {
+    if (get().loadState !== 'ready' || get().saveState === 'saving') return false;
     const current = get();
+    const executionPreferences = useAssistantExecutionPreferencesStore.getState();
+    if (executionPreferences.loadState === 'ready' && executionPreferences.preferences.defaultProfileId === profileId) {
+      if (!(await executionPreferences.setPreference('defaultProfileId', null))) {
+        set({ errorKey: 'assistantProfileSaveFailed' });
+        return false;
+      }
+    }
     const snapshot = {
       profiles: current.profiles.filter((profile) => profile.id !== profileId),
     };
@@ -81,17 +91,18 @@ export const useAssistantProfilesStore = create<AssistantProfilesState>((set, ge
   },
 }));
 
-function persist(
+async function persist(
   snapshot: AssistantProfilesSnapshot,
   set: (partial: Partial<AssistantProfilesState>) => void,
-): boolean {
+): Promise<boolean> {
+  set({ saveState: 'saving' });
   try {
     const parsed = parseAssistantProfiles(snapshot);
-    writeAssistantProfiles(parsed);
-    set({ ...parsed, loadState: 'ready', errorKey: null });
+    await writeAssistantProfiles(parsed);
+    set({ ...parsed, loadState: 'ready', saveState: 'idle', errorKey: null });
     return true;
   } catch {
-    set({ errorKey: 'assistantProfileSaveFailed' });
+    set({ saveState: 'error', errorKey: 'assistantProfileSaveFailed' });
     return false;
   }
 }

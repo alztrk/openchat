@@ -34,11 +34,6 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks(id) {
-          if (id.includes('node_modules/lucide-react')) return 'lucide';
-          if (id.includes('node_modules/@radix-ui/') || id.includes('node_modules/@floating-ui/')) {
-            return 'radix-vendor';
-          }
-          if (id.includes('/src/design-system/')) return 'design-system';
           if (id.includes('node_modules/react-dom') || id.includes('node_modules/react/')) {
             return 'react-vendor';
           }

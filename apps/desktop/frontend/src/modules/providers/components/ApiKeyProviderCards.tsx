@@ -25,7 +25,7 @@ export interface ProviderRequestOutcomeView {
 
 export interface CredentialCardProps {
   configured: boolean;
-  documentationUrl: string;
+  documentationUrl?: string;
   draft: string;
   feedback: CredentialFeedback | null;
   formOpen: boolean;
@@ -69,7 +69,7 @@ export function CredentialCard({
   verification,
 }: CredentialCardProps) {
   const { t } = useTranslation();
-  const documentationHost = new URL(documentationUrl).hostname;
+  const documentationHost = documentationUrl ? new URL(documentationUrl).hostname : null;
   return (
     <div className="grid min-w-0 gap-3 p-3 sm:flex sm:items-center sm:justify-between sm:gap-5 sm:p-4">
       <div className="flex min-w-0 items-center gap-3 sm:flex-1">
@@ -78,15 +78,17 @@ export function CredentialCard({
           <h3 className="truncate text-sm font-medium">{label}</h3>
           <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
             <CredentialStatus configured={configured} keySuffix={keySuffix} text={statusText} />
-            <a
-              aria-label={`${label}: ${documentationHost}`}
-              className="truncate text-xs text-secondary-text underline underline-offset-2 hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
-              href={documentationUrl}
-              rel="noreferrer"
-              target="_blank"
-            >
-              {documentationHost}
-            </a>
+            {documentationUrl && documentationHost ? (
+              <a
+                aria-label={`${label}: ${documentationHost}`}
+                className="truncate text-xs text-secondary-text underline underline-offset-2 hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+                href={documentationUrl}
+                rel="noreferrer"
+                target="_blank"
+              >
+                {documentationHost}
+              </a>
+            ) : null}
           </div>
         </div>
       </div>

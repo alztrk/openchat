@@ -2,6 +2,7 @@ import { parseToolActivities } from '@/modules/conversations/components/message/
 import { readProjectSkillIds, type ToolPermissionMode } from '@/modules/projects/data/projectPreferences';
 import type { ChatModel } from '@/modules/providers/data/chatModels';
 import { modelRouteKey, readModelPreferences } from '@/modules/providers/data/modelPreferences';
+import { readAssistantExecutionPreferences } from '@/modules/settings/data/assistantExecutionPreferences';
 import { personalMemoryContextForConversation } from '@/modules/settings/data/personalMemory';
 import { readSharedInstructions } from '@/modules/settings/data/sharedInstructions';
 import { LocalServiceError, localServiceClient } from '@/platform/local-service';
@@ -66,7 +67,9 @@ export async function loadContextUsageConfiguration(
     const personalMemory = isTemporaryChat
       ? { context: '', factIds: [] }
       : await personalMemoryContextForConversation(conversationId);
-    const projectSkillIds = projectId === null ? [] : readProjectSkillIds(projectId);
+    const assistantPreferences = readAssistantExecutionPreferences();
+    const projectSkillIds =
+      projectId === null || !assistantPreferences.includeProjectSkills ? [] : readProjectSkillIds(projectId);
     const customInstructions = [sharedInstructions, personalMemory.context]
       .map((value) => value.trim())
       .filter((value) => value.length > 0)

@@ -1,9 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-
-import { Checkbox } from '@/design-system';
-
-import { Button } from '@/design-system';
+import { Button, Checkbox } from '@/design-system';
 import type { ChatProject } from '@/modules/conversations/data/chatStorage';
 import { readProjectSkillIds, writeProjectSkillIds } from '@/modules/projects/data/projectPreferences';
 import { localServiceClient } from '@/platform/local-service';
@@ -135,8 +132,9 @@ export function ProjectSkillsPanel({ project, onClose }: ProjectSkillsPanelProps
             </details>
           ))}
           {staleIds.map((id) => (
-            <label className="flex items-start gap-3 rounded-card border border-warning p-3 text-sm" key={id}>
+            <div className="flex items-start gap-3 rounded-card border border-warning p-3 text-sm" key={id}>
               <Checkbox
+                aria-label={`${id}: ${t('projectSkillsStale')}`}
                 checked
                 disabled={isSaving}
                 onChange={(event) => toggleSkill(id, event.target.checked)}
@@ -145,7 +143,7 @@ export function ProjectSkillsPanel({ project, onClose }: ProjectSkillsPanelProps
                 <span className="font-code text-text">{id}</span>
                 <span className="mt-1 block text-secondary-text">{t('projectSkillsStale')}</span>
               </span>
-            </label>
+            </div>
           ))}
           {skills.length === 0 && staleIds.length === 0 ? (
             <p className="text-sm text-secondary-text">{t('projectSkillsEmpty')}</p>

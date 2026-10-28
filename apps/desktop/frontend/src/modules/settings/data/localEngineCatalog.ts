@@ -48,6 +48,7 @@ export interface LocalModel {
   pathKind: 'file' | 'directory';
   pathExists: boolean;
   isAvailable: boolean;
+  estimatedMemoryBytes: number | null;
   reason: string | null;
 }
 
@@ -394,6 +395,15 @@ function parseModel(value: unknown): LocalModel {
     typeof value.isAvailable !== 'boolean'
   )
     throw new Error('The local model entry is invalid.');
+  const estimatedMemoryBytes = value.estimatedMemoryBytes ?? null;
+  if (
+    estimatedMemoryBytes !== null &&
+    (typeof estimatedMemoryBytes !== 'number' ||
+      !Number.isSafeInteger(estimatedMemoryBytes) ||
+      estimatedMemoryBytes < 0)
+  ) {
+    throw new Error('The local model memory estimate is invalid.');
+  }
   return {
     id: value.id,
     engineId: value.engineId,
@@ -402,6 +412,7 @@ function parseModel(value: unknown): LocalModel {
     pathKind: value.pathKind,
     pathExists: value.pathExists,
     isAvailable: value.isAvailable,
+    estimatedMemoryBytes,
     reason: optionalString(value.reason),
   };
 }

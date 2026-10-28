@@ -32,13 +32,12 @@ export function readAssistantProfiles(): AssistantProfilesSnapshot {
   return parseAssistantProfiles(JSON.parse(encoded));
 }
 
-export function writeAssistantProfiles(snapshot: AssistantProfilesSnapshot): void {
+export function writeAssistantProfiles(snapshot: AssistantProfilesSnapshot): Promise<void> {
   const parsed = parseAssistantProfiles(snapshot);
   if (parsed.profiles.length === 0) {
-    unifiedStorage.removeItem(storageKey);
-    return;
+    return unifiedStorage.removePersistedItem(storageKey);
   }
-  unifiedStorage.setItem(storageKey, JSON.stringify(parsed));
+  return unifiedStorage.setPersistedItem(storageKey, JSON.stringify(parsed));
 }
 
 export function parseAssistantProfiles(value: unknown): AssistantProfilesSnapshot {

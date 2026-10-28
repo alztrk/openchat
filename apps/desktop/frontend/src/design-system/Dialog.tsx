@@ -29,7 +29,15 @@ const sizeClasses: Record<DialogSize, string> = {
 };
 
 /** Renders a modal with managed focus, Escape dismissal, and an accessible title. */
-export function Dialog({ children, className, initialFocusRef, onOpenChange, open, size = 'default', title }: DialogProps) {
+export function Dialog({
+  children,
+  className,
+  initialFocusRef,
+  onOpenChange,
+  open,
+  size = 'default',
+  title,
+}: DialogProps) {
   return (
     <DialogPrimitive.Root onOpenChange={onOpenChange} open={open}>
       <DialogPrimitive.Portal>

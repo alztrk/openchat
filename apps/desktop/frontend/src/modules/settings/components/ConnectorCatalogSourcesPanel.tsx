@@ -6,10 +6,10 @@ import { Button, Card, Dialog, Input } from '@/design-system';
 import {
   type ConnectorCatalogEntry,
   type ConnectorCatalogSource,
-  type VerifiedConnectorCatalog,
   fetchSignedConnectorCatalog,
   parseConnectorCatalogSource,
   readConnectorSources,
+  type VerifiedConnectorCatalog,
   writeConnectorSources,
 } from '@/modules/settings/data/connectorCatalog';
 
@@ -33,6 +33,7 @@ export function ConnectorCatalogSourcesPanel({
   const [sources, setSources] = useState<ConnectorCatalogSource[]>([]);
   const [loadFailed, setLoadFailed] = useState(false);
   const [sourceError, setSourceError] = useState(false);
+  const [isSavingSources, setIsSavingSources] = useState(false);
   const [loadAttempt, setLoadAttempt] = useState(0);
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [name, setName] = useState('');
@@ -42,12 +43,17 @@ export function ConnectorCatalogSourcesPanel({
   const [refreshingId, setRefreshingId] = useState<string | null>(null);
   const [result, setResult] = useState<SourceResult | null>(null);
   const [refreshError, setRefreshError] = useState<
-    'connectorSourceFetchError' | 'connectorSourceRollbackError' | 'connectorSourceRevisionConflict' | 'connectorSourceSaveFailed' | null
+    | 'connectorSourceFetchError'
+    | 'connectorSourceRollbackError'
+    | 'connectorSourceRevisionConflict'
+    | 'connectorSourceSaveFailed'
+    | null
   >(null);
   const [importingId, setImportingId] = useState<string | null>(null);
   const [importedIds, setImportedIds] = useState<string[]>([]);
   const [importFailed, setImportFailed] = useState(false);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: loadAttempt intentionally retries the persisted source read.
   useEffect(() => {
     try {
       setSources(readConnectorSources());
@@ -57,19 +63,24 @@ export function ConnectorCatalogSourcesPanel({
     }
   }, [loadAttempt]);
 
-  const persistSources = (nextSources: ConnectorCatalogSource[]) => {
+  const persistSources = async (nextSources: ConnectorCatalogSource[]): Promise<boolean> => {
+    if (isSavingSources) return false;
+    setIsSavingSources(true);
     try {
-      writeConnectorSources(nextSources);
+      await writeConnectorSources(nextSources);
       setSources(nextSources);
       setSourceError(false);
       return true;
     } catch {
       setSourceError(true);
       return false;
+    } finally {
+      setIsSavingSources(false);
     }
   };
 
-  const addSource = () => {
+  const addSource = async () => {
+    if (isSavingSources) return;
     setAddFailed(false);
     try {
       const source = parseConnectorCatalogSource({
@@ -82,7 +93,7 @@ export function ConnectorCatalogSourcesPanel({
         setAddFailed(true);
         return;
       }
-      if (persistSources([...sources, source])) {
+      if (await persistSources([...sources, source])) {
         setShowAddDialog(false);
         setName('');
         setUrl('');
@@ -93,13 +104,14 @@ export function ConnectorCatalogSourcesPanel({
     }
   };
 
-  const removeSource = (source: ConnectorCatalogSource) => {
-    if (!persistSources(sources.filter((item) => item.id !== source.id))) return;
+  const removeSource = async (source: ConnectorCatalogSource) => {
+    if (isSavingSources) return;
+    if (!(await persistSources(sources.filter((item) => item.id !== source.id)))) return;
     if (result?.sourceId === source.id) setResult(null);
   };
 
   const refreshSource = async (source: ConnectorCatalogSource) => {
-    if (!canRefresh || refreshingId !== null) return;
+    if (!canRefresh || refreshingId !== null || isSavingSources) return;
     setRefreshingId(source.id);
     setRefreshError(null);
     setResult(null);
@@ -110,10 +122,7 @@ export function ConnectorCatalogSourcesPanel({
         setRefreshError('connectorSourceRollbackError');
         return;
       }
-      if (
-        source.lastRevision === catalog.revision &&
-        source.lastPayloadHash !== catalog.payloadHash
-      ) {
+      if (source.lastRevision === catalog.revision && source.lastPayloadHash !== catalog.payloadHash) {
         setRefreshError('connectorSourceRevisionConflict');
         return;
       }
@@ -123,7 +132,7 @@ export function ConnectorCatalogSourcesPanel({
             ? { ...item, lastRevision: catalog.revision, lastPayloadHash: catalog.payloadHash }
             : item,
         );
-        if (!persistSources(nextSources)) {
+        if (!(await persistSources(nextSources))) {
           setRefreshError('connectorSourceSaveFailed');
           return;
         }
@@ -160,7 +169,7 @@ export function ConnectorCatalogSourcesPanel({
           </h3>
           <p className="mt-1 text-sm text-secondary-text">{t('connectorSourcesDescription')}</p>
         </div>
-        <Button onClick={() => setShowAddDialog(true)} size="small" variant="secondary">
+        <Button disabled={isSavingSources} onClick={() => setShowAddDialog(true)} size="small" variant="secondary">
           <Plus aria-hidden="true" size={15} />
           {t('connectorSourceAdd')}
         </Button>
@@ -195,7 +204,7 @@ export function ConnectorCatalogSourcesPanel({
               </div>
               <div className="flex flex-wrap gap-2">
                 <Button
-                  disabled={!canRefresh || refreshingId !== null}
+                  disabled={!canRefresh || refreshingId !== null || isSavingSources}
                   onClick={() => void refreshSource(source)}
                   size="small"
                   variant="secondary"
@@ -209,7 +218,9 @@ export function ConnectorCatalogSourcesPanel({
                 </Button>
                 <Button
                   aria-label={`${t('connectorSourceRemove')}: ${source.name}`}
-                  onClick={() => removeSource(source)}
+                  disabled={isSavingSources}
+                  loading={isSavingSources}
+                  onClick={() => void removeSource(source)}
                   size="small"
                   variant="ghost"
                 >
@@ -221,11 +232,19 @@ export function ConnectorCatalogSourcesPanel({
           ))}
         </div>
       )}
-      {sourceError ? <p className="text-sm text-destructive" role="alert">{t('connectorSourceAddFailed')}</p> : null}
-      {refreshError ? <p className="text-sm text-destructive" role="alert">{t(refreshError)}</p> : null}
+      {sourceError ? (
+        <p className="text-sm text-destructive" role="alert">
+          {t('connectorSourceAddFailed')}
+        </p>
+      ) : null}
+      {refreshError ? (
+        <p className="text-sm text-destructive" role="alert">
+          {t(refreshError)}
+        </p>
+      ) : null}
 
       {result ? (
-        <div className="grid gap-3" aria-label={t('connectorSourcesTitle')}>
+        <section aria-label={t('connectorSourcesTitle')} className="grid gap-3">
           <p className="text-sm text-secondary-text">
             {t('connectorSourceVerifiedCount', { count: result.catalog.entries.length })}
           </p>
@@ -257,15 +276,17 @@ export function ConnectorCatalogSourcesPanel({
                   ) : (
                     <Download aria-hidden="true" size={15} />
                   )}
-                  {wasImported || isAlreadyAdded
-                    ? t('connectorSourceAlreadyAdded')
-                    : t('connectorSourceImport')}
+                  {wasImported || isAlreadyAdded ? t('connectorSourceAlreadyAdded') : t('connectorSourceImport')}
                 </Button>
               </Card>
             );
           })}
-          {importFailed ? <p className="text-sm text-destructive" role="alert">{t('connectorSourceAddFailed')}</p> : null}
-        </div>
+          {importFailed ? (
+            <p className="text-sm text-destructive" role="alert">
+              {t('connectorSourceAddFailed')}
+            </p>
+          ) : null}
+        </section>
       ) : null}
 
       <Dialog
@@ -279,9 +300,15 @@ export function ConnectorCatalogSourcesPanel({
         title={t('connectorSourceAddDialogTitle')}
       >
         <div className="grid gap-4">
-          <Input label={t('connectorSourceName')} onChange={(event) => setName(event.target.value)} value={name} />
+          <Input
+            disabled={isSavingSources}
+            label={t('connectorSourceName')}
+            onChange={(event) => setName(event.target.value)}
+            value={name}
+          />
           <Input
             autoComplete="url"
+            disabled={isSavingSources}
             label={t('connectorSourceUrl')}
             onChange={(event) => setUrl(event.target.value)}
             value={url}
@@ -289,15 +316,24 @@ export function ConnectorCatalogSourcesPanel({
           <Input
             autoCapitalize="none"
             autoComplete="off"
+            disabled={isSavingSources}
             label={t('connectorSourcePublicKey')}
             onChange={(event) => setPublicKey(event.target.value)}
             value={publicKey}
           />
           <p className="text-xs text-secondary-text">{t('connectorSourceKeyHelp')}</p>
-          {addFailed ? <p className="text-sm text-destructive" role="alert">{t('connectorSourceAddFailed')}</p> : null}
+          {addFailed ? (
+            <p className="text-sm text-destructive" role="alert">
+              {t('connectorSourceAddFailed')}
+            </p>
+          ) : null}
           <div className="flex justify-end gap-2 border-t border-border pt-3">
-            <Button onClick={() => setShowAddDialog(false)} variant="ghost">{t('cancel')}</Button>
-            <Button onClick={addSource} variant="primary">{t('connectorSourceAdd')}</Button>
+            <Button disabled={isSavingSources} onClick={() => setShowAddDialog(false)} variant="ghost">
+              {t('cancel')}
+            </Button>
+            <Button loading={isSavingSources} onClick={() => void addSource()} variant="primary">
+              {t('connectorSourceAdd')}
+            </Button>
           </div>
         </div>
       </Dialog>

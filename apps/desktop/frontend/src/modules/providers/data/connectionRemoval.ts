@@ -6,10 +6,7 @@ export interface ConnectionRemovalWaitOptions {
 
 export function isRetryableConnectionRemovalFailure(error: unknown): boolean {
   return (
-    error instanceof Error &&
-    error.name === 'LocalServiceError' &&
-    'retryable' in error &&
-    error.retryable === true
+    error instanceof Error && error.name === 'LocalServiceError' && 'retryable' in error && error.retryable === true
   );
 }
 
@@ -19,9 +16,7 @@ export async function waitForConnectionRemoval(
   connectionExists: (id: string) => Promise<boolean>,
   options: ConnectionRemovalWaitOptions,
 ): Promise<void> {
-  type OperationOutcome =
-    | { kind: 'completed'; response: Record<string, unknown> }
-    | { kind: 'failed'; cause: unknown };
+  type OperationOutcome = { kind: 'completed'; response: Record<string, unknown> } | { kind: 'failed'; cause: unknown };
   const outcomePromise: Promise<OperationOutcome> = operationResult.then(
     (response) => ({ kind: 'completed', response }),
     (cause: unknown) => ({ kind: 'failed', cause }),
@@ -29,10 +24,7 @@ export async function waitForConnectionRemoval(
   let checkFailureReported = false;
 
   while (true) {
-    const outcome = await Promise.race([
-      outcomePromise,
-      wait(options.intervalMs).then(() => null),
-    ]);
+    const outcome = await Promise.race([outcomePromise, wait(options.intervalMs).then(() => null)]);
     if (outcome?.kind === 'completed') {
       if (outcome.response.removed === true) return;
       throw new Error('The local service did not confirm ChatGPT connection removal.');

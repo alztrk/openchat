@@ -1,5 +1,6 @@
-import { unifiedStorage } from '@/platform/storage/unifiedStorage';
 import { LocalServiceError, localServiceClient } from '@/platform/local-service';
+import { unifiedStorage } from '@/platform/storage/unifiedStorage';
+import { type ConnectorManifest, parseConnectorManifest } from './connectorManifest';
 
 const storageKey = 'connectors.local_catalog';
 const sourcesStorageKey = 'connectors.pinned_sources';
@@ -36,6 +37,7 @@ export interface ConnectorCatalogEntry {
   authEnvironmentVariable?: string;
   package?: ConnectorExecutablePackage;
   catalogTrust?: ConnectorCatalogTrust;
+  manifest?: ConnectorManifest;
 }
 
 export interface ConnectorCatalogSource {
@@ -87,13 +89,17 @@ export function readConnectorCatalog(): ConnectorCatalogEntry[] {
   }
 }
 
-export function writeConnectorCatalog(entries: ConnectorCatalogEntry[]): void {
+export async function writeConnectorCatalog(entries: ConnectorCatalogEntry[]): Promise<void> {
   try {
     validateConnectorCatalog(entries);
     if (entries.length === 0) {
-      unifiedStorage.removeItem(storageKey);
+      await unifiedStorage.removePersistedItem(storageKey);
     } else {
-      unifiedStorage.setItem(storageKey, JSON.stringify(entries));
+      const encoded = JSON.stringify(entries);
+      if (new TextEncoder().encode(encoded).byteLength > maxCatalogBytes) {
+        throw new ConnectorCatalogError('invalid');
+      }
+      await unifiedStorage.setPersistedItem(storageKey, encoded);
     }
   } catch (error) {
     if (error instanceof ConnectorCatalogError) throw error;
@@ -128,7 +134,7 @@ export function readConnectorSources(): ConnectorCatalogSource[] {
   }
 }
 
-export function writeConnectorSources(sources: ConnectorCatalogSource[]): void {
+export async function writeConnectorSources(sources: ConnectorCatalogSource[]): Promise<void> {
   try {
     if (sources.length > maxCatalogSources) throw new ConnectorCatalogError('invalid');
     const parsed = sources.map(parseConnectorCatalogSource);
@@ -143,21 +149,23 @@ export function writeConnectorSources(sources: ConnectorCatalogSource[]): void {
     if (new TextEncoder().encode(encoded).byteLength > maxCatalogBytes) {
       throw new ConnectorCatalogError('invalid');
     }
-    if (parsed.length === 0) unifiedStorage.removeItem(sourcesStorageKey);
-    else unifiedStorage.setItem(sourcesStorageKey, encoded);
+    if (parsed.length === 0) await unifiedStorage.removePersistedItem(sourcesStorageKey);
+    else await unifiedStorage.setPersistedItem(sourcesStorageKey, encoded);
   } catch (error) {
     if (error instanceof ConnectorCatalogError) throw error;
     throw new ConnectorCatalogError('unavailable');
   }
 }
 
-export async function fetchSignedConnectorCatalog(
-  source: ConnectorCatalogSource,
-): Promise<VerifiedConnectorCatalog> {
-  const response = await localServiceClient.call('connector.catalog.fetch_signed', {
-    sourceUrl: source.url,
-    publicKeyBase64: source.publicKeyBase64,
-  }, 15_000);
+export async function fetchSignedConnectorCatalog(source: ConnectorCatalogSource): Promise<VerifiedConnectorCatalog> {
+  const response = await localServiceClient.call(
+    'connector.catalog.fetch_signed',
+    {
+      sourceUrl: source.url,
+      publicKeyBase64: source.publicKeyBase64,
+    },
+    15_000,
+  );
   if (
     !isRecord(response) ||
     typeof response.sourceUrl !== 'string' ||
@@ -229,9 +237,15 @@ export function parseConnectorEntry(value: unknown): ConnectorCatalogEntry {
   const packageMetadata =
     value.package === undefined || value.package === null ? undefined : parseExecutablePackage(value.package);
   const catalogTrust =
-    value.catalogTrust === undefined || value.catalogTrust === null
-      ? undefined
-      : parseCatalogTrust(value.catalogTrust);
+    value.catalogTrust === undefined || value.catalogTrust === null ? undefined : parseCatalogTrust(value.catalogTrust);
+  let manifest: ConnectorManifest | undefined;
+  if (value.manifest !== undefined && value.manifest !== null) {
+    try {
+      manifest = parseConnectorManifest(value.manifest);
+    } catch {
+      throw new ConnectorCatalogError('invalid');
+    }
+  }
 
   if (program !== undefined) entry.program = program.trim();
   if (endpoint !== undefined) entry.endpoint = endpoint;
@@ -240,6 +254,7 @@ export function parseConnectorEntry(value: unknown): ConnectorCatalogEntry {
   }
   if (packageMetadata !== undefined) entry.package = packageMetadata;
   if (catalogTrust !== undefined) entry.catalogTrust = catalogTrust;
+  if (manifest !== undefined) entry.manifest = manifest;
 
   if (
     !/^[a-z0-9_]{1,24}$/.test(entry.id) ||
@@ -249,10 +264,8 @@ export function parseConnectorEntry(value: unknown): ConnectorCatalogEntry {
     !entry.requestedAccess ||
     !entry.dataDisclosure ||
     (entry.transport === 'stdio' &&
-      ((entry.package === undefined &&
-        (entry.program === undefined || !isAbsoluteWindowsPath(entry.program))) ||
-        (entry.package !== undefined &&
-          (entry.program !== undefined || entry.catalogTrust === undefined)))) ||
+      ((entry.package === undefined && (entry.program === undefined || !isAbsoluteWindowsPath(entry.program))) ||
+        (entry.package !== undefined && (entry.program !== undefined || entry.catalogTrust === undefined)))) ||
     (entry.transport === 'streamableHttp' &&
       (entry.endpoint === undefined ||
         entry.program !== undefined ||
@@ -329,19 +342,18 @@ export function parseConnectorCatalogSource(value: unknown): ConnectorCatalogSou
     lastPayloadHash: null,
   };
   if (
-    !(lastRevision === null || (typeof lastRevision === 'number' && Number.isSafeInteger(lastRevision) && lastRevision > 0)) ||
+    !(
+      lastRevision === null ||
+      (typeof lastRevision === 'number' && Number.isSafeInteger(lastRevision) && lastRevision > 0)
+    ) ||
     !(lastPayloadHash === null || (typeof lastPayloadHash === 'string' && /^[a-f0-9]{64}$/.test(lastPayloadHash))) ||
-    ((lastRevision === null) !== (lastPayloadHash === null))
+    (lastRevision === null) !== (lastPayloadHash === null)
   ) {
     throw new ConnectorCatalogError('invalid');
   }
   source.lastRevision = lastRevision;
   source.lastPayloadHash = lastPayloadHash;
-  if (
-    !/^[a-z0-9_-]{1,48}$/.test(source.id) ||
-    !source.name ||
-    !/^[A-Za-z0-9_-]{43}$/.test(source.publicKeyBase64)
-  ) {
+  if (!/^[a-z0-9_-]{1,48}$/.test(source.id) || !source.name || !/^[A-Za-z0-9_-]{43}$/.test(source.publicKeyBase64)) {
     throw new ConnectorCatalogError('invalid');
   }
   return source;

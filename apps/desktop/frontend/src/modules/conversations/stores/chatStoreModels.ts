@@ -106,6 +106,13 @@ export function createRefreshModelsAction(
         routeModel?.key ??
         currentSelection?.key ??
         (!current.activeConversationId && preferredNewChatModel ? preferredNewChatModel.key : null);
+      const selectedModel = models.find((model) => model.key === selectedModelKey);
+      const selectedReasoningEffort =
+        current.activeConversationId || current.selectedModelKey === selectedModelKey
+          ? current.selectedReasoningEffort
+          : selectedModel?.supportsReasoning
+            ? (current.modelReasoningEfforts[modelRouteKey(selectedModel)] ?? null)
+            : null;
       const errorCode = projectPreferenceInvalid
         ? 'projectDefaultModelLoadFailed'
         : current.errorCode === 'modelRequired' && selectedModelKey !== null
@@ -126,6 +133,7 @@ export function createRefreshModelsAction(
           chatGptCatalog?.hasConfiguredProvider === true || apiKeyCatalog?.hasConfiguredProvider === true,
         chatGptWorkspaceSelectionRequired: chatGptCatalog?.needsChatGptWorkspaceSelection === true,
         selectedModelKey,
+        selectedReasoningEffort,
         errorCode,
       });
       if (allCatalogsSettled) void refreshOAuthRateLimits(models);

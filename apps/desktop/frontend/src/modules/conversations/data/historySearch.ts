@@ -1,3 +1,4 @@
+import { i18n } from '@/localization/i18n';
 import { type JsonObject, LocalServiceError, localServiceClient } from '@/platform/local-service';
 import { unifiedStorage } from '@/platform/storage/unifiedStorage';
 import { listProjects } from './chatStorage';
@@ -99,7 +100,7 @@ export async function searchHistory(
   const nativeResults = isLocalOnlyResultType(filters.resultType)
     ? []
     : await searchNativeHistory(normalizedQuery, filters, fromUnixMs, throughUnixMs);
-  const localResults = await searchLocalLibrary(normalizedQuery, filters);
+  const localResults = await searchLocalLibrary(normalizedQuery, filters, currentLocale());
   const seenMessageKeys = new Set(
     nativeResults
       .filter((result) => result.messageId !== null)
@@ -148,22 +149,18 @@ async function searchNativeHistory(
 async function searchLocalLibrary(
   query: string,
   filters: HistorySearchFilters,
+  locale: string,
 ): Promise<HistorySearchResult[]> {
-  const normalizedQuery = query.toLocaleLowerCase('en-US');
+  const normalizedQuery = query.toLocaleLowerCase(locale);
   const includeProjects =
     filters.resultType === 'all' || filters.resultType === 'projects' || filters.resultType === 'conversations';
   const projects = includeProjects ? await listProjects() : [];
   const results: HistorySearchResult[] = [];
   if (includeProjects) {
     for (const project of projects) {
-      if (!project.name.toLocaleLowerCase('en-US').includes(normalizedQuery)) continue;
+      if (!project.name.toLocaleLowerCase(locale).includes(normalizedQuery)) continue;
       if (filters.projectId !== null && filters.projectId !== project.id) continue;
-      if (
-        filters.providerId !== null ||
-        filters.modelId !== null ||
-        filters.isArchived !== null
-      )
-        continue;
+      if (filters.providerId !== null || filters.modelId !== null || filters.isArchived !== null) continue;
       results.push({
         kind: 'project',
         conversationId: '',
@@ -196,8 +193,9 @@ export function loadSavedHistorySearches(): SavedHistorySearch[] {
 
 export function saveHistorySearch(search: SavedHistorySearch): SavedHistorySearch[] {
   const current = loadSavedHistorySearches();
+  const locale = currentLocale();
   const remaining = current.filter(
-    (item) => item.name.toLocaleLowerCase('en-US') !== search.name.toLocaleLowerCase('en-US'),
+    (item) => item.name.toLocaleLowerCase(locale) !== search.name.toLocaleLowerCase(locale),
   );
   if (remaining.length >= maximumSavedSearches) {
     throw new SavedHistorySearchError('limitReached');
@@ -207,9 +205,14 @@ export function saveHistorySearch(search: SavedHistorySearch): SavedHistorySearc
 
 export function deleteHistorySearch(name: string): SavedHistorySearch[] {
   const current = loadSavedHistorySearches();
+  const locale = currentLocale();
   return writeSavedHistorySearches(
-    current.filter((item) => item.name.toLocaleLowerCase('en-US') !== name.toLocaleLowerCase('en-US')),
+    current.filter((item) => item.name.toLocaleLowerCase(locale) !== name.toLocaleLowerCase(locale)),
   );
+}
+
+function currentLocale(): string {
+  return i18n.resolvedLanguage ?? i18n.language;
 }
 
 function writeSavedHistorySearches(searches: SavedHistorySearch[]): SavedHistorySearch[] {

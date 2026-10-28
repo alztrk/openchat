@@ -46,9 +46,9 @@ export function ModelDirectorySetting() {
     };
   }, [customDirectory, preferenceAvailable]);
 
-  const persistDirectory = () => {
+  const persistDirectory = async () => {
     const value = directory.trim();
-    const saved = value === defaultDirectory.trim() ? resetDirectory() : saveDirectory(value);
+    const saved = await (value === defaultDirectory.trim() ? resetDirectory() : saveDirectory(value));
     if (!saved) {
       setErrorKey(value ? 'localModelActionError' : 'localModelDirectoryUnavailable');
       return;
@@ -98,12 +98,12 @@ export function ModelDirectorySetting() {
           <Button
             disabled={loadState !== 'ready'}
             onClick={() => {
-              if (resetDirectory()) {
-                setDirectory(defaultDirectory);
-                setErrorKey(null);
-              } else {
-                setErrorKey('localModelActionError');
-              }
+              void resetDirectory().then((reset) => {
+                if (reset) {
+                  setDirectory(defaultDirectory);
+                  setErrorKey(null);
+                } else setErrorKey('localModelActionError');
+              });
             }}
             variant="ghost"
           >

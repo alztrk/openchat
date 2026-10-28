@@ -32,12 +32,15 @@ import { useTranslation } from 'react-i18next';
 import { Button, Checkbox, ColorPicker, DatePicker, Dialog, Input, Select, Slider, Textarea } from '@/design-system';
 import type { ConversationAttachmentSummary } from '@/modules/conversations/data/chatStorage';
 import { listConversationAttachments, readMessageAttachment } from '@/modules/conversations/data/chatStorage';
+import { DesignCanvas } from '@/modules/design/components/DesignCanvas';
 import {
   clampDesignPanelWidth,
   DESIGN_PANEL_DEFAULT_WIDTH,
   DESIGN_PANEL_MAX_WIDTH,
   DESIGN_PANEL_MIN_WIDTH,
   readDesignPanelWidth,
+  resolveDesignGenerationSettings,
+  useDesignPreferencesStore,
   writeDesignPanelWidth,
 } from '@/modules/design/data/designPreferences';
 import {
@@ -119,7 +122,13 @@ const standardSizeOptions = sizeOptions.slice(0, 4);
 const customSizeOption = { value: 'custom', labelKey: 'designResolutionCustom' } as const;
 
 export function DesignPage({ onOpenSettings }: DesignPageProps) {
-  const { t } = useTranslation();
+  const { i18n, t } = useTranslation();
+  const [workspace, setWorkspace] = useState<'images' | 'canvas'>('images');
+  const designPreferences = useDesignPreferencesStore((state) => state.preferences);
+  const updateDesignPreferences = useDesignPreferencesStore((state) => state.updatePreferences);
+  const [initialGenerationSettings] = useState(() =>
+    resolveDesignGenerationSettings(useDesignPreferencesStore.getState().preferences),
+  );
   const [controlPanelWidth, setControlPanelWidth] = useState(readDesignPanelWidth);
   const [isResizingControlPanel, setIsResizingControlPanel] = useState(false);
   const [targets, setTargets] = useState<DesignImageTarget[]>([]);
@@ -128,19 +137,21 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
   const [targetKey, setTargetKey] = useState('');
   const [prompt, setPrompt] = useState('');
   const [model, setModel] = useState('');
-  const [size, setSize] = useState('1024x1024');
-  const [quality, setQuality] = useState<ImageQuality>('auto');
-  const [background, setBackground] = useState<ImageBackground>('auto');
-  const [customBackgroundMode, setCustomBackgroundMode] = useState<'none' | 'solid' | 'gradient'>('none');
-  const [backgroundColor, setBackgroundColor] = useState('#E8DCCB');
-  const [gradientEndColor, setGradientEndColor] = useState('#8FA7C7');
-  const [gradientAngle, setGradientAngle] = useState(135);
-  const [moderation, setModeration] = useState<ImageModeration>('auto');
-  const [outputFormat, setOutputFormat] = useState<ImageOutputFormat>('png');
-  const [outputCompression, setOutputCompression] = useState(90);
-  const [count, setCount] = useState('1');
-  const [customWidth, setCustomWidth] = useState('1536');
-  const [customHeight, setCustomHeight] = useState('1024');
+  const [size, setSize] = useState(initialGenerationSettings.size);
+  const [quality, setQuality] = useState<ImageQuality>(initialGenerationSettings.quality);
+  const [background, setBackground] = useState<ImageBackground>(initialGenerationSettings.background);
+  const [customBackgroundMode, setCustomBackgroundMode] = useState<'none' | 'solid' | 'gradient'>(
+    initialGenerationSettings.customBackgroundMode,
+  );
+  const [backgroundColor, setBackgroundColor] = useState(initialGenerationSettings.backgroundColor);
+  const [gradientEndColor, setGradientEndColor] = useState(initialGenerationSettings.gradientEndColor);
+  const [gradientAngle, setGradientAngle] = useState(initialGenerationSettings.gradientAngle);
+  const [moderation, setModeration] = useState<ImageModeration>(initialGenerationSettings.moderation);
+  const [outputFormat, setOutputFormat] = useState<ImageOutputFormat>(initialGenerationSettings.outputFormat);
+  const [outputCompression, setOutputCompression] = useState(initialGenerationSettings.outputCompression);
+  const [count, setCount] = useState(String(initialGenerationSettings.count));
+  const [customWidth, setCustomWidth] = useState(initialGenerationSettings.customWidth);
+  const [customHeight, setCustomHeight] = useState(initialGenerationSettings.customHeight);
   const [accountQuota, setAccountQuota] = useState<ChatGptAccountQuotaStatus | null>(null);
   const [generationStarting, setGenerationStarting] = useState(false);
   const [activeOperation, setActiveOperation] = useState<DesignServiceOperation | null>(null);
@@ -149,14 +160,20 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
   const [gallery, setGallery] = useState<GalleryImage[]>([]);
   const [query, setQuery] = useState('');
   const [queryDraft, setQueryDraft] = useState('');
-  const [sort, setSort] = useState<'newest' | 'oldest'>('newest');
+  const [sort, setSort] = useState<'newest' | 'oldest'>(
+    () => useDesignPreferencesStore.getState().preferences.gallerySort,
+  );
   const [sourceFilter, setSourceFilter] = useState<'all' | 'design' | 'chat'>('all');
   const [providerFilter, setProviderFilter] = useState<'all' | 'oauth' | 'api_key'>('all');
   const [modelFilter, setModelFilter] = useState('');
-  const [favoritesOnly, setFavoritesOnly] = useState(false);
+  const [favoritesOnly, setFavoritesOnly] = useState(
+    () => useDesignPreferencesStore.getState().preferences.favoritesOnly,
+  );
   const [tagFilter, setTagFilter] = useState('');
   const [tagFilterDraft, setTagFilterDraft] = useState('');
-  const [collectionFilter, setCollectionFilter] = useState('');
+  const [collectionFilter, setCollectionFilter] = useState(
+    () => useDesignPreferencesStore.getState().preferences.defaultCollectionId ?? '',
+  );
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [collections, setCollections] = useState<ImageCollection[]>([]);
@@ -372,7 +389,14 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
     ]);
     if (!mountedRef.current) return;
     const [collectionResult, templateResult, runResult] = results;
-    if (collectionResult.status === 'fulfilled') setCollections(collectionResult.value);
+    if (collectionResult.status === 'fulfilled') {
+      setCollections(collectionResult.value);
+      const defaultCollectionId = useDesignPreferencesStore.getState().preferences.defaultCollectionId;
+      if (defaultCollectionId !== null && !collectionResult.value.some((item) => item.id === defaultCollectionId)) {
+        useDesignPreferencesStore.getState().updatePreferences({ defaultCollectionId: null });
+        setCollectionFilter((current) => (current === defaultCollectionId ? '' : current));
+      }
+    }
     if (templateResult.status === 'fulfilled') setTemplates(templateResult.value);
     if (runResult.status === 'fulfilled') {
       setFailedRuns(runResult.value.filter((run) => run.status === 'failed' || run.status === 'cancelled'));
@@ -386,6 +410,49 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
     void loadGalleryPage({ design: 0, chat: 0 }, false);
     void refreshLibraryMetadata();
   }, [loadGalleryPage, loadTargets, refreshLibraryMetadata]);
+
+  useEffect(() => {
+    if (!designPreferences.rememberLastGeneration) return;
+    const requestedCount = Number(count);
+    if (!Number.isInteger(requestedCount) || requestedCount < 1 || requestedCount > 10) return;
+    updateDesignPreferences({
+      lastGenerationSettings: {
+        size,
+        quality,
+        background,
+        customBackgroundMode,
+        backgroundColor,
+        gradientEndColor,
+        gradientAngle,
+        moderation,
+        outputFormat,
+        outputCompression,
+        count: requestedCount,
+        customWidth,
+        customHeight,
+      },
+    });
+  }, [
+    background,
+    backgroundColor,
+    count,
+    customBackgroundMode,
+    customHeight,
+    customWidth,
+    designPreferences.rememberLastGeneration,
+    gradientAngle,
+    gradientEndColor,
+    moderation,
+    outputCompression,
+    outputFormat,
+    quality,
+    size,
+    updateDesignPreferences,
+  ]);
+
+  useEffect(() => {
+    updateDesignPreferences({ gallerySort: sort, favoritesOnly });
+  }, [favoritesOnly, sort, updateDesignPreferences]);
 
   useEffect(() => {
     const timeout = window.setTimeout(() => setQuery(queryDraft), 250);
@@ -909,6 +976,10 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
     dateTo !== '',
   ].filter(Boolean).length;
 
+  if (workspace === 'canvas') {
+    return <DesignCanvas onOpenImageStudio={() => setWorkspace('images')} onOpenSettings={onOpenSettings} />;
+  }
+
   return (
     <div
       className="design-workspace flex h-full min-h-0 min-w-0 flex-col overflow-hidden lg:flex-row"
@@ -927,6 +998,11 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
           <div className="min-w-0">
             <h1 className="text-section-title font-semibold">{t('designTitle')}</h1>
           </div>
+          <Button className="ml-auto shrink-0" onClick={() => setWorkspace('canvas')} size="small" variant="secondary">
+            <PanelsTopLeft aria-hidden="true" size={15} />
+            <span className="hidden sm:inline">{t('designCanvasOpen')}</span>
+            <span className="sm:hidden">{t('designCanvasShortLabel')}</span>
+          </Button>
         </div>
 
         {targetsLoading ? (
@@ -1249,10 +1325,10 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
                 </div>
                 <div className="grid gap-2">
                   <label className="text-sm font-medium text-text" htmlFor="design-gradient-angle">
-                  <span className="flex items-center justify-between gap-3">
-                    {t('designGradientAngle')}
-                    <span className="font-mono text-xs font-normal text-secondary-text">{gradientAngle}°</span>
-                  </span>
+                    <span className="flex items-center justify-between gap-3">
+                      {t('designGradientAngle')}
+                      <span className="font-mono text-xs font-normal text-secondary-text">{gradientAngle}°</span>
+                    </span>
                   </label>
                   <Slider
                     disabled={activeOperation !== null || generationStarting}
@@ -1303,7 +1379,7 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
                 {outputFormat !== 'png' ? (
                   <div className="grid gap-2">
                     <label className="text-sm font-medium text-text" htmlFor="design-compression">
-                    {t('designCompression', { value: outputCompression })}
+                      {t('designCompression', { value: outputCompression })}
                     </label>
                     <Slider
                       disabled={activeOperation !== null || generationStarting}
@@ -1320,10 +1396,10 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
             ) : null}
             <div className="grid gap-2">
               <label className="text-sm font-medium text-text" htmlFor="design-image-count">
-              <span className="flex items-center justify-between gap-3">
-                <span>{t('designImageCount')}</span>
-                <span className="text-secondary-text">{t('designImageCountOption', { count: Number(count) })}</span>
-              </span>
+                <span className="flex items-center justify-between gap-3">
+                  <span>{t('designImageCount')}</span>
+                  <span className="text-secondary-text">{t('designImageCountOption', { count: Number(count) })}</span>
+                </span>
               </label>
               <Slider
                 disabled={activeOperation !== null || generationStarting}
@@ -1797,7 +1873,9 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
                 ) : null}
                 <div className="min-w-0">
                   <dt className="text-xs text-secondary-text">{t('designMetadataFileSize')}</dt>
-                  <dd className="mt-1 font-medium text-text">{formatImageSize(selectedDesignImage.sizeBytes)}</dd>
+                  <dd className="mt-1 font-medium text-text">
+                    {formatImageSize(selectedDesignImage.sizeBytes, i18n.resolvedLanguage ?? i18n.language)}
+                  </dd>
                 </div>
               </dl>
             ) : null}
@@ -1823,7 +1901,9 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
                 </div>
                 <div className="min-w-0">
                   <dt className="text-xs text-secondary-text">{t('designMetadataFileSize')}</dt>
-                  <dd className="mt-1 font-medium text-text">{formatImageSize(selectedImage.image.image.sizeBytes)}</dd>
+                  <dd className="mt-1 font-medium text-text">
+                    {formatImageSize(selectedImage.image.image.sizeBytes, i18n.resolvedLanguage ?? i18n.language)}
+                  </dd>
                 </div>
               </dl>
             ) : null}
@@ -2117,7 +2197,13 @@ function imageBackgroundLabelKey(
 
 function imageQualityLabelKey(
   quality: ImageQuality,
-): 'designQualityAuto' | 'designQualityLow' | 'designQualityMedium' | 'designQualityHigh' | 'designQualityXhigh' | 'designQualityMax' {
+):
+  | 'designQualityAuto'
+  | 'designQualityLow'
+  | 'designQualityMedium'
+  | 'designQualityHigh'
+  | 'designQualityXhigh'
+  | 'designQualityMax' {
   const keys = {
     auto: 'designQualityAuto',
     low: 'designQualityLow',
@@ -2171,7 +2257,9 @@ function galleryVariants(images: GalleryImage[], selected: GalleryImage): Galler
 function galleryPrompt(entry: GalleryImage): string {
   return entry.source === 'design'
     ? extractUserPrompt(entry.image.prompt)
-    : (entry.image.prompt ? extractUserPrompt(entry.image.prompt) : entry.image.conversationTitle);
+    : entry.image.prompt
+      ? extractUserPrompt(entry.image.prompt)
+      : entry.image.conversationTitle;
 }
 
 function withAnnotations(entry: GalleryImage, annotations: { isFavorite: boolean; tags: string[] }): GalleryImage {
@@ -2217,7 +2305,9 @@ function galleryImageAlt(entry: GalleryImage): string {
 function galleryImageCaption(entry: GalleryImage): string {
   return entry.source === 'design'
     ? extractUserPrompt(entry.image.prompt)
-    : (entry.image.prompt ? extractUserPrompt(entry.image.prompt) : entry.image.conversationTitle);
+    : entry.image.prompt
+      ? extractUserPrompt(entry.image.prompt)
+      : entry.image.conversationTitle;
 }
 
 function galleryImageExtension(entry: GalleryImage): string {
@@ -2288,9 +2378,9 @@ function isValidImageSize(widthValue: string, heightValue: string): boolean {
   );
 }
 
-function formatImageSize(sizeBytes: number): string {
+function formatImageSize(sizeBytes: number, locale: string): string {
   const mebibytes = sizeBytes / (1024 * 1024);
-  return `${new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 }).format(mebibytes)} MiB`;
+  return `${new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(mebibytes)} MiB`;
 }
 
 function reportGalleryLoadFailure(source: 'Design' | 'chat', error: unknown): void {

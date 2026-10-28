@@ -1,6 +1,5 @@
 import type { ChatConversation, ChatMessage } from '@/modules/conversations/data/chatStorage';
 import type { ChatModel } from '@/modules/providers/data/chatModels';
-import { type CompatibleProviderId, compatibleProviderIds } from '@/modules/providers/data/providerCredentials';
 import type { JsonObject } from '@/platform/local-service';
 import { isObject } from '@/shared/utils/json';
 
@@ -78,7 +77,7 @@ export function isSameRoute(model: ChatModel, conversation: ChatConversation): b
 }
 
 export function favoriteSourceConnection(model: ChatModel): string | null {
-  if (model.providerId === 'chatgpt_api' || isCompatibleProviderId(model.providerId) || model.customProvider) {
+  if (model.apiKeyConnectionId || model.customProvider) {
     return model.apiKeyConnectionId ?? model.connectionId ?? model.providerId;
   }
   return null;
@@ -105,8 +104,4 @@ function mergeToolActivity(encoded: string, activity: JsonObject): string {
   if (index < 0) parsed.push(activity);
   else parsed[index] = activity;
   return JSON.stringify(parsed);
-}
-
-function isCompatibleProviderId(value: string): value is CompatibleProviderId {
-  return compatibleProviderIds.some((providerId) => providerId === value);
 }

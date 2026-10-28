@@ -279,5 +279,6 @@ function toEntry(draft: ConnectorDraft, currentEntry: ConnectorCatalogEntry | nu
     ...(currentEntry?.package === undefined
       ? {}
       : { package: currentEntry.package, catalogTrust: currentEntry.catalogTrust }),
+    ...(currentEntry?.manifest === undefined ? {} : { manifest: currentEntry.manifest }),
   };
 }

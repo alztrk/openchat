@@ -15,6 +15,7 @@ import {
   saveProjectToolPermissionRules,
 } from '@/modules/projects/data/projectPermissionSettings';
 import type { ProjectToolPermissionRule } from '@/modules/projects/data/projectPreferences';
+import { type ConnectorToolComparison, compareConnectorToolNames } from '@/modules/settings/data/connectorManifest';
 import { LocalServiceError, localServiceClient } from '@/platform/local-service';
 import { ProjectMcpCredentialDialog } from './ProjectMcpCredentialDialog';
 
@@ -30,6 +31,7 @@ type McpError =
   | 'projectMcpSaveFailed'
   | 'projectMcpCredentialUnavailable'
   | 'projectMcpDuplicateId'
+  | 'projectMcpCheckFailed'
   | 'connectorPackageCleanupFailed';
 type McpEditorError =
   | 'projectMcpInvalidId'
@@ -40,6 +42,11 @@ type McpEditorError =
 interface McpCheckResult {
   message: string;
   details: string | null;
+  toolComparison?: ConnectorToolComparison | null;
+}
+interface McpPermissionBindings {
+  serverRuleName: string;
+  toolRuleNames: Record<string, string>;
 }
 
 export function ProjectMcpPanel({ project, onClose }: ProjectMcpPanelProps) {
@@ -50,6 +57,7 @@ export function ProjectMcpPanel({ project, onClose }: ProjectMcpPanelProps) {
   const [savedServers, setSavedServers] = useState<ProjectMcpServer[]>([]);
   const [rules, setRules] = useState<Record<string, ProjectToolPermissionRule>>({});
   const [toolNames, setToolNames] = useState<Record<string, string[]>>({});
+  const [permissionBindings, setPermissionBindings] = useState<Record<string, McpPermissionBindings>>({});
   const [checkResults, setCheckResults] = useState<Record<string, McpCheckResult>>({});
   const [checkingServerId, setCheckingServerId] = useState<string | null>(null);
   const [credentialServer, setCredentialServer] = useState<ProjectMcpServer | null>(null);
@@ -78,12 +86,14 @@ export function ProjectMcpPanel({ project, onClose }: ProjectMcpPanelProps) {
       setServers(catalog.servers);
       setSavedServers(catalog.servers);
       setRules(savedRules);
-      setToolNames(deriveToolNamesFromRules(catalog.servers, savedRules));
+      setToolNames({});
+      setPermissionBindings({});
       setCheckResults({});
       setIsLoading(false);
     } catch (error) {
       if (mounted.current && generation === projectGeneration.current) {
         setToolNames({});
+        setPermissionBindings({});
         setCheckResults({});
         setErrorKey('projectMcpLoadFailed');
         setErrorDetails(readErrorDetails(error));
@@ -105,6 +115,7 @@ export function ProjectMcpPanel({ project, onClose }: ProjectMcpPanelProps) {
     setSavedServers([]);
     setRules({});
     setToolNames({});
+    setPermissionBindings({});
     setCheckResults({});
     setErrorKey(null);
     setErrorDetails(null);
@@ -140,7 +151,11 @@ export function ProjectMcpPanel({ project, onClose }: ProjectMcpPanelProps) {
       await removeStaleCredentials(projectId, savedServers, servers);
       const nextRules = Object.fromEntries(
         Object.entries(rules).filter(
-          ([name]) => !name.startsWith('mcp__') || servers.some((server) => name.startsWith(`mcp__${server.id}__`)),
+          ([name]) =>
+            (!name.startsWith('mcp__') && !name.startsWith('mcpv1__')) ||
+            servers.some(
+              (server) => name.startsWith(`mcp__${server.id}__`) || name.startsWith(`mcpv1__${server.id}__`),
+            ),
         ),
       );
       await saveProjectToolPermissionRules(projectId, nextRules);
@@ -202,16 +217,32 @@ export function ProjectMcpPanel({ project, onClose }: ProjectMcpPanelProps) {
       )
         throw new Error('The MCP server check result is invalid.');
       const names = [...new Set(rawToolNames)].sort((left, right) => left.localeCompare(right));
+      const toolComparison = compareConnectorToolNames(server.catalogToolNames, names);
+      const bindings = parseMcpPermissionBindings(
+        response.serverPermissionRuleName,
+        response.toolPermissionBindings,
+        server.id,
+        names,
+      );
+      if (names.length !== rawToolNames.length || bindings === null) {
+        throw new Error('The MCP server permission bindings are invalid.');
+      }
       if (mounted.current && generation === projectGeneration.current) {
         setToolNames((current) => ({ ...current, [server.id]: names }));
+        setPermissionBindings((current) => ({ ...current, [server.id]: bindings }));
         setCheckResults((current) => ({
           ...current,
-          [server.id]: { message: t('projectMcpConnected', { count: toolCount }), details: null },
+          [server.id]: {
+            message: t('projectMcpConnected', { count: toolCount }),
+            details: null,
+            toolComparison,
+          },
         }));
       }
     } catch (error) {
       if (mounted.current && generation === projectGeneration.current) {
         setToolNames((current) => omitKey(current, server.id));
+        setPermissionBindings((current) => omitKey(current, server.id));
         setCheckResults((current) => ({
           ...current,
           [server.id]: { message: t('projectMcpCheckFailed'), details: readErrorDetails(error) },
@@ -228,6 +259,10 @@ export function ProjectMcpPanel({ project, onClose }: ProjectMcpPanelProps) {
 
   const saveEditedServer = (server: ProjectMcpServer, permission: PermissionChoice) => {
     const editIndex = editing?.server ? servers.findIndex((item) => item.id === editing.server?.id) : -1;
+    if (permission === 'allow') {
+      setErrorKey('projectMcpSaveFailed');
+      return;
+    }
     if (servers.some((item, index) => item.id === server.id && index !== editIndex)) {
       setErrorKey('projectMcpDuplicateId');
       return;
@@ -241,14 +276,19 @@ export function ProjectMcpPanel({ project, onClose }: ProjectMcpPanelProps) {
         return;
       }
       setToolNames((current) => omitKey(current, previousServer.id));
+      setPermissionBindings((current) => omitKey(current, previousServer.id));
       setCheckResults((current) => omitKey(current, previousServer.id));
     }
     setToolNames((current) => omitKey(current, server.id));
+    setPermissionBindings((current) => omitKey(current, server.id));
     setCheckResults((current) => omitKey(current, server.id));
     setServers(nextServers);
     setEditing(null);
-    if (permission !== 'inherit') updateRule(`mcp__${server.id}__*`, permission);
-    else updateRule(`mcp__${server.id}__*`, 'inherit');
+    setRules((current) => {
+      const next = clearMcpServerRules(current, server.id);
+      if (permission !== 'inherit') next[`mcp__${server.id}__*`] = permission;
+      return next;
+    });
     setErrorKey(null);
     setErrorDetails(null);
   };
@@ -256,10 +296,50 @@ export function ProjectMcpPanel({ project, onClose }: ProjectMcpPanelProps) {
   const removeServer = (server: ProjectMcpServer) => {
     setServers((current) => current.filter((item) => item.id !== server.id));
     setToolNames((current) => omitKey(current, server.id));
+    setPermissionBindings((current) => omitKey(current, server.id));
     setCheckResults((current) => omitKey(current, server.id));
     setRules((current) =>
-      Object.fromEntries(Object.entries(current).filter(([name]) => !name.startsWith(`mcp__${server.id}__`))),
+      Object.fromEntries(
+        Object.entries(current).filter(
+          ([name]) => !name.startsWith(`mcp__${server.id}__`) && !name.startsWith(`mcpv1__${server.id}__`),
+        ),
+      ),
     );
+  };
+
+  const updateServerPermission = (
+    serverId: string,
+    permission: PermissionChoice,
+    bindings: McpPermissionBindings | undefined,
+  ) => {
+    if (permission === 'allow' && bindings === undefined) {
+      setErrorKey('projectMcpCheckFailed');
+      setErrorDetails(null);
+      return;
+    }
+    setRules((current) => {
+      const legacyPrefix = `mcp__${serverId}__`;
+      const boundPrefix = `mcpv1__${serverId}__`;
+      const next = { ...current };
+      for (const [name, rule] of Object.entries(next)) {
+        if ((name.startsWith(legacyPrefix) || name.startsWith(boundPrefix)) && rule === 'allow') {
+          delete next[name];
+        }
+      }
+      delete next[`${legacyPrefix}*`];
+      if (bindings !== undefined) delete next[bindings.serverRuleName];
+      if (permission === 'deny') next[`${legacyPrefix}*`] = 'deny';
+      if (permission === 'ask') {
+        next[bindings?.serverRuleName ?? `${legacyPrefix}*`] = 'ask';
+      }
+      if (permission === 'allow' && bindings !== undefined) {
+        next[bindings.serverRuleName] = 'allow';
+        for (const ruleName of Object.values(bindings.toolRuleNames)) next[ruleName] = 'allow';
+      }
+      return next;
+    });
+    setErrorKey(null);
+    setErrorDetails(null);
   };
 
   return (
@@ -290,25 +370,30 @@ export function ProjectMcpPanel({ project, onClose }: ProjectMcpPanelProps) {
           {servers.length === 0 ? (
             <p className="py-4 text-center text-sm text-secondary-text">{t('projectMcpEmpty')}</p>
           ) : null}
-          {servers.map((server, index) => (
-            <ProjectMcpServerRow
-              checking={checkingServerId === server.id}
-              checkResult={checkResults[server.id]}
-              disabled={isSaving || checkingServerId !== null || editing !== null}
-              key={server.id}
-              onCheck={() => void checkServer(server)}
-              onEdit={() => setEditing({ server, rule: rules[`mcp__${server.id}__*`] ?? 'inherit' })}
-              onManageCredentials={() => setCredentialServer(server)}
-              onPermissionChange={(value) => updateRule(`mcp__${server.id}__*`, value)}
-              onRemove={() => removeServer(server)}
-              onToggle={(enabled) => replaceServer(index, { ...server, enabled })}
-              permission={rules[`mcp__${server.id}__*`] ?? 'inherit'}
-              server={server}
-              toolNames={toolNames[server.id] ?? []}
-              toolRules={rules}
-              onToolPermissionChange={updateRule}
-            />
-          ))}
+          {servers.map((server, index) => {
+            const bindings = permissionBindings[server.id];
+            return (
+              <ProjectMcpServerRow
+                checking={checkingServerId === server.id}
+                checkResult={checkResults[server.id]}
+                disabled={isSaving || checkingServerId !== null || editing !== null}
+                key={server.id}
+                onCheck={() => void checkServer(server)}
+                onEdit={() => setEditing({ server, rule: getLegacyServerPermission(server.id, rules) })}
+                onManageCredentials={() => setCredentialServer(server)}
+                onPermissionChange={(value) => updateServerPermission(server.id, value, bindings)}
+                onRemove={() => removeServer(server)}
+                onToggle={(enabled) => replaceServer(index, { ...server, enabled })}
+                permission={getServerPermission(server.id, rules, bindings)}
+                server={server}
+                toolNames={toolNames[server.id] ?? []}
+                toolRuleNames={bindings?.toolRuleNames ?? {}}
+                toolRules={rules}
+                canPersistAllow={bindings !== undefined}
+                onToolPermissionChange={updateRule}
+              />
+            );
+          })}
         </div>
       )}
       {editing ? (
@@ -399,7 +484,9 @@ interface ProjectMcpServerRowProps {
   server: ProjectMcpServer;
   permission: PermissionChoice;
   toolNames: readonly string[];
+  toolRuleNames: Readonly<Record<string, string>>;
   toolRules: Readonly<Record<string, ProjectToolPermissionRule>>;
+  canPersistAllow: boolean;
   checkResult?: McpCheckResult;
   checking: boolean;
   disabled: boolean;
@@ -416,7 +503,9 @@ function ProjectMcpServerRow({
   server,
   permission,
   toolNames,
+  toolRuleNames,
   toolRules,
+  canPersistAllow,
   checkResult,
   checking,
   disabled,
@@ -492,7 +581,7 @@ function ProjectMcpServerRow({
         label={t('projectMcpPermissionScope')}
         disabled={disabled}
         onChange={(event) => onPermissionChange(readPermissionChoice(event.target.value))}
-        options={permissionOptions(t)}
+        options={permissionOptions(t, canPersistAllow)}
         value={permission}
       />
       {toolNames.map((name) => (
@@ -500,11 +589,12 @@ function ProjectMcpServerRow({
           key={name}
           label={`${name} · ${t('projectMcpPermissionScope')}`}
           disabled={disabled || permission === 'deny'}
-          onChange={(event) =>
-            onToolPermissionChange(`mcp__${server.id}__${name}`, readPermissionChoice(event.target.value))
-          }
+          onChange={(event) => {
+            const ruleName = toolRuleNames[name];
+            if (ruleName) onToolPermissionChange(ruleName, readPermissionChoice(event.target.value));
+          }}
           options={permissionOptions(t)}
-          value={toolRules[`mcp__${server.id}__${name}`] ?? 'inherit'}
+          value={toolRuleNames[name] ? (toolRules[toolRuleNames[name]] ?? 'inherit') : 'inherit'}
         />
       ))}
       {checkResult ? (
@@ -512,6 +602,28 @@ function ProjectMcpServerRow({
           <p className={`text-xs ${checkResult.details ? 'text-destructive' : 'text-secondary-text'}`}>
             {checkResult.message}
           </p>
+          {checkResult.toolComparison ? (
+            <div className="grid gap-1 text-xs text-secondary-text">
+              {checkResult.toolComparison.declaredOnly.length === 0 &&
+              checkResult.toolComparison.runtimeOnly.length === 0 ? (
+                <p>{t('projectMcpCatalogToolsMatch')}</p>
+              ) : (
+                <>
+                  <p>{t('projectMcpCatalogToolsMismatch')}</p>
+                  {checkResult.toolComparison.declaredOnly.length > 0 ? (
+                    <p className="break-words">
+                      {t('projectMcpCatalogToolsDeclaredOnly')}: {checkResult.toolComparison.declaredOnly.join(', ')}
+                    </p>
+                  ) : null}
+                  {checkResult.toolComparison.runtimeOnly.length > 0 ? (
+                    <p className="break-words">
+                      {t('projectMcpCatalogToolsRuntimeOnly')}: {checkResult.toolComparison.runtimeOnly.join(', ')}
+                    </p>
+                  ) : null}
+                </>
+              )}
+            </div>
+          ) : null}
           {checkResult.details ? (
             <p className="break-words text-xs text-secondary-text">
               {t('chatErrorDetails')}: {checkResult.details}
@@ -622,26 +734,34 @@ function ProjectMcpServerEditor({ server, permission, onSave, onCancel }: Projec
           {server?.package ? (
             <p className="text-xs text-secondary-text">{server.package.sourceKeyFingerprint}</p>
           ) : null}
-          <label className="grid gap-2 text-sm font-medium text-text">
-            {t('projectMcpArguments')}
+          <div className="grid gap-2 text-sm font-medium text-text">
+            <label htmlFor="project-mcp-arguments">{t('projectMcpArguments')}</label>
             <Textarea
               className="min-h-20 rounded-control border border-border bg-raised px-3 py-2 text-text outline-none focus-visible:ring-2 focus-visible:ring-focus"
               fieldLayout="none"
+              id="project-mcp-arguments"
+              aria-describedby="project-mcp-arguments-hint"
               onChange={(event) => setArgumentsText(event.target.value)}
               value={argumentsText}
             />
-            <span className="text-xs font-normal text-secondary-text">{t('projectMcpArgumentsHint')}</span>
-          </label>
-          <label className="grid gap-2 text-sm font-medium text-text">
-            {t('projectMcpEnvironmentVariables')}
+            <span className="text-xs font-normal text-secondary-text" id="project-mcp-arguments-hint">
+              {t('projectMcpArgumentsHint')}
+            </span>
+          </div>
+          <div className="grid gap-2 text-sm font-medium text-text">
+            <label htmlFor="project-mcp-environment">{t('projectMcpEnvironmentVariables')}</label>
             <Textarea
               className="min-h-16 rounded-control border border-border bg-raised px-3 py-2 text-text outline-none focus-visible:ring-2 focus-visible:ring-focus"
               fieldLayout="none"
+              id="project-mcp-environment"
+              aria-describedby="project-mcp-environment-hint"
               onChange={(event) => setEnvironmentText(event.target.value)}
               value={environmentText}
             />
-            <span className="text-xs font-normal text-secondary-text">{t('projectMcpEnvironmentVariablesHint')}</span>
-          </label>
+            <span className="text-xs font-normal text-secondary-text" id="project-mcp-environment-hint">
+              {t('projectMcpEnvironmentVariablesHint')}
+            </span>
+          </div>
         </>
       ) : (
         <>
@@ -676,7 +796,7 @@ function ProjectMcpServerEditor({ server, permission, onSave, onCancel }: Projec
       <Select
         label={t('projectMcpPermissionScope')}
         onChange={(event) => setPermissionRule(readPermissionChoice(event.target.value))}
-        options={permissionOptions(t)}
+        options={permissionOptions(t, false)}
         value={permissionRule}
       />
       {errorKey ? (
@@ -694,13 +814,14 @@ function ProjectMcpServerEditor({ server, permission, onSave, onCancel }: Projec
   );
 }
 
-function permissionOptions(t: (key: TranslationKey) => string) {
-  return [
+function permissionOptions(t: (key: TranslationKey) => string, includeAllow = true) {
+  const options = [
     { value: 'inherit', label: t('projectToolRuleInherit') },
     { value: 'ask', label: t('projectToolRuleAsk') },
     { value: 'allow', label: t('projectToolRuleAllow') },
     { value: 'deny', label: t('projectToolRuleDeny') },
   ];
+  return includeAllow ? options : options.filter((option) => option.value !== 'allow');
 }
 
 function readPermissionChoice(value: string): PermissionChoice {
@@ -749,22 +870,75 @@ function isMcpToolNames(value: unknown, expectedCount: number): value is string[
   );
 }
 
-function deriveToolNamesFromRules(
-  servers: readonly ProjectMcpServer[],
-  savedRules: Readonly<Record<string, ProjectToolPermissionRule>>,
-): Record<string, string[]> {
-  const next: Record<string, string[]> = {};
-  for (const server of servers) {
-    const prefix = `mcp__${server.id}__`;
-    const names = new Set(
-      Object.keys(savedRules)
-        .filter((name) => name.startsWith(prefix) && !name.endsWith('__*'))
-        .map((name) => name.slice(prefix.length))
-        .filter((name) => /^[A-Za-z0-9_-]{1,64}$/.test(name)),
-    );
-    next[server.id] = [...names].sort((left, right) => left.localeCompare(right));
+function parseMcpPermissionBindings(
+  serverRuleName: unknown,
+  value: unknown,
+  serverId: string,
+  toolNames: readonly string[],
+): McpPermissionBindings | null {
+  const serverPrefix = `mcpv1__${serverId}__*__`;
+  if (
+    typeof serverRuleName !== 'string' ||
+    serverRuleName.length > 128 ||
+    !serverRuleName.startsWith(serverPrefix) ||
+    !/^[a-f0-9]{32}$/.test(serverRuleName.slice(serverPrefix.length)) ||
+    !Array.isArray(value) ||
+    value.length !== toolNames.length
+  ) {
+    return null;
   }
-  return next;
+
+  const expectedNames = new Set(toolNames);
+  const toolRuleNames: Record<string, string> = {};
+  for (const binding of value) {
+    if (!isObject(binding) || typeof binding.name !== 'string' || typeof binding.permissionRuleName !== 'string') {
+      return null;
+    }
+    const name = binding.name;
+    const prefix = `mcpv1__${serverId}__${name}__`;
+    if (
+      !expectedNames.has(name) ||
+      toolRuleNames[name] !== undefined ||
+      binding.permissionRuleName.length > 128 ||
+      !binding.permissionRuleName.startsWith(prefix) ||
+      !/^[a-f0-9]{32}$/.test(binding.permissionRuleName.slice(prefix.length))
+    ) {
+      return null;
+    }
+    toolRuleNames[name] = binding.permissionRuleName;
+  }
+  if (Object.keys(toolRuleNames).length !== toolNames.length) return null;
+  return { serverRuleName, toolRuleNames };
+}
+
+function getLegacyServerPermission(
+  serverId: string,
+  rules: Readonly<Record<string, ProjectToolPermissionRule>>,
+): PermissionChoice {
+  const rule = rules[`mcp__${serverId}__*`];
+  return rule === 'ask' || rule === 'deny' ? rule : 'inherit';
+}
+
+function getServerPermission(
+  serverId: string,
+  rules: Readonly<Record<string, ProjectToolPermissionRule>>,
+  bindings: McpPermissionBindings | undefined,
+): PermissionChoice {
+  const legacyRule = getLegacyServerPermission(serverId, rules);
+  if (legacyRule === 'deny' || legacyRule === 'ask') return legacyRule;
+  if (bindings === undefined) return 'inherit';
+  return rules[bindings.serverRuleName] ?? 'inherit';
+}
+
+function clearMcpServerRules(
+  rules: Readonly<Record<string, ProjectToolPermissionRule>>,
+  serverId: string,
+): Record<string, ProjectToolPermissionRule> {
+  const legacyPrefix = `mcp__${serverId}__`;
+  const boundPrefix = `mcpv1__${serverId}__`;
+  return Object.fromEntries(
+    Object.entries(rules).filter(([name]) => !name.startsWith(legacyPrefix) && !name.startsWith(boundPrefix)),
+  );
 }
 
 function getCredentialNames(server: ProjectMcpServer): string[] {
@@ -774,6 +948,10 @@ function getCredentialNames(server: ProjectMcpServer): string[] {
       ...(server.authEnvironmentVariable ? [server.authEnvironmentVariable] : []),
     ]),
   ];
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 async function removeStaleCredentials(

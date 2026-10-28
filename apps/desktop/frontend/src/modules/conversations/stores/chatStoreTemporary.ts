@@ -315,9 +315,9 @@ export function createTemporarySendMessageAction(
         set((current) => ({ messages: upsertMessage(current.messages, completedMessage) }));
       }
       if (completedMessage.status === 'completed') {
-        void playAssistantResponseAudio('completed');
+        void playAssistantResponseAudio('completed', null);
       } else {
-        void playAssistantResponseAudio('failed');
+        void playAssistantResponseAudio('failed', null);
       }
       return completedMessage.status === 'completed';
     } catch (error) {
@@ -325,7 +325,7 @@ export function createTemporarySendMessageAction(
       const failureCode = error instanceof LocalServiceError ? error.code : 'service_error';
       const isCancelled = failureCode === 'operation_cancelled' || failureCode === 'request_cancelled';
       if (!isCancelled) {
-        void playAssistantResponseAudio('failed');
+        void playAssistantResponseAudio('failed', null);
       }
       const failureMessage: ChatMessage = assistantMessage
         ? {
@@ -355,8 +355,7 @@ export function createTemporarySendMessageAction(
       if (get().temporaryChat?.id === session.id) {
         set((current) => ({
           messages: upsertMessage(current.messages, failureMessage),
-          errorCode:
-            failureCode === 'provider_credentials_missing' ? 'providerCredentialMissing' : 'chatRequestFailed',
+          errorCode: failureCode === 'provider_credentials_missing' ? 'providerCredentialMissing' : 'chatRequestFailed',
           errorMessage: readTemporaryChatErrorDetails(error),
           opencodeRetryAtUnixMs: getOpenCodeRetryAtUnixMs(error, selectedModel.providerId),
         }));

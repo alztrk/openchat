@@ -15,12 +15,13 @@ import {
 } from '@/modules/projects/data/projectPermissionSettings';
 import { readProjectSkillIds } from '@/modules/projects/data/projectPreferences';
 import { modelRouteKey } from '@/modules/providers/data/modelPreferences';
-import { recordOAuthRateLimit } from '@/modules/providers/data/oauthRateLimits';
 import { loadRouteParameters } from '@/modules/providers/data/modelRouteParameters';
+import { recordOAuthRateLimit } from '@/modules/providers/data/oauthRateLimits';
 import {
   type ProviderRequestOutcome,
   writeProviderRequestOutcomeRecord,
 } from '@/modules/providers/data/providerRequestOutcome';
+import { readAssistantExecutionPreferences } from '@/modules/settings/data/assistantExecutionPreferences';
 import {
   personalMemoryContextForConversation,
   setPersonalMemoryExcludedForConversation,
@@ -97,13 +98,20 @@ export function createSendMessageAction(
         : state.conversations.find((conversation) => conversation.id === conversationId);
     const projectId = targetConversation?.projectId ?? state.pendingProjectId;
     let projectSkillIds: string[] = [];
+    let assistantExecutionPreferences: ReturnType<typeof readAssistantExecutionPreferences>;
+    try {
+      assistantExecutionPreferences = readAssistantExecutionPreferences();
+    } catch {
+      set({ errorCode: 'assistantPreferencesLoadFailed' });
+      return false;
+    }
     try {
       await loadToolPermissionMode();
     } catch {
       set({ errorCode: 'toolPermissionModeLoadFailed' });
       return false;
     }
-    if (projectId !== null) {
+    if (projectId !== null && assistantExecutionPreferences.includeProjectSkills) {
       try {
         projectSkillIds = readProjectSkillIds(projectId);
       } catch {
@@ -365,6 +373,9 @@ export function createSendMessageAction(
             ...(model.apiKeyConnectionId ? { apiKeyConnectionId: model.apiKeyConnectionId } : {}),
             supportsTools: model.supportsTools ?? null,
             reasoningLevels: model.reasoningLevels,
+            preferred:
+              assistantExecutionPreferences.preferredDelegationModelRouteKey !== null &&
+              modelRouteKey(model) === assistantExecutionPreferences.preferredDelegationModelRouteKey,
             requestProtocol:
               model.requestProtocol ??
               (model.providerId === 'chatgpt' || model.providerId === 'chatgpt_api'
@@ -485,7 +496,7 @@ export function createSendMessageAction(
         },
       );
       if (finalStatus === 'completed' && streamedMessage) {
-        void playAssistantResponseAudio('completed');
+        void playAssistantResponseAudio('completed', projectId);
         const conversation = conversations?.find((item) => item.id === targetConversationId);
         if (conversation) {
           const completedMessage = assistantMessage.current;
@@ -506,11 +517,14 @@ export function createSendMessageAction(
         );
       }
       requestOutcome ??= providerRequestOutcomeForError(error);
-      if ((selectedModel.providerId === 'chatgpt' || selectedModel.providerId === 'copilot') && requestOutcome === 'rateLimited') {
+      if (
+        (selectedModel.providerId === 'chatgpt' || selectedModel.providerId === 'copilot') &&
+        requestOutcome === 'rateLimited'
+      ) {
         void recordOAuthRateLimit(selectedModel, state.models, error);
       }
       if (requestOutcome !== 'stopped') {
-        void playAssistantResponseAudio('failed');
+        void playAssistantResponseAudio('failed', projectId);
       }
       const code =
         !userMessageSaved && attachments.length > 0
@@ -559,9 +573,7 @@ export function createSendMessageAction(
       }
       return userMessageSaved;
     } finally {
-      window.dispatchEvent(
-        new CustomEvent('openchat-chat-request-finished', { detail: { conversationId } }),
-      );
+      window.dispatchEvent(new CustomEvent('openchat-chat-request-finished', { detail: { conversationId } }));
       streamUi.dispose();
       if (requestOutcome !== null) {
         try {

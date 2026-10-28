@@ -13,50 +13,18 @@ const maximumActiveRequestBytes = 64 * 1024 * 1024;
 /** JSON object accepted or returned by the local sidecar RPC boundary. */
 export type JsonObject = Record<string, unknown>;
 
-/** Copy rendered by the active frontend locale for native tool-permission dialogs. */
-export interface NativePermissionDialogCopy {
-  title: string;
-  intro: string;
-  fullAccessIntro: string;
-  fullAccessWarning: string;
-  projectAllowIntro: string;
-  projectAllowWarning: string;
-  projectAllowMore: string;
-  toolLabel: string;
-  targetLabel: string;
-  argumentsLabel: string;
-  warning: string;
-  allowOnce: string;
-  enableFullAccess: string;
-  saveProjectAllow: string;
-  deny: string;
-  tooLarge: string;
-  close: string;
-}
+/** Supported native dialog locale identifiers; the host owns all displayed copy. */
+export type NativeDialogLocale = 'de' | 'en' | 'es' | 'fr' | 'tr';
 
-/** Resolves native permission copy through the same i18next resources as the renderer UI. */
-export async function getNativePermissionDialogCopy(): Promise<NativePermissionDialogCopy> {
+/** Selects a host-embedded locale without sending renderer-authored dialog text. */
+export async function getNativeDialogLocale(): Promise<NativeDialogLocale> {
   const { i18n, i18nReady } = await import('@/localization/i18n');
   await i18nReady;
-  return {
-    title: i18n.t('nativePermissionTitle'),
-    intro: i18n.t('nativePermissionIntro'),
-    fullAccessIntro: i18n.t('nativePermissionFullAccessIntro'),
-    fullAccessWarning: i18n.t('nativePermissionFullAccessWarning'),
-    projectAllowIntro: i18n.t('nativePermissionProjectAllowIntro'),
-    projectAllowWarning: i18n.t('nativePermissionProjectAllowWarning'),
-    projectAllowMore: i18n.t('nativePermissionProjectAllowMore'),
-    toolLabel: i18n.t('nativePermissionToolLabel'),
-    targetLabel: i18n.t('nativePermissionTargetLabel'),
-    argumentsLabel: i18n.t('nativePermissionArgumentsLabel'),
-    warning: i18n.t('nativePermissionWarning'),
-    allowOnce: i18n.t('nativePermissionAllowOnce'),
-    enableFullAccess: i18n.t('nativePermissionEnableFullAccess'),
-    saveProjectAllow: i18n.t('nativePermissionSaveProjectAllow'),
-    deny: i18n.t('nativePermissionDeny'),
-    tooLarge: i18n.t('nativePermissionTooLarge'),
-    close: i18n.t('nativePermissionClose'),
-  };
+  const language = i18n.resolvedLanguage?.toLowerCase().split('-')[0];
+  if (language === 'de' || language === 'en' || language === 'es' || language === 'fr' || language === 'tr') {
+    return language;
+  }
+  throw new Error('The selected locale is not supported for native security dialogs.');
 }
 
 /** Progress or state event emitted while a sidecar operation is running. */
@@ -209,7 +177,10 @@ export class LocalServiceClient {
   getStartupSettings(): JsonObject {
     const settings = this.initializationSettings;
     if (!settings) {
-      throw new LocalServiceError('startup_settings_unavailable', 'The local service startup settings are unavailable.');
+      throw new LocalServiceError(
+        'startup_settings_unavailable',
+        'The local service startup settings are unavailable.',
+      );
     }
     return settings;
   }
@@ -236,7 +207,7 @@ export class LocalServiceClient {
       generation,
       approvalRequestId,
       approved,
-      permissionCopy: await getNativePermissionDialogCopy(),
+      permissionLocale: await getNativeDialogLocale(),
     });
     if (typeof result !== 'boolean') {
       throw new LocalServiceError(
@@ -325,10 +296,7 @@ export class LocalServiceClient {
 
   /** Performs the one-time storage preparation and application initialization handshake. */
   private async initializeOnce(startWithEmptyStorage: boolean): Promise<void> {
-    const [chatSchemaVersion] = await Promise.all([
-      getChatSchemaVersion(),
-      this.startProcess(startWithEmptyStorage),
-    ]);
+    const [chatSchemaVersion] = await Promise.all([getChatSchemaVersion(), this.startProcess(startWithEmptyStorage)]);
 
     const initialization = await this.callRaw('system.initialize', { chatSchemaVersion }, requestTimeoutMs);
     if (initialization.status !== 'ready') {
@@ -512,8 +480,6 @@ export class LocalServiceClient {
       );
     }
 
-    const permissionCopyPromise = getNativePermissionDialogCopy();
-
     let resolveResult: (value: JsonObject) => void = () => undefined;
     let rejectResult: (reason: LocalServiceError) => void = () => undefined;
     const result = new Promise<JsonObject>((resolve, reject) => {
@@ -539,7 +505,7 @@ export class LocalServiceClient {
         await invoke('write_local_service', {
           generation,
           line: payload,
-          permissionCopy: await permissionCopyPromise,
+          permissionLocale: await getNativeDialogLocale(),
         });
       } catch (error) {
         throw nativeWriteError(error);

@@ -30,7 +30,7 @@ export function LocalModelsSection({
   startingModelId: string | null;
   startingModelIsCancelling: boolean;
 }) {
-  const { t } = useTranslation();
+  const { i18n, t } = useTranslation();
   return (
     <section aria-labelledby={`local-models-heading-${engineId}`} className="grid gap-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -60,6 +60,16 @@ export function LocalModelsSection({
                 <div className="min-w-0 flex-1">
                   <p className="break-words font-medium text-text">{model.displayName}</p>
                   <p className="mt-1 break-all font-mono text-xs text-secondary-text">{model.path}</p>
+                  <p className="mt-2 text-sm text-secondary-text">
+                    {model.estimatedMemoryBytes === null
+                      ? t('localModelMemoryEstimateUnavailable')
+                      : t('localModelMemoryEstimate', {
+                          size: formatMemorySize(model.estimatedMemoryBytes, i18n.language),
+                        })}
+                  </p>
+                  {model.estimatedMemoryBytes !== null ? (
+                    <p className="mt-1 text-xs text-secondary-text">{t('localModelMemoryEstimateNote')}</p>
+                  ) : null}
                   {!model.pathExists ? <p className="mt-2 text-sm text-warning">{t('localModelPathMissing')}</p> : null}
                   {model.pathExists && !model.isAvailable ? (
                     <p className="mt-2 text-sm text-warning">{t('localModelEngineNotReady')}</p>
@@ -112,4 +122,17 @@ export function LocalModelsSection({
       </ul>
     </section>
   );
+}
+
+function formatMemorySize(bytes: number, language: string): string {
+  const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB', 'PiB', 'EiB'];
+  let value = bytes;
+  let unitIndex = 0;
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+  const unit = units[unitIndex];
+  if (unit === undefined) throw new Error('The memory unit is unavailable.');
+  return `${new Intl.NumberFormat(language, { maximumFractionDigits: 1 }).format(value)} ${unit}`;
 }

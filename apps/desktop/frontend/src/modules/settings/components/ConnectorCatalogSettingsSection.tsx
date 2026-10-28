@@ -17,9 +17,10 @@ import {
   readConnectorCatalog,
   writeConnectorCatalog,
 } from '@/modules/settings/data/connectorCatalog';
+import type { ConnectorManifest } from '@/modules/settings/data/connectorManifest';
 import { localServiceClient } from '@/platform/local-service';
-import { ConnectorTemplateDialog } from './ConnectorTemplateDialog';
 import { ConnectorCatalogSourcesPanel } from './ConnectorCatalogSourcesPanel';
+import { ConnectorTemplateDialog } from './ConnectorTemplateDialog';
 
 type LoadState = 'loading' | 'ready' | 'failed';
 type SaveOutcome = 'saved' | 'duplicate' | 'failed';
@@ -125,7 +126,7 @@ export function ConnectorCatalogSettingsSection() {
     setIsSaving(true);
     setErrorKey(null);
     try {
-      writeConnectorCatalog(nextEntries);
+      await writeConnectorCatalog(nextEntries);
       setEntries(nextEntries);
       return 'saved';
     } catch {
@@ -136,14 +137,14 @@ export function ConnectorCatalogSettingsSection() {
     }
   };
 
-  const confirmDelete = () => {
+  const confirmDelete = async () => {
     const target = deleteEntry;
     if (!target || isSaving) return;
     setIsSaving(true);
     setErrorKey(null);
     try {
       const nextEntries = entries.filter((entry) => entry.id !== target.id);
-      writeConnectorCatalog(nextEntries);
+      await writeConnectorCatalog(nextEntries);
       setEntries(nextEntries);
       setDeleteEntry(null);
     } catch {
@@ -516,7 +517,7 @@ function ConnectorInstallDialog({
   onConfirm(): void;
   onOpenChange(open: boolean): void;
 }) {
-  const { t } = useTranslation();
+  const { i18n, t } = useTranslation();
   const authentication =
     entry.transport === 'streamableHttp'
       ? entry.authEnvironmentVariable === undefined
@@ -527,12 +528,15 @@ function ConnectorInstallDialog({
         : t('connectorCatalogProjectEnvironmentCredentials');
 
   return (
-    <Dialog onOpenChange={onOpenChange} open title={t('connectorCatalogInstall')}>
+    <Dialog
+      className="max-h-dialog-viewport overflow-y-auto"
+      onOpenChange={onOpenChange}
+      open
+      title={t('connectorCatalogInstall')}
+    >
       <div className="grid gap-3">
         <p className="text-sm text-secondary-text">{t('connectorCatalogInstallPrompt')}</p>
-        {entry.package ? (
-          <p className="text-sm text-secondary-text">{t('connectorPackageDownloadPrompt')}</p>
-        ) : null}
+        {entry.package ? <p className="text-sm text-secondary-text">{t('connectorPackageDownloadPrompt')}</p> : null}
         <dl className="grid gap-2 text-sm">
           <ConnectorDetail label={t('connectorCatalogPublisher')} value={entry.publisher} />
           <ConnectorDetail label={t('connectorCatalogVersion')} value={entry.version} />
@@ -554,13 +558,16 @@ function ConnectorInstallDialog({
           <ConnectorDetail label={t('connectorCatalogRequestedAccess')} value={entry.requestedAccess} />
           <ConnectorDetail label={t('connectorCatalogDataDisclosure')} value={entry.dataDisclosure} />
         </dl>
+        {entry.manifest ? <ConnectorManifestDisclosure manifest={entry.manifest} /> : null}
         <p className="text-sm text-secondary-text">{t('connectorCatalogRemovalImpact')}</p>
         {entry.package && entry.catalogTrust ? (
           <>
             <dl className="grid gap-2 text-sm">
               <ConnectorDetail
                 label={t('connectorPackageSize')}
-                value={`${Math.ceil(entry.package.sizeBytes / 1024).toLocaleString()} KB`}
+                value={`${new Intl.NumberFormat(i18n.resolvedLanguage ?? i18n.language).format(
+                  Math.ceil(entry.package.sizeBytes / 1024),
+                )} KB`}
               />
               <ConnectorDetail label={t('connectorPackageSha256')} value={entry.package.sha256} />
               <ConnectorDetail label={t('connectorPackageSigner')} value={entry.catalogTrust.keyFingerprint} />
@@ -579,6 +586,56 @@ function ConnectorInstallDialog({
   );
 }
 
+function ConnectorManifestDisclosure({ manifest }: { manifest: ConnectorManifest }) {
+  const { t } = useTranslation();
+  return (
+    <details className="grid gap-3 rounded-control border border-border p-3" open>
+      <summary className="cursor-pointer text-sm font-medium text-text">
+        {t('connectorManifestHeading', { version: manifest.version })}
+      </summary>
+      <p className="text-sm text-secondary-text">{t('connectorManifestNotice')}</p>
+      <ManifestList
+        label={t('connectorManifestTools')}
+        values={manifest.tools.map((tool) =>
+          tool.description === undefined ? tool.name : `${tool.name}: ${tool.description}`,
+        )}
+      />
+      <ManifestList label={t('connectorManifestPermissions')} values={manifest.permissions} />
+      <ManifestList label={t('connectorManifestProviders')} values={manifest.providers} />
+      <ManifestList
+        label={t('connectorManifestConfiguration')}
+        values={manifest.configuration.map((item) => {
+          const requirements = [
+            item.required ? t('connectorManifestRequired') : t('connectorManifestOptional'),
+            ...(item.secret ? [t('connectorManifestSecret')] : []),
+          ];
+          return `${item.name}: ${item.description} (${requirements.join(', ')})`;
+        })}
+      />
+    </details>
+  );
+}
+
+function ManifestList({ label, values }: { label: string; values: string[] }) {
+  const { t } = useTranslation();
+  return (
+    <section className="grid gap-1 text-sm">
+      <h3 className="font-medium text-text">{label}</h3>
+      {values.length === 0 ? (
+        <p className="text-secondary-text">{t('connectorManifestNoDeclarations')}</p>
+      ) : (
+        <ul className="list-inside list-disc text-secondary-text">
+          {values.map((value) => (
+            <li className="break-words" key={value}>
+              {value}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
 function projectServerFromEntry(
   entry: ConnectorCatalogEntry,
   packageReference?: ProjectMcpServer['package'],
@@ -593,6 +650,7 @@ function projectServerFromEntry(
     ...(entry.endpoint === undefined ? {} : { endpoint: entry.endpoint }),
     ...(entry.authEnvironmentVariable === undefined ? {} : { authEnvironmentVariable: entry.authEnvironmentVariable }),
     ...(packageReference === undefined ? {} : { package: packageReference }),
+    ...(entry.manifest === undefined ? {} : { catalogToolNames: entry.manifest.tools.map((tool) => tool.name) }),
   };
 }
 

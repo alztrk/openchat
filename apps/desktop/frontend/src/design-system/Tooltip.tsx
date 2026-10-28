@@ -22,7 +22,12 @@ export function Tooltip({ children, label, side, sideOffset = 8 }: TooltipProps)
       <TooltipPrimitive.Root>
         <TooltipPrimitive.Trigger asChild>{children}</TooltipPrimitive.Trigger>
         <TooltipPrimitive.Portal>
-          <TooltipPrimitive.Content className="openchat-tooltip" collisionPadding={8} side={side} sideOffset={sideOffset}>
+          <TooltipPrimitive.Content
+            className="openchat-tooltip"
+            collisionPadding={8}
+            side={side}
+            sideOffset={sideOffset}
+          >
             {label}
             <TooltipPrimitive.Arrow className="openchat-tooltip-arrow" />
           </TooltipPrimitive.Content>
