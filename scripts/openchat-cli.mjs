@@ -562,6 +562,7 @@ function pruneStaleArtifacts(targetPath, apply = false) {
       const match = /^(.+)-([0-9a-fA-F]{16})$/u.exec(entry);
       if (!match) continue;
       const key = match[1];
+      if (key === "openssl-sys") continue;
       const dirPath = path.join(buildDir, entry);
       try {
         const stats = statSync(dirPath);
@@ -716,7 +717,31 @@ function printHelp() {
   );
 }
 
+function ensureOpenSslEnvironment() {
+  if (process.env.OPENSSL_DIR) return;
+  if (process.platform === 'win32') {
+    const candidates = [
+      'D:\\tools\\openssl',
+      path.join(workspaceRoot, 'vendor', 'openssl-windows-x64'),
+      path.join(process.env.ProgramFiles ?? 'C:\\Program Files', 'OpenSSL-Win64'),
+      'C:\\OpenSSL-Win64',
+    ];
+    for (const candidate of candidates) {
+      if (
+        existsSync(path.join(candidate, 'include', 'openssl', 'ssl.h')) &&
+        (existsSync(path.join(candidate, 'lib', 'libcrypto.lib')) ||
+          existsSync(path.join(candidate, 'lib', 'VC', 'static', 'libcrypto64MT.lib')))
+      ) {
+        process.env.OPENSSL_DIR = candidate;
+        process.env.OPENSSL_NO_VENDOR = '1';
+        break;
+      }
+    }
+  }
+}
+
 function main() {
+  ensureOpenSslEnvironment();
   const [taskName, ...args] = process.argv.slice(2);
   if (!taskName || taskName === '--help' || taskName === '-h') {
     printHelp();
