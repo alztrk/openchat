@@ -248,7 +248,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             let main_window = main_window_builder.build()?;
             #[cfg(windows)]
-            main_window.with_webview(|webview| {
+            let app_handle = app.handle().clone();
+            #[cfg(windows)]
+            main_window.with_webview(move |webview| {
                 // SAFETY: Tauri keeps the WebView2 controller alive for this UI-thread callback.
                 // The COM interfaces are obtained from that controller and used on the UI thread.
                 let result = unsafe {
@@ -263,8 +265,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 };
                 if let Err(error) = result {
                     eprintln!(
-                        "OpenChat could not disable WebView2 browser accelerator keys: {error}"
+                        "OpenChat could not disable WebView2 browser accelerator keys; stopping startup: {error}"
                     );
+                    app_handle.exit(1);
                 }
             })?;
             if setup_profile_root.is_none() {
