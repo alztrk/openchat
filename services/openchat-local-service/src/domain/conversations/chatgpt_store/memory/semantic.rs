@@ -4,7 +4,7 @@
 //! bounded; cached runtime state is released when no longer needed.
 
 use std::{
-    collections::HashSet,
+    collections::{BinaryHeap, HashMap, HashSet},
     fs,
     path::{Path, PathBuf},
     sync::{
@@ -28,10 +28,6 @@ use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     sync::{mpsc as tokio_mpsc, watch},
     time::Instant,
-};
-use usearch::{
-    Index, IndexOptions,
-    ffi::{MetricKind, ScalarKind},
 };
 
 use super::{ArchivedMemoryExcerpt, index, search, vector_math};
@@ -448,10 +444,254 @@ pub(super) async fn invalidate_cached_index(
     .map_err(|error| SemanticMemoryError::Worker(error.to_string()))?
 }
 
+const VECTOR_INDEX_MAGIC: &[u8; 4] = b"OCVI";
+const VECTOR_INDEX_VERSION: u32 = 1;
+
+#[derive(Debug, Clone)]
+pub struct VectorMatches {
+    pub keys: Vec<u64>,
+    pub distances: Vec<f32>,
+}
+
+#[derive(Debug, Clone)]
+pub struct VectorIndex {
+    dimensions: usize,
+    vectors: HashMap<u64, Vec<i8>>,
+}
+
+#[derive(PartialEq)]
+struct Candidate {
+    distance: f32,
+    key: u64,
+}
+
+impl Eq for Candidate {}
+
+impl PartialOrd for Candidate {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Candidate {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.distance
+            .total_cmp(&other.distance)
+            .then_with(|| self.key.cmp(&other.key))
+    }
+}
+
+impl VectorIndex {
+    pub fn new(dimensions: usize) -> Self {
+        Self {
+            dimensions,
+            vectors: HashMap::new(),
+        }
+    }
+
+    pub fn size(&self) -> usize {
+        self.vectors.len()
+    }
+
+    pub fn reserve(&mut self, capacity: usize) -> Result<(), SemanticMemoryError> {
+        self.vectors.reserve(capacity);
+        Ok(())
+    }
+
+    pub fn add(&mut self, key: u64, vector: &[i8]) -> Result<(), SemanticMemoryError> {
+        if vector.len() != self.dimensions {
+            return Err(SemanticMemoryError::Index(format!(
+                "vector dimension mismatch: expected {}, got {}",
+                self.dimensions,
+                vector.len()
+            )));
+        }
+        self.vectors.insert(key, vector.to_vec());
+        Ok(())
+    }
+
+    pub fn remove(&mut self, key: u64) -> Result<(), SemanticMemoryError> {
+        self.vectors.remove(&key);
+        Ok(())
+    }
+
+    pub fn filtered_search<F>(
+        &self,
+        query: &[i8],
+        candidate_count: usize,
+        filter: F,
+    ) -> Result<VectorMatches, SemanticMemoryError>
+    where
+        F: Fn(u64) -> bool,
+    {
+        if query.len() != self.dimensions {
+            return Err(SemanticMemoryError::Index(format!(
+                "query dimension mismatch: expected {}, got {}",
+                self.dimensions,
+                query.len()
+            )));
+        }
+        if candidate_count == 0 || self.vectors.is_empty() {
+            return Ok(VectorMatches {
+                keys: Vec::new(),
+                distances: Vec::new(),
+            });
+        }
+
+        let mut heap = BinaryHeap::with_capacity(candidate_count + 1);
+
+        for (&key, vector) in &self.vectors {
+            if !filter(key) {
+                continue;
+            }
+            let similarity = vector_math::cosine_similarity_i8(query, vector);
+            let distance = 1.0_f32 - similarity;
+
+            if heap.len() < candidate_count {
+                heap.push(Candidate { distance, key });
+            } else if let Some(worst) = heap.peek()
+                && distance < worst.distance
+            {
+                heap.pop();
+                heap.push(Candidate { distance, key });
+            }
+        }
+
+        let sorted = heap.into_sorted_vec();
+        let mut keys = Vec::with_capacity(sorted.len());
+        let mut distances = Vec::with_capacity(sorted.len());
+        for candidate in sorted {
+            keys.push(candidate.key);
+            distances.push(candidate.distance);
+        }
+
+        Ok(VectorMatches { keys, distances })
+    }
+
+    pub fn save(&self, path: &str) -> Result<(), SemanticMemoryError> {
+        use std::io::Write;
+        let file = fs::File::create(path).map_err(|e| SemanticMemoryError::Io(e.to_string()))?;
+        let mut writer = std::io::BufWriter::new(file);
+
+        writer
+            .write_all(VECTOR_INDEX_MAGIC)
+            .map_err(|e| SemanticMemoryError::Io(e.to_string()))?;
+        writer
+            .write_all(&VECTOR_INDEX_VERSION.to_le_bytes())
+            .map_err(|e| SemanticMemoryError::Io(e.to_string()))?;
+        writer
+            .write_all(&(self.dimensions as u32).to_le_bytes())
+            .map_err(|e| SemanticMemoryError::Io(e.to_string()))?;
+        writer
+            .write_all(&(self.vectors.len() as u64).to_le_bytes())
+            .map_err(|e| SemanticMemoryError::Io(e.to_string()))?;
+
+        let mut byte_buf = vec![0_u8; self.dimensions];
+        for (&key, vector) in &self.vectors {
+            writer
+                .write_all(&key.to_le_bytes())
+                .map_err(|e| SemanticMemoryError::Io(e.to_string()))?;
+            for (dst, &src) in byte_buf.iter_mut().zip(vector.iter()) {
+                *dst = src as u8;
+            }
+            writer
+                .write_all(&byte_buf)
+                .map_err(|e| SemanticMemoryError::Io(e.to_string()))?;
+        }
+
+        writer
+            .flush()
+            .map_err(|e| SemanticMemoryError::Io(e.to_string()))?;
+        Ok(())
+    }
+
+    pub fn restore(path: &str) -> Result<Self, SemanticMemoryError> {
+        use std::io::Read;
+        let file = fs::File::open(path).map_err(|e| SemanticMemoryError::Io(e.to_string()))?;
+        let file_len = file
+            .metadata()
+            .map_err(|e| SemanticMemoryError::Io(e.to_string()))?
+            .len();
+        if file_len < 20 {
+            return Err(SemanticMemoryError::Index(
+                "index file is too short to contain header".to_owned(),
+            ));
+        }
+
+        let mut reader = std::io::BufReader::new(file);
+        let mut magic = [0_u8; 4];
+        reader
+            .read_exact(&mut magic)
+            .map_err(|e| SemanticMemoryError::Io(e.to_string()))?;
+        if &magic != VECTOR_INDEX_MAGIC {
+            return Err(SemanticMemoryError::Index(
+                "invalid vector index magic signature".to_owned(),
+            ));
+        }
+
+        let mut u32_buf = [0_u8; 4];
+        reader
+            .read_exact(&mut u32_buf)
+            .map_err(|e| SemanticMemoryError::Io(e.to_string()))?;
+        let version = u32::from_le_bytes(u32_buf);
+        if version != VECTOR_INDEX_VERSION {
+            return Err(SemanticMemoryError::Index(format!(
+                "unsupported index version: {version}"
+            )));
+        }
+
+        reader
+            .read_exact(&mut u32_buf)
+            .map_err(|e| SemanticMemoryError::Io(e.to_string()))?;
+        let dimensions = u32::from_le_bytes(u32_buf) as usize;
+        if dimensions != VECTOR_DIMENSIONS {
+            return Err(SemanticMemoryError::Index(format!(
+                "index dimension mismatch: expected {VECTOR_DIMENSIONS}, got {dimensions}"
+            )));
+        }
+
+        let mut u64_buf = [0_u8; 8];
+        reader
+            .read_exact(&mut u64_buf)
+            .map_err(|e| SemanticMemoryError::Io(e.to_string()))?;
+        let entry_count = u64::from_le_bytes(u64_buf) as usize;
+
+        let entry_bytes = 8 + dimensions;
+        let expected_bytes =
+            20_u64.saturating_add((entry_count as u64).saturating_mul(entry_bytes as u64));
+        if file_len < expected_bytes {
+            return Err(SemanticMemoryError::Index(
+                "index file is truncated".to_owned(),
+            ));
+        }
+
+        let mut vectors = HashMap::with_capacity(entry_count);
+        let mut key_buf = [0_u8; 8];
+        let mut vec_buf = vec![0_u8; dimensions];
+
+        for _ in 0..entry_count {
+            reader
+                .read_exact(&mut key_buf)
+                .map_err(|e| SemanticMemoryError::Io(e.to_string()))?;
+            let key = u64::from_le_bytes(key_buf);
+            reader
+                .read_exact(&mut vec_buf)
+                .map_err(|e| SemanticMemoryError::Io(e.to_string()))?;
+            let vector = vec_buf.iter().map(|&b| b as i8).collect();
+            vectors.insert(key, vector);
+        }
+
+        Ok(Self {
+            dimensions,
+            vectors,
+        })
+    }
+}
+
 #[derive(Default)]
 struct SemanticRuntime {
     model: Option<TextEmbedding>,
-    index: Option<Index>,
+    index: Option<VectorIndex>,
     model_directory: Option<PathBuf>,
     index_generation: Option<i64>,
 }
@@ -592,7 +832,7 @@ impl SemanticRuntime {
         let index_path = index_path(cache_directory, generation);
         if self.index.is_none()
             && index_path.is_file()
-            && let Ok(index) = Index::restore(&path_string(&index_path))
+            && let Ok(index) = VectorIndex::restore(&path_string(&index_path))
         {
             let directory = index_path.parent().ok_or_else(|| {
                 SemanticMemoryError::Index("semantic index cache path is invalid".to_owned())
@@ -604,7 +844,7 @@ impl SemanticRuntime {
             return Ok(());
         }
 
-        let index = new_index()?;
+        let mut index = new_index()?;
         let vector_count = connection.query_row(
             "SELECT COUNT(*) FROM conversation_memory_embeddings WHERE model_id = ?1",
             [MODEL_ID],
@@ -614,9 +854,7 @@ impl SemanticRuntime {
             SemanticMemoryError::Index("semantic vector count is out of range".to_owned())
         })?;
         if vector_count > 0 {
-            index
-                .reserve(vector_count)
-                .map_err(|error| SemanticMemoryError::Index(error.to_string()))?;
+            index.reserve(vector_count)?;
         }
         let mut statement = connection.prepare(
             "SELECT embedding.id, namespace.namespace, embedding.vector
@@ -633,9 +871,7 @@ impl SemanticRuntime {
             let bytes: Vec<u8> = row.get(2)?;
             let vector = bytes.into_iter().map(|byte| byte as i8).collect::<Vec<_>>();
             let key = index_key(namespace, id)?;
-            index
-                .add(key, &vector)
-                .map_err(|error| SemanticMemoryError::Index(error.to_string()))?;
+            index.add(key, &vector)?;
         }
         save_index(connection, cache_directory, &index, generation)?;
         self.index = Some(index);
@@ -895,25 +1131,19 @@ impl SemanticRuntime {
 
             let index = self
                 .index
-                .as_ref()
+                .as_mut()
                 .ok_or_else(|| SemanticMemoryError::Index("index is not loaded".to_owned()))?;
             for old_id in old_ids {
-                index
-                    .remove(index_key(namespace, old_id)?)
-                    .map_err(|error| SemanticMemoryError::Index(error.to_string()))?;
+                index.remove(index_key(namespace, old_id)?)?;
             }
             if !new_ids.is_empty() {
                 let current_size = index.size();
                 let required_capacity = current_size.saturating_add(new_ids.len());
                 let geometric_capacity = current_size.saturating_mul(2).max(64);
-                index
-                    .reserve(required_capacity.max(geometric_capacity))
-                    .map_err(|error| SemanticMemoryError::Index(error.to_string()))?;
+                index.reserve(required_capacity.max(geometric_capacity))?;
             }
             for (id, vector) in new_ids.into_iter().zip(vectors.iter()) {
-                index
-                    .add(index_key(namespace, id)?, vector)
-                    .map_err(|error| SemanticMemoryError::Index(error.to_string()))?;
+                index.add(index_key(namespace, id)?, vector)?;
             }
             self.index_generation = Some(semantic_index_generation(connection)?);
         }
@@ -966,17 +1196,8 @@ fn load_model(directory: &Path) -> Result<TextEmbedding, SemanticMemoryError> {
     .map_err(|error| SemanticMemoryError::Model(error.to_string()))
 }
 
-fn new_index() -> Result<Index, SemanticMemoryError> {
-    let options = IndexOptions {
-        dimensions: VECTOR_DIMENSIONS,
-        metric: MetricKind::Cos,
-        quantization: ScalarKind::I8,
-        connectivity: 16,
-        expansion_add: 128,
-        expansion_search: 64,
-        multi: false,
-    };
-    Index::new(&options).map_err(|error| SemanticMemoryError::Index(error.to_string()))
+fn new_index() -> Result<VectorIndex, SemanticMemoryError> {
+    Ok(VectorIndex::new(VECTOR_DIMENSIONS))
 }
 
 fn chunk_text(
@@ -1302,7 +1523,7 @@ fn set_indexed_generation(
 fn save_index(
     connection: &StorageConnection<'_>,
     cache_directory: &Path,
-    index: &Index,
+    index: &VectorIndex,
     generation: i64,
 ) -> Result<(), SemanticMemoryError> {
     let index_directory = cache_directory.join(MODEL_ID);
@@ -1321,9 +1542,7 @@ fn save_index(
         fs::remove_file(&temporary)?;
     }
     let _temporary_file = IndexTemporaryFile(temporary.clone());
-    index
-        .save(&path_string(&temporary))
-        .map_err(|error| SemanticMemoryError::Index(error.to_string()))?;
+    index.save(&path_string(&temporary))?;
     if destination.exists() {
         fs::remove_file(&destination)?;
     }
@@ -2232,7 +2451,7 @@ mod tests {
 
     #[test]
     fn semantic_index_filters_hits_by_conversation_namespace() {
-        let index = new_index().expect("create semantic test index");
+        let mut index = new_index().expect("create semantic test index");
         index.reserve(2).expect("reserve semantic test vectors");
         let mut conversation_vector = vec![0_i8; super::VECTOR_DIMENSIONS];
         conversation_vector[0] = 100;
@@ -2316,5 +2535,65 @@ mod tests {
         assert!(current_index.exists());
         assert!(!interrupted_index.exists());
         assert!(unrelated_file.exists());
+    }
+
+    #[test]
+    fn vector_index_filtered_search_orders_by_similarity_and_respects_count() {
+        let mut index = super::VectorIndex::new(super::VECTOR_DIMENSIONS);
+        let mut v1 = vec![0_i8; super::VECTOR_DIMENSIONS];
+        v1[0] = 100;
+        let mut v2 = vec![0_i8; super::VECTOR_DIMENSIONS];
+        v2[0] = 50;
+        v2[1] = 50;
+        let mut v3 = vec![0_i8; super::VECTOR_DIMENSIONS];
+        v3[1] = 100;
+
+        index.add(1, &v1).expect("add v1");
+        index.add(2, &v2).expect("add v2");
+        index.add(3, &v3).expect("add v3");
+
+        let query = v1.clone();
+        let matches = index
+            .filtered_search(&query, 2, |_| true)
+            .expect("search all vectors");
+        assert_eq!(matches.keys.len(), 2);
+        assert_eq!(matches.keys[0], 1);
+        assert_eq!(matches.keys[1], 2);
+        assert!(matches.distances[0] <= matches.distances[1]);
+    }
+
+    #[test]
+    fn vector_index_persists_and_restores_cleanly() {
+        let temp_dir = TemporaryDirectory::new();
+        let file_path = temp_dir.0.join("test_index.bin");
+        let path_str = file_path.to_string_lossy().into_owned();
+
+        let mut index = super::VectorIndex::new(super::VECTOR_DIMENSIONS);
+        let mut vec1 = vec![0_i8; super::VECTOR_DIMENSIONS];
+        vec1[0] = 42;
+        let mut vec2 = vec![0_i8; super::VECTOR_DIMENSIONS];
+        vec2[1] = -84;
+
+        index.add(101, &vec1).expect("add key 101");
+        index.add(202, &vec2).expect("add key 202");
+        index.save(&path_str).expect("save vector index");
+
+        let restored = super::VectorIndex::restore(&path_str).expect("restore vector index");
+        assert_eq!(restored.size(), 2);
+
+        let search = restored
+            .filtered_search(&vec1, 1, |_| true)
+            .expect("search restored");
+        assert_eq!(search.keys, [101]);
+    }
+
+    #[test]
+    fn vector_index_restore_rejects_invalid_magic() {
+        let temp_dir = TemporaryDirectory::new();
+        let file_path = temp_dir.0.join("corrupted.bin");
+        fs::write(&file_path, b"CORRUPTED_FILE_DATA_HERE").expect("write bad file");
+
+        let result = super::VectorIndex::restore(&file_path.to_string_lossy());
+        assert!(result.is_err());
     }
 }

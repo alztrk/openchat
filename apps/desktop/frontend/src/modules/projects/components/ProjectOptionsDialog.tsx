@@ -1,14 +1,4 @@
-import {
-  Brain,
-  ChevronLeft,
-  FolderTree,
-  GitBranch,
-  Hand,
-  NotebookPen,
-  Server,
-  Sparkles,
-  Star,
-} from 'lucide-react';
+import { Brain, ChevronLeft, FolderTree, GitBranch, Hand, NotebookPen, Server, Sparkles, Star } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
