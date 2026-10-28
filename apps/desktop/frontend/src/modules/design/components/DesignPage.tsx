@@ -1,4 +1,3 @@
-import type { TFunction } from 'i18next';
 import {
   ArrowDownToLine,
   ChevronDown,
@@ -30,9 +29,51 @@ import {
 import { useTranslation } from 'react-i18next';
 
 import { Button, Checkbox, ColorPicker, DatePicker, Dialog, Input, Select, Slider, Textarea } from '@/design-system';
-import type { ConversationAttachmentSummary } from '@/modules/conversations/data/chatStorage';
-import { listConversationAttachments, readMessageAttachment } from '@/modules/conversations/data/chatStorage';
+import { listConversationAttachments } from '@/modules/conversations/data/chatStorage';
 import { DesignCanvas } from '@/modules/design/components/DesignCanvas';
+import {
+  buildStructuredImagePrompt,
+  customSizeOption,
+  extractUserPrompt,
+  formatImageSize,
+  type GalleryImage,
+  galleryGenerationKey,
+  galleryImageAlt,
+  galleryImageCaption,
+  galleryImageExtension,
+  galleryPageSize,
+  galleryPrompt,
+  gallerySourceKey,
+  galleryVariants,
+  imageBackgroundLabel,
+  imageBackgroundLabelKey,
+  imageGenerationAccountLabel,
+  imageModelLabel,
+  imageModerationLabel,
+  imageQualityLabel,
+  imageQualityLabelKey,
+  isGalleryProviderFilter,
+  isGallerySort,
+  isGallerySourceFilter,
+  isImageBackground,
+  isImageModeration,
+  isImageOutputFormat,
+  isImageQuality,
+  isValidImageSize,
+  mergeUniqueImages,
+  modelOptions,
+  providerRouteLabel,
+  qualityOptions,
+  readGalleryImage,
+  reportGalleryLoadFailure,
+  sizeOptions,
+  standardSizeOptions,
+  structuredPromptCharacterLimit,
+  supportsCustomResolution,
+  supportsHighQualityTier,
+  withAnnotations,
+} from '@/modules/design/components/designPageUtils';
+import { ImageTile } from '@/modules/design/components/ImageTile';
 import {
   clampDesignPanelWidth,
   DESIGN_PANEL_DEFAULT_WIDTH,
@@ -45,7 +86,6 @@ import {
 } from '@/modules/design/data/designPreferences';
 import {
   clearImageLibrary,
-  type DesignImageRecord,
   type DesignImageTarget,
   defaultDesignImageTarget,
   deleteImageCollection,
@@ -65,7 +105,6 @@ import {
   listImageGenerationRuns,
   listImagePromptTemplates,
   loadDesignImageTargets,
-  readDesignImage,
   removeImageFromLibrary,
   saveImageAnnotation,
   saveImageCollection,
@@ -74,10 +113,6 @@ import {
 } from '@/modules/design/data/imageGeneration';
 import { type ChatGptAccountQuotaStatus, refreshChatGptAccountQuota } from '@/modules/providers/data/oauthRateLimits';
 import { LocalServiceError, type ServiceOperation } from '@/platform/local-service/LocalServiceClient';
-
-type GalleryImage =
-  | { source: 'design'; key: string; createdAt: number; image: DesignImageRecord }
-  | { source: 'chat'; key: string; createdAt: number; image: ConversationAttachmentSummary };
 
 interface ImagePageCursor {
   design: number | null;
@@ -89,37 +124,6 @@ interface DesignPageProps {
 }
 
 type DesignServiceOperation = Omit<ServiceOperation, 'result'> & { result: Promise<ImageGenerationResponse> };
-
-const galleryPageSize = 30;
-const modelOptions = {
-  oauth: [{ value: 'chatgpt-image-latest', labelKey: 'designModelChatGpt' }],
-  api_key: [
-    { value: 'gpt-image-2.5-flare', labelKey: 'designModelFast' },
-    { value: 'gpt-image-2.5-sunburst', labelKey: 'designModelDetailed' },
-    { value: 'gpt-image-2', labelKey: 'designModelTwo' },
-  ],
-} as const;
-const qualityOptions = [
-  { value: 'auto', labelKey: 'designQualityAuto' },
-  { value: 'low', labelKey: 'designQualityLow' },
-  { value: 'medium', labelKey: 'designQualityMedium' },
-  { value: 'high', labelKey: 'designQualityHigh' },
-  { value: 'xhigh', labelKey: 'designQualityXhigh' },
-  { value: 'max', labelKey: 'designQualityMax' },
-] as const;
-const sizeOptions = [
-  { value: 'auto', labelKey: 'designResolutionAuto' },
-  { value: '1024x1024', labelKey: 'designSizeSquare1k' },
-  { value: '1536x1024', labelKey: 'designSizeLandscape15k' },
-  { value: '1024x1536', labelKey: 'designSizePortrait15k' },
-  { value: '2048x2048', labelKey: 'designSizeSquare2k' },
-  { value: '2048x1152', labelKey: 'designSizeLandscape2k' },
-  { value: '1152x2048', labelKey: 'designSizePortrait2k' },
-  { value: '3840x2160', labelKey: 'designSizeLandscape4k' },
-  { value: '2160x3840', labelKey: 'designSizePortrait4k' },
-] as const;
-const standardSizeOptions = sizeOptions.slice(0, 4);
-const customSizeOption = { value: 'custom', labelKey: 'designResolutionCustom' } as const;
 
 export function DesignPage({ onOpenSettings }: DesignPageProps) {
   const { i18n, t } = useTranslation();
@@ -2054,336 +2058,4 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
       </Dialog>
     </div>
   );
-}
-
-function ImageTile({
-  entry,
-  root,
-  onSelect,
-}: {
-  entry: GalleryImage;
-  root: Element | null;
-  onSelect(src: string): void;
-}) {
-  const { t } = useTranslation();
-  const tileRef = useRef<HTMLButtonElement>(null);
-  const [inRange, setInRange] = useState(false);
-  const [src, setSrc] = useState<string | null>(null);
-  const [failed, setFailed] = useState(false);
-
-  useEffect(() => {
-    const element = tileRef.current;
-    if (!element || typeof IntersectionObserver === 'undefined') {
-      setInRange(true);
-      return;
-    }
-    const observer = new IntersectionObserver(
-      (entries) => {
-        setInRange(entries.some((item) => item.isIntersecting));
-      },
-      { root, rootMargin: '480px' },
-    );
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, [root]);
-
-  useEffect(() => {
-    if (!inRange) {
-      setSrc(null);
-      return;
-    }
-    let active = true;
-    setFailed(false);
-    void readGalleryImage(entry)
-      .then((value) => {
-        if (active) setSrc(value);
-      })
-      .catch(() => {
-        if (active) setFailed(true);
-      });
-    return () => {
-      active = false;
-    };
-  }, [entry, inRange]);
-
-  const label = galleryPrompt(entry);
-  return (
-    <Button
-      aria-label={t('designOpenImage', { label: label.slice(0, 100) })}
-      className="group design-image-tile relative min-h-0 w-full grid aspect-square min-w-0 overflow-hidden rounded-control border border-border bg-raised text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
-      onClick={() => {
-        if (src) onSelect(src);
-      }}
-      ref={tileRef}
-      size="small"
-      type="button"
-      variant="ghost"
-    >
-      {src ? (
-        <img
-          alt={label}
-          className="size-full object-cover transition-transform duration-quick"
-          loading="lazy"
-          src={src}
-        />
-      ) : failed ? (
-        <span className="flex h-full items-center justify-center px-3 text-center text-xs text-secondary-text">
-          {t('designImageUnavailable')}
-        </span>
-      ) : (
-        <span className="flex h-full items-center justify-center text-secondary-icon">
-          <LoaderCircle aria-label={t('designImageLoading')} className="animate-spin" size={18} />
-        </span>
-      )}
-      <span className="absolute inset-x-0 bottom-0 flex items-end justify-between gap-2 bg-gradient-to-t from-black/80 via-black/45 to-transparent px-3 pb-2 pt-12">
-        <span
-          aria-hidden="true"
-          className="pointer-events-none line-clamp-3 min-w-0 flex-1 break-words text-left text-xs font-medium leading-4 text-white/75 opacity-0 transition-opacity duration-quick group-hover:opacity-75 group-focus-visible:opacity-75 motion-reduce:transition-none"
-        >
-          {label}
-        </span>
-        <span className="max-w-1/2 shrink-0 truncate text-xs font-medium text-white/70">
-          {entry.source === 'design' ? entry.image.model : entry.image.conversationTitle}
-        </span>
-      </span>
-    </Button>
-  );
-}
-
-async function readGalleryImage(entry: GalleryImage): Promise<string> {
-  if (entry.source === 'design') {
-    const image = await readDesignImage(entry.image.id, entry.image.mimeType, entry.image.sizeBytes);
-    return bytesToDataUrl(image.mimeType, image.bytes);
-  }
-  const bytes = await readMessageAttachment(
-    entry.image.conversationId,
-    entry.image.messageId,
-    entry.image.attachmentId,
-  );
-  return bytesToDataUrl(entry.image.mimeType, bytes);
-}
-
-function bytesToDataUrl(mimeType: string, bytes: Uint8Array): string {
-  let binary = '';
-  const chunkSize = 0x8000;
-  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
-    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
-  }
-  return `data:${mimeType};base64,${window.btoa(binary)}`;
-}
-
-function buildStructuredImagePrompt(userPrompt: string, systemPromptConfigs: string): string {
-  return `User Prompt: ${JSON.stringify(userPrompt)}\nSystem Prompt / Configs: ${JSON.stringify(systemPromptConfigs)}`;
-}
-
-function structuredPromptCharacterLimit(systemPromptConfigs: string): number {
-  let low = 0;
-  let high = 10_000;
-  while (low < high) {
-    const middle = Math.ceil((low + high) / 2);
-    if (buildStructuredImagePrompt('a'.repeat(middle), systemPromptConfigs).length <= 10_000) low = middle;
-    else high = middle - 1;
-  }
-  return low;
-}
-
-function imageBackgroundLabelKey(
-  background: ImageBackground,
-): 'designBackgroundTransparent' | 'designBackgroundOpaque' | 'designBackgroundAuto' {
-  if (background === 'transparent') return 'designBackgroundTransparent';
-  if (background === 'opaque') return 'designBackgroundOpaque';
-  return 'designBackgroundAuto';
-}
-
-function imageQualityLabelKey(
-  quality: ImageQuality,
-):
-  | 'designQualityAuto'
-  | 'designQualityLow'
-  | 'designQualityMedium'
-  | 'designQualityHigh'
-  | 'designQualityXhigh'
-  | 'designQualityMax' {
-  const keys = {
-    auto: 'designQualityAuto',
-    low: 'designQualityLow',
-    medium: 'designQualityMedium',
-    high: 'designQualityHigh',
-    xhigh: 'designQualityXhigh',
-    max: 'designQualityMax',
-  } as const;
-  return keys[quality];
-}
-
-function extractUserPrompt(prompt: string): string {
-  const prefix = 'User Prompt: ';
-  const separator = '\nSystem Prompt / Configs: ';
-  if (!prompt.startsWith(prefix)) return prompt;
-  const separatorIndex = prompt.indexOf(separator, prefix.length);
-  if (separatorIndex < 0) return prompt;
-  try {
-    const parsed: unknown = JSON.parse(prompt.slice(prefix.length, separatorIndex));
-    return typeof parsed === 'string' ? parsed : prompt;
-  } catch {
-    return prompt;
-  }
-}
-
-function mergeUniqueImages(current: GalleryImage[], next: GalleryImage[], sort: 'newest' | 'oldest'): GalleryImage[] {
-  const images = new Map(current.map((image) => [image.key, image]));
-  for (const image of next) images.set(image.key, image);
-  return [...images.values()].sort((left, right) =>
-    sort === 'oldest' ? left.createdAt - right.createdAt : right.createdAt - left.createdAt,
-  );
-}
-
-function gallerySourceKey(entry: GalleryImage): string {
-  return entry.source === 'design'
-    ? entry.image.id
-    : `${entry.image.conversationId}:${entry.image.messageId}:${entry.image.attachmentId}`;
-}
-
-function galleryGenerationKey(entry: GalleryImage): string {
-  if (entry.source === 'design') return `generation:${entry.image.generationId}`;
-  return entry.image.generationId
-    ? `generation:${entry.image.generationId}`
-    : `legacy-chat:${entry.image.conversationId}:${entry.image.messageId}`;
-}
-
-function galleryVariants(images: GalleryImage[], selected: GalleryImage): GalleryImage[] {
-  return images.filter((image) => galleryGenerationKey(image) === galleryGenerationKey(selected));
-}
-
-function galleryPrompt(entry: GalleryImage): string {
-  return entry.source === 'design'
-    ? extractUserPrompt(entry.image.prompt)
-    : entry.image.prompt
-      ? extractUserPrompt(entry.image.prompt)
-      : entry.image.conversationTitle;
-}
-
-function withAnnotations(entry: GalleryImage, annotations: { isFavorite: boolean; tags: string[] }): GalleryImage {
-  if (entry.source === 'design') return { ...entry, image: { ...entry.image, ...annotations } };
-  return { ...entry, image: { ...entry.image, ...annotations } };
-}
-
-function providerRouteLabel(route: 'oauth' | 'api_key' | 'unknown' | null, t: TFunction): string {
-  if (route === 'oauth') return t('designProviderOAuth');
-  if (route === 'api_key') return t('designProviderApi');
-  return t('designMetadataUnavailable');
-}
-
-function isGallerySourceFilter(value: string): value is 'all' | 'design' | 'chat' {
-  return value === 'all' || value === 'design' || value === 'chat';
-}
-
-function isGallerySort(value: string): value is 'newest' | 'oldest' {
-  return value === 'newest' || value === 'oldest';
-}
-
-function isGalleryProviderFilter(value: string): value is 'all' | 'oauth' | 'api_key' {
-  return value === 'all' || value === 'oauth' || value === 'api_key';
-}
-
-function imageGenerationAccountLabel(target: DesignImageTarget, t: TFunction): string {
-  const accountLabel =
-    target.accountLabel ?? t(target.kind === 'api_key' ? 'designAccountApiKey' : 'designAccountDefault');
-  const workspaceLabel = target.workspaceId === null ? null : (target.workspaceLabel ?? t('designWorkspaceDefault'));
-  return workspaceLabel ? `${accountLabel} · ${workspaceLabel}` : accountLabel;
-}
-
-function extensionFromMime(mimeType: string): string {
-  if (mimeType === 'image/jpeg') return 'jpeg';
-  if (mimeType === 'image/webp') return 'webp';
-  return 'png';
-}
-
-function galleryImageAlt(entry: GalleryImage): string {
-  return entry.source === 'design' ? extractUserPrompt(entry.image.prompt) : entry.image.fileName;
-}
-
-function galleryImageCaption(entry: GalleryImage): string {
-  return entry.source === 'design'
-    ? extractUserPrompt(entry.image.prompt)
-    : entry.image.prompt
-      ? extractUserPrompt(entry.image.prompt)
-      : entry.image.conversationTitle;
-}
-
-function galleryImageExtension(entry: GalleryImage): string {
-  return entry.source === 'design' ? entry.image.outputFormat : extensionFromMime(entry.image.mimeType);
-}
-
-function imageModelLabel(model: string, t: TFunction): string {
-  const modelOption = [...modelOptions.oauth, ...modelOptions.api_key].find((option) => option.value === model);
-  return modelOption ? t(modelOption.labelKey) : model;
-}
-
-function imageQualityLabel(quality: string | null, t: TFunction): string {
-  const qualityOption = qualityOptions.find((option) => option.value === quality);
-  return qualityOption ? t(qualityOption.labelKey) : t('designQualityAuto');
-}
-
-function imageBackgroundLabel(background: string | null, t: TFunction): string {
-  if (background === 'transparent') return t('designBackgroundTransparent');
-  if (background === 'opaque') return t('designBackgroundOpaque');
-  return t('designBackgroundAuto');
-}
-
-function imageModerationLabel(moderation: ImageModeration, t: TFunction): string {
-  return moderation === 'low' ? t('designModerationLow') : t('designModerationAuto');
-}
-
-function isImageQuality(value: string): value is ImageQuality {
-  return qualityOptions.some((option) => option.value === value);
-}
-
-function isImageBackground(value: string): value is ImageBackground {
-  return value === 'auto' || value === 'opaque' || value === 'transparent';
-}
-
-function isImageModeration(value: string): value is ImageModeration {
-  return value === 'auto' || value === 'low';
-}
-
-function isImageOutputFormat(value: string): value is ImageOutputFormat {
-  return value === 'png' || value === 'jpeg' || value === 'webp';
-}
-
-function supportsCustomResolution(model: string): boolean {
-  return model === 'gpt-image-2' || model.startsWith('gpt-image-2.5-');
-}
-
-function supportsHighQualityTier(model: string): boolean {
-  return model.startsWith('gpt-image-2.5-');
-}
-
-function isValidImageSize(widthValue: string, heightValue: string): boolean {
-  if (!/^\d+$/.test(widthValue) || !/^\d+$/.test(heightValue)) return false;
-  const width = Number(widthValue);
-  const height = Number(heightValue);
-  const pixels = width * height;
-  return (
-    Number.isSafeInteger(width) &&
-    Number.isSafeInteger(height) &&
-    width >= 256 &&
-    height >= 256 &&
-    width <= 3840 &&
-    height <= 3840 &&
-    width % 16 === 0 &&
-    height % 16 === 0 &&
-    pixels >= 655_360 &&
-    pixels <= 8_294_400 &&
-    Math.max(width, height) <= Math.min(width, height) * 3
-  );
-}
-
-function formatImageSize(sizeBytes: number, locale: string): string {
-  const mebibytes = sizeBytes / (1024 * 1024);
-  return `${new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(mebibytes)} MiB`;
-}
-
-function reportGalleryLoadFailure(source: 'Design' | 'chat', error: unknown): void {
-  const code = error instanceof LocalServiceError ? error.code : 'request_failed';
-  globalThis.reportError(new Error(`${source} image library request failed (${code}).`));
 }
