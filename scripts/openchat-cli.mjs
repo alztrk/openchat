@@ -494,6 +494,138 @@ function formatGiB(bytes) {
   return (Number(bytes) / Number(gibibyte)).toFixed(2);
 }
 
+function pruneStaleArtifacts(targetPath, apply = false) {
+  let prunedBytes = 0n;
+  let prunedCount = 0;
+
+  const candidateDirs = [
+    path.join(targetPath, 'debug', 'deps'),
+    path.join(targetPath, 'deps'),
+  ];
+
+  for (const depsDir of candidateDirs) {
+    if (!existsSync(depsDir)) continue;
+    let entries = [];
+    try {
+      entries = readdirSync(depsDir);
+    } catch {
+      continue;
+    }
+
+    const groups = new Map();
+    for (const entry of entries) {
+      const match = /^(.+)-([0-9a-fA-F]{16})\.([a-zA-Z0-9_]+)$/u.exec(entry);
+      if (!match) continue;
+      const key = `${match[1]}.${match[3]}`;
+      const filePath = path.join(depsDir, entry);
+      try {
+        const stats = statSync(filePath);
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push({ path: filePath, mtimeMs: stats.mtimeMs, size: BigInt(stats.size) });
+      } catch {
+        // Skip inaccessible entries
+      }
+    }
+
+    for (const [, items] of groups) {
+      if (items.length > 1) {
+        items.sort((a, b) => b.mtimeMs - a.mtimeMs);
+        for (let i = 1; i < items.length; i += 1) {
+          prunedBytes += items[i].size;
+          prunedCount += 1;
+          if (apply) {
+            try {
+              rmSync(items[i].path, { force: true });
+            } catch {
+              // Ignore
+            }
+          }
+        }
+      }
+    }
+  }
+
+  const buildDirs = [
+    path.join(targetPath, 'debug', 'build'),
+    path.join(targetPath, 'build'),
+  ];
+  for (const buildDir of buildDirs) {
+    if (!existsSync(buildDir)) continue;
+    let entries = [];
+    try {
+      entries = readdirSync(buildDir);
+    } catch {
+      continue;
+    }
+    const groups = new Map();
+    for (const entry of entries) {
+      const match = /^(.+)-([0-9a-fA-F]{16})$/u.exec(entry);
+      if (!match) continue;
+      const key = match[1];
+      const dirPath = path.join(buildDir, entry);
+      try {
+        const stats = statSync(dirPath);
+        if (stats.isDirectory()) {
+          if (!groups.has(key)) groups.set(key, []);
+          groups.get(key).push({ path: dirPath, mtimeMs: stats.mtimeMs });
+        }
+      } catch {
+        // Skip
+      }
+    }
+    for (const [, items] of groups) {
+      if (items.length > 1) {
+        items.sort((a, b) => b.mtimeMs - a.mtimeMs);
+        for (let i = 1; i < items.length; i += 1) {
+          if (apply) {
+            try {
+              rmSync(items[i].path, { recursive: true, force: true });
+            } catch {
+              // Ignore
+            }
+          }
+        }
+      }
+    }
+  }
+
+  if (path.basename(targetPath) === 'target') {
+    try {
+      const entries = readdirSync(targetPath);
+      const allowed = new Set([
+        'debug',
+        'CACHEDIR.TAG',
+        '.rustc_info.json',
+        '.rustdoc_fingerprint.json',
+        'cxxbridge',
+        'tmp',
+        'doc',
+        'flycheck0',
+      ]);
+      for (const entry of entries) {
+        if (allowed.has(entry)) continue;
+        const candidate = path.join(targetPath, entry);
+        try {
+          const stats = statSync(candidate);
+          if (stats.isDirectory()) {
+            prunedBytes += directoryBytes(candidate);
+            prunedCount += 1;
+            if (apply) {
+              rmSync(candidate, { recursive: true, force: true });
+            }
+          }
+        } catch {
+          // Ignore
+        }
+      }
+    } catch {
+      // Ignore
+    }
+  }
+
+  return { prunedBytes, prunedCount };
+}
+
 function maintainTarget(args) {
   const options = parseMaintainTargetOptions(args);
   if (options === null) return;
@@ -520,7 +652,20 @@ function maintainTarget(args) {
     );
   }
 
-  if (totalBytes <= thresholdBytes) {
+  for (const target of targets) {
+    const { prunedBytes, prunedCount } = pruneStaleArtifacts(target.path, options.apply);
+    if (prunedBytes > 0n || prunedCount > 0) {
+      const mode = options.apply ? 'Pruned' : 'Previewed pruning for';
+      process.stdout.write(
+        `${mode} ${prunedCount} stale artifact${prunedCount === 1 ? '' : 's'} (${formatGiB(prunedBytes)} GiB) in ${path.relative(workspaceRoot, target.path)}.\n`,
+      );
+    }
+  }
+
+  const updatedTargets = discoverTargets();
+  const remainingBytes = updatedTargets.reduce((total, target) => total + target.bytes, 0n);
+
+  if (remainingBytes <= thresholdBytes) {
     process.stdout.write('Target usage is within the limit; no cleanup is needed.\n');
     return;
   }

@@ -9,6 +9,12 @@ incremental = false
 [profile.dev.package."*"]
 debug = false
 
+[profile.test]
+debug = "line-tables-only"
+
+[profile.test.package."*"]
+debug = false
+
 [profile.debugging]
 inherits = "dev"
 debug = true
