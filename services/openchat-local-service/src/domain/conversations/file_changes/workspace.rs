@@ -817,6 +817,7 @@ fn set_file_delete_disposition(file: &CapabilityFile, delete: bool) -> io::Resul
     Ok(())
 }
 
+#[cfg(any(not(windows), test))]
 fn remove_workspace_temp_after_error(
     directory: &Dir,
     temporary: &Path,
