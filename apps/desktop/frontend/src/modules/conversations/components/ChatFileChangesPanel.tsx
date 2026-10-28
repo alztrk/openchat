@@ -1,20 +1,14 @@
 import {
-  Check,
   CheckCheck,
   Columns2,
   FileCode2,
   FileDiff,
-  FilePlus2,
   GitFork,
   Globe,
-  Info,
   LoaderCircle,
   MessageSquare,
-  NotebookPen,
   Plus,
   Rows3,
-  Trash2,
-  TriangleAlert,
   Undo2,
   X,
 } from 'lucide-react';
@@ -35,9 +29,12 @@ import {
 } from '@/modules/conversations/data/chatFileChanges';
 import { readOpenConversationTabs, writeOpenConversationTabs } from '@/modules/conversations/data/sidebarPreferences';
 import { LocalServiceError } from '@/platform/local-service';
+import { FileChangeRow } from './ChatFileChangeRow';
+import { DiffContent } from './ChatFileChangesDiffViewer';
 import { EmbeddedBrowserPanel } from './EmbeddedBrowserPanel';
-import { detectFileLanguage, highlightFileLines } from './message/FileSyntaxHighlight';
+import { detectFileLanguage } from './message/FileSyntaxHighlight';
 import { SubagentsPanel } from './SubagentsPanel';
+import { type FileWorkspaceTab, WorkspaceFileView } from './WorkspaceFileView';
 
 export type RightWorkspaceTab = 'changes' | 'browser' | 'subagents';
 
@@ -46,15 +43,6 @@ type BuiltinWorkspaceTab = {
   kind: 'builtin';
   tab: RightWorkspaceTab;
   conversationId: string | null;
-};
-type FileWorkspaceTab = {
-  id: string;
-  kind: 'file';
-  conversationId: string | null;
-  fileName: string;
-  content: string;
-  language: string | null;
-  changeId: string | null;
 };
 type ConversationWorkspaceTab = { id: string; kind: 'conversation'; conversationId: string };
 type WorkspaceTab = BuiltinWorkspaceTab | FileWorkspaceTab | ConversationWorkspaceTab;
@@ -88,34 +76,6 @@ export interface ChatFileChangesPanelProps {
 }
 
 type FileChangeError = 'load' | 'diff' | 'conflict' | 'applied' | 'revertAll' | 'revert';
-interface ParsedDiffHunk {
-  index: number;
-  header: string;
-  lines: string[];
-}
-
-function parseUnifiedDiffHunks(rawDiff: string): { fileHeaderLines: string[]; hunks: ParsedDiffHunk[] } {
-  const allLines = rawDiff.split('\n');
-  const fileHeaderLines: string[] = [];
-  const hunks: ParsedDiffHunk[] = [];
-  let currentHunk: ParsedDiffHunk | null = null;
-
-  for (const line of allLines) {
-    if (line.startsWith('@@')) {
-      currentHunk = {
-        index: hunks.length,
-        header: line,
-        lines: [],
-      };
-      hunks.push(currentHunk);
-    } else if (currentHunk) {
-      currentHunk.lines.push(line);
-    } else {
-      fileHeaderLines.push(line);
-    }
-  }
-  return { fileHeaderLines, hunks };
-}
 
 export function ChatFileChangesPanel({
   conversationId,
@@ -790,15 +750,6 @@ export function ChatFileChangesPanel({
   );
 }
 
-function keyedDiffLines(lines: readonly string[], prefix: string): { key: string; text: string }[] {
-  const occurrences = new Map<string, number>();
-  return lines.map((text) => {
-    const occurrence = (occurrences.get(text) ?? 0) + 1;
-    occurrences.set(text, occurrence);
-    return { key: `${prefix}-${occurrence}-${text}`, text };
-  });
-}
-
 function builtinTabLabelKey(
   tabId: RightWorkspaceTab,
 ): 'fileChangesTitle' | 'browserPanelTitle' | 'subagentsPanelTitle' {
@@ -809,300 +760,6 @@ function builtinTabLabelKey(
 
 function normalizeFilePath(path: string): string {
   return path.replaceAll('\\', '/').replace(/\/+$/, '').toLocaleLowerCase();
-}
-
-function WorkspaceFileView({ file }: { file: FileWorkspaceTab }) {
-  const { t } = useTranslation();
-  const lines = useMemo(
-    () => file.content.split(/\r\n|\r|\n/).map((text, index) => ({ number: index + 1, text })),
-    [file.content],
-  );
-  const highlightedLines = useMemo(
-    () =>
-      highlightFileLines(
-        file.language,
-        lines.map((line) => line.text),
-      ),
-    [file.language, lines],
-  );
-
-  return (
-    <section aria-label={t('workspaceFileContent', { name: file.fileName })} className="flex min-h-0 flex-1 flex-col">
-      <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border px-3 text-xs text-secondary-text">
-        <FileCode2 aria-hidden="true" className="shrink-0 text-accent" size={14} />
-        <span className="truncate" title={file.fileName}>
-          {file.fileName}
-        </span>
-        <span className="ml-auto shrink-0">{t('workspaceFileLineCount', { count: lines.length })}</span>
-      </div>
-      {file.content.length === 0 ? (
-        <p className="flex min-h-0 flex-1 items-center justify-center px-6 text-center text-xs text-secondary-text">
-          {t('workspaceFileEmpty')}
-        </p>
-      ) : (
-        <ol
-          aria-label={t('workspaceFileContent', { name: file.fileName })}
-          className="openchat-scroll-area min-h-0 flex-1 overflow-auto py-2 font-code text-xs leading-5"
-        >
-          {lines.map((line, index) => (
-            <li className="grid grid-cols-tool-lines gap-2 px-3" key={line.number}>
-              <span aria-hidden="true" className="select-none text-right text-secondary-text">
-                {line.number}
-              </span>
-              <span className="min-w-0 whitespace-pre-wrap break-words text-text">{highlightedLines[index]}</span>
-            </li>
-          ))}
-        </ol>
-      )}
-    </section>
-  );
-}
-
-function DiffContent({
-  diff,
-  isLoading,
-  viewMode,
-  canRevertHunks,
-  mutatingHunkIndex,
-  onRevertHunk,
-}: {
-  diff: ChatFileChangeDiff | null;
-  isLoading: boolean;
-  viewMode: 'unified' | 'split';
-  canRevertHunks: boolean;
-  mutatingHunkIndex: number | null;
-  onRevertHunk(hunkIndex: number): void;
-}) {
-  const { t } = useTranslation();
-  const parsed = useMemo(() => (diff?.diff ? parseUnifiedDiffHunks(diff.diff) : null), [diff?.diff]);
-
-  if (isLoading) {
-    return (
-      <div className="flex min-h-0 flex-1 items-center justify-center" role="status">
-        <LoaderCircle aria-hidden="true" className="animate-spin text-accent motion-reduce:animate-none" size={18} />
-      </div>
-    );
-  }
-  if (!diff) return <div className="min-h-0 flex-1" />;
-  if (diff.isBinary) return <DiffNotice>{t('fileChangesBinary')}</DiffNotice>;
-  if (!diff.available) return <DiffNotice>{t('fileChangesDiffUnavailable')}</DiffNotice>;
-  if (!parsed || parsed.hunks.length === 0) {
-    return <DiffNotice>{t('fileChangesEmpty')}</DiffNotice>;
-  }
-
-  return (
-    <section
-      aria-label={t('fileChangesDiffTitle')}
-      className="openchat-scroll-area min-h-0 flex-1 overflow-auto px-2 py-1.5"
-    >
-      <div className="flex flex-col gap-2">
-        {parsed.hunks.map((hunk) => (
-          <div className="overflow-hidden rounded-control border border-border/80 bg-composer" key={hunk.index}>
-            <div className="flex items-center justify-between gap-2 border-b border-border/60 bg-raised px-2.5 py-1 text-caption">
-              <span className="truncate font-code text-secondary-text">{hunk.header}</span>
-              {canRevertHunks ? (
-                <Button
-                  className="min-h-0 shrink-0 gap-1 rounded-control border-border bg-surface px-2 py-0.5 text-caption font-medium text-secondary-text transition-colors hover:bg-hover hover:text-destructive disabled:opacity-50"
-                  disabled={mutatingHunkIndex !== null}
-                  onClick={() => onRevertHunk(hunk.index)}
-                  size="small"
-                  type="button"
-                  variant="secondary"
-                >
-                  {mutatingHunkIndex === hunk.index ? (
-                    <LoaderCircle aria-hidden="true" className="animate-spin" size={11} />
-                  ) : (
-                    <Undo2 aria-hidden="true" size={11} />
-                  )}
-                  <span>{t('fileChangesRejectHunk')}</span>
-                </Button>
-              ) : null}
-            </div>
-            {viewMode === 'unified' ? (
-              <pre className="overflow-x-auto whitespace-pre px-2 py-1 font-code text-xs leading-5">
-                {keyedDiffLines(hunk.lines, `hunk-${hunk.index}`).map((line) => (
-                  <span className={`block select-text ${diffLineClass(line.text)}`} key={line.key}>
-                    {line.text || ' '}
-                  </span>
-                ))}
-              </pre>
-            ) : (
-              <SplitHunkView hunkIndex={hunk.index} lines={hunk.lines} />
-            )}
-          </div>
-        ))}
-      </div>
-      {diff.truncated ? <p className="px-2 py-2 text-xs text-secondary-text">{t('fileChangesDiffTruncated')}</p> : null}
-    </section>
-  );
-}
-
-function SplitHunkView({ hunkIndex, lines }: { hunkIndex: number; lines: string[] }) {
-  const leftLines: string[] = [];
-  const rightLines: string[] = [];
-  for (const line of lines) {
-    if (line.startsWith('-')) {
-      leftLines.push(line);
-    } else if (line.startsWith('+')) {
-      rightLines.push(line);
-    } else {
-      while (leftLines.length < rightLines.length) leftLines.push('');
-      while (rightLines.length < leftLines.length) rightLines.push('');
-      leftLines.push(line);
-      rightLines.push(line);
-    }
-  }
-  while (leftLines.length < rightLines.length) leftLines.push('');
-  while (rightLines.length < leftLines.length) rightLines.push('');
-
-  return (
-    <div className="grid grid-cols-2 divide-x divide-border/60 overflow-x-auto font-code text-xs leading-5">
-      <pre className="overflow-x-auto whitespace-pre px-2 py-1">
-        {keyedDiffLines(leftLines, `left-${hunkIndex}`).map((line) => (
-          <span className={`block select-text ${diffLineClass(line.text)}`} key={line.key}>
-            {line.text || ' '}
-          </span>
-        ))}
-      </pre>
-      <pre className="overflow-x-auto whitespace-pre px-2 py-1">
-        {keyedDiffLines(rightLines, `right-${hunkIndex}`).map((line) => (
-          <span className={`block select-text ${diffLineClass(line.text)}`} key={line.key}>
-            {line.text || ' '}
-          </span>
-        ))}
-      </pre>
-    </div>
-  );
-}
-
-function DiffNotice({ children }: { children: string }) {
-  return (
-    <p className="flex min-h-0 flex-1 items-center justify-center px-5 text-center text-xs leading-5 text-secondary-text">
-      {children}
-    </p>
-  );
-}
-
-function FileChangeRow({
-  change,
-  isAnyMutating,
-  isSelected,
-  isMutating,
-  onSelect,
-  onApprove,
-  onRevert,
-}: {
-  change: ChatFileChange;
-  isAnyMutating: boolean;
-  isSelected: boolean;
-  isMutating: boolean;
-  onSelect(): void;
-  onApprove(): void;
-  onRevert(): void;
-}) {
-  const { t } = useTranslation();
-  return (
-    <li
-      className={`mx-1.5 flex min-h-12 items-center gap-1.5 rounded-control px-2 ${
-        isSelected ? 'border border-accent bg-composer' : 'border border-transparent hover:bg-hover'
-      }`}
-    >
-      <Button
-        aria-pressed={isSelected}
-        className="min-h-0 min-w-0 flex-1 justify-start gap-2 py-1 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
-        onClick={onSelect}
-        size="small"
-        title={change.path}
-        type="button"
-        variant="ghost"
-      >
-        <FileKindIcon kind={change.kind} />
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-xs font-medium text-text">{change.path}</span>
-          <span
-            className={`block truncate text-xs leading-4 ${
-              change.status === 'conflict'
-                ? 'text-destructive'
-                : change.approved
-                  ? 'text-success font-medium'
-                  : 'text-secondary-text'
-            }`}
-          >
-            {change.approved
-              ? t('fileChangesApproved')
-              : change.status === 'active'
-                ? t('fileChangesActive')
-                : change.status === 'reverted'
-                  ? t('fileChangesReverted')
-                  : t('fileChangesConflict')}
-          </span>
-        </span>
-        {change.addedLines !== null || change.removedLines !== null ? (
-          <span className="flex shrink-0 gap-1 text-xs font-semibold">
-            {change.addedLines !== null ? <span className="text-success">+{change.addedLines}</span> : null}
-            {change.removedLines !== null ? <span className="text-destructive">-{change.removedLines}</span> : null}
-          </span>
-        ) : null}
-      </Button>
-      {change.status === 'active' && !change.approved ? (
-        <div className="flex shrink-0 items-center gap-1">
-          <Button
-            aria-label={`${t('fileChangesApprove')}: ${change.path}`}
-            className="h-7 px-2 text-xs text-success hover:text-success"
-            disabled={isMutating || isAnyMutating}
-            onClick={onApprove}
-            size="small"
-            title={t('fileChangesApprove')}
-            variant="ghost"
-          >
-            <Check aria-hidden="true" size={14} />
-            <span>{t('fileChangesApprove')}</span>
-          </Button>
-          {change.canRevert ? (
-            <Button
-              aria-label={`${t('fileChangesRevert')}: ${change.path}`}
-              className="h-7 px-2 text-xs"
-              disabled={isMutating || isAnyMutating}
-              onClick={onRevert}
-              size="small"
-              variant="ghost"
-            >
-              {isMutating ? (
-                <LoaderCircle aria-hidden="true" className="animate-spin motion-reduce:animate-none" size={13} />
-              ) : (
-                t('fileChangesRevert')
-              )}
-            </Button>
-          ) : null}
-        </div>
-      ) : change.approved ? (
-        <span
-          className="inline-flex items-center gap-1 rounded-full bg-success/15 px-2 py-0.5 text-caption font-medium text-success"
-          title={t('fileChangesApproved')}
-        >
-          <Check aria-hidden="true" size={12} />
-          <span>{t('fileChangesApproved')}</span>
-        </span>
-      ) : change.status === 'reverted' ? (
-        <Check aria-hidden="true" className="shrink-0 text-secondary-icon" size={16} />
-      ) : change.status === 'conflict' ? (
-        <span aria-label={t('fileChangesConflict')} role="img" title={t('fileChangesConflict')}>
-          <TriangleAlert aria-hidden="true" className="text-destructive" size={16} />
-        </span>
-      ) : !change.diffAvailable ? (
-        <span aria-label={t('fileChangesDiffUnavailable')} role="img" title={t('fileChangesDiffUnavailable')}>
-          <Info aria-hidden="true" className="text-secondary-icon" size={16} />
-        </span>
-      ) : null}
-    </li>
-  );
-}
-
-function FileKindIcon({ kind }: { kind: ChatFileChange['kind'] }) {
-  const iconProps = { 'aria-hidden': true as const, className: 'shrink-0 text-secondary-icon', size: 16 };
-  if (kind === 'added') return <FilePlus2 {...iconProps} />;
-  if (kind === 'deleted') return <Trash2 {...iconProps} />;
-  return <NotebookPen {...iconProps} />;
 }
 
 function firstChangeId(changes: ChatFileChange[]): string | null {
@@ -1116,10 +773,4 @@ function firstChangeId(changes: ChatFileChange[]): string | null {
 
 function selectedChangePath(changes: ChatFileChange[], selectedId: string | null): string | null {
   return changes.find((change) => change.id === selectedId)?.path ?? null;
-}
-
-function diffLineClass(line: string): string {
-  if (line.startsWith('+') && !line.startsWith('+++')) return 'bg-success/10 text-success';
-  if (line.startsWith('-') && !line.startsWith('---')) return 'bg-destructive/10 text-destructive';
-  return 'text-secondary-text';
 }
