@@ -334,6 +334,11 @@ impl ChatGptService {
         if !context.is_security_scan && !model.supports_images {
             tools.retain(|tool| tool.name != "computer_use");
         }
+        if !context.is_security_scan
+            && !crate::tools::model_supports_image_generation("chatgpt", &model.id)
+        {
+            tools.retain(|tool| tool.name != "generate_image");
+        }
         #[cfg(windows)]
         if let Some(registry) = mcp_registry.as_ref() {
             tools.extend(registry.definitions().iter().cloned());

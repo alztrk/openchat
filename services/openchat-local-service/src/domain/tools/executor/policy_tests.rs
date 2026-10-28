@@ -530,15 +530,15 @@ fn named_task_rules_override_the_project_wide_task_rule() {
 fn permission_rule_parser_rejects_unknown_tools_and_values() {
     let valid = json!({
         "execute_command": "ask",
-        "search_project_code": "allow",
-        "query_language_server": "ask",
+        "read_file": "allow",
+        "search_files": "ask",
         "git_diff": "allow",
         "project_tool__lint": "deny"
     });
     let rules = parse_tool_permission_rules(Some(&valid)).expect("valid rules");
     assert_eq!(rules["execute_command"], ToolPermissionRule::Ask);
-    assert_eq!(rules["search_project_code"], ToolPermissionRule::Allow);
-    assert_eq!(rules["query_language_server"], ToolPermissionRule::Ask);
+    assert_eq!(rules["read_file"], ToolPermissionRule::Allow);
+    assert_eq!(rules["search_files"], ToolPermissionRule::Ask);
     assert_eq!(rules["project_tool__lint"], ToolPermissionRule::Deny);
 
     #[cfg(windows)]

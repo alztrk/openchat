@@ -450,26 +450,6 @@ pub(super) fn qualify_output_paths(
             prepared.scope,
             _project_roots,
         ),
-        ToolOperation::CodeSearch { .. } => {
-            qualify_path_array(
-                output.get_mut("matches").and_then(Value::as_array_mut),
-                &prepared.root,
-                prepared.scope,
-                _project_roots,
-            );
-            qualify_path_array(
-                output.get_mut("symbols").and_then(Value::as_array_mut),
-                &prepared.root,
-                prepared.scope,
-                _project_roots,
-            );
-        }
-        ToolOperation::LspQuery { .. } => qualify_path_array(
-            output.get_mut("locations").and_then(Value::as_array_mut),
-            &prepared.root,
-            prepared.scope,
-            _project_roots,
-        ),
         ToolOperation::Read { .. }
         | ToolOperation::Write { .. }
         | ToolOperation::Edit { .. }

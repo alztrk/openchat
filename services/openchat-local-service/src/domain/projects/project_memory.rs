@@ -47,6 +47,7 @@ pub(crate) struct ProjectMemorySnapshot {
     pub(crate) total_bytes: usize,
 }
 
+#[allow(dead_code)]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct ProjectMemorySearchHit {
     pub(crate) id: String,
@@ -87,6 +88,7 @@ pub(crate) fn context_from_snapshot(snapshot: &ProjectMemorySnapshot) -> Option<
 }
 
 /// Searches the small, opt-in project note set without mixing it into the file index.
+#[allow(dead_code)]
 pub(crate) fn search(
     connection: &StorageConnection<'_>,
     project_id: &str,

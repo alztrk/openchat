@@ -1425,69 +1425,6 @@ fn read_file_returns_a_requested_range_and_can_return_a_small_file_in_full() {
 }
 
 #[test]
-fn language_server_queries_are_bound_to_the_attached_project_root() {
-    use super::{ToolExecutor, ToolPermissionMode};
-    use crate::provider_schema::ToolCall;
-
-    let project = TestDirectory::new();
-    project.write("src/lib.rs", "pub fn launch() {}\n");
-    let source_path = Path::new(project.root()).join("src/lib.rs");
-    let executor = ToolExecutor::new(
-        Some(Path::new(project.root())),
-        Path::new(project.root()),
-        ToolPermissionMode::FullAccess,
-    );
-    let call = ToolCall {
-        id: "call_lsp_1".to_owned(),
-        name: "query_language_server".to_owned(),
-        arguments: json!({
-            "action": "definition",
-            "path": source_path.to_string_lossy(),
-            "line": 1,
-            "character": 8,
-            "limit": 10
-        }),
-    };
-
-    let prepared = executor
-        .prepare_call(&call)
-        .expect("prepare project LSP call");
-    assert_eq!(
-        prepared.root,
-        Path::new(project.root())
-            .canonicalize()
-            .expect("canonical project")
-    );
-    assert_eq!(Path::new(&prepared.relative_path), Path::new("src/lib.rs"));
-}
-
-#[test]
-fn language_server_queries_reject_files_outside_the_attached_project() {
-    use super::{ToolExecutor, ToolPermissionMode};
-    use crate::provider_schema::ToolCall;
-
-    let project = TestDirectory::new();
-    let outside = TestDirectory::new();
-    outside.write("outside.rs", "pub fn launch() {}\n");
-    let executor = ToolExecutor::new(
-        Some(Path::new(project.root())),
-        Path::new(project.root()),
-        ToolPermissionMode::FullAccess,
-    );
-    let call = ToolCall {
-        id: "call_lsp_2".to_owned(),
-        name: "query_language_server".to_owned(),
-        arguments: json!({
-            "action": "diagnostics",
-            "path": Path::new(outside.root()).join("outside.rs").to_string_lossy(),
-            "limit": 10
-        }),
-    };
-
-    assert!(executor.prepare_call(&call).is_err());
-}
-
-#[test]
 fn edit_file_rejects_oversized_files_without_changing_them() {
     let directory = TestDirectory::new();
     let path = directory.0.join("oversized.txt");

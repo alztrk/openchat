@@ -1392,6 +1392,7 @@ pub(crate) fn search_current_hits(
 }
 
 /// Looks up a bounded page of symbols by case-insensitive name prefix.
+#[allow(dead_code)]
 pub(crate) fn search_symbols(
     connection: &StorageConnection<'_>,
     project_id: &str,

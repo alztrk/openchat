@@ -137,8 +137,6 @@ pub(crate) fn is_permission_rule_tool(name: &str) -> bool {
         name,
         "list_files"
             | "search_files"
-            | "search_project_code"
-            | "query_language_server"
             | "read_file"
             | "write_file"
             | "edit_file"

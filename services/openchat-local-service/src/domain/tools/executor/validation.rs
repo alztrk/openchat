@@ -24,17 +24,6 @@ pub(crate) enum ToolOperation {
         offset: usize,
         limit: usize,
     },
-    CodeSearch {
-        query: String,
-        mode: String,
-        limit: usize,
-    },
-    LspQuery {
-        action: String,
-        line: Option<usize>,
-        character: Option<usize>,
-        limit: usize,
-    },
     Read {
         start_line: usize,
         line_count: usize,
@@ -106,18 +95,13 @@ impl ToolOperation {
                 | Self::CancelSubagent { .. }
                 | Self::List { .. }
                 | Self::Search { .. }
-                | Self::CodeSearch { .. }
-                | Self::LspQuery { .. }
                 | Self::Read { .. }
                 | Self::Info
         )
     }
 
     pub(crate) fn targets_directory(&self) -> bool {
-        matches!(
-            self,
-            Self::List { .. } | Self::Search { .. } | Self::CodeSearch { .. }
-        )
+        matches!(self, Self::List { .. } | Self::Search { .. })
     }
 
     pub(crate) fn can_create_file(&self) -> bool {
@@ -151,55 +135,6 @@ impl ToolExecutor {
                 "The tool arguments must be a JSON object.",
             ));
         };
-        if call.name == "search_project_code" {
-            if !only_keys(&call.arguments, &["query", "mode", "limit"]) {
-                return Err(tool_error(
-                    "invalid_tool_input",
-                    "The project code search arguments are invalid.",
-                ));
-            }
-            let Some(query) = string_argument(&call.arguments, "query")
-                .map(str::trim)
-                .filter(|query| !query.is_empty() && query.len() <= 128)
-            else {
-                return Err(tool_error(
-                    "invalid_tool_input",
-                    "A project code search query of at most 128 characters is required.",
-                ));
-            };
-            let mode = string_argument(&call.arguments, "mode").unwrap_or("all");
-            if !matches!(mode, "all" | "text" | "symbol" | "memory") {
-                return Err(tool_error(
-                    "invalid_tool_input",
-                    "The project code search mode is invalid.",
-                ));
-            }
-            let limit = usize_argument(&call.arguments, "limit").unwrap_or(12);
-            if !(1..=50).contains(&limit) {
-                return Err(tool_error(
-                    "invalid_tool_input",
-                    "The project code search limit must be between 1 and 50.",
-                ));
-            }
-            let Some(root) = self.project_root.clone() else {
-                return Err(tool_error(
-                    "project_required",
-                    "Project code search requires an attached project.",
-                ));
-            };
-            return Ok(PreparedToolCall {
-                root: root.clone(),
-                relative_path: String::new(),
-                requested_path: root.to_string_lossy().into_owned(),
-                target_path: root,
-                scope: ToolPathScope::Project,
-                operation: ToolOperation::CodeSearch {
-                    query: query.to_owned(),
-                    mode: mode.to_owned(),
-                    limit,
-                },
-            });
-        }
         #[cfg(windows)]
         if let Some(tool) = super::super::project_tools::find(&self.project_tools, &call.name) {
             tool.validate_arguments(&call.arguments)
@@ -671,52 +606,6 @@ impl ToolExecutor {
                 }
             }
             "get_file_info" => ToolOperation::Info,
-            "query_language_server" => {
-                if !only_keys(
-                    &call.arguments,
-                    &["action", "path", "line", "character", "limit"],
-                ) {
-                    return Err(tool_error(
-                        "invalid_tool_input",
-                        "The language server query arguments are invalid.",
-                    ));
-                }
-                let Some(action) = string_argument(&call.arguments, "action").filter(|value| {
-                    matches!(
-                        *value,
-                        "definition" | "references" | "hover" | "diagnostics"
-                    )
-                }) else {
-                    return Err(tool_error(
-                        "invalid_tool_input",
-                        "Choose a supported language server query action.",
-                    ));
-                };
-                let line = usize_argument(&call.arguments, "line");
-                let character = usize_argument(&call.arguments, "character");
-                if matches!(action, "definition" | "references" | "hover")
-                    && (!line.is_some_and(|value| (1..=1_000_000).contains(&value))
-                        || !character.is_some_and(|value| (1..=100_000).contains(&value)))
-                {
-                    return Err(tool_error(
-                        "invalid_tool_input",
-                        "Definition, reference, and hover queries require positive line and character positions.",
-                    ));
-                }
-                let limit = usize_argument(&call.arguments, "limit").unwrap_or(10);
-                if !(1..=25).contains(&limit) {
-                    return Err(tool_error(
-                        "invalid_tool_input",
-                        "The language server result limit must be between 1 and 25.",
-                    ));
-                }
-                ToolOperation::LspQuery {
-                    action: action.to_owned(),
-                    line,
-                    character,
-                    limit,
-                }
-            }
             _ => {
                 return Err(tool_error(
                     "invalid_tool_input",
@@ -744,37 +633,6 @@ impl ToolExecutor {
             operation.targets_directory(),
             operation.can_create_file(),
         )?;
-        if matches!(&operation, ToolOperation::LspQuery { .. }) {
-            let project_root = self
-                .project_roots
-                .iter()
-                .filter_map(|project_root| crate::tools::canonical_root(project_root).ok())
-                .find(|project_root| target_path.starts_with(project_root))
-                .ok_or_else(|| {
-                    tool_error(
-                        "permission_scope_denied",
-                        "Language server queries are limited to files inside the active project.",
-                    )
-                })?;
-            let relative = target_path
-                .strip_prefix(&project_root)
-                .map_err(|_| {
-                    tool_error(
-                        "permission_scope_denied",
-                        "Language server queries are limited to files inside the active project.",
-                    )
-                })?
-                .to_string_lossy()
-                .into_owned();
-            return Ok(PreparedToolCall {
-                root: project_root,
-                relative_path: relative,
-                requested_path: path.to_owned(),
-                target_path,
-                scope: ToolPathScope::Project,
-                operation,
-            });
-        }
         Ok(PreparedToolCall {
             root,
             relative_path: relative,

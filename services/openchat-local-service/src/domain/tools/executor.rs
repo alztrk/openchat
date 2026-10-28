@@ -1445,7 +1445,11 @@ impl ToolExecutor {
                                         .map(crate::chatgpt::subagents::OwnedImageGenerationContext::from_borrowed);
                                         let child_executor = self.child_executor(
                                             model.supports_tools,
-                                            child_image_generation.is_some(),
+                                            child_image_generation.is_some()
+                                                || crate::tools::model_supports_image_generation(
+                                                    &model.provider_id,
+                                                    &model.model_id,
+                                                ),
                                         );
                                         crate::chatgpt::subagents::start_child_analysis(
                                         crate::chatgpt::subagents::ChildRunTask {
@@ -1511,33 +1515,6 @@ impl ToolExecutor {
                         &self.project_roots,
                         self.permission_mode == ToolPermissionMode::FullAccess,
                     )
-                    .await
-                }
-                ToolOperation::CodeSearch { query, mode, limit } => execute_project_code_search(
-                    storage,
-                    &snapshot.conversation_id,
-                    &prepared,
-                    &self.project_roots,
-                    query,
-                    mode,
-                    *limit,
-                ),
-                ToolOperation::LspQuery {
-                    action,
-                    line,
-                    character,
-                    limit,
-                } => {
-                    crate::tools::lsp::execute_lsp_query(crate::tools::lsp::LspQueryRequest {
-                        cache_root: &self.data_root,
-                        root: &prepared.root,
-                        relative_path: &prepared.relative_path,
-                        action,
-                        line: *line,
-                        character: *character,
-                        limit: *limit,
-                        cancellation,
-                    })
                     .await
                 }
                 #[cfg(windows)]
@@ -2847,177 +2824,6 @@ fn image_storage_cleanup_error() -> ServiceError {
 
 fn is_image_cancellation(error: &ServiceError) -> bool {
     matches!(error.code, "operation_cancelled" | "request_cancelled")
-}
-
-fn execute_project_code_search(
-    storage: &AppStorage,
-    conversation_id: &str,
-    prepared: &PreparedToolCall,
-    project_roots: &[PathBuf],
-    query: &str,
-    mode: &str,
-    limit: usize,
-) -> Value {
-    let result = (|| -> Result<Value, ServiceError> {
-        let connection = storage.connect().map_err(|error| {
-            ServiceError::new(
-                "project_index_unavailable",
-                "The local project index could not be accessed.",
-                true,
-            )
-            .with_details(error.to_string())
-        })?;
-        let project_id = connection
-            .query_row(
-                "SELECT project_id FROM conversations WHERE id = ?1",
-                [conversation_id],
-                |row| row.get::<_, Option<String>>(0),
-            )
-            .optional()
-            .map_err(|error| {
-                ServiceError::new(
-                    "project_index_unavailable",
-                    "The local project index could not be accessed.",
-                    true,
-                )
-                .with_details(error.to_string())
-            })?
-            .flatten()
-            .ok_or_else(|| {
-                ServiceError::new(
-                    "project_required",
-                    "Project code search requires an attached project.",
-                    false,
-                )
-            })?;
-        let memory = if mode == "all" || mode == "memory" {
-            crate::project_memory::search(&connection, &project_id, query, limit)?
-                .into_iter()
-                .map(|hit| json!({"id": hit.id, "origin": hit.origin, "content": hit.content}))
-                .collect::<Vec<_>>()
-        } else {
-            Vec::new()
-        };
-        let needs_code_index = mode != "memory";
-        let state = if needs_code_index {
-            Some(crate::project_index::snapshot(&connection, &project_id)?)
-        } else {
-            None
-        };
-        if let Some(state) = state.as_ref()
-            && !state.enabled
-        {
-            return Ok(json!({
-                "status": "index_disabled",
-                "matches": [],
-                "symbols": [],
-                "memory": memory
-            }));
-        }
-        if let Some(state) = state.as_ref()
-            && state.status != "current"
-        {
-            let roots = if project_roots.is_empty() {
-                vec![prepared.root.clone()]
-            } else {
-                project_roots.to_vec()
-            };
-            let index_scheduled = crate::project_index::schedule_sync_roots_on_connection(
-                &connection,
-                storage.database_queue_handle(),
-                &project_id,
-                &roots,
-            )
-            .is_ok();
-            return Ok(json!({
-                "status": if index_scheduled { "indexing" } else { "stale" },
-                "indexScheduled": index_scheduled,
-                "indexedFiles": state.indexed_files,
-                "indexedSymbols": state.indexed_symbols,
-                "memory": memory
-            }));
-        }
-
-        let mut rule_targets = Vec::new();
-        let matches = if mode == "all" || mode == "text" {
-            crate::project_index::search_current_hits(&connection, &project_id, query)?
-                .into_iter()
-                .take(limit)
-                .map(|hit| {
-                    rule_targets.push(PathBuf::from(&hit.path));
-                    json!({"path": hit.path, "excerpt": hit.excerpt})
-                })
-                .collect::<Vec<_>>()
-        } else {
-            Vec::new()
-        };
-        let symbols = if mode == "all" || mode == "symbol" {
-            crate::project_index::search_symbols(&connection, &project_id, query, limit)?
-                .into_iter()
-                .map(|hit| {
-                    rule_targets.push(PathBuf::from(&hit.path));
-                    json!({
-                        "path": hit.path,
-                        "name": hit.name,
-                        "kind": hit.kind,
-                        "startLine": hit.start_line,
-                        "endLine": hit.end_line,
-                        "signature": hit.signature,
-                        "container": hit.container,
-                        "relationships": hit.relationships,
-                    })
-                })
-                .collect::<Vec<_>>()
-        } else {
-            Vec::new()
-        };
-        let current_state = crate::project_index::snapshot(&connection, &project_id)?;
-        if current_state.status != "current" {
-            let roots = if project_roots.is_empty() {
-                vec![prepared.root.clone()]
-            } else {
-                project_roots.to_vec()
-            };
-            let index_scheduled = crate::project_index::schedule_sync_roots_on_connection(
-                &connection,
-                storage.database_queue_handle(),
-                &project_id,
-                &roots,
-            )
-            .is_ok();
-            return Ok(json!({
-                "status": if index_scheduled { "indexing" } else { "stale" },
-                "indexScheduled": index_scheduled,
-                "indexedFiles": current_state.indexed_files,
-                "indexedSymbols": current_state.indexed_symbols,
-                "memory": memory
-            }));
-        }
-        let roots = if project_roots.is_empty() {
-            vec![prepared.root.clone()]
-        } else {
-            project_roots.to_vec()
-        };
-        let project_rules =
-            crate::domain::project_rules::matching_rules_for_targets(&roots, &rule_targets)?;
-        let mut output = json!({
-            "status": if needs_code_index { "current" } else { "memory_only" },
-            "matches": matches,
-            "symbols": symbols,
-            "memory": memory
-        });
-        if !project_rules.is_empty() {
-            output["projectRules"] = json!(project_rules);
-        }
-        Ok(output)
-    })();
-    result.unwrap_or_else(|error| {
-        let mut output = tool_error(error.code, &error.message);
-        if let Some(details) = error.details {
-            output["error"]["details"] = json!(details);
-        }
-        output
-    })
 }
 
 fn tool_error(code: &str, message: &str) -> Value {

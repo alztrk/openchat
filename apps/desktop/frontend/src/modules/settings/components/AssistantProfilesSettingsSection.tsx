@@ -20,8 +20,6 @@ type McpToolsState = 'idle' | 'loading' | 'ready' | 'error';
 const builtInToolNames = [
   'list_files',
   'search_files',
-  'search_project_code',
-  'query_language_server',
   'read_file',
   'write_file',
   'edit_file',
@@ -388,8 +386,6 @@ export function AssistantProfilesSettingsSection({ showReadyAgents = false }: { 
                         />
                         <span>
                           {toolName === 'run_project_task' ? t('assistantProfileProjectTasks') : null}
-                          {toolName === 'search_project_code' ? t('toolSearchProjectCode') : null}
-                          {toolName === 'query_language_server' ? t('toolQueryLanguageServer') : null}
                           {toolName === 'run_project_task' ? (
                             <code className="ml-1 break-all text-xs">{toolName}</code>
                           ) : (
