@@ -721,13 +721,13 @@ Hosted sharing remains out of scope under the current product decision.
 
 **Exit criteria:** hooks execute deterministically without consuming LLM inference; post-edit formatters maintain project style; and syntax/type regressions trigger instant self-correction turns.
 
-### 28. Add Tree-sitter codebase mapping and glob-scoped rules
+### 28. Retire Tree-sitter code mapping and keep glob-scoped rules
 
 **Status: retired on 2026-10-28 at Alican's direction.** The project code index, Tree-sitter symbol extraction, project index settings panel, and `project.index.*` RPC methods have been removed. Backend migration 57 drops active project-index tables; old `project.index.*` calls now return `method_not_found`. Project-scoped glob rules remain implemented as a separate feature. The former implementation's benchmark and validation records are historical and do not describe current capabilities.
 
 - Glob-scoped `.openchat/rules/**/*.mdc` rules load only when a matching project path is searched, read, written, or edited. Rule parsing, redaction, symlink containment, and file/context limits are enforced locally.
 
-**Exit criteria:** repository maps accurately reflect code structure within a bounded token budget; path-specific rules activate only for relevant target files; and rule parsing remains fast and local.
+**Exit criteria:** project code maps and symbol search are unavailable; glob-scoped rules activate only for matching project paths and remain bounded and local.
 
 ### 29. Broaden cross-platform kernel-level sandboxing and network policy
 
