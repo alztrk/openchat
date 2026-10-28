@@ -47,7 +47,9 @@ url = "2"
 uuid = { version = "1", features = ["v4"] }
 webbrowser = "1.2.4"
 htmd = "0.5.5"
-fastembed = { version = "7.1.0", default-features = false, features = ["ort-download-binaries-rustls-tls"] }
+candle-core = "0.11.0"
+candle-nn = "0.11.0"
+candle-transformers = "0.11.0"
 tokenizers = { version = "0.23.2", default-features = false, features = ["fancy-regex"] }
 zip = { version = "9.0.4", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 flate2 = { version = "1", default-features = false, features = ["zlib-rs"] }
@@ -63,7 +65,6 @@ process-wrap = { version = "=10.0.1", default-features = false, features = ["kil
 [target.'cfg(windows)'.dependencies]
 keyring = { version = "=3.6.3", default-features = false, features = ["windows-native"] }
 rmcp = { version = "=3.0.1", default-features = false, features = ["client", "transport-async-rw", "transport-streamable-http-client-reqwest"] }
-ort = { version = "=2.0.0-rc.13", default-features = false, features = ["copy-dylibs"] }
 windows-sys = { version = "=0.61.2", features = [
     "Win32_Foundation",
     "Win32_Security",

@@ -8,10 +8,6 @@
 #[cfg(all(feature = "desktop-profile-test-support", not(debug_assertions)))]
 compile_error!("desktop profile test support is unavailable in optimized builds");
 
-// This direct dependency enables ORT's copy-dylibs feature for fastembed on Windows.
-#[cfg(windows)]
-use ort as _;
-
 mod domain;
 pub(crate) use domain::{
     attachments, chat_operation, chatgpt, chatgpt_store, connector_packages, connectors,

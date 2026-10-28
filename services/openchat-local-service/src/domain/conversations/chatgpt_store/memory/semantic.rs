@@ -14,9 +14,9 @@ use std::{
     time::Duration,
 };
 
-use fastembed::{
-    InitOptionsUserDefined, Pooling, TextEmbedding, TokenizerFiles, UserDefinedEmbeddingModel,
-};
+use candle_core::{DType, Device, Tensor};
+use candle_nn::VarBuilder;
+use candle_transformers::models::bert::{BertModel, Config as BertConfig};
 use futures_util::StreamExt;
 use reqwest::{
     StatusCode,
@@ -33,9 +33,9 @@ use tokio::{
 use super::{ArchivedMemoryExcerpt, index, search, vector_math};
 use crate::storage::{DatabaseQueueHandle, StorageConnection, StorageRow, StorageTransaction};
 
-const MODEL_ID: &str = "multilingual-e5-small-761b726d";
-const MODEL_REPOSITORY: &str = "Xenova/multilingual-e5-small";
-const MODEL_REVISION: &str = "761b726dd34fb83930e26aab4e9ac3899aa1fa78";
+const MODEL_ID: &str = "multilingual-e5-small-614241f6";
+const MODEL_REPOSITORY: &str = "intfloat/multilingual-e5-small";
+const MODEL_REVISION: &str = "614241f622f53c4eeff9890bdc4f31cfecc418b3";
 const MODEL_DOWNLOAD_BASE_URL: &str = "https://huggingface.co";
 const DOWNLOAD_IDLE_TIMEOUT: Duration = Duration::from_secs(60);
 const RUNTIME_IDLE_TIMEOUT: Duration = Duration::from_secs(120);
@@ -49,10 +49,10 @@ const INDEX_KEY_ID_BITS: u32 = 40;
 const INDEX_KEY_ID_MASK: u64 = (1_u64 << INDEX_KEY_ID_BITS) - 1;
 const MODEL_FILES: [ModelFile; 5] = [
     ModelFile {
-        path: "onnx/model_quantized.onnx",
-        local_name: "model_quantized.onnx",
-        size: 118_308_185,
-        sha256: "f80102d3f2a1229f387d3c81909990d8945513e347b0eab049f7de3c6f98c193",
+        path: "model.safetensors",
+        local_name: "model.safetensors",
+        size: 470_641_600,
+        sha256: "1a55775f53449dac10a2bcbc312469fac40b96d53198c407081a831f81c98477",
     },
     ModelFile {
         path: "tokenizer.json",
@@ -63,8 +63,8 @@ const MODEL_FILES: [ModelFile; 5] = [
     ModelFile {
         path: "config.json",
         local_name: "config.json",
-        size: 658,
-        sha256: "cb99455288675345e1a4f411438d5d0adbba5fbd3a67ea4fb03c015433b996c1",
+        size: 655,
+        sha256: "69137736cab8b8903a07fe8afaafdda25aac55415a12a55d1bffa9f581abf959",
     },
     ModelFile {
         path: "special_tokens_map.json",
@@ -688,9 +688,99 @@ impl VectorIndex {
     }
 }
 
+struct SemanticModel {
+    model: BertModel,
+    tokenizer: tokenizers::Tokenizer,
+}
+
+impl SemanticModel {
+    fn embed<S: AsRef<str>>(
+        &self,
+        texts: &[S],
+        batch_size: Option<usize>,
+    ) -> Result<Vec<Vec<f32>>, SemanticMemoryError> {
+        if texts.is_empty() {
+            return Ok(Vec::new());
+        }
+        let batch_size = batch_size.unwrap_or(32).max(1);
+        let mut all_embeddings = Vec::with_capacity(texts.len());
+
+        for chunk in texts.chunks(batch_size) {
+            let chunk_strs: Vec<&str> = chunk.iter().map(|s| s.as_ref()).collect();
+            let encodings = self
+                .tokenizer
+                .encode_batch(chunk_strs, true)
+                .map_err(|e| SemanticMemoryError::Model(e.to_string()))?;
+
+            let mut all_ids = Vec::with_capacity(encodings.len());
+            let mut all_masks = Vec::with_capacity(encodings.len());
+            for encoding in encodings {
+                all_ids.push(encoding.get_ids().to_vec());
+                all_masks.push(encoding.get_attention_mask().to_vec());
+            }
+
+            let input_ids = Tensor::new(all_ids, &Device::Cpu)
+                .map_err(|e| SemanticMemoryError::Model(e.to_string()))?;
+            let attention_mask = Tensor::new(all_masks, &Device::Cpu)
+                .map_err(|e| SemanticMemoryError::Model(e.to_string()))?;
+            let token_type_ids = input_ids
+                .zeros_like()
+                .map_err(|e| SemanticMemoryError::Model(e.to_string()))?;
+
+            let embeddings = self
+                .model
+                .forward(&input_ids, &token_type_ids, Some(&attention_mask))
+                .map_err(|e| SemanticMemoryError::Model(e.to_string()))?;
+
+            // Mean pooling: sum(embeddings * mask) / sum(mask)
+            let mask = attention_mask
+                .unsqueeze(2)
+                .map_err(|e| SemanticMemoryError::Model(e.to_string()))?
+                .to_dtype(DType::F32)
+                .map_err(|e| SemanticMemoryError::Model(e.to_string()))?
+                .broadcast_as(embeddings.shape())
+                .map_err(|e| SemanticMemoryError::Model(e.to_string()))?;
+
+            let masked_embeddings = embeddings
+                .broadcast_mul(&mask)
+                .map_err(|e| SemanticMemoryError::Model(e.to_string()))?;
+            let sum = masked_embeddings
+                .sum(1)
+                .map_err(|e| SemanticMemoryError::Model(e.to_string()))?;
+            let mask_sum = mask
+                .sum(1)
+                .map_err(|e| SemanticMemoryError::Model(e.to_string()))?
+                .clamp(1e-9, f64::INFINITY)
+                .map_err(|e| SemanticMemoryError::Model(e.to_string()))?;
+            let pooled = sum
+                .broadcast_div(&mask_sum)
+                .map_err(|e| SemanticMemoryError::Model(e.to_string()))?;
+
+            // L2 normalize
+            let norm = pooled
+                .sqr()
+                .map_err(|e| SemanticMemoryError::Model(e.to_string()))?
+                .sum_keepdim(1)
+                .map_err(|e| SemanticMemoryError::Model(e.to_string()))?
+                .sqrt()
+                .map_err(|e| SemanticMemoryError::Model(e.to_string()))?;
+            let normalized = pooled
+                .broadcast_div(&norm)
+                .map_err(|e| SemanticMemoryError::Model(e.to_string()))?;
+
+            let batch_vectors = normalized
+                .to_vec2::<f32>()
+                .map_err(|e| SemanticMemoryError::Model(e.to_string()))?;
+            all_embeddings.extend(batch_vectors);
+        }
+
+        Ok(all_embeddings)
+    }
+}
+
 #[derive(Default)]
 struct SemanticRuntime {
-    model: Option<TextEmbedding>,
+    model: Option<SemanticModel>,
     index: Option<VectorIndex>,
     model_directory: Option<PathBuf>,
     index_generation: Option<i64>,
@@ -745,12 +835,11 @@ impl SemanticRuntime {
 
         let model = self
             .model
-            .as_mut()
+            .as_ref()
             .ok_or_else(|| SemanticMemoryError::Model("model is not loaded".to_owned()))?;
         let query_text = format!("query: {query}");
         let query_embedding = model
-            .embed([query_text.as_str()], Some(1))
-            .map_err(|error| SemanticMemoryError::Model(error.to_string()))?
+            .embed(&[query_text.as_str()], Some(1))?
             .into_iter()
             .next()
             .ok_or_else(|| SemanticMemoryError::Model("query embedding is empty".to_owned()))?;
@@ -1022,7 +1111,7 @@ impl SemanticRuntime {
 
             let model = self
                 .model
-                .as_mut()
+                .as_ref()
                 .ok_or_else(|| SemanticMemoryError::Model("model is not loaded".to_owned()))?;
             let chunks = chunk_text(&model.tokenizer, &source_content)?;
             let chunk_texts = chunks
@@ -1032,9 +1121,7 @@ impl SemanticRuntime {
             let embeddings = if chunk_texts.is_empty() {
                 Vec::new()
             } else {
-                model
-                    .embed(&chunk_texts, Some(32))
-                    .map_err(|error| SemanticMemoryError::Model(error.to_string()))?
+                model.embed(&chunk_texts, Some(32))?
             };
             if embeddings.len() != chunks.len() {
                 return Err(SemanticMemoryError::Model(
@@ -1173,27 +1260,42 @@ struct TextChunk {
     content: String,
 }
 
-fn load_model(directory: &Path) -> Result<TextEmbedding, SemanticMemoryError> {
-    let read = |name: &str| {
-        fs::read(directory.join(name)).map_err(|error| SemanticMemoryError::Io(error.to_string()))
+fn load_model(directory: &Path) -> Result<SemanticModel, SemanticMemoryError> {
+    let config_path = directory.join("config.json");
+    let config_content = fs::read_to_string(&config_path)
+        .map_err(|error| SemanticMemoryError::Io(error.to_string()))?;
+    let config: BertConfig = serde_json::from_str(&config_content)
+        .map_err(|error| SemanticMemoryError::Model(error.to_string()))?;
+
+    let tokenizer_path = directory.join("tokenizer.json");
+    let mut tokenizer = tokenizers::Tokenizer::from_file(&tokenizer_path)
+        .map_err(|error| SemanticMemoryError::Model(error.to_string()))?;
+    if let Some(pp) = tokenizer.get_padding_mut() {
+        pp.strategy = tokenizers::PaddingStrategy::BatchLongest;
+    } else {
+        let params = tokenizers::PaddingParams {
+            strategy: tokenizers::PaddingStrategy::BatchLongest,
+            ..Default::default()
+        };
+        tokenizer.with_padding(Some(params));
+    }
+    let truncation = tokenizers::TruncationParams {
+        max_length: MODEL_MAX_LENGTH,
+        ..Default::default()
     };
-    let model = UserDefinedEmbeddingModel::new(
-        read("model_quantized.onnx")?,
-        TokenizerFiles {
-            tokenizer_file: read("tokenizer.json")?,
-            config_file: read("config.json")?,
-            special_tokens_map_file: read("special_tokens_map.json")?,
-            tokenizer_config_file: read("tokenizer_config.json")?,
-        },
-    )
-    .with_pooling(Pooling::Mean);
-    TextEmbedding::try_new_from_user_defined(
-        model,
-        InitOptionsUserDefined::default()
-            .with_max_length(MODEL_MAX_LENGTH)
-            .with_intra_threads(2),
-    )
-    .map_err(|error| SemanticMemoryError::Model(error.to_string()))
+    let _ = tokenizer.with_truncation(Some(truncation));
+
+    let weights_path = directory.join("model.safetensors");
+    // SAFETY: The model safetensors file has been verified by its SHA-256 hash
+    // and is pinned read-only inside the cache directory without concurrent writers.
+    let vb = unsafe {
+        VarBuilder::from_mmaped_safetensors(&[&weights_path], DType::F32, &Device::Cpu)
+            .map_err(|error| SemanticMemoryError::Model(error.to_string()))?
+    };
+    let model = BertModel::load(vb, &config)
+        .map_err(|error| SemanticMemoryError::Model(error.to_string()))?;
+
+    Ok(SemanticModel { model, tokenizer })
 }
 
 fn new_index() -> Result<VectorIndex, SemanticMemoryError> {
