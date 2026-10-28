@@ -295,7 +295,7 @@ function check(args) {
 
   runCommand('cargo', ['fmt', '--all', '--', '--check'], { cwd: workspaceRoot });
   runCommand('cargo', ['check', '--workspace'], { cwd: workspaceRoot });
-  runCommand('cargo', ['test', '--workspace', '--', '--test-threads=1'], {
+  runCommand('cargo', ['test', '--workspace', '--features', 'openchat-local-service/desktop-profile-test-support', '--', '--test-threads=1'], {
     cwd: workspaceRoot,
   });
 }
