@@ -12,6 +12,7 @@ export type ConnectorTransport = 'stdio' | 'streamableHttp';
 export interface ConnectorExecutablePackage {
   url: string;
   sha256: string;
+  authenticodeSignerSha256?: string;
   sizeBytes: number;
 }
 
@@ -79,7 +80,7 @@ export function readConnectorCatalog(): ConnectorCatalogEntry[] {
       throw new ConnectorCatalogError('invalid');
     }
 
-    const entries = value.map(parseConnectorEntry);
+    const entries = value.map((entry) => parseConnectorEntry(entry));
     validateConnectorCatalog(entries);
     return entries;
   } catch (error) {
@@ -184,16 +185,19 @@ export async function fetchSignedConnectorCatalog(source: ConnectorCatalogSource
   const sourceUrl = requiredHttpsUrl(response.sourceUrl);
   const entries = response.entries.map((value) => {
     if (isRecord(value) && value.package !== undefined) {
-      return parseConnectorEntry({
-        ...value,
-        catalogTrust: {
-          sourceUrl: source.url,
-          publicKeyBase64: source.publicKeyBase64,
-          keyFingerprint: response.keyFingerprint,
+      return parseConnectorEntry(
+        {
+          ...value,
+          catalogTrust: {
+            sourceUrl: source.url,
+            publicKeyBase64: source.publicKeyBase64,
+            keyFingerprint: response.keyFingerprint,
+          },
         },
-      });
+        true,
+      );
     }
-    return parseConnectorEntry(value);
+    return parseConnectorEntry(value, true);
   });
   const ids = new Set<string>();
   const names = new Set<string>();
@@ -214,7 +218,7 @@ export async function fetchSignedConnectorCatalog(source: ConnectorCatalogSource
   };
 }
 
-export function parseConnectorEntry(value: unknown): ConnectorCatalogEntry {
+export function parseConnectorEntry(value: unknown, requirePackageSigner = false): ConnectorCatalogEntry {
   if (!isRecord(value)) throw new ConnectorCatalogError('invalid');
 
   const entry: ConnectorCatalogEntry = {
@@ -235,7 +239,9 @@ export function parseConnectorEntry(value: unknown): ConnectorCatalogEntry {
     value.endpoint === undefined || value.endpoint === null ? undefined : requiredHttpsUrl(value.endpoint);
   const authEnvironmentVariable = optionalString(value.authEnvironmentVariable, 128);
   const packageMetadata =
-    value.package === undefined || value.package === null ? undefined : parseExecutablePackage(value.package);
+    value.package === undefined || value.package === null
+      ? undefined
+      : parseExecutablePackage(value.package, requirePackageSigner);
   const catalogTrust =
     value.catalogTrust === undefined || value.catalogTrust === null ? undefined : parseCatalogTrust(value.catalogTrust);
   let manifest: ConnectorManifest | undefined;
@@ -298,15 +304,23 @@ export function parseConnectorEntry(value: unknown): ConnectorCatalogEntry {
   return entry;
 }
 
-function parseExecutablePackage(value: unknown): ConnectorExecutablePackage {
+function parseExecutablePackage(value: unknown, requireSigner: boolean): ConnectorExecutablePackage {
   if (!isRecord(value)) throw new ConnectorCatalogError('invalid');
+  const authenticodeSignerSha256 =
+    value.authenticodeSignerSha256 === undefined ? undefined : requiredString(value.authenticodeSignerSha256, 64);
+  if (requireSigner && authenticodeSignerSha256 === undefined) {
+    throw new ConnectorCatalogError('invalid');
+  }
   const packageMetadata: ConnectorExecutablePackage = {
     url: requiredHttpsUrl(value.url),
     sha256: requiredString(value.sha256, 64),
+    ...(authenticodeSignerSha256 === undefined ? {} : { authenticodeSignerSha256 }),
     sizeBytes: typeof value.sizeBytes === 'number' ? value.sizeBytes : Number.NaN,
   };
   if (
     !/^[a-f0-9]{64}$/.test(packageMetadata.sha256) ||
+    (packageMetadata.authenticodeSignerSha256 !== undefined &&
+      !/^[a-f0-9]{64}$/.test(packageMetadata.authenticodeSignerSha256)) ||
     !Number.isSafeInteger(packageMetadata.sizeBytes) ||
     packageMetadata.sizeBytes < 1 ||
     packageMetadata.sizeBytes > 128 * 1024 * 1024

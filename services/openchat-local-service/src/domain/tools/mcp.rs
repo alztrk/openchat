@@ -1147,10 +1147,14 @@ impl StdioTransport {
         environment: &[(String, zeroize::Zeroizing<String>)],
         full_access: bool,
     ) -> Result<Self, String> {
-        if let Some(reference) = &config.package {
-            crate::connector_packages::verify_installed_package(&config.program, reference)
-                .map_err(|_| "The installed MCP package failed its integrity check.".to_owned())?;
-        }
+        let verified_package_file = config
+            .package
+            .as_ref()
+            .map(|reference| {
+                crate::connector_packages::open_verified_package(&config.program, reference)
+            })
+            .transpose()
+            .map_err(|_| "The installed MCP package failed its integrity check.".to_owned())?;
         let package_read_paths = config.package_directory.iter().cloned().collect::<Vec<_>>();
         let options = SandboxOptions {
             additional_read_only_paths: &package_read_paths,
@@ -1179,6 +1183,7 @@ impl StdioTransport {
             )
         }
         .map_err(|error| format!("The MCP server could not start: {error}"))?;
+        drop(verified_package_file);
         let stdin = process
             .take_stdin()
             .ok_or_else(|| "The MCP server stdin pipe is unavailable.".to_owned())?;

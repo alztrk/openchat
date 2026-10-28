@@ -157,6 +157,10 @@ export function ConnectorCatalogSettingsSection() {
   const installEntry = async (entry: ConnectorCatalogEntry) => {
     const projectId = activeProjectId;
     if (serviceStatus !== 'ready' || projectId === null || installingId !== null) return;
+    if (entry.package !== undefined && entry.package.authenticodeSignerSha256 === undefined) {
+      setInstallErrorKey('connectorCatalogInstallFailed');
+      return;
+    }
 
     setInstallingId(entry.id);
     setInstallFeedback(null);
@@ -350,7 +354,12 @@ export function ConnectorCatalogSettingsSection() {
             <div className="grid gap-3">
               {visibleEntries.map((entry) => (
                 <ConnectorEntryCard
-                  canInstall={serviceStatus === 'ready' && activeProjectId !== null && installingId === null}
+                  canInstall={
+                    serviceStatus === 'ready' &&
+                    activeProjectId !== null &&
+                    installingId === null &&
+                    (entry.package === undefined || entry.package.authenticodeSignerSha256 !== undefined)
+                  }
                   entry={entry}
                   hasProject={activeProjectId !== null}
                   installing={installingId === entry.id}
@@ -456,6 +465,15 @@ function ConnectorEntryCard({
   installing: boolean;
   t: TFunction;
 }) {
+  const missingSignerFingerprint = entry.package !== undefined && entry.package.authenticodeSignerSha256 === undefined;
+  const signerNoticeId = `connector-catalog-signer-unavailable-${entry.id}`;
+  const describedBy = [
+    hasProject ? null : 'connector-catalog-no-project',
+    missingSignerFingerprint ? signerNoticeId : null,
+  ]
+    .filter((value): value is string => value !== null)
+    .join(' ');
+
   return (
     <Card className="grid gap-4 sm:p-5" padding="default">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -490,9 +508,14 @@ function ConnectorEntryCard({
         <ConnectorDetail label={t('connectorCatalogRequestedAccess')} value={entry.requestedAccess} />
         <ConnectorDetail label={t('connectorCatalogDataDisclosure')} value={entry.dataDisclosure} />
       </dl>
+      {missingSignerFingerprint ? (
+        <p className="text-sm text-secondary-text" id={signerNoticeId}>
+          {t('connectorPackageSignerUnavailable')}
+        </p>
+      ) : null}
 
       <Button
-        aria-describedby={hasProject ? undefined : 'connector-catalog-no-project'}
+        aria-describedby={describedBy || undefined}
         className="justify-self-start"
         disabled={!canInstall || installing}
         onClick={onInstall}
@@ -570,7 +593,10 @@ function ConnectorInstallDialog({
                 )} KB`}
               />
               <ConnectorDetail label={t('connectorPackageSha256')} value={entry.package.sha256} />
-              <ConnectorDetail label={t('connectorPackageSigner')} value={entry.catalogTrust.keyFingerprint} />
+              {entry.package.authenticodeSignerSha256 !== undefined ? (
+                <ConnectorDetail label={t('connectorPackageSigner')} value={entry.package.authenticodeSignerSha256} />
+              ) : null}
+              <ConnectorDetail label={t('connectorPackageSourceKey')} value={entry.catalogTrust.keyFingerprint} />
             </dl>
             <p className="text-sm text-secondary-text">{t('connectorPackageTrustNotice')}</p>
           </>
@@ -662,6 +688,8 @@ async function installSignedPackage(
   trust: ConnectorCatalogTrust | undefined,
 ): Promise<NonNullable<ProjectMcpServer['package']>> {
   if (trust === undefined) throw new Error('The package has no verified catalog source.');
+  const authenticodeSignerSha256 = packageMetadata.authenticodeSignerSha256;
+  if (authenticodeSignerSha256 === undefined) throw new Error('The package has no signed signer fingerprint.');
   const response = await localServiceClient.call(
     'connector.package.install_signed',
     {
@@ -670,6 +698,10 @@ async function installSignedPackage(
       publicKeyBase64: trust.publicKeyBase64,
       id,
       version,
+      expectedUrl: packageMetadata.url,
+      expectedSha256: packageMetadata.sha256,
+      expectedAuthenticodeSignerSha256: authenticodeSignerSha256,
+      expectedSizeBytes: packageMetadata.sizeBytes,
     },
     180_000,
   );
@@ -677,6 +709,7 @@ async function installSignedPackage(
     !isRecord(response) ||
     response.version !== version ||
     response.sha256 !== packageMetadata.sha256 ||
+    response.authenticodeSignerSha256 !== authenticodeSignerSha256 ||
     response.sizeBytes !== packageMetadata.sizeBytes ||
     response.sourceKeyFingerprint !== trust.keyFingerprint
   ) {
@@ -685,6 +718,7 @@ async function installSignedPackage(
   return {
     version,
     sha256: packageMetadata.sha256,
+    authenticodeSignerSha256,
     sourceKeyFingerprint: trust.keyFingerprint,
     sizeBytes: packageMetadata.sizeBytes,
   };
@@ -699,6 +733,9 @@ function expectedPackageReference(
   return {
     version,
     sha256: packageMetadata.sha256,
+    ...(packageMetadata.authenticodeSignerSha256 === undefined
+      ? {}
+      : { authenticodeSignerSha256: packageMetadata.authenticodeSignerSha256 }),
     sourceKeyFingerprint: trust.keyFingerprint,
     sizeBytes: packageMetadata.sizeBytes,
   };
@@ -723,6 +760,7 @@ function samePackage(
   return (
     first.version === second.version &&
     first.sha256 === second.sha256 &&
+    first.authenticodeSignerSha256 === second.authenticodeSignerSha256 &&
     first.sourceKeyFingerprint === second.sourceKeyFingerprint &&
     first.sizeBytes === second.sizeBytes
   );

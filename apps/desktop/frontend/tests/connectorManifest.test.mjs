@@ -20,6 +20,14 @@ const compiledProjectMcp = ts.transpileModule(projectMcpSource, {
 const { parseProjectMcpServer } = await import(
   `data:text/javascript;base64,${Buffer.from(compiledProjectMcp).toString('base64')}`
 );
+const connectorCatalogSourcePath = path.resolve('src/modules/settings/data/connectorCatalog.ts');
+const connectorCatalogSource = fs.readFileSync(connectorCatalogSourcePath, 'utf8').replace(/^import .*;\r?\n/gm, '');
+const compiledConnectorCatalog = ts.transpileModule(connectorCatalogSource, {
+  compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
+}).outputText;
+const { parseConnectorEntry } = await import(
+  `data:text/javascript;base64,${Buffer.from(compiledConnectorCatalog).toString('base64')}`
+);
 
 const validManifest = {
   version: 1,
@@ -73,6 +81,78 @@ test('project catalogs accept old servers and bounded catalog tool claims', () =
   assert.throws(() => parseProjectMcpServer({ ...server, catalogToolNames: ['search', 'SEARCH'] }));
   assert.throws(() =>
     parseProjectMcpServer({ ...server, catalogToolNames: Array.from({ length: 129 }, (_, index) => `tool_${index}`) }),
+  );
+});
+
+test('project package references preserve legacy cleanup and validate signer pins', () => {
+  const packageServer = {
+    id: 'records',
+    enabled: false,
+    transport: 'stdio',
+    arguments: [],
+    environmentVariables: [],
+    package: {
+      version: '1.0.0',
+      sha256: 'a'.repeat(64),
+      authenticodeSignerSha256: 'b'.repeat(64),
+      sourceKeyFingerprint: 'c'.repeat(64),
+      sizeBytes: 1,
+    },
+  };
+  assert.equal(parseProjectMcpServer(packageServer).package.authenticodeSignerSha256, 'b'.repeat(64));
+
+  const legacyPackage = { ...packageServer.package };
+  delete legacyPackage.authenticodeSignerSha256;
+  assert.equal(
+    parseProjectMcpServer({ ...packageServer, package: legacyPackage }).package.authenticodeSignerSha256,
+    undefined,
+  );
+  assert.throws(() =>
+    parseProjectMcpServer({
+      ...packageServer,
+      package: { ...packageServer.package, authenticodeSignerSha256: 'B'.repeat(64) },
+    }),
+  );
+});
+
+test('saved catalogs preserve legacy package entries and signed entries require a canonical signer pin', () => {
+  const entry = {
+    id: 'records',
+    name: 'Records',
+    publisher: 'Records publisher',
+    version: '1.0.0',
+    sourceUrl: 'https://example.invalid/catalog.json',
+    requestedAccess: 'read project records',
+    dataDisclosure: 'Project records are sent to the configured provider.',
+    transport: 'stdio',
+    arguments: [],
+    environmentVariables: [],
+    package: {
+      url: 'https://example.invalid/connector.exe',
+      sha256: 'a'.repeat(64),
+      authenticodeSignerSha256: 'b'.repeat(64),
+      sizeBytes: 1,
+    },
+    catalogTrust: {
+      sourceUrl: 'https://example.invalid/catalog.json',
+      publicKeyBase64: 'A'.repeat(43),
+      keyFingerprint: 'c'.repeat(64),
+    },
+  };
+
+  assert.equal(parseConnectorEntry(entry, true).package.authenticodeSignerSha256, 'b'.repeat(64));
+  const legacyPackage = { ...entry.package };
+  delete legacyPackage.authenticodeSignerSha256;
+  assert.equal(parseConnectorEntry({ ...entry, package: legacyPackage }).package.authenticodeSignerSha256, undefined);
+  assert.throws(() => parseConnectorEntry({ ...entry, package: legacyPackage }, true));
+  assert.throws(() =>
+    parseConnectorEntry(
+      {
+        ...entry,
+        package: { ...entry.package, authenticodeSignerSha256: 'B'.repeat(64) },
+      },
+      true,
+    ),
   );
 });
 

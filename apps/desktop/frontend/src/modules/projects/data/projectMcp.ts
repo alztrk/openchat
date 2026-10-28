@@ -3,6 +3,7 @@ export type ProjectMcpTransport = 'stdio' | 'streamableHttp';
 export interface ProjectMcpPackage {
   version: string;
   sha256: string;
+  authenticodeSignerSha256?: string;
   sourceKeyFingerprint: string;
   sizeBytes: number;
 }
@@ -135,12 +136,20 @@ function parseProjectMcpPackage(value: unknown): ProjectMcpPackage {
   const packageReference: ProjectMcpPackage = {
     version: typeof value.version === 'string' ? value.version : '',
     sha256: typeof value.sha256 === 'string' ? value.sha256 : '',
+    ...(value.authenticodeSignerSha256 === undefined
+      ? {}
+      : {
+          authenticodeSignerSha256:
+            typeof value.authenticodeSignerSha256 === 'string' ? value.authenticodeSignerSha256 : '',
+        }),
     sourceKeyFingerprint: typeof value.sourceKeyFingerprint === 'string' ? value.sourceKeyFingerprint : '',
     sizeBytes: typeof value.sizeBytes === 'number' ? value.sizeBytes : Number.NaN,
   };
   if (
     !/^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$/.test(packageReference.version) ||
     !/^[a-f0-9]{64}$/.test(packageReference.sha256) ||
+    (packageReference.authenticodeSignerSha256 !== undefined &&
+      !/^[a-f0-9]{64}$/.test(packageReference.authenticodeSignerSha256)) ||
     !/^[a-f0-9]{64}$/.test(packageReference.sourceKeyFingerprint) ||
     !Number.isSafeInteger(packageReference.sizeBytes) ||
     packageReference.sizeBytes < 1 ||

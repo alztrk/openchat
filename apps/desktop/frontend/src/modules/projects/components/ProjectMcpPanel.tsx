@@ -732,7 +732,18 @@ function ProjectMcpServerEditor({ server, permission, onSave, onCancel }: Projec
             value={server?.package ? t('projectMcpManagedPackage', { version: server.package.version }) : program}
           />
           {server?.package ? (
-            <p className="text-xs text-secondary-text">{server.package.sourceKeyFingerprint}</p>
+            <dl className="grid gap-1 text-xs">
+              <div>
+                <dt className="text-secondary-text">{t('connectorPackageSigner')}</dt>
+                <dd className="break-all text-secondary-text">
+                  {server.package.authenticodeSignerSha256 ?? t('connectorPackageSignerUnavailable')}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-secondary-text">{t('connectorPackageSourceKey')}</dt>
+                <dd className="break-all text-secondary-text">{server.package.sourceKeyFingerprint}</dd>
+              </div>
+            </dl>
           ) : null}
           <div className="grid gap-2 text-sm font-medium text-text">
             <label htmlFor="project-mcp-arguments">{t('projectMcpArguments')}</label>
@@ -857,6 +868,7 @@ function samePackage(
   return (
     first.version === second.version &&
     first.sha256 === second.sha256 &&
+    first.authenticodeSignerSha256 === second.authenticodeSignerSha256 &&
     first.sourceKeyFingerprint === second.sourceKeyFingerprint &&
     first.sizeBytes === second.sizeBytes
   );

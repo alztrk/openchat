@@ -28,6 +28,8 @@ const PACKAGE_METADATA_FILE: &str = "package.json";
 pub(crate) struct InstalledPackageReference {
     pub(crate) version: String,
     pub(crate) sha256: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) authenticode_signer_sha256: Option<String>,
     pub(crate) source_key_fingerprint: String,
     pub(crate) size_bytes: u64,
 }
@@ -46,6 +48,7 @@ struct SignedPackageEntry {
 struct SignedPackageMetadata {
     url: String,
     sha256: String,
+    authenticode_signer_sha256: String,
     size_bytes: u64,
 }
 
@@ -55,6 +58,8 @@ struct InstalledPackageMetadata {
     id: String,
     version: String,
     sha256: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    authenticode_signer_sha256: Option<String>,
     source_key_fingerprint: String,
     size_bytes: u64,
 }
@@ -67,6 +72,10 @@ pub(crate) async fn install_signed_package(
     public_key_base64: &str,
     id: &str,
     version: &str,
+    expected_sha256: &str,
+    expected_url: &str,
+    expected_authenticode_signer_sha256: &str,
+    expected_size_bytes: u64,
 ) -> Result<InstalledPackageReference, PackageError> {
     validate_connector_identity(id, version)?;
     let catalog = connectors::fetch_signed_catalog(source_url, public_key_base64)
@@ -83,6 +92,13 @@ pub(crate) async fn install_signed_package(
     }
     let package = entry.package.ok_or(PackageError::PackageUnavailable)?;
     validate_package_metadata(&package)?;
+    validate_confirmed_package_metadata(
+        &package,
+        expected_sha256,
+        expected_url,
+        expected_authenticode_signer_sha256,
+        expected_size_bytes,
+    )?;
 
     let package_url = Url::parse(&package.url).map_err(|_| PackageError::InvalidCatalog)?;
     let package_url = validate_http_url(package_url).map_err(|_| PackageError::InvalidCatalog)?;
@@ -107,6 +123,7 @@ pub(crate) async fn install_signed_package(
         id: id.to_owned(),
         version: version.to_owned(),
         sha256: sha256.clone(),
+        authenticode_signer_sha256: Some(package.authenticode_signer_sha256.clone()),
         source_key_fingerprint: source_key_fingerprint.clone(),
         size_bytes: package.size_bytes,
     };
@@ -117,6 +134,8 @@ pub(crate) async fn install_signed_package(
             if existing.id != id
                 || existing.version != version
                 || existing.sha256 != sha256
+                || existing.authenticode_signer_sha256.as_deref()
+                    != Some(package.authenticode_signer_sha256.as_str())
                 || existing.source_key_fingerprint != source_key_fingerprint
                 || existing.size_bytes != package.size_bytes
             {
@@ -151,10 +170,17 @@ fn publish_verified_package(
     let temporary_path = package_directory.join(format!(".download-{}.tmp", uuid::Uuid::new_v4()));
     let mut owns_executable = false;
     let result = (|| {
-        let mut temporary = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create_new(true)
+        let mut temporary_options = OpenOptions::new();
+        temporary_options.read(true).write(true).create_new(true);
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::OpenOptionsExt;
+            use windows_sys::Win32::Storage::FileSystem::{FILE_SHARE_DELETE, FILE_SHARE_READ};
+            // The final path is re-opened with mutation sharing denied and revalidated before
+            // package metadata is written. Hard-link promotion needs delete sharing here.
+            temporary_options.share_mode(FILE_SHARE_READ | FILE_SHARE_DELETE);
+        }
+        let mut temporary = temporary_options
             .open(&temporary_path)
             .map_err(|_| PackageError::Unavailable)?;
         temporary
@@ -166,13 +192,21 @@ fn publish_verified_package(
         temporary
             .seek(SeekFrom::Start(0))
             .map_err(|_| PackageError::Unavailable)?;
-        verify_authenticode_signature(&temporary, &temporary_path)?;
-        drop(temporary);
         fs::hard_link(&temporary_path, executable_path).map_err(|_| PackageError::Unavailable)?;
         owns_executable = true;
+        drop(temporary);
         fs::remove_file(&temporary_path).map_err(|_| PackageError::Unavailable)?;
+        let reference = InstalledPackageReference {
+            version: metadata.version.clone(),
+            sha256: metadata.sha256.clone(),
+            authenticode_signer_sha256: metadata.authenticode_signer_sha256.clone(),
+            source_key_fingerprint: metadata.source_key_fingerprint.clone(),
+            size_bytes: metadata.size_bytes,
+        };
+        let verified_file = open_verified_package(executable_path, &reference)?;
         write_installed_metadata(package_directory, metadata)
             .map_err(|_| PackageError::Unavailable)?;
+        drop(verified_file);
         Ok::<(), PackageError>(())
     })();
     if let Err(error) = result {
@@ -236,6 +270,7 @@ pub(crate) fn resolve_installed_package(
     if metadata.id != id
         || metadata.version != reference.version
         || metadata.sha256 != reference.sha256
+        || metadata.authenticode_signer_sha256 != reference.authenticode_signer_sha256
         || metadata.source_key_fingerprint != reference.source_key_fingerprint
         || metadata.size_bytes != reference.size_bytes
     {
@@ -257,9 +292,49 @@ pub(crate) fn verify_installed_package(
     executable: &Path,
     reference: &InstalledPackageReference,
 ) -> Result<(), PackageError> {
-    verify_installed_package_integrity(executable, reference)?;
-    let file = File::open(executable).map_err(|_| PackageError::Unavailable)?;
-    verify_authenticode_signature(&file, executable)
+    let _file = open_verified_package(executable, reference)?;
+    Ok(())
+}
+
+pub(crate) fn open_verified_package(
+    executable: &Path,
+    reference: &InstalledPackageReference,
+) -> Result<File, PackageError> {
+    validate_launch_reference(reference)?;
+    let mut file = open_package_for_verification(executable)?;
+    let metadata = file.metadata().map_err(|_| PackageError::Unavailable)?;
+    if !metadata.is_file() || is_reparse_point(&metadata) || metadata.len() != reference.size_bytes
+    {
+        return Err(PackageError::InvalidPackage);
+    }
+
+    let mut digest = Sha256::new();
+    let mut header = Vec::with_capacity(4096);
+    let mut buffer = [0u8; 64 * 1024];
+    loop {
+        let count = file
+            .read(&mut buffer)
+            .map_err(|_| PackageError::Unavailable)?;
+        if count == 0 {
+            break;
+        }
+        if header.len() < 4096 {
+            let remaining = 4096 - header.len();
+            header.extend_from_slice(&buffer[..count.min(remaining)]);
+        }
+        digest.update(&buffer[..count]);
+    }
+    if hex_digest(&digest.finalize()) != reference.sha256 || !is_windows_pe(&header) {
+        return Err(PackageError::InvalidPackage);
+    }
+
+    file.seek(SeekFrom::Start(0))
+        .map_err(|_| PackageError::Unavailable)?;
+    let actual_signer = verify_authenticode_signature(&file, executable)?;
+    if reference.authenticode_signer_sha256.as_deref() != Some(actual_signer.as_str()) {
+        return Err(PackageError::InvalidPackage);
+    }
+    Ok(file)
 }
 
 fn verify_installed_package_integrity(
@@ -295,6 +370,27 @@ fn verify_installed_package_integrity(
     Ok(())
 }
 
+fn open_package_for_verification(path: &Path) -> Result<File, PackageError> {
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+        use windows_sys::Win32::Storage::FileSystem::{
+            FILE_FLAG_OPEN_REPARSE_POINT, FILE_SHARE_READ,
+        };
+
+        OpenOptions::new()
+            .read(true)
+            .share_mode(FILE_SHARE_READ)
+            .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
+            .open(path)
+            .map_err(|_| PackageError::Unavailable)
+    }
+    #[cfg(not(windows))]
+    {
+        File::open(path).map_err(|_| PackageError::Unavailable)
+    }
+}
+
 /// Removes one package version only after its project server has been removed or replaced.
 pub(crate) fn remove_installed_package(
     storage_root: &Path,
@@ -321,6 +417,7 @@ pub(crate) fn remove_installed_package(
         if metadata.id != id
             || metadata.version != reference.version
             || metadata.sha256 != reference.sha256
+            || metadata.authenticode_signer_sha256 != reference.authenticode_signer_sha256
             || metadata.source_key_fingerprint != reference.source_key_fingerprint
             || metadata.size_bytes != reference.size_bytes
         {
@@ -359,10 +456,28 @@ fn validate_package_metadata(package: &SignedPackageMetadata) -> Result<(), Pack
         || package.size_bytes > MAX_PACKAGE_BYTES
         || package.sha256.len() != 64
         || !package.sha256.bytes().all(|byte| byte.is_ascii_hexdigit())
+        || !is_sha256_fingerprint(&package.authenticode_signer_sha256)
         || package.url.len() > 2048
         || package.url.trim() != package.url
         || package.url.contains('?')
         || package.url.contains('#')
+    {
+        return Err(PackageError::InvalidCatalog);
+    }
+    Ok(())
+}
+
+fn validate_confirmed_package_metadata(
+    package: &SignedPackageMetadata,
+    expected_sha256: &str,
+    expected_url: &str,
+    expected_authenticode_signer_sha256: &str,
+    expected_size_bytes: u64,
+) -> Result<(), PackageError> {
+    if package.sha256 != expected_sha256
+        || package.url != expected_url
+        || package.authenticode_signer_sha256 != expected_authenticode_signer_sha256
+        || package.size_bytes != expected_size_bytes
     {
         return Err(PackageError::InvalidCatalog);
     }
@@ -396,10 +511,22 @@ fn validate_reference(reference: &InstalledPackageReference) -> Result<(), Packa
             .all(|byte| byte.is_ascii_hexdigit())
         || reference.size_bytes == 0
         || reference.size_bytes > MAX_PACKAGE_BYTES
+        || reference
+            .authenticode_signer_sha256
+            .as_deref()
+            .is_some_and(|fingerprint| !is_sha256_fingerprint(fingerprint))
     {
         return Err(PackageError::InvalidPackage);
     }
     validate_connector_identity("package", &reference.version)
+}
+
+fn validate_launch_reference(reference: &InstalledPackageReference) -> Result<(), PackageError> {
+    validate_reference(reference)?;
+    if reference.authenticode_signer_sha256.is_none() {
+        return Err(PackageError::InvalidPackage);
+    }
+    Ok(())
 }
 
 fn package_directory(
@@ -567,6 +694,7 @@ fn verify_package_executable(
         &InstalledPackageReference {
             version: metadata.version.clone(),
             sha256: metadata.sha256.clone(),
+            authenticode_signer_sha256: metadata.authenticode_signer_sha256.clone(),
             source_key_fingerprint: metadata.source_key_fingerprint.clone(),
             size_bytes: metadata.size_bytes,
         },
@@ -577,6 +705,7 @@ fn package_reference(metadata: InstalledPackageMetadata) -> InstalledPackageRefe
     InstalledPackageReference {
         version: metadata.version,
         sha256: metadata.sha256,
+        authenticode_signer_sha256: metadata.authenticode_signer_sha256,
         source_key_fingerprint: metadata.source_key_fingerprint,
         size_bytes: metadata.size_bytes,
     }
@@ -594,6 +723,13 @@ fn hex_digest(bytes: &[u8]) -> String {
     bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
+fn is_sha256_fingerprint(value: &str) -> bool {
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+}
+
 fn is_windows_pe(bytes: &[u8]) -> bool {
     if bytes.len() < 64 || &bytes[..2] != b"MZ" {
         return false;
@@ -605,7 +741,7 @@ fn is_windows_pe(bytes: &[u8]) -> bool {
 }
 
 #[cfg(windows)]
-fn verify_authenticode_signature(file: &File, path: &Path) -> Result<(), PackageError> {
+fn verify_authenticode_signature(file: &File, path: &Path) -> Result<String, PackageError> {
     use std::{
         os::windows::{ffi::OsStrExt, io::AsRawHandle},
         ptr,
@@ -643,7 +779,8 @@ fn verify_authenticode_signature(file: &File, path: &Path) -> Result<(), Package
     let mut action = WINTRUST_ACTION_GENERIC_VERIFY_V2;
 
     // SAFETY: WinVerifyTrustEx reads the file path and handle synchronously. Both remain valid for
-    // this call, the handle refers to the staged package, and the state is closed immediately after.
+    // this call, the handle refers to the package under verification, and the state is closed
+    // immediately after.
     let status = unsafe { WinVerifyTrustEx(ptr::null_mut(), &mut action, &mut trust_data) };
     trust_data.dwStateAction = WTD_STATEACTION_CLOSE;
     // SAFETY: This releases any provider state created by the verification call above.
@@ -654,13 +791,182 @@ fn verify_authenticode_signature(file: &File, path: &Path) -> Result<(), Package
     } else if close_status != 0 {
         Err(PackageError::Unavailable)
     } else {
-        Ok(())
+        authenticode_signer_sha256(path)
     }
 }
 
 #[cfg(not(windows))]
-fn verify_authenticode_signature(_file: &File, _path: &Path) -> Result<(), PackageError> {
+fn verify_authenticode_signature(_file: &File, _path: &Path) -> Result<String, PackageError> {
     Err(PackageError::InvalidPackage)
+}
+
+#[cfg(windows)]
+fn authenticode_signer_sha256(path: &Path) -> Result<String, PackageError> {
+    use std::{os::windows::ffi::OsStrExt, ptr, slice};
+    use windows_sys::Win32::Security::Cryptography::{
+        CERT_CLOSE_STORE_CHECK_FLAG, CERT_CONTEXT, CERT_FIND_SUBJECT_CERT, CERT_INFO,
+        CERT_QUERY_CONTENT_FLAG_PKCS7_SIGNED_EMBED, CERT_QUERY_CONTENT_PKCS7_SIGNED_EMBED,
+        CERT_QUERY_FORMAT_BINARY, CERT_QUERY_FORMAT_FLAG_BINARY, CERT_QUERY_OBJECT_FILE,
+        CMSG_SIGNER_CERT_INFO_PARAM, CMSG_SIGNER_COUNT_PARAM, CertCloseStore,
+        CertFindCertificateInStore, CertFreeCertificateContext, CryptMsgClose, CryptMsgGetParam,
+        CryptQueryObject, HCERTSTORE, PKCS_7_ASN_ENCODING, X509_ASN_ENCODING,
+    };
+
+    struct QueryHandles {
+        store: HCERTSTORE,
+        message: *mut std::ffi::c_void,
+    }
+
+    impl Drop for QueryHandles {
+        fn drop(&mut self) {
+            // SAFETY: These handles are returned by CryptQueryObject and are closed once here.
+            unsafe {
+                if !self.message.is_null() {
+                    let _ = CryptMsgClose(self.message);
+                }
+                if !self.store.is_null() {
+                    let _ = CertCloseStore(self.store, CERT_CLOSE_STORE_CHECK_FLAG);
+                }
+            }
+        }
+    }
+
+    struct CertificateContext(*const CERT_CONTEXT);
+
+    impl Drop for CertificateContext {
+        fn drop(&mut self) {
+            // SAFETY: This context is returned by CertFindCertificateInStore and is freed once.
+            unsafe {
+                if !self.0.is_null() {
+                    let _ = CertFreeCertificateContext(self.0);
+                }
+            }
+        }
+    }
+
+    let wide_path = path
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect::<Vec<_>>();
+    let mut encoding_type = 0;
+    let mut content_type = 0;
+    let mut format_type = 0;
+    let mut store = ptr::null_mut();
+    let mut message = ptr::null_mut();
+
+    // SAFETY: The path is NUL-terminated and all result pointers remain valid for the call.
+    let queried = unsafe {
+        CryptQueryObject(
+            CERT_QUERY_OBJECT_FILE,
+            wide_path.as_ptr().cast(),
+            CERT_QUERY_CONTENT_FLAG_PKCS7_SIGNED_EMBED,
+            CERT_QUERY_FORMAT_FLAG_BINARY,
+            0,
+            &mut encoding_type,
+            &mut content_type,
+            &mut format_type,
+            &mut store,
+            &mut message,
+            ptr::null_mut(),
+        )
+    };
+    let handles = QueryHandles { store, message };
+    if queried == 0
+        || handles.store.is_null()
+        || handles.message.is_null()
+        || content_type != CERT_QUERY_CONTENT_PKCS7_SIGNED_EMBED
+        || format_type != CERT_QUERY_FORMAT_BINARY
+        || encoding_type != (X509_ASN_ENCODING | PKCS_7_ASN_ENCODING)
+    {
+        return Err(PackageError::InvalidPackage);
+    }
+
+    let mut signer_count = 0u32;
+    let mut signer_count_size = std::mem::size_of::<u32>() as u32;
+    // SAFETY: signer_count points to a writable u32 buffer of the declared size.
+    let got_signer_count = unsafe {
+        CryptMsgGetParam(
+            handles.message,
+            CMSG_SIGNER_COUNT_PARAM,
+            0,
+            (&mut signer_count as *mut u32).cast(),
+            &mut signer_count_size,
+        )
+    };
+    if got_signer_count == 0 || signer_count != 1 {
+        return Err(PackageError::InvalidPackage);
+    }
+
+    let mut signer_info_size = 0u32;
+    // SAFETY: A null data pointer requests the required buffer size for signer information.
+    let queried_signer_info_size = unsafe {
+        CryptMsgGetParam(
+            handles.message,
+            CMSG_SIGNER_CERT_INFO_PARAM,
+            0,
+            ptr::null_mut(),
+            &mut signer_info_size,
+        )
+    };
+    let signer_info_size = signer_info_size as usize;
+    if (queried_signer_info_size == 0 && signer_info_size == 0)
+        || signer_info_size < std::mem::size_of::<CERT_INFO>()
+        || signer_info_size > 64 * 1024
+    {
+        return Err(PackageError::InvalidPackage);
+    }
+    let word_size = std::mem::size_of::<u64>();
+    let signer_info_word_count = signer_info_size.div_ceil(word_size);
+    let signer_info_buffer_size = signer_info_word_count * word_size;
+    let mut signer_info_buffer = vec![0u64; signer_info_word_count];
+    let mut signer_info_output_size = signer_info_buffer_size as u32;
+    let signer_info = signer_info_buffer.as_mut_ptr().cast::<CERT_INFO>();
+    // SAFETY: The buffer is at least the queried size, u64-aligned for CERT_INFO, and remains
+    // alive while its embedded issuer and serial number pointers are used below.
+    let got_signer_info = unsafe {
+        CryptMsgGetParam(
+            handles.message,
+            CMSG_SIGNER_CERT_INFO_PARAM,
+            0,
+            signer_info.cast(),
+            &mut signer_info_output_size,
+        )
+    };
+    if got_signer_info == 0 || signer_info_output_size as usize > signer_info_buffer_size {
+        return Err(PackageError::InvalidPackage);
+    }
+
+    // SAFETY: The store and signer info are valid for this call. The returned certificate
+    // context is owned by the caller and released by CertificateContext.
+    let certificate = unsafe {
+        CertFindCertificateInStore(
+            handles.store,
+            X509_ASN_ENCODING | PKCS_7_ASN_ENCODING,
+            0,
+            CERT_FIND_SUBJECT_CERT,
+            signer_info.cast_const().cast(),
+            ptr::null(),
+        )
+    };
+    if certificate.is_null() {
+        return Err(PackageError::InvalidPackage);
+    }
+    let certificate = CertificateContext(certificate);
+
+    // SAFETY: The certificate context stays alive through hashing; a missing encoded buffer or
+    // empty certificate is rejected before constructing the slice.
+    let certificate_context = unsafe { &*certificate.0 };
+    if certificate_context.pbCertEncoded.is_null() || certificate_context.cbCertEncoded == 0 {
+        return Err(PackageError::InvalidPackage);
+    }
+    let encoded_certificate = unsafe {
+        slice::from_raw_parts(
+            certificate_context.pbCertEncoded,
+            certificate_context.cbCertEncoded as usize,
+        )
+    };
+    Ok(hex_digest(&Sha256::digest(encoded_certificate)))
 }
 
 #[cfg(all(test, windows))]
@@ -675,7 +981,9 @@ mod signature_tests {
             .join("kernel32.dll");
         let file = File::open(&path).expect("kernel32.dll is present");
 
-        assert_eq!(verify_authenticode_signature(&file, &path), Ok(()));
+        let signer = verify_authenticode_signature(&file, &path)
+            .expect("trusted system binary has an embedded signer certificate");
+        assert!(is_sha256_fingerprint(&signer));
     }
 
     #[test]
@@ -690,6 +998,30 @@ mod signature_tests {
     }
 
     #[test]
+    fn rejects_a_trusted_binary_when_the_catalog_signer_pin_differs() {
+        let system_root = std::env::var_os("SystemRoot").expect("Windows defines SystemRoot");
+        let path = PathBuf::from(system_root)
+            .join("System32")
+            .join("kernel32.dll");
+        let bytes = fs::read(&path).expect("kernel32.dll is readable");
+        let metadata = fs::metadata(&path).expect("kernel32.dll metadata is available");
+
+        assert_eq!(
+            verify_installed_package(
+                &path,
+                &InstalledPackageReference {
+                    version: "1.0.0".to_owned(),
+                    sha256: hex_digest(&Sha256::digest(&bytes)),
+                    authenticode_signer_sha256: Some("0".repeat(64)),
+                    source_key_fingerprint: "1".repeat(64),
+                    size_bytes: metadata.len(),
+                },
+            ),
+            Err(PackageError::InvalidPackage)
+        );
+    }
+
+    #[test]
     fn publishes_and_launches_a_trusted_windows_binary() {
         let system_root = std::env::var_os("SystemRoot").expect("Windows defines SystemRoot");
         let system_binary = PathBuf::from(system_root)
@@ -697,6 +1029,11 @@ mod signature_tests {
             .join("kernel32.dll");
         let package_bytes = fs::read(&system_binary).expect("kernel32.dll is readable");
         assert!(is_windows_pe(&package_bytes));
+        let signer = verify_authenticode_signature(
+            &File::open(&system_binary).expect("kernel32.dll is readable"),
+            &system_binary,
+        )
+        .expect("kernel32.dll has a trusted embedded signer");
 
         let package_directory = std::env::temp_dir().join(format!(
             "openchat-package-signature-{}",
@@ -708,6 +1045,7 @@ mod signature_tests {
             id: "signature_test".to_owned(),
             version: "1.0.0".to_owned(),
             sha256: hex_digest(&Sha256::digest(&package_bytes)),
+            authenticode_signer_sha256: Some(signer),
             source_key_fingerprint: "0".repeat(64),
             size_bytes: package_bytes.len() as u64,
         };
@@ -729,6 +1067,105 @@ mod signature_tests {
     }
 
     #[test]
+    fn holds_the_verified_package_handle_through_process_creation() {
+        use windows_sys::Win32::Foundation::ERROR_SHARING_VIOLATION;
+
+        let system_root = std::env::var_os("SystemRoot").expect("Windows defines SystemRoot");
+        let system_binary = PathBuf::from(system_root)
+            .join("System32")
+            .join("kernel32.dll");
+        let package_bytes = fs::read(&system_binary).expect("kernel32.dll is readable");
+        let signer = verify_authenticode_signature(
+            &File::open(&system_binary).expect("kernel32.dll is readable"),
+            &system_binary,
+        )
+        .expect("kernel32.dll has a trusted embedded signer");
+        let package_directory = std::env::temp_dir().join(format!(
+            "openchat-package-launch-lock-{}",
+            uuid::Uuid::new_v4()
+        ));
+        fs::create_dir(&package_directory).expect("test package directory is created");
+        let executable_path = package_directory.join(EXECUTABLE_FILE);
+        let replacement_path = package_directory.join("replacement.exe");
+        fs::write(&executable_path, &package_bytes).expect("test package is staged");
+        let reference = InstalledPackageReference {
+            version: "1.0.0".to_owned(),
+            sha256: hex_digest(&Sha256::digest(&package_bytes)),
+            authenticode_signer_sha256: Some(signer),
+            source_key_fingerprint: "0".repeat(64),
+            size_bytes: package_bytes.len() as u64,
+        };
+
+        let verified_file =
+            open_verified_package(&executable_path, &reference).expect("package is verified");
+        let replacement_error = fs::rename(&executable_path, &replacement_path)
+            .err()
+            .and_then(|error| error.raw_os_error());
+        drop(verified_file);
+        let replacement_after_release = fs::rename(&executable_path, &replacement_path);
+        fs::remove_dir_all(&package_directory).expect("test package directory is removed");
+
+        assert_eq!(
+            replacement_error,
+            Some(ERROR_SHARING_VIOLATION as i32),
+            "the verified path must not be replaceable before process creation"
+        );
+        assert!(replacement_after_release.is_ok());
+    }
+
+    #[test]
+    fn refuses_to_verify_a_package_with_a_preexisting_writer_handle() {
+        use std::os::windows::fs::OpenOptionsExt;
+        use windows_sys::Win32::Storage::FileSystem::{
+            FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE,
+        };
+
+        let system_root = std::env::var_os("SystemRoot").expect("Windows defines SystemRoot");
+        let system_binary = PathBuf::from(system_root)
+            .join("System32")
+            .join("kernel32.dll");
+        let package_bytes = fs::read(&system_binary).expect("kernel32.dll is readable");
+        let signer = verify_authenticode_signature(
+            &File::open(&system_binary).expect("kernel32.dll is readable"),
+            &system_binary,
+        )
+        .expect("kernel32.dll has a trusted embedded signer");
+        let package_directory = std::env::temp_dir().join(format!(
+            "openchat-package-writer-lock-{}",
+            uuid::Uuid::new_v4()
+        ));
+        fs::create_dir(&package_directory).expect("test package directory is created");
+        let executable_path = package_directory.join(EXECUTABLE_FILE);
+        fs::write(&executable_path, &package_bytes).expect("test package is staged");
+        let reference = InstalledPackageReference {
+            version: "1.0.0".to_owned(),
+            sha256: hex_digest(&Sha256::digest(&package_bytes)),
+            authenticode_signer_sha256: Some(signer),
+            source_key_fingerprint: "0".repeat(64),
+            size_bytes: package_bytes.len() as u64,
+        };
+        let mut writer_options = OpenOptions::new();
+        writer_options
+            .write(true)
+            .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE);
+        let writer = writer_options
+            .open(&executable_path)
+            .expect("test writer handle is opened before verification");
+        let verification_with_writer = open_verified_package(&executable_path, &reference);
+        drop(writer);
+        let verification_after_writer_release = open_verified_package(&executable_path, &reference);
+        let verified_after_writer_release = verification_after_writer_release.is_ok();
+        drop(verification_after_writer_release);
+        fs::remove_dir_all(&package_directory).expect("test package directory is removed");
+
+        assert_eq!(
+            verification_with_writer.err(),
+            Some(PackageError::Unavailable)
+        );
+        assert!(verified_after_writer_release);
+    }
+
+    #[test]
     fn requires_authenticode_for_install_and_launch_but_not_removal_integrity() {
         let package_directory = std::env::temp_dir().join(format!(
             "openchat-package-signature-{}",
@@ -742,6 +1179,7 @@ mod signature_tests {
             id: "signature_test".to_owned(),
             version: "1.0.0".to_owned(),
             sha256: hex_digest(&Sha256::digest(unsigned_pe)),
+            authenticode_signer_sha256: Some("0".repeat(64)),
             source_key_fingerprint: "0".repeat(64),
             size_bytes: unsigned_pe.len() as u64,
         };
@@ -791,15 +1229,18 @@ mod signature_tests {
         let reference = InstalledPackageReference {
             version: version.to_owned(),
             sha256: hex_digest(&Sha256::digest(unsigned_pe)),
+            authenticode_signer_sha256: None,
             source_key_fingerprint: "0".repeat(64),
             size_bytes: unsigned_pe.len() as u64,
         };
 
         let removal_result = remove_installed_package(&storage_root, &project_root, id, &reference);
+        let launch_result = verify_installed_package(&executable_path, &reference);
         let package_directory_exists = directory.exists();
         fs::remove_dir_all(&temporary_root).expect("temporary test directories are removed");
 
         assert_eq!(removal_result, Ok(()));
+        assert_eq!(launch_result, Err(PackageError::InvalidPackage));
         assert!(!package_directory_exists);
     }
 
@@ -809,6 +1250,173 @@ mod signature_tests {
         bytes[60..64].copy_from_slice(&64u32.to_le_bytes());
         bytes[64..68].copy_from_slice(b"PE\0\0");
         bytes
+    }
+}
+
+#[cfg(test)]
+mod metadata_tests {
+    use super::*;
+
+    #[test]
+    fn signed_package_metadata_requires_a_canonical_signer_fingerprint() {
+        let value = |signer: Option<&str>| {
+            let mut package = serde_json::json!({
+                "url": "https://example.invalid/connector.exe",
+                "sha256": "a".repeat(64),
+                "sizeBytes": 1,
+            });
+            if let Some(signer) = signer {
+                package["authenticodeSignerSha256"] = serde_json::Value::String(signer.to_owned());
+            }
+            serde_json::json!({
+                "id": "records",
+                "version": "1.0.0",
+                "transport": "stdio",
+                "package": package,
+            })
+        };
+
+        assert!(parse_signed_entry(value(None), "records", "1.0.0").is_none());
+        let parsed = parse_signed_entry(value(Some(&"b".repeat(64))), "records", "1.0.0")
+            .expect("matching entry parses");
+        let package = parsed
+            .package
+            .as_ref()
+            .expect("package metadata is present");
+        assert_eq!(validate_package_metadata(package), Ok(()));
+        assert_eq!(
+            validate_confirmed_package_metadata(
+                package,
+                &"a".repeat(64),
+                "https://example.invalid/connector.exe",
+                &"b".repeat(64),
+                1,
+            ),
+            Ok(())
+        );
+        assert_eq!(
+            validate_confirmed_package_metadata(
+                package,
+                &"0".repeat(64),
+                "https://example.invalid/connector.exe",
+                &"b".repeat(64),
+                1,
+            ),
+            Err(PackageError::InvalidCatalog)
+        );
+        assert_eq!(
+            validate_confirmed_package_metadata(
+                package,
+                &"a".repeat(64),
+                "https://example.invalid/connector.exe",
+                &"0".repeat(64),
+                1,
+            ),
+            Err(PackageError::InvalidCatalog)
+        );
+        assert_eq!(
+            validate_confirmed_package_metadata(
+                package,
+                &"a".repeat(64),
+                "https://example.invalid/connector.exe",
+                &"b".repeat(64),
+                2,
+            ),
+            Err(PackageError::InvalidCatalog)
+        );
+        assert_eq!(
+            validate_confirmed_package_metadata(
+                package,
+                &"a".repeat(64),
+                "https://changed.example/connector.exe",
+                &"b".repeat(64),
+                1,
+            ),
+            Err(PackageError::InvalidCatalog)
+        );
+
+        for invalid in ["B".repeat(64), "b".repeat(63), "b".repeat(65)] {
+            let parsed = parse_signed_entry(value(Some(&invalid)), "records", "1.0.0")
+                .expect("matching entry parses before semantic validation");
+            assert_eq!(
+                validate_package_metadata(
+                    parsed
+                        .package
+                        .as_ref()
+                        .expect("package metadata is present")
+                ),
+                Err(PackageError::InvalidCatalog)
+            );
+        }
+    }
+
+    #[test]
+    fn legacy_package_references_remain_readable_but_cannot_launch() {
+        let value = serde_json::json!({
+            "version": "1.0.0",
+            "sha256": "a".repeat(64),
+            "sourceKeyFingerprint": "c".repeat(64),
+            "sizeBytes": 1,
+        });
+        let reference: InstalledPackageReference =
+            serde_json::from_value(value).expect("legacy package reference remains readable");
+
+        assert_eq!(validate_reference(&reference), Ok(()));
+        assert_eq!(
+            validate_launch_reference(&reference),
+            Err(PackageError::InvalidPackage)
+        );
+    }
+
+    #[test]
+    fn legacy_package_references_can_resolve_for_removal_but_not_launch() {
+        let temporary_root =
+            std::env::temp_dir().join(format!("openchat-legacy-package-{}", uuid::Uuid::new_v4()));
+        let storage_root = temporary_root.join("storage");
+        let project_root = temporary_root.join("project");
+        fs::create_dir_all(&storage_root).expect("test storage directory is created");
+        fs::create_dir_all(&project_root).expect("test project directory is created");
+        let project_root = fs::canonicalize(project_root).expect("project directory is canonical");
+        let directory = package_directory(&storage_root, &project_root, "records", "1.0.0")
+            .expect("legacy package directory is resolved");
+        fs::create_dir_all(&directory).expect("legacy package directory is created");
+        let executable = directory.join(EXECUTABLE_FILE);
+        let mut package_bytes = [0u8; 68];
+        package_bytes[..2].copy_from_slice(b"MZ");
+        package_bytes[60..64].copy_from_slice(&64u32.to_le_bytes());
+        package_bytes[64..68].copy_from_slice(b"PE\0\0");
+        fs::write(&executable, package_bytes).expect("legacy executable is written");
+        let reference = InstalledPackageReference {
+            version: "1.0.0".to_owned(),
+            sha256: hex_digest(&Sha256::digest(package_bytes)),
+            authenticode_signer_sha256: None,
+            source_key_fingerprint: "c".repeat(64),
+            size_bytes: package_bytes.len() as u64,
+        };
+        let metadata = serde_json::json!({
+            "id": "records",
+            "version": reference.version.clone(),
+            "sha256": reference.sha256.clone(),
+            "sourceKeyFingerprint": reference.source_key_fingerprint.clone(),
+            "sizeBytes": reference.size_bytes,
+        });
+        fs::write(
+            directory.join(PACKAGE_METADATA_FILE),
+            serde_json::to_vec(&metadata).expect("legacy metadata is serialized"),
+        )
+        .expect("legacy metadata is written");
+
+        let resolved =
+            resolve_installed_package(&storage_root, &project_root, "records", &reference);
+        let launch = verify_installed_package(&executable, &reference);
+        let removal = remove_installed_package(&storage_root, &project_root, "records", &reference);
+        let directory_exists_after_removal = directory.exists();
+        fs::remove_dir_all(&temporary_root).expect("test directory tree is removed");
+
+        assert_eq!(resolved, Ok((executable, directory)));
+        assert_eq!(launch, Err(PackageError::InvalidPackage));
+        assert_eq!(removal, Ok(()));
+        assert!(!directory_exists_after_removal);
     }
 }
 

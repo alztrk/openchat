@@ -56,16 +56,22 @@ Signed catalogs may also describe a version-pinned Windows stdio executable.
 The app downloads it only after the user confirms installation. The local
 service fetches the signed catalog again, verifies the pinned Ed25519 key,
 requires HTTPS without redirects, bounds the file to 128 MiB, and checks its
-declared size, SHA-256, and PE executable format before saving it under the
-project's local app-data package directory. A project reference records the
-version, digest, size, and key fingerprint rather than an absolute machine path.
-Before launch, the service checks the file again and grants its directory
-read-only access in the Windows AppContainer. The MCP server remains disabled
-after installation and its tools require approval by default. An update needs
-another user confirmation, installs a separate version, resets that connector's
-tool rules to `Ask`, then removes the previous package. Removal failures stay
-visible and can be retried; cleanup never recursively deletes an unexpected
-directory.
+declared size, SHA-256, PE executable format, and Authenticode signer certificate
+SHA-256 before saving it under the project's local app-data package directory.
+The install request must still match the package URL, size, digest, and signer
+fingerprint that the user confirmed when the service refetches the signed
+catalog. A project reference records the version, digest, signer certificate
+fingerprint, size, and catalog key fingerprint rather than an absolute machine
+path. Before launch, the service checks the file digest, PE structure, Windows
+Authenticode trust, and signer fingerprint again. It keeps that verified file
+handle open until process creation completes, so the executable path cannot be
+replaced during launch. An incompatible writer already holding the file also
+prevents verification. The package directory then receives read-only access in
+the Windows AppContainer. The MCP server remains disabled after installation,
+and its tools require approval by default. An update needs another user
+confirmation, installs a separate version, resets that connector's tool rules
+to `Ask`, then removes the previous package. Removal failures stay visible and
+can be retried; cleanup never recursively deletes an unexpected directory.
 
 A catalog entry may include an optional version 1 manifest that declares tool
 names, permissions, provider requirements, and configuration needs. The app
@@ -77,19 +83,19 @@ declarations. It does not compare the declaration with the tools actually
 returned by the server. Runtime tool discovery and project tool permissions
 remain authoritative.
 
-A valid signature proves that the catalog was signed by the pinned key. It does
-not establish the publisher's real-world identity. The confirmation shows the
-catalog key fingerprint, package URL, size, digest, requested access, and data
-disclosure. Users should verify the fingerprint through a separate trusted
-channel before installing. No centrally hosted or first-party public catalog is
-provided by OpenChat. Windows Authenticode publisher identity, a first-party
-catalog, and release/update signing remain separate release work. On Windows,
-installation and every launch require the package to pass the operating
-system's Authenticode trust check. Previously installed unsigned packages stop
-launching. An update installs and saves the signed replacement before removing
-the previous version; cleanup failures remain visible and can be retried. The
-check uses cached trust data only and does not check certificate revocation; it
-does not bind the executable's signer identity to the catalog's publisher claim
-or to the catalog signing key. Non-Windows service builds reject Windows
+A valid signature proves that the catalog was signed by the pinned key. The
+signed entry also pins the executable's Authenticode signer certificate, and
+the confirmation shows that fingerprint separately from the catalog key
+fingerprint, along with package URL, size, digest, requested access, and data
+disclosure. Users should verify the catalog key through a separate trusted
+channel before installing. These checks do not establish the publisher's
+real-world identity. No centrally hosted or first-party public catalog is
+provided by OpenChat. A first-party catalog and release/update signing remain
+separate release work. The Authenticode check uses cached trust data and does
+not check certificate revocation. Previously installed packages without a
+signer fingerprint remain removable but require reinstallation from an updated
+signed catalog before they can launch. An update installs and saves the signed
+replacement before removing the previous version; cleanup failures remain
+visible and can be retried. Non-Windows service builds reject Windows
 executable packages because they cannot perform this operating-system trust
 check.

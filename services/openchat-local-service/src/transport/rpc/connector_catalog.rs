@@ -42,10 +42,21 @@ pub(super) async fn dispatch(
             let public_key = required_string(params, "publicKeyBase64")?;
             let id = required_string(params, "id")?;
             let version = required_string(params, "version")?;
+            let expected_sha256 = required_string(params, "expectedSha256")?;
+            let expected_url = required_string(params, "expectedUrl")?;
+            let expected_authenticode_signer_sha256 =
+                required_string(params, "expectedAuthenticodeSignerSha256")?;
+            let expected_size_bytes = params
+                .get("expectedSizeBytes")
+                .and_then(Value::as_u64)
+                .ok_or_else(invalid_request_params)?;
             if source_url.len() > 2048
+                || expected_url.len() > 2048
                 || public_key.len() != 43
                 || id.len() > 24
                 || version.len() > 64
+                || expected_sha256.len() != 64
+                || expected_authenticode_signer_sha256.len() != 64
             {
                 return Err(invalid_request_params());
             }
@@ -57,6 +68,10 @@ pub(super) async fn dispatch(
                 public_key,
                 id,
                 version,
+                expected_sha256,
+                expected_url,
+                expected_authenticode_signer_sha256,
+                expected_size_bytes,
             )
             .await
             .map_err(map_package_error)?;
