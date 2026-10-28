@@ -407,7 +407,7 @@ mod request_manifest_tests {
     #[test]
     fn instruction_source_categories_exclude_empty_and_unconfigured_sources() {
         assert_eq!(
-            instruction_source_categories(Some("shared"), Some("project"), &[], None, None, true,),
+            instruction_source_categories(Some("shared"), Some("project"), &[], None, None, true),
             ["shared_preferences", "project_instructions", "goal_mode"]
         );
         assert!(
@@ -428,10 +428,10 @@ mod request_manifest_tests {
     }
 
     #[test]
-    fn instruction_source_categories_record_project_index_separately() {
+    fn instruction_source_categories_record_project_history_separately() {
         assert_eq!(
             instruction_source_categories(None, None, &[], None, Some("excerpt"), false),
-            ["project_index"]
+            ["project_history"]
         );
     }
 

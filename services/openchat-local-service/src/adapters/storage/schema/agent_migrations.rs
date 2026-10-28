@@ -1655,5 +1655,22 @@ pub(super) fn apply_agent_migrations(
         current_version = 56;
     }
 
+    if current_version < 57 && target_version >= 57 {
+        let transaction = connection.unchecked_transaction()?;
+        transaction.execute_batch(
+            "DROP TABLE IF EXISTS project_index_fts;
+             DROP TABLE IF EXISTS project_index_symbols;
+             DROP TABLE IF EXISTS project_index_files;
+             DROP TABLE IF EXISTS project_index_roots;
+             DROP TABLE IF EXISTS project_index_state;",
+        )?;
+        transaction.execute(
+            "INSERT INTO openchat_backend_migrations (version, applied_at_unix_ms) VALUES (57, ?1)",
+            [unix_time_millis()?],
+        )?;
+        transaction.commit()?;
+        current_version = 57;
+    }
+
     Ok(current_version)
 }

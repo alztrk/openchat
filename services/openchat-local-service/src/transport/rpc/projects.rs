@@ -171,69 +171,6 @@ pub(super) async fn dispatch(
                     .collect::<Vec<_>>()
             }))
         }
-        "project.index.get" => {
-            let project_id = required_string(params, "projectId")?;
-            let connection = storage
-                .connect()
-                .map_err(|_| project_index_storage_error())?;
-            Ok(json!({"index": crate::project_index::snapshot(&connection, project_id)?}))
-        }
-        "project.index.set_enabled" => {
-            let project_id = required_string(params, "projectId")?;
-            let enabled = params
-                .get("enabled")
-                .and_then(Value::as_bool)
-                .ok_or_else(invalid_request_params)?;
-            let mut connection = storage
-                .connect()
-                .map_err(|_| project_index_storage_error())?;
-            crate::project_index::set_enabled(&mut connection, project_id, enabled)?;
-            drop(connection);
-            let index_scheduled = if enabled {
-                match project_workspace_roots_for_project(storage, project_id) {
-                    Ok(roots) => crate::project_index::schedule_sync_roots(
-                        storage.database_queue_handle(),
-                        project_id,
-                        &roots,
-                    )
-                    .is_ok(),
-                    Err(_) => false,
-                }
-            } else {
-                false
-            };
-            let connection = storage
-                .connect()
-                .map_err(|_| project_index_storage_error())?;
-            Ok(json!({
-                "index": crate::project_index::snapshot(&connection, project_id)?,
-                "indexScheduled": index_scheduled
-            }))
-        }
-        "project.index.sync" => {
-            let project_id = required_string(params, "projectId")?;
-            let project_roots = project_workspace_roots_for_project(storage, project_id)?;
-            let index_scheduled = crate::project_index::schedule_sync_roots(
-                storage.database_queue_handle(),
-                project_id,
-                &project_roots,
-            )
-            .is_ok();
-            let connection = storage
-                .connect()
-                .map_err(|_| project_index_storage_error())?;
-            Ok(json!({
-                "index": crate::project_index::snapshot(&connection, project_id)?,
-                "indexScheduled": index_scheduled
-            }))
-        }
-        "project.index.clear" => {
-            let project_id = required_string(params, "projectId")?;
-            let mut connection = storage
-                .connect()
-                .map_err(|_| project_index_storage_error())?;
-            Ok(json!({"index": crate::project_index::clear(&mut connection, project_id)?}))
-        }
         "project.mcp.catalog.get" => {
             let project_id = required_string(params, "projectId")?;
             let project_root = project_root_for_mcp(storage, project_id)?;
@@ -769,14 +706,6 @@ fn git_worktree_error(error: git_worktrees::GitWorktreeError) -> ServiceError {
     }
 }
 
-fn project_index_storage_error() -> ServiceError {
-    ServiceError::new(
-        "project_index_unavailable",
-        "The local project index is unavailable. Retry the operation or clear the index.",
-        true,
-    )
-}
-
 fn project_memory_storage_error() -> ServiceError {
     ServiceError::new(
         "project_memory_unavailable",
@@ -834,7 +763,7 @@ mod tests {
 
         let mut unknown_params = json!({});
         let unknown_error = dispatch(
-            "project.unavailable.method",
+            "project.index.get",
             &mut unknown_params,
             &json!("unknown-request"),
             &storage,
@@ -843,7 +772,7 @@ mod tests {
             &mut cancellation,
         )
         .await
-        .expect_err("unknown project method is rejected");
+        .expect_err("retired project index method is rejected");
         assert_eq!(unknown_error.code, "method_not_found");
     }
 

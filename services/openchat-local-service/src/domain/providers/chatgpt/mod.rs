@@ -368,7 +368,7 @@ impl ChatGptService {
                 project: project_instructions,
                 project_skills,
                 project_memory_context,
-                project_index_context: context.project_index_context.as_deref(),
+                project_history_context: context.project_history_context.as_deref(),
                 project_context_window_tokens: model.context_window,
                 permission_mode: context.permission_mode,
                 has_project: project_root.is_some(),

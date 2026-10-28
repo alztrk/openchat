@@ -149,13 +149,6 @@ enum WorkerMessage {
         backfill: bool,
         response: SyncSender<Result<Vec<ArchivedMemoryExcerpt>, SemanticMemoryError>>,
     },
-    RerankProjectCandidates {
-        database: DatabaseQueueHandle,
-        cache_directory: PathBuf,
-        query: String,
-        candidates: Vec<String>,
-        response: SyncSender<Result<Vec<usize>, SemanticMemoryError>>,
-    },
     InvalidateIndex {
         database: DatabaseQueueHandle,
         cache_directory: PathBuf,
@@ -312,32 +305,6 @@ pub(super) async fn search_archive_existing(
     .await
 }
 
-pub(super) async fn rerank_project_candidates(
-    database: DatabaseQueueHandle,
-    cache_directory: PathBuf,
-    query: String,
-    candidates: Vec<String>,
-) -> Result<Vec<usize>, SemanticMemoryError> {
-    tokio::task::spawn_blocking(move || {
-        let sender = worker_sender()?;
-        let (response_sender, response_receiver) = mpsc::sync_channel(1);
-        sender
-            .send(WorkerMessage::RerankProjectCandidates {
-                database,
-                cache_directory,
-                query,
-                candidates,
-                response: response_sender,
-            })
-            .map_err(|error| SemanticMemoryError::Worker(error.to_string()))?;
-        response_receiver
-            .recv()
-            .map_err(|error| SemanticMemoryError::Worker(error.to_string()))?
-    })
-    .await
-    .map_err(|error| SemanticMemoryError::Worker(error.to_string()))?
-}
-
 async fn run_prepare_worker(
     database: DatabaseQueueHandle,
     cache_directory: PathBuf,
@@ -445,21 +412,6 @@ fn worker_loop(receiver: Receiver<WorkerMessage>) {
                     result_limit,
                     backfill,
                 });
-                let _ = response.send(result);
-            }
-            WorkerMessage::RerankProjectCandidates {
-                database,
-                cache_directory,
-                query,
-                candidates,
-                response,
-            } => {
-                let result = runtime.rerank_project_candidates(
-                    &database,
-                    &cache_directory,
-                    &query,
-                    &candidates,
-                );
                 let _ = response.send(result);
             }
             WorkerMessage::InvalidateIndex {
@@ -611,55 +563,6 @@ impl SemanticRuntime {
             return Ok(Vec::new());
         }
         Ok(excerpts.into_iter().map(|(_, excerpt)| excerpt).collect())
-    }
-
-    fn rerank_project_candidates(
-        &mut self,
-        database: &DatabaseQueueHandle,
-        cache_directory: &Path,
-        query: &str,
-        candidates: &[String],
-    ) -> Result<Vec<usize>, SemanticMemoryError> {
-        if candidates.is_empty() {
-            return Ok(Vec::new());
-        }
-        let connection = database.connect()?;
-        self.load_model_and_index(&connection, cache_directory)?;
-        let model = self
-            .model
-            .as_mut()
-            .ok_or_else(|| SemanticMemoryError::Model("model is not loaded".to_owned()))?;
-        let query_text = format!("query: {query}");
-        let query_embedding = model
-            .embed([query_text.as_str()], Some(1))
-            .map_err(|error| SemanticMemoryError::Model(error.to_string()))?
-            .into_iter()
-            .next()
-            .ok_or_else(|| SemanticMemoryError::Model("query embedding is empty".to_owned()))?;
-        let candidate_texts = candidates
-            .iter()
-            .map(|candidate| format!("passage: {candidate}"))
-            .collect::<Vec<_>>();
-        let candidate_embeddings = model
-            .embed(&candidate_texts, Some(24))
-            .map_err(|error| SemanticMemoryError::Model(error.to_string()))?;
-        if candidate_embeddings.len() != candidates.len() {
-            return Err(SemanticMemoryError::Model(
-                "candidate embedding count does not match the input".to_owned(),
-            ));
-        }
-        let mut scores = candidate_embeddings
-            .iter()
-            .enumerate()
-            .map(|(index, embedding)| {
-                (
-                    index,
-                    vector_math::cosine_similarity_f32(&query_embedding, embedding),
-                )
-            })
-            .collect::<Vec<_>>();
-        scores.sort_by(|left, right| right.1.total_cmp(&left.1).then(left.0.cmp(&right.0)));
-        Ok(scores.into_iter().map(|(index, _)| index).collect())
     }
 
     fn load_model_and_index(

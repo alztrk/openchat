@@ -487,23 +487,9 @@ fn create_project(params: &Value, storage: &AppStorage) -> Result<Value, Service
             params![id, folder_path, now],
         )
         .map_err(storage_error)?;
-    transaction
-        .execute(
-            "INSERT INTO project_index_state
-                (project_id, enabled, status, indexed_files, indexed_bytes, updated_at_unix_ms)
-             VALUES (?1, 1, 'stale', 0, 0, NULL)",
-            [id],
-        )
-        .map_err(storage_error)?;
     transaction.commit().map_err(storage_error)?;
     drop(connection);
-    let index_scheduled = crate::project_index::schedule_sync(
-        storage.database_queue_handle(),
-        id,
-        Path::new(&folder_path),
-    )
-    .is_ok();
-    Ok(json!({"saved": true, "indexScheduled": index_scheduled}))
+    Ok(json!({"saved": true}))
 }
 
 fn add_project_workspace_root(params: &Value, storage: &AppStorage) -> Result<Value, ServiceError> {
@@ -555,13 +541,6 @@ fn add_project_workspace_root(params: &Value, storage: &AppStorage) -> Result<Va
             params![project_id, root_path, position, unix_time_millis()?],
         )
         .map_err(storage_error)?;
-    transaction
-        .execute(
-            "UPDATE project_index_state SET status = 'stale'
-             WHERE project_id = ?1 AND enabled = 1",
-            [project_id],
-        )
-        .map_err(storage_error)?;
     transaction.commit().map_err(storage_error)?;
     Ok(json!({"saved": true, "rootPath": root_path}))
 }
@@ -600,13 +579,6 @@ fn remove_project_workspace_root(
     if removed != 1 {
         return Err(not_found("workspace root"));
     }
-    connection
-        .execute(
-            "UPDATE project_index_state SET status = 'stale'
-             WHERE project_id = ?1 AND enabled = 1",
-            [project_id],
-        )
-        .map_err(storage_error)?;
     Ok(json!({"deleted": true}))
 }
 

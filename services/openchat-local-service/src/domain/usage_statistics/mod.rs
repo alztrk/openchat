@@ -337,7 +337,7 @@ pub(crate) fn instruction_source_categories(
     project_instructions: Option<&str>,
     project_skills: &[crate::project_skills::ProjectSkill],
     project_memory_context: Option<&str>,
-    project_index_context: Option<&str>,
+    project_history_context: Option<&str>,
     goal_mode: bool,
 ) -> Vec<String> {
     let mut sources = Vec::new();
@@ -353,8 +353,8 @@ pub(crate) fn instruction_source_categories(
     if project_memory_context.is_some_and(|value| !value.trim().is_empty()) {
         sources.push("project_memory".to_owned());
     }
-    if project_index_context.is_some_and(|value| !value.trim().is_empty()) {
-        sources.push("project_index".to_owned());
+    if project_history_context.is_some_and(|value| !value.trim().is_empty()) {
+        sources.push("project_history".to_owned());
     }
     if goal_mode {
         sources.push("goal_mode".to_owned());
@@ -621,7 +621,7 @@ fn request_data_manifest(payload: &Value, sources: Option<&RequestDataSources>) 
                     | "project_instructions"
                     | "project_skills"
                     | "project_memory"
-                    | "project_index"
+                    | "project_history"
                     | "goal_mode"
             ) && !instruction_sources.contains(&source.as_str())
             {

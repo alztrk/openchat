@@ -206,13 +206,13 @@ remain separate Rust processes with their existing storage and RPC boundaries.
   separately verified export path.
   When this conflict blocks startup, the user may explicitly confirm creating
   an empty AppContainer profile. The broker records that legacy sources were
-  intentionally preserved, skips database, secret, local-model, and project
-  index imports, and leaves old WebView localStorage untouched on later starts.
+  intentionally preserved, skips database, secret, and local-model imports,
+  and leaves old WebView localStorage untouched on later starts.
   This does not migrate or delete the protected profile.
   Legacy provider secrets are transferred in bounded zeroizing IPC frames and
-  remain DPAPI-protected. The old project-index database contributes only
-  per-project enabled settings; its derived text is marked stale and rebuilt
-  through the broker on demand, and the old index file remains untouched. Both
+  remain DPAPI-protected. Project indexing is retired: migration 57 drops its
+  tables from the active database, while the old standalone
+  `cache/project-index.sqlite3` file is no longer read or modified. Both
   chat and backend schema versions migrate after a verified pre-migration
   backup. Startup checks integrity and the chat schema contract, repairs known
   missing chat columns and sort indexes, repairs known backend-derived indexes
@@ -288,47 +288,13 @@ remain separate Rust processes with their existing storage and RPC boundaries.
   returns at most 30 matches with excerpts capped at 4,096 UTF-8 bytes. This
   synthetic in-memory measurement does not profile CPU or resident memory and
   does not predict performance for every user database.
-- Project indexing opens files relative to the selected project root capability
-  and caps one sync at 128 MiB of file reads, 128 KiB per file, 20,000 indexed
-  files, and 100,000 traversal entries. A scan that reaches a bound stays stale,
-  so partial results are not used as model context.
-- Project retrieval uses FTS5 for project files and prior project conversations.
-  When the local embedding model is already prepared, it semantically reranks
-  up to 24 lexical file candidates and searches existing embeddings from up to
-  eight recent project conversations. Chat sends do not download the model or
-  backfill conversation embeddings. Retrieved code and history share a 12 KiB
-  context bound; history remains disabled until the user opts in per project.
-  When the selected model advertises an input limit, notes and retrieval share
-  an additional budget capped at 8% of that window. The fixed byte caps apply
-  when the provider does not report a limit.
-- Project creation schedules the code index on a bounded background queue. The
-  index covers up to eight configured workspace roots, follows `.gitignore`,
-  and applies shared limits of 20,000 files and 128 MiB scanned per sync, 64 MiB
-  of indexed text, and 100,000 Tree-sitter symbols across Bash, C, C++, C#,
-  Dart, Go, Java, Lua, PHP, Python, Ruby, Rust, Scala, SQL, Swift, JavaScript,
-  and TypeScript. Kotlin source remains searchable as text; its current
-  Tree-sitter grammar does not reliably parse class declarations, so Kotlin
-  symbols are not indexed. Indexed paths and search results use canonical
-  absolute paths. Symbol results include 1-based
-  line ranges, declaration signatures, containing types, and inheritance or
-  implementation relationships when the grammar exposes them. The richer
-  structural details are extracted from cached indexed source when searching,
-  so they do not require a separate database migration. `search_project_code`
-  returns bounded text excerpts, symbol locations, and enabled durable project
-  notes, helping an agent select a narrow `read_file` range. The expected token
-  savings come from retrieving those excerpts instead of sending unrelated file
-  contents; the benchmark's comparison with the entire synthetic workspace is
-  an upper bound, and reading one already identified narrow file can be cheaper
-  than a search response. Exact savings depend on the repository, task, and
-  provider tokenizer. Manual benchmark cases cover a synthetic workspace and
-  the current repository; they report byte-based token estimates, not provider
-  tokenizer counts. Backend migration 46 stores a per-file symbol extractor
-  version, backfills existing grammars, and marks enabled indexes stale. The
-  next sync refreshes files whose supported symbols are missing or stale while
-  reusing unchanged symbols from previously supported languages.
-  The per-file index records whether symbol extraction has run, including files
-  with no declarations, so unchanged files are not repeatedly parsed. Index
-  updates to any configured workspace root mark the shared index stale.
+- Project conversation retrieval is opt-in per project. It searches other
+  conversations associated with that project, excludes the active conversation
+  and archived history, and may use existing local embeddings when the model is
+  already prepared. Chat sends do not download the embedding model or backfill
+  conversation embeddings. Retrieved history and durable project notes share a
+  20 KiB context cap and, when the selected model advertises an input limit, an
+  additional budget capped at 8% of that window.
 - Glob-scoped project rules live in `.openchat/rules/**/*.mdc`. The agent gets
   a rule only when its `globs` front matter matches a returned or requested
   project file path. A first write or edit to a matching path returns the rule
@@ -367,12 +333,10 @@ remain separate Rust processes with their existing storage and RPC boundaries.
   is present, and TypeScript Language Server otherwise.
   The sandboxed executor currently supports Windows only and denies network
   access.
-- Project code symbols, file text, durable notes, and prior project conversations
-  remain separate local sources. `search_project_code` can query file text,
-  symbols, and enabled durable notes together while keeping each result group
-  distinct; prior conversation search remains its own opt-in retrieval source.
-  Chat context assembly applies the existing project-memory and retrieval
-  limits, and code search returns source locations for narrow follow-up reads.
+- Project notes and prior project conversations remain separate local sources.
+  Project conversation search is opt-in and scoped to the attached project;
+  project notes can be enabled independently. Both are treated as untrusted
+  reference context and are bounded before provider requests.
 - Read-only Git status, diff, and history use fixed arguments, bounded output,
   and a five-second process deadline. The repository-classification probe also
   has a deadline and kills its child when the task is dropped.
@@ -1149,4 +1113,4 @@ runtime, extraction throughput, CPU use, or memory use.
 - **Persistent Project Agent Memory & Semantic Context Engine:**
   - Local notes have per-project opt-ins, separate assistant-save permission, source labels, bounded storage, JSON export, editing, and selective deletion.
   - Enabled notes enter normal project-run context and its continuation checkpoint; temporary chats and Plan mode do not receive them.
-  - Project files and prior project conversations use bounded FTS5 retrieval; a prepared local model adds semantic reranking and searches existing conversation embeddings without chat-time downloads or backfill.
+  - Prior project conversations use bounded FTS5 retrieval; a prepared local model can search existing conversation embeddings without chat-time downloads or backfill.

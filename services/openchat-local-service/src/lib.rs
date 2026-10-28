@@ -18,9 +18,9 @@ pub(crate) use domain::{
     context_compaction, conversation_archive, copilot_oauth, document_parser, file_changes,
     git_inspection, git_worktrees, goals, history, hugging_face, image_library, instructions,
     local_engines, oauth, openai_api, openai_compatible, pending_archive_export, permissions,
-    profile_archive, project_index, project_instructions, project_memory, project_skills,
-    provider_credentials, provider_schema, response_budget, security_scan, temporary_conversation,
-    tools, usage_statistics, user_question_broker, workspace_settings,
+    profile_archive, project_instructions, project_memory, project_skills, provider_credentials,
+    provider_schema, response_budget, security_scan, temporary_conversation, tools,
+    usage_statistics, user_question_broker, workspace_settings,
 };
 
 #[path = "adapters/filesystem.rs"]

@@ -77,7 +77,7 @@ impl ChatGptService {
             project_instructions,
             project_memory_context,
             project_skills,
-            mut project_index_context,
+            mut project_history_context,
             project_root,
             workspace_roots,
             data_root,
@@ -200,13 +200,15 @@ impl ChatGptService {
         let mut response_budget = ProviderResponseBudget::default();
         let mut initial_provider_request = true;
         'model_turn: loop {
-            if !initial_provider_request && let Some(index_context) = project_index_context.take() {
+            if !initial_provider_request
+                && let Some(history_context) = project_history_context.take()
+            {
                 let removed = match payload.get_mut("instructions") {
                     Some(Value::String(instructions)) => {
-                        crate::instructions::remove_project_index_context(
+                        crate::instructions::remove_project_history_context(
                             instructions,
                             project_memory_context,
-                            &index_context,
+                            &history_context,
                             model.context_window,
                         )
                     }
@@ -224,8 +226,8 @@ impl ChatGptService {
                         elapsed: Some(elapsed),
                     })?;
                     return Err(ServiceError::new(
-                        "project_index_context_cleanup_failed",
-                        "The project index context could not be removed before a follow-up request.",
+                        "project_history_context_cleanup_failed",
+                        "The project history context could not be removed before a follow-up request.",
                         false,
                     ));
                 }
@@ -291,7 +293,7 @@ impl ChatGptService {
                     project_instructions,
                     &project_skills,
                     project_memory_context,
-                    project_index_context.as_deref(),
+                    project_history_context.as_deref(),
                     goal.is_some(),
                 ),
                 ..Default::default()

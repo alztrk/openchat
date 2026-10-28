@@ -69,8 +69,8 @@ pub struct ChatSendContext<'a> {
     pub project_memory_context: Option<&'a str>,
     /// Validated skill content selected for the active project.
     pub project_skills: Vec<crate::project_skills::ProjectSkill>,
-    /// Bounded local index excerpts available to project-aware tools.
-    pub project_index_context: Option<String>,
+    /// Bounded excerpts from prior project conversations for this request.
+    pub project_history_context: Option<String>,
     /// Canonical project root used to scope project tools, if any.
     pub project_root: Option<&'a Path>,
     /// Display name of the attached project, when available.

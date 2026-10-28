@@ -72,7 +72,6 @@ fn legacy_profile_database_sources_are_encrypted_without_creating_missing_files(
     let legacy_paths = [
         directory.0.join("db/openchat.sqlite3"),
         directory.0.join("db/local_models.sqlite3"),
-        directory.0.join("cache/project-index.sqlite3"),
     ];
     for path in &legacy_paths {
         fs::create_dir_all(path.parent().expect("legacy database parent"))

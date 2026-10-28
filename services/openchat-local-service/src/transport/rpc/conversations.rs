@@ -394,7 +394,7 @@ pub(super) async fn dispatch(
                     project: project_instructions.as_deref(),
                     project_skills: &project_skills,
                     project_memory_context: project_memory_context.as_deref(),
-                    project_index_context: None,
+                    project_history_context: None,
                     project_context_window_tokens,
                     permission_mode,
                     has_project,

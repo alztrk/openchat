@@ -287,7 +287,7 @@ pub async fn send_message(
         project_instructions,
         project_memory_context,
         project_skills,
-        project_index_context,
+        project_history_context,
         project_root,
         project_name,
         workspace_roots,
@@ -489,7 +489,7 @@ pub async fn send_message(
             project_instructions,
             project_memory_context,
             project_skills: &project_skills,
-            project_index_context: project_index_context.as_deref(),
+            project_history_context: project_history_context.as_deref(),
             project_context_window_tokens: route.request_context_limit(),
             permission_mode,
             has_project: project_root.is_some(),
@@ -758,7 +758,7 @@ pub async fn send_message(
             project_instructions,
             &project_skills,
             project_memory_context,
-            project_index_context.as_deref(),
+            project_history_context.as_deref(),
             goal.is_some(),
         ),
         message_ids: included_messages[history_start..]
@@ -888,7 +888,7 @@ pub async fn send_message(
         events: &events,
         request_sources: &mut request_sources,
         project_memory_context,
-        project_index_context: project_index_context.as_deref(),
+        project_history_context: project_history_context.as_deref(),
         opencode_free_workspace: opencode_free_workspace.as_deref(),
     })
     .await;
@@ -1080,7 +1080,7 @@ struct StreamConversationContext<'a> {
     events: &'a crate::protocol::EventSink,
     request_sources: &'a mut RequestDataSources,
     project_memory_context: Option<&'a str>,
-    project_index_context: Option<&'a str>,
+    project_history_context: Option<&'a str>,
     opencode_free_workspace: Option<&'a Path>,
 }
 
@@ -1094,32 +1094,32 @@ async fn stream_conversation(context: StreamConversationContext<'_>) -> Result<(
     let api_key = context.api_key;
     let fast_mode = context.fast_mode;
     let goal = context.goal;
+    let mut project_history_context = context.project_history_context;
     let session_id = route
         .is_opencode
         .then(|| opencode_session_id_for_conversation(context.conversation_id, context.created_at));
-    let mut project_index_context = context.project_index_context;
     let mut operation = "chat";
     let mut response_budget = ProviderResponseBudget::default();
     let mut initial_provider_request = true;
 
     loop {
-        if !initial_provider_request && let Some(index_context) = project_index_context.take() {
-            if !crate::instructions::remove_project_index_context(
+        if !initial_provider_request && let Some(history_context) = project_history_context.take() {
+            if !crate::instructions::remove_project_history_context(
                 &mut provider_request.instructions,
                 context.project_memory_context,
-                index_context,
-                context.route.request_context_limit(),
+                history_context,
+                route.request_context_limit(),
             ) {
                 return Err(ServiceError::new(
-                    "project_index_context_cleanup_failed",
-                    "The project index context could not be removed before a follow-up request.",
+                    "project_history_context_cleanup_failed",
+                    "The project history context could not be removed before a follow-up request.",
                     false,
                 ));
             }
             context
                 .request_sources
                 .instruction_sources
-                .retain(|source| source != "project_index");
+                .retain(|source| source != "project_history");
         }
         initial_provider_request = false;
         let mut body = if route.uses_responses_api {

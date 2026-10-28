@@ -361,26 +361,6 @@ pub async fn search_project_history(
         .collect())
 }
 
-/// Semantically reranks bounded lexical candidates when the local embedding model is available.
-pub async fn rank_project_candidates(
-    storage: &AppStorage,
-    query: &str,
-    candidates: Vec<String>,
-) -> Option<Vec<usize>> {
-    let cache_directory = storage.semantic_memory_cache_directory();
-    if candidates.is_empty() || !semantic::is_ready(&cache_directory).await {
-        return None;
-    }
-    semantic::rerank_project_candidates(
-        storage.database_queue_handle(),
-        cache_directory,
-        query.to_owned(),
-        candidates,
-    )
-    .await
-    .ok()
-}
-
 fn merge_project_history_candidate(
     candidates: &mut Vec<(ProjectHistoryExcerpt, u32)>,
     positions: &mut std::collections::HashMap<(String, String), usize>,

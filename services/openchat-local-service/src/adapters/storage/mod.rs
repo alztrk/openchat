@@ -208,11 +208,7 @@ impl AppStorage {
                         .complete_empty_legacy_import(crate::secrets::SecretMap::default(), true)?;
                     preserve_legacy_sources = true;
                 } else if protected_legacy_profile {
-                    protect_legacy_profile_databases(
-                        &database_directory,
-                        &cache_directory,
-                        &database_key,
-                    )?;
+                    protect_legacy_profile_databases(&database_directory, &database_key)?;
                     return Err(rusqlite::Error::SqliteFailure(
                         ffi::Error::new(ffi::SQLITE_CANTOPEN),
                         Some(
@@ -254,11 +250,7 @@ impl AppStorage {
             LegacyImportStatus::CompletedWithLegacySourcePreserved => {}
             LegacyImportStatus::ExistingData => {
                 if legacy_database_exists(&database_path)? {
-                    protect_legacy_profile_databases(
-                        &database_directory,
-                        &cache_directory,
-                        &database_key,
-                    )?;
+                    protect_legacy_profile_databases(&database_directory, &database_key)?;
                     return Err(rusqlite::Error::InvalidQuery);
                 }
             }
@@ -270,13 +262,8 @@ impl AppStorage {
                 &broker,
                 &database_key,
             )?;
-            migrate_legacy_project_index(
-                &cache_directory.join("project-index.sqlite3"),
-                &broker,
-                &database_key,
-            )?;
         }
-        protect_legacy_profile_databases(&database_directory, &cache_directory, &database_key)?;
+        protect_legacy_profile_databases(&database_directory, &database_key)?;
 
         let schema_version = broker.query_row(
             "SELECT COALESCE(MAX(version), 0) FROM openchat_backend_migrations",
@@ -1119,12 +1106,6 @@ struct LegacyLocalModel {
 }
 
 #[cfg(windows)]
-struct LegacyProjectIndexState {
-    project_id: String,
-    enabled: bool,
-}
-
-#[cfg(windows)]
 fn protect_legacy_database_file(
     path: &Path,
     database_key: &database_key::DatabaseKey,
@@ -1241,98 +1222,6 @@ fn migrate_legacy_local_models(
     transaction.execute(
         "INSERT INTO openchat_storage_metadata (key, value)
          VALUES ('legacy_local_models_import_completed', '1')
-         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-        [],
-    )?;
-    transaction.commit()?;
-    Ok(())
-}
-
-#[cfg(windows)]
-fn migrate_legacy_project_index(
-    legacy_path: &Path,
-    broker: &BrokerConnection,
-    database_key: &database_key::DatabaseKey,
-) -> rusqlite::Result<()> {
-    let completed = broker
-        .query_row(
-            "SELECT value FROM openchat_storage_metadata
-             WHERE key = 'legacy_project_index_import_completed'",
-            [],
-            |row| row.get::<_, String>(0),
-        )
-        .optional()?;
-    match completed.as_deref() {
-        Some("1") => return Ok(()),
-        Some(_) => return Err(rusqlite::Error::InvalidQuery),
-        None => {}
-    }
-
-    let mut states = Vec::new();
-    match fs::symlink_metadata(legacy_path) {
-        Ok(metadata) => {
-            if !metadata.is_file()
-                || metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
-                || metadata.len() < 16
-            {
-                return Err(rusqlite::Error::InvalidPath(legacy_path.to_path_buf()));
-            }
-            let (source, _) = database_key.open_or_migrate(legacy_path)?;
-            disable_trusted_schema(&source)?;
-            database_guard::verify_integrity(&source)?;
-            let has_state = source.query_row(
-                "SELECT EXISTS (
-                    SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = 'project_index_state'
-                )",
-                [],
-                |row| row.get::<_, bool>(0),
-            )?;
-            if has_state {
-                let mut statement = source.prepare(
-                    "SELECT project_id, enabled FROM project_index_state ORDER BY project_id",
-                )?;
-                let rows = statement.query_map([], |row| {
-                    Ok(LegacyProjectIndexState {
-                        project_id: row.get(0)?,
-                        enabled: row.get(1)?,
-                    })
-                })?;
-                for row in rows {
-                    if states.len() >= 100_000 {
-                        return Err(rusqlite::Error::InvalidQuery);
-                    }
-                    let state = row?;
-                    if state.project_id.is_empty()
-                        || state.project_id.len() > 128
-                        || state.project_id.chars().any(char::is_control)
-                    {
-                        return Err(rusqlite::Error::InvalidQuery);
-                    }
-                    states.push(state);
-                }
-            }
-        }
-        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-        Err(error) => return Err(filesystem_error(error)),
-    }
-
-    let transaction = broker.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
-    for state in states {
-        transaction.execute(
-            "INSERT INTO project_index_state (
-                project_id, enabled, status, indexed_files, indexed_bytes, updated_at_unix_ms
-             ) VALUES (?1, ?2, ?3, 0, 0, NULL)
-             ON CONFLICT(project_id) DO NOTHING",
-            rusqlite::params![
-                state.project_id,
-                state.enabled,
-                if state.enabled { "stale" } else { "disabled" },
-            ],
-        )?;
-    }
-    transaction.execute(
-        "INSERT INTO openchat_storage_metadata (key, value)
-         VALUES ('legacy_project_index_import_completed', '1')
          ON CONFLICT(key) DO UPDATE SET value = excluded.value",
         [],
     )?;
@@ -1849,7 +1738,6 @@ fn validate_sqlite_runtime(version_number: i32, version: &str) -> rusqlite::Resu
 #[cfg(windows)]
 fn protect_legacy_profile_databases(
     database_directory: &Path,
-    cache_directory: &Path,
     database_key: &database_key::DatabaseKey,
 ) -> rusqlite::Result<()> {
     protect_legacy_database_file(&database_directory.join("openchat.sqlite3"), database_key)?;
@@ -1857,7 +1745,6 @@ fn protect_legacy_profile_databases(
         &database_directory.join("local_models.sqlite3"),
         database_key,
     )?;
-    protect_legacy_database_file(&cache_directory.join("project-index.sqlite3"), database_key)?;
     convert_retained_pre_migration_backups(database_directory, database_key)
 }
 

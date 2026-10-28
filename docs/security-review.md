@@ -403,6 +403,8 @@ The local-data settings derive archive availability from the local service state
 
 ### Resolved: project indexing ignored Git global and repository-local excludes
 
+Lifecycle note, 2026-10-28: project file indexing and code-symbol mapping were retired after these historical findings were addressed. Backend migration 57 removes active project-index tables. The findings below record the former implementation and no longer describe current runtime behavior; `.openchat/rules/**/*.mdc` remains a separate feature.
+
 The project walker now honors `.gitignore`, `.git/info/exclude`, and the user's Git global exclude configuration. A regression test verifies that a repository-local exclude rule prevents a file from entering the search index. This does not validate the current user's global exclude file; project `.gitignore` size, line-length, and rule-count limits are covered separately below.
 
 ### Resolved: project indexing bounds Git ignore-rule inputs (A-028)

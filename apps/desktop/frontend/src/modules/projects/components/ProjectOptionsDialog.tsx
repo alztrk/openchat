@@ -5,7 +5,6 @@ import {
   GitBranch,
   Hand,
   NotebookPen,
-  Search,
   Server,
   Sparkles,
   Star,
@@ -16,7 +15,6 @@ import { useTranslation } from 'react-i18next';
 import { Button, Dialog } from '@/design-system';
 import type { ChatProject } from '@/modules/conversations/data/chatStorage';
 import { ProjectDefaultModelPanel } from './ProjectDefaultModelPanel';
-import { ProjectIndexPanel } from './ProjectIndexPanel';
 import { ProjectInstructionsPanel } from './ProjectInstructionsPanel';
 import { ProjectMcpPanel } from './ProjectMcpPanel';
 import { ProjectMemoryPanel } from './ProjectMemoryPanel';
@@ -31,7 +29,6 @@ type ProjectOptionId =
   | 'instructions'
   | 'memory'
   | 'skills'
-  | 'index'
   | 'permissions'
   | 'mcp'
   | 'worktrees';
@@ -57,7 +54,6 @@ export function ProjectOptionsDialog({ project, open, onOpenChange, onUseWorktre
     instructions: t('projectOptionsInstructions'),
     memory: t('projectMemoryTitle'),
     skills: t('projectOptionsSkills'),
-    index: t('projectIndexTitle'),
     permissions: t('projectOptionsToolPermissions'),
     mcp: t('projectOptionsMcpServers'),
     worktrees: t('projectOptionsWorktrees'),
@@ -103,7 +99,6 @@ export function ProjectOptionsDialog({ project, open, onOpenChange, onUseWorktre
               />
               <ProjectOptionButton icon={Brain} label={optionLabels.memory} onClick={() => setOption('memory')} />
               <ProjectOptionButton icon={Sparkles} label={optionLabels.skills} onClick={() => setOption('skills')} />
-              <ProjectOptionButton icon={Search} label={optionLabels.index} onClick={() => setOption('index')} />
               <ProjectOptionButton
                 icon={Hand}
                 label={optionLabels.permissions}
@@ -126,7 +121,6 @@ export function ProjectOptionsDialog({ project, open, onOpenChange, onUseWorktre
           ) : null}
           {option === 'memory' ? <ProjectMemoryPanel onClose={() => onOpenChange(false)} project={project} /> : null}
           {option === 'skills' ? <ProjectSkillsPanel onClose={() => onOpenChange(false)} project={project} /> : null}
-          {option === 'index' ? <ProjectIndexPanel onClose={() => onOpenChange(false)} project={project} /> : null}
           {option === 'permissions' ? (
             <ProjectToolPermissionsPanel onClose={() => onOpenChange(false)} project={project} />
           ) : null}

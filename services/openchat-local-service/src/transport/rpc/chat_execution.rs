@@ -172,8 +172,8 @@ pub(super) struct PreparedChatRun {
     pub(super) project_memory_context: Option<String>,
     /// Validated project skills loaded or restored from a resume checkpoint.
     pub(super) project_skills: Vec<ProjectSkill>,
-    /// Bounded index excerpt selected from source-verified current index results.
-    pub(super) project_index_context: Option<String>,
+    /// Bounded excerpts from prior project conversations, selected for this request.
+    pub(super) project_history_context: Option<String>,
     /// Effective reasoning effort, restored from a resume checkpoint when needed.
     pub(super) reasoning_effort: Option<String>,
     /// Effective Fast mode setting, restored from a resume checkpoint when needed.
@@ -190,7 +190,7 @@ struct PreparedRunState {
     run_id: String,
     /// Validated user instructions saved for the run.
     custom_instructions: Option<String>,
-    /// Project instructions, skills, and bounded index excerpt used by provider context.
+    /// Project instructions, skills, and bounded history excerpt used by provider context.
     project_context: ProjectContext,
     /// Reasoning effort requested by the user or restored from the checkpoint.
     reasoning_effort: Option<String>,
@@ -202,7 +202,7 @@ struct PreparedRunState {
     profile_tool_allowlist: Option<HashSet<String>>,
 }
 
-/// Project-scoped context captured for one provider request; index excerpts are not checkpointed.
+/// Project-scoped context captured for one provider request; history excerpts are not checkpointed.
 struct ProjectContext {
     /// Validated project instruction text.
     instructions: Option<String>,
@@ -210,8 +210,8 @@ struct ProjectContext {
     memory_context: Option<String>,
     /// Explicitly selected project skills.
     skills: Vec<ProjectSkill>,
-    /// Bounded current index excerpt relevant to the latest user message.
-    index_excerpt: Option<String>,
+    /// Bounded excerpts from prior conversations in this project.
+    history_context: Option<String>,
 }
 
 /// Validates goal and provider settings, restores or creates a run, and loads its project context.
@@ -311,7 +311,7 @@ pub(super) async fn prepare_run(
         project_instructions: prepared.project_context.instructions,
         project_memory_context: prepared.project_context.memory_context,
         project_skills: prepared.project_context.skills,
-        project_index_context: prepared.project_context.index_excerpt,
+        project_history_context: prepared.project_context.history_context,
         reasoning_effort: prepared.reasoning_effort,
         fast_mode: prepared.fast_mode,
         goal_execution: prepared.goal_execution,
@@ -324,7 +324,7 @@ fn empty_project_context() -> ProjectContext {
         instructions: None,
         memory_context: None,
         skills: Vec::new(),
-        index_excerpt: None,
+        history_context: None,
     }
 }
 
@@ -433,7 +433,7 @@ fn restore_run(
         instructions: restore_project_instructions(checkpoint)?,
         memory_context: restore_project_memory_context(checkpoint)?,
         skills: crate::project_skills::from_checkpoint(checkpoint.get("projectSkills"))?,
-        index_excerpt: project_index_excerpt_for_resume(checkpoint)?,
+        history_context: None,
     };
     let reasoning_effort = checkpoint
         .get("reasoningEffort")
@@ -482,19 +482,6 @@ fn restore_project_instructions(checkpoint: &Value) -> Result<Option<String>, Se
         Some(_) => Err(ServiceError::new(
             "question_run_checkpoint_invalid",
             "The saved project instructions are invalid.",
-            false,
-        )),
-    }
-}
-
-/// Validates the saved index field but never replays its potentially stale excerpt.
-fn project_index_excerpt_for_resume(checkpoint: &Value) -> Result<Option<String>, ServiceError> {
-    match checkpoint.get("projectIndexContext") {
-        None | Some(Value::Null) => Ok(None),
-        Some(Value::String(value)) if value.len() <= 12 * 1024 => Ok(None),
-        _ => Err(ServiceError::new(
-            "question_run_checkpoint_invalid",
-            "The saved project index context is invalid.",
             false,
         )),
     }
@@ -583,19 +570,10 @@ async fn load_project_context(
     let memory_context = memory_snapshot
         .as_ref()
         .and_then(crate::project_memory::context_from_snapshot);
-    let project_index_enabled = if permission_mode == ToolPermissionMode::Plan {
-        false
-    } else if let (Some(project_id), Some(_)) =
-        (route.project_id.as_deref(), route.project_root.as_deref())
-    {
-        crate::project_index::snapshot(connection, project_id)?.enabled
-    } else {
-        false
-    };
     let history_context_enabled = memory_snapshot
         .as_ref()
         .is_some_and(|snapshot| snapshot.history_context_enabled);
-    let latest_user_message = if project_index_enabled || history_context_enabled {
+    let latest_user_message = if history_context_enabled {
         chatgpt_store::conversation_messages_on_connection(
             connection,
             storage.root(),
@@ -616,91 +594,6 @@ async fn load_project_context(
     } else {
         None
     };
-    let code_context = if project_index_enabled {
-        if let (Some(project_id), Some(root), Some(query)) = (
-            route.project_id.as_deref(),
-            route.project_root.as_deref(),
-            latest_user_message.as_deref(),
-        ) {
-            let mut hits =
-                crate::project_index::search_current_hits(connection, project_id, query)?;
-            let mut ranked_indices = None;
-            let mut candidates_unchanged = true;
-            if !hits.is_empty() {
-                let candidates = hits
-                    .iter()
-                    .map(|hit| format!("{}\n{}", hit.path, hit.excerpt))
-                    .collect::<Vec<_>>();
-                ranked_indices =
-                    chatgpt_store::rank_project_candidates(storage, query, candidates).await;
-                let current_hits =
-                    crate::project_index::search_current_hits(connection, project_id, query)?;
-                candidates_unchanged = hits.len() == current_hits.len()
-                    && hits.iter().zip(&current_hits).all(|(previous, current)| {
-                        previous.path == current.path && previous.excerpt == current.excerpt
-                    });
-                hits = current_hits;
-            }
-            let state = crate::project_index::snapshot(connection, project_id)?;
-            if state.status != "current" {
-                match super::projects::project_workspace_roots_for_project(storage, project_id) {
-                    Ok(roots) => {
-                        if let Err(error) = crate::project_index::schedule_sync_roots_on_connection(
-                            connection,
-                            storage.database_queue_handle(),
-                            project_id,
-                            &roots,
-                        ) {
-                            eprintln!("project_index_sync_schedule_failed code={}", error.code);
-                        }
-                    }
-                    Err(error) => {
-                        eprintln!("project_index_workspace_roots_failed code={}", error.code);
-                    }
-                }
-            }
-            if hits.is_empty() {
-                None
-            } else {
-                let ranked_hits =
-                    if candidates_unchanged && let Some(ranked_indices) = ranked_indices {
-                        let mut seen = HashSet::new();
-                        let mut ranked_hits = Vec::with_capacity(hits.len());
-                        for index in ranked_indices {
-                            if let Some(hit) = hits.get(index)
-                                && seen.insert(index)
-                            {
-                                ranked_hits.push(hit.clone());
-                            }
-                        }
-                        for (index, hit) in hits.iter().enumerate() {
-                            if seen.insert(index) {
-                                ranked_hits.push(hit.clone());
-                            }
-                        }
-                        ranked_hits
-                    } else {
-                        hits
-                    };
-                crate::project_index::format_current_hits(Path::new(root), &ranked_hits)
-            }
-        } else {
-            None
-        }
-    } else {
-        None
-    };
-    let symbol_map = if project_index_enabled {
-        match (route.project_id.as_deref(), latest_user_message.as_deref()) {
-            (Some(project_id), Some(query)) => {
-                crate::project_index::prompt_symbol_map(connection, project_id, query)?
-            }
-            _ => None,
-        }
-    } else {
-        None
-    };
-    let code_context = merge_project_code_context(code_context, symbol_map);
     let history_context = if history_context_enabled {
         match (route.project_id.as_deref(), latest_user_message.as_deref()) {
             (Some(project_id), Some(query)) => {
@@ -725,12 +618,11 @@ async fn load_project_context(
     } else {
         None
     };
-    let index_excerpt = merge_project_retrieval_context(code_context, history_context);
     Ok(ProjectContext {
         instructions,
         memory_context,
         skills,
-        index_excerpt,
+        history_context,
     })
 }
 
@@ -744,7 +636,7 @@ fn format_project_history_context(
     for excerpt in excerpts {
         let title = truncate_utf8(&excerpt.conversation_title, 160);
         let content = truncate_utf8(&excerpt.excerpt, 2400);
-        let addition = format!("\n[{} | {}]\n{}\n", title, excerpt.role, content);
+        let addition = format!("\n[{title} | {}]\n{content}\n", excerpt.role);
         let remaining = MAX_BYTES.saturating_sub(context.len());
         if remaining == 0 {
             break;
@@ -755,53 +647,6 @@ fn format_project_history_context(
         }
     }
     (context.lines().count() > 1).then_some(context)
-}
-
-fn merge_project_retrieval_context(
-    code_context: Option<String>,
-    history_context: Option<String>,
-) -> Option<String> {
-    const MAX_BYTES: usize = 12 * 1024;
-    const HISTORY_RESERVE_BYTES: usize = 6 * 1024;
-    match (code_context, history_context) {
-        (None, None) => None,
-        (Some(code), None) => Some(truncate_utf8(&code, MAX_BYTES).to_owned()),
-        (None, Some(history)) => Some(truncate_utf8(&history, MAX_BYTES).to_owned()),
-        (Some(code), Some(history)) => {
-            let code_limit = MAX_BYTES.saturating_sub(HISTORY_RESERVE_BYTES);
-            let code = truncate_utf8(&code, code_limit);
-            let mut merged = code.to_owned();
-            let remaining = MAX_BYTES.saturating_sub(merged.len());
-            if remaining > 1 {
-                merged.push('\n');
-                merged.push_str(truncate_utf8(&history, remaining - 1));
-            }
-            Some(merged)
-        }
-    }
-}
-
-fn merge_project_code_context(
-    excerpts: Option<String>,
-    symbol_map: Option<String>,
-) -> Option<String> {
-    const MAX_BYTES: usize = 12 * 1024;
-    match (excerpts, symbol_map) {
-        (None, None) => None,
-        (Some(excerpts), None) => Some(truncate_utf8(&excerpts, MAX_BYTES).to_owned()),
-        (None, Some(symbol_map)) => Some(truncate_utf8(&symbol_map, MAX_BYTES).to_owned()),
-        (Some(excerpts), Some(symbol_map)) => {
-            let symbol_map = truncate_utf8(&symbol_map, MAX_BYTES);
-            let excerpt_budget = MAX_BYTES.saturating_sub(symbol_map.len()).saturating_sub(1);
-            let excerpts = truncate_utf8(&excerpts, excerpt_budget);
-            let mut combined = symbol_map.to_owned();
-            if !excerpts.is_empty() {
-                combined.push('\n');
-                combined.push_str(excerpts);
-            }
-            Some(combined)
-        }
-    }
 }
 
 fn truncate_utf8(value: &str, max_bytes: usize) -> &str {
@@ -1150,10 +995,7 @@ mod tests {
         user_question_broker::{RunOutcome, UserQuestionBroker},
     };
 
-    use super::{
-        ChatRunFinalization, classify_run_outcome, finish_run, merge_project_code_context,
-        project_index_excerpt_for_resume,
-    };
+    use super::{ChatRunFinalization, classify_run_outcome, finish_run};
 
     struct TestDirectory(PathBuf);
 
@@ -1259,43 +1101,6 @@ mod tests {
 
     fn service_error(code: &'static str, retryable: bool) -> ServiceError {
         ServiceError::new(code, "test failure", retryable)
-    }
-
-    #[test]
-    fn resumed_runs_validate_but_do_not_replay_saved_project_index_context() {
-        assert_eq!(
-            project_index_excerpt_for_resume(&json!({
-                "projectIndexContext": "previously indexed source excerpt"
-            }))
-            .expect("validate saved project index context"),
-            None
-        );
-        assert_eq!(
-            project_index_excerpt_for_resume(&json!({}))
-                .expect("accept a checkpoint without index context"),
-            None
-        );
-        assert_eq!(
-            project_index_excerpt_for_resume(&json!({
-                "projectIndexContext": "x".repeat(12 * 1024 + 1)
-            }))
-            .expect_err("reject an oversized checkpoint excerpt")
-            .code,
-            "question_run_checkpoint_invalid"
-        );
-    }
-
-    #[test]
-    fn project_code_context_keeps_the_symbol_map_within_the_request_budget() {
-        let context = merge_project_code_context(
-            Some("relevant source excerpt\n".repeat(1_000)),
-            Some("Relevant declarations from the local index.\n- src/router.rs:12 [function] fn dispatch_request()\n".to_owned()),
-        )
-        .expect("project code context is available");
-
-        assert!(context.starts_with("Relevant declarations"));
-        assert!(context.contains("relevant source excerpt"));
-        assert!(context.len() <= 12 * 1024);
     }
 
     #[test]

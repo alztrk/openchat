@@ -185,19 +185,19 @@ These bullets describe code present in the repository. They do not mean that eve
 
 **Exit criteria:** met for the supported Windows target. Built-in, user-configured, and MCP tools use explicit permission decisions and report their activity consistently; local process tools run inside an enforced sandbox; file edits can be reviewed and reversed; and denied, failed, timed-out, and cancelled calls have clear outcomes in the UI.
 
-### 2. Add project profiles and incremental code context
+### 2. Add project profiles and project context
 
-**Status: implemented in source.** Project-scoped instructions are editable from project options and saved to `.openchat/instructions.md`. Project Skills in `.openchat/skills/<id>/SKILL.md` can be selected per project, previewed in project options, and are included in new provider requests. Skill IDs, UTF-8 content, project containment, per-file and total sizes, checkpoint restoration, and stale selections are validated. Skill selections are stored in local preferences outside repository catalogs and conversation/profile archives. Projects can save a local provider/model route and supported reasoning effort as their default for new conversations; the model picker marks the effective project default, existing conversations retain their saved route, and missing project models fall back to the global default. The optional incremental index is stored in the local cache, follows `.gitignore`, bounds ignore-file size, line length, and rule count before indexing, applies bounded scanning and redaction, and adds matching excerpts to new requests only after checking the indexed source against the current file. Follow-up provider requests remove the index excerpt, new checkpoints do not store it, and legacy checkpoint values are validated but discarded on resume. Its options report indexed state and support enable, sync, and clear operations.
+**Status: implemented in source.** Project-scoped instructions are editable from project options and saved to `.openchat/instructions.md`. Project Skills in `.openchat/skills/<id>/SKILL.md` can be selected per project, previewed in project options, and are included in new provider requests. Skill IDs, UTF-8 content, project containment, per-file and total sizes, checkpoint restoration, and stale selections are validated. Skill selections are stored in local preferences outside repository catalogs and conversation/profile archives. Projects can save a local provider/model route and supported reasoning effort as their default for new conversations; the model picker marks the effective project default, existing conversations retain their saved route, and missing project models fall back to the global default. Optional project notes and opt-in retrieval from prior project conversations remain separate, bounded context sources. Glob-scoped `.openchat/rules/**/*.mdc` rules are loaded only for matching project file paths.
 
 - Allow a project to select default provider/model, reasoning preference, instructions, tool policy, and working directory. Provider/model and reasoning defaults are implemented in local preferences and apply to new conversations started from the project when the model still supports the saved effort.
 - Support project-scoped Skills and make the effective global, project, and Skill instruction sources inspectable. Skills are selected from project files and previewed in project options; shared and project instruction sources remain editable in Settings and project options.
-- Add an incremental project index that respects `.gitignore`, reports stale or unavailable state, and can be disabled or cleared per project. Implemented with bounded scans, a local FTS5 cache, explicit project controls, and matching excerpts in requests.
-- Schedule the bounded project file and Tree-sitter symbol index after project creation. The index covers up to eight configured workspace roots under shared scan, text, and symbol limits. `search_project_code` returns matching snippets, declaration signatures and locations, available container and relationship data, and enabled durable project notes so the agent can inspect a narrow `read_file` range; search paths are absolute and index excerpts are capped before they enter chat context. `.openchat/rules/**/*.mdc` rules enter tool context only for matching search, read, write, or edit paths. Notes, code symbols, file text, and project conversation history remain distinct retrieval sources under the existing context limits. The included benchmark reports approximate token counts because exact counts depend on the selected model tokenizer.
+- Retrieve prior project conversations only when the project history option is enabled. Search stays scoped to the project, excludes the active conversation and archived history, and uses already prepared local embeddings without downloading a model or backfilling during chat sends.
+- Load `.openchat/rules/**/*.mdc` only for matching project file paths during search, read, write, or edit operations.
 - Keep LSP navigation and diagnostics in agent tools rather than an editor. The initial Windows implementation uses only locally installed popular servers, starts them on demand, and does not download or update them. Broaden the catalog and add other operating-system sandboxes as supported runtimes become available.
 - Make profile precedence visible when global and project settings both apply. The model picker labels the project default when it overrides the global route.
 - Add a dedicated Projects tab for browsing and creating projects and starting project chats, rather than putting project creation in the composer project selector.
 
-**Exit criteria:** a project can restore its own model and tool defaults when reopened; ignored files stay out of project indexing; stale or disabled indexes are shown explicitly.
+**Exit criteria:** a project restores its saved model, tool, and instruction settings when reopened; optional notes and history remain scoped and bounded; matching rules apply only to relevant project paths.
 
 ### 3. Add Git-aware tasks and isolated workspaces
 
@@ -527,14 +527,14 @@ provider and tool boundaries are explicit in the temporary-chat flow.
 - Keep the memory-save tool unavailable in temporary chats. Temporary chats
   neither receive persistent personal-memory context nor write to its store.
 - Keep conversation memory search scoped to its current conversation and
-  project indexing scoped to its selected project unless the user enables a
-  separate cross-conversation memory feature.
+  prior-project-conversation retrieval scoped to its selected project and
+  explicit opt-in.
 - Make archive and index behavior understandable at the point where users
   enable it; keep local-history and personal-memory controls in separate pages
   under the data and privacy settings group.
 
 **Exit criteria:** temporary chats do not enter durable history, search,
-project indexes, or exports unless explicitly saved; personal memory is off by
+or exports unless explicitly saved; personal memory is off by
 default and every remembered item and source can be reviewed or removed.
 
 ### 21. Remove the saved-response collection
@@ -689,13 +689,12 @@ Hosted sharing remains out of scope under the current product decision.
 
 ### 25. Add persistent project agent memory and semantic context engine
 
-**Status: implemented in source and covered by focused local tests, P1.** Bounded notes, assistant learning, export, and opt-in project retrieval are implemented in source. Project isolation, assistant opt-ins, storage limits, project-index states, and prompt-context rules have deterministic coverage.
+**Status: implemented in source and covered by focused local tests, P1.** Bounded notes, assistant learning, export, and opt-in prior-project-conversation retrieval are implemented in source. Project isolation, assistant opt-ins, storage limits, and prompt-context rules have deterministic coverage.
 
 - Store up to 20 user-managed or assistant-authored notes per project in local SQLite, with an 8 KiB project limit and 4 KiB per-note limit. Assistant-authored notes require separate opt-ins, carry their origin in the UI, and remain editable and individually deletable.
 - Include enabled notes only in normal runs for their attached project. New run checkpoints preserve the captured note context for continuation; temporary chats and Plan mode exclude it. Users can export the current project's notes as JSON.
 - Add optional retrieval from other conversations attached to the same project. FTS5 searches project history; semantic results use existing local conversation embeddings without downloading the model or backfilling conversations during a chat send. Archived conversations excluded from memory search and the active conversation are not used.
-- Use project-index FTS5 results to select code candidates and semantically rerank up to 24 candidates with the prepared local embedding model. Keep the existing keyword order when the model is not ready or reranking fails.
-- Bound retrieved project context to 12 KiB, including code and history excerpts, and notes to 8 KiB. When the selected model advertises an input limit, both share an additional budget capped at 8% of that window.
+- Bound retrieved project history and notes before including them in a request. When the selected model advertises an input limit, both share an additional budget capped at 8% of that window.
 
 **Exit criteria:** agent runs preserve verified project conventions across session boundaries; memory remains isolated to its project; users can inspect, export, and delete stored items; and retrieval does not degrade token budgets on small-context models.
 
@@ -724,11 +723,8 @@ Hosted sharing remains out of scope under the current product decision.
 
 ### 28. Add Tree-sitter codebase mapping and glob-scoped rules
 
-**Status: implemented in source and checked with a local real-repository task benchmark, P2.** The deterministic fixture measures 100% expected declaration recall and 100% result precision across four task queries, including a related class/method pair and an unrelated declaration. A manual benchmark against this OpenChat checkout also passed four task queries with complete expected-symbol recall and no unrelated declarations. This is local evidence from one debug checkout, not broad project-corpus validation. When the project index is enabled, an initial tool-enabled project request can include up to eight query-matched declarations with paths, line ranges, signatures, containing types, and supported relationships. The map is limited to 4 KiB and contains no source bodies. Candidate files are checked against current contents; stale, disabled, and unavailable indexes contribute no map. The explicit Plan permission mode continues to receive no project data and no tools.
+**Status: retired on 2026-10-28 at Alican's direction.** The project code index, Tree-sitter symbol extraction, project index settings panel, and `project.index.*` RPC methods have been removed. Backend migration 57 drops active project-index tables; old `project.index.*` calls now return `method_not_found`. Project-scoped glob rules remain implemented as a separate feature. The former implementation's benchmark and validation records are historical and do not describe current capabilities.
 
-- Tree-sitter symbol indexing is implemented for Bash, C, C++, C#, Dart, Go, Java, Lua, PHP, Python, Ruby, Rust, Scala, SQL, Swift, JavaScript, and TypeScript. TypeScript local arrow functions and function expressions are indexed with bounded signatures and container names; the extractor version triggers re-indexing on the next sync. Kotlin remains text-searchable but does not yet have a reliable compatible grammar. The index caps symbols at 512 per file and 100,000 per project; `search_project_code` exposes matching declarations with absolute paths, line locations, signatures, containers, and grammar-supported relationships. Fresh 2026-10-28 checks passed the `code_symbols` filter 7/7 and the `project_index` filter 23/25, with two manual benchmarks ignored; representative language fixtures and one local repository do not establish broad external-corpus quality.
-- Extend structural extraction only where a grammar exposes reliable, useful fields; validate the existing extraction against representative language fixtures.
-- Manual benchmark runs include the bounded symbol map and four task-like queries. A fresh 2026-10-28 debug run against this 546-file OpenChat checkout indexed 8,580,838 source bytes and 8,418 symbols in 10.093 s; unchanged sync took 66.7 ms and the four-query search took 3.331 s. The index's declaration names, kinds, paths, and line locations alone serialize to 1,144,639 bytes (about 286,160 rough tokens), before signatures or relationships, far above the 4 KiB map limit. The four task maps measured 619, 443, 671, and 1,219 bytes; all expected declarations were retrieved with no unrelated declarations. Query parsing prioritizes identifier-shaped terms and drops common English and Turkish task words so broad natural-language prefixes do not crowd out code symbols. Keep query-scoped retrieval and do not inject a full symbol map by default. This single local debug result is not a release or broad task-corpus benchmark.
 - Glob-scoped `.openchat/rules/**/*.mdc` rules load only when a matching project path is searched, read, written, or edited. Rule parsing, redaction, symlink containment, and file/context limits are enforced locally.
 
 **Exit criteria:** repository maps accurately reflect code structure within a bounded token budget; path-specific rules activate only for relevant target files; and rule parsing remains fast and local.

@@ -720,6 +720,41 @@ fn migration_56_adds_a_separate_security_scan_attempt_id() {
     assert_eq!(attempt_column, ("TEXT".to_owned(), None));
 }
 
+#[test]
+fn migration_57_drops_retired_project_index_tables_and_cached_content() {
+    let connection = memory_index_repair_fixture(56);
+    connection
+        .execute_batch(
+            "INSERT INTO project_index_state
+                (project_id, enabled, status, indexed_files, indexed_bytes)
+             VALUES ('project-1', 1, 'current', 1, 4);
+             INSERT INTO project_index_roots (project_id, root_path)
+             VALUES ('project-1', 'C:/project');
+             INSERT INTO project_index_files
+                (project_id, path, modified_ns, size, content)
+             VALUES ('project-1', 'src/lib.rs', 1, 4, 'code');
+             INSERT INTO project_index_fts (project_id, path, content)
+             VALUES ('project-1', 'src/lib.rs', 'code');
+             INSERT INTO project_index_symbols
+                (project_id, path, name, kind, start_line, end_line)
+             VALUES ('project-1', 'src/lib.rs', 'run', 'function', 1, 2);",
+        )
+        .expect("seed retired project index tables");
+
+    assert_eq!(
+        initialize_schema(&connection, 57).expect("drop retired project index tables"),
+        57
+    );
+    let remaining_tables = connection
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_schema WHERE name LIKE 'project_index%'",
+            [],
+            |row| row.get::<_, i64>(0),
+        )
+        .expect("check retired index tables");
+    assert_eq!(remaining_tables, 0);
+}
+
 fn memory_index_repair_fixture(version: i64) -> Connection {
     let connection = Connection::open_in_memory().expect("open in-memory database");
     connection
