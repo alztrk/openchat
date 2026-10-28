@@ -163,13 +163,6 @@ export const mcpToolDescriptionKeys: Readonly<Record<string, Readonly<Record<str
     get_subscription: 'mcpToolDescriptionStripeGetSubscription',
     list_invoices: 'mcpToolDescriptionStripeListInvoices',
   },
-  openmail: {
-    list_accounts: 'mcpToolDescriptionOpenMailListAccounts',
-    list_mailboxes: 'mcpToolDescriptionOpenMailListMailboxes',
-    list_messages: 'mcpToolDescriptionOpenMailListMessages',
-    get_message: 'mcpToolDescriptionOpenMailGetMessage',
-    get_thread: 'mcpToolDescriptionOpenMailGetThread',
-  },
 };
 
 export function formatMcpToolLabel(serverId: string, rawTool: string, translate: TFunction): string {
@@ -402,16 +395,6 @@ export const popularMcpCatalog: readonly CuratedMcpServer[] = [
     args: ['-y', 'mcp-server-discord'],
     requiredEnvKeys: ['DISCORD_BOT_TOKEN'],
     discoveredTools: ['list_guild_channels', 'send_message'],
-  },
-  {
-    id: 'openmail',
-    name: 'OpenMail',
-    category: 'productivity',
-    descriptionKey: 'mcpDescriptionOpenMail',
-    command: 'D:\\projects\\OpenMail\\src-tauri\\target\\release\\openmail-mcp.exe',
-    args: [],
-    requiredEnvKeys: [],
-    discoveredTools: ['list_accounts', 'list_mailboxes', 'list_messages', 'get_message', 'get_thread'],
   },
   {
     id: 'obsidian',
