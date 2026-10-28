@@ -1792,7 +1792,7 @@ mod tests {
         });
         super::apply_opencode_free_request_shape(&mut body, "opencode", true, None);
         let headers = super::opencode_free_headers(Some(&session_id), None);
-        let response = super::opencode_free_transport::send(
+        let mut response = super::opencode_free_transport::send(
             super::CHAT_URL,
             headers,
             serde_json::to_vec(&body).expect("serialize body"),
@@ -1805,6 +1805,15 @@ mod tests {
             http::StatusCode::OK,
             "Expected HTTP 200 OK from OpenCode"
         );
+
+        use futures_util::StreamExt;
+        let mut text_acc = String::new();
+        while let Some(chunk_res) = response.body.next().await {
+            let chunk = chunk_res.expect("chunk error");
+            text_acc.push_str(&String::from_utf8_lossy(&chunk));
+        }
+        eprintln!("=== LIVE OPENCODE RESPONSE ===\n{text_acc}\n=============================");
+        assert!(text_acc.contains("data:"), "Expected SSE data in response");
     }
 
     #[tokio::test]
