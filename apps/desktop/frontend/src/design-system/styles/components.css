@@ -625,6 +625,14 @@ html[data-motion-input='keyboard'] .openchat-dialog {
   box-shadow: none;
 }
 
+.shiki-token {
+  color: var(--shiki-light, inherit);
+}
+
+.dark .shiki-token {
+  color: var(--shiki-dark, inherit);
+}
+
 .tool-code-token-comment,
 .tool-code-token-prolog,
 .tool-code-token-doctype,
