@@ -81,6 +81,7 @@ pub(crate) fn directory_identity(directory: &Dir) -> io::Result<DirectoryIdentit
             Storage::FileSystem::{BY_HANDLE_FILE_INFORMATION, GetFileInformationByHandle},
         };
         let mut information = BY_HANDLE_FILE_INFORMATION::default();
+        // SAFETY: `file` owns a live Windows handle and `information` is a writable output.
         if unsafe { GetFileInformationByHandle(file.as_raw_handle() as HANDLE, &mut information) }
             == 0
         {
