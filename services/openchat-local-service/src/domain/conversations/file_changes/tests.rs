@@ -1247,8 +1247,9 @@ fn tracked_revert_target_holds_existing_nested_parent_through_write() {
 
     assert!(target.matches_entry(&entry).expect("verify current file"));
     assert!(fs::rename(&nested, &moved).is_err());
+    let current = target.capture().expect("capture current file");
     target
-        .write_file(b"baseline")
+        .write_file(current.as_ref(), b"baseline")
         .expect("write through pinned parent capability");
     assert_eq!(
         fs::read(nested.join("note.txt")).expect("read reverted file"),
@@ -1289,7 +1290,7 @@ fn tracked_revert_target_retains_a_created_nested_parent() {
 
     assert!(target.matches_entry(&entry).expect("verify missing file"));
     target
-        .write_file(b"created")
+        .write_file(None, b"created")
         .expect("create file through retained parent capability");
     assert_eq!(
         target

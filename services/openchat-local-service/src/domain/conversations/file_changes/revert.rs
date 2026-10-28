@@ -16,9 +16,9 @@ use super::store::{
 };
 use super::types::*;
 use super::workspace::{
-    atomic_write_workspace_file_from_directory, capture_file_from_directory, directory_identity,
-    is_current_version, open_workspace_directory, remove_workspace_file_from_directory,
-    same_directory_object, workspace_directory_matches_path,
+    WorkspaceMutationGuard, capture_file_from_directory, directory_identity, is_current_version,
+    open_workspace_directory, remove_workspace_file_if_unchanged, same_directory_object,
+    workspace_directory_matches_path, write_workspace_file_if_unchanged,
 };
 use crate::storage::{AppStorage, StorageConnection};
 
@@ -29,6 +29,7 @@ pub(crate) struct RevertFileTarget {
     pub(crate) parent_relative: PathBuf,
     pub(crate) file_name: PathBuf,
     pub(crate) directory_identity: DirectoryIdentity,
+    mutation_guard: Option<WorkspaceMutationGuard>,
 }
 
 impl RevertFileTarget {
@@ -68,10 +69,18 @@ impl RevertFileTarget {
             parent_relative,
             file_name,
             directory_identity,
+            mutation_guard: None,
         })
     }
 
     pub(crate) fn capture(&self) -> Result<Option<FileSnapshot>, TrackingError> {
+        if self
+            .mutation_guard
+            .as_ref()
+            .is_some_and(WorkspaceMutationGuard::is_delete_pending)
+        {
+            return Ok(None);
+        }
         match &self.parent_directory {
             Some(parent) => capture_file_from_directory(parent, &self.file_name),
             None => Ok(None),
@@ -123,7 +132,11 @@ impl RevertFileTarget {
         }
     }
 
-    pub(crate) fn write_file(&mut self, content: &[u8]) -> io::Result<()> {
+    pub(crate) fn write_file(
+        &mut self,
+        expected: Option<&FileSnapshot>,
+        content: &[u8],
+    ) -> io::Result<()> {
         if self.parent_directory.is_none() {
             let parent = crate::filesystem::create_directory_chain_from_directory(
                 &self.directory,
@@ -151,10 +164,16 @@ impl RevertFileTarget {
                 ));
             }
         }
-        atomic_write_workspace_file_from_directory(parent, &self.file_name, content)
+        write_workspace_file_if_unchanged(
+            parent,
+            &self.file_name,
+            expected,
+            content,
+            &mut self.mutation_guard,
+        )
     }
 
-    pub(crate) fn remove_file(&self) -> io::Result<()> {
+    pub(crate) fn remove_file(&mut self, expected: &FileSnapshot) -> io::Result<()> {
         let parent = self.parent_directory.as_ref().ok_or_else(|| {
             io::Error::new(
                 io::ErrorKind::NotFound,
@@ -175,7 +194,12 @@ impl RevertFileTarget {
                 ));
             }
         }
-        remove_workspace_file_from_directory(parent, &self.file_name)
+        remove_workspace_file_if_unchanged(
+            parent,
+            &self.file_name,
+            expected,
+            &mut self.mutation_guard,
+        )
     }
 }
 
@@ -244,13 +268,17 @@ pub(crate) fn revert_change(
             mark_revert_conflict(&mut connection, conversation_id, &mut entry)?;
             return Err(RevertError::Conflict);
         }
-        target.write_file(&content).map_err(|_| {
-            if rollback_file_change_if_matches(&mut target, &original, &baseline_snapshot) {
-                RevertError::Unavailable
-            } else {
-                RevertError::RollbackFailed
+        if let Err(error) = target.write_file(original.as_ref(), &content) {
+            if error.kind() == io::ErrorKind::WouldBlock {
+                mark_revert_conflict(&mut connection, conversation_id, &mut entry)?;
+                return Err(RevertError::Conflict);
             }
-        })?;
+            if rollback_file_change_if_matches(&mut target, &original, &baseline_snapshot) {
+                return Err(RevertError::Unavailable);
+            } else {
+                return Err(RevertError::RollbackFailed);
+            }
+        }
     } else {
         baseline_snapshot = None;
         if !target
@@ -260,9 +288,16 @@ pub(crate) fn revert_change(
             mark_revert_conflict(&mut connection, conversation_id, &mut entry)?;
             return Err(RevertError::Conflict);
         }
-        match target.remove_file() {
+        let Some(current) = original.as_ref() else {
+            return Err(RevertError::Conflict);
+        };
+        match target.remove_file(current) {
             Ok(()) => {}
             Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                mark_revert_conflict(&mut connection, conversation_id, &mut entry)?;
+                return Err(RevertError::Conflict);
+            }
             Err(error) if error.kind() == io::ErrorKind::InvalidInput => {
                 return Err(RevertError::Conflict);
             }
@@ -510,14 +545,18 @@ pub(crate) fn revert_hunk(
         mark_revert_conflict(&mut connection, conversation_id, &mut entry)?;
         return Err(RevertError::Conflict);
     }
-    target.write_file(updated_bytes).map_err(|_| {
+    if let Err(error) = target.write_file(Some(&original), updated_bytes) {
+        if error.kind() == io::ErrorKind::WouldBlock {
+            mark_revert_conflict(&mut connection, conversation_id, &mut entry)?;
+            return Err(RevertError::Conflict);
+        }
         if rollback_file_change_if_matches(&mut target, &Some(original.clone()), &updated_snapshot)
         {
-            RevertError::Unavailable
+            return Err(RevertError::Unavailable);
         } else {
-            RevertError::RollbackFailed
+            return Err(RevertError::RollbackFailed);
         }
-    })?;
+    }
     let new_hash = sha256(updated_bytes);
     let (added, removed, is_binary, diff_available) = diff_stats(&baseline_bytes, updated_bytes);
     let mut applied_snapshot = updated_snapshot;
@@ -529,9 +568,7 @@ pub(crate) fn revert_hunk(
     if entry.baseline_exists && entry.baseline_hash.as_deref() == Some(new_hash.as_str()) {
         entry.status = "reverted".to_owned();
     } else if !entry.baseline_exists && updated_bytes.is_empty() {
-        if !revert_target_matches_snapshot(&target, &applied_snapshot).unwrap_or(false)
-            || target.remove_file().is_err()
-        {
+        if !revert_target_matches_snapshot(&target, &applied_snapshot).unwrap_or(false) {
             return Err(
                 if rollback_file_change_if_matches(
                     &mut target,
@@ -543,6 +580,34 @@ pub(crate) fn revert_hunk(
                     RevertError::RollbackFailed
                 },
             );
+        }
+        if let Some(expected) = applied_snapshot.as_ref() {
+            if let Err(error) = target.remove_file(expected) {
+                if error.kind() == io::ErrorKind::WouldBlock {
+                    if rollback_file_change_if_matches(
+                        &mut target,
+                        &Some(original.clone()),
+                        &applied_snapshot,
+                    ) {
+                        mark_revert_conflict(&mut connection, conversation_id, &mut entry)?;
+                        return Err(RevertError::Conflict);
+                    }
+                    return Err(RevertError::RollbackFailed);
+                }
+                return Err(
+                    if rollback_file_change_if_matches(
+                        &mut target,
+                        &Some(original.clone()),
+                        &applied_snapshot,
+                    ) {
+                        RevertError::Unavailable
+                    } else {
+                        RevertError::RollbackFailed
+                    },
+                );
+            }
+        } else {
+            return Err(RevertError::Conflict);
         }
         applied_snapshot = None;
         entry.expected_exists = false;
@@ -601,13 +666,17 @@ fn rollback_file_change_if_matches(
     }
     let restore_result = match original {
         Some(snapshot) => match snapshot.content.as_deref() {
-            Some(content) => target.write_file(content),
+            Some(content) => target.write_file(applied.as_ref(), content),
             None => return false,
         },
-        None => match target.remove_file() {
-            Ok(()) => Ok(()),
-            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
-            Err(error) => Err(error),
+        None => match applied
+            .as_ref()
+            .map(|snapshot| target.remove_file(snapshot))
+        {
+            Some(Ok(())) => Ok(()),
+            Some(Err(error)) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+            Some(Err(error)) => Err(error),
+            None => return false,
         },
     };
     restore_result.is_ok() && revert_target_matches_snapshot(target, original).unwrap_or(false)

@@ -15,6 +15,27 @@ use std::os::unix::fs::MetadataExt;
 use super::types::*;
 use crate::filesystem::OpenedFile as CapabilityFile;
 
+/// Keeps a checked workspace entry protected until its tracking update completes.
+pub(crate) struct WorkspaceMutationGuard {
+    #[cfg(windows)]
+    file: CapabilityFile,
+    #[cfg(windows)]
+    delete_pending: bool,
+}
+
+impl WorkspaceMutationGuard {
+    pub(crate) fn is_delete_pending(&self) -> bool {
+        #[cfg(windows)]
+        {
+            self.delete_pending
+        }
+        #[cfg(not(windows))]
+        {
+            false
+        }
+    }
+}
+
 #[cfg(test)]
 pub(crate) fn capture_file(
     root: &Path,
@@ -345,6 +366,7 @@ where
     }
 }
 
+#[cfg(any(not(windows), test))]
 pub(crate) fn atomic_write_workspace_file_from_directory<D>(
     directory: &D,
     relative_path: &Path,
@@ -385,6 +407,49 @@ where
         .map_err(|error| remove_workspace_temp_after_error(&parent, &temporary, error))
 }
 
+/// Compares and changes one workspace file while retaining the Windows file handle through the
+/// caller's tracking transaction. Windows writes in place under a restrictive share mode; other
+/// platforms use an atomic publish after comparison but cannot exclude uncoordinated writers.
+pub(crate) fn write_workspace_file_if_unchanged<D>(
+    directory: &D,
+    relative_path: &Path,
+    expected: Option<&FileSnapshot>,
+    content: &[u8],
+    mutation_guard: &mut Option<WorkspaceMutationGuard>,
+) -> io::Result<()>
+where
+    D: crate::filesystem::DirectoryCapability + ?Sized,
+{
+    crate::filesystem::validate_relative_path(relative_path)?;
+    let parent_path = relative_path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty());
+    let parent = match parent_path {
+        Some(parent_path) => {
+            crate::filesystem::create_directory_chain_from_directory(directory, parent_path)?
+        }
+        None => directory.try_clone_chain()?,
+    };
+    let file_name = relative_path.file_name().ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "The workspace path has no file name.",
+        )
+    })?;
+
+    #[cfg(windows)]
+    {
+        write_workspace_file_windows(&parent, file_name, expected, content, mutation_guard)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = mutation_guard;
+        ensure_workspace_snapshot_matches(&parent, Path::new(file_name), expected)?;
+        atomic_write_workspace_file_from_directory(&parent, Path::new(file_name), content)
+    }
+}
+
+#[cfg(any(not(windows), test))]
 pub(crate) fn remove_workspace_file_from_directory<D>(
     directory: &D,
     relative_path: &Path,
@@ -418,6 +483,340 @@ where
     parent.remove_file(file_name)
 }
 
+/// Marks the file identified by its checked handle for deletion and keeps that handle alive until
+/// the caller's tracking transaction completes. On Windows the delete-on-close disposition is
+/// finalized when the guard is released, reserving the path during compensation and persistence.
+pub(crate) fn remove_workspace_file_if_unchanged<D>(
+    directory: &D,
+    relative_path: &Path,
+    expected: &FileSnapshot,
+    mutation_guard: &mut Option<WorkspaceMutationGuard>,
+) -> io::Result<()>
+where
+    D: crate::filesystem::DirectoryCapability + ?Sized,
+{
+    crate::filesystem::validate_relative_path(relative_path)?;
+    let parent_path = relative_path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty());
+    let parent = match parent_path {
+        Some(parent_path) => {
+            crate::filesystem::open_directory_from_directory(directory, parent_path)?
+        }
+        None => directory.try_clone_chain()?,
+    };
+    let file_name = relative_path.file_name().ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "The workspace path has no file name.",
+        )
+    })?;
+
+    #[cfg(windows)]
+    {
+        remove_workspace_file_windows(&parent, file_name, expected, mutation_guard)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = mutation_guard;
+        ensure_workspace_snapshot_matches(&parent, Path::new(file_name), Some(expected))?;
+        remove_workspace_file_from_directory(&parent, Path::new(file_name))
+    }
+}
+
+#[cfg(not(windows))]
+fn ensure_workspace_snapshot_matches<D>(
+    directory: &D,
+    file_name: &Path,
+    expected: Option<&FileSnapshot>,
+) -> io::Result<()>
+where
+    D: crate::filesystem::DirectoryCapability + ?Sized,
+{
+    let current = capture_file_from_directory(directory, file_name)
+        .map_err(|_| io::Error::other("The workspace file could not be compared."))?;
+    if current.as_ref().map(|snapshot| snapshot.hash.as_str())
+        != expected.map(|snapshot| snapshot.hash.as_str())
+    {
+        return Err(workspace_mutation_conflict());
+    }
+    Ok(())
+}
+
+fn workspace_mutation_conflict() -> io::Error {
+    io::Error::new(
+        io::ErrorKind::WouldBlock,
+        "The workspace file changed before the guarded mutation.",
+    )
+}
+
+#[cfg(windows)]
+fn write_workspace_file_windows(
+    parent: &crate::filesystem::OpenedDirectory,
+    file_name: &std::ffi::OsStr,
+    expected: Option<&FileSnapshot>,
+    content: &[u8],
+    mutation_guard: &mut Option<WorkspaceMutationGuard>,
+) -> io::Result<()> {
+    let mut created_file = false;
+    if mutation_guard.is_none() {
+        match expected {
+            Some(expected) => {
+                let mut file = open_workspace_mutation_file(parent, file_name)
+                    .map_err(map_workspace_lock_error)?;
+                let current = snapshot_guarded_file(&mut file)?;
+                if !workspace_snapshots_equal(Some(&current), Some(expected)) {
+                    return Err(workspace_mutation_conflict());
+                }
+                if expected.content.is_none() {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        "The workspace file is too large to safely roll back an in-place write.",
+                    ));
+                }
+                ensure_workspace_handle_matches(parent, file_name, &file)?;
+                *mutation_guard = Some(WorkspaceMutationGuard {
+                    file,
+                    delete_pending: false,
+                });
+            }
+            None => {
+                let file = create_workspace_mutation_file(parent, Path::new(file_name))
+                    .map_err(map_workspace_publish_error)?;
+                ensure_workspace_handle_matches(parent, file_name, &file)?;
+                *mutation_guard = Some(WorkspaceMutationGuard {
+                    file,
+                    delete_pending: false,
+                });
+                created_file = true;
+            }
+        }
+    }
+
+    let guard = mutation_guard
+        .as_mut()
+        .ok_or_else(|| io::Error::other("The workspace mutation handle is unavailable."))?;
+    if guard.delete_pending {
+        if expected.is_some() {
+            return Err(workspace_mutation_conflict());
+        }
+        set_file_delete_disposition(&guard.file, false)?;
+        guard.delete_pending = false;
+    } else if !created_file {
+        let current = snapshot_guarded_file(&mut guard.file)?;
+        if !workspace_snapshots_equal(Some(&current), expected) {
+            return Err(workspace_mutation_conflict());
+        }
+    } else if expected.is_some() {
+        return Err(workspace_mutation_conflict());
+    }
+    ensure_workspace_handle_matches(parent, file_name, &guard.file)?;
+
+    let previous_content =
+        if created_file {
+            None
+        } else {
+            Some(snapshot_guarded_file(&mut guard.file)?.content.ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                "The workspace file is too large to safely roll back an in-place write.",
+            )
+        })?)
+        };
+    if let Err(write_error) = write_workspace_handle(&mut guard.file, content) {
+        let rollback_result = match previous_content.as_deref() {
+            Some(previous) => write_workspace_handle(&mut guard.file, previous),
+            None => set_file_delete_disposition(&guard.file, true).map(|()| {
+                guard.delete_pending = true;
+            }),
+        };
+        return match rollback_result {
+            Ok(()) => Err(write_error),
+            Err(rollback_error) => Err(io::Error::other(format!(
+                "{write_error}; restoring the workspace file after the failed write also failed: {rollback_error}"
+            ))),
+        };
+    }
+    ensure_workspace_handle_matches(parent, file_name, &guard.file)
+}
+
+#[cfg(windows)]
+fn remove_workspace_file_windows(
+    parent: &crate::filesystem::OpenedDirectory,
+    file_name: &std::ffi::OsStr,
+    expected: &FileSnapshot,
+    mutation_guard: &mut Option<WorkspaceMutationGuard>,
+) -> io::Result<()> {
+    if mutation_guard.is_none() {
+        let mut file =
+            open_workspace_mutation_file(parent, file_name).map_err(map_workspace_lock_error)?;
+        let current = snapshot_guarded_file(&mut file)?;
+        if !workspace_snapshots_equal(Some(&current), Some(expected)) {
+            return Err(workspace_mutation_conflict());
+        }
+        if current.content.is_none() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "The workspace file is too large to safely roll back a delete.",
+            ));
+        }
+        ensure_workspace_handle_matches(parent, file_name, &file)?;
+        *mutation_guard = Some(WorkspaceMutationGuard {
+            file,
+            delete_pending: false,
+        });
+    }
+
+    let guard = mutation_guard
+        .as_mut()
+        .ok_or_else(|| io::Error::other("The workspace mutation handle is unavailable."))?;
+    if guard.delete_pending {
+        return Ok(());
+    }
+    let current = snapshot_guarded_file(&mut guard.file)?;
+    if !workspace_snapshots_equal(Some(&current), Some(expected)) {
+        return Err(workspace_mutation_conflict());
+    }
+    if current.content.is_none() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "The workspace file is too large to safely roll back a delete.",
+        ));
+    }
+    ensure_workspace_handle_matches(parent, file_name, &guard.file)?;
+    set_file_delete_disposition(&guard.file, true)?;
+    guard.delete_pending = true;
+    Ok(())
+}
+
+#[cfg(windows)]
+fn map_workspace_lock_error(error: io::Error) -> io::Error {
+    use windows_sys::Win32::Foundation::ERROR_SHARING_VIOLATION;
+
+    if error.raw_os_error() == Some(ERROR_SHARING_VIOLATION as i32) {
+        workspace_mutation_conflict()
+    } else if error.kind() == io::ErrorKind::NotFound {
+        workspace_mutation_conflict()
+    } else {
+        error
+    }
+}
+
+#[cfg(windows)]
+fn map_workspace_publish_error(error: io::Error) -> io::Error {
+    use windows_sys::Win32::Foundation::{ERROR_ALREADY_EXISTS, ERROR_FILE_EXISTS};
+
+    if matches!(
+        error.raw_os_error(),
+        Some(code)
+            if code == ERROR_ALREADY_EXISTS as i32 || code == ERROR_FILE_EXISTS as i32
+    ) {
+        workspace_mutation_conflict()
+    } else {
+        error
+    }
+}
+
+#[cfg(windows)]
+fn write_workspace_handle(file: &mut CapabilityFile, content: &[u8]) -> io::Result<()> {
+    use std::io::Seek;
+
+    file.seek(std::io::SeekFrom::Start(0))?;
+    file.write_all(content)?;
+    file.set_len(content.len() as u64)?;
+    file.sync_all()
+}
+
+#[cfg(windows)]
+fn ensure_workspace_handle_matches(
+    parent: &crate::filesystem::OpenedDirectory,
+    file_name: &std::ffi::OsStr,
+    file: &CapabilityFile,
+) -> io::Result<()> {
+    match crate::filesystem::opened_file_matches_directory_entry(parent, Path::new(file_name), file)
+    {
+        Ok(true) => Ok(()),
+        Ok(false) => Err(workspace_mutation_conflict()),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Err(workspace_mutation_conflict()),
+        Err(error) => Err(error),
+    }
+}
+
+#[cfg(windows)]
+fn workspace_snapshots_equal(
+    current: Option<&FileSnapshot>,
+    expected: Option<&FileSnapshot>,
+) -> bool {
+    current.map(|snapshot| snapshot.hash.as_str())
+        == expected.map(|snapshot| snapshot.hash.as_str())
+}
+
+#[cfg(windows)]
+fn snapshot_guarded_file(file: &mut CapabilityFile) -> io::Result<FileSnapshot> {
+    snapshot_opened_file(file).map_err(|_| {
+        io::Error::other("The workspace file could not be compared through its handle.")
+    })
+}
+
+#[cfg(windows)]
+fn open_workspace_mutation_file(
+    parent: &crate::filesystem::OpenedDirectory,
+    file_name: &std::ffi::OsStr,
+) -> io::Result<CapabilityFile> {
+    use cap_std::fs::OpenOptionsExt;
+    use windows_sys::Win32::{
+        Foundation::{GENERIC_READ, GENERIC_WRITE},
+        Storage::FileSystem::{DELETE, FILE_SHARE_READ},
+    };
+
+    let mut options = CapabilityOpenOptions::new();
+    options.read(true).write(true);
+    options.share_mode(FILE_SHARE_READ);
+    options.access_mode(GENERIC_READ | GENERIC_WRITE | DELETE);
+    crate::filesystem::open_file_from_directory(parent, Path::new(file_name), &options)
+}
+
+#[cfg(windows)]
+fn create_workspace_mutation_file(
+    parent: &crate::filesystem::OpenedDirectory,
+    relative_path: &Path,
+) -> io::Result<CapabilityFile> {
+    use cap_std::fs::OpenOptionsExt;
+    use windows_sys::Win32::{
+        Foundation::{GENERIC_READ, GENERIC_WRITE},
+        Storage::FileSystem::{DELETE, FILE_SHARE_READ},
+    };
+
+    let mut options = CapabilityOpenOptions::new();
+    options.read(true).write(true).create_new(true);
+    options.share_mode(FILE_SHARE_READ);
+    options.access_mode(GENERIC_READ | GENERIC_WRITE | DELETE);
+    crate::filesystem::open_file_from_directory(parent, relative_path, &options)
+}
+
+#[cfg(windows)]
+fn set_file_delete_disposition(file: &CapabilityFile, delete: bool) -> io::Result<()> {
+    use std::{mem::size_of, os::windows::io::AsRawHandle};
+    use windows_sys::Win32::Storage::FileSystem::{
+        FILE_DISPOSITION_INFO, FileDispositionInfo, SetFileInformationByHandle,
+    };
+
+    let disposition = FILE_DISPOSITION_INFO { DeleteFile: delete };
+    // SAFETY: the file owns a live handle and `disposition` is a correctly sized input structure.
+    if unsafe {
+        SetFileInformationByHandle(
+            file.as_raw_handle() as _,
+            FileDispositionInfo,
+            (&disposition as *const FILE_DISPOSITION_INFO).cast(),
+            size_of::<FILE_DISPOSITION_INFO>() as u32,
+        )
+    } == 0
+    {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(())
+}
+
 fn remove_workspace_temp_after_error(
     directory: &Dir,
     temporary: &Path,
@@ -429,6 +828,399 @@ fn remove_workspace_temp_after_error(
         Err(cleanup_error) => io::Error::other(format!(
             "{operation_error}; temporary file cleanup failed: {cleanup_error}"
         )),
+    }
+}
+
+#[cfg(all(test, windows))]
+mod windows_mutation_tests {
+    use super::{
+        CapabilityOpenOptions, WorkspaceMutationGuard, capture_file_from_directory,
+        open_workspace_mutation_file, remove_workspace_file_if_unchanged, snapshot_guarded_file,
+        write_workspace_file_if_unchanged,
+    };
+    use std::{
+        fs::{self, OpenOptions},
+        path::{Path, PathBuf},
+    };
+
+    struct TestDirectory(PathBuf);
+
+    impl TestDirectory {
+        fn new() -> Self {
+            let path = std::env::temp_dir().join(format!(
+                "openchat-workspace-mutation-{}-{}",
+                std::process::id(),
+                uuid::Uuid::new_v4()
+            ));
+            fs::create_dir_all(&path).expect("create test directory");
+            Self(path)
+        }
+    }
+
+    impl Drop for TestDirectory {
+        fn drop(&mut self) {
+            fs::remove_dir_all(&self.0).expect("remove test directory");
+        }
+    }
+
+    #[test]
+    fn checked_in_place_write_holds_the_path_through_tracking_persistence() {
+        let temporary = TestDirectory::new();
+        let path = temporary.0.join("note.txt");
+        let moved_path = temporary.0.join("moved-note.txt");
+        fs::write(&path, b"before").expect("write initial file");
+        let root = crate::filesystem::open_absolute_directory_no_follow(&temporary.0)
+            .expect("open workspace capability");
+        let expected = capture_file_from_directory(&root, Path::new("note.txt"))
+            .expect("capture initial workspace file")
+            .expect("initial file exists");
+
+        let mut file = open_workspace_mutation_file(&root, Path::new("note.txt").as_os_str())
+            .expect("lock the compared workspace file");
+        let locked_snapshot = snapshot_guarded_file(&mut file).expect("hash locked file");
+        assert_eq!(locked_snapshot.hash, expected.hash);
+        assert!(
+            OpenOptions::new().write(true).open(&path).is_err(),
+            "a writer must not open after the compare handle is acquired"
+        );
+        assert!(
+            fs::rename(&path, &moved_path).is_err(),
+            "the checked path must not be renamed before publication"
+        );
+
+        let mut mutation_guard = Some(WorkspaceMutationGuard {
+            file,
+            delete_pending: false,
+        });
+        write_workspace_file_if_unchanged(
+            &root,
+            Path::new("note.txt"),
+            Some(&expected),
+            b"after",
+            &mut mutation_guard,
+        )
+        .expect("write the checked file through its retained handle");
+        assert_eq!(fs::read(&path).expect("read updated file"), b"after");
+        assert!(
+            OpenOptions::new().write(true).open(&path).is_err(),
+            "the new file must stay protected until tracking persistence ends"
+        );
+        assert!(
+            fs::rename(&path, &moved_path).is_err(),
+            "the new path must stay protected until tracking persistence ends"
+        );
+
+        drop(mutation_guard);
+        fs::rename(&path, &moved_path).expect("replacement path unlocks after the guard drops");
+    }
+
+    #[test]
+    fn checked_delete_reserves_the_path_until_the_guard_is_released() {
+        let temporary = TestDirectory::new();
+        let path = temporary.0.join("note.txt");
+        fs::write(&path, b"before").expect("write initial file");
+        let root = crate::filesystem::open_absolute_directory_no_follow(&temporary.0)
+            .expect("open workspace capability");
+        let expected = capture_file_from_directory(&root, Path::new("note.txt"))
+            .expect("capture initial workspace file")
+            .expect("initial file exists");
+        let file = open_workspace_mutation_file(&root, Path::new("note.txt").as_os_str())
+            .expect("open the target with delete access");
+        drop(file);
+        let mut mutation_guard = None;
+
+        remove_workspace_file_if_unchanged(
+            &root,
+            Path::new("note.txt"),
+            &expected,
+            &mut mutation_guard,
+        )
+        .expect("mark the checked handle for deletion");
+        assert!(
+            mutation_guard
+                .as_ref()
+                .is_some_and(WorkspaceMutationGuard::is_delete_pending),
+            "the checked delete must remain pending while its handle is retained"
+        );
+        assert!(
+            OpenOptions::new().write(true).open(&path).is_err(),
+            "a new writer must not open the file while its delete is pending"
+        );
+        assert!(
+            OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&path)
+                .is_err(),
+            "the pending delete must reserve the original name"
+        );
+
+        drop(mutation_guard);
+        assert!(
+            !path.exists(),
+            "the file is removed when the guard is released"
+        );
+    }
+
+    #[test]
+    fn failed_delete_transaction_can_restore_through_the_retained_handle() {
+        let temporary = TestDirectory::new();
+        let path = temporary.0.join("note.txt");
+        fs::write(&path, b"before").expect("write initial file");
+        let root = crate::filesystem::open_absolute_directory_no_follow(&temporary.0)
+            .expect("open workspace capability");
+        let expected = capture_file_from_directory(&root, Path::new("note.txt"))
+            .expect("capture initial workspace file")
+            .expect("initial file exists");
+        let mut mutation_guard = None;
+
+        remove_workspace_file_if_unchanged(
+            &root,
+            Path::new("note.txt"),
+            &expected,
+            &mut mutation_guard,
+        )
+        .expect("mark the checked handle for deletion");
+        write_workspace_file_if_unchanged(
+            &root,
+            Path::new("note.txt"),
+            None,
+            b"restored",
+            &mut mutation_guard,
+        )
+        .expect("restore the file before releasing its pending delete handle");
+        assert_eq!(fs::read(&path).expect("read restored file"), b"restored");
+
+        drop(mutation_guard);
+        assert_eq!(
+            fs::read(&path).expect("read after guard release"),
+            b"restored"
+        );
+    }
+
+    #[test]
+    fn checked_guard_blocks_posix_replace_until_tracking_finishes() {
+        use cap_std::fs::OpenOptionsExt;
+        use std::os::windows::{ffi::OsStrExt, io::AsRawHandle};
+        use windows_sys::Wdk::Storage::FileSystem::{
+            FILE_RENAME_POSIX_SEMANTICS, FILE_RENAME_REPLACE_IF_EXISTS,
+        };
+        use windows_sys::Win32::Storage::FileSystem::{
+            FileRenameInfoEx, SetFileInformationByHandle,
+        };
+
+        #[repr(C)]
+        struct RenameInformationExHeader {
+            flags: u32,
+            root_directory: windows_sys::Win32::Foundation::HANDLE,
+            file_name_length: u32,
+        }
+
+        let temporary = TestDirectory::new();
+        let path = temporary.0.join("note.txt");
+        let replacement_path = temporary.0.join("replacement.txt");
+        fs::write(&path, b"before").expect("write initial file");
+        fs::write(&replacement_path, b"external").expect("write replacement file");
+        let root = crate::filesystem::open_absolute_directory_no_follow(&temporary.0)
+            .expect("open workspace capability");
+        let target_guard = open_workspace_mutation_file(&root, Path::new("note.txt").as_os_str())
+            .expect("lock the target file");
+        let mut options = CapabilityOpenOptions::new();
+        options.read(true).write(true);
+        options.access_mode(
+            windows_sys::Win32::Foundation::GENERIC_READ
+                | windows_sys::Win32::Foundation::GENERIC_WRITE
+                | windows_sys::Win32::Storage::FileSystem::DELETE,
+        );
+        let replacement = crate::filesystem::open_file_from_directory(
+            &root,
+            Path::new("replacement.txt"),
+            &options,
+        )
+        .expect("open the replacement file with rename sharing");
+        let wide_name: Vec<u16> = path.as_os_str().encode_wide().collect();
+        let file_name_length = (wide_name.len() * std::mem::size_of::<u16>()) as u32;
+        let file_name_offset = std::mem::offset_of!(RenameInformationExHeader, file_name_length)
+            + std::mem::size_of::<u32>();
+        let buffer_length = (file_name_offset + wide_name.len() * 2).max(24);
+        let mut buffer = vec![0_u64; buffer_length.div_ceil(8)];
+        let header = RenameInformationExHeader {
+            flags: FILE_RENAME_REPLACE_IF_EXISTS | FILE_RENAME_POSIX_SEMANTICS,
+            root_directory: std::ptr::null_mut(),
+            file_name_length,
+        };
+        let buffer_pointer = buffer.as_mut_ptr().cast::<u8>();
+        // SAFETY: the u64-backed buffer is aligned and large enough for the header and UTF-16 name.
+        unsafe {
+            std::ptr::write(buffer_pointer.cast::<RenameInformationExHeader>(), header);
+            std::ptr::copy_nonoverlapping(
+                wide_name.as_ptr(),
+                buffer_pointer.add(file_name_offset).cast::<u16>(),
+                wide_name.len(),
+            );
+        }
+        // SAFETY: `replacement` owns a live handle and the input buffer remains valid for the call.
+        let result = unsafe {
+            SetFileInformationByHandle(
+                replacement.as_raw_handle() as _,
+                FileRenameInfoEx,
+                buffer_pointer.cast(),
+                buffer_length as u32,
+            )
+        };
+        assert_eq!(result, 0, "the guarded POSIX replacement must be denied");
+        assert_eq!(
+            std::io::Error::last_os_error().raw_os_error(),
+            Some(windows_sys::Win32::Foundation::ERROR_SHARING_VIOLATION as i32)
+        );
+        assert_eq!(fs::read(&path).expect("read unchanged path"), b"before");
+        drop(target_guard);
+        // SAFETY: the source handle and input buffer are still live and valid.
+        let result = unsafe {
+            SetFileInformationByHandle(
+                replacement.as_raw_handle() as _,
+                FileRenameInfoEx,
+                buffer_pointer.cast(),
+                buffer_length as u32,
+            )
+        };
+        assert_ne!(
+            result, 0,
+            "the POSIX replacement should be allowed after the guard closes"
+        );
+        assert_eq!(fs::read(&path).expect("read replaced path"), b"external");
+    }
+
+    #[test]
+    fn pending_delete_guard_blocks_posix_replace_until_tracking_finishes() {
+        use cap_std::fs::OpenOptionsExt;
+        use std::os::windows::{ffi::OsStrExt, io::AsRawHandle};
+        use windows_sys::Wdk::Storage::FileSystem::{
+            FILE_RENAME_POSIX_SEMANTICS, FILE_RENAME_REPLACE_IF_EXISTS,
+        };
+        use windows_sys::Win32::Storage::FileSystem::{
+            FileRenameInfoEx, SetFileInformationByHandle,
+        };
+
+        #[repr(C)]
+        struct RenameInformationExHeader {
+            flags: u32,
+            root_directory: windows_sys::Win32::Foundation::HANDLE,
+            file_name_length: u32,
+        }
+
+        let temporary = TestDirectory::new();
+        let path = temporary.0.join("note.txt");
+        let replacement_path = temporary.0.join("replacement.txt");
+        fs::write(&path, b"before").expect("write initial file");
+        fs::write(&replacement_path, b"external").expect("write replacement file");
+        let root = crate::filesystem::open_absolute_directory_no_follow(&temporary.0)
+            .expect("open workspace capability");
+        let expected = capture_file_from_directory(&root, Path::new("note.txt"))
+            .expect("capture initial workspace file")
+            .expect("initial file exists");
+        let mut options = CapabilityOpenOptions::new();
+        options.read(true).write(true);
+        options.access_mode(
+            windows_sys::Win32::Foundation::GENERIC_READ
+                | windows_sys::Win32::Foundation::GENERIC_WRITE
+                | windows_sys::Win32::Storage::FileSystem::DELETE,
+        );
+        let replacement = crate::filesystem::open_file_from_directory(
+            &root,
+            Path::new("replacement.txt"),
+            &options,
+        )
+        .expect("open the replacement file with rename sharing");
+        let mut mutation_guard = None;
+        remove_workspace_file_if_unchanged(
+            &root,
+            Path::new("note.txt"),
+            &expected,
+            &mut mutation_guard,
+        )
+        .expect("mark the checked file for deletion");
+
+        let wide_name: Vec<u16> = path.as_os_str().encode_wide().collect();
+        let file_name_length = (wide_name.len() * std::mem::size_of::<u16>()) as u32;
+        let file_name_offset = std::mem::offset_of!(RenameInformationExHeader, file_name_length)
+            + std::mem::size_of::<u32>();
+        let buffer_length = (file_name_offset + wide_name.len() * 2).max(24);
+        let mut buffer = vec![0_u64; buffer_length.div_ceil(8)];
+        let header = RenameInformationExHeader {
+            flags: FILE_RENAME_REPLACE_IF_EXISTS | FILE_RENAME_POSIX_SEMANTICS,
+            root_directory: std::ptr::null_mut(),
+            file_name_length,
+        };
+        let buffer_pointer = buffer.as_mut_ptr().cast::<u8>();
+        // SAFETY: the u64-backed buffer is aligned and large enough for the header and UTF-16 name.
+        unsafe {
+            std::ptr::write(buffer_pointer.cast::<RenameInformationExHeader>(), header);
+            std::ptr::copy_nonoverlapping(
+                wide_name.as_ptr(),
+                buffer_pointer.add(file_name_offset).cast::<u16>(),
+                wide_name.len(),
+            );
+        }
+        // SAFETY: `replacement` owns a live handle and the input buffer remains valid for the call.
+        let result = unsafe {
+            SetFileInformationByHandle(
+                replacement.as_raw_handle() as _,
+                FileRenameInfoEx,
+                buffer_pointer.cast(),
+                buffer_length as u32,
+            )
+        };
+        assert_eq!(result, 0, "a pending delete must reserve the guarded path");
+        assert_eq!(
+            std::io::Error::last_os_error().raw_os_error(),
+            Some(windows_sys::Win32::Foundation::ERROR_SHARING_VIOLATION as i32)
+        );
+        drop(mutation_guard);
+        // SAFETY: the source handle and input buffer are still live and valid.
+        let result = unsafe {
+            SetFileInformationByHandle(
+                replacement.as_raw_handle() as _,
+                FileRenameInfoEx,
+                buffer_pointer.cast(),
+                buffer_length as u32,
+            )
+        };
+        assert_ne!(
+            result, 0,
+            "the replacement should proceed after the pending-delete guard closes"
+        );
+        assert_eq!(fs::read(&path).expect("read replacement path"), b"external");
+    }
+
+    #[test]
+    fn an_already_open_writer_makes_the_checked_mutation_fail_before_changes() {
+        let temporary = TestDirectory::new();
+        let path = temporary.0.join("note.txt");
+        fs::write(&path, b"before").expect("write initial file");
+        let root = crate::filesystem::open_absolute_directory_no_follow(&temporary.0)
+            .expect("open workspace capability");
+        let expected = capture_file_from_directory(&root, Path::new("note.txt"))
+            .expect("capture initial workspace file")
+            .expect("initial file exists");
+        let writer = OpenOptions::new()
+            .write(true)
+            .open(&path)
+            .expect("open competing writer before the mutation");
+        let mut mutation_guard = None;
+
+        let error = write_workspace_file_if_unchanged(
+            &root,
+            Path::new("note.txt"),
+            Some(&expected),
+            b"replacement",
+            &mut mutation_guard,
+        )
+        .expect_err("refuse a target with a writer already open");
+        assert_eq!(error.kind(), std::io::ErrorKind::WouldBlock);
+        assert!(mutation_guard.is_none());
+        assert_eq!(fs::read(&path).expect("read unchanged file"), b"before");
+        drop(writer);
     }
 }
 

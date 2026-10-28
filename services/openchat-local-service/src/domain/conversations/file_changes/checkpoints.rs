@@ -5,7 +5,7 @@ use std::{
     ffi::OsString,
     io,
     path::{Path, PathBuf},
-    sync::{Arc, MutexGuard},
+    sync::{Arc, Mutex, MutexGuard},
 };
 
 use rusqlite::{OptionalExtension, params};
@@ -16,12 +16,12 @@ use uuid::Uuid;
 
 use super::{
     FileChangeDelta, FileSnapshot, MAX_DIFF_LINES, MAX_DIFF_OUTPUT_BYTES, MAX_TEXT_DIFF_BYTES,
-    TrackingError, as_text, atomic_write_workspace_file_from_directory,
-    capture_file_from_directory, cleanup_pending_snapshot_blobs,
-    ensure_no_symlink_path_from_directory, ensure_snapshot_blob, lock_file_changes,
-    open_workspace_directory, read_snapshot_blob, remove_workspace_file_from_directory,
-    safe_relative_path, sha256, unix_time_millis, validate_change_id, validate_conversation_id,
-    workspace_directory_matches_path,
+    TrackingError, WorkspaceMutationGuard, as_text, capture_file_from_directory,
+    cleanup_pending_snapshot_blobs, ensure_no_symlink_path_from_directory, ensure_snapshot_blob,
+    lock_file_changes, open_workspace_directory, read_snapshot_blob,
+    remove_workspace_file_if_unchanged, safe_relative_path, sha256, unix_time_millis,
+    validate_change_id, validate_conversation_id, workspace_directory_matches_path,
+    write_workspace_file_if_unchanged,
 };
 use crate::storage::{AppStorage, StorageConnection, StorageTransaction};
 
@@ -96,6 +96,7 @@ struct RestorePlan {
     target_exists: bool,
     target_hash: Option<String>,
     target_content: Option<Vec<u8>>,
+    mutation_guard: Arc<Mutex<Option<WorkspaceMutationGuard>>>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -843,6 +844,7 @@ fn plan_file_restore(
         target_exists: desired.exists,
         target_hash: desired.hash.clone(),
         target_content,
+        mutation_guard: Arc::new(Mutex::new(None)),
     })
 }
 
@@ -974,15 +976,22 @@ fn apply_restore_plans(
                         "checkpoint content is unavailable",
                     )
                 })
-                .and_then(|content| write_restore_plan_file(plan, content))
+                .and_then(|content| write_restore_plan_file(plan, plan.current.as_ref(), content))
         } else if plan.current.is_some() {
-            remove_restore_plan_file(plan)
+            match plan.current.as_ref() {
+                Some(current) => remove_restore_plan_file(plan, current),
+                None => Ok(()),
+            }
         } else {
             Ok(())
         };
-        if result.is_err() {
+        if let Err(error) = result {
             return if rollback_in_progress(plan, &applied) {
-                Err(CheckpointRestoreError::Unavailable)
+                if error.kind() == io::ErrorKind::WouldBlock {
+                    Err(CheckpointRestoreError::Conflict)
+                } else {
+                    Err(CheckpointRestoreError::Unavailable)
+                }
             } else {
                 Err(CheckpointRestoreError::RollbackFailed)
             };
@@ -1160,6 +1169,14 @@ impl RestorePlan {
         self.current.as_ref().map(|state| state.hash.as_str()) != self.target_hash.as_deref()
             || self.current.is_some() != self.target_exists
     }
+
+    fn target_snapshot(&self) -> Option<FileSnapshot> {
+        let hash = self.target_hash.clone()?;
+        self.target_exists.then(|| FileSnapshot {
+            hash,
+            content: self.target_content.clone(),
+        })
+    }
 }
 
 fn file_states_match(left: &FileState, right: &FileState) -> bool {
@@ -1255,6 +1272,15 @@ fn create_restore_plan_parent(plan: &mut RestorePlan) -> Result<(), CheckpointRe
 }
 
 fn capture_plan_file(plan: &RestorePlan) -> Result<Option<FileSnapshot>, CheckpointRestoreError> {
+    if plan
+        .mutation_guard
+        .lock()
+        .map_err(|_| CheckpointRestoreError::Unavailable)?
+        .as_ref()
+        .is_some_and(WorkspaceMutationGuard::is_delete_pending)
+    {
+        return Ok(None);
+    }
     match &plan.parent_directory {
         Some(parent) => capture_file_from_directory(parent.as_ref(), Path::new(&plan.file_name)),
         None => capture_file_from_directory(plan.directory.as_ref(), Path::new(&plan.path)),
@@ -1262,24 +1288,47 @@ fn capture_plan_file(plan: &RestorePlan) -> Result<Option<FileSnapshot>, Checkpo
     .map_err(|_| CheckpointRestoreError::Unavailable)
 }
 
-fn write_restore_plan_file(plan: &RestorePlan, content: &[u8]) -> io::Result<()> {
+fn write_restore_plan_file(
+    plan: &RestorePlan,
+    expected: Option<&FileSnapshot>,
+    content: &[u8],
+) -> io::Result<()> {
     let parent = plan.parent_directory.as_ref().ok_or_else(|| {
         io::Error::new(
             io::ErrorKind::InvalidInput,
             "checkpoint restore parent capability is unavailable",
         )
     })?;
-    atomic_write_workspace_file_from_directory(parent.as_ref(), Path::new(&plan.file_name), content)
+    let mut mutation_guard = plan
+        .mutation_guard
+        .lock()
+        .map_err(|_| io::Error::other("checkpoint mutation handle is unavailable"))?;
+    write_workspace_file_if_unchanged(
+        parent.as_ref(),
+        Path::new(&plan.file_name),
+        expected,
+        content,
+        &mut mutation_guard,
+    )
 }
 
-fn remove_restore_plan_file(plan: &RestorePlan) -> io::Result<()> {
+fn remove_restore_plan_file(plan: &RestorePlan, expected: &FileSnapshot) -> io::Result<()> {
     let parent = plan.parent_directory.as_ref().ok_or_else(|| {
         io::Error::new(
             io::ErrorKind::InvalidInput,
             "checkpoint restore parent capability is unavailable",
         )
     })?;
-    remove_workspace_file_from_directory(parent.as_ref(), Path::new(&plan.file_name))
+    let mut mutation_guard = plan
+        .mutation_guard
+        .lock()
+        .map_err(|_| io::Error::other("checkpoint mutation handle is unavailable"))?;
+    remove_workspace_file_if_unchanged(
+        parent.as_ref(),
+        Path::new(&plan.file_name),
+        expected,
+        &mut mutation_guard,
+    )
 }
 
 fn rollback_applied(plans: &[RestorePlan]) -> bool {
@@ -1317,17 +1366,23 @@ fn rollback_plan(plan: &RestorePlan) -> bool {
             let Some(content) = current.content.as_deref() else {
                 return false;
             };
-            if write_restore_plan_file(plan, content).is_err() {
+            let expected_target = plan.target_snapshot();
+            if write_restore_plan_file(plan, expected_target.as_ref(), content).is_err() {
                 return false;
             }
             capture_plan_file(plan).is_ok_and(|state| {
                 state.as_ref().map(|snapshot| snapshot.hash.as_str()) == Some(current.hash.as_str())
             })
         }
-        None => match remove_restore_plan_file(plan) {
-            Ok(()) => true,
-            Err(error) if error.kind() == io::ErrorKind::NotFound => true,
-            Err(_) => false,
+        None => match plan
+            .target_snapshot()
+            .as_ref()
+            .map(|target| remove_restore_plan_file(plan, target))
+        {
+            Some(Ok(())) => true,
+            Some(Err(error)) if error.kind() == io::ErrorKind::NotFound => true,
+            Some(Err(_)) => false,
+            None => false,
         },
     }
 }
@@ -1666,7 +1721,7 @@ mod tests {
         .expect("plan checkpoint restore with a missing parent");
 
         create_restore_plan_parent(&mut plan).expect("create and retain nested parent");
-        write_restore_plan_file(&plan, b"restored").expect("write through retained parent");
+        write_restore_plan_file(&plan, None, b"restored").expect("write through retained parent");
         assert_eq!(
             capture_plan_file(&plan)
                 .expect("capture restored file")
