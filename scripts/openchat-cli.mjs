@@ -9,11 +9,11 @@ import {
   rmSync,
   statSync,
 } from 'node:fs';
-import { randomUUID } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { reserveTemporaryTestProfileRoot } from './temporaryTestProfile.mjs';
 
 const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
 const workspaceRoot = path.resolve(scriptDirectory, '..');
@@ -170,11 +170,7 @@ function devTestProfile(args) {
   if (cleanupProfileOnExit && explicitProfileRoot !== undefined) {
     throw new Error('--cleanup-profile cannot be used with --profile-root.');
   }
-  const profileRoot =
-    explicitProfileRoot ?? path.join(tmpdir(), 'openchat-desktop-test-' + randomUUID());
-  if (cleanupProfileOnExit && existsSync(profileRoot)) {
-    throw new Error('Refusing to clean up an existing desktop test profile.');
-  }
+  const profileRoot = explicitProfileRoot ?? reserveTemporaryTestProfileRoot();
 
   let launchError;
   try {
@@ -219,7 +215,7 @@ function startupBenchmark(args) {
   }
   ensureNoArguments('startup-benchmark', args);
 
-  const profileRoot = path.join(tmpdir(), 'openchat-desktop-test-' + randomUUID());
+  const profileRoot = reserveTemporaryTestProfileRoot();
   const resultPath = path.join(profileRoot, 'result.json');
   let benchmarkError;
 
