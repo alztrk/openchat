@@ -1,7 +1,6 @@
 import { Github, MessageSquare, PanelRight } from 'lucide-react';
 import {
   lazy,
-  type DragEvent as ReactDragEvent,
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
   Suspense,
@@ -24,9 +23,7 @@ import { getMessages } from '@/modules/conversations/data/chatStorage';
 import { setPendingComposerDraft } from '@/modules/conversations/data/pendingComposerDraft';
 import {
   clampWorkspacePanelRatio,
-  getSidebarDraggingConversationId,
   readWorkspacePanelRatio,
-  setSidebarDraggingConversationId,
   writeWorkspacePanelRatio,
 } from '@/modules/conversations/data/sidebarPreferences';
 import { useChatStore } from '@/modules/conversations/stores/chatStore';
@@ -57,12 +54,7 @@ import {
 import { useAssistantExecutionPreferencesStore } from '@/modules/settings/data/assistantExecutionPreferences';
 import type { AssistantAgentSnapshot } from '@/modules/settings/data/assistantProfiles';
 import { useChatDisplayPreferencesStore } from '@/modules/settings/data/chatDisplayPreferences';
-import {
-  keyboardShortcutActions,
-  keyboardShortcutMatches,
-  keyboardShortcutRequiresModifier,
-  useKeyboardShortcutsStore,
-} from '@/modules/settings/stores/keyboardShortcutsStore';
+import { useKeyboardShortcutsStore } from '@/modules/settings/stores/keyboardShortcutsStore';
 import { localServiceClient } from '@/platform/local-service';
 import { unifiedStorage } from '@/platform/storage/unifiedStorage';
 import { getCurrentWindow, getVersion, invoke, isTauri, listen } from '@/platform/tauri';
@@ -70,6 +62,9 @@ import { BrandMark } from '@/shell/BrandMark';
 import { ConversationActionsHeader } from '@/shell/ConversationActionsHeader';
 import { type AppSurface, NavigationRail } from '@/shell/NavigationRail';
 import { TitleBar } from '@/shell/TitleBar';
+import { AppModals } from './AppModals';
+import { useAppDragDrop } from './useAppDragDrop';
+import { useAppKeyboardShortcuts } from './useAppKeyboardShortcuts';
 
 const LibraryPage = lazy(() =>
   import('@/modules/model-library/components/LibraryPage').then((module) => ({ default: module.LibraryPage })),
@@ -88,14 +83,6 @@ const ChatFileChangesPanel = lazy(() =>
   import('@/modules/conversations/components/ChatFileChangesPanel').then((module) => ({
     default: module.ChatFileChangesPanel,
   })),
-);
-const TemporaryChatExitDialog = lazy(() =>
-  import('@/modules/conversations/components/TemporaryChatExitDialog').then((module) => ({
-    default: module.TemporaryChatExitDialog,
-  })),
-);
-const CommandPalette = lazy(() =>
-  import('@/shell/CommandPalette').then((module) => ({ default: module.CommandPalette })),
 );
 const DesignPage = lazy(() =>
   import('@/modules/design/components/DesignPage').then((module) => ({ default: module.DesignPage })),
@@ -187,15 +174,12 @@ export function App() {
   const [systemIsDark, setSystemIsDark] = useState(() => window.matchMedia('(prefers-color-scheme: dark)').matches);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [workspaceRatio, setWorkspaceRatio] = useState<number>(readWorkspacePanelRatio);
-  const [draggingConversationId, setDraggingConversationId] = useState<string | null>(null);
-  const [activeDropZone, setActiveDropZone] = useState<'primary' | 'panel' | null>(null);
   const workspaceDropRef = useRef<HTMLDivElement>(null);
   const rightPanelShellRef = useRef<HTMLDivElement>(null);
   const surfaceHeadingRef = useRef<HTMLElement>(null);
   const lastInteractionMethod = useRef<'keyboard' | 'pointer'>('pointer');
   const goalBudgetPauseAttemptKey = useRef<string | null>(null);
   const initializeChat = useChatStore((state) => state.initialize);
-  const keyboardBindings = useKeyboardShortcutsStore((state) => state.bindings);
   const initializeKeyboardShortcuts = useKeyboardShortcutsStore((state) => state.initialize);
   const initializeAssistantExecutionPreferences = useAssistantExecutionPreferencesStore((state) => state.initialize);
   const maxGoalRuntimeMinutes = useAssistantExecutionPreferencesStore(
@@ -208,9 +192,6 @@ export function App() {
   const isChangingGoal = useChatStore((state) => state.isChangingGoal);
   const startNewChat = useChatStore((state) => state.startNewChat);
   const startTemporaryChat = useChatStore((state) => state.startTemporaryChat);
-  const temporaryChat = useChatStore((state) => state.temporaryChat);
-  const temporaryChatMessageCount = useChatStore((state) => state.messages.length);
-  const temporaryChatErrorCode = useChatStore((state) => state.errorCode);
   const isDark = theme === 'dark' || (theme === 'system' && systemIsDark);
 
   useEffect(() => {
@@ -288,23 +269,6 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    const onDragState = (event: Event) => {
-      if (!(event instanceof CustomEvent)) return;
-      const detail = isObject(event.detail) ? event.detail : null;
-      if (detail && typeof detail.conversationId === 'string' && detail.dragging === true) {
-        setDraggingConversationId(detail.conversationId);
-      } else {
-        setDraggingConversationId(null);
-        setActiveDropZone(null);
-      }
-    };
-    window.addEventListener('openchat-conversation-drag-state', onDragState);
-    return () => {
-      window.removeEventListener('openchat-conversation-drag-state', onDragState);
-    };
-  }, []);
-
-  useEffect(() => {
     if (!isTauri()) return;
     let active = true;
     void getVersion()
@@ -357,19 +321,6 @@ export function App() {
     );
     return () => window.clearTimeout(timer);
   }, [activeGoal, isChangingGoal, maxGoalRuntimeMinutes]);
-
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'b') {
-        const target = event.target;
-        if (isEditableShortcutTarget(target) || isDialogShortcutTarget(target)) return;
-        event.preventDefault();
-        setIsSidebarOpen((open) => !open);
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
 
   useEffect(() => {
     void writeCloseWindowBehavior(readCloseWindowBehavior()).catch((cause: unknown) => {
@@ -888,74 +839,15 @@ export function App() {
     setIsRightPanelOpen(true);
   }, [isRightPanelOpen]);
 
-  useEffect(() => {
-    const handleGlobalShortcut = (event: KeyboardEvent) => {
-      if (event.defaultPrevented || event.repeat) return;
-      if (isDialogShortcutTarget(event.target)) return;
-
-      const action = keyboardShortcutActions.find((candidate) => {
-        const binding = keyboardBindings[candidate];
-        if (
-          binding === null ||
-          (keyboardShortcutRequiresModifier(candidate) && !event.ctrlKey && !event.altKey && !event.metaKey)
-        ) {
-          return false;
-        }
-        return keyboardShortcutMatches(event, binding);
-      });
-      if (!action || action === 'sendMessage' || action === 'insertNewLine' || action === 'stopResponse') return;
-      if (isEditableShortcutTarget(event.target) && action !== 'openCommandPalette') return;
-
-      event.preventDefault();
-      switch (action) {
-        case 'newChat':
-          startWorkspaceChat();
-          break;
-        case 'openSearch':
-          window.dispatchEvent(new Event('openchat-open-title-search'));
-          break;
-        case 'openModelPicker':
-          requestTemporaryChatExit(() => {
-            navigateSurface('chats');
-            window.dispatchEvent(new Event('openchat-open-model-picker'));
-          });
-          break;
-        case 'openCommandPalette':
-          setIsCommandPaletteOpen(true);
-          break;
-        case 'toggleRightPanel':
-          if (activeSurface === 'chats') handleTogglePrimaryRightPanel();
-          break;
-        case 'previousConversation':
-        case 'nextConversation': {
-          const available = conversations.filter((conversation) => !conversation.isArchived);
-          const index = available.findIndex((conversation) => conversation.id === activeConversationId);
-          const offset = action === 'previousConversation' ? -1 : 1;
-          const target = index >= 0 ? available[index + offset] : undefined;
-          if (target) {
-            requestTemporaryChatExit(async () => {
-              navigateSurface('chats');
-              await useChatStore.getState().selectConversation(target.id);
-            });
-          }
-          break;
-        }
-        default:
-          break;
-      }
-    };
-    window.addEventListener('keydown', handleGlobalShortcut, true);
-    return () => window.removeEventListener('keydown', handleGlobalShortcut, true);
-  }, [
-    activeConversationId,
+  useAppKeyboardShortcuts({
     activeSurface,
-    conversations,
     handleTogglePrimaryRightPanel,
-    keyboardBindings,
     navigateSurface,
     requestTemporaryChatExit,
+    setIsCommandPaletteOpen,
+    setIsSidebarOpen,
     startWorkspaceChat,
-  ]);
+  });
 
   const handleOpenRightPanelForConversation = useCallback(
     (conversationId: string | null, tab: RightWorkspaceTab = 'changes') => {
@@ -1039,107 +931,19 @@ export function App() {
     [activeConversationId, requestTemporaryChatExit],
   );
 
-  const isConversationDragEvent = (event: ReactDragEvent<HTMLElement> | DragEvent): boolean => {
-    if (draggingConversationId !== null) return true;
-    if (getSidebarDraggingConversationId() !== null) return true;
-    const types = Array.from(event.dataTransfer?.types ?? []);
-    return types.includes('application/x-openchat-conversation') || types.includes('text/plain');
-  };
-
-  const workspaceDragDepthRef = useRef(0);
-
-  const getWorkspaceDropZone = (clientX: number): 'primary' | 'panel' => {
-    if (isRightPanelOpen) {
-      const panelBounds = rightPanelShellRef.current?.getBoundingClientRect();
-      if (panelBounds && panelBounds.width > 0) return clientX >= panelBounds.left ? 'panel' : 'primary';
-    }
-    const workspaceBounds = workspaceDropRef.current?.getBoundingClientRect();
-    if (!workspaceBounds || workspaceBounds.width <= 0) return 'primary';
-    return (clientX - workspaceBounds.left) / workspaceBounds.width >= 0.52 ? 'panel' : 'primary';
-  };
-
-  useEffect(() => {
-    const handleGlobalDragOver = (event: DragEvent) => {
-      const isConv =
-        getSidebarDraggingConversationId() !== null ||
-        Array.from(event.dataTransfer?.types ?? []).includes('application/x-openchat-conversation');
-      if (isConv) {
-        event.preventDefault();
-        if (event.dataTransfer) {
-          event.dataTransfer.dropEffect = 'copy';
-        }
-      }
-    };
-
-    const handleGlobalDragEnd = () => {
-      workspaceDragDepthRef.current = 0;
-      setActiveDropZone(null);
-      setDraggingConversationId(null);
-      setSidebarDraggingConversationId(null);
-    };
-
-    window.addEventListener('dragover', handleGlobalDragOver);
-    window.addEventListener('dragend', handleGlobalDragEnd);
-    window.addEventListener('drop', handleGlobalDragEnd);
-    return () => {
-      window.removeEventListener('dragover', handleGlobalDragOver);
-      window.removeEventListener('dragend', handleGlobalDragEnd);
-      window.removeEventListener('drop', handleGlobalDragEnd);
-    };
-  }, []);
-
-  const handleWorkspaceDragEnter = (event: ReactDragEvent<HTMLDivElement>) => {
-    if (!isConversationDragEvent(event)) return;
-    event.preventDefault();
-    event.dataTransfer.dropEffect = 'copy';
-    workspaceDragDepthRef.current += 1;
-    setActiveDropZone(getWorkspaceDropZone(event.clientX));
-  };
-
-  const handleWorkspaceDragOver = (event: ReactDragEvent<HTMLDivElement>) => {
-    if (!isConversationDragEvent(event)) return;
-    event.preventDefault();
-    event.dataTransfer.dropEffect = 'copy';
-    const targetZone = getWorkspaceDropZone(event.clientX);
-    if (activeDropZone !== targetZone) {
-      setActiveDropZone(targetZone);
-    }
-  };
-
-  const handleWorkspaceDragLeave = (event: ReactDragEvent<HTMLDivElement>) => {
-    if (!isConversationDragEvent(event)) return;
-    event.preventDefault();
-    workspaceDragDepthRef.current = Math.max(0, workspaceDragDepthRef.current - 1);
-    if (workspaceDragDepthRef.current === 0) {
-      setActiveDropZone(null);
-    }
-  };
-
-  const handleWorkspaceDrop = (event: ReactDragEvent<HTMLDivElement>) => {
-    if (!isConversationDragEvent(event)) return;
-    event.preventDefault();
-    event.stopPropagation();
-    workspaceDragDepthRef.current = 0;
-    setActiveDropZone(null);
-
-    const customData = event.dataTransfer.getData('application/x-openchat-conversation');
-    const inMemoryId = draggingConversationId || getSidebarDraggingConversationId();
-    const plainText = event.dataTransfer.getData('text/plain');
-    const matchingPlainId = conversations.some((c) => c.id === plainText) ? plainText : '';
-    const draggedId = customData || inMemoryId || matchingPlainId;
-    const dropTarget = event.target;
-    const targetZone =
-      dropTarget instanceof Node && rightPanelShellRef.current?.contains(dropTarget)
-        ? 'panel'
-        : getWorkspaceDropZone(event.clientX);
-
-    setDraggingConversationId(null);
-    setSidebarDraggingConversationId(null);
-    if (draggedId) {
-      if (targetZone === 'panel') handleOpenConversationInPanel(draggedId);
-      else handleOpenConversationInPrimary(draggedId);
-    }
-  };
+  const {
+    activeDropZone,
+    handleWorkspaceDragEnter,
+    handleWorkspaceDragOver,
+    handleWorkspaceDragLeave,
+    handleWorkspaceDrop,
+  } = useAppDragDrop({
+    isRightPanelOpen,
+    rightPanelShellRef,
+    workspaceDropRef,
+    onOpenConversationInPanel: handleOpenConversationInPanel,
+    onOpenConversationInPrimary: handleOpenConversationInPrimary,
+  });
 
   const handleWorkspaceResizePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.button !== 0) return;
@@ -1480,55 +1284,26 @@ export function App() {
           <span>{t('appTitle')}</span>
         </span>
       </footer>
-      {temporaryExitIntent !== null ? (
-        <Suspense fallback={null}>
-          <TemporaryChatExitDialog
-            canSave={temporaryChatMessageCount > 0 && temporaryChat?.route !== null}
-            errorMessage={
-              temporaryChatErrorCode === 'temporaryChatSaveFailed' ||
-              temporaryChatErrorCode === 'temporaryChatSaveCleanupFailed'
-                ? t(temporaryChatErrorCode)
-                : null
-            }
-            isBusy={isSavingTemporaryChat}
-            onDiscard={discardTemporaryChatAndContinue}
-            onOpenChange={closeTemporaryChatExitDialog}
-            onSave={() => void saveTemporaryChatAndContinue()}
-            open
-          />
-        </Suspense>
-      ) : null}
-      {isCommandPaletteOpen ? (
-        <Suspense fallback={null}>
-          <CommandPalette
-            isDark={isDark}
-            onNewChat={startWorkspaceChat}
-            onNavigate={navigate}
-            onOpenAgents={openAgentLibrary}
-            onSelectModel={(modelKey) => {
-              const chat = useChatStore.getState();
-              void chat.selectConversationModel(modelKey, chat.activeConversationId ?? undefined);
-            }}
-            onStartChatWithAgent={startWorkspaceAgentChat}
-            onOpenChange={setIsCommandPaletteOpen}
-            onOpenSettingsSection={(section) => {
-              requestTemporaryChatExit(() => {
-                setSettingsSectionRequest((current) => ({ section, requestId: current.requestId + 1 }));
-                if (activeSurface !== 'settings') navigateSurface('settings');
-              });
-            }}
-            onSelectConversation={(conversationId) => openSearchConversation(conversationId)}
-            onStartProjectChat={(projectId) => {
-              requestTemporaryChatExit(() => {
-                navigateSurface('chats');
-                useChatStore.getState().startNewChat(projectId);
-              });
-            }}
-            onToggleTheme={toggleTheme}
-            open
-          />
-        </Suspense>
-      ) : null}
+      <AppModals
+        activeSurface={activeSurface}
+        closeTemporaryChatExitDialog={closeTemporaryChatExitDialog}
+        discardTemporaryChatAndContinue={discardTemporaryChatAndContinue}
+        isCommandPaletteOpen={isCommandPaletteOpen}
+        isDark={isDark}
+        isSavingTemporaryChat={isSavingTemporaryChat}
+        navigate={navigate}
+        navigateSurface={navigateSurface}
+        openAgentLibrary={openAgentLibrary}
+        openSearchConversation={openSearchConversation}
+        requestTemporaryChatExit={requestTemporaryChatExit}
+        saveTemporaryChatAndContinue={saveTemporaryChatAndContinue}
+        setIsCommandPaletteOpen={setIsCommandPaletteOpen}
+        setSettingsSectionRequest={setSettingsSectionRequest}
+        startWorkspaceAgentChat={startWorkspaceAgentChat}
+        startWorkspaceChat={startWorkspaceChat}
+        temporaryExitIntent={temporaryExitIntent}
+        toggleTheme={toggleTheme}
+      />
     </div>
   );
 }
@@ -1580,16 +1355,4 @@ function isNotificationIdentifier(value: unknown): value is string {
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function isEditableShortcutTarget(target: EventTarget | null): boolean {
-  return (
-    target instanceof HTMLElement &&
-    (target.isContentEditable ||
-      target.closest('input, textarea, select, [role="textbox"], [contenteditable="true"]') !== null)
-  );
-}
-
-function isDialogShortcutTarget(target: EventTarget | null): boolean {
-  return target instanceof HTMLElement && target.closest('[role="dialog"], dialog') !== null;
 }
