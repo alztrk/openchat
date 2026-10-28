@@ -38,12 +38,6 @@ macro_rules! app_invoke_handler {
 
 mod app_preferences;
 mod archive_export;
-#[cfg(test)]
-// The test harness does not start the Tauri runtime that calls these commands.
-#[allow(dead_code)]
-mod chat_storage;
-#[cfg(not(test))]
-#[path = "chat_storage_runtime.rs"]
 mod chat_storage;
 mod computer_use_overlay;
 mod file_ops;

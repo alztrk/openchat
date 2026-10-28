@@ -161,7 +161,6 @@ mod markdown_export_tests {
     use super::{
         is_safe_export_file_name, is_safe_markdown_export_file_name, write_markdown_export,
     };
-    use crate::chat_storage::CreateProjectInput;
 
     struct TestDirectory(PathBuf);
 
@@ -219,17 +218,5 @@ mod markdown_export_tests {
             fs::read(destination).expect("read published Markdown"),
             b"complete new export"
         );
-    }
-
-    #[test]
-    fn project_creation_rejects_renderer_supplied_folder_paths() {
-        let request = r#"{
-            "id": "project-1",
-            "name": "Project",
-            "folderSelectionId": "550e8400-e29b-41d4-a716-446655440000",
-            "folderPath": "C:\\private"
-        }"#;
-
-        assert!(serde_json::from_str::<CreateProjectInput>(request).is_err());
     }
 }

@@ -3692,7 +3692,6 @@ version = "0.1.8"
 dependencies = [
  "base64 0.22.1",
  "openchat-local-service",
- "rusqlite",
  "serde",
  "serde_json",
  "tauri",
