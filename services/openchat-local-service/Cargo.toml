@@ -49,7 +49,7 @@ webbrowser = "1.2.4"
 htmd = "0.5.5"
 fastembed = { version = "7.1.0", default-features = false, features = ["ort-download-binaries-rustls-tls"] }
 usearch = "2.26.2"
-tokenizers = { version = "0.23.2", default-features = false, features = ["onig"] }
+tokenizers = { version = "0.23.2", default-features = false, features = ["fancy-regex"] }
 zip = { version = "9.0.4", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 flate2 = { version = "1", default-features = false, features = ["zlib-rs"] }
 tar = "0.4"
