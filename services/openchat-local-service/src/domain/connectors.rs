@@ -59,11 +59,11 @@ pub(crate) async fn fetch_signed_catalog(
     .await
     .map_err(|_| ConnectorCatalogFetchError::Unavailable)?;
     if page.truncated
-        || !page
+        || page
             .content_type
             .split(';')
             .next()
-            .is_some_and(|content_type| content_type.trim() == "application/json")
+            .is_none_or(|content_type| content_type.trim() != "application/json")
     {
         return Err(ConnectorCatalogFetchError::InvalidCatalog);
     }

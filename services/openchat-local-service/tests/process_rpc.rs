@@ -26,7 +26,7 @@ async fn child_service_handles_health_and_shutdown_rpc_in_an_isolated_profile()
         .arg(profile.path())
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
+        .stderr(Stdio::inherit())
         .kill_on_drop(true)
         .spawn()?;
     let mut stdin = child.stdin.take().ok_or("service stdin was not piped")?;
@@ -36,25 +36,38 @@ async fn child_service_handles_health_and_shutdown_rpc_in_an_isolated_profile()
     let health = exchange(&mut stdin, &mut stdout, "health", "system.health").await?;
     assert_eq!(health["id"], "health");
     assert_eq!(health["result"]["status"], "ready");
-    assert!(health["result"].get("storage_root").is_none());
-    assert_eq!(
-        health["result"]["database_path"].as_str(),
-        Some(
-            profile
-                .path()
-                .join("db")
-                .join("openchat.sqlite3")
-                .to_string_lossy()
-                .as_ref()
-        )
-    );
-
+    assert!(health["result"].get("database_path").is_none());
+    assert!(health["result"]["schema_version"].as_i64().is_some());
     let shutdown = exchange(&mut stdin, &mut stdout, "shutdown", "system.shutdown").await?;
     assert_eq!(shutdown["id"], "shutdown");
     assert_eq!(shutdown["result"]["stopping"], true);
     drop(stdin);
     let status = timeout(Duration::from_secs(10), child.wait()).await??;
     assert!(status.success(), "service child returned {status}");
+    Ok(())
+}
+
+#[cfg(feature = "desktop-profile-test-support")]
+#[tokio::test]
+/// Verifies a temporary desktop profile reopens its SQLCipher database after a service restart.
+async fn desktop_test_profile_reuses_its_key_across_service_process_restarts()
+-> Result<(), Box<dyn Error>> {
+    let profile = DesktopTestProfile::new()?;
+    let storage_root = profile.path().join("storage");
+    let database_path = storage_root.join("db").join("openchat.sqlite3");
+    let key_path = profile.path().join("database-test-key.bin");
+
+    let mut first_service = RunningService::start(&storage_root)?;
+    first_service.health_check("first-start").await?;
+    first_service.shutdown().await?;
+
+    let database_header = fs::read(&database_path)?;
+    assert_ne!(&database_header[..16], b"SQLite format 3\0");
+    assert_eq!(fs::metadata(&key_path)?.len(), 32);
+
+    let mut restarted_service = RunningService::start(&storage_root)?;
+    restarted_service.health_check("restarted-profile").await?;
+    restarted_service.shutdown().await?;
     Ok(())
 }
 
@@ -70,7 +83,7 @@ async fn child_service_rejects_complex_json_without_losing_rpc_frame_alignment()
         .arg(profile.path())
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
+        .stderr(Stdio::inherit())
         .kill_on_drop(true)
         .spawn()?;
     let mut stdin = child.stdin.take().ok_or("service stdin was not piped")?;
@@ -282,7 +295,7 @@ impl RunningService {
             .arg(data_root)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::null())
+            .stderr(Stdio::inherit())
             .kill_on_drop(true)
             .spawn()?;
         let stdin = child
@@ -504,9 +517,10 @@ struct TemporaryProfile(PathBuf);
 impl TemporaryProfile {
     /// Creates an empty profile under the system temporary directory.
     fn new() -> io::Result<Self> {
-        let path =
-            std::env::temp_dir().join(format!("openchat-process-rpc-{}", Uuid::new_v4().simple()));
-        fs::create_dir(&path)?;
+        let path = std::env::temp_dir()
+            .join(format!("openchat-desktop-test-{}", Uuid::new_v4()))
+            .join("storage");
+        fs::create_dir_all(&path)?;
         Ok(Self(path))
     }
 
@@ -518,6 +532,35 @@ impl TemporaryProfile {
 
 impl Drop for TemporaryProfile {
     /// Removes test data after the service child has shut down.
+    fn drop(&mut self) {
+        if let Some(parent) = self.0.parent() {
+            let _ = fs::remove_dir_all(parent);
+        }
+    }
+}
+
+#[cfg(feature = "desktop-profile-test-support")]
+/// Creates and removes one UUID-named desktop test profile under the system temporary directory.
+struct DesktopTestProfile(PathBuf);
+
+#[cfg(feature = "desktop-profile-test-support")]
+impl DesktopTestProfile {
+    /// Creates an isolated profile root accepted by the desktop test-support feature.
+    fn new() -> io::Result<Self> {
+        let path = std::env::temp_dir().join(format!("openchat-desktop-test-{}", Uuid::new_v4()));
+        fs::create_dir_all(path.join("storage"))?;
+        Ok(Self(path))
+    }
+
+    /// Returns the temporary profile path.
+    fn path(&self) -> &Path {
+        &self.0
+    }
+}
+
+#[cfg(feature = "desktop-profile-test-support")]
+impl Drop for DesktopTestProfile {
+    /// Removes only the disposable profile owned by this integration test.
     fn drop(&mut self) {
         let _ = fs::remove_dir_all(&self.0);
     }

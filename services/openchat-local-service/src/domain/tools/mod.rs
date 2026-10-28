@@ -10,11 +10,10 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 
-use cap_std::{
-    ambient_authority,
-    fs::{Dir, OpenOptions},
-};
+use cap_std::fs::{Dir, OpenOptions};
+#[cfg(test)]
 use ignore::WalkBuilder;
+use ignore::gitignore::{Gitignore, GitignoreBuilder};
 use serde_json::{Value, json};
 
 use crate::{protocol::ServiceError, provider_schema::ToolDefinition};
@@ -36,6 +35,12 @@ pub mod web_search;
 const MAX_LIST_RESULTS: usize = 100;
 const MAX_LIST_OFFSET: usize = 100_000;
 const MAX_LIST_SCAN: usize = 100_000;
+const MAX_GITIGNORE_ANCESTORS: usize = 512;
+const MAX_GITIGNORE_FILES: usize = 512;
+const MAX_GITIGNORE_FILE_BYTES: usize = 1024 * 1024;
+const MAX_GITIGNORE_TOTAL_BYTES: usize = 8 * 1024 * 1024;
+const MAX_GITIGNORE_LINE_BYTES: usize = 4 * 1024;
+const MAX_GITIGNORE_LINES: usize = 10_000;
 const MAX_READ_LINES: usize = 500;
 const MAX_OUTPUT_BYTES: usize = 64 * 1024;
 const MAX_DIRECT_READ_BYTES: u64 = MAX_OUTPUT_BYTES as u64 * 1024;
@@ -148,7 +153,8 @@ pub fn list_files(
     offset: usize,
     limit: usize,
 ) -> Result<Value, ServiceError> {
-    let (root, directory, explicit_filter_scope) = resolve_directory(root, path)?;
+    let (root, directory, root_handle, directory_handle, explicit_filter_scope) =
+        resolve_directory_for_listing(root, path)?;
     let limit = limit.clamp(1, MAX_LIST_RESULTS);
     if offset > MAX_LIST_OFFSET {
         return Err(invalid("The directory offset exceeds the supported range."));
@@ -156,13 +162,242 @@ pub fn list_files(
 
     let relative = directory.strip_prefix(&root).unwrap_or(Path::new(""));
     let retain_count = offset.saturating_add(limit).min(MAX_LIST_SCAN);
-    let listing = read_directory_listing(&directory, explicit_filter_scope, retain_count)?;
+    let ignore_matchers =
+        load_gitignore_matchers(&root, &directory, &root_handle, &directory_handle)?;
+    let listing = read_directory_listing_from_capability(
+        &directory_handle,
+        &directory,
+        &ignore_matchers,
+        explicit_filter_scope,
+        retain_count,
+    )?;
+    verify_directory_handles(&root, &directory, &root_handle, &directory_handle)?;
     Ok(directory_listing_response(
         relative, &listing, offset, limit,
     ))
 }
 
+fn read_directory_listing_from_capability(
+    directory: &Dir,
+    directory_path: &Path,
+    ignore_matchers: &[Gitignore],
+    explicit_filter_scope: bool,
+    retain_count: usize,
+) -> Result<DirectoryListing, ServiceError> {
+    let entries = directory
+        .entries()
+        .map_err(|error| filesystem_error(&error, "opening the requested directory"))?;
+    let mut retained = BinaryHeap::with_capacity(retain_count);
+    let mut total_entries = 0usize;
+    let mut scanned = 0usize;
+    let mut incomplete = false;
+
+    for result in entries {
+        let Ok(entry) = result else {
+            incomplete = true;
+            continue;
+        };
+        let Some(name) = entry.file_name().to_str().map(str::to_owned) else {
+            incomplete = true;
+            continue;
+        };
+        let Some(file_type) = entry.file_type().ok() else {
+            incomplete = true;
+            continue;
+        };
+        if file_type.is_symlink() || (!file_type.is_dir() && !file_type.is_file()) {
+            continue;
+        }
+        let candidate_path = directory_path.join(&name);
+        if is_ignored_by_gitignore(&candidate_path, file_type.is_dir(), ignore_matchers) {
+            continue;
+        }
+
+        if !explicit_filter_scope
+            && ((file_type.is_dir() && is_default_ignored_directory(&name))
+                || name.starts_with('.')
+                || cap_entry_is_hidden(&entry))
+        {
+            continue;
+        }
+
+        scanned += 1;
+        if scanned > MAX_LIST_SCAN {
+            break;
+        }
+        total_entries += 1;
+        let is_directory = file_type.is_dir();
+        if retained.len() < retain_count {
+            retained.push((name.clone(), is_directory));
+        } else if retained
+            .peek()
+            .is_some_and(|largest: &(String, bool)| name.as_str() < largest.0.as_str())
+        {
+            retained.pop();
+            retained.push((name, is_directory));
+        }
+    }
+
+    let was_scan_limited = scanned > MAX_LIST_SCAN || incomplete;
+    let mut entries = retained.into_vec();
+    entries.sort_unstable_by(|left, right| left.0.cmp(&right.0));
+    Ok(DirectoryListing {
+        entries,
+        total_entries,
+        truncated: was_scan_limited,
+    })
+}
+
+fn is_ignored_by_gitignore(path: &Path, is_directory: bool, matchers: &[Gitignore]) -> bool {
+    for matcher in matchers {
+        let matched = matcher.matched(path, is_directory);
+        if !matched.is_none() {
+            return matched.is_ignore();
+        }
+    }
+    false
+}
+
+fn load_gitignore_matchers(
+    root_path: &Path,
+    directory_path: &Path,
+    root: &crate::filesystem::OpenedDirectory,
+    directory: &crate::filesystem::OpenedDirectory,
+) -> Result<Vec<Gitignore>, ServiceError> {
+    let mut matchers = Vec::new();
+    let mut ancestor_count = 0usize;
+    let mut file_count = 0usize;
+    let mut total_bytes = 0usize;
+    let mut total_lines = 0usize;
+
+    for ancestor in directory_path.ancestors() {
+        ancestor_count += 1;
+        if ancestor_count > MAX_GITIGNORE_ANCESTORS {
+            return Err(invalid(
+                "The directory path is too deep to load ignore rules safely.",
+            ));
+        }
+        let ancestor_handle =
+            open_listing_ancestor(root_path, directory_path, root, directory, ancestor)?;
+        let ignore_bytes = match read_bounded_file_from_directory(
+            &ancestor_handle,
+            Path::new(".gitignore"),
+            MAX_GITIGNORE_FILE_BYTES,
+        ) {
+            Ok(bytes) => bytes,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
+            Err(error) => return Err(filesystem_error(&error, "reading project ignore rules")),
+        };
+        if ignore_bytes.len() > MAX_GITIGNORE_FILE_BYTES {
+            return Err(invalid(
+                "A project .gitignore file exceeds the supported size limit.",
+            ));
+        }
+        file_count += 1;
+        total_bytes = total_bytes
+            .checked_add(ignore_bytes.len())
+            .filter(|total| *total <= MAX_GITIGNORE_TOTAL_BYTES)
+            .ok_or_else(|| invalid("Project .gitignore files exceed the supported total size."))?;
+        if file_count > MAX_GITIGNORE_FILES {
+            return Err(invalid(
+                "The directory hierarchy contains too many .gitignore files.",
+            ));
+        }
+
+        let ignore_text = std::str::from_utf8(&ignore_bytes)
+            .map_err(|_| invalid("A project .gitignore file is not valid UTF-8."))?;
+        let ignore_path = ancestor.join(".gitignore");
+        let mut builder = GitignoreBuilder::new(ancestor);
+        for (line_index, line) in ignore_text.lines().enumerate() {
+            total_lines += 1;
+            if total_lines > MAX_GITIGNORE_LINES {
+                return Err(invalid(
+                    "Project .gitignore files contain too many rule lines.",
+                ));
+            }
+            if line.len() > MAX_GITIGNORE_LINE_BYTES {
+                return Err(invalid(
+                    "A project .gitignore rule exceeds the supported line length.",
+                ));
+            }
+            let line = if line_index == 0 {
+                line.strip_prefix('\u{feff}').unwrap_or(line)
+            } else {
+                line
+            };
+            builder
+                .add_line(Some(ignore_path.clone()), line)
+                .map_err(|_| invalid("A project .gitignore file contains an invalid rule."))?;
+        }
+        let matcher = builder
+            .build()
+            .map_err(|_| invalid("A project .gitignore file contains invalid rules."))?;
+        matchers.push(matcher);
+    }
+
+    Ok(matchers)
+}
+
+fn open_listing_ancestor(
+    root_path: &Path,
+    directory_path: &Path,
+    root: &crate::filesystem::OpenedDirectory,
+    directory: &crate::filesystem::OpenedDirectory,
+    ancestor: &Path,
+) -> Result<crate::filesystem::OpenedDirectory, ServiceError> {
+    if ancestor == directory_path {
+        return directory
+            .try_clone()
+            .map_err(|error| filesystem_error(&error, "opening a project ancestor directory"));
+    }
+    if ancestor == root_path {
+        return root
+            .try_clone()
+            .map_err(|error| filesystem_error(&error, "opening a project ancestor directory"));
+    }
+    if let Ok(relative) = ancestor.strip_prefix(root_path) {
+        return crate::filesystem::open_directory_from_directory(root, relative)
+            .map_err(|error| filesystem_error(&error, "opening a project ancestor directory"));
+    }
+    crate::filesystem::open_absolute_directory_no_follow(ancestor)
+        .map_err(|error| filesystem_error(&error, "opening a project ancestor directory"))
+}
+
+#[cfg(test)]
 fn read_directory_listing(
+    directory: &Path,
+    explicit_filter_scope: bool,
+    retain_count: usize,
+) -> Result<DirectoryListing, ServiceError> {
+    let directory_handle = crate::filesystem::open_absolute_directory_no_follow(directory)
+        .map_err(|error| filesystem_error(&error, "opening the requested directory"))?;
+    read_directory_listing_from_capability(
+        &directory_handle,
+        directory,
+        &[],
+        explicit_filter_scope,
+        retain_count,
+    )
+}
+
+#[cfg(windows)]
+fn cap_entry_is_hidden(entry: &cap_std::fs::DirEntry) -> bool {
+    use cap_std::fs::MetadataExt;
+
+    const FILE_ATTRIBUTE_HIDDEN: u32 = 0x2;
+    entry
+        .metadata()
+        .is_ok_and(|metadata| metadata.file_attributes() & FILE_ATTRIBUTE_HIDDEN != 0)
+}
+
+#[cfg(not(windows))]
+fn cap_entry_is_hidden(_entry: &cap_std::fs::DirEntry) -> bool {
+    false
+}
+
+// Kept only as a benchmark baseline for the former path-based walker.
+#[cfg(test)]
+fn read_directory_listing_legacy(
     directory: &Path,
     explicit_filter_scope: bool,
     retain_count: usize,
@@ -256,6 +491,7 @@ fn read_directory_listing(
     })
 }
 
+#[cfg(test)]
 fn has_gitignore_rule_ancestor(directory: &Path) -> bool {
     for ancestor in directory.ancestors() {
         match fs::symlink_metadata(ancestor.join(".gitignore")) {
@@ -267,6 +503,7 @@ fn has_gitignore_rule_ancestor(directory: &Path) -> bool {
     false
 }
 
+#[cfg(test)]
 fn read_directory_listing_from_entries(
     entries: fs::ReadDir,
     explicit_filter_scope: bool,
@@ -445,11 +682,12 @@ pub fn read_file(
 
 /// Returns the type and byte length of a regular file inside the active tool root.
 pub fn get_file_info(root: impl AsRef<Path>, path: &str) -> Result<Value, ServiceError> {
-    let (root, file_path, metadata) = resolve_file(root, path)?;
-    let relative = file_path.strip_prefix(&root).unwrap_or(&file_path);
+    let mut options = OpenOptions::new();
+    options.read(true);
+    let (relative, _file, metadata) = open_file_under_root(root, path, &options)?;
     Ok(json!({
         "path": relative.to_string_lossy().replace('\\', "/"),
-        "type": if metadata.is_dir() { "directory" } else { "file" },
+        "type": "file",
         "size": metadata.len(),
     }))
 }
@@ -459,30 +697,39 @@ pub fn get_file_info(root: impl AsRef<Path>, path: &str) -> Result<Value, Servic
 /// Parent directories are created relative to an opened directory capability, so a path changed
 /// after permission approval cannot redirect the write through an external symbolic link. Existing
 /// hard-linked files are rejected to avoid changing an inode also named outside the selected root.
+/// File mutations share the checkpoint and revert lock so these service operations cannot overlap.
 pub fn write_file(
     root: impl AsRef<Path>,
+    path: &str,
+    content: &str,
+) -> Result<Value, ServiceError> {
+    let _file_change_guard =
+        crate::file_changes::lock_file_changes().map_err(|_| file_change_lock_unavailable())?;
+    let directory = crate::filesystem::open_absolute_directory_no_follow(root.as_ref())
+        .map_err(|error| filesystem_error(&error, "opening the active tool root for writing"))?;
+    write_file_with_file_change_lock_held(&directory, path, content)
+}
+
+/// Writes a bounded file while the caller holds the file-change lock.
+pub(crate) fn write_file_with_file_change_lock_held(
+    directory: &crate::filesystem::OpenedDirectory,
     path: &str,
     content: &str,
 ) -> Result<Value, ServiceError> {
     if content.len() > 10 * 1024 * 1024 {
         return Err(invalid("The file content exceeds the 10MB write limit."));
     }
-    let root = canonical_root(root)?;
     let requested = safe_relative_path(path)?;
-    let directory = Dir::open_ambient_dir(&root, ambient_authority())
-        .map_err(|error| filesystem_error(&error, "opening the active tool root for writing"))?;
     if let Some(parent) = requested
         .parent()
         .filter(|parent| !parent.as_os_str().is_empty())
     {
-        directory
-            .create_dir_all(parent)
+        crate::filesystem::create_directory_chain_from_directory(directory, parent)
             .map_err(|error| filesystem_error(&error, "creating the parent directory"))?;
     }
     let mut options = OpenOptions::new();
     options.write(true).create(true);
-    let mut file = directory
-        .open_with(&requested, &options)
+    let mut file = crate::filesystem::open_file_from_directory(directory, &requested, &options)
         .map_err(|error| filesystem_error(&error, "creating or opening the file"))?;
     let metadata = file
         .metadata()
@@ -513,9 +760,24 @@ pub fn write_file(
 /// Replaces one unique text occurrence in a regular file beneath the active tool root.
 ///
 /// The opened file remains rooted to the selected directory, and hard-linked files are rejected
-/// because editing one can also change a path outside that directory.
+/// because editing one can also change a path outside that directory. The edit shares the
+/// checkpoint and revert lock so these service operations cannot overlap.
 pub fn edit_file(
     root: impl AsRef<Path>,
+    path: &str,
+    old_string: &str,
+    new_string: &str,
+) -> Result<Value, ServiceError> {
+    let _file_change_guard =
+        crate::file_changes::lock_file_changes().map_err(|_| file_change_lock_unavailable())?;
+    let directory = crate::filesystem::open_absolute_directory_no_follow(root.as_ref())
+        .map_err(|error| filesystem_error(&error, "opening the active tool root for editing"))?;
+    edit_file_with_file_change_lock_held(&directory, path, old_string, new_string)
+}
+
+/// Edits a bounded file while the caller holds the file-change lock.
+pub(crate) fn edit_file_with_file_change_lock_held(
+    directory: &crate::filesystem::OpenedDirectory,
     path: &str,
     old_string: &str,
     new_string: &str,
@@ -525,7 +787,10 @@ pub fn edit_file(
     }
     let mut options = OpenOptions::new();
     options.read(true).write(true);
-    let (relative_path, mut file, metadata) = open_file_under_root(root, path, &options)?;
+    let relative_path = safe_relative_path(path)?;
+    let (mut file, metadata) =
+        crate::filesystem::open_regular_file_from_directory(directory, &relative_path, &options)
+            .map_err(|error| filesystem_error(&error, "opening the requested file"))?;
     if metadata.len() > MAX_EDIT_BYTES as u64 {
         return Err(invalid("The file exceeds the 10MB edit limit."));
     }
@@ -1625,6 +1890,120 @@ mod image_tool_tests {
     }
 }
 
+fn resolve_directory_for_listing(
+    root: impl AsRef<Path>,
+    path: &str,
+) -> Result<
+    (
+        PathBuf,
+        PathBuf,
+        crate::filesystem::OpenedDirectory,
+        crate::filesystem::OpenedDirectory,
+        bool,
+    ),
+    ServiceError,
+> {
+    let root_path = root.as_ref();
+    let initial_root = crate::filesystem::open_absolute_directory_no_follow(root_path)
+        .map_err(|error| filesystem_error(&error, "opening the active tool root"))?;
+    let root = root_path
+        .canonicalize()
+        .map_err(|error| filesystem_error(&error, "resolving the active tool root"))?;
+    let root_handle = crate::filesystem::open_absolute_directory_no_follow(&root)
+        .map_err(|error| filesystem_error(&error, "reopening the active tool root"))?;
+    if !crate::filesystem::same_directory_object(&initial_root, &root_handle)
+        .map_err(|error| filesystem_error(&error, "validating the active tool root"))?
+    {
+        return Err(invalid("The active tool root changed while it was opened."));
+    }
+    let requested = safe_relative_path(path)?;
+    let directory = root
+        .join(&requested)
+        .canonicalize()
+        .map_err(|error| filesystem_error(&error, "resolving the requested directory"))?;
+    if !directory.starts_with(&root) {
+        return Err(invalid(
+            "The requested path is outside the active tool root or is not a directory.",
+        ));
+    }
+    let directory_handle = if requested.as_os_str().is_empty() {
+        root_handle
+            .try_clone()
+            .map_err(|error| filesystem_error(&error, "opening the requested directory"))?
+    } else {
+        crate::filesystem::open_directory_from_directory(&root_handle, &requested)
+            .map_err(|error| filesystem_error(&error, "opening the requested directory"))?
+    };
+    let canonical_directory_handle =
+        crate::filesystem::open_absolute_directory_no_follow(&directory)
+            .map_err(|error| filesystem_error(&error, "reopening the requested directory"))?;
+    if !crate::filesystem::same_directory_object(&directory_handle, &canonical_directory_handle)
+        .map_err(|error| filesystem_error(&error, "validating the requested directory"))?
+    {
+        return Err(invalid(
+            "The requested directory changed while it was opened.",
+        ));
+    }
+    let (explicit_hidden, filter_directory_handle) =
+        directory_filter_scope(&root_handle, &requested)?;
+    if !crate::filesystem::same_directory_object(&directory_handle, &filter_directory_handle)
+        .map_err(|error| filesystem_error(&error, "validating the requested directory"))?
+    {
+        return Err(invalid(
+            "The requested directory changed while it was opened.",
+        ));
+    }
+    Ok((
+        root,
+        directory,
+        root_handle,
+        directory_handle,
+        explicit_hidden,
+    ))
+}
+
+fn directory_filter_scope(
+    root: &crate::filesystem::OpenedDirectory,
+    relative_path: &Path,
+) -> Result<(bool, crate::filesystem::OpenedDirectory), ServiceError> {
+    let mut current = root
+        .try_clone()
+        .map_err(|error| filesystem_error(&error, "opening the requested directory"))?;
+    let mut explicit = false;
+    for component in relative_path.components() {
+        let Component::Normal(name) = component else {
+            return Err(invalid(
+                "Tool paths must be relative to the active tool root.",
+            ));
+        };
+        current = crate::filesystem::open_directory_from_directory(&current, Path::new(name))
+            .map_err(|error| filesystem_error(&error, "opening the requested directory"))?;
+        let name = name.to_string_lossy();
+        explicit |= is_default_ignored_directory(&name)
+            || opened_directory_is_hidden(&name, &current)
+                .map_err(|error| filesystem_error(&error, "reading directory metadata"))?;
+    }
+    Ok((explicit, current))
+}
+
+fn opened_directory_is_hidden(name: &str, directory: &Dir) -> io::Result<bool> {
+    if name.starts_with('.') {
+        return Ok(true);
+    }
+    #[cfg(windows)]
+    {
+        use cap_std::fs::MetadataExt;
+
+        const FILE_ATTRIBUTE_HIDDEN: u32 = 0x2;
+        Ok(directory.dir_metadata()?.file_attributes() & FILE_ATTRIBUTE_HIDDEN != 0)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = directory;
+        Ok(false)
+    }
+}
+
 fn resolve_directory(
     root: impl AsRef<Path>,
     path: &str,
@@ -1652,29 +2031,29 @@ fn resolve_directory(
     Ok((root, directory, explicit_hidden))
 }
 
-fn resolve_file(
-    root: impl AsRef<Path>,
-    path: &str,
-) -> Result<(PathBuf, PathBuf, fs::Metadata), ServiceError> {
-    let root = canonical_root(root)?;
-    let requested = safe_relative_path(path)?;
-    let file_path = root
-        .join(requested)
-        .canonicalize()
-        .map_err(|error| filesystem_error(&error, "resolving the requested file"))?;
-    if !file_path.starts_with(&root) {
+fn verify_directory_handles(
+    root_path: &Path,
+    directory_path: &Path,
+    root: &crate::filesystem::OpenedDirectory,
+    directory: &crate::filesystem::OpenedDirectory,
+) -> Result<(), ServiceError> {
+    let current_root = crate::filesystem::open_absolute_directory_no_follow(root_path)
+        .map_err(|error| filesystem_error(&error, "reopening the active tool root"))?;
+    if !crate::filesystem::same_directory_object(root, &current_root)
+        .map_err(|error| filesystem_error(&error, "validating the active tool root"))?
+    {
+        return Err(invalid("The active tool root changed while it was listed."));
+    }
+    let current_directory = crate::filesystem::open_absolute_directory_no_follow(directory_path)
+        .map_err(|error| filesystem_error(&error, "reopening the requested directory"))?;
+    if !crate::filesystem::same_directory_object(directory, &current_directory)
+        .map_err(|error| filesystem_error(&error, "validating the requested directory"))?
+    {
         return Err(invalid(
-            "The requested path is outside the active tool root or is not a file.",
+            "The requested directory changed while it was listed.",
         ));
     }
-    let metadata = fs::metadata(&file_path)
-        .map_err(|error| filesystem_error(&error, "reading file metadata"))?;
-    if !metadata.is_file() {
-        return Err(invalid(
-            "The requested path is outside the active tool root or is not a file.",
-        ));
-    }
-    Ok((root, file_path, metadata))
+    Ok(())
 }
 
 /// Opens a regular file relative to a directory capability for the active tool root.
@@ -1682,25 +2061,20 @@ fn open_file_under_root(
     root: impl AsRef<Path>,
     path: &str,
     options: &OpenOptions,
-) -> Result<(PathBuf, cap_std::fs::File, cap_std::fs::Metadata), ServiceError> {
-    let root = canonical_root(root)?;
+) -> Result<
+    (
+        PathBuf,
+        crate::filesystem::OpenedFile,
+        cap_std::fs::Metadata,
+    ),
+    ServiceError,
+> {
     let relative = safe_relative_path(path)?;
-    let directory = Dir::open_ambient_dir(&root, ambient_authority())
+    let directory = crate::filesystem::open_absolute_directory_no_follow(root.as_ref())
         .map_err(|error| filesystem_error(&error, "opening the active tool root"))?;
-    let file = directory
-        .open_with(&relative, options)
-        .map_err(|error| filesystem_error(&error, "opening the requested file"))?;
-    let metadata = file
-        .metadata()
-        .map_err(|error| filesystem_error(&error, "reading file metadata"))?;
-    if !metadata.is_file() {
-        return Err(invalid("The requested path is not a regular file."));
-    }
-    if has_multiple_links(&file)? {
-        return Err(invalid(
-            "The requested file has multiple links and cannot be accessed safely.",
-        ));
-    }
+    let (file, metadata) =
+        crate::filesystem::open_regular_file_from_directory(&directory, &relative, options)
+            .map_err(|error| filesystem_error(&error, "opening the requested file"))?;
     Ok((relative, file, metadata))
 }
 
@@ -1713,7 +2087,7 @@ pub(super) fn read_bounded_file_under_root(
 }
 
 pub(super) fn path_exists_under_root(root: &Path, relative_path: &Path) -> io::Result<bool> {
-    let directory = Dir::open_ambient_dir(root, ambient_authority())?;
+    let directory = crate::filesystem::open_absolute_directory_no_follow(root)?;
     crate::filesystem::validate_relative_path(relative_path)?;
     match directory.symlink_metadata(relative_path) {
         Ok(_) => Ok(true),
@@ -1723,7 +2097,7 @@ pub(super) fn path_exists_under_root(root: &Path, relative_path: &Path) -> io::R
 }
 
 pub(super) fn read_bounded_file_from_directory(
-    directory: &Dir,
+    directory: &(impl crate::filesystem::DirectoryCapability + ?Sized),
     relative_path: &Path,
     max_bytes: usize,
 ) -> io::Result<Vec<u8>> {
@@ -1739,14 +2113,20 @@ fn has_multiple_links(file: &cap_std::fs::File) -> Result<bool, ServiceError> {
 }
 
 fn canonical_root(root: impl AsRef<Path>) -> Result<PathBuf, ServiceError> {
-    let root = root
-        .as_ref()
+    let root = root.as_ref();
+    let directory = crate::filesystem::open_absolute_directory_no_follow(root)
+        .map_err(|error| filesystem_error(&error, "opening the active tool root"))?;
+    let canonical_root = root
         .canonicalize()
         .map_err(|error| filesystem_error(&error, "resolving the active tool root"))?;
-    if !root.is_dir() {
-        return Err(invalid("The active tool root is not a folder."));
+    let canonical_directory = crate::filesystem::open_absolute_directory_no_follow(&canonical_root)
+        .map_err(|error| filesystem_error(&error, "reopening the active tool root"))?;
+    if !crate::filesystem::same_directory_object(&directory, &canonical_directory)
+        .map_err(|error| filesystem_error(&error, "validating the active tool root"))?
+    {
+        return Err(invalid("The active tool root changed while it was opened."));
     }
-    Ok(root)
+    Ok(canonical_root)
 }
 
 fn safe_relative_path(path: &str) -> Result<PathBuf, ServiceError> {
@@ -1824,6 +2204,14 @@ fn invalid(message: &str) -> ServiceError {
 
 fn unavailable(message: &str) -> ServiceError {
     ServiceError::new("tool_path_unavailable", message, false)
+}
+
+fn file_change_lock_unavailable() -> ServiceError {
+    ServiceError::new(
+        "storage_unavailable",
+        "File changes could not be coordinated safely.",
+        true,
+    )
 }
 
 pub(crate) fn filesystem_error_code(error: &io::Error) -> &'static str {

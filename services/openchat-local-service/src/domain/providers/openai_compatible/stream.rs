@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 
 use serde_json::Value;
 
-use crate::usage_statistics::UsageData;
+use crate::usage_statistics::{ProviderRateLimitObservation, UsageData};
 use crate::{protocol::ServiceError, provider_schema::ToolCall, tools};
 
 use super::invalid_response_error;
@@ -29,6 +29,12 @@ pub(super) struct ProviderRequestUsage {
     pub(super) reasoning_tokens: Option<i64>,
     pub(super) reported_cost_usd: Option<f64>,
     pub(super) service_tier: Option<String>,
+    pub(super) completion_reason: Option<String>,
+    pub(super) provider_processing_ms: Option<i64>,
+    pub(super) provider_queue_time_ms: Option<i64>,
+    pub(super) provider_input_processing_ms: Option<i64>,
+    pub(super) provider_output_processing_ms: Option<i64>,
+    pub(super) provider_rate_limits: Option<ProviderRateLimitObservation>,
 }
 
 impl ProviderRequestUsage {
@@ -41,6 +47,12 @@ impl ProviderRequestUsage {
             cache_write_tokens: self.cache_write_tokens,
             reported_cost_usd: self.reported_cost_usd,
             service_tier: self.service_tier,
+            completion_reason: self.completion_reason,
+            provider_processing_ms: self.provider_processing_ms,
+            provider_queue_time_ms: self.provider_queue_time_ms,
+            provider_input_processing_ms: self.provider_input_processing_ms,
+            provider_output_processing_ms: self.provider_output_processing_ms,
+            provider_rate_limits: self.provider_rate_limits,
         }
     }
 }
@@ -88,6 +100,7 @@ pub(super) fn parse_sse_line(line: &[u8]) -> Result<SseLine, ()> {
 pub(super) fn finish_reason(value: &Value) -> Option<&str> {
     value
         .pointer("/choices/0/finish_reason")
+        .or_else(|| value.pointer("/candidates/0/finishReason"))
         .and_then(Value::as_str)
         .filter(|reason| !reason.is_empty())
 }
@@ -139,6 +152,12 @@ pub(super) fn update_provider_request_usage(
         reasoning_tokens: usage_data.reasoning_tokens,
         reported_cost_usd: usage_data.reported_cost_usd,
         service_tier: usage_data.service_tier,
+        completion_reason: usage_data.completion_reason,
+        provider_processing_ms: usage_data.provider_processing_ms,
+        provider_queue_time_ms: usage_data.provider_queue_time_ms,
+        provider_input_processing_ms: usage_data.provider_input_processing_ms,
+        provider_output_processing_ms: usage_data.provider_output_processing_ms,
+        provider_rate_limits: usage_data.provider_rate_limits,
     };
     if current.prompt_tokens.is_none()
         && current.completion_tokens.is_none()
@@ -148,6 +167,12 @@ pub(super) fn update_provider_request_usage(
         && current.reasoning_tokens.is_none()
         && current.reported_cost_usd.is_none()
         && current.service_tier.is_none()
+        && current.completion_reason.is_none()
+        && current.provider_processing_ms.is_none()
+        && current.provider_queue_time_ms.is_none()
+        && current.provider_input_processing_ms.is_none()
+        && current.provider_output_processing_ms.is_none()
+        && current.provider_rate_limits.is_none()
     {
         return;
     }
@@ -179,6 +204,36 @@ pub(super) fn update_provider_request_usage(
             previous
                 .as_ref()
                 .and_then(|usage| usage.service_tier.clone())
+        }),
+        completion_reason: current.completion_reason.or_else(|| {
+            previous
+                .as_ref()
+                .and_then(|usage| usage.completion_reason.clone())
+        }),
+        provider_processing_ms: current.provider_processing_ms.or_else(|| {
+            previous
+                .as_ref()
+                .and_then(|usage| usage.provider_processing_ms)
+        }),
+        provider_queue_time_ms: current.provider_queue_time_ms.or_else(|| {
+            previous
+                .as_ref()
+                .and_then(|usage| usage.provider_queue_time_ms)
+        }),
+        provider_input_processing_ms: current.provider_input_processing_ms.or_else(|| {
+            previous
+                .as_ref()
+                .and_then(|usage| usage.provider_input_processing_ms)
+        }),
+        provider_output_processing_ms: current.provider_output_processing_ms.or_else(|| {
+            previous
+                .as_ref()
+                .and_then(|usage| usage.provider_output_processing_ms)
+        }),
+        provider_rate_limits: current.provider_rate_limits.or_else(|| {
+            previous
+                .as_ref()
+                .and_then(|usage| usage.provider_rate_limits.clone())
         }),
     });
 }
@@ -505,6 +560,54 @@ mod tests {
         update_chat_completion_usage(&next_event, &mut input_tokens, &mut output_tokens);
 
         assert_eq!(output_tokens, Some(12));
+    }
+
+    #[test]
+    fn accumulates_groq_reported_timings_for_request_statistics() {
+        let mut usage = None;
+        update_provider_request_usage(
+            "groq",
+            &json!({
+                "usage": {
+                    "prompt_tokens": 20,
+                    "completion_tokens": 5,
+                    "queue_time": 0.02,
+                    "prompt_time": 0.03,
+                    "completion_time": 0.25,
+                    "total_time": 0.30
+                }
+            }),
+            &mut usage,
+        );
+
+        let usage = usage
+            .expect("provider usage includes Groq timing fields")
+            .usage_data();
+        assert_eq!(usage.input_tokens, Some(20));
+        assert_eq!(usage.output_tokens, Some(5));
+        assert_eq!(usage.provider_queue_time_ms, Some(20));
+        assert_eq!(usage.provider_input_processing_ms, Some(30));
+        assert_eq!(usage.provider_output_processing_ms, Some(250));
+        assert_eq!(usage.provider_processing_ms, Some(300));
+    }
+
+    #[test]
+    fn preserves_a_provider_finish_reason_without_usage_tokens() {
+        let mut usage = None;
+        update_provider_request_usage(
+            "openai",
+            &serde_json::json!({"choices": [{"finish_reason": "tool_calls"}]}),
+            &mut usage,
+        );
+
+        assert_eq!(
+            usage
+                .expect("finish reason creates request outcome data")
+                .usage_data()
+                .completion_reason
+                .as_deref(),
+            Some("tool_calls")
+        );
     }
 
     #[test]

@@ -3,13 +3,17 @@
 //! This layer validates server-sent events and returns normalized text, usage,
 //! tool-call, and completion state to conversation orchestration.
 
-use std::collections::BTreeMap;
-use std::pin::Pin;
+use std::{
+    collections::BTreeMap,
+    pin::Pin,
+    time::{Duration, Instant as StdInstant, SystemTime, UNIX_EPOCH},
+};
 
 use bytes::Bytes;
 use futures_util::{Stream, StreamExt};
 use reqwest::{StatusCode, header::ACCEPT};
 use serde_json::Value;
+use tokio::time::Instant;
 
 use crate::{
     domain::http_headers::sensitive_api_key_header,
@@ -17,6 +21,7 @@ use crate::{
     provider_schema::{
         ChatStreamDelta, ChatStreamEvent, ChatStreamSnapshot, ReasoningSummary, ToolCall,
     },
+    usage_statistics::{ProviderRateLimitObservation, UsageData},
 };
 
 use super::super::{
@@ -37,10 +42,14 @@ use super::{ResponseStreamRequest, think_tag_filter::ThinkTagFilter};
 /// both the `reqwest` and OpenSSL transports can share one code path.
 type ProviderBody = Pin<Box<dyn Stream<Item = Result<Bytes, String>> + Send>>;
 
+const PROVIDER_ERROR_BODY_TIMEOUT: Duration = Duration::from_secs(10);
+
 pub(super) struct StreamedTurn {
     pub(super) round_content: String,
     pub(super) tool_calls: Vec<ToolCall>,
     pub(super) provider_request_usage: Option<ProviderRequestUsage>,
+    #[cfg(test)]
+    pub(super) first_output_latency: Option<Duration>,
 }
 
 async fn append_visible_text(
@@ -235,19 +244,31 @@ pub(super) async fn receive(
 struct ProviderResponse {
     status: StatusCode,
     retry_after: Option<u64>,
+    provider_processing_ms: Option<i64>,
+    provider_rate_limits: Option<ProviderRateLimitObservation>,
     body: ProviderBody,
 }
 
 impl ProviderResponse {
-    fn from_reqwest(response: reqwest::Response) -> Self {
+    fn from_reqwest(response: reqwest::Response, provider_id: Option<&str>) -> Self {
         let status = response.status();
         let retry_after = retry_after_seconds(response.headers());
+        let provider_processing_ms =
+            openai_processing_ms(provider_id, response.url(), response.headers());
+        let provider_rate_limits = provider_rate_limit_observation(
+            provider_id,
+            response.url(),
+            response.headers(),
+            current_unix_millis(),
+        );
         let body = response
             .bytes_stream()
             .map(|chunk| chunk.map_err(|error| error.without_url().to_string()));
         Self {
             status,
             retry_after,
+            provider_processing_ms,
+            provider_rate_limits,
             body: Box::pin(body),
         }
     }
@@ -256,9 +277,173 @@ impl ProviderResponse {
         Self {
             status: response.status,
             retry_after: response.retry_after,
+            provider_processing_ms: None,
+            provider_rate_limits: None,
             body: response.body,
         }
     }
+}
+
+fn openai_processing_ms(
+    provider_id: Option<&str>,
+    url: &reqwest::Url,
+    headers: &reqwest::header::HeaderMap,
+) -> Option<i64> {
+    if !matches!(provider_id, Some("openai" | "chatgpt_api"))
+        || url.scheme() != "https"
+        || url.host_str() != Some("api.openai.com")
+        || url.port_or_known_default() != Some(443)
+    {
+        return None;
+    }
+
+    headers
+        .get("openai-processing-ms")
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.trim().parse::<i64>().ok())
+        .filter(|milliseconds| *milliseconds >= 0)
+}
+
+fn current_unix_millis() -> Option<i64> {
+    i64::try_from(
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .ok()?
+            .as_millis(),
+    )
+    .ok()
+}
+
+fn provider_rate_limit_observation(
+    provider_id: Option<&str>,
+    url: &reqwest::Url,
+    headers: &reqwest::header::HeaderMap,
+    observed_at_unix_ms: Option<i64>,
+) -> Option<ProviderRateLimitObservation> {
+    let expected_host = match provider_id {
+        Some("openai") => "api.openai.com",
+        Some("groq") => "api.groq.com",
+        _ => return None,
+    };
+    if url.scheme() != "https"
+        || url.host_str() != Some(expected_host)
+        || url.port_or_known_default() != Some(443)
+        || !url.username().is_empty()
+        || url.password().is_some()
+    {
+        return None;
+    }
+
+    let observed_at_unix_ms = observed_at_unix_ms?;
+    let request_limit = rate_limit_header(headers, "x-ratelimit-limit-requests");
+    let request_remaining = rate_limit_header(headers, "x-ratelimit-remaining-requests");
+    let request_reset_at_unix_ms =
+        rate_limit_reset_at(headers, "x-ratelimit-reset-requests", observed_at_unix_ms);
+    let token_limit = rate_limit_header(headers, "x-ratelimit-limit-tokens");
+    let token_remaining = rate_limit_header(headers, "x-ratelimit-remaining-tokens");
+    let token_reset_at_unix_ms =
+        rate_limit_reset_at(headers, "x-ratelimit-reset-tokens", observed_at_unix_ms);
+    if [
+        request_limit,
+        request_remaining,
+        request_reset_at_unix_ms,
+        token_limit,
+        token_remaining,
+        token_reset_at_unix_ms,
+    ]
+    .iter()
+    .all(Option::is_none)
+    {
+        return None;
+    }
+
+    Some(ProviderRateLimitObservation {
+        observed_at_unix_ms,
+        request_limit,
+        request_remaining,
+        request_reset_at_unix_ms,
+        token_limit,
+        token_remaining,
+        token_reset_at_unix_ms,
+    })
+}
+
+fn rate_limit_header(headers: &reqwest::header::HeaderMap, name: &str) -> Option<i64> {
+    headers
+        .get(name)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.trim().parse::<i64>().ok())
+        .filter(|value| *value >= 0)
+}
+
+fn rate_limit_reset_at(
+    headers: &reqwest::header::HeaderMap,
+    name: &str,
+    observed_at_unix_ms: i64,
+) -> Option<i64> {
+    let value = headers.get(name)?.to_str().ok()?;
+    observed_at_unix_ms.checked_add(rate_limit_duration_ms(value)?)
+}
+
+fn rate_limit_duration_ms(value: &str) -> Option<i64> {
+    let bytes = value.trim().as_bytes();
+    if bytes.is_empty() || bytes.len() > 64 {
+        return None;
+    }
+
+    let mut position = 0;
+    let mut total_millis = 0.0_f64;
+    while position < bytes.len() {
+        let number_start = position;
+        let mut saw_digit = false;
+        while position < bytes.len() && bytes[position].is_ascii_digit() {
+            saw_digit = true;
+            position += 1;
+        }
+        if position < bytes.len() && bytes[position] == b'.' {
+            position += 1;
+            let fraction_start = position;
+            while position < bytes.len() && bytes[position].is_ascii_digit() {
+                saw_digit = true;
+                position += 1;
+            }
+            if position == fraction_start {
+                return None;
+            }
+        }
+        if !saw_digit {
+            return None;
+        }
+
+        let number = std::str::from_utf8(bytes.get(number_start..position)?).ok()?;
+        let amount = number.parse::<f64>().ok()?;
+        let multiplier = if bytes.get(position..position + 2) == Some(b"ms") {
+            position += 2;
+            1.0
+        } else {
+            match bytes.get(position).copied()? {
+                b'h' => {
+                    position += 1;
+                    3_600_000.0
+                }
+                b'm' => {
+                    position += 1;
+                    60_000.0
+                }
+                b's' => {
+                    position += 1;
+                    1_000.0
+                }
+                _ => return None,
+            }
+        };
+        total_millis += amount * multiplier;
+        if !total_millis.is_finite() || total_millis > 31_536_000_000.0 {
+            return None;
+        }
+    }
+
+    Some(total_millis.round() as i64)
 }
 
 fn retry_after_seconds(headers: &reqwest::header::HeaderMap) -> Option<u64> {
@@ -269,22 +454,49 @@ fn retry_after_seconds(headers: &reqwest::header::HeaderMap) -> Option<u64> {
         .filter(|seconds| (1..=86_400).contains(seconds))
 }
 
-async fn read_error_body(body: &mut ProviderBody) -> Option<Value> {
+async fn read_error_body(
+    body: &mut ProviderBody,
+    cancellation: &mut tokio::sync::watch::Receiver<bool>,
+) -> Result<Option<Value>, ServiceError> {
+    read_error_body_until(
+        body,
+        cancellation,
+        Instant::now() + PROVIDER_ERROR_BODY_TIMEOUT,
+    )
+    .await
+}
+
+async fn read_error_body_until(
+    body: &mut ProviderBody,
+    cancellation: &mut tokio::sync::watch::Receiver<bool>,
+    deadline: Instant,
+) -> Result<Option<Value>, ServiceError> {
     let mut collected = Vec::new();
     while collected.len() < MAX_PROVIDER_ERROR_BYTES {
-        let Some(Ok(chunk)) = body.next().await else {
+        let next = tokio::select! {
+            changed = cancellation.changed() => {
+                let _ = changed;
+                return Err(cancelled_error());
+            }
+            result = tokio::time::timeout_at(deadline, body.next()) => match result {
+                Ok(next) => next,
+                Err(_) => return Ok(None),
+            },
+        };
+        let Some(Ok(chunk)) = next else {
             break;
         };
         let remaining = MAX_PROVIDER_ERROR_BYTES - collected.len();
         collected.extend_from_slice(&chunk[..chunk.len().min(remaining)]);
     }
-    serde_json::from_slice::<Value>(&collected).ok()
+    Ok(serde_json::from_slice::<Value>(&collected).ok())
 }
 
 async fn receive_with_client(
     mut request: ResponseStreamRequest<'_>,
     client: &reqwest::Client,
 ) -> Result<StreamedTurn, ServiceError> {
+    let provider_request_started = StdInstant::now();
     let response = if request.route.is_opencode && request.route.is_free {
         // The free tier requires a TLS profile only OpenSSL can produce.
         let headers =
@@ -361,13 +573,18 @@ async fn receive_with_client(
                     connection_error(request.route, error.without_url().to_string())
                 })?,
         };
-        ProviderResponse::from_reqwest(response)
+        ProviderResponse::from_reqwest(response, request.route.provider_id.as_deref())
     };
     let ProviderResponse {
         status,
         retry_after: retry_after_value,
+        provider_processing_ms,
+        provider_rate_limits,
         body: mut stream,
     } = response;
+    if let Some(rate_limit_observation) = request.rate_limit_observation.as_mut() {
+        **rate_limit_observation = provider_rate_limits.clone();
+    }
     let retry_after_seconds = retry_after_value;
     if !status.is_success() {
         if request.route.is_opencode
@@ -376,7 +593,7 @@ async fn receive_with_client(
                 status,
                 StatusCode::FORBIDDEN | StatusCode::TOO_MANY_REQUESTS
             )
-            && let Some(error_body) = read_error_body(&mut stream).await
+            && let Some(error_body) = read_error_body(&mut stream, request.cancellation).await?
         {
             if status == StatusCode::FORBIDDEN
                 && super::super::contains_free_tier_error(&error_body)
@@ -423,6 +640,7 @@ async fn receive_with_client(
     let mut saw_finish_reason = false;
     let mut stream_ended = false;
     let mut provider_request_usage: Option<ProviderRequestUsage> = None;
+    let mut first_output_latency = None;
 
     while !stream_ended {
         let chunk = tokio::select! {
@@ -455,6 +673,13 @@ async fn receive_with_client(
             };
 
             if request.route.is_anthropic() {
+                if first_output_latency.is_none() && anthropic_event_has_output(&value) {
+                    let elapsed = provider_request_started.elapsed();
+                    first_output_latency = Some(elapsed);
+                    if let Some(recorder) = request.first_output_recorder {
+                        recorder.record(elapsed);
+                    }
+                }
                 match value
                     .get("type")
                     .and_then(Value::as_str)
@@ -589,6 +814,13 @@ async fn receive_with_client(
                                 .get_or_insert_with(ProviderRequestUsage::default)
                                 .reasoning_tokens = Some(tokens);
                         }
+                        if let Some(reason) =
+                            UsageData::from_messages_event(&value, "anthropic").completion_reason
+                        {
+                            provider_request_usage
+                                .get_or_insert_with(ProviderRequestUsage::default)
+                                .completion_reason = Some(reason);
+                        }
                         saw_finish_reason |= value
                             .pointer("/delta/stop_reason")
                             .and_then(Value::as_str)
@@ -608,6 +840,13 @@ async fn receive_with_client(
             }
 
             if request.route.uses_responses_api {
+                if first_output_latency.is_none() && responses_event_has_output(&value) {
+                    let elapsed = provider_request_started.elapsed();
+                    first_output_latency = Some(elapsed);
+                    if let Some(recorder) = request.first_output_recorder {
+                        recorder.record(elapsed);
+                    }
+                }
                 if supports_provider_citations {
                     collect_provider_citations(
                         &value,
@@ -721,20 +960,6 @@ async fn receive_with_client(
                 });
             let output = think_filter.push(text.unwrap_or_default());
             let mut visible_delta = output.visible;
-            if !output.reasoning.is_empty() {
-                append_legacy_reasoning(&mut request, &output.reasoning).await?;
-            }
-            if let Some(delta) = mistral_delta.as_ref() {
-                for reference_id in &delta.reference_ids {
-                    let Some(source_id) = mistral_reference_sources.get(*reference_id) else {
-                        continue;
-                    };
-                    visible_delta.push_str(" [");
-                    visible_delta.push_str(source_id);
-                    visible_delta.push(']');
-                }
-            }
-            append_visible_text(&mut request, &mut round_content, &visible_delta).await?;
             let reasoning = mistral_delta
                 .as_ref()
                 .and_then(|delta| (!delta.reasoning.is_empty()).then_some(delta.reasoning.as_str()))
@@ -750,6 +975,36 @@ async fn receive_with_client(
                         .or_else(|| value.pointer("/choices/0/delta/thinking"))
                         .and_then(Value::as_str)
                 });
+            let has_tool_delta = value
+                .pointer("/choices/0/delta/tool_calls")
+                .and_then(Value::as_array)
+                .is_some_and(|deltas| !deltas.is_empty());
+            if first_output_latency.is_none()
+                && (!visible_delta.is_empty()
+                    || !output.reasoning.is_empty()
+                    || reasoning.is_some_and(|text| !text.is_empty())
+                    || has_tool_delta)
+            {
+                let elapsed = provider_request_started.elapsed();
+                first_output_latency = Some(elapsed);
+                if let Some(recorder) = request.first_output_recorder {
+                    recorder.record(elapsed);
+                }
+            }
+            if !output.reasoning.is_empty() {
+                append_legacy_reasoning(&mut request, &output.reasoning).await?;
+            }
+            if let Some(delta) = mistral_delta.as_ref() {
+                for reference_id in &delta.reference_ids {
+                    let Some(source_id) = mistral_reference_sources.get(*reference_id) else {
+                        continue;
+                    };
+                    visible_delta.push_str(" [");
+                    visible_delta.push_str(source_id);
+                    visible_delta.push(']');
+                }
+            }
+            append_visible_text(&mut request, &mut round_content, &visible_delta).await?;
             if let Some(reasoning) = reasoning {
                 append_legacy_reasoning(&mut request, reasoning).await?;
             }
@@ -822,11 +1077,61 @@ async fn receive_with_client(
             .map_err(|_| protocol_error())?;
     }
 
+    if let Some(milliseconds) = provider_processing_ms {
+        provider_request_usage
+            .get_or_insert_with(ProviderRequestUsage::default)
+            .provider_processing_ms = Some(milliseconds);
+    }
+
+    if let Some(rate_limits) = provider_rate_limits {
+        provider_request_usage
+            .get_or_insert_with(ProviderRequestUsage::default)
+            .provider_rate_limits = Some(rate_limits);
+    }
+
     Ok(StreamedTurn {
         round_content,
         tool_calls: parse_streamed_tool_calls(tool_calls, request.route.is_opencode)?,
         provider_request_usage,
+        #[cfg(test)]
+        first_output_latency,
     })
+}
+
+fn responses_event_has_output(value: &Value) -> bool {
+    matches!(
+        value.get("type").and_then(Value::as_str),
+        Some(
+            "response.output_text.delta"
+                | "response.function_call_arguments.delta"
+                | "response.reasoning_text.delta"
+                | "response.reasoning_summary_text.delta"
+        )
+    ) && value
+        .get("delta")
+        .and_then(Value::as_str)
+        .is_some_and(|delta| !delta.is_empty())
+}
+
+fn anthropic_event_has_output(value: &Value) -> bool {
+    if value.get("type").and_then(Value::as_str) != Some("content_block_delta") {
+        return false;
+    }
+    match value.pointer("/delta/type").and_then(Value::as_str) {
+        Some("text_delta") => value
+            .pointer("/delta/text")
+            .and_then(Value::as_str)
+            .is_some_and(|text| !text.is_empty()),
+        Some("thinking_delta") => value
+            .pointer("/delta/thinking")
+            .and_then(Value::as_str)
+            .is_some_and(|text| !text.is_empty()),
+        Some("input_json_delta") => value
+            .pointer("/delta/partial_json")
+            .and_then(Value::as_str)
+            .is_some_and(|text| !text.is_empty()),
+        _ => false,
+    }
 }
 
 fn collect_provider_citations(
@@ -1236,24 +1541,29 @@ fn append_text_field(value: &Value, output: &mut String) {
 mod tests {
     use std::time::{Duration, Instant};
 
+    use super::{
+        ProviderBody, ResponseStreamRequest, StreamedTurn, anthropic_event_has_output,
+        append_provider_citation_anchors, collect_provider_citations, connection_error,
+        local_inference_error, mistral_content_delta, mistral_reference_sources,
+        openai_processing_ms, provider_rate_limit_observation, rate_limit_duration_ms,
+        read_error_body_until, receive_with_client, request_contains_tool_payload,
+        responses_event_has_output,
+    };
+    use crate::usage_statistics::FirstOutputLatencyRecorder;
+    use crate::{
+        openai_compatible::route::ChatRoute,
+        protocol::{EventSink, ServiceError},
+        response_budget::ProviderResponseBudget,
+    };
+    use bytes::Bytes;
     use reqwest::Client;
+    use reqwest::header::{HeaderMap, HeaderValue};
     use serde_json::json;
     use tokio::{
         io::{AsyncReadExt, AsyncWriteExt},
         net::{TcpListener, TcpStream},
         sync::{oneshot, watch},
         task::JoinHandle,
-    };
-
-    use super::{
-        ResponseStreamRequest, StreamedTurn, append_provider_citation_anchors,
-        collect_provider_citations, connection_error, local_inference_error, mistral_content_delta,
-        mistral_reference_sources, receive_with_client, request_contains_tool_payload,
-    };
-    use crate::{
-        openai_compatible::route::ChatRoute,
-        protocol::{EventSink, ServiceError},
-        response_budget::ProviderResponseBudget,
     };
 
     struct FixtureOutcome {
@@ -1265,6 +1575,200 @@ mod tests {
         output_tokens: Option<i64>,
         request: Vec<u8>,
         events: Vec<crate::protocol::Response>,
+    }
+
+    #[test]
+    fn first_output_detection_uses_nonempty_provider_deltas() {
+        assert!(responses_event_has_output(&json!({
+            "type": "response.output_text.delta",
+            "delta": "hello"
+        })));
+        assert!(!responses_event_has_output(&json!({
+            "type": "response.completed",
+            "response": {}
+        })));
+        assert!(anthropic_event_has_output(&json!({
+            "type": "content_block_delta",
+            "delta": {"type": "input_json_delta", "partial_json": "{}"}
+        })));
+        assert!(!anthropic_event_has_output(&json!({
+            "type": "content_block_delta",
+            "delta": {"type": "text_delta", "text": ""}
+        })));
+    }
+
+    #[test]
+    fn provider_processing_time_is_restricted_to_direct_openai_api_responses() {
+        let url = reqwest::Url::parse("https://api.openai.com/v1/responses")
+            .expect("parse official OpenAI API URL");
+        let mut headers = HeaderMap::new();
+        headers.insert("openai-processing-ms", HeaderValue::from_static("123"));
+
+        assert_eq!(
+            openai_processing_ms(Some("openai"), &url, &headers),
+            Some(123)
+        );
+        assert_eq!(
+            openai_processing_ms(Some("chatgpt_api"), &url, &headers),
+            Some(123)
+        );
+        assert_eq!(
+            openai_processing_ms(Some("openrouter"), &url, &headers),
+            None
+        );
+
+        let proxy_url = reqwest::Url::parse("https://api.openai.example/v1/responses")
+            .expect("parse proxy URL");
+        assert_eq!(
+            openai_processing_ms(Some("openai"), &proxy_url, &headers),
+            None
+        );
+
+        let insecure_url =
+            reqwest::Url::parse("http://api.openai.com/v1/responses").expect("parse insecure URL");
+        assert_eq!(
+            openai_processing_ms(Some("openai"), &insecure_url, &headers),
+            None
+        );
+
+        let custom_port_url = reqwest::Url::parse("https://api.openai.com:8443/v1/responses")
+            .expect("parse custom-port URL");
+        assert_eq!(
+            openai_processing_ms(Some("openai"), &custom_port_url, &headers),
+            None
+        );
+
+        headers.insert("openai-processing-ms", HeaderValue::from_static("-1"));
+        assert_eq!(openai_processing_ms(Some("openai"), &url, &headers), None);
+        headers.insert("openai-processing-ms", HeaderValue::from_static("invalid"));
+        assert_eq!(openai_processing_ms(Some("openai"), &url, &headers), None);
+        headers.insert(
+            "openai-processing-ms",
+            HeaderValue::from_static("9223372036854775808"),
+        );
+        assert_eq!(openai_processing_ms(Some("openai"), &url, &headers), None);
+    }
+
+    #[test]
+    fn provider_rate_limits_are_restricted_to_documented_https_hosts() {
+        let mut headers = HeaderMap::new();
+        headers.insert("x-ratelimit-limit-requests", HeaderValue::from_static("60"));
+        headers.insert(
+            "x-ratelimit-remaining-requests",
+            HeaderValue::from_static("58"),
+        );
+        headers.insert("x-ratelimit-reset-requests", HeaderValue::from_static("1s"));
+        headers.insert(
+            "x-ratelimit-limit-tokens",
+            HeaderValue::from_static("150000"),
+        );
+        headers.insert(
+            "x-ratelimit-remaining-tokens",
+            HeaderValue::from_static("149984"),
+        );
+        headers.insert("x-ratelimit-reset-tokens", HeaderValue::from_static("6m0s"));
+
+        let openai_url = reqwest::Url::parse("https://api.openai.com/v1/chat/completions")
+            .expect("parse official OpenAI API URL");
+        let limits =
+            provider_rate_limit_observation(Some("openai"), &openai_url, &headers, Some(1_000))
+                .expect("read OpenAI rate-limit headers");
+        assert_eq!(limits.observed_at_unix_ms, 1_000);
+        assert_eq!(limits.request_limit, Some(60));
+        assert_eq!(limits.request_remaining, Some(58));
+        assert_eq!(limits.request_reset_at_unix_ms, Some(2_000));
+        assert_eq!(limits.token_limit, Some(150_000));
+        assert_eq!(limits.token_remaining, Some(149_984));
+        assert_eq!(limits.token_reset_at_unix_ms, Some(361_000));
+
+        let groq_url = reqwest::Url::parse("https://api.groq.com/openai/v1/chat/completions")
+            .expect("parse official Groq API URL");
+        assert!(
+            provider_rate_limit_observation(Some("groq"), &groq_url, &headers, Some(1_000))
+                .is_some()
+        );
+        assert!(
+            provider_rate_limit_observation(Some("openai"), &groq_url, &headers, Some(1_000))
+                .is_none()
+        );
+
+        let proxy_url = reqwest::Url::parse("https://api.openai.example/v1/chat/completions")
+            .expect("parse proxy URL");
+        assert!(
+            provider_rate_limit_observation(Some("openai"), &proxy_url, &headers, Some(1_000))
+                .is_none()
+        );
+        let insecure_url = reqwest::Url::parse("http://api.openai.com/v1/chat/completions")
+            .expect("parse insecure URL");
+        assert!(
+            provider_rate_limit_observation(Some("openai"), &insecure_url, &headers, Some(1_000))
+                .is_none()
+        );
+        let custom_port_url =
+            reqwest::Url::parse("https://api.openai.com:8443/v1/chat/completions")
+                .expect("parse custom-port URL");
+        assert!(
+            provider_rate_limit_observation(
+                Some("openai"),
+                &custom_port_url,
+                &headers,
+                Some(1_000)
+            )
+            .is_none()
+        );
+        assert!(
+            provider_rate_limit_observation(
+                Some("custom_openai"),
+                &openai_url,
+                &headers,
+                Some(1_000)
+            )
+            .is_none()
+        );
+    }
+
+    #[test]
+    fn rate_limit_reset_values_are_bounded_and_parse_documented_durations() {
+        assert_eq!(rate_limit_duration_ms("2m59.56s"), Some(179_560));
+        assert_eq!(rate_limit_duration_ms("7.66s"), Some(7_660));
+        assert_eq!(rate_limit_duration_ms("250ms"), Some(250));
+        assert_eq!(rate_limit_duration_ms("1h2m3s"), Some(3_723_000));
+        assert_eq!(rate_limit_duration_ms(""), None);
+        assert_eq!(rate_limit_duration_ms("-1s"), None);
+        assert_eq!(rate_limit_duration_ms("1.5"), None);
+        assert_eq!(rate_limit_duration_ms("999999999h"), None);
+    }
+
+    #[test]
+    fn provider_rate_limits_ignore_invalid_values_and_empty_headers() {
+        let url = reqwest::Url::parse("https://api.openai.com/v1/chat/completions")
+            .expect("parse official OpenAI API URL");
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "x-ratelimit-limit-requests",
+            HeaderValue::from_static("invalid"),
+        );
+        headers.insert(
+            "x-ratelimit-remaining-requests",
+            HeaderValue::from_static("-1"),
+        );
+        headers.insert(
+            "x-ratelimit-reset-requests",
+            HeaderValue::from_static("never"),
+        );
+
+        assert!(
+            provider_rate_limit_observation(Some("openai"), &url, &headers, Some(1_000)).is_none()
+        );
+
+        headers.insert(
+            "x-ratelimit-remaining-tokens",
+            HeaderValue::from_static("0"),
+        );
+        let limits = provider_rate_limit_observation(Some("openai"), &url, &headers, Some(1_000))
+            .expect("keep valid values when neighboring headers are invalid");
+        assert_eq!(limits.token_remaining, Some(0));
+        assert_eq!(limits.token_limit, None);
     }
 
     async fn run_fixture(
@@ -1380,6 +1884,8 @@ mod tests {
                 output_tokens: &mut output_tokens,
                 input_tokens: &mut input_tokens,
                 started: Instant::now(),
+                first_output_recorder: None,
+                rate_limit_observation: None,
                 cancellation: &mut cancellation,
                 events: &events,
                 response_budget,
@@ -1491,6 +1997,38 @@ mod tests {
             .timeout(timeout)
             .build()
             .expect("build local fixture client")
+    }
+
+    #[tokio::test]
+    async fn stalled_provider_error_body_respects_its_deadline() {
+        let mut body: ProviderBody =
+            Box::pin(futures_util::stream::pending::<Result<Bytes, String>>());
+        let (_cancel_sender, mut cancellation) = watch::channel(false);
+
+        let result =
+            read_error_body_until(&mut body, &mut cancellation, tokio::time::Instant::now()).await;
+
+        assert!(matches!(result, Ok(None)));
+    }
+
+    #[tokio::test]
+    async fn provider_error_body_read_observes_cancellation() {
+        let mut body: ProviderBody =
+            Box::pin(futures_util::stream::pending::<Result<Bytes, String>>());
+        let (cancel_sender, mut cancellation) = watch::channel(false);
+        cancel_sender
+            .send(true)
+            .expect("cancellation receiver should be active");
+
+        let error = read_error_body_until(
+            &mut body,
+            &mut cancellation,
+            tokio::time::Instant::now() + Duration::from_secs(1),
+        )
+        .await
+        .expect_err("cancelled error-body reads must stop");
+
+        assert_eq!(error.code, "request_cancelled");
     }
 
     async fn spawn_fixture_server(
@@ -2025,6 +2563,7 @@ mod tests {
 
         let outcome = run_fixture(200, response_body, false).await;
         let turn = outcome.result.expect("fixture stream should complete");
+        assert!(turn.first_output_latency.is_some());
         assert_eq!(outcome.content, "Searching.");
         assert_eq!(turn.round_content, "Searching.");
         let text_event = outcome
@@ -2148,6 +2687,7 @@ mod tests {
 
         let outcome = run_fixture(200, response_body, true).await;
         let turn = outcome.result.expect("Responses fixture should complete");
+        assert!(turn.first_output_latency.is_some());
         assert_eq!(outcome.content, "Found it.");
         assert_eq!(outcome.input_tokens, Some(20));
         assert_eq!(outcome.output_tokens, Some(4));
@@ -2240,6 +2780,7 @@ mod tests {
         let mut input_tokens = None;
         let request_id = json!("fixture-request");
         let mut response_budget = ProviderResponseBudget::with_limit(initial.len());
+        let first_output_recorder = FirstOutputLatencyRecorder::default();
         let mut receive = Box::pin(receive_for_test(
             &client,
             ResponseStreamRequest {
@@ -2257,6 +2798,8 @@ mod tests {
                 output_tokens: &mut output_tokens,
                 input_tokens: &mut input_tokens,
                 started: Instant::now(),
+                first_output_recorder: Some(&first_output_recorder),
+                rate_limit_observation: None,
                 cancellation: &mut cancellation,
                 events: &events,
                 response_budget: &mut response_budget,
@@ -2290,6 +2833,7 @@ mod tests {
         let error = expect_service_error(receive.await);
         assert_eq!(error.code, "response_too_large");
         assert_eq!(content, "partial");
+        assert!(first_output_recorder.value().is_some());
         server.await.expect("fixture server should finish");
     }
 
@@ -2334,6 +2878,8 @@ mod tests {
                 output_tokens: &mut output_tokens,
                 input_tokens: &mut input_tokens,
                 started: Instant::now(),
+                first_output_recorder: None,
+                rate_limit_observation: None,
                 cancellation: &mut cancellation,
                 events: &events,
                 response_budget: &mut response_budget,
@@ -2394,6 +2940,8 @@ mod tests {
                     output_tokens: &mut output_tokens,
                     input_tokens: &mut input_tokens,
                     started: Instant::now(),
+                    first_output_recorder: None,
+                    rate_limit_observation: None,
                     cancellation: &mut cancellation,
                     events: &events,
                     response_budget: &mut response_budget,
@@ -2464,6 +3012,8 @@ mod tests {
                 output_tokens: &mut output_tokens,
                 input_tokens: &mut input_tokens,
                 started: Instant::now(),
+                first_output_recorder: None,
+                rate_limit_observation: None,
                 cancellation: &mut cancellation,
                 events: &events,
                 response_budget: &mut response_budget,
@@ -2526,6 +3076,8 @@ mod tests {
                 output_tokens: &mut output_tokens,
                 input_tokens: &mut input_tokens,
                 started: Instant::now(),
+                first_output_recorder: None,
+                rate_limit_observation: None,
                 cancellation: &mut cancellation,
                 events: &events,
                 response_budget: &mut response_budget,

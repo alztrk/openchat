@@ -133,11 +133,10 @@ pub(super) async fn resolve_chat_route(
         cancellation,
     )
     .await
-    .map_err(|error| {
+    .inspect_err(|error| {
         if error.code == "storage_unavailable" {
             log_send_storage_failure(storage, "chat.send.compatible_route_metadata", error.code);
         }
-        error
     })
 }
 
@@ -164,7 +163,7 @@ pub(super) async fn resolve_temporary_chat_route(
         cancellation,
     )
     .await
-    .map_err(|error| {
+    .inspect_err(|error| {
         if error.code == "storage_unavailable" {
             log_send_storage_failure(
                 storage,
@@ -172,7 +171,6 @@ pub(super) async fn resolve_temporary_chat_route(
                 error.code,
             );
         }
-        error
     })
 }
 

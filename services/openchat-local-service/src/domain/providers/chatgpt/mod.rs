@@ -307,20 +307,31 @@ impl ChatGptService {
         } else {
             tools::mcp::filter_denied_servers(&context.mcp_configs, &context.tool_permission_rules)
         };
-        let mcp_registry = tools::mcp::connect_with_approval(
-            context.storage,
-            mcp_configs,
-            &context.tool_permission_rules,
-            context.permission_mode == tools::ToolPermissionMode::FullAccess,
-            context.permission_broker,
-            &context.request_id,
-            &context.events,
-            context.cancellation,
-        )
-        .await?
-        .map(Arc::new);
-        let mut tools = tools::definitions_for_chatgpt_model();
-        if !model.supports_images {
+        #[cfg(windows)]
+        let mcp_registry = if context.is_security_scan {
+            None
+        } else {
+            tools::mcp::connect_with_approval(
+                context.storage,
+                mcp_configs,
+                tools::mcp::McpApprovalContext {
+                    rules: &context.tool_permission_rules,
+                    full_access: context.permission_mode == tools::ToolPermissionMode::FullAccess,
+                    permission_broker: context.permission_broker,
+                    request_id: &context.request_id,
+                    events: &context.events,
+                    cancellation: context.cancellation,
+                },
+            )
+            .await?
+            .map(Arc::new)
+        };
+        let mut tools = if context.is_security_scan {
+            crate::security_scan::tool_definitions(context.security_scan_public_web_research)
+        } else {
+            tools::definitions_for_chatgpt_model()
+        };
+        if !context.is_security_scan && !model.supports_images {
             tools.retain(|tool| tool.name != "computer_use");
         }
         #[cfg(windows)]
@@ -334,14 +345,19 @@ impl ChatGptService {
         if cfg!(windows) && !project_task_ids.is_empty() && !tools.is_empty() {
             tools.push(tools::project_tasks::tool_definition(&project_task_ids));
         }
-        if !tools.is_empty() {
+        if !context.is_security_scan && !tools.is_empty() {
             tools.extend(goals::control_tool_definitions());
         }
         tools::apply_profile_tool_allowlist(&mut tools, context.profile_tool_allowlist.as_ref());
-        if context.permission_mode == tools::ToolPermissionMode::Plan {
+        if !context.is_security_scan && context.permission_mode == tools::ToolPermissionMode::Plan {
             tools::disable_tools_for_plan_mode(&mut tools);
         }
-        let mut shared_instructions =
+        let mut shared_instructions = if context.is_security_scan {
+            crate::security_scan::provider_instructions(
+                &context.workspace_roots,
+                context.security_scan_public_web_research,
+            )?
+        } else {
             instructions::shared_instructions(instructions::SharedInstructionInput {
                 custom: custom_instructions,
                 project: project_instructions,
@@ -355,11 +371,14 @@ impl ChatGptService {
                 project_root,
                 tools_available: !tools.is_empty(),
                 provider_id: "chatgpt",
-            });
-        if !tools.is_empty() {
+            })
+        };
+        if !context.is_security_scan && !tools.is_empty() {
             goals::append_goal_tool_instructions(&mut shared_instructions);
         }
-        if let Some(goal) = context.goal.as_ref() {
+        if !context.is_security_scan
+            && let Some(goal) = context.goal.as_ref()
+        {
             goals::append_goal_instructions(&mut shared_instructions, &goal.objective);
         }
         let provider_request = ProviderChatRequest {
@@ -381,6 +400,7 @@ impl ChatGptService {
                 service: self.as_ref(),
                 storage: &self.storage,
                 conversation_id,
+                run_id: &context.run_id,
                 route: &route,
                 external_workspace_id: &workspace.external_id,
                 model: &model,
@@ -424,15 +444,15 @@ impl ChatGptService {
             payload["reasoning"] = json!({"effort": effort});
         }
 
-        self.stream_response(
+        self.stream_response(streaming::StreamResponseRequest {
             context,
-            &route,
-            &workspace.external_id,
-            &model,
-            provider_request.last_message_id.as_deref(),
-            provider_request.tools.clone(),
+            route: &route,
+            external_workspace_id: &workspace.external_id,
+            model: &model,
+            last_prompt_message_id: provider_request.last_message_id.as_deref(),
+            tool_definitions: provider_request.tools.clone(),
             payload,
-        )
+        })
         .await
     }
 

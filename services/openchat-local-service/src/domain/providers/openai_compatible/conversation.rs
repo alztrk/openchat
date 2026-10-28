@@ -24,7 +24,8 @@ use crate::{
     storage::{AppStorage, sqlite_error_code},
     tools::{self, ToolExecutor},
     usage_statistics::{
-        RequestAttachmentSource, RequestDataSources, UsageRequestDetails, UsageRequestTracker,
+        FirstOutputLatencyRecorder, ProviderRateLimitObservation, RequestAttachmentSource,
+        RequestDataSources, UsageData, UsageRequestDetails, UsageRequestTracker,
     },
 };
 
@@ -125,11 +126,10 @@ pub(crate) async fn send_temporary_message(
         cancellation,
     )
     .await
-    .map_err(|error| {
+    .inspect_err(|error| {
         if error.code == "storage_unavailable" {
             log_send_storage_failure(storage, "chat.temporary.send.compatible_route", error.code);
         }
-        error
     })?;
     let provider_id = route.provider_id.as_deref().ok_or_else(route_error)?;
     // Temporary conversations have no project, so only the configured default
@@ -240,6 +240,8 @@ pub(crate) async fn send_temporary_message(
         output_tokens: &mut output_tokens,
         input_tokens: &mut input_tokens,
         started,
+        first_output_recorder: None,
+        rate_limit_observation: None,
         cancellation,
         events,
         response_budget: &mut response_budget,
@@ -294,6 +296,8 @@ pub async fn send_message(
         permission_mode,
         tool_permission_rules,
         profile_tool_allowlist,
+        is_security_scan,
+        security_scan_public_web_research,
         available_subagent_models,
         #[cfg(windows)]
         mcp_configs,
@@ -330,13 +334,19 @@ pub async fn send_message(
         cancellation,
     )
     .await
-    .map_err(|error| {
+    .inspect_err(|error| {
         if error.code == "storage_unavailable" {
             log_send_storage_failure(storage, "chat.send.compatible_route", error.code);
         }
-        error
     })?;
     let provider_id = route.provider_id.as_deref().ok_or_else(route_error)?;
+    if is_security_scan && route.supports_tool_calls == Some(false) {
+        return Err(ServiceError::new(
+            "security_scan_tools_unsupported",
+            "The selected model does not support the tool calls required for a security scan. Choose a model with tool support.",
+            false,
+        ));
+    }
     // Resolved once per send so retries and tool-loop iterations reuse the same
     // environment value without re-reading settings.
     let opencode_free_workspace = (provider_id == "opencode" && route.is_free)
@@ -349,7 +359,8 @@ pub async fn send_message(
         })
         .flatten();
     #[cfg(windows)]
-    let mcp_registry = if route.supports_tool_calls != Some(false)
+    let mcp_registry = if !is_security_scan
+        && route.supports_tool_calls != Some(false)
         && permission_mode != crate::tools::ToolPermissionMode::Plan
     {
         let mut mcp_configs =
@@ -363,12 +374,14 @@ pub async fn send_message(
         crate::tools::mcp::connect_with_approval(
             storage,
             mcp_configs,
-            &tool_permission_rules,
-            permission_mode == crate::tools::ToolPermissionMode::FullAccess,
-            permission_broker,
-            &request_id,
-            &events,
-            cancellation,
+            crate::tools::mcp::McpApprovalContext {
+                rules: &tool_permission_rules,
+                full_access: permission_mode == crate::tools::ToolPermissionMode::FullAccess,
+                permission_broker,
+                request_id: &request_id,
+                events: &events,
+                cancellation,
+            },
         )
         .await?
         .map(std::sync::Arc::new)
@@ -436,16 +449,18 @@ pub async fn send_message(
         })?
     };
     crate::history::validate_model_attachments(&stored_messages, route.supports_images)?;
-    let project_task_ids = if permission_mode == crate::tools::ToolPermissionMode::Plan {
-        Vec::new()
-    } else {
-        crate::tools::project_tasks::load_project_task_ids_if_enabled(
-            project_root,
-            cfg!(windows) && route.supports_tool_calls != Some(false),
-        )?
-    };
+    let project_task_ids =
+        if is_security_scan || permission_mode == crate::tools::ToolPermissionMode::Plan {
+            Vec::new()
+        } else {
+            crate::tools::project_tasks::load_project_task_ids_if_enabled(
+                project_root,
+                cfg!(windows) && route.supports_tool_calls != Some(false),
+            )?
+        };
     #[cfg(windows)]
-    let project_tools = if route.supports_tool_calls != Some(false)
+    let project_tools = if !is_security_scan
+        && route.supports_tool_calls != Some(false)
         && permission_mode != crate::tools::ToolPermissionMode::Plan
     {
         project_root
@@ -466,6 +481,9 @@ pub async fn send_message(
         request::ProviderRequestOptions {
             model_id: route.provider_model_id.clone(),
             provider_id: route.provider_id.as_deref().unwrap_or(""),
+            is_security_scan,
+            security_scan_public_web_research,
+            workspace_roots: &workspace_roots,
             excluded_assistant_message_id,
             custom_instructions,
             project_instructions,
@@ -575,6 +593,7 @@ pub async fn send_message(
             super::context_compaction::HistorySummaryRequest {
                 storage: Some(storage),
                 conversation_id: Some(conversation_id),
+                run_id: Some(&run_id),
                 route: &route,
                 api_key,
                 session_id: session_id.as_deref(),
@@ -733,7 +752,7 @@ pub async fn send_message(
             );
         }
     }
-    let request_sources = RequestDataSources {
+    let mut request_sources = RequestDataSources {
         instruction_sources: crate::usage_statistics::instruction_source_categories(
             custom_instructions,
             project_instructions,
@@ -829,6 +848,7 @@ pub async fn send_message(
         tool_permission_rules,
     )
     .with_workspace_roots(workspace_roots)
+    .with_security_scan_scope(is_security_scan, security_scan_public_web_research)
     .with_project_memory_context(project_memory_context.map(str::to_owned))
     .with_chat_service(image_service.as_ref().clone())
     .with_subagent_models(available_subagent_models)
@@ -843,11 +863,12 @@ pub async fn send_message(
         route: &route,
         provider_id,
         image_service,
-        provider_request: &provider_request,
+        provider_request: &mut provider_request,
         messages: &mut messages,
         tool_executor: &mut tool_executor,
         api_key,
         fast_mode,
+        is_security_scan,
         goal: &mut goal,
         request_id: &request_id,
         conversation_id,
@@ -865,7 +886,9 @@ pub async fn send_message(
         user_question_broker,
         cancellation,
         events: &events,
-        request_sources: &request_sources,
+        request_sources: &mut request_sources,
+        project_memory_context,
+        project_index_context: project_index_context.as_deref(),
         opencode_free_workspace: opencode_free_workspace.as_deref(),
     })
     .await;
@@ -898,6 +921,7 @@ pub async fn send_message(
     } else {
         message_status
     };
+    goals::validate_security_scan_final_status(is_security_scan, status, goal.as_ref())?;
     let elapsed = started.elapsed();
     save_message(
         storage,
@@ -917,8 +941,7 @@ pub async fn send_message(
     )?;
     if status == "completed"
         && let Some(input_tokens) = input_tokens
-    {
-        if chatgpt_store::save_prompt_usage(
+        && chatgpt_store::save_prompt_usage(
             storage,
             conversation_id,
             chatgpt_store::PromptUsage {
@@ -931,10 +954,9 @@ pub async fn send_message(
             },
         )
         .is_err()
-            && storage.log_context_usage_save_failure().is_err()
-        {
-            eprintln!("context_usage_diagnostic_write_failed");
-        }
+        && storage.log_context_usage_save_failure().is_err()
+    {
+        eprintln!("context_usage_diagnostic_write_failed");
     }
     if status == "completed"
         && chatgpt_store::should_generate_automatic_title(storage, conversation_id).unwrap_or(false)
@@ -1002,7 +1024,7 @@ pub async fn send_message(
                             &title_model_id,
                             title_excluded_message_id.as_deref(),
                             title_events,
-                            Some(target),
+                            Some(*target),
                         )
                         .await;
                 }
@@ -1011,7 +1033,7 @@ pub async fn send_message(
                         &title_service,
                         &title_storage,
                         &title_conversation_id,
-                        target,
+                        *target,
                         title_excluded_message_id.as_deref(),
                         title_events,
                     )
@@ -1033,11 +1055,12 @@ struct StreamConversationContext<'a> {
     route: &'a route::ChatRoute,
     provider_id: &'a str,
     image_service: &'a ChatGptService,
-    provider_request: &'a crate::provider_schema::ProviderChatRequest,
+    provider_request: &'a mut crate::provider_schema::ProviderChatRequest,
     messages: &'a mut Vec<Value>,
     tool_executor: &'a mut ToolExecutor,
     api_key: Option<&'a str>,
     fast_mode: bool,
+    is_security_scan: bool,
     goal: &'a mut Option<GoalExecution>,
     request_id: &'a Value,
     conversation_id: &'a str,
@@ -1055,7 +1078,9 @@ struct StreamConversationContext<'a> {
     user_question_broker: &'a crate::user_question_broker::UserQuestionBroker,
     cancellation: &'a mut tokio::sync::watch::Receiver<bool>,
     events: &'a crate::protocol::EventSink,
-    request_sources: &'a RequestDataSources,
+    request_sources: &'a mut RequestDataSources,
+    project_memory_context: Option<&'a str>,
+    project_index_context: Option<&'a str>,
     opencode_free_workspace: Option<&'a Path>,
 }
 
@@ -1072,10 +1097,31 @@ async fn stream_conversation(context: StreamConversationContext<'_>) -> Result<(
     let session_id = route
         .is_opencode
         .then(|| opencode_session_id_for_conversation(context.conversation_id, context.created_at));
+    let mut project_index_context = context.project_index_context;
     let mut operation = "chat";
     let mut response_budget = ProviderResponseBudget::default();
+    let mut initial_provider_request = true;
 
     loop {
+        if !initial_provider_request && let Some(index_context) = project_index_context.take() {
+            if !crate::instructions::remove_project_index_context(
+                &mut provider_request.instructions,
+                context.project_memory_context,
+                index_context,
+                context.route.request_context_limit(),
+            ) {
+                return Err(ServiceError::new(
+                    "project_index_context_cleanup_failed",
+                    "The project index context could not be removed before a follow-up request.",
+                    false,
+                ));
+            }
+            context
+                .request_sources
+                .instruction_sources
+                .retain(|source| source != "project_index");
+        }
+        initial_provider_request = false;
         let mut body = if route.uses_responses_api {
             request::responses_api_body(provider_request, messages, provider_id)
         } else if route.is_anthropic() {
@@ -1123,7 +1169,11 @@ async fn stream_conversation(context: StreamConversationContext<'_>) -> Result<(
                 reasoning_effort: provider_request.reasoning_effort.as_deref(),
                 operation,
                 fast_requested: fast_mode,
-                run_id: None,
+                run_id: Some(context.run_id),
+                connection_id: route.connection_id.as_deref(),
+                workspace_id: None,
+                project_id: route.project_id.as_deref(),
+                parent_run_id: None,
             },
         )
         .map_err(|error| {
@@ -1144,6 +1194,8 @@ async fn stream_conversation(context: StreamConversationContext<'_>) -> Result<(
                 );
                 storage_error()
             })?;
+        let first_output_recorder = usage_request.first_output_recorder();
+        let mut rate_limit_observation: Option<ProviderRateLimitObservation> = None;
         let turn = match response_stream::receive(ResponseStreamRequest {
             route,
             api_key,
@@ -1159,6 +1211,8 @@ async fn stream_conversation(context: StreamConversationContext<'_>) -> Result<(
             output_tokens: context.output_tokens,
             input_tokens: context.input_tokens,
             started: context.started,
+            first_output_recorder: Some(&first_output_recorder),
+            rate_limit_observation: Some(&mut rate_limit_observation),
             cancellation: context.cancellation,
             events: context.events,
             response_budget: &mut response_budget,
@@ -1167,7 +1221,11 @@ async fn stream_conversation(context: StreamConversationContext<'_>) -> Result<(
         {
             Ok(turn) => turn,
             Err(error) if is_cancelled(&error) => {
-                usage_request.cancel().map_err(|error| {
+                let usage = UsageData {
+                    provider_rate_limits: rate_limit_observation,
+                    ..UsageData::default()
+                };
+                usage_request.cancel_with_usage(&usage).map_err(|error| {
                     log_send_storage_failure(
                         context.storage,
                         "chat.send.compatible_usage_cancel",
@@ -1177,13 +1235,31 @@ async fn stream_conversation(context: StreamConversationContext<'_>) -> Result<(
                 })?;
                 return Err(error);
             }
-            Err(error) => return Err(error),
+            Err(error) => {
+                if let Some(provider_rate_limits) = rate_limit_observation {
+                    usage_request
+                        .fail(&UsageData {
+                            provider_rate_limits: Some(provider_rate_limits),
+                            ..UsageData::default()
+                        })
+                        .map_err(|error| {
+                            log_send_storage_failure(
+                                context.storage,
+                                "chat.send.compatible_usage_fail",
+                                sqlite_error_code(&error),
+                            );
+                            storage_error()
+                        })?;
+                }
+                return Err(error);
+            }
         };
-        let usage = turn
+        let mut usage = turn
             .provider_request_usage
             .clone()
             .unwrap_or_default()
             .usage_data();
+        usage.provider_rate_limits = rate_limit_observation.or(usage.provider_rate_limits);
         usage_request.complete(&usage).map_err(|error| {
             log_send_storage_failure(
                 context.storage,
@@ -1247,11 +1323,14 @@ async fn stream_conversation(context: StreamConversationContext<'_>) -> Result<(
         let control_results = goals::process_control_calls(
             &control_calls,
             goal,
-            context.storage,
-            context.run_id,
-            context.conversation_id,
-            context.request_id,
-            context.events,
+            goals::ControlCallContext {
+                storage: context.storage,
+                run_id: context.run_id,
+                conversation_id: context.conversation_id,
+                request_id: context.request_id,
+                events: context.events,
+                is_security_scan: context.is_security_scan,
+            },
         )
         .await?;
         if starting_goal && let Some(started_goal) = goal.as_ref() {
@@ -1337,6 +1416,8 @@ struct ResponseStreamRequest<'a> {
     output_tokens: &'a mut Option<i64>,
     input_tokens: &'a mut Option<i64>,
     started: Instant,
+    first_output_recorder: Option<&'a FirstOutputLatencyRecorder>,
+    rate_limit_observation: Option<&'a mut Option<ProviderRateLimitObservation>>,
     cancellation: &'a mut tokio::sync::watch::Receiver<bool>,
     events: &'a crate::protocol::EventSink,
     response_budget: &'a mut ProviderResponseBudget,

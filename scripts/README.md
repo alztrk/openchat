@@ -5,6 +5,9 @@ it through the frontend npm script from `apps/desktop/frontend`:
 
 ```bash
 npm run openchat -- dev
+npm run openchat -- dev-test-profile
+npm run openchat -- dev-test-profile --profile-root "<absolute OS temporary path>"
+npm run openchat -- startup-benchmark
 npm run openchat -- build
 npm run openchat -- check
 npm run openchat -- clean
@@ -15,6 +18,21 @@ npm run openchat -- maintain-target --max-gib 20
 locked release sidecar and Tauri bundle. `check` runs frontend lint and build plus
 Rust formatting, checking, and tests. `clean` removes generated build and bundle
 output directories.
+
+`dev-test-profile` builds both the Tauri host and local-service sidecar with the
+debug-only `desktop-profile-test-support` feature, then starts the app with an
+isolated profile directly under the OS temporary directory. It prints the profile
+path and keeps that profile after the app closes so it can be reused for a second
+launch. The host accepts only `openchat-desktop-test-<UUID>` directories directly
+under the canonical temporary directory. Remove that exact profile directory when
+the test is complete.
+
+`startup-benchmark` builds a debug local-service sidecar with isolated-profile
+support, starts a Tauri debug build with startup timing enabled, and measures the
+process-to-React-ready interval. It requires the normal OpenChat application shell
+and verifies the temporary active database has no plaintext SQLite header before
+reporting a result. The command removes its UUID-named temporary profile after the
+run. This is a debug startup measurement, not a release-package result.
 
 `maintain-target` reports Cargo target sizes and previews cleanup by default. Add
 `--apply` only when you want to clean those Cargo target directories.

@@ -19,12 +19,22 @@ use rusqlite::{
 };
 use uuid::Uuid;
 
+use super::database_key::DatabaseKey;
+
 const BACKUP_STEP_PAGES: i32 = 128;
 const BACKUP_RETRY_DELAY: Duration = Duration::from_millis(50);
 const BACKUP_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Runs SQLite's bounded quick check and converts corruption into a stable database error.
 pub(super) fn verify_integrity(connection: &Connection) -> rusqlite::Result<()> {
+    let mut statement = connection.prepare("PRAGMA cipher_integrity_check")?;
+    if statement.query([])?.next()?.is_some() {
+        return Err(corrupt_database_error());
+    }
+    verify_plaintext_integrity(connection)
+}
+
+pub(super) fn verify_plaintext_integrity(connection: &Connection) -> rusqlite::Result<()> {
     let result: String = connection.query_row("PRAGMA quick_check(1)", [], |row| row.get(0))?;
     if result == "ok" {
         return Ok(());
@@ -72,6 +82,7 @@ pub(super) fn chat_schema_version(connection: &Connection) -> rusqlite::Result<i
 pub(super) fn create_verified_backup(
     source: &Connection,
     database_path: &Path,
+    key: &DatabaseKey,
 ) -> rusqlite::Result<PathBuf> {
     verify_integrity(source)?;
 
@@ -90,13 +101,14 @@ pub(super) fn create_verified_backup(
         Uuid::new_v4()
     );
     let final_path = backup_directory.join(name);
-    create_verified_snapshot(source, &final_path)?;
+    create_verified_snapshot(source, &final_path, key)?;
     Ok(final_path)
 }
 
 pub(super) fn create_verified_snapshot(
     source: &Connection,
     final_path: &Path,
+    key: &DatabaseKey,
 ) -> rusqlite::Result<()> {
     verify_integrity(source)?;
     let parent = final_path
@@ -111,7 +123,7 @@ pub(super) fn create_verified_snapshot(
         .open(&temporary_path)
         .map_err(io_error)?;
 
-    let backup_result = build_backup(source, &temporary_path);
+    let backup_result = build_backup(source, &temporary_path, key);
     if let Err(error) = backup_result {
         match fs::remove_file(&temporary_path) {
             Ok(()) => return Err(error),
@@ -134,8 +146,15 @@ pub(super) fn create_verified_snapshot(
     Ok(())
 }
 
-fn build_backup(source: &Connection, temporary_path: &Path) -> rusqlite::Result<()> {
-    let mut destination = Connection::open(temporary_path)?;
+fn build_backup(
+    source: &Connection,
+    temporary_path: &Path,
+    key: &DatabaseKey,
+) -> rusqlite::Result<()> {
+    let mut destination = key.open(
+        temporary_path,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE | rusqlite::OpenFlags::SQLITE_OPEN_CREATE,
+    )?;
     super::disable_trusted_schema(&destination)?;
     {
         let backup = Backup::new(source, &mut destination)?;
@@ -181,7 +200,10 @@ fn io_error(error: io::Error) -> Error {
 mod tests {
     use std::{fs, path::PathBuf};
 
-    use super::{create_verified_backup, is_corrupt_database_error, verify_integrity};
+    use super::{
+        DatabaseKey, create_verified_backup, is_corrupt_database_error, verify_integrity,
+        verify_plaintext_integrity,
+    };
     use rusqlite::Connection;
     use uuid::Uuid;
 
@@ -198,7 +220,14 @@ mod tests {
     fn verified_backup_contains_committed_wal_data() {
         let directory = TestDirectory::new();
         let database_path = directory.0.join("openchat.sqlite3");
-        let connection = Connection::open(&database_path).expect("open source database");
+        let key = DatabaseKey::isolated_test_key();
+        let connection = key
+            .open(
+                &database_path,
+                rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE
+                    | rusqlite::OpenFlags::SQLITE_OPEN_CREATE,
+            )
+            .expect("open source database");
         connection
             .execute_batch(
                 "PRAGMA journal_mode = WAL;
@@ -207,9 +236,11 @@ mod tests {
             )
             .expect("create committed WAL content");
 
-        let backup_path = create_verified_backup(&connection, &database_path)
+        let backup_path = create_verified_backup(&connection, &database_path, &key)
             .expect("create and validate backup");
-        let backup = Connection::open(&backup_path).expect("open backup database");
+        let backup = key
+            .open(&backup_path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .expect("open encrypted backup database");
         let value = backup
             .query_row("SELECT value FROM backup_probe", [], |row| {
                 row.get::<_, String>(0)
@@ -222,6 +253,69 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "manual performance measurement on an isolated 32 MiB synthetic database"]
+    fn manual_verified_backup_performance_on_temporary_database() {
+        const ROW_COUNT: usize = 512;
+        const VALUE_BYTES: usize = 64 * 1024;
+        const SAMPLE_COUNT: usize = 3;
+
+        let directory = TestDirectory::new();
+        let database_path = directory.0.join("openchat.sqlite3");
+        let key = DatabaseKey::isolated_test_key();
+        let connection = key
+            .open(
+                &database_path,
+                rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE
+                    | rusqlite::OpenFlags::SQLITE_OPEN_CREATE,
+            )
+            .expect("open synthetic source database");
+        connection
+            .execute_batch(
+                "PRAGMA journal_mode = WAL;
+                 CREATE TABLE backup_probe (value TEXT NOT NULL);",
+            )
+            .expect("create synthetic source schema");
+
+        let value = "x".repeat(VALUE_BYTES);
+        let transaction = connection
+            .unchecked_transaction()
+            .expect("start synthetic data transaction");
+        let mut insert = transaction
+            .prepare("INSERT INTO backup_probe (value) VALUES (?1)")
+            .expect("prepare synthetic data insert");
+        for _ in 0..ROW_COUNT {
+            insert
+                .execute([value.as_str()])
+                .expect("insert synthetic data row");
+        }
+        drop(insert);
+        transaction.commit().expect("commit synthetic data");
+
+        let mut samples_ms = Vec::with_capacity(SAMPLE_COUNT);
+        for _ in 0..SAMPLE_COUNT {
+            let started_at = std::time::Instant::now();
+            let backup_path = create_verified_backup(&connection, &database_path, &key)
+                .expect("create and verify encrypted backup");
+            samples_ms.push(started_at.elapsed().as_secs_f64() * 1000.0);
+            assert!(
+                fs::metadata(backup_path)
+                    .expect("read encrypted backup size")
+                    .len()
+                    >= (ROW_COUNT * VALUE_BYTES) as u64
+            );
+        }
+
+        samples_ms.sort_by(f64::total_cmp);
+        let median_ms = samples_ms[SAMPLE_COUNT / 2];
+        eprintln!(
+            "Verified SQLCipher backup: {} rows × {} bytes ({} payload bytes); samples_ms={samples_ms:?}; median_ms={median_ms:.1}",
+            ROW_COUNT,
+            VALUE_BYTES,
+            ROW_COUNT * VALUE_BYTES
+        );
+    }
+
+    #[test]
     fn integrity_check_rejects_non_database_without_changing_source() {
         let directory = TestDirectory::new();
         let database_path = directory.0.join("openchat.sqlite3");
@@ -229,7 +323,7 @@ mod tests {
         fs::write(&database_path, original).expect("write corrupt fixture");
         let connection = Connection::open(&database_path).expect("open corrupt fixture");
 
-        let error = verify_integrity(&connection).expect_err("reject corrupt database");
+        let error = verify_plaintext_integrity(&connection).expect_err("reject corrupt database");
 
         assert!(is_corrupt_database_error(&error));
         assert_eq!(fs::read(database_path).expect("read fixture"), original);

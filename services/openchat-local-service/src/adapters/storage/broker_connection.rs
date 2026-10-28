@@ -231,6 +231,13 @@ impl BrokerConnection {
         }
     }
 
+    pub(crate) fn commit_pending_profile_restore(&self) -> Result<()> {
+        match self.request(StorageRequest::CommitPendingProfileRestore)? {
+            StorageResponse::Unit => Ok(()),
+            _ => Err(invalid_response()),
+        }
+    }
+
     pub(crate) fn complete_empty_legacy_import(
         &self,
         secrets: crate::secrets::SecretMap,
@@ -758,10 +765,8 @@ impl BrokerTransaction {
 
 impl Drop for BrokerTransaction {
     fn drop(&mut self) {
-        if self.active {
-            if self.connection.finish_transaction(false).is_ok() {
-                self.active = false;
-            }
+        if self.active && self.connection.finish_transaction(false).is_ok() {
+            self.active = false;
         }
     }
 }

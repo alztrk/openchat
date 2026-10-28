@@ -116,7 +116,7 @@ fn map_package_error(error: PackageError) -> ServiceError {
         ),
         PackageError::InvalidPackage => ServiceError::new(
             "connector_package_integrity_failed",
-            "The connector package failed its integrity or executable-format check.",
+            "The connector package failed its integrity, executable-format, or Windows trust check.",
             false,
         ),
         PackageError::InstallConflict => ServiceError::new(

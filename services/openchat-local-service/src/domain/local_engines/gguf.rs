@@ -18,11 +18,16 @@ const MAX_KEY_BYTES: u64 = 64 * 1024;
 const MAX_ARCHITECTURE_BYTES: u64 = 256;
 const MAX_METADATA_BYTES: u64 = 64 * 1024 * 1024;
 
-/// Reads a supported context-window value without loading model tensor data.
-///
-/// Returns `Ok(None)` when the file is valid but does not declare a usable
-/// context value; malformed or unreadable metadata returns an I/O error.
-pub(crate) fn context_window(path: &Path) -> io::Result<Option<i64>> {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct ModelMetadata {
+    pub(crate) context_window: Option<i64>,
+    pub(crate) estimated_memory_bytes: Option<u64>,
+}
+
+/// Reads model metadata without loading tensor data and estimates model weight
+/// storage plus a full-context F16 key/value cache when all dimensions exist.
+/// Runtime buffers, allocator overhead, and engine process memory are excluded.
+pub(crate) fn inspect(path: &Path) -> io::Result<Option<ModelMetadata>> {
     let file = File::open(path)?;
     let file_size = file.metadata()?.len();
     let mut reader = BufReader::new(file);
@@ -44,7 +49,7 @@ pub(crate) fn context_window(path: &Path) -> io::Result<Option<i64>> {
 
     let metadata_start = reader.stream_position()?;
     let mut architecture = None;
-    let mut context_lengths = Vec::new();
+    let mut model_values = Vec::new();
 
     for _ in 0..metadata_count {
         ensure_metadata_limit(&mut reader, metadata_start, file_size)?;
@@ -58,9 +63,18 @@ pub(crate) fn context_window(path: &Path) -> io::Result<Option<i64>> {
                 metadata_start,
                 MAX_ARCHITECTURE_BYTES,
             )?);
-        } else if key.ends_with(".context_length") {
+        } else if [
+            ".context_length",
+            ".block_count",
+            ".attention.head_count",
+            ".attention.head_count_kv",
+            ".embedding_length",
+        ]
+        .iter()
+        .any(|suffix| key.ends_with(suffix))
+        {
             let value = read_integer_value(&mut reader, value_type, file_size, metadata_start)?;
-            context_lengths.push((key, value));
+            model_values.push((key, value));
         } else {
             skip_value(&mut reader, value_type, file_size, metadata_start)?;
         }
@@ -70,11 +84,58 @@ pub(crate) fn context_window(path: &Path) -> io::Result<Option<i64>> {
     let Some(architecture) = architecture else {
         return Ok(None);
     };
-    let target_key = format!("{architecture}.context_length");
-    Ok(context_lengths
-        .into_iter()
-        .find(|(key, value)| key == &target_key && value.is_some_and(|value| value > 0))
-        .and_then(|(_, value)| value))
+    let value_for = |suffix: &str| {
+        let key = format!("{architecture}.{suffix}");
+        model_values
+            .iter()
+            .find_map(|(candidate, value)| (candidate == &key).then_some(*value).flatten())
+    };
+    let context_window = value_for("context_length").filter(|value| *value > 0);
+    let estimated_memory_bytes = estimate_memory_bytes(
+        file_size,
+        context_window,
+        value_for("block_count"),
+        value_for("attention.head_count"),
+        value_for("attention.head_count_kv"),
+        value_for("embedding_length"),
+    );
+    Ok(Some(ModelMetadata {
+        context_window,
+        estimated_memory_bytes,
+    }))
+}
+
+fn estimate_memory_bytes(
+    model_file_bytes: u64,
+    context_window: Option<i64>,
+    layer_count: Option<i64>,
+    attention_head_count: Option<i64>,
+    key_value_head_count: Option<i64>,
+    embedding_length: Option<i64>,
+) -> Option<u64> {
+    let context_window = positive_u64(context_window?)?;
+    let layer_count = positive_u64(layer_count?)?;
+    let attention_head_count = positive_u64(attention_head_count?)?;
+    let key_value_head_count = positive_u64(key_value_head_count?)?;
+    let embedding_length = positive_u64(embedding_length?)?;
+    if key_value_head_count > attention_head_count
+        || attention_head_count % key_value_head_count != 0
+        || embedding_length % attention_head_count != 0
+    {
+        return None;
+    }
+    let head_dimension = embedding_length / attention_head_count;
+    let kv_cache_bytes = context_window
+        .checked_mul(layer_count)?
+        .checked_mul(key_value_head_count)?
+        .checked_mul(head_dimension)?
+        .checked_mul(2)?
+        .checked_mul(2)?;
+    model_file_bytes.checked_add(kv_cache_bytes)
+}
+
+fn positive_u64(value: i64) -> Option<u64> {
+    u64::try_from(value).ok().filter(|value| *value > 0)
 }
 
 fn read_integer_value<R: Read + Seek>(
@@ -272,7 +333,7 @@ mod tests {
 
     use uuid::Uuid;
 
-    use super::context_window;
+    use super::inspect;
 
     struct TestFile(PathBuf);
 
@@ -325,8 +386,50 @@ mod tests {
         let file = TestFile::new(&gguf(3, &metadata));
 
         assert_eq!(
-            context_window(&file.0).expect("metadata should parse"),
+            inspect(&file.0)
+                .expect("metadata should parse")
+                .expect("model architecture should exist")
+                .context_window,
             Some(32_768)
+        );
+    }
+
+    #[test]
+    fn estimates_model_file_and_full_context_f16_kv_cache_memory() {
+        let mut metadata = Vec::new();
+        push_string_value(&mut metadata, "general.architecture", "llama");
+        push_uint32_value(&mut metadata, "llama.context_length", 4_096);
+        push_uint32_value(&mut metadata, "llama.block_count", 32);
+        push_uint32_value(&mut metadata, "llama.attention.head_count", 32);
+        push_uint32_value(&mut metadata, "llama.attention.head_count_kv", 8);
+        push_uint32_value(&mut metadata, "llama.embedding_length", 4_096);
+        let file = TestFile::new(&gguf(6, &metadata));
+        let file_size = fs::metadata(&file.0)
+            .expect("read test model file size")
+            .len();
+
+        assert_eq!(
+            inspect(&file.0)
+                .expect("metadata should parse")
+                .expect("model architecture should exist")
+                .estimated_memory_bytes,
+            Some(file_size + 512 * 1024 * 1024)
+        );
+    }
+
+    #[test]
+    fn leaves_memory_estimate_unavailable_when_architecture_dimensions_are_missing() {
+        let mut metadata = Vec::new();
+        push_string_value(&mut metadata, "general.architecture", "llama");
+        push_uint32_value(&mut metadata, "llama.context_length", 4_096);
+        let file = TestFile::new(&gguf(2, &metadata));
+
+        assert_eq!(
+            inspect(&file.0)
+                .expect("metadata should parse")
+                .expect("model architecture should exist")
+                .estimated_memory_bytes,
+            None
         );
     }
 
@@ -343,24 +446,30 @@ mod tests {
         push_uint32_value(&mut metadata, "qwen2.context_length", 131_072);
         let file = TestFile::new(&gguf(3, &metadata));
         assert_eq!(
-            context_window(&file.0).expect("metadata should parse"),
+            inspect(&file.0)
+                .expect("metadata should parse")
+                .expect("model architecture should exist")
+                .context_window,
             Some(131_072)
         );
 
         let truncated = TestFile::new(&gguf(3, &metadata[..metadata.len() - 1]));
-        assert!(context_window(&truncated.0).is_err());
+        assert!(inspect(&truncated.0).is_err());
     }
 
     #[test]
     fn rejects_invalid_files_and_does_not_infer_a_missing_context_length() {
         let invalid = TestFile::new(b"not a GGUF file");
-        assert!(context_window(&invalid.0).is_err());
+        assert!(inspect(&invalid.0).is_err());
 
         let mut metadata = Vec::new();
         push_string_value(&mut metadata, "general.architecture", "llama");
         let missing = TestFile::new(&gguf(1, &metadata));
         assert_eq!(
-            context_window(&missing.0).expect("metadata should parse"),
+            inspect(&missing.0)
+                .expect("metadata should parse")
+                .expect("model architecture should exist")
+                .context_window,
             None
         );
     }

@@ -341,6 +341,10 @@ impl ChatGptService {
                 operation: "title_generation",
                 fast_requested: false,
                 run_id: None,
+                connection_id: Some(&route.connection_id),
+                workspace_id: Some(&route.workspace_id),
+                project_id: None,
+                parent_run_id: None,
             },
         )
         .map_err(database_error)?;

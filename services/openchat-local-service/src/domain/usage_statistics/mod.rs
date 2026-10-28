@@ -8,7 +8,11 @@ mod models_dev_pricing;
 use rusqlite::{params, params_from_iter};
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, HashMap};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::sync::{
+    Arc,
+    atomic::{AtomicI64, Ordering},
+};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
 
 use crate::{
@@ -18,9 +22,9 @@ use crate::{
 use tokio::sync::watch;
 
 #[derive(Clone, Debug, Default)]
-/// Token, cost, and service-tier values reported for one provider response.
+/// Usage and timing values reported for one provider response.
 pub(crate) struct UsageData {
-    /// Input tokens reported by the provider.
+    /// Total input tokens, including cache tokens reported separately by a provider.
     pub(crate) input_tokens: Option<i64>,
     /// Output tokens reported by the provider.
     pub(crate) output_tokens: Option<i64>,
@@ -34,6 +38,31 @@ pub(crate) struct UsageData {
     pub(crate) reported_cost_usd: Option<f64>,
     /// Provider service tier associated with the response.
     pub(crate) service_tier: Option<String>,
+    /// Bounded provider response reason, such as a stop or tool-call reason.
+    pub(crate) completion_reason: Option<String>,
+    /// Provider-reported request processing time in milliseconds, when available.
+    pub(crate) provider_processing_ms: Option<i64>,
+    /// Provider-reported request queue time in milliseconds, when available.
+    pub(crate) provider_queue_time_ms: Option<i64>,
+    /// Provider-reported input processing time in milliseconds, when available.
+    pub(crate) provider_input_processing_ms: Option<i64>,
+    /// Provider-reported output generation time in milliseconds, when available.
+    pub(crate) provider_output_processing_ms: Option<i64>,
+    /// Provider-reported rate-limit values observed on the response, when available.
+    pub(crate) provider_rate_limits: Option<ProviderRateLimitObservation>,
+}
+
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+/// Rate-limit values observed on one provider response.
+pub(crate) struct ProviderRateLimitObservation {
+    pub(crate) observed_at_unix_ms: i64,
+    pub(crate) request_limit: Option<i64>,
+    pub(crate) request_remaining: Option<i64>,
+    pub(crate) request_reset_at_unix_ms: Option<i64>,
+    pub(crate) token_limit: Option<i64>,
+    pub(crate) token_remaining: Option<i64>,
+    pub(crate) token_reset_at_unix_ms: Option<i64>,
 }
 
 impl UsageData {
@@ -58,6 +87,12 @@ impl UsageData {
                 .get("service_tier")
                 .and_then(Value::as_str)
                 .map(str::to_owned),
+            completion_reason: provider_reason(response.pointer("/incomplete_details/reason")),
+            provider_processing_ms: groq_duration_ms(provider_id, usage, "total_time"),
+            provider_queue_time_ms: groq_duration_ms(provider_id, usage, "queue_time"),
+            provider_input_processing_ms: groq_duration_ms(provider_id, usage, "prompt_time"),
+            provider_output_processing_ms: groq_duration_ms(provider_id, usage, "completion_time"),
+            provider_rate_limits: None,
         }
     }
 
@@ -86,6 +121,16 @@ impl UsageData {
                 .get("service_tier")
                 .and_then(Value::as_str)
                 .map(str::to_owned),
+            completion_reason: provider_reason(
+                value
+                    .pointer("/choices/0/finish_reason")
+                    .or_else(|| value.pointer("/candidates/0/finishReason")),
+            ),
+            provider_processing_ms: groq_duration_ms(provider_id, usage, "total_time"),
+            provider_queue_time_ms: groq_duration_ms(provider_id, usage, "queue_time"),
+            provider_input_processing_ms: groq_duration_ms(provider_id, usage, "prompt_time"),
+            provider_output_processing_ms: groq_duration_ms(provider_id, usage, "completion_time"),
+            provider_rate_limits: None,
         }
     }
 
@@ -93,7 +138,7 @@ impl UsageData {
     pub(crate) fn from_messages_event(value: &Value, provider_id: &str) -> Self {
         let usage = value.get("usage");
         Self {
-            input_tokens: nonnegative_token(usage.and_then(|usage| usage.get("input_tokens"))),
+            input_tokens: messages_total_input_tokens(usage),
             output_tokens: nonnegative_token(usage.and_then(|usage| usage.get("output_tokens"))),
             reasoning_tokens: None,
             cached_input_tokens: nonnegative_token(
@@ -104,6 +149,16 @@ impl UsageData {
             ),
             reported_cost_usd: reported_cost(usage, provider_id),
             service_tier: None,
+            completion_reason: provider_reason(
+                value
+                    .pointer("/delta/stop_reason")
+                    .or_else(|| value.get("stop_reason")),
+            ),
+            provider_processing_ms: None,
+            provider_queue_time_ms: None,
+            provider_input_processing_ms: None,
+            provider_output_processing_ms: None,
+            provider_rate_limits: None,
         }
     }
 
@@ -117,8 +172,55 @@ impl UsageData {
     }
 }
 
+pub(crate) fn provider_reason(value: Option<&Value>) -> Option<String> {
+    let reason = value?.as_str()?;
+    if reason.is_empty()
+        || reason.len() > 64
+        || !reason
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
+    {
+        return None;
+    }
+    Some(reason.to_owned())
+}
+
+fn groq_duration_ms(provider_id: &str, usage: Option<&Value>, field: &str) -> Option<i64> {
+    if provider_id != "groq" {
+        return None;
+    }
+    let seconds = usage?.get(field)?.as_f64()?;
+    if !seconds.is_finite() || seconds < 0.0 {
+        return None;
+    }
+    let milliseconds = (seconds * 1_000.0).round();
+    if milliseconds >= i64::MAX as f64 {
+        return None;
+    }
+    Some(milliseconds as i64)
+}
+
 fn nonnegative_token(value: Option<&Value>) -> Option<i64> {
     value.and_then(Value::as_i64).filter(|tokens| *tokens >= 0)
+}
+
+fn messages_total_input_tokens(usage: Option<&Value>) -> Option<i64> {
+    let usage = usage?;
+    let input_tokens = nonnegative_token(usage.get("input_tokens"))?;
+    let cache_read_tokens = optional_nonnegative_token(usage.get("cache_read_input_tokens"))?;
+    let cache_write_tokens = optional_nonnegative_token(usage.get("cache_creation_input_tokens"))?;
+
+    // Anthropic reports cache counts separately, while local pricing and context tiers use total input.
+    input_tokens
+        .checked_add(cache_read_tokens)?
+        .checked_add(cache_write_tokens)
+}
+
+fn optional_nonnegative_token(value: Option<&Value>) -> Option<i64> {
+    match value {
+        None | Some(Value::Null) => Some(0),
+        Some(value) => nonnegative_token(Some(value)),
+    }
 }
 
 fn reported_cost(usage: Option<&Value>, provider_id: &str) -> Option<f64> {
@@ -158,7 +260,32 @@ fn cost_nano_usd(cost: Option<f64>) -> Option<i64> {
 pub(crate) struct UsageRequestTracker<'a> {
     storage: &'a AppStorage,
     event_id: String,
+    first_output_latency: FirstOutputLatencyRecorder,
     is_finished: bool,
+}
+
+/// Shares the first streamed-output measurement between request tracking and stream parsing.
+#[derive(Clone, Debug)]
+pub(crate) struct FirstOutputLatencyRecorder(Arc<AtomicI64>);
+
+impl Default for FirstOutputLatencyRecorder {
+    fn default() -> Self {
+        Self(Arc::new(AtomicI64::new(-1)))
+    }
+}
+
+impl FirstOutputLatencyRecorder {
+    pub(crate) fn record(&self, elapsed: Duration) {
+        let milliseconds = i64::try_from(elapsed.as_millis()).unwrap_or(i64::MAX);
+        let _ = self
+            .0
+            .compare_exchange(-1, milliseconds, Ordering::Relaxed, Ordering::Relaxed);
+    }
+
+    pub(crate) fn value(&self) -> Option<i64> {
+        let milliseconds = self.0.load(Ordering::Relaxed);
+        (milliseconds >= 0).then_some(milliseconds)
+    }
 }
 
 /// Describes the provider request whose usage should be recorded.
@@ -179,6 +306,14 @@ pub(crate) struct UsageRequestDetails<'a> {
     pub(crate) fast_requested: bool,
     /// Active execution identifier, when the request belongs to a run.
     pub(crate) run_id: Option<&'a str>,
+    /// Provider connection selected for this request, when available.
+    pub(crate) connection_id: Option<&'a str>,
+    /// Provider workspace selected for this request, when available.
+    pub(crate) workspace_id: Option<&'a str>,
+    /// Project selected for this request, when available.
+    pub(crate) project_id: Option<&'a str>,
+    /// Parent run identifier for a delegated child run, when applicable.
+    pub(crate) parent_run_id: Option<&'a str>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -254,8 +389,12 @@ impl<'a> UsageRequestTracker<'a> {
             "INSERT INTO usage_events (
                 event_id, event_kind, conversation_id, assistant_message_id,
                 provider_id, model_id, reasoning_effort, operation, status,
-                fast_requested, usage_source, started_at_unix_ms, run_id
-             ) VALUES (?1, 'request', ?2, ?3, ?4, ?5, ?6, ?7, 'pending', ?8, 'unavailable', ?9, ?10)",
+                fast_requested, usage_source, started_at_unix_ms, run_id,
+                connection_id, workspace_id, project_id, parent_run_id
+             ) VALUES (
+                ?1, 'request', ?2, ?3, ?4, ?5, ?6, ?7, 'pending', ?8, 'unavailable', ?9, ?10,
+                ?11, ?12, COALESCE(?13, (SELECT project_id FROM conversations WHERE id = ?2)), ?14
+             )",
             params![
                 event_id,
                 request.conversation_id,
@@ -267,13 +406,27 @@ impl<'a> UsageRequestTracker<'a> {
                 request.fast_requested,
                 now_unix_millis()?,
                 request.run_id,
+                request.connection_id,
+                request.workspace_id,
+                request.project_id,
+                request.parent_run_id,
             ],
         )?;
         Ok(Self {
             storage,
             event_id,
+            first_output_latency: FirstOutputLatencyRecorder::default(),
             is_finished: false,
         })
+    }
+
+    /// Records the local request-to-first-output duration once when an output delta arrives.
+    pub(crate) fn record_first_output(&mut self, elapsed: Duration) {
+        self.first_output_latency.record(elapsed);
+    }
+
+    pub(crate) fn first_output_recorder(&self) -> FirstOutputLatencyRecorder {
+        self.first_output_latency.clone()
     }
 
     pub(crate) fn complete(&mut self, usage: &UsageData) -> rusqlite::Result<()> {
@@ -305,18 +458,29 @@ impl<'a> UsageRequestTracker<'a> {
     }
 
     pub(crate) fn cancel(&mut self) -> rusqlite::Result<()> {
-        self.finish("cancelled", &UsageData::default())
+        self.cancel_with_usage(&UsageData::default())
+    }
+
+    pub(crate) fn cancel_with_usage(&mut self, usage: &UsageData) -> rusqlite::Result<()> {
+        self.finish("cancelled", usage)
     }
 
     fn finish(&mut self, status: &str, usage: &UsageData) -> rusqlite::Result<()> {
         let cost = cost_nano_usd(usage.reported_cost_usd);
+        let provider_rate_limits_json = usage
+            .provider_rate_limits
+            .as_ref()
+            .map(serde_json::to_string)
+            .transpose()
+            .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
         let usage_source = if usage.has_reported_usage() {
             "provider_reported"
         } else {
             "unavailable"
         };
-        let database = self.storage.connect()?;
-        let updated = database.execute(
+        let mut database = self.storage.connect()?;
+        let transaction = database.transaction()?;
+        let updated = transaction.execute(
             "UPDATE usage_events
              SET status = ?2,
                  input_tokens = ?3,
@@ -328,7 +492,14 @@ impl<'a> UsageRequestTracker<'a> {
                  cost_source = CASE WHEN ?8 IS NULL THEN NULL ELSE 'provider_reported' END,
                  service_tier = ?9,
                  usage_source = ?10,
-                 finished_at_unix_ms = ?11
+                 finished_at_unix_ms = ?11,
+                 first_output_latency_ms = ?12,
+                 provider_processing_ms = ?13,
+                 provider_queue_time_ms = ?14,
+                 provider_input_processing_ms = ?15,
+                 provider_output_processing_ms = ?16,
+                 completion_reason = ?17,
+                 provider_rate_limits_json = ?18
              WHERE event_id = ?1 AND status = 'pending'",
             params![
                 self.event_id,
@@ -342,8 +513,20 @@ impl<'a> UsageRequestTracker<'a> {
                 usage.service_tier,
                 usage_source,
                 now_unix_millis()?,
+                self.first_output_latency.value(),
+                usage.provider_processing_ms.filter(|value| *value >= 0),
+                usage.provider_queue_time_ms.filter(|value| *value >= 0),
+                usage
+                    .provider_input_processing_ms
+                    .filter(|value| *value >= 0),
+                usage
+                    .provider_output_processing_ms
+                    .filter(|value| *value >= 0),
+                usage.completion_reason,
+                provider_rate_limits_json,
             ],
         )?;
+        transaction.commit()?;
         self.is_finished = true;
         if updated > 0 {
             invalidate_cached_event_cost(&database, &self.event_id)?;
@@ -542,9 +725,14 @@ impl Drop for UsageRequestTracker<'_> {
         let result = self.storage.connect().and_then(|database| {
             database.execute(
                 "UPDATE usage_events
-                 SET status = 'failed', finished_at_unix_ms = ?2
+                 SET status = 'failed', finished_at_unix_ms = ?2,
+                     first_output_latency_ms = COALESCE(first_output_latency_ms, ?3)
                  WHERE event_id = ?1 AND status = 'pending'",
-                params![self.event_id, now_unix_millis()?],
+                params![
+                    self.event_id,
+                    now_unix_millis()?,
+                    self.first_output_latency.value()
+                ],
             )
         });
         if result.is_err() {
@@ -638,6 +826,7 @@ struct AggregationEvent<'a> {
     reasoning_tokens: Option<i64>,
     cached_input_tokens: Option<i64>,
     cache_write_tokens: Option<i64>,
+    usage_source: &'a str,
     estimated_cost_usd: Option<f64>,
     started_at_unix_ms: i64,
     day: Option<&'a str>,
@@ -651,6 +840,9 @@ struct UsageTotals {
     reasoning_tokens: i64,
     cached_input_tokens: i64,
     cache_write_tokens: i64,
+    cache_share_input_tokens: i64,
+    cache_share_cached_tokens: i64,
+    cache_share_requests: i64,
     estimated_cost_usd: f64,
     estimated_cost_requests: i64,
 }
@@ -663,6 +855,16 @@ impl UsageTotals {
         add_optional(&mut self.reasoning_tokens, event.reasoning_tokens)?;
         add_optional(&mut self.cached_input_tokens, event.cached_input_tokens)?;
         add_optional(&mut self.cache_write_tokens, event.cache_write_tokens)?;
+        if event.is_request
+            && event.usage_source == "provider_reported"
+            && let (Some(input_tokens), Some(cached_tokens)) =
+                (event.input_tokens, event.cached_input_tokens)
+            && cached_tokens <= input_tokens
+        {
+            add_optional(&mut self.cache_share_input_tokens, Some(input_tokens))?;
+            add_optional(&mut self.cache_share_cached_tokens, Some(cached_tokens))?;
+            increment(&mut self.cache_share_requests)?;
+        }
         if let Some(cost) = event.estimated_cost_usd {
             self.estimated_cost_usd += cost;
             increment(&mut self.estimated_cost_requests)?;
@@ -679,6 +881,9 @@ impl UsageTotals {
             "reasoningTokens": self.reasoning_tokens,
             "cachedInputTokens": self.cached_input_tokens,
             "cacheWriteTokens": self.cache_write_tokens,
+            "cacheShareInputTokens": self.cache_share_input_tokens,
+            "cacheShareCachedTokens": self.cache_share_cached_tokens,
+            "cacheShareRequests": self.cache_share_requests,
             "estimatedCostUsd": self.estimated_cost_usd,
             "estimatedCostRequests": self.estimated_cost_requests,
         })
@@ -890,7 +1095,7 @@ fn aggregate_usage_events(
             e.cached_input_tokens, e.cache_write_tokens, mc.cost_usd,
             e.started_at_unix_ms,
             strftime('%Y-%m-%d', e.started_at_unix_ms / 1000, 'unixepoch', 'localtime'),
-            conversation.id IS NOT NULL
+            conversation.id IS NOT NULL, e.usage_source
          FROM usage_events AS e {CATALOG_COST_JOIN}
          LEFT JOIN conversations AS conversation ON conversation.id = e.conversation_id
          {} ORDER BY e.started_at_unix_ms DESC, e.event_id DESC LIMIT ?8",
@@ -909,7 +1114,7 @@ fn aggregate_usage_events(
             e.cached_input_tokens, e.cache_write_tokens, mc.cost_usd,
             e.started_at_unix_ms,
             strftime('%Y-%m-%d', e.started_at_unix_ms / 1000, 'unixepoch', 'localtime'),
-            conversation.id IS NOT NULL
+            conversation.id IS NOT NULL, e.usage_source
          FROM usage_events AS e {CATALOG_COST_JOIN}
          LEFT JOIN conversations AS conversation ON conversation.id = e.conversation_id
          {} AND (e.started_at_unix_ms < ?8 OR (
@@ -945,6 +1150,7 @@ fn aggregate_usage_events(
                 is_legacy_output: row.get(2)?,
                 conversation_id: row.get_str(3)?,
                 conversation_exists: row.get(19)?,
+                usage_source: row.get_str(20)?,
                 provider_id: row.get_optional_str(4)?,
                 model_id: row.get_optional_str(5)?,
                 reasoning_effort: row.get_optional_str(6)?,
@@ -1155,6 +1361,7 @@ fn get_statistics_from_database(
     pricing_metadata: Value,
 ) -> rusqlite::Result<Value> {
     let aggregate = aggregate_usage_events(database, query)?;
+    let local_model_measurements = local_model_measurements(database, query)?;
     let summary = aggregate.summary_json();
     let detail_count = aggregate.all_events.count;
     let provider_breakdown = sorted_breakdown(aggregate.providers, "providerId", 200);
@@ -1198,11 +1405,150 @@ fn get_statistics_from_database(
         "dailyTrend": daily_trend,
         "monthlyTrend": monthly_trend,
         "conversationRanking": conversation_ranking,
+        "localModelMeasurements": local_model_measurements,
         "requestDetailCount": detail_count,
         "requestDetails": request_details,
         "filterOptions": filter_options,
         "quotaHistory": quota_history,
     }))
+}
+
+fn local_model_measurements(
+    database: &StorageConnection<'_>,
+    query: &StatisticsQuery,
+) -> rusqlite::Result<Value> {
+    let measurable_request = "e.status = 'completed'
+        AND e.usage_source = 'provider_reported'
+        AND e.output_tokens > 0
+        AND e.finished_at_unix_ms IS NOT NULL
+        AND e.first_output_latency_ms IS NOT NULL
+        AND e.first_output_latency_ms >= 0
+        AND e.finished_at_unix_ms > e.started_at_unix_ms
+        AND e.finished_at_unix_ms - e.started_at_unix_ms > e.first_output_latency_ms";
+    let sql = format!(
+        "SELECT COUNT(*),
+            COALESCE(SUM(CASE WHEN {measurable_request} THEN 1 ELSE 0 END), 0),
+            COALESCE(SUM(CASE WHEN {measurable_request} THEN e.output_tokens ELSE 0 END), 0),
+            COALESCE(SUM(CASE WHEN {measurable_request}
+                THEN e.finished_at_unix_ms - e.started_at_unix_ms - e.first_output_latency_ms
+                ELSE 0 END), 0)
+         FROM usage_events AS e
+         {} AND e.event_kind = 'request' AND e.provider_id = 'llama_cpp'",
+        FILTER
+    );
+    let values = filter_params(query);
+    let (sampled_requests, measured_requests, output_tokens, generation_time_ms) = database
+        .query_row(&sql, params_from_iter(values.iter()), |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, i64>(1)?,
+                row.get::<_, i64>(2)?,
+                row.get::<_, i64>(3)?,
+            ))
+        })?;
+    let output_tokens_per_second = (measured_requests > 0 && generation_time_ms > 0)
+        .then(|| (output_tokens as f64 * 1_000.0) / generation_time_ms as f64);
+    Ok(json!({
+        "localRequests": sampled_requests,
+        "measuredRequests": measured_requests,
+        "outputTokens": output_tokens,
+        "generationTimeMs": generation_time_ms,
+        "outputTokensPerSecond": output_tokens_per_second,
+    }))
+}
+
+#[cfg(test)]
+mod local_model_measurement_tests {
+    use std::{fs, path::PathBuf};
+
+    use crate::storage::AppStorage;
+
+    use super::{StatisticsQuery, local_model_measurements};
+
+    struct TestDirectory(PathBuf);
+
+    impl TestDirectory {
+        fn new() -> Self {
+            let path = std::env::temp_dir().join(format!(
+                "openchat-local-model-statistics-test-{}",
+                uuid::Uuid::new_v4()
+            ));
+            fs::create_dir(&path).expect("create isolated test directory");
+            Self(path)
+        }
+    }
+
+    impl Drop for TestDirectory {
+        fn drop(&mut self) {
+            fs::remove_dir_all(&self.0).expect("remove isolated test directory");
+        }
+    }
+
+    fn query(model_id: Option<&str>) -> StatisticsQuery {
+        StatisticsQuery {
+            from_unix_ms: 0,
+            to_unix_ms: 10_000,
+            provider_id: None,
+            model_id: model_id.map(str::to_owned),
+            operation: None,
+            reasoning_effort: None,
+            fast_mode: None,
+            offset: 0,
+            limit: 1,
+        }
+    }
+
+    #[test]
+    fn local_model_rate_uses_only_completed_provider_reported_output_and_timing() {
+        let directory = TestDirectory::new();
+        let storage = AppStorage::open_at(directory.0.clone()).expect("open test storage");
+        let database = storage.connect().expect("connect test storage");
+        database
+            .execute_batch(
+                "CREATE TABLE usage_events (
+                    event_kind TEXT NOT NULL,
+                    provider_id TEXT,
+                    model_id TEXT,
+                    operation TEXT NOT NULL,
+                    reasoning_effort TEXT,
+                    fast_requested INTEGER,
+                    status TEXT NOT NULL,
+                    usage_source TEXT NOT NULL,
+                    output_tokens INTEGER,
+                    started_at_unix_ms INTEGER NOT NULL,
+                    finished_at_unix_ms INTEGER,
+                    first_output_latency_ms INTEGER,
+                    provider_rate_limits_json TEXT
+                 );
+                 INSERT INTO usage_events (
+                    event_kind, provider_id, model_id, operation, reasoning_effort,
+                    fast_requested, status, usage_source, output_tokens,
+                    started_at_unix_ms, finished_at_unix_ms, first_output_latency_ms
+                 ) VALUES
+                    ('request', 'llama_cpp', 'model-a', 'chat', NULL, 0, 'completed', 'provider_reported', 40, 1000, 3500, 500),
+                    ('request', 'llama_cpp', 'model-a', 'chat', NULL, 0, 'completed', 'estimated', 100, 1000, 2500, 500),
+                    ('request', 'llama_cpp', 'model-b', 'chat', NULL, 0, 'failed', 'provider_reported', 100, 1000, 2500, 500),
+                    ('request', 'openai', 'model-a', 'chat', NULL, 0, 'completed', 'provider_reported', 400, 1000, 2000, 100);",
+            )
+            .expect("create isolated usage event schema");
+
+        let all_local = local_model_measurements(&database, &query(None))
+            .expect("aggregate local model measurements");
+        assert_eq!(all_local["localRequests"], 3);
+        assert_eq!(all_local["measuredRequests"], 1);
+        assert_eq!(all_local["outputTokens"], 40);
+        assert_eq!(all_local["generationTimeMs"], 2_000);
+        assert_eq!(all_local["outputTokensPerSecond"], 20.0);
+
+        let unmeasured_model = local_model_measurements(&database, &query(Some("model-b")))
+            .expect("aggregate filtered local model measurements");
+        assert_eq!(unmeasured_model["localRequests"], 1);
+        assert_eq!(unmeasured_model["measuredRequests"], 0);
+        assert_eq!(
+            unmeasured_model["outputTokensPerSecond"],
+            serde_json::Value::Null
+        );
+    }
 }
 
 fn sorted_breakdown(groups: HashMap<String, UsageTotals>, key: &str, limit: usize) -> Vec<Value> {
@@ -1348,7 +1694,11 @@ fn request_details(
             e.input_tokens, e.output_tokens, e.reasoning_tokens, e.cached_input_tokens,
             e.cache_write_tokens, e.reported_cost_nano_usd, e.cost_source, e.usage_source,
             e.started_at_unix_ms, e.finished_at_unix_ms, mc.cost_usd,
-            e.request_manifest_json, e.run_id
+            e.request_manifest_json, e.run_id, e.first_output_latency_ms,
+            e.connection_id, e.workspace_id, e.project_id, e.parent_run_id,
+            e.provider_processing_ms, e.provider_queue_time_ms,
+            e.provider_input_processing_ms, e.provider_output_processing_ms,
+            e.completion_reason
          FROM usage_events AS e
          {CATALOG_COST_JOIN}
          JOIN conversations AS conversation ON conversation.id = e.conversation_id
@@ -1398,6 +1748,16 @@ fn request_details(
                 "estimatedCostUsd": row.get::<_, Option<f64>>(22)?,
                 "requestManifest": request_manifest,
                 "runId": row.get::<_, Option<String>>(24)?,
+                "firstOutputLatencyMs": row.get::<_, Option<i64>>(25)?,
+                "connectionId": row.get::<_, Option<String>>(26)?,
+                "workspaceId": row.get::<_, Option<String>>(27)?,
+                "projectId": row.get::<_, Option<String>>(28)?,
+                "parentRunId": row.get::<_, Option<String>>(29)?,
+                "providerProcessingMs": row.get::<_, Option<i64>>(30)?,
+                "providerQueueTimeMs": row.get::<_, Option<i64>>(31)?,
+                "providerInputProcessingMs": row.get::<_, Option<i64>>(32)?,
+                "providerOutputProcessingMs": row.get::<_, Option<i64>>(33)?,
+                "completionReason": row.get::<_, Option<String>>(34)?,
             }))
         })?
         .collect()
@@ -1408,11 +1768,15 @@ fn request_details_for_export(
     query: &StatisticsQuery,
 ) -> rusqlite::Result<Vec<Value>> {
     let sql = format!(
-        "SELECT e.event_kind, e.started_at_unix_ms, conversation.title,
+        "SELECT e.event_kind, e.started_at_unix_ms, conversation.id, conversation.title,
             e.provider_id, e.model_id, e.reasoning_effort, e.operation, e.status,
             e.fast_requested, e.input_tokens, e.output_tokens, e.reasoning_tokens,
             e.cached_input_tokens, e.cache_write_tokens, mc.cost_usd,
-            e.usage_source, e.run_id
+            e.usage_source, e.run_id, e.first_output_latency_ms, e.finished_at_unix_ms,
+            e.connection_id, e.workspace_id, e.project_id, e.parent_run_id,
+            e.provider_processing_ms, e.provider_queue_time_ms,
+            e.provider_input_processing_ms, e.provider_output_processing_ms,
+            e.completion_reason
          FROM usage_events AS e
          {PAGE_CATALOG_COST_JOIN}
          JOIN conversations AS conversation ON conversation.id = e.conversation_id
@@ -1429,24 +1793,337 @@ fn request_details_for_export(
             Ok(json!({
                 "eventKind": row.get::<_, String>(0)?,
                 "startedAtUnixMs": row.get::<_, i64>(1)?,
-                "conversationTitle": row.get::<_, String>(2)?,
-                "providerId": row.get::<_, Option<String>>(3)?,
-                "modelId": row.get::<_, Option<String>>(4)?,
-                "reasoningEffort": row.get::<_, Option<String>>(5)?,
-                "operation": row.get::<_, String>(6)?,
-                "status": row.get::<_, String>(7)?,
-                "fastRequested": row.get::<_, Option<bool>>(8)?,
-                "inputTokens": row.get::<_, Option<i64>>(9)?,
-                "outputTokens": row.get::<_, Option<i64>>(10)?,
-                "reasoningTokens": row.get::<_, Option<i64>>(11)?,
-                "cachedInputTokens": row.get::<_, Option<i64>>(12)?,
-                "cacheWriteTokens": row.get::<_, Option<i64>>(13)?,
-                "estimatedCostUsd": row.get::<_, Option<f64>>(14)?,
-                "usageSource": row.get::<_, String>(15)?,
-                "runId": row.get::<_, Option<String>>(16)?,
+                "conversationId": row.get::<_, String>(2)?,
+                "conversationTitle": row.get::<_, String>(3)?,
+                "providerId": row.get::<_, Option<String>>(4)?,
+                "modelId": row.get::<_, Option<String>>(5)?,
+                "reasoningEffort": row.get::<_, Option<String>>(6)?,
+                "operation": row.get::<_, String>(7)?,
+                "status": row.get::<_, String>(8)?,
+                "fastRequested": row.get::<_, Option<bool>>(9)?,
+                "inputTokens": row.get::<_, Option<i64>>(10)?,
+                "outputTokens": row.get::<_, Option<i64>>(11)?,
+                "reasoningTokens": row.get::<_, Option<i64>>(12)?,
+                "cachedInputTokens": row.get::<_, Option<i64>>(13)?,
+                "cacheWriteTokens": row.get::<_, Option<i64>>(14)?,
+                "estimatedCostUsd": row.get::<_, Option<f64>>(15)?,
+                "usageSource": row.get::<_, String>(16)?,
+                "runId": row.get::<_, Option<String>>(17)?,
+                "firstOutputLatencyMs": row.get::<_, Option<i64>>(18)?,
+                "finishedAtUnixMs": row.get::<_, Option<i64>>(19)?,
+                "connectionId": row.get::<_, Option<String>>(20)?,
+                "workspaceId": row.get::<_, Option<String>>(21)?,
+                "projectId": row.get::<_, Option<String>>(22)?,
+                "parentRunId": row.get::<_, Option<String>>(23)?,
+                "providerProcessingMs": row.get::<_, Option<i64>>(24)?,
+                "providerQueueTimeMs": row.get::<_, Option<i64>>(25)?,
+                "providerInputProcessingMs": row.get::<_, Option<i64>>(26)?,
+                "providerOutputProcessingMs": row.get::<_, Option<i64>>(27)?,
+                "completionReason": row.get::<_, Option<String>>(28)?,
             }))
         })?
         .collect()
+}
+
+#[cfg(test)]
+mod usage_data_tests {
+    use serde_json::json;
+
+    use super::{AggregationEvent, STATUS_CODE_COMPLETED, UsageData, UsageTotals};
+
+    #[test]
+    fn cache_read_share_uses_only_complete_provider_reported_pairs() {
+        fn event<'a>(
+            event_id: &'a str,
+            usage_source: &'a str,
+            input_tokens: Option<i64>,
+            cached_input_tokens: Option<i64>,
+        ) -> AggregationEvent<'a> {
+            AggregationEvent {
+                is_request: true,
+                is_legacy_output: false,
+                event_id,
+                conversation_id: "conversation",
+                conversation_exists: true,
+                provider_id: Some("provider"),
+                model_id: Some("model"),
+                reasoning_effort: None,
+                operation: "chat",
+                status_code: STATUS_CODE_COMPLETED,
+                fast_requested: None,
+                service_tier: None,
+                input_tokens,
+                output_tokens: None,
+                reasoning_tokens: None,
+                cached_input_tokens,
+                cache_write_tokens: None,
+                usage_source,
+                estimated_cost_usd: None,
+                started_at_unix_ms: 1,
+                day: Some("2026-10-27"),
+            }
+        }
+
+        let mut totals = UsageTotals::default();
+        for request in [
+            event("reported", "provider_reported", Some(100), Some(40)),
+            event("missing-cache", "provider_reported", Some(200), None),
+            event("estimated", "estimated", Some(80), Some(20)),
+            event("inconsistent", "provider_reported", Some(10), Some(11)),
+        ] {
+            totals.add(&request).expect("aggregate usage totals");
+        }
+
+        assert_eq!(totals.cache_share_input_tokens, 100);
+        assert_eq!(totals.cache_share_cached_tokens, 40);
+        assert_eq!(totals.cache_share_requests, 1);
+        let breakdown = totals.to_breakdown_json("providerId", "provider");
+        assert_eq!(breakdown["cacheShareInputTokens"], json!(100));
+        assert_eq!(breakdown["cacheShareCachedTokens"], json!(40));
+        assert_eq!(breakdown["cacheShareRequests"], json!(1));
+    }
+
+    #[test]
+    fn completion_reasons_are_read_only_from_bounded_provider_fields() {
+        assert_eq!(
+            UsageData::from_chat_completion_event(
+                &json!({"choices": [{"finish_reason": "tool_calls"}]}),
+                "openai",
+            )
+            .completion_reason
+            .as_deref(),
+            Some("tool_calls")
+        );
+        assert_eq!(
+            UsageData::from_chat_completion_event(
+                &json!({"candidates": [{"finishReason": "MAX_TOKENS"}]}),
+                "gemini",
+            )
+            .completion_reason
+            .as_deref(),
+            Some("MAX_TOKENS")
+        );
+        assert_eq!(
+            UsageData::from_messages_event(
+                &json!({"delta": {"stop_reason": "tool_use"}}),
+                "anthropic",
+            )
+            .completion_reason
+            .as_deref(),
+            Some("tool_use")
+        );
+        assert_eq!(
+            UsageData::from_responses_event(
+                &json!({"response": {"incomplete_details": {"reason": "max_output_tokens"}}}),
+                "chatgpt_api",
+            )
+            .completion_reason
+            .as_deref(),
+            Some("max_output_tokens")
+        );
+        assert_eq!(
+            UsageData::from_chat_completion_event(
+                &json!({"choices": [{"finish_reason": "reason with spaces"}]}),
+                "openai",
+            )
+            .completion_reason,
+            None
+        );
+        assert_eq!(
+            UsageData::from_chat_completion_event(
+                &json!({"choices": [{"finish_reason": "x".repeat(65)}]}),
+                "openai",
+            )
+            .completion_reason,
+            None
+        );
+    }
+
+    #[test]
+    fn responses_usage_maps_reasoning_cache_and_service_tier() {
+        let usage = UsageData::from_responses_event(
+            &json!({
+                "response": {
+                    "usage": {
+                        "input_tokens": 120,
+                        "output_tokens": 35,
+                        "output_tokens_details": {"reasoning_tokens": 9},
+                        "input_tokens_details": {
+                            "cached_tokens": 40,
+                            "cache_write_tokens": 6
+                        },
+                        "cost_usd": 0.002
+                    },
+                    "service_tier": "priority"
+                }
+            }),
+            "openai",
+        );
+
+        assert_eq!(usage.input_tokens, Some(120));
+        assert_eq!(usage.output_tokens, Some(35));
+        assert_eq!(usage.reasoning_tokens, Some(9));
+        assert_eq!(usage.cached_input_tokens, Some(40));
+        assert_eq!(usage.cache_write_tokens, Some(6));
+        assert_eq!(usage.reported_cost_usd, Some(0.002));
+        assert_eq!(usage.service_tier.as_deref(), Some("priority"));
+    }
+
+    #[test]
+    fn chat_completion_usage_maps_reasoning_cache_and_reported_cost() {
+        let usage = UsageData::from_chat_completion_event(
+            &json!({
+                "usage": {
+                    "prompt_tokens": 200,
+                    "completion_tokens": 25,
+                    "completion_tokens_details": {"reasoning_tokens": 8},
+                    "prompt_tokens_details": {
+                        "cached_tokens": 70,
+                        "cache_write_tokens": 4
+                    },
+                    "total_cost_usd": 0.003
+                },
+                "service_tier": "flex"
+            }),
+            "custom_openai",
+        );
+
+        assert_eq!(usage.input_tokens, Some(200));
+        assert_eq!(usage.output_tokens, Some(25));
+        assert_eq!(usage.reasoning_tokens, Some(8));
+        assert_eq!(usage.cached_input_tokens, Some(70));
+        assert_eq!(usage.cache_write_tokens, Some(4));
+        assert_eq!(usage.reported_cost_usd, Some(0.003));
+        assert_eq!(usage.service_tier.as_deref(), Some("flex"));
+    }
+
+    #[test]
+    fn groq_chat_completion_usage_maps_provider_timing_fields() {
+        let usage = UsageData::from_chat_completion_event(
+            &json!({
+                "usage": {
+                    "prompt_tokens": 20,
+                    "completion_tokens": 5,
+                    "queue_time": 0.026959759,
+                    "prompt_time": 0.009995497,
+                    "completion_time": 5.57691751,
+                    "total_time": 5.586913007
+                }
+            }),
+            "groq",
+        );
+
+        assert_eq!(usage.provider_queue_time_ms, Some(27));
+        assert_eq!(usage.provider_input_processing_ms, Some(10));
+        assert_eq!(usage.provider_output_processing_ms, Some(5_577));
+        assert_eq!(usage.provider_processing_ms, Some(5_587));
+
+        let other_provider = UsageData::from_chat_completion_event(
+            &json!({"usage": {"completion_time": 1.0, "total_time": 1.0}}),
+            "openrouter",
+        );
+        assert_eq!(other_provider.provider_output_processing_ms, None);
+        assert_eq!(other_provider.provider_processing_ms, None);
+    }
+
+    #[test]
+    fn groq_timing_values_reject_negative_nonfinite_and_overflowing_durations() {
+        let usage = UsageData::from_chat_completion_event(
+            &json!({
+                "usage": {
+                    "queue_time": -1.0,
+                    "prompt_time": "1.5",
+                    "completion_time": 1e100,
+                    "total_time": 0.0
+                }
+            }),
+            "groq",
+        );
+
+        assert_eq!(usage.provider_queue_time_ms, None);
+        assert_eq!(usage.provider_input_processing_ms, None);
+        assert_eq!(usage.provider_output_processing_ms, None);
+        assert_eq!(usage.provider_processing_ms, Some(0));
+    }
+
+    #[test]
+    fn messages_usage_maps_cache_reads_and_writes_without_inventing_reasoning() {
+        let usage = UsageData::from_messages_event(
+            &json!({
+                "usage": {
+                    "input_tokens": 300,
+                    "output_tokens": 45,
+                    "cache_read_input_tokens": 100,
+                    "cache_creation_input_tokens": 20
+                }
+            }),
+            "anthropic",
+        );
+
+        assert_eq!(usage.input_tokens, Some(420));
+        assert_eq!(usage.output_tokens, Some(45));
+        assert_eq!(usage.reasoning_tokens, None);
+        assert_eq!(usage.cached_input_tokens, Some(100));
+        assert_eq!(usage.cache_write_tokens, Some(20));
+        assert_eq!(usage.reported_cost_usd, None);
+        assert_eq!(usage.service_tier, None);
+    }
+
+    #[test]
+    fn messages_usage_requires_valid_complete_input_counts_for_total() {
+        let missing_input = UsageData::from_messages_event(
+            &json!({
+                "usage": {
+                    "cache_read_input_tokens": 100,
+                    "cache_creation_input_tokens": 20
+                }
+            }),
+            "anthropic",
+        );
+        assert_eq!(missing_input.input_tokens, None);
+        assert_eq!(missing_input.cached_input_tokens, Some(100));
+        assert_eq!(missing_input.cache_write_tokens, Some(20));
+
+        let overflowing_total = UsageData::from_messages_event(
+            &json!({
+                "usage": {
+                    "input_tokens": i64::MAX,
+                    "cache_read_input_tokens": 1
+                }
+            }),
+            "anthropic",
+        );
+        assert_eq!(overflowing_total.input_tokens, None);
+
+        let invalid_cache_count = UsageData::from_messages_event(
+            &json!({
+                "usage": {
+                    "input_tokens": 300,
+                    "cache_read_input_tokens": -1
+                }
+            }),
+            "anthropic",
+        );
+        assert_eq!(invalid_cache_count.input_tokens, None);
+    }
+
+    #[test]
+    fn provider_specific_reported_costs_are_converted_or_scoped() {
+        let xai = UsageData::from_chat_completion_event(
+            &json!({"usage": {"cost_in_usd_ticks": 2_000_000}}),
+            "xai",
+        );
+        let openrouter =
+            UsageData::from_chat_completion_event(&json!({"usage": {"cost": 0.004}}), "openrouter");
+        let other = UsageData::from_chat_completion_event(
+            &json!({"usage": {"cost": 0.004}}),
+            "custom_openai",
+        );
+
+        assert_eq!(xai.reported_cost_usd, Some(0.0002));
+        assert_eq!(openrouter.reported_cost_usd, Some(0.004));
+        assert_eq!(other.reported_cost_usd, None);
+    }
 }
 
 #[cfg(test)]
@@ -1551,11 +2228,14 @@ mod request_manifest_tests {
 
 #[cfg(test)]
 mod request_tracker_tests {
-    use std::{fs, path::PathBuf};
+    use std::{fs, path::PathBuf, time::Duration};
 
     use crate::storage::AppStorage;
 
-    use super::{UsageData, UsageRequestDetails, UsageRequestTracker};
+    use super::{
+        ProviderRateLimitObservation, StatisticsQuery, UsageData, UsageRequestDetails,
+        UsageRequestTracker, quota_history, request_details, request_details_for_export,
+    };
 
     struct TestDirectory(PathBuf);
 
@@ -1584,8 +2264,40 @@ mod request_tracker_tests {
             .connect()
             .expect("connect to test storage")
             .execute_batch(
-                "CREATE TABLE conversations (id TEXT PRIMARY KEY NOT NULL);
-                 CREATE TABLE usage_events (
+                "CREATE TABLE conversations (
+                    id TEXT PRIMARY KEY NOT NULL,
+                    title TEXT NOT NULL,
+                    project_id TEXT
+                 );
+                 CREATE TABLE IF NOT EXISTS chatgpt_connections (
+                    id TEXT PRIMARY KEY NOT NULL,
+                    display_name TEXT
+                 );
+                 CREATE TABLE IF NOT EXISTS chatgpt_workspaces (
+                    connection_id TEXT NOT NULL,
+                    id TEXT NOT NULL,
+                    display_name TEXT,
+                    PRIMARY KEY (connection_id, id)
+                 );
+                 CREATE TABLE IF NOT EXISTS chatgpt_usage_snapshots (
+                    id TEXT PRIMARY KEY NOT NULL,
+                    connection_id TEXT NOT NULL,
+                    workspace_id TEXT NOT NULL,
+                    fetched_at_unix_ms INTEGER NOT NULL,
+                    freshness TEXT NOT NULL,
+                    ordinary_usage_allowed INTEGER,
+                    reset_credit_count INTEGER,
+                    reset_credit_details_state TEXT NOT NULL
+                 );
+                 CREATE TABLE IF NOT EXISTS chatgpt_usage_buckets (
+                    snapshot_id TEXT NOT NULL,
+                    limit_id TEXT NOT NULL,
+                    used_percent REAL,
+                    window_seconds INTEGER,
+                    reset_at_unix_ms INTEGER,
+                    PRIMARY KEY (snapshot_id, limit_id)
+                 );
+                 CREATE TABLE IF NOT EXISTS usage_events (
                     event_id TEXT PRIMARY KEY NOT NULL,
                     event_kind TEXT NOT NULL,
                     conversation_id TEXT NOT NULL REFERENCES conversations(id),
@@ -1596,11 +2308,58 @@ mod request_tracker_tests {
                     operation TEXT NOT NULL,
                     status TEXT NOT NULL,
                     fast_requested INTEGER,
+                    service_tier TEXT,
+                    input_tokens INTEGER,
+                    output_tokens INTEGER,
+                    reasoning_tokens INTEGER,
+                    cached_input_tokens INTEGER,
+                    cache_write_tokens INTEGER,
+                    reported_cost_nano_usd INTEGER,
+                    cost_source TEXT,
                     usage_source TEXT NOT NULL,
                     started_at_unix_ms INTEGER NOT NULL,
-                    run_id TEXT
+                    finished_at_unix_ms INTEGER,
+                    request_manifest_json TEXT,
+                    first_output_latency_ms INTEGER,
+                    provider_processing_ms INTEGER,
+                    provider_queue_time_ms INTEGER,
+                    provider_input_processing_ms INTEGER,
+                    provider_output_processing_ms INTEGER,
+                    completion_reason TEXT,
+                    run_id TEXT,
+                    connection_id TEXT,
+                    workspace_id TEXT,
+                    project_id TEXT,
+                    parent_run_id TEXT,
+                    provider_rate_limits_json TEXT
                  );
-                 INSERT INTO conversations (id) VALUES ('conversation-1');",
+                 CREATE TEMP TABLE models_dev_event_costs (
+                    event_id TEXT PRIMARY KEY NOT NULL,
+                    cost_usd REAL NOT NULL
+                 );
+                 CREATE TEMP TABLE models_dev_page_event_costs (
+                    event_id TEXT PRIMARY KEY NOT NULL,
+                    cost_usd REAL NOT NULL
+                 );
+                 INSERT INTO conversations (id, title, project_id)
+                 VALUES ('conversation-1', 'Conversation', 'conversation-project');
+                 INSERT INTO chatgpt_connections (
+                    id, credential_reference, auth_status, created_at_unix_ms, updated_at_unix_ms
+                 ) VALUES (
+                    'quota-connection', 'test-credential-reference', 'active', 1, 1
+                 );
+                 INSERT INTO chatgpt_workspaces (
+                    id, connection_id, external_workspace_id, is_selected, fetched_at_unix_ms
+                 ) VALUES (
+                    'quota-workspace', 'quota-connection', 'external-workspace', 1, 1
+                 );
+                 INSERT INTO chatgpt_usage_snapshots (
+                    id, connection_id, workspace_id, fetched_at_unix_ms, freshness,
+                    ordinary_usage_allowed, reset_credit_details_state
+                 ) VALUES (
+                    'chatgpt-snapshot', 'quota-connection', 'quota-workspace', 10_500,
+                    'current', 1, 'omitted'
+                 );",
             )
             .expect("create isolated usage event schema");
 
@@ -1608,38 +2367,406 @@ mod request_tracker_tests {
             UsageRequestDetails {
                 conversation_id: "conversation-1",
                 assistant_message_id: None,
-                provider_id: "provider",
+                provider_id: "openai",
                 model_id: "model",
                 reasoning_effort: None,
                 operation: "chat",
                 fast_requested: false,
                 run_id: None,
+                connection_id: None,
+                workspace_id: None,
+                project_id: None,
+                parent_run_id: None,
             },
             UsageRequestDetails {
                 conversation_id: "conversation-1",
                 assistant_message_id: None,
-                provider_id: "provider",
+                provider_id: "groq",
                 model_id: "model",
                 reasoning_effort: None,
                 operation: "tool_follow_up",
                 fast_requested: false,
                 run_id: Some("child-run-1"),
+                connection_id: Some("connection-1"),
+                workspace_id: Some("workspace-1"),
+                project_id: Some("route-project"),
+                parent_run_id: Some("parent-run-1"),
             },
         ];
 
-        for (request, expected_run_id) in requests.into_iter().zip([None, Some("child-run-1")]) {
-            let tracker =
+        for (request, expected) in requests.into_iter().zip([
+            (None, None, None, Some("conversation-project"), None),
+            (
+                Some("child-run-1"),
+                Some("connection-1"),
+                Some("workspace-1"),
+                Some("route-project"),
+                Some("parent-run-1"),
+            ),
+        ]) {
+            let mut tracker =
                 UsageRequestTracker::start(&storage, request).expect("record usage request");
+            if expected.0.is_none() {
+                tracker
+                    .complete(&UsageData {
+                        provider_processing_ms: Some(5_587),
+                        provider_queue_time_ms: Some(27),
+                        provider_input_processing_ms: Some(10),
+                        provider_output_processing_ms: Some(5_577),
+                        completion_reason: Some("tool_calls".to_owned()),
+                        provider_rate_limits: Some(ProviderRateLimitObservation {
+                            observed_at_unix_ms: 10_000,
+                            request_limit: Some(60),
+                            request_remaining: Some(58),
+                            request_reset_at_unix_ms: Some(11_000),
+                            token_limit: Some(150_000),
+                            token_remaining: Some(149_984),
+                            token_reset_at_unix_ms: Some(361_000),
+                        }),
+                        ..UsageData::default()
+                    })
+                    .expect("finish request with provider processing time");
+            } else {
+                tracker
+                    .fail(&UsageData {
+                        provider_rate_limits: Some(ProviderRateLimitObservation {
+                            observed_at_unix_ms: 20_000,
+                            request_limit: Some(60),
+                            request_remaining: Some(0),
+                            request_reset_at_unix_ms: Some(80_000),
+                            token_limit: Some(150_000),
+                            token_remaining: Some(0),
+                            token_reset_at_unix_ms: Some(380_000),
+                        }),
+                        ..UsageData::default()
+                    })
+                    .expect("finish failed request with provider rate limits");
+            }
             let database = storage.connect().expect("connect to test storage");
-            let run_id = database
-                .query_row(
-                    "SELECT run_id FROM usage_events WHERE event_id = ?1",
-                    [&tracker.event_id],
-                    |row| row.get::<_, Option<String>>(0),
+            if expected.0.is_none() {
+                let rate_limits = database
+                    .query_row(
+                        "SELECT provider_rate_limits_json FROM usage_events WHERE event_id = ?1",
+                        [&tracker.event_id],
+                        |row| row.get::<_, Option<String>>(0),
+                    )
+                    .expect("read provider rate-limit observation")
+                    .and_then(|value| serde_json::from_str::<serde_json::Value>(&value).ok())
+                    .expect("decode provider rate-limit observation");
+                assert_eq!(rate_limits["observedAtUnixMs"], 10_000);
+                assert_eq!(rate_limits["requestRemaining"], 58);
+                assert_eq!(rate_limits["tokenResetAtUnixMs"], 361_000);
+                let history = quota_history(
+                    &database,
+                    &StatisticsQuery {
+                        from_unix_ms: 9_000,
+                        to_unix_ms: 11_000,
+                        provider_id: Some("openai".to_owned()),
+                        model_id: None,
+                        operation: None,
+                        reasoning_effort: None,
+                        fast_mode: None,
+                        offset: 0,
+                        limit: 100,
+                    },
                 )
-                .expect("read recorded run id");
+                .expect("load provider rate-limit history");
+                assert_eq!(history.len(), 1);
+                assert_eq!(history[0]["source"], "provider_response");
+                assert_eq!(history[0]["providerId"], "openai");
+                assert_eq!(history[0]["modelId"], "model");
+                assert_eq!(history[0]["buckets"][0]["limitId"], "requests");
+                assert_eq!(history[0]["buckets"][0]["limit"], 60);
+                assert_eq!(history[0]["buckets"][0]["remaining"], 58);
+                let chatgpt_history = quota_history(
+                    &database,
+                    &StatisticsQuery {
+                        from_unix_ms: 9_000,
+                        to_unix_ms: 11_000,
+                        provider_id: Some("chatgpt_api".to_owned()),
+                        model_id: None,
+                        operation: None,
+                        reasoning_effort: None,
+                        fast_mode: None,
+                        offset: 0,
+                        limit: 100,
+                    },
+                )
+                .expect("load ChatGPT quota history");
+                assert_eq!(chatgpt_history.len(), 1);
+                assert_eq!(chatgpt_history[0]["source"], "chatgpt");
+                assert_eq!(chatgpt_history[0]["connectionId"], "quota-connection");
+            } else {
+                let (status, rate_limits) = database
+                    .query_row(
+                        "SELECT status, provider_rate_limits_json FROM usage_events WHERE event_id = ?1",
+                        [&tracker.event_id],
+                        |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+                    )
+                    .expect("read failed request with provider rate limits");
+                assert_eq!(status, "failed");
+                let rate_limits: serde_json::Value =
+                    serde_json::from_str(&rate_limits).expect("decode failed request rate limits");
+                assert_eq!(rate_limits["requestRemaining"], 0);
+                let history = quota_history(
+                    &database,
+                    &StatisticsQuery {
+                        from_unix_ms: 19_000,
+                        to_unix_ms: 21_000,
+                        provider_id: Some("groq".to_owned()),
+                        model_id: None,
+                        operation: None,
+                        reasoning_effort: None,
+                        fast_mode: None,
+                        offset: 0,
+                        limit: 100,
+                    },
+                )
+                .expect("load failed request rate-limit history");
+                assert_eq!(history.len(), 1);
+                assert_eq!(history[0]["source"], "provider_response");
+                assert_eq!(history[0]["providerId"], "groq");
+                assert_eq!(history[0]["buckets"][0]["remaining"], 0);
+            }
+            let (run_id, connection_id, workspace_id, project_id, parent_run_id) = database
+                .query_row(
+                    "SELECT run_id, connection_id, workspace_id, project_id, parent_run_id
+                     FROM usage_events WHERE event_id = ?1",
+                    [&tracker.event_id],
+                    |row| {
+                        Ok((
+                            row.get::<_, Option<String>>(0)?,
+                            row.get::<_, Option<String>>(1)?,
+                            row.get::<_, Option<String>>(2)?,
+                            row.get::<_, Option<String>>(3)?,
+                            row.get::<_, Option<String>>(4)?,
+                        ))
+                    },
+                )
+                .expect("read recorded usage attribution");
 
-            assert_eq!(run_id.as_deref(), expected_run_id);
+            assert_eq!(run_id.as_deref(), expected.0);
+            assert_eq!(connection_id.as_deref(), expected.1);
+            assert_eq!(workspace_id.as_deref(), expected.2);
+            assert_eq!(project_id.as_deref(), expected.3);
+            assert_eq!(parent_run_id.as_deref(), expected.4);
+
+            let query = StatisticsQuery {
+                from_unix_ms: 0,
+                to_unix_ms: i64::MAX,
+                provider_id: None,
+                model_id: None,
+                operation: None,
+                reasoning_effort: None,
+                fast_mode: None,
+                offset: 0,
+                limit: 10,
+            };
+            let details = request_details(&database, &query).expect("read usage event details");
+            let expected_run_id = expected
+                .0
+                .map_or(serde_json::Value::Null, serde_json::Value::from);
+            let detail = details
+                .iter()
+                .find(|value| value["runId"] == expected_run_id)
+                .expect("matching request details exist");
+            assert_eq!(detail["conversationId"], "conversation-1");
+            assert_eq!(
+                detail["connectionId"],
+                expected
+                    .1
+                    .map_or(serde_json::Value::Null, serde_json::Value::from)
+            );
+            assert_eq!(
+                detail["workspaceId"],
+                expected
+                    .2
+                    .map_or(serde_json::Value::Null, serde_json::Value::from)
+            );
+            assert_eq!(
+                detail["projectId"],
+                expected
+                    .3
+                    .map_or(serde_json::Value::Null, serde_json::Value::from)
+            );
+            assert_eq!(
+                detail["parentRunId"],
+                expected
+                    .4
+                    .map_or(serde_json::Value::Null, serde_json::Value::from)
+            );
+            assert_eq!(
+                detail["providerProcessingMs"],
+                if expected.0.is_none() {
+                    serde_json::json!(5_587)
+                } else {
+                    serde_json::Value::Null
+                }
+            );
+            assert_eq!(
+                detail["providerQueueTimeMs"],
+                if expected.0.is_none() {
+                    serde_json::json!(27)
+                } else {
+                    serde_json::Value::Null
+                }
+            );
+            assert_eq!(
+                detail["providerInputProcessingMs"],
+                if expected.0.is_none() {
+                    serde_json::json!(10)
+                } else {
+                    serde_json::Value::Null
+                }
+            );
+            assert_eq!(
+                detail["providerOutputProcessingMs"],
+                if expected.0.is_none() {
+                    serde_json::json!(5_577)
+                } else {
+                    serde_json::Value::Null
+                }
+            );
+            assert_eq!(
+                detail["completionReason"],
+                if expected.0.is_none() {
+                    serde_json::json!("tool_calls")
+                } else {
+                    serde_json::Value::Null
+                }
+            );
+
+            let export_details = request_details_for_export(&database, &query)
+                .expect("read usage event export details");
+            let export_detail = export_details
+                .iter()
+                .find(|value| value["runId"] == expected_run_id)
+                .expect("matching export request details exist");
+            assert_eq!(export_detail["conversationId"], "conversation-1");
+            assert_eq!(export_detail["connectionId"], detail["connectionId"]);
+            assert_eq!(export_detail["workspaceId"], detail["workspaceId"]);
+            assert_eq!(export_detail["projectId"], detail["projectId"]);
+            assert_eq!(export_detail["parentRunId"], detail["parentRunId"]);
+            assert_eq!(
+                export_detail["providerProcessingMs"],
+                detail["providerProcessingMs"]
+            );
+            assert_eq!(
+                export_detail["providerQueueTimeMs"],
+                detail["providerQueueTimeMs"]
+            );
+            assert_eq!(
+                export_detail["providerInputProcessingMs"],
+                detail["providerInputProcessingMs"]
+            );
+            assert_eq!(
+                export_detail["providerOutputProcessingMs"],
+                detail["providerOutputProcessingMs"]
+            );
+            assert_eq!(
+                export_detail["completionReason"],
+                detail["completionReason"]
+            );
+        }
+    }
+
+    #[test]
+    fn first_output_latency_survives_failed_and_cancelled_requests() {
+        let directory = TestDirectory::new();
+        let storage = AppStorage::open_at(directory.0.clone()).expect("open test storage");
+        storage
+            .connect()
+            .expect("connect to test storage")
+            .execute_batch(
+                "CREATE TABLE conversations (
+                    id TEXT PRIMARY KEY NOT NULL,
+                    project_id TEXT
+                 );
+                 CREATE TABLE usage_events (
+                    event_id TEXT PRIMARY KEY NOT NULL,
+                    event_kind TEXT NOT NULL,
+                    conversation_id TEXT NOT NULL,
+                    assistant_message_id TEXT,
+                    provider_id TEXT,
+                    model_id TEXT,
+                    reasoning_effort TEXT,
+                    operation TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    fast_requested INTEGER,
+                    usage_source TEXT NOT NULL,
+                    started_at_unix_ms INTEGER NOT NULL,
+                    finished_at_unix_ms INTEGER,
+                    input_tokens INTEGER,
+                    output_tokens INTEGER,
+                    reasoning_tokens INTEGER,
+                    cached_input_tokens INTEGER,
+                    cache_write_tokens INTEGER,
+                    reported_cost_nano_usd INTEGER,
+                    cost_source TEXT,
+                    service_tier TEXT,
+                    first_output_latency_ms INTEGER,
+                    provider_processing_ms INTEGER,
+                    provider_queue_time_ms INTEGER,
+                    provider_input_processing_ms INTEGER,
+                    provider_output_processing_ms INTEGER,
+                    completion_reason TEXT,
+                    run_id TEXT,
+                    connection_id TEXT,
+                    workspace_id TEXT,
+                    project_id TEXT,
+                    parent_run_id TEXT,
+                    provider_rate_limits_json TEXT
+                 );
+                 INSERT INTO conversations (id, project_id) VALUES ('conversation-1', NULL);",
+            )
+            .expect("create isolated usage event schema");
+
+        let make_request = || UsageRequestDetails {
+            conversation_id: "conversation-1",
+            assistant_message_id: None,
+            provider_id: "provider",
+            model_id: "model",
+            reasoning_effort: None,
+            operation: "chat",
+            fast_requested: false,
+            run_id: None,
+            connection_id: None,
+            workspace_id: None,
+            project_id: None,
+            parent_run_id: None,
+        };
+
+        let failed =
+            UsageRequestTracker::start(&storage, make_request()).expect("record failed request");
+        let failed_event_id = failed.event_id.clone();
+        let failed_recorder = failed.first_output_recorder();
+        failed_recorder.record(Duration::from_millis(120));
+        failed_recorder.record(Duration::from_millis(2));
+        drop(failed);
+
+        let mut cancelled =
+            UsageRequestTracker::start(&storage, make_request()).expect("record cancelled request");
+        let cancelled_event_id = cancelled.event_id.clone();
+        cancelled
+            .first_output_recorder()
+            .record(Duration::from_millis(80));
+        cancelled.cancel().expect("finish cancelled request");
+
+        let database = storage.connect().expect("connect to test storage");
+        for (event_id, expected_status, expected_latency) in [
+            (failed_event_id, "failed", Some(120)),
+            (cancelled_event_id, "cancelled", Some(80)),
+        ] {
+            let (status, latency) = database
+                .query_row(
+                    "SELECT status, first_output_latency_ms
+                     FROM usage_events WHERE event_id = ?1",
+                    [&event_id],
+                    |row| Ok((row.get::<_, String>(0)?, row.get::<_, Option<i64>>(1)?)),
+                )
+                .expect("read completed usage event");
+            assert_eq!(status, expected_status);
+            assert_eq!(latency, expected_latency);
         }
     }
 
@@ -1651,7 +2778,10 @@ mod request_tracker_tests {
             .connect()
             .expect("connect to test storage")
             .execute_batch(
-                "CREATE TABLE conversations (id TEXT PRIMARY KEY NOT NULL);
+                "CREATE TABLE conversations (
+                    id TEXT PRIMARY KEY NOT NULL,
+                    project_id TEXT
+                 );
                  CREATE TABLE usage_events (
                     event_id TEXT PRIMARY KEY NOT NULL,
                     event_kind TEXT NOT NULL,
@@ -1674,13 +2804,24 @@ mod request_tracker_tests {
                     reported_cost_nano_usd INTEGER,
                     cost_source TEXT,
                     service_tier TEXT,
-                    run_id TEXT
+                    first_output_latency_ms INTEGER,
+                    provider_processing_ms INTEGER,
+                    provider_queue_time_ms INTEGER,
+                    provider_input_processing_ms INTEGER,
+                    provider_output_processing_ms INTEGER,
+                    completion_reason TEXT,
+                    run_id TEXT,
+                    connection_id TEXT,
+                    workspace_id TEXT,
+                    project_id TEXT,
+                    parent_run_id TEXT,
+                    provider_rate_limits_json TEXT
                  );
                  CREATE TEMP TABLE models_dev_event_costs (
                     event_id TEXT PRIMARY KEY NOT NULL,
                     cost_usd REAL NOT NULL
                  );
-                 INSERT INTO conversations (id) VALUES ('conversation-1');",
+                 INSERT INTO conversations (id, project_id) VALUES ('conversation-1', NULL);",
             )
             .expect("create isolated usage event schema");
 
@@ -1695,6 +2836,10 @@ mod request_tracker_tests {
                 operation: "chat",
                 fast_requested: false,
                 run_id: None,
+                connection_id: None,
+                workspace_id: None,
+                project_id: None,
+                parent_run_id: None,
             },
         )
         .expect("record usage request");
@@ -1708,11 +2853,21 @@ mod request_tracker_tests {
             .expect("cache estimated cost");
         drop(database);
 
+        tracker.record_first_output(Duration::from_millis(120));
+        tracker.record_first_output(Duration::from_millis(2));
         tracker
             .complete(&UsageData::default())
             .expect("finish usage request");
 
         let database = storage.connect().expect("connect to test storage");
+        let latency = database
+            .query_row(
+                "SELECT first_output_latency_ms FROM usage_events WHERE event_id = ?1",
+                [&tracker.event_id],
+                |row| row.get::<_, Option<i64>>(0),
+            )
+            .expect("read first output latency");
+        assert_eq!(latency, Some(120));
         let cached_cost_count = database
             .query_row(
                 "SELECT COUNT(*) FROM temp.models_dev_event_costs WHERE event_id = ?1",
@@ -1760,6 +2915,7 @@ fn quota_history(
     database: &StorageConnection<'_>,
     query: &StatisticsQuery,
 ) -> rusqlite::Result<Vec<Value>> {
+    const MAX_QUOTA_HISTORY_SNAPSHOTS: i64 = 100;
     let mut statement = database.prepare(
         "SELECT snapshot.id, snapshot.connection_id, snapshot.workspace_id,
             connection.display_name, workspace.display_name, snapshot.fetched_at_unix_ms,
@@ -1773,61 +2929,190 @@ fn quota_history(
            ON workspace.connection_id = snapshot.connection_id
           AND workspace.id = snapshot.workspace_id
          LEFT JOIN chatgpt_usage_buckets AS bucket ON bucket.snapshot_id = snapshot.id
-         WHERE snapshot.fetched_at_unix_ms >= ?1 AND snapshot.fetched_at_unix_ms < ?2
+         WHERE snapshot.id IN (
+            SELECT id FROM chatgpt_usage_snapshots
+            WHERE fetched_at_unix_ms >= ?1 AND fetched_at_unix_ms < ?2
+              AND (?3 IS NULL OR ?3 = 'chatgpt_api')
+            ORDER BY fetched_at_unix_ms DESC, id DESC LIMIT ?4
+         )
          ORDER BY snapshot.fetched_at_unix_ms DESC, snapshot.id, bucket.limit_id",
     )?;
     let rows = statement
-        .query_map(params![query.from_unix_ms, query.to_unix_ms], |row| {
-            let bucket = match row.get::<_, Option<String>>(10)? {
-                Some(limit_id) => Some(json!({
-                    "limitId": limit_id,
-                    "usedPercent": row.get::<_, Option<f64>>(11)?,
-                    "windowSeconds": row.get::<_, Option<i64>>(12)?,
-                    "resetAtUnixMs": row.get::<_, Option<i64>>(13)?,
-                })),
-                None => None,
-            };
-            Ok((
-                row.get::<_, String>(0)?,
-                json!({
-                    "connectionId": row.get::<_, String>(1)?,
-                    "workspaceId": row.get::<_, String>(2)?,
-                    "connectionName": row.get::<_, Option<String>>(3)?,
-                    "workspaceName": row.get::<_, Option<String>>(4)?,
-                    "fetchedAtUnixMs": row.get::<_, i64>(5)?,
-                    "freshness": row.get::<_, String>(6)?,
-                    "ordinaryUsageAllowed": row.get::<_, Option<bool>>(7)?,
-                    "resetCreditCount": row.get::<_, Option<i64>>(8)?,
-                    "resetCreditDetailsState": row.get::<_, String>(9)?,
-                }),
-                bucket,
-            ))
-        })?
+        .query_map(
+            params![
+                query.from_unix_ms,
+                query.to_unix_ms,
+                query.provider_id.as_deref(),
+                MAX_QUOTA_HISTORY_SNAPSHOTS
+            ],
+            |row| {
+                let bucket = match row.get::<_, Option<String>>(10)? {
+                    Some(limit_id) => Some(json!({
+                        "limitId": limit_id,
+                        "limit": null,
+                        "remaining": null,
+                        "usedPercent": row.get::<_, Option<f64>>(11)?,
+                        "windowSeconds": row.get::<_, Option<i64>>(12)?,
+                        "resetAtUnixMs": row.get::<_, Option<i64>>(13)?,
+                    })),
+                    None => None,
+                };
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, i64>(5)?,
+                    json!({
+                        "source": "chatgpt",
+                        "providerId": null,
+                        "modelId": null,
+                        "connectionId": row.get::<_, String>(1)?,
+                        "workspaceId": row.get::<_, String>(2)?,
+                        "connectionName": row.get::<_, Option<String>>(3)?,
+                        "workspaceName": row.get::<_, Option<String>>(4)?,
+                        "fetchedAtUnixMs": row.get::<_, i64>(5)?,
+                        "freshness": row.get::<_, String>(6)?,
+                        "ordinaryUsageAllowed": row.get::<_, Option<bool>>(7)?,
+                        "resetCreditCount": row.get::<_, Option<i64>>(8)?,
+                        "resetCreditDetailsState": row.get::<_, String>(9)?,
+                    }),
+                    bucket,
+                ))
+            },
+        )?
         .collect::<rusqlite::Result<Vec<_>>>()?;
     drop(statement);
 
-    let mut snapshots: Vec<(String, Value, Vec<Value>)> = Vec::new();
-    for (snapshot_id, snapshot, bucket) in rows {
+    let mut snapshots: Vec<(String, i64, Value, Vec<Value>)> = Vec::new();
+    for (snapshot_id, fetched_at, snapshot, bucket) in rows {
         if snapshots
             .last()
-            .map_or(true, |(current_id, _, _)| current_id != &snapshot_id)
+            .is_none_or(|(current_id, _, _, _)| current_id != &snapshot_id)
         {
-            snapshots.push((snapshot_id.clone(), snapshot, Vec::new()));
+            snapshots.push((snapshot_id.clone(), fetched_at, snapshot, Vec::new()));
         }
-        if let Some(bucket) = bucket {
-            if let Some((_, _, buckets)) = snapshots.last_mut() {
-                buckets.push(bucket);
-            }
+        if let Some(bucket) = bucket
+            && let Some((_, _, _, buckets)) = snapshots.last_mut()
+        {
+            buckets.push(bucket);
         }
     }
 
-    Ok(snapshots
+    let mut history = snapshots
         .into_iter()
-        .map(|(_, mut snapshot, buckets)| {
+        .map(|(_, fetched_at, mut snapshot, buckets)| {
             snapshot["buckets"] = json!(buckets);
-            snapshot
+            (fetched_at, snapshot)
         })
-        .collect())
+        .collect::<Vec<_>>();
+
+    let now = now_unix_millis()?;
+    let mut statement = database.prepare(
+        "SELECT e.provider_id, e.model_id, e.connection_id, e.workspace_id,
+            json_extract(e.provider_rate_limits_json, '$.observedAtUnixMs'),
+            json_extract(e.provider_rate_limits_json, '$.requestLimit'),
+            json_extract(e.provider_rate_limits_json, '$.requestRemaining'),
+            json_extract(e.provider_rate_limits_json, '$.requestResetAtUnixMs'),
+            json_extract(e.provider_rate_limits_json, '$.tokenLimit'),
+            json_extract(e.provider_rate_limits_json, '$.tokenRemaining'),
+            json_extract(e.provider_rate_limits_json, '$.tokenResetAtUnixMs')
+         FROM usage_events AS e
+         WHERE e.provider_rate_limits_json IS NOT NULL
+           AND e.provider_id IN ('openai', 'groq')
+           AND json_extract(e.provider_rate_limits_json, '$.observedAtUnixMs') >= ?1
+           AND json_extract(e.provider_rate_limits_json, '$.observedAtUnixMs') < ?2
+           AND (?3 IS NULL OR e.provider_id = ?3)
+           AND (?4 IS NULL OR e.model_id = ?4)
+           AND json_type(e.provider_rate_limits_json, '$.observedAtUnixMs') = 'integer'
+           AND json_extract(e.provider_rate_limits_json, '$.observedAtUnixMs') >= 0
+         ORDER BY json_extract(e.provider_rate_limits_json, '$.observedAtUnixMs') DESC,
+            e.event_id DESC LIMIT ?5",
+    )?;
+    let provider_rows = statement
+        .query_map(
+            params![
+                query.from_unix_ms,
+                query.to_unix_ms,
+                query.provider_id.as_deref(),
+                query.model_id.as_deref(),
+                MAX_QUOTA_HISTORY_SNAPSHOTS,
+            ],
+            |row| {
+                let provider_id = row.get::<_, String>(0)?;
+                let model_id = row.get::<_, Option<String>>(1)?;
+                let connection_id = row.get::<_, Option<String>>(2)?;
+                let workspace_id = row.get::<_, Option<String>>(3)?;
+                let observed_at = row.get::<_, i64>(4)?;
+                let request_limit = row.get::<_, Option<i64>>(5)?.filter(|value| *value >= 0);
+                let request_remaining = row.get::<_, Option<i64>>(6)?.filter(|value| *value >= 0);
+                let request_reset_at = row.get::<_, Option<i64>>(7)?.filter(|value| *value >= 0);
+                let token_limit = row.get::<_, Option<i64>>(8)?.filter(|value| *value >= 0);
+                let token_remaining = row.get::<_, Option<i64>>(9)?.filter(|value| *value >= 0);
+                let token_reset_at = row.get::<_, Option<i64>>(10)?.filter(|value| *value >= 0);
+                let bucket = |limit_id: &str,
+                              limit: Option<i64>,
+                              remaining: Option<i64>,
+                              reset_at_unix_ms: Option<i64>| {
+                    if limit.is_none() && remaining.is_none() && reset_at_unix_ms.is_none() {
+                        return None;
+                    }
+                    let used_percent = match (limit, remaining) {
+                        (Some(limit), Some(remaining)) if limit > 0 && remaining <= limit => {
+                            Some((limit - remaining) as f64 / limit as f64 * 100.0)
+                        }
+                        _ => None,
+                    };
+                    Some(json!({
+                        "limitId": limit_id,
+                        "limit": limit,
+                        "remaining": remaining,
+                        "usedPercent": used_percent,
+                        "windowSeconds": null,
+                        "resetAtUnixMs": reset_at_unix_ms,
+                    }))
+                };
+                let mut buckets = Vec::new();
+                if let Some(bucket) = bucket(
+                    "requests",
+                    request_limit,
+                    request_remaining,
+                    request_reset_at,
+                ) {
+                    buckets.push(bucket);
+                }
+                if let Some(bucket) = bucket("tokens", token_limit, token_remaining, token_reset_at)
+                {
+                    buckets.push(bucket);
+                }
+                let freshness = if observed_at < 0 || observed_at > now {
+                    "unknown"
+                } else if now.saturating_sub(observed_at) <= 60_000 {
+                    "current"
+                } else {
+                    "stale"
+                };
+                Ok((
+                    observed_at,
+                    json!({
+                        "source": "provider_response",
+                        "providerId": provider_id,
+                        "modelId": model_id,
+                        "connectionId": connection_id,
+                        "workspaceId": workspace_id,
+                        "connectionName": null,
+                        "workspaceName": null,
+                        "fetchedAtUnixMs": observed_at,
+                        "freshness": freshness,
+                        "ordinaryUsageAllowed": null,
+                        "buckets": buckets,
+                    }),
+                ))
+            },
+        )?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    drop(statement);
+    history.extend(provider_rows);
+    history.sort_by_key(|snapshot| std::cmp::Reverse(snapshot.0));
+    history.truncate(MAX_QUOTA_HISTORY_SNAPSHOTS as usize);
+    Ok(history.into_iter().map(|(_, snapshot)| snapshot).collect())
 }
 
 #[cfg(test)]
@@ -1887,8 +3172,18 @@ mod benchmark_tests {
                     usage_source TEXT NOT NULL,
                     started_at_unix_ms INTEGER NOT NULL,
                     finished_at_unix_ms INTEGER,
+                    first_output_latency_ms INTEGER,
+                    provider_processing_ms INTEGER,
+                    provider_queue_time_ms INTEGER,
+                    provider_input_processing_ms INTEGER,
+                    provider_output_processing_ms INTEGER,
                     request_manifest_json TEXT,
-                    run_id TEXT
+                    run_id TEXT,
+                    connection_id TEXT,
+                    workspace_id TEXT,
+                    project_id TEXT,
+                    parent_run_id TEXT,
+                    provider_rate_limits_json TEXT
                  );
                  CREATE INDEX usage_events_started_idx
                     ON usage_events(started_at_unix_ms DESC, event_id);
@@ -1923,11 +3218,11 @@ mod benchmark_tests {
                  INSERT INTO usage_events (
                     event_id, event_kind, conversation_id, provider_id, model_id,
                     operation, status, fast_requested, input_tokens, output_tokens,
-                    usage_source, started_at_unix_ms, finished_at_unix_ms
+                    cached_input_tokens, usage_source, started_at_unix_ms, finished_at_unix_ms
                  )
                  SELECT 'benchmark-event-' || value, 'request',
                     'benchmark-conversation', 'chatgpt_api', 'benchmark-model',
-                    'chat', 'completed', 0, 1000, 500, 'provider_reported', 10, 11
+                    'chat', 'completed', 0, 1000, 500, 250, 'provider_reported', 10, 11
                  FROM numbers WHERE value <= {EVENT_COUNT};",
                 super::now_unix_millis().expect("benchmark clock"),
             ))
@@ -1962,6 +3257,18 @@ mod benchmark_tests {
             json!("chatgpt_api")
         );
         assert_eq!(cold["providerBreakdown"][0]["requests"], json!(EVENT_COUNT));
+        assert_eq!(
+            cold["providerBreakdown"][0]["cacheShareInputTokens"],
+            json!(EVENT_COUNT * 1_000)
+        );
+        assert_eq!(
+            cold["providerBreakdown"][0]["cacheShareCachedTokens"],
+            json!(EVENT_COUNT * 250)
+        );
+        assert_eq!(
+            cold["providerBreakdown"][0]["cacheShareRequests"],
+            json!(EVENT_COUNT)
+        );
         assert_eq!(
             cold["modelBreakdown"][0]["modelId"],
             json!("benchmark-model")

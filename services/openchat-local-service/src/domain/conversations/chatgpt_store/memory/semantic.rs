@@ -163,6 +163,16 @@ enum WorkerMessage {
     },
 }
 
+struct ArchiveSearchRequest {
+    database: DatabaseQueueHandle,
+    cache_directory: PathBuf,
+    conversation_id: String,
+    through_message_id: Option<String>,
+    query: String,
+    result_limit: usize,
+    backfill: bool,
+}
+
 static WORKER: OnceLock<Result<Sender<WorkerMessage>, String>> = OnceLock::new();
 static PREPARE_LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
 
@@ -426,15 +436,15 @@ fn worker_loop(receiver: Receiver<WorkerMessage>) {
                 backfill,
                 response,
             } => {
-                let result = runtime.search(
-                    &database,
-                    &cache_directory,
-                    &conversation_id,
-                    through_message_id.as_deref(),
-                    &query,
+                let result = runtime.search(ArchiveSearchRequest {
+                    database,
+                    cache_directory,
+                    conversation_id,
+                    through_message_id,
+                    query,
                     result_limit,
                     backfill,
-                );
+                });
                 let _ = response.send(result);
             }
             WorkerMessage::RerankProjectCandidates {
@@ -513,28 +523,31 @@ impl SemanticRuntime {
 
     fn search(
         &mut self,
-        database: &DatabaseQueueHandle,
-        cache_directory: &Path,
-        conversation_id: &str,
-        through_message_id: Option<&str>,
-        query: &str,
-        result_limit: usize,
-        backfill: bool,
+        request: ArchiveSearchRequest,
     ) -> Result<Vec<ArchivedMemoryExcerpt>, SemanticMemoryError> {
+        let ArchiveSearchRequest {
+            database,
+            cache_directory,
+            conversation_id,
+            through_message_id,
+            query,
+            result_limit,
+            backfill,
+        } = request;
         let mut connection = database.connect()?;
-        if !index::archive_indexing_enabled(&connection, conversation_id)? {
+        if !index::archive_indexing_enabled(&connection, &conversation_id)? {
             return Ok(Vec::new());
         }
-        self.load_model_and_index(&connection, cache_directory)?;
-        self.ensure_index_current(&connection, cache_directory)?;
-        let namespace = ensure_namespace(&connection, conversation_id)?;
+        self.load_model_and_index(&connection, &cache_directory)?;
+        self.ensure_index_current(&connection, &cache_directory)?;
+        let namespace = ensure_namespace(&connection, &conversation_id)?;
         if backfill {
             self.ensure_conversation_indexed(
                 &mut connection,
-                conversation_id,
-                through_message_id,
+                &conversation_id,
+                through_message_id.as_deref(),
                 namespace,
-                cache_directory,
+                &cache_directory,
             )?;
         }
 
@@ -557,7 +570,8 @@ impl SemanticRuntime {
         if result_limit == 0 || index.size() == 0 {
             return Ok(Vec::new());
         }
-        let boundary = boundary_order(&connection, conversation_id, through_message_id)?;
+        let boundary =
+            boundary_order(&connection, &conversation_id, through_message_id.as_deref())?;
         let mut excerpts = Vec::with_capacity(result_limit);
         let mut seen_messages = HashSet::new();
         let mut candidate_count = (result_limit.saturating_mul(8)).max(64).min(index.size());
@@ -573,7 +587,7 @@ impl SemanticRuntime {
                     continue;
                 };
                 if let Some(excerpt) =
-                    semantic_excerpt(&connection, conversation_id, id, boundary.as_ref())?
+                    semantic_excerpt(&connection, &conversation_id, id, boundary.as_ref())?
                     && seen_messages.insert(excerpt.message_id.clone())
                 {
                     excerpts.push((*distance, excerpt));
@@ -587,7 +601,7 @@ impl SemanticRuntime {
             }
             candidate_count = candidate_count.saturating_mul(2).min(index.size());
         }
-        if !index::archive_indexing_enabled(&connection, conversation_id)? {
+        if !index::archive_indexing_enabled(&connection, &conversation_id)? {
             return Ok(Vec::new());
         }
         let indexed_generation = self.index_generation.ok_or_else(|| {

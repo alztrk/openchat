@@ -67,10 +67,29 @@ tool rules to `Ask`, then removes the previous package. Removal failures stay
 visible and can be retried; cleanup never recursively deletes an unexpected
 directory.
 
+A catalog entry may include an optional version 1 manifest that declares tool
+names, permissions, provider requirements, and configuration needs. The app
+rejects unsupported versions, unknown fields, duplicate declarations, and
+manifests larger than 16 KiB; individual declaration lists and text fields are
+also bounded, and control characters including bidirectional formatting
+controls are rejected. The installation confirmation displays these values as catalog
+declarations. It does not compare the declaration with the tools actually
+returned by the server. Runtime tool discovery and project tool permissions
+remain authoritative.
+
 A valid signature proves that the catalog was signed by the pinned key. It does
 not establish the publisher's real-world identity. The confirmation shows the
 catalog key fingerprint, package URL, size, digest, requested access, and data
 disclosure. Users should verify the fingerprint through a separate trusted
 channel before installing. No centrally hosted or first-party public catalog is
 provided by OpenChat. Windows Authenticode publisher identity, a first-party
-catalog, and release/update signing remain separate release work.
+catalog, and release/update signing remain separate release work. On Windows,
+installation and every launch require the package to pass the operating
+system's Authenticode trust check. Previously installed unsigned packages stop
+launching. An update installs and saves the signed replacement before removing
+the previous version; cleanup failures remain visible and can be retried. The
+check uses cached trust data only and does not check certificate revocation; it
+does not bind the executable's signer identity to the catalog's publisher claim
+or to the catalog signing key. Non-Windows service builds reject Windows
+executable packages because they cannot perform this operating-system trust
+check.

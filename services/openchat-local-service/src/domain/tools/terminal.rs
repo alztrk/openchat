@@ -162,6 +162,38 @@ struct WorkingDirectoryCapture {
     command_sequence: u64,
 }
 
+struct TerminalSessionRequest<'a> {
+    command_str: &'a str,
+    workdir: &'a Path,
+    owner_conversation_id: &'a str,
+    timeout_seconds: Option<u64>,
+    workspace_roots: &'a [PathBuf],
+    full_access: bool,
+    idle_timeout: Option<Duration>,
+    working_directory_capture: Option<WorkingDirectoryCapture>,
+}
+
+pub(crate) struct TerminalCommandRequest<'a> {
+    pub(crate) command_str: &'a str,
+    pub(crate) workdir: &'a Path,
+    pub(crate) owner_conversation_id: &'a str,
+    pub(crate) timeout_seconds: Option<u64>,
+    pub(crate) wait_ms: Option<u64>,
+    pub(crate) workspace_roots: &'a [PathBuf],
+    pub(crate) full_access: bool,
+}
+
+#[cfg(windows)]
+pub(crate) struct ProjectToolRequest<'a> {
+    pub(crate) program: &'a Path,
+    pub(crate) workdir: &'a Path,
+    pub(crate) input: &'a str,
+    pub(crate) timeout_seconds: u64,
+    pub(crate) output_limit_bytes: usize,
+    pub(crate) cancellation: &'a mut tokio::sync::watch::Receiver<bool>,
+    pub(crate) full_access: bool,
+}
+
 impl WorkingDirectoryCapture {
     async fn create(
         workspace_root: PathBuf,
@@ -380,8 +412,8 @@ fn build_shell_command(command_str: &str, state_file: Option<&Path>) -> Command 
 
 #[cfg(windows)]
 enum TerminalChild {
-    Managed(SandboxedProcess),
-    Process(tokio::process::Child),
+    Managed(Box<SandboxedProcess>),
+    Process(Box<tokio::process::Child>),
 }
 
 #[cfg(windows)]
@@ -759,31 +791,34 @@ impl TerminalSessionManager {
         owner_conversation_id: &str,
         timeout_seconds: Option<u64>,
     ) -> Result<Arc<TerminalSession>, String> {
-        self.create_session_with_workspace_roots(
+        self.create_session_with_workspace_roots(TerminalSessionRequest {
             command_str,
             workdir,
             owner_conversation_id,
             timeout_seconds,
-            &[],
-            false,
-            Some(Duration::from_secs(120)),
-            None,
-        )
+            workspace_roots: &[],
+            full_access: false,
+            idle_timeout: Some(Duration::from_secs(120)),
+            working_directory_capture: None,
+        })
         .await
         .map_err(|error| error.message)
     }
 
     async fn create_session_with_workspace_roots(
         &self,
-        command_str: &str,
-        workdir: &Path,
-        owner_conversation_id: &str,
-        timeout_seconds: Option<u64>,
-        workspace_roots: &[PathBuf],
-        full_access: bool,
-        idle_timeout: Option<Duration>,
-        working_directory_capture: Option<WorkingDirectoryCapture>,
+        request: TerminalSessionRequest<'_>,
     ) -> Result<Arc<TerminalSession>, ToolRuntimeError> {
+        let TerminalSessionRequest {
+            command_str,
+            workdir,
+            owner_conversation_id,
+            timeout_seconds,
+            workspace_roots,
+            full_access,
+            idle_timeout,
+            working_directory_capture,
+        } = request;
         let session_slot = Arc::clone(&self.session_slots)
             .try_acquire_owned()
             .map_err(|_| {
@@ -876,7 +911,12 @@ impl TerminalSessionManager {
                     proc.stdout.take().map(|s| Box::new(s) as _);
                 let stderr: Option<Box<dyn tokio::io::AsyncRead + Send + Unpin>> =
                     proc.stderr.take().map(|s| Box::new(s) as _);
-                (TerminalChild::Process(proc), stdin, stdout, stderr)
+                (
+                    TerminalChild::Process(Box::new(proc)),
+                    stdin,
+                    stdout,
+                    stderr,
+                )
             } else if full_access {
                 let options = command_sandbox_options(&[])?;
                 let mut options = options;
@@ -892,7 +932,12 @@ impl TerminalSessionManager {
                     child.take_stdout().map(|stream| Box::new(stream) as _);
                 let stderr: Option<Box<dyn tokio::io::AsyncRead + Send + Unpin>> =
                     child.take_stderr().map(|stream| Box::new(stream) as _);
-                (TerminalChild::Managed(child), stdin, stdout, stderr)
+                (
+                    TerminalChild::Managed(Box::new(child)),
+                    stdin,
+                    stdout,
+                    stderr,
+                )
             } else {
                 let mut additional_roots = workspace_roots
                     .iter()
@@ -914,7 +959,12 @@ impl TerminalSessionManager {
                     child.take_stdout().map(|s| Box::new(s) as _);
                 let stderr: Option<Box<dyn tokio::io::AsyncRead + Send + Unpin>> =
                     child.take_stderr().map(|s| Box::new(s) as _);
-                (TerminalChild::Managed(child), stdin, stdout, stderr)
+                (
+                    TerminalChild::Managed(Box::new(child)),
+                    stdin,
+                    stdout,
+                    stderr,
+                )
             }
         };
 
@@ -1047,15 +1097,15 @@ impl TerminalSessionManager {
         timeout_seconds: Option<u64>,
         wait_ms: Option<u64>,
     ) -> Result<Value, String> {
-        self.execute_with_workspace_roots(
+        self.execute_with_workspace_roots(TerminalCommandRequest {
             command_str,
             workdir,
             owner_conversation_id,
             timeout_seconds,
             wait_ms,
-            &[],
-            false,
-        )
+            workspace_roots: &[],
+            full_access: false,
+        })
         .await
         .map_err(|error| error.message)
     }
@@ -1063,14 +1113,17 @@ impl TerminalSessionManager {
     /// Runs a command with write access to the explicitly configured project roots.
     pub async fn execute_with_workspace_roots(
         &self,
-        command_str: &str,
-        workdir: &Path,
-        owner_conversation_id: &str,
-        timeout_seconds: Option<u64>,
-        wait_ms: Option<u64>,
-        workspace_roots: &[PathBuf],
-        full_access: bool,
+        request: TerminalCommandRequest<'_>,
     ) -> Result<Value, ToolRuntimeError> {
+        let TerminalCommandRequest {
+            command_str,
+            workdir,
+            owner_conversation_id,
+            timeout_seconds,
+            wait_ms,
+            workspace_roots,
+            full_access,
+        } = request;
         let wait_duration =
             Duration::from_millis(wait_ms.unwrap_or(DEFAULT_WAIT_MS).clamp(100, MAX_WAIT_MS));
 
@@ -1091,16 +1144,16 @@ impl TerminalSessionManager {
         process_workspace_roots.push(capture.directory.clone());
 
         let session = self
-            .create_session_with_workspace_roots(
+            .create_session_with_workspace_roots(TerminalSessionRequest {
                 command_str,
-                &workdir,
+                workdir: &workdir,
                 owner_conversation_id,
                 timeout_seconds,
-                &process_workspace_roots,
+                workspace_roots: &process_workspace_roots,
                 full_access,
-                Some(Duration::from_secs(120)),
-                Some(capture),
-            )
+                idle_timeout: Some(Duration::from_secs(120)),
+                working_directory_capture: Some(capture),
+            })
             .await?;
         let (output, _offset, truncated) = session.wait_for_output(0, wait_duration).await?;
         let status = session.process_status().await?;
@@ -1163,16 +1216,16 @@ impl TerminalSessionManager {
         }
 
         let session = self
-            .create_session_with_workspace_roots(
+            .create_session_with_workspace_roots(TerminalSessionRequest {
                 command_str,
                 workdir,
-                INTERNAL_TERMINAL_OWNER,
-                Some(timeout_seconds),
-                &[],
+                owner_conversation_id: INTERNAL_TERMINAL_OWNER,
+                timeout_seconds: Some(timeout_seconds),
+                workspace_roots: &[],
                 full_access,
-                None,
-                None,
-            )
+                idle_timeout: None,
+                working_directory_capture: None,
+            })
             .await?;
         session.stdin.lock().await.take();
         let deadline = Instant::now() + Duration::from_secs(timeout_seconds);
@@ -1231,14 +1284,17 @@ impl TerminalSessionManager {
     #[cfg(windows)]
     pub async fn execute_project_tool(
         &self,
-        program: &Path,
-        workdir: &Path,
-        input: &str,
-        timeout_seconds: u64,
-        output_limit_bytes: usize,
-        cancellation: &mut tokio::sync::watch::Receiver<bool>,
-        full_access: bool,
+        request: ProjectToolRequest<'_>,
     ) -> Result<Value, ToolRuntimeError> {
+        let ProjectToolRequest {
+            program,
+            workdir,
+            input,
+            timeout_seconds,
+            output_limit_bytes,
+            cancellation,
+            full_access,
+        } = request;
         if !(5..=MAX_TIMEOUT_SECONDS).contains(&timeout_seconds)
             || !(1..=MAX_BUFFER_BYTES).contains(&output_limit_bytes)
             || input.len() > 16 * 1024
@@ -1551,9 +1607,45 @@ async fn drain_project_tool_pipe(
 
 #[cfg(test)]
 mod tests {
-    use super::TerminalSessionManager;
-    use std::path::PathBuf;
+    use super::{TerminalSessionManager, TerminalSessionRequest, shell_quote_posix};
+    use std::{
+        fs,
+        path::{Path, PathBuf},
+        process::Command,
+        time::Duration,
+    };
     use uuid::Uuid;
+
+    #[tokio::test]
+    async fn terminal_working_directory_keeps_all_configured_workspace_roots() {
+        let base = std::env::temp_dir().join(format!(
+            "openchat-terminal-workspace-roots-{}",
+            Uuid::new_v4().simple()
+        ));
+        let primary = base.join("primary");
+        let secondary = base.join("secondary");
+        fs::create_dir_all(&primary).expect("create primary workspace root");
+        fs::create_dir_all(&secondary).expect("create secondary workspace root");
+        let primary = fs::canonicalize(primary).expect("canonicalize primary workspace root");
+        let secondary = fs::canonicalize(secondary).expect("canonicalize secondary workspace root");
+        let manager = TerminalSessionManager::isolated();
+
+        let (workspace_root, current_directory, allowed_roots, reset, _) = manager
+            .resolve_working_directory(
+                &primary,
+                std::slice::from_ref(&secondary),
+                "workspace-roots-test",
+            )
+            .await
+            .expect("resolve configured terminal workspace roots");
+
+        assert_eq!(workspace_root, primary);
+        assert_eq!(current_directory, primary);
+        assert_eq!(allowed_roots, vec![primary, secondary]);
+        assert!(!reset);
+        drop(manager);
+        fs::remove_dir_all(base).expect("remove terminal workspace test folder");
+    }
 
     #[tokio::test]
     async fn active_session_limit_rejects_new_processes_and_releases_capacity() {
@@ -1629,5 +1721,99 @@ mod tests {
             manager.backend().await,
             crate::sandbox::SandboxBackend::Wsl2
         );
+    }
+
+    #[tokio::test]
+    async fn wsl2_terminal_runs_a_command_inside_the_bubblewrap_workspace() {
+        if !crate::sandbox::SandboxPolicy::is_wsl2_available() {
+            return;
+        }
+
+        let base = std::env::temp_dir().join(format!(
+            "openchat-terminal-wsl2-{}",
+            Uuid::new_v4().simple()
+        ));
+        let primary = base.join("primary");
+        let secondary = base.join("secondary");
+        let ungranted = base.join("ungranted");
+        fs::create_dir_all(&primary).expect("create the primary WSL2 workspace");
+        fs::create_dir_all(&secondary).expect("create the secondary WSL2 workspace");
+        fs::create_dir_all(&ungranted).expect("create an ungranted WSL2 sibling");
+        let primary = fs::canonicalize(primary).expect("canonicalize primary WSL2 workspace");
+        let secondary = fs::canonicalize(secondary).expect("canonicalize secondary WSL2 workspace");
+        let ungranted = fs::canonicalize(ungranted).expect("canonicalize ungranted WSL2 sibling");
+        let secondary_path = wsl_path(&secondary);
+        let ungranted_path = wsl_path(&ungranted);
+        let command = format!(
+            "test -d {} && test ! -e {} && printf 'wsl2-service-test-ok'",
+            shell_quote_posix(&secondary_path),
+            shell_quote_posix(&ungranted_path),
+        );
+        let manager = TerminalSessionManager::isolated();
+        manager
+            .set_backend(crate::sandbox::SandboxBackend::Wsl2)
+            .await;
+        let session = manager
+            .create_session_with_workspace_roots(TerminalSessionRequest {
+                command_str: &command,
+                workdir: &primary,
+                owner_conversation_id: "wsl2-terminal-test",
+                timeout_seconds: Some(10),
+                workspace_roots: std::slice::from_ref(&secondary),
+                full_access: false,
+                idle_timeout: Some(Duration::from_secs(120)),
+                working_directory_capture: None,
+            })
+            .await
+            .expect("start a scoped non-mutating command in the WSL2 sandbox");
+
+        let result = tokio::time::timeout(Duration::from_secs(15), async {
+            loop {
+                let state = manager
+                    .read_output_of(&session.id, "wsl2-terminal-test", Some(250))
+                    .await?;
+                let is_running = state["is_running"]
+                    .as_bool()
+                    .ok_or_else(|| "terminal response omitted its running state".to_owned())?;
+                if !is_running {
+                    return Ok::<_, String>(state);
+                }
+            }
+        })
+        .await
+        .expect("WSL2 terminal command completes within the test deadline")
+        .expect("read WSL2 terminal command output");
+
+        assert_eq!(result["exit_code"], 0, "WSL2 scope check failed: {result}");
+        assert!(
+            result["output"]
+                .as_str()
+                .is_some_and(|output| output.contains("wsl2-service-test-ok")),
+            "WSL2 terminal output did not contain the command marker: {result}"
+        );
+        manager
+            .stop_all()
+            .await
+            .expect("stop any remaining WSL2 terminal sessions");
+        drop(session);
+        drop(manager);
+        fs::remove_dir_all(base).expect("remove isolated WSL2 test directory");
+    }
+
+    fn wsl_path(path: &Path) -> String {
+        let output = Command::new("wsl.exe")
+            .args(["--exec", "wslpath", "-u"])
+            .arg(path)
+            .output()
+            .expect("convert the temporary Windows path to its WSL path");
+        assert!(
+            output.status.success(),
+            "wslpath failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        String::from_utf8(output.stdout)
+            .expect("wslpath output should be UTF-8")
+            .trim()
+            .to_owned()
     }
 }

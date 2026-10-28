@@ -7,6 +7,11 @@ use serde_json::Value;
 
 use crate::{
     chatgpt::{ChatGptService, TemporaryChatRequest},
+    conversation_limits::{
+        MAXIMUM_ATTACHMENT_FILE_COUNT, MAXIMUM_ATTACHMENT_IMAGE_COUNT,
+        MAXIMUM_ATTACHMENT_KIND_BYTES, MAXIMUM_ATTACHMENT_MIME_TYPE_BYTES,
+        MAXIMUM_ATTACHMENT_NAME_BYTES, MAXIMUM_ATTACHMENT_TOTAL_BYTES,
+    },
     openai_compatible,
     protocol::{EventSink, ServiceError},
     provider_credentials::{self, ProviderCredentials},
@@ -17,8 +22,6 @@ use super::{
     bounded_route_id, invalid_request_params, optional_string, required_string,
     take_optional_api_key,
 };
-
-const MAXIMUM_ATTACHMENT_MIME_TYPE_BYTES: usize = 128;
 
 /// Validates and sends one temporary conversation turn without persisting its transcript.
 pub(super) async fn dispatch(
@@ -139,7 +142,11 @@ fn parse_messages(
         }
         let raw_attachments = match value.get("attachments") {
             None => &[][..],
-            Some(Value::Array(attachments)) if attachments.len() <= 10 => attachments,
+            Some(Value::Array(attachments))
+                if attachments.len() <= MAXIMUM_ATTACHMENT_FILE_COUNT =>
+            {
+                attachments
+            }
             _ => return Err(invalid_request_params()),
         };
         if role != crate::provider_schema::MessageRole::User && !raw_attachments.is_empty() {
@@ -176,7 +183,7 @@ fn parse_messages(
             crate::attachments::validate_attachment(&metadata, &bytes)
                 .map_err(|_| invalid_request_params())?;
             total_attachment_bytes = total_attachment_bytes.saturating_add(bytes.len());
-            if total_attachment_bytes > crate::attachments::MAXIMUM_TOTAL_BYTES {
+            if total_attachment_bytes > MAXIMUM_ATTACHMENT_TOTAL_BYTES {
                 return Err(ServiceError::new(
                     "temporary_transcript_too_large",
                     "The temporary conversation attachments exceed their request limit.",
@@ -186,7 +193,7 @@ fn parse_messages(
             has_attachments = true;
             if metadata.kind == "image" {
                 image_count += 1;
-                if image_count > crate::attachments::MAXIMUM_IMAGE_COUNT {
+                if image_count > MAXIMUM_ATTACHMENT_IMAGE_COUNT {
                     return Err(invalid_request_params());
                 }
                 images.push(format!("data:{};base64,{}", metadata.mime_type, encoded));
@@ -225,10 +232,10 @@ fn parse_attachment_metadata(
     value: &Value,
 ) -> Result<crate::attachments::AttachmentMetadata, ServiceError> {
     let id = bounded_attachment_string(value, "id", 128)?;
-    let name = bounded_attachment_string(value, "name", 255 * 4)?;
+    let name = bounded_attachment_string(value, "name", MAXIMUM_ATTACHMENT_NAME_BYTES)?;
     let mime_type =
         bounded_attachment_string(value, "mimeType", MAXIMUM_ATTACHMENT_MIME_TYPE_BYTES)?;
-    let kind = bounded_attachment_string(value, "kind", 5)?;
+    let kind = bounded_attachment_string(value, "kind", MAXIMUM_ATTACHMENT_KIND_BYTES)?;
     let size_bytes = value
         .get("sizeBytes")
         .and_then(Value::as_u64)
@@ -380,7 +387,7 @@ mod tests {
     #[test]
     #[ignore = "manual comparison of cloned and bounded image metadata parsing"]
     fn benchmark_attachment_metadata_parsing() {
-        const IMAGE_BYTES: usize = crate::attachments::MAXIMUM_IMAGE_BYTES;
+        const IMAGE_BYTES: usize = crate::conversation_limits::MAXIMUM_ATTACHMENT_IMAGE_BYTES;
         let mut image = vec![0; IMAGE_BYTES];
         image[..8].copy_from_slice(b"\x89PNG\r\n\x1a\n");
         let encoded = STANDARD.encode(image);

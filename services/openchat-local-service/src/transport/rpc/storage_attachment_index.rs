@@ -14,20 +14,20 @@ use rusqlite::{OptionalExtension, params};
 use serde_json::{Value, json};
 
 use crate::{
+    conversation_limits::{
+        MAXIMUM_ATTACHMENT_FILE_COUNT as MAX_ATTACHMENT_COUNT,
+        MAXIMUM_ATTACHMENT_IMAGE_BYTES as MAX_IMAGE_BYTES,
+        MAXIMUM_ATTACHMENT_IMAGE_COUNT as MAX_IMAGE_COUNT, MAXIMUM_ATTACHMENT_KIND_BYTES,
+        MAXIMUM_ATTACHMENT_NAME_CHARS, MAXIMUM_ATTACHMENT_TEXT_BYTES as MAX_TEXT_BYTES,
+        MAXIMUM_ATTACHMENT_TOTAL_BYTES as MAX_ATTACHMENT_BYTES, MESSAGE_CONTENT_PREFIX,
+    },
     protocol::ServiceError,
     storage::{AppStorage, StorageConnection, sqlite_error_code},
 };
 
 const ATTACHMENT_TEXT_INDEX_SETTING: &str = "attachment_text_index.enabled";
 const ATTACHMENT_TEXT_INDEX_TRUNCATED_SETTING: &str = "attachment_text_index.truncated";
-const MESSAGE_CONTENT_PREFIX: &str = "\u{1e}openchat-attachments-v1:";
 const MAX_IDENTIFIER_BYTES: usize = 128;
-const MAX_ATTACHMENT_COUNT: usize = 10;
-const MAX_IMAGE_COUNT: usize = 3;
-const MAX_ATTACHMENT_BYTES: usize = 14 * 1024 * 1024;
-const MAX_IMAGE_BYTES: usize = 10 * 1024 * 1024;
-const MAX_TEXT_BYTES: usize = 1024 * 1024;
-const MAX_ATTACHMENT_NAME_CHARS: usize = 255;
 const MAXIMUM_ATTACHMENT_INDEX_FILES: usize = 5_000;
 const MAXIMUM_ATTACHMENT_INDEX_BYTES: usize = 100 * 1024 * 1024;
 const MAXIMUM_ATTACHMENT_INDEX_SCAN_MESSAGES: usize = 50_000;
@@ -426,8 +426,9 @@ fn validate_stored_attachment(
 fn validate_attachment_metadata(metadata: &AttachmentMetadata) -> Result<(), ServiceError> {
     if !is_safe_identifier(&metadata.id)
         || metadata.name.trim().is_empty()
-        || metadata.name.chars().count() > MAX_ATTACHMENT_NAME_CHARS
+        || metadata.name.chars().count() > MAXIMUM_ATTACHMENT_NAME_CHARS
         || metadata.name.chars().any(char::is_control)
+        || metadata.kind.len() > MAXIMUM_ATTACHMENT_KIND_BYTES
         || metadata.size_bytes == 0
     {
         return Err(storage_unavailable());

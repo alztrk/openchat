@@ -3,12 +3,15 @@ import {
   existsSync,
   lstatSync,
   mkdirSync,
+  readFileSync,
   readdirSync,
   realpathSync,
   rmSync,
   statSync,
 } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -79,7 +82,7 @@ function rustHostTargetTriple() {
   return match[1];
 }
 
-function buildLocalService(profile, locked) {
+function buildLocalService(profile, locked, features = []) {
   if (profile !== 'debug' && profile !== 'release') {
     throw new Error('The local-service build profile is invalid.');
   }
@@ -96,6 +99,7 @@ function buildLocalService(profile, locked) {
   ];
   if (profile === 'release') args.push('--release');
   if (locked) args.push('--locked');
+  if (features.length > 0) args.push('--features', features.join(','));
   runCommand('cargo', args);
 
   const extension = targetTriple.split('-').includes('windows') ? '.exe' : '';
@@ -127,11 +131,155 @@ function dev(args) {
   ensureNoArguments('dev', args);
   buildLocalService('debug', false);
 
+  ensureFrontendDependencies();
+  runNpm(['run', 'tauri:dev'], frontendDirectory);
+}
+
+function devTestProfile(args) {
+  if (args.length === 1 && (args[0] === '--help' || args[0] === '-h')) {
+    process.stdout.write(
+      'Usage: npm run openchat -- dev-test-profile [--profile-root <absolute-temp-path>]\n' +
+        'Creates a UUID-named OS temporary profile when --profile-root is omitted.\n',
+    );
+    return;
+  }
+
+  let profileRoot;
+  if (args.length === 0) {
+    profileRoot = path.join(tmpdir(), 'openchat-desktop-test-' + randomUUID());
+  } else if (
+    args.length === 2 &&
+    args[0] === '--profile-root' &&
+    path.isAbsolute(args[1])
+  ) {
+    profileRoot = path.normalize(args[1]);
+  } else {
+    throw new Error(
+      'Use --profile-root with an absolute path, or omit it to create an isolated temporary profile.',
+    );
+  }
+
+  buildLocalService('debug', false, ['desktop-profile-test-support']);
+  ensureFrontendDependencies();
+  process.stdout.write('Isolated desktop test profile: ' + profileRoot + '\n');
+  runNpm(
+    [
+      'run',
+      'tauri:dev',
+      '--',
+      '--features',
+      'desktop-profile-test-support',
+      '--',
+      '--',
+      '--desktop-test-profile-root',
+      profileRoot,
+    ],
+    frontendDirectory,
+  );
+}
+
+function startupBenchmark(args) {
+  if (args.length === 1 && (args[0] === '--help' || args[0] === '-h')) {
+    process.stdout.write('Usage: npm run openchat -- startup-benchmark\n');
+    return;
+  }
+  ensureNoArguments('startup-benchmark', args);
+
+  const profileRoot = path.join(tmpdir(), 'openchat-desktop-test-' + randomUUID());
+  const resultPath = path.join(profileRoot, 'result.json');
+  let benchmarkError;
+
+  try {
+    buildLocalService('debug', false, ['desktop-profile-test-support']);
+    ensureFrontendDependencies();
+    runNpm(
+      [
+        'run',
+        'tauri:dev',
+        '--',
+        '--features',
+        'startup-benchmark',
+        '--',
+        '--',
+        '--startup-benchmark-root',
+        profileRoot,
+      ],
+      frontendDirectory,
+    );
+
+    const result = JSON.parse(readFileSync(resultPath, 'utf8'));
+    const elapsedMs = result?.processToReactReadyMs;
+    const renderedRootClass = result?.performanceSnapshot?.renderedRootClass;
+    if (
+      typeof elapsedMs !== 'number' ||
+      !Number.isFinite(elapsedMs) ||
+      elapsedMs <= 0 ||
+      typeof renderedRootClass !== 'string' ||
+      !renderedRootClass.split(/\s+/u).includes('app-shell') ||
+      renderedRootClass.includes('startup-error-page')
+    ) {
+      throw new Error('The desktop did not reach the OpenChat application shell.');
+    }
+
+    const databasePath = path.join(profileRoot, 'storage', 'db', 'openchat.sqlite3');
+    if (!existsSync(databasePath)) {
+      throw new Error('The benchmark profile did not create the active database.');
+    }
+    const databaseHeader = readFileSync(databasePath).subarray(0, 16);
+    if (
+      databaseHeader.length !== 16 ||
+      databaseHeader.equals(Buffer.from('SQLite format 3\0', 'ascii'))
+    ) {
+      throw new Error('The benchmark profile database is missing or plaintext SQLite.');
+    }
+
+    process.stdout.write(
+      'Debug startup to React ready: ' + elapsedMs.toFixed(1) + ' ms; app shell and encrypted database verified.\n',
+    );
+  } catch (error) {
+    benchmarkError = error;
+  }
+
+  try {
+    removeStartupBenchmarkProfile(profileRoot);
+  } catch (cleanupError) {
+    if (benchmarkError) {
+      throw new AggregateError([benchmarkError, cleanupError], 'Startup benchmark and cleanup failed.');
+    }
+    throw cleanupError;
+  }
+
+  if (benchmarkError) throw benchmarkError;
+}
+
+function removeStartupBenchmarkProfile(profileRoot) {
+  if (!existsSync(profileRoot)) return;
+
+  const temporaryRoot = realpathSync(tmpdir());
+  const metadata = lstatSync(profileRoot);
+  if (!metadata.isDirectory() || metadata.isSymbolicLink()) {
+    throw new Error('Refusing to remove an invalid startup benchmark profile.');
+  }
+
+  const canonicalProfileRoot = realpathSync(profileRoot);
+  const profileName = path.basename(profileRoot);
+  if (
+    path.dirname(canonicalProfileRoot) !== temporaryRoot ||
+    path.basename(canonicalProfileRoot) !== profileName ||
+    !/^openchat-desktop-test-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u.test(
+      profileName,
+    )
+  ) {
+    throw new Error('Refusing to remove a profile outside the startup benchmark temporary scope.');
+  }
+
+  rmSync(canonicalProfileRoot, { recursive: true });
+}
+
+function ensureFrontendDependencies() {
   if (!existsSync(path.join(frontendDirectory, 'node_modules'))) {
     runNpm(['ci'], frontendDirectory);
   }
-
-  runNpm(['run', 'tauri:dev'], frontendDirectory);
 }
 
 function build(args) {
@@ -388,7 +536,7 @@ function maintainTarget(args) {
 
 function printHelp() {
   process.stdout.write(
-    'Usage: npm run openchat -- <dev|build|check|clean|maintain-target> [options]\n' +
+    'Usage: npm run openchat -- <dev|dev-test-profile|startup-benchmark|build|check|clean|maintain-target> [options]\n' +
       'Run from apps/desktop/frontend. Use --help after a task for its options.\n',
   );
 }
@@ -402,6 +550,8 @@ function main() {
 
   const tasks = {
     dev,
+    'dev-test-profile': devTestProfile,
+    'startup-benchmark': startupBenchmark,
     build,
     check,
     clean,

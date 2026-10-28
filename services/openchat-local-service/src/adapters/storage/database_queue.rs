@@ -11,7 +11,7 @@ use std::{
 
 use rusqlite::{Connection, ffi};
 
-use super::connection::StorageConnection;
+use super::{connection::StorageConnection, database_key::DatabaseKey};
 
 #[cfg(windows)]
 use super::broker_connection::BrokerConnection;
@@ -42,6 +42,7 @@ pub(super) struct DatabaseQueue {
     state: Mutex<QueueState>,
     ready: Condvar,
     connection: Mutex<Connection>,
+    key: Arc<DatabaseKey>,
 }
 
 /// A database connection lease that owns its FIFO queue slot until dropped.
@@ -58,7 +59,7 @@ struct DatabaseQueueLease<'a> {
 }
 
 impl DatabaseQueue {
-    fn new(connection: Connection) -> Self {
+    fn new(connection: Connection, key: Arc<DatabaseKey>) -> Self {
         Self {
             state: Mutex::new(QueueState {
                 next_ticket: 0,
@@ -68,6 +69,7 @@ impl DatabaseQueue {
             }),
             ready: Condvar::new(),
             connection: Mutex::new(connection),
+            key,
         }
     }
 
@@ -154,10 +156,10 @@ impl DatabaseQueue {
 }
 
 impl DatabaseQueueHandle {
-    pub(crate) fn new(connection: Connection) -> Self {
+    pub(crate) fn new(connection: Connection, key: Arc<DatabaseKey>) -> Self {
         Self {
             backend: Arc::new(DatabaseQueueBackend::Local(Arc::new(DatabaseQueue::new(
-                connection,
+                connection, key,
             )))),
         }
     }
@@ -171,7 +173,9 @@ impl DatabaseQueueHandle {
 
     pub(crate) fn connect(&self) -> rusqlite::Result<StorageConnection<'_>> {
         match self.backend.as_ref() {
-            DatabaseQueueBackend::Local(queue) => queue.connect().map(StorageConnection::local),
+            DatabaseQueueBackend::Local(queue) => queue
+                .connect()
+                .map(|connection| StorageConnection::local(connection, &queue.key)),
             #[cfg(windows)]
             DatabaseQueueBackend::Remote => {
                 BrokerConnection::connect().map(StorageConnection::remote)
@@ -272,4 +276,65 @@ fn queue_wait_timed_out_error() -> rusqlite::Error {
         ffi::Error::new(ffi::SQLITE_BUSY),
         Some("database operation queue wait timed out".to_owned()),
     )
+}
+
+#[cfg(test)]
+mod benchmark_tests {
+    use std::{
+        sync::{Arc, Barrier},
+        thread,
+        time::{Duration, Instant},
+    };
+
+    use rusqlite::Connection;
+
+    use super::super::database_key::DatabaseKey;
+    use super::DatabaseQueueHandle;
+
+    #[test]
+    #[ignore = "manual local database queue contention benchmark"]
+    fn benchmark_concurrent_local_database_queue_wait() {
+        let key = Arc::new(DatabaseKey::isolated_test_key());
+        let connection = Connection::open_in_memory().expect("open in-memory benchmark database");
+        key.apply(&connection).expect("key benchmark database");
+        let queue = DatabaseQueueHandle::new(connection, key);
+        let worker_count = 12;
+        let barrier = Arc::new(Barrier::new(worker_count + 1));
+        let active_lease = queue
+            .connect_local()
+            .expect("hold the database queue before workers start");
+        let workers = (0..worker_count)
+            .map(|_| {
+                let queue = queue.clone();
+                let barrier = Arc::clone(&barrier);
+                thread::spawn(move || {
+                    barrier.wait();
+                    let started = Instant::now();
+                    let connection = queue
+                        .connect_local()
+                        .expect("acquire a queued benchmark connection");
+                    let wait = started.elapsed();
+                    thread::sleep(Duration::from_millis(2));
+                    drop(connection);
+                    wait
+                })
+            })
+            .collect::<Vec<_>>();
+
+        barrier.wait();
+        thread::sleep(Duration::from_millis(10));
+        drop(active_lease);
+        let mut waits = workers
+            .into_iter()
+            .map(|worker| worker.join().expect("queue benchmark worker completes"))
+            .collect::<Vec<_>>();
+        waits.sort_unstable();
+
+        eprintln!(
+            "local_database_queue workers={worker_count} hold_ms=2 p50_ms={:.3} p95_ms={:.3} max_ms={:.3}",
+            waits[(waits.len() - 1) * 50 / 100].as_secs_f64() * 1000.0,
+            waits[(waits.len() - 1) * 95 / 100].as_secs_f64() * 1000.0,
+            waits.last().map_or(0.0, |wait| wait.as_secs_f64() * 1000.0),
+        );
+    }
 }

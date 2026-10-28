@@ -450,14 +450,17 @@ pub(crate) fn to_json(model: &RegisteredModel, available: bool) -> Result<Value,
             metadata.is_dir()
         }
     });
-    let context_window = if model.path_kind == "file" {
-        super::gguf::context_window(&model.path)
-            .ok()
-            .flatten()
-            .map_or(Value::Null, |context_window| json!(context_window))
+    let gguf_metadata = if path_exists && model.path_kind == "file" {
+        super::gguf::inspect(&model.path).ok().flatten()
     } else {
-        Value::Null
+        None
     };
+    let context_window = gguf_metadata
+        .and_then(|metadata| metadata.context_window)
+        .map_or(Value::Null, |context_window| json!(context_window));
+    let estimated_memory_bytes = gguf_metadata
+        .and_then(|metadata| metadata.estimated_memory_bytes)
+        .map_or(Value::Null, |bytes| json!(bytes));
     let supports_images =
         path_exists && model.path_kind == "file" && vision_projector_path(&model.path)?.is_some();
     Ok(json!({
@@ -466,6 +469,7 @@ pub(crate) fn to_json(model: &RegisteredModel, available: bool) -> Result<Value,
         "displayName": model.display_name,
         "description": Value::Null,
         "contextWindow": context_window,
+        "estimatedMemoryBytes": estimated_memory_bytes,
         "reasoningLevels": [],
         "supportsReasoning": false,
         "supportsImages": supports_images,

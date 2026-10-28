@@ -28,17 +28,21 @@ pub(super) async fn dispatch(
     match method {
         "project.tool_permissions.get" => {
             let project_id = required_string(params, "projectId")?;
+            let native_confirmed = tool_permissions::native_confirmation(params)?;
             let rules = tool_permissions::get_project_rules(
                 storage,
                 project_id,
                 params.get("initialRules"),
+                native_confirmed,
             )?;
             Ok(json!({"rules": tool_permissions::rules_to_value(&rules)}))
         }
         "project.tool_permissions.set" => {
             let project_id = required_string(params, "projectId")?;
             let rules = params.get("rules").ok_or_else(invalid_request_params)?;
-            let rules = tool_permissions::save_project_rules(storage, project_id, rules)?;
+            let native_confirmed = tool_permissions::native_confirmation(params)?;
+            let rules =
+                tool_permissions::save_project_rules(storage, project_id, rules, native_confirmed)?;
             Ok(json!({"rules": tool_permissions::rules_to_value(&rules)}))
         }
         "project.worktrees.list" => {
@@ -270,6 +274,8 @@ pub(super) async fn dispatch(
                 tool_permissions::load_mode(&connection)?
             };
             let server_id = config.id.clone();
+            let server_permission_rule_name =
+                tools::mcp::server_permission_rule_name(&server_id, &config.permission_fingerprint);
             let registry = tools::mcp::McpRegistry::connect(
                 vec![config],
                 permission_mode == tools::ToolPermissionMode::FullAccess,
@@ -288,10 +294,22 @@ pub(super) async fn dispatch(
                 .as_ref()
                 .map(|registry| registry.tool_names_for_server(&server_id))
                 .unwrap_or_default();
+            let tool_permission_bindings = registry
+                .as_ref()
+                .map(|registry| registry.permission_bindings_for_server(&server_id))
+                .unwrap_or_default();
             Ok(json!({
                 "status": "connected",
                 "toolCount": tool_names.len(),
-                "toolNames": tool_names
+                "toolNames": tool_names,
+                "serverPermissionRuleName": server_permission_rule_name,
+                "toolPermissionBindings": tool_permission_bindings
+                    .iter()
+                    .map(|(name, permission_rule_name)| json!({
+                        "name": name,
+                        "permissionRuleName": permission_rule_name
+                    }))
+                    .collect::<Vec<_>>()
             }))
         }
         "project.mcp.credential.set" => {
@@ -703,7 +721,7 @@ fn mcp_credential_error(error: crate::credentials::CredentialStoreError) -> Serv
         ),
         _ => ServiceError::new(
             "mcp_credential_storage_unavailable",
-            "The MCP credential could not be accessed in Windows Credential Manager.",
+            "The MCP credential could not be accessed in protected storage.",
             true,
         ),
     }

@@ -195,7 +195,6 @@ impl PricingCatalog {
                     }
                 }
                 insert_batch(&mut price_rows, &mut encoded_bytes)?;
-                drop(insert_batch);
             }
             transaction.execute(
                 "INSERT INTO models_dev_prices_catalog (cache_id, fetched_at_unix_ms)
@@ -680,9 +679,9 @@ fn load_cached_catalog(storage: &AppStorage) -> Result<Option<(i64, String)>, Se
         .map_err(|_| storage_error())
 }
 
-fn load_cached_pricing(
-    storage: &AppStorage,
-) -> Result<Option<(i64, Arc<Vec<ModelRates>>, Arc<str>)>, ServiceError> {
+type CachedPricing = (i64, Arc<Vec<ModelRates>>, Arc<str>);
+
+fn load_cached_pricing(storage: &AppStorage) -> Result<Option<CachedPricing>, ServiceError> {
     let fetched_at_unix_ms = storage
         .connect()
         .map_err(|_| storage_error())?

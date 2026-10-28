@@ -9,8 +9,9 @@ use std::{
     time::{Duration, Instant},
 };
 
+use windows_sys::Wdk::Storage::FileSystem::NtSetSecurityObject;
 use windows_sys::Win32::{
-    Foundation::{ERROR_SUCCESS, HANDLE, LocalFree},
+    Foundation::{ERROR_SUCCESS, HANDLE, LocalFree, RtlNtStatusToDosError},
     Security::{
         ACL,
         Authorization::{
@@ -18,9 +19,11 @@ use windows_sys::Win32::{
             SE_WINDOW_OBJECT, SET_ACCESS, SetEntriesInAclW, SetSecurityInfo, TRUSTEE_IS_SID,
             TRUSTEE_IS_UNKNOWN, TRUSTEE_IS_USER, TRUSTEE_W,
         },
-        CONTAINER_INHERIT_ACE, DACL_SECURITY_INFORMATION, InitializeSecurityDescriptor,
-        NO_INHERITANCE, OBJECT_INHERIT_ACE, PSECURITY_DESCRIPTOR, PSID, SECURITY_DESCRIPTOR,
-        SetFileSecurityW, SetSecurityDescriptorDacl,
+        CONTAINER_INHERIT_ACE, DACL_SECURITY_INFORMATION, GetSecurityDescriptorControl,
+        InitializeSecurityDescriptor, NO_INHERITANCE, OBJECT_INHERIT_ACE, PSECURITY_DESCRIPTOR,
+        PSID, SE_DACL_AUTO_INHERIT_REQ, SE_DACL_AUTO_INHERITED, SE_DACL_DEFAULTED,
+        SE_DACL_PROTECTED, SECURITY_DESCRIPTOR, SetSecurityDescriptorControl,
+        SetSecurityDescriptorDacl,
     },
     Storage::FileSystem::{
         BY_HANDLE_FILE_INFORMATION, DELETE, FILE_ADD_FILE, FILE_ADD_SUBDIRECTORY,
@@ -38,7 +41,7 @@ use windows_sys::Win32::{
     },
 };
 
-use super::types::{last_os_error, wide};
+use super::types::last_os_error;
 
 /// Caps the number of file-system paths scheduled for one AppContainer ACL traversal.
 pub(crate) const MAX_ACL_ENTRIES: usize = 20_000;
@@ -275,19 +278,40 @@ pub(crate) fn update_app_container_acl(
     let _system_guard = AppContainerAclLock::acquire()?;
     let use_maximum_allowed_for_target = allow && inheritance != 0;
     let (path_handles, information) = lock_acl_path(path, use_maximum_allowed_for_target)?;
+    let is_directory = information.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY != 0;
     let file = path_handles
         .last()
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "The ACL path is empty."))?;
-    let is_directory = information.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY != 0;
     if allow && !is_directory && information.nNumberOfLinks > 1 {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
             "A sandbox path contains a hard-linked file.",
         ));
     }
-    // File and directory ACLs are updated through their inspected handles to avoid resolving a
-    // potentially redirected path again. MAXIMUM_ALLOWED is used when an inheritable grant must
-    // avoid changing existing children.
+    // ACL updates use the inspected object handle. Inheritable directory grants use
+    // MAXIMUM_ALLOWED with SetSecurityInfo to suppress documented propagation. Non-inheriting
+    // directory updates use NtSetSecurityObject; Windows regressions verify unchanged child DACLs.
+    update_acl_handle(
+        file,
+        sid,
+        allow,
+        permissions,
+        inheritance,
+        is_directory,
+        use_maximum_allowed_for_target,
+    )
+}
+
+/// Updates an inspected securable object through its existing handle.
+pub(super) fn update_acl_handle(
+    file: &fs::File,
+    sid: PSID,
+    allow: bool,
+    permissions: u32,
+    inheritance: u32,
+    is_directory: bool,
+    use_maximum_allowed_for_target: bool,
+) -> io::Result<()> {
     let mut current_dacl = null_mut();
     let mut source_descriptor = null_mut();
     // SAFETY: `file` owns the live target handle and every requested output pointer is writable.
@@ -307,12 +331,28 @@ pub(crate) fn update_app_container_acl(
         return Err(io::Error::from_raw_os_error(status as i32));
     }
     if current_dacl.is_null() {
-        // SAFETY: The security descriptor pointer was returned by GetSecurityInfo; LocalFree accepts null.
+        // SAFETY: The descriptor pointer was returned by GetSecurityInfo; LocalFree accepts null.
         unsafe { LocalFree(source_descriptor) };
         return Err(io::Error::new(
             io::ErrorKind::PermissionDenied,
             "A null or absent DACL cannot be safely scoped to an AppContainer.",
         ));
+    }
+    let mut original_control = 0;
+    let mut descriptor_revision = 0;
+    // SAFETY: `source_descriptor` is the descriptor returned by the successful GetSecurityInfo call.
+    if unsafe {
+        GetSecurityDescriptorControl(
+            source_descriptor,
+            &mut original_control,
+            &mut descriptor_revision,
+        )
+    } == 0
+    {
+        let error = last_os_error();
+        // SAFETY: The descriptor was allocated by GetSecurityInfo and has not yet been freed.
+        unsafe { LocalFree(source_descriptor) };
+        return Err(error);
     }
     let access = EXPLICIT_ACCESS_W {
         grfAccessPermissions: permissions,
@@ -337,25 +377,65 @@ pub(crate) fn update_app_container_acl(
     // SAFETY: The descriptor was allocated by GetSecurityInfo and has not yet been freed.
     unsafe { LocalFree(source_descriptor) };
     let updated_dacl = require_non_null_acl(updated_dacl)?;
-    let mut descriptor_storage = std::mem::MaybeUninit::<SECURITY_DESCRIPTOR>::uninit();
-    let descriptor = descriptor_storage.as_mut_ptr();
-    // SAFETY: `descriptor` points to writable storage large enough for a SECURITY_DESCRIPTOR.
-    let initialized = unsafe { InitializeSecurityDescriptor(descriptor.cast(), 1) };
-    let dacl_attached = if initialized != 0 {
-        // SAFETY: Initialization succeeded and `updated_dacl` is a valid API-produced ACL.
-        (unsafe { SetSecurityDescriptorDacl(descriptor.cast(), 1, updated_dacl.as_ptr(), 0) }) != 0
+    let set_result = if is_directory && !use_maximum_allowed_for_target {
+        let mut descriptor_storage = std::mem::MaybeUninit::<SECURITY_DESCRIPTOR>::uninit();
+        let descriptor = descriptor_storage.as_mut_ptr();
+        // SAFETY: `descriptor` points to writable storage large enough for a SECURITY_DESCRIPTOR.
+        let initialized = unsafe { InitializeSecurityDescriptor(descriptor.cast(), 1) };
+        let dacl_attached = if initialized != 0 {
+            // SAFETY: Initialization succeeded and `updated_dacl` is a valid API-produced ACL.
+            (unsafe {
+                SetSecurityDescriptorDacl(
+                    descriptor.cast(),
+                    1,
+                    updated_dacl.as_ptr(),
+                    i32::from(original_control & SE_DACL_DEFAULTED != 0),
+                )
+            }) != 0
+        } else {
+            false
+        };
+        let inheritance_control_mask =
+            SE_DACL_AUTO_INHERIT_REQ | SE_DACL_AUTO_INHERITED | SE_DACL_PROTECTED;
+        // This operation is intentionally non-inheriting: retaining the request bit could ask a
+        // filesystem provider to propagate the changed DACL to existing children.
+        let inheritance_control_value = noninheriting_directory_control_value(original_control);
+        let inheritance_control_restored = if initialized != 0 && dacl_attached {
+            // SAFETY: `descriptor` is initialized and the mask contains only control bits supported
+            // by SetSecurityDescriptorControl.
+            (unsafe {
+                SetSecurityDescriptorControl(
+                    descriptor.cast(),
+                    inheritance_control_mask,
+                    inheritance_control_value,
+                )
+            }) != 0
+        } else {
+            false
+        };
+        if initialized == 0 || !dacl_attached || !inheritance_control_restored {
+            Err(last_os_error())
+        } else {
+            // SAFETY: `file` is the inspected target handle and `descriptor` remains valid for the
+            // call. NtSetSecurityObject requires WRITE_DAC, which the path was opened with.
+            let status = unsafe {
+                NtSetSecurityObject(
+                    file.as_raw_handle() as HANDLE,
+                    DACL_SECURITY_INFORMATION,
+                    descriptor.cast(),
+                )
+            };
+            if status == 0 {
+                Ok(())
+            } else {
+                // SAFETY: The native ACL update returned this NTSTATUS value.
+                let error = unsafe { RtlNtStatusToDosError(status) };
+                Err(io::Error::from_raw_os_error(error as i32))
+            }
+        }
     } else {
-        false
-    };
-    if initialized == 0 || !dacl_attached {
-        let error = last_os_error();
-        // SAFETY: `updated_dacl` was allocated by SetEntriesInAclW and is still owned here.
-        unsafe { LocalFree(updated_dacl.as_ptr().cast()) };
-        return Err(error);
-    }
-    let set_result = if !is_directory || use_maximum_allowed_for_target {
         // SAFETY: `file` owns the live target handle and `updated_dacl` is a valid API-produced ACL.
-        // MAXIMUM_ALLOWED suppresses propagation to existing children.
+        // MAXIMUM_ALLOWED suppresses propagation to existing children for inheritable grants.
         let status = unsafe {
             SetSecurityInfo(
                 file.as_raw_handle() as HANDLE,
@@ -372,33 +452,20 @@ pub(crate) fn update_app_container_acl(
         } else {
             Err(io::Error::from_raw_os_error(status as i32))
         }
-    } else {
-        let path_wide = wide(path.as_os_str());
-        // Open path handles disallow delete sharing, which pins name resolution through the write.
-        // SetFileSecurityW preserves the existing nonrecursive ACL update behavior.
-        // SAFETY: `path_wide` is NUL-terminated and `descriptor` references the live ACL.
-        let success = unsafe {
-            SetFileSecurityW(
-                path_wide.as_ptr(),
-                DACL_SECURITY_INFORMATION,
-                descriptor.cast(),
-            )
-        };
-        if success != 0 {
-            Ok(())
-        } else {
-            Err(last_os_error())
-        }
     };
     // SAFETY: `updated_dacl` was allocated by SetEntriesInAclW and has no remaining users.
     unsafe { LocalFree(updated_dacl.as_ptr().cast()) };
     set_result
 }
 
+pub(super) fn noninheriting_directory_control_value(original_control: u16) -> u16 {
+    original_control & (SE_DACL_AUTO_INHERITED | SE_DACL_PROTECTED)
+}
+
 /// Converts a successful ACL API result into a non-null pointer before applying it.
 ///
-/// A null pointer supplied to `SetSecurityDescriptorDacl` represents a null DACL and grants
-/// unrestricted access, so the sandbox must reject it instead of treating it as an empty ACL.
+/// A null ACL would grant unrestricted access when applied, so the sandbox rejects it instead of
+/// treating it as an empty ACL.
 pub(crate) fn require_non_null_acl(acl: *mut ACL) -> io::Result<NonNull<ACL>> {
     NonNull::new(acl).ok_or_else(|| {
         io::Error::new(
@@ -484,10 +551,11 @@ impl AppContainerAclLock {
     }
 }
 
-/// Opens and pins each component of one canonical ACL path without following reparse points.
+/// Opens each component of one canonical ACL path without following reparse points.
 ///
-/// Keeping the chain open without delete sharing stabilizes name resolution until the ACL write
-/// completes. Each opened handle is checked against its canonical component to reject redirection.
+/// Each opened handle is checked against its canonical component to reject redirection while the
+/// path is prepared. Retaining handles preserves the inspected objects, but does not prevent a
+/// process with delete-child access to a parent directory from renaming a directory entry.
 pub(crate) fn lock_acl_path(
     path: &Path,
     use_maximum_allowed_for_target: bool,
@@ -525,54 +593,11 @@ pub(crate) fn lock_acl_path(
             .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE)
             .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS);
         let file = options.open(component)?;
-        let mut information = BY_HANDLE_FILE_INFORMATION::default();
-        // SAFETY: `file` owns a live file handle and `information` is a writable output structure.
-        if unsafe { GetFileInformationByHandle(file.as_raw_handle() as HANDLE, &mut information) }
-            == 0
-        {
-            return Err(last_os_error());
-        }
-        if information.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "A sandbox path cannot contain a reparse point.",
-            ));
-        }
+        let information = verify_acl_handle_path(&file, component)?;
         if !is_target && information.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY == 0 {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 "A sandbox path ancestor is not a directory.",
-            ));
-        }
-
-        let mut final_path = vec![0u16; 32_768];
-        // SAFETY: `file` is live and `final_path` is writable for its declared capacity.
-        let final_path_length = unsafe {
-            GetFinalPathNameByHandleW(
-                file.as_raw_handle() as HANDLE,
-                final_path.as_mut_ptr(),
-                final_path.len() as u32,
-                FILE_NAME_NORMALIZED | VOLUME_NAME_DOS,
-            )
-        };
-        if final_path_length == 0 {
-            return Err(last_os_error());
-        }
-        if final_path_length as usize >= final_path.len() {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "A sandbox path exceeds the Windows path limit.",
-            ));
-        }
-        final_path.truncate(final_path_length as usize);
-        if !component
-            .as_os_str()
-            .encode_wide()
-            .eq(final_path.iter().copied())
-        {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "A sandbox path changed while its ACL was being prepared.",
             ));
         }
 
@@ -581,4 +606,50 @@ pub(crate) fn lock_acl_path(
     }
 
     Ok((handles, target_information))
+}
+
+fn verify_acl_handle_path(file: &fs::File, path: &Path) -> io::Result<BY_HANDLE_FILE_INFORMATION> {
+    let mut information = BY_HANDLE_FILE_INFORMATION::default();
+    // SAFETY: `file` owns a live target handle and `information` is a writable output structure.
+    if unsafe { GetFileInformationByHandle(file.as_raw_handle() as HANDLE, &mut information) } == 0
+    {
+        return Err(last_os_error());
+    }
+    if information.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "A sandbox path cannot contain a reparse point.",
+        ));
+    }
+    let mut final_path = vec![0u16; 32_768];
+    // SAFETY: `file` is live and `final_path` is writable for its declared capacity.
+    let final_path_length = unsafe {
+        GetFinalPathNameByHandleW(
+            file.as_raw_handle() as HANDLE,
+            final_path.as_mut_ptr(),
+            final_path.len() as u32,
+            FILE_NAME_NORMALIZED | VOLUME_NAME_DOS,
+        )
+    };
+    if final_path_length == 0 {
+        return Err(last_os_error());
+    }
+    if final_path_length as usize >= final_path.len() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "A sandbox path exceeds the Windows path limit.",
+        ));
+    }
+    final_path.truncate(final_path_length as usize);
+    if !path
+        .as_os_str()
+        .encode_wide()
+        .eq(final_path.iter().copied())
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "A sandbox path changed while its ACL was being prepared.",
+        ));
+    }
+    Ok(information)
 }

@@ -3,6 +3,7 @@
 use std::{
     borrow::Cow,
     collections::HashMap,
+    path::PathBuf,
     sync::{
         atomic::{AtomicBool, Ordering},
         mpsc::SyncSender,
@@ -38,6 +39,7 @@ pub(crate) struct LocalServiceState {
     pub(crate) permissions: Arc<Mutex<PendingPermissionState>>,
     pub(crate) native_responses: Arc<Mutex<HashMap<String, NativeResponseWaiter>>>,
     pub(crate) permission_policy_confirmation_active: AtomicBool,
+    pub(crate) storage_root_override: Option<PathBuf>,
 }
 
 /// Routes a private native-host request response without forwarding it to the renderer.
@@ -212,6 +214,8 @@ pub(crate) struct RendererRpcPermissionModeParams<'a> {
     pub(crate) mode: Option<Cow<'a, str>>,
     #[serde(borrow, rename = "initialMode")]
     pub(crate) initial_mode: Option<Cow<'a, str>>,
+    #[serde(rename = "nativeConfirmation")]
+    pub(crate) native_confirmation: Option<bool>,
 }
 
 /// Reads project permission fields while borrowing their bounded JSON strings.
@@ -232,6 +236,8 @@ pub(crate) struct RendererRpcProjectPermissionParams<'a> {
     pub(crate) rules: Option<HashMap<&'a str, &'a str>>,
     #[serde(borrow, rename = "initialRules")]
     pub(crate) initial_rules: Option<HashMap<&'a str, &'a str>>,
+    #[serde(rename = "nativeConfirmation")]
+    pub(crate) native_confirmation: Option<bool>,
 }
 
 /// Identifies whether forwarding a renderer RPC needs a native confirmation.
@@ -239,6 +245,13 @@ pub(crate) struct RendererRpcProjectPermissionParams<'a> {
 pub(crate) enum RendererRpcDisposition {
     Forward,
     Confirm(PermissionDetails),
+    CheckLegacyGlobal {
+        imported_full_access: bool,
+    },
+    CheckLegacyProject {
+        project_id: String,
+        import_confirmation: Option<PermissionDetails>,
+    },
 }
 
 /// Releases the single-flight guard even if an OS dialog future is cancelled.
@@ -271,6 +284,14 @@ pub(crate) enum LocalServiceEvent {
 
 /// Manages the runtime process and generation state of the local service.
 impl LocalServiceState {
+    /// Creates a service state whose database lives under an isolated local profile.
+    pub(crate) fn with_storage_root(storage_root: PathBuf) -> Self {
+        Self {
+            storage_root_override: Some(storage_root),
+            ..Self::default()
+        }
+    }
+
     /// Stops the owned process during application shutdown.
     pub(crate) fn stop(&self) -> Result<(), String> {
         let child = self

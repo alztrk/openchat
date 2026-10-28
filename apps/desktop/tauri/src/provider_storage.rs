@@ -26,25 +26,6 @@ const MAXIMUM_PROVIDER_NAME_BYTES: usize = 320;
 const MAXIMUM_PROVIDER_URL_BYTES: usize = 2048;
 const MAXIMUM_PROVIDER_PROTOCOL_BYTES: usize = 16;
 const MAXIMUM_REASONING_EFFORTS_BYTES: usize = 1100;
-const MAXIMUM_DIALOG_COPY_FIELD_BYTES: usize = 1024;
-const COMPATIBLE_PROVIDER_IDS: [&str; 16] = [
-    "gemini",
-    "groq",
-    "cerebras",
-    "openrouter",
-    "mistral",
-    "deepseek",
-    "xai",
-    "perplexity",
-    "together",
-    "sambanova",
-    "anthropic",
-    "fireworks",
-    "deepinfra",
-    "dashscope",
-    "cohere",
-    "kilo",
-];
 static HTTP_PROVIDER_CONFIRMATION_ACTIVE: AtomicBool = AtomicBool::new(false);
 
 #[derive(Debug, Serialize)]
@@ -96,6 +77,13 @@ impl ProviderStorageError {
         Self {
             code: "custom_provider_http_approval_denied",
             message: "The unencrypted HTTP provider was not saved because approval was denied.",
+        }
+    }
+
+    fn http_loopback_required() -> Self {
+        Self {
+            code: "custom_provider_http_loopback_required",
+            message: "Use HTTPS for remote providers. Unencrypted HTTP is available only for localhost or loopback IP addresses.",
         }
     }
 
@@ -157,9 +145,12 @@ pub struct CustomProviderConfig {
     pub base_url: String,
     /// Supported request protocol, currently `openAi` or `anthropic`.
     pub protocol: String,
-    /// Explicit user approval for sending provider requests over unencrypted HTTP.
+    /// User-selected permission to use this endpoint over unencrypted HTTP.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub allow_insecure_http: Option<bool>,
+    /// Native-host provenance for an HTTP approval stored by this application.
+    #[serde(default)]
+    pub native_http_confirmed: bool,
     /// Reasoning effort values supported by this provider's models.
     #[serde(default)]
     pub reasoning_efforts: Vec<String>,
@@ -187,35 +178,39 @@ pub(crate) struct SaveCustomProviderInput {
     #[serde(default)]
     enable_thinking: bool,
     api_key: Option<BoundedText<MAXIMUM_KEY_BYTES>>,
-    dialog_copy: HttpProviderDialogCopy,
+    dialog_locale: crate::local_service::dialogs::NativeDialogLocale,
 }
 
-fn deserialize_dialog_copy_text<'de, D>(deserializer: D) -> Result<String, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    crate::request_bounds::deserialize_bounded_text::<D, MAXIMUM_DIALOG_COPY_FIELD_BYTES>(
-        deserializer,
-    )
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields, rename_all = "camelCase")]
-/// Localized copy resolved by the renderer for the native HTTP security confirmation.
+#[derive(Debug)]
+/// Copy loaded by the native host for the native HTTP security confirmation.
 struct HttpProviderDialogCopy {
-    #[serde(deserialize_with = "deserialize_dialog_copy_text")]
     title: String,
-    #[serde(deserialize_with = "deserialize_dialog_copy_text")]
     intro: String,
-    #[serde(deserialize_with = "deserialize_dialog_copy_text")]
     warning: String,
-    #[serde(deserialize_with = "deserialize_dialog_copy_text")]
     allow: String,
-    #[serde(deserialize_with = "deserialize_dialog_copy_text")]
     cancel: String,
 }
 
 impl HttpProviderDialogCopy {
+    fn for_locale(
+        locale: crate::local_service::dialogs::NativeDialogLocale,
+    ) -> Result<Self, ProviderStorageError> {
+        let message = |key| {
+            locale
+                .message(key)
+                .map_err(|_| ProviderStorageError::invalid())
+        };
+        let copy = Self {
+            title: message("nativeProviderHttpTitle")?,
+            intro: message("nativeProviderHttpIntro")?,
+            warning: message("nativeProviderHttpWarning")?,
+            allow: message("nativeProviderHttpAllow")?,
+            cancel: message("nativeProviderHttpCancel")?,
+        };
+        copy.validate()?;
+        Ok(copy)
+    }
+
     fn validate(&self) -> Result<(), ProviderStorageError> {
         let fields = [
             &self.title,
@@ -289,12 +284,11 @@ pub async fn load_provider_credential_status(
         .collect::<Vec<_>>();
     chatgpt_api_keys.sort_by(|left, right| left.id.cmp(&right.id));
 
-    let compatible_providers = COMPATIBLE_PROVIDER_IDS
-        .iter()
+    let compatible_providers = openchat_local_service::provider_ids::compatible_provider_ids()
         .map(|provider_id| {
             let value = values.get(&format!("{COMPATIBLE_KEY_PREFIX}{provider_id}"));
             CompatibleProviderSummary {
-                provider_id: (*provider_id).to_owned(),
+                provider_id: provider_id.to_owned(),
                 is_configured: value.is_some_and(|value| !value.trim().is_empty()),
                 key_suffix: value.and_then(key_suffix),
             }
@@ -365,7 +359,7 @@ pub async fn save_compatible_provider_api_key(
 ) -> Result<(), ProviderStorageError> {
     let provider_id = provider_id.into_inner();
     let api_key = Zeroizing::new(api_key.into_inner());
-    if !COMPATIBLE_PROVIDER_IDS.contains(&provider_id.as_str()) {
+    if !openchat_local_service::provider_ids::is_compatible_provider_id(&provider_id) {
         return Err(ProviderStorageError::invalid());
     }
     let api_key = validated_key(&provider_id, api_key)?;
@@ -426,11 +420,10 @@ pub async fn save_custom_provider(
         reasoning_efforts,
         enable_thinking,
         api_key,
-        dialog_copy,
+        dialog_locale,
     } = input;
-    dialog_copy.validate()?;
     let api_key = api_key.map(|value| Zeroizing::new(value.into_inner()));
-    let config = validated_custom_provider(
+    let mut config = validated_custom_provider(
         id.into_inner(),
         name.into_inner(),
         base_url.into_inner(),
@@ -441,9 +434,11 @@ pub async fn save_custom_provider(
     )?;
     if requires_native_http_approval(&config) {
         let _confirmation_guard = HttpProviderConfirmationGuard::acquire()?;
+        let dialog_copy = HttpProviderDialogCopy::for_locale(dialog_locale)?;
         if !confirm_insecure_http_provider(app, config.base_url.clone(), dialog_copy).await? {
             return Err(ProviderStorageError::http_approval_denied());
         }
+        config.native_http_confirmed = true;
     }
     let _update_lock = lock_secret_map().map_err(map_storage_error)?;
     let mut values = read_secret_map(&state).await.map_err(map_storage_error)?;
@@ -477,7 +472,9 @@ async fn confirm_insecure_http_provider(
 
 /// Returns true when persisting an HTTP endpoint must follow native user confirmation.
 fn requires_native_http_approval(config: &CustomProviderConfig) -> bool {
-    config.base_url.starts_with("http://") && config.allow_insecure_http == Some(true)
+    config.base_url.starts_with("http://")
+        && config.allow_insecure_http == Some(true)
+        && !config.native_http_confirmed
 }
 
 /// Updates one provider in a decrypted map after validating that an existing key remains bound
@@ -548,7 +545,7 @@ pub async fn delete_custom_provider(
     id: BoundedText<MAXIMUM_PROVIDER_ID_BYTES>,
 ) -> Result<(), ProviderStorageError> {
     let id = id.into_inner();
-    if !is_custom_provider_id(&id) {
+    if !openchat_local_service::provider_ids::is_custom_provider_id(&id) {
         return Err(ProviderStorageError::invalid());
     }
     let _update_lock = lock_secret_map().map_err(map_storage_error)?;
@@ -591,7 +588,7 @@ pub async fn delete_compatible_provider_api_key(
     provider_id: BoundedText<MAXIMUM_PROVIDER_ID_BYTES>,
 ) -> Result<(), ProviderStorageError> {
     let provider_id = provider_id.into_inner();
-    if !COMPATIBLE_PROVIDER_IDS.contains(&provider_id.as_str()) {
+    if !openchat_local_service::provider_ids::is_compatible_provider_id(&provider_id) {
         return Err(ProviderStorageError::invalid());
     }
     let _update_lock = lock_secret_map().map_err(map_storage_error)?;
@@ -659,12 +656,39 @@ fn validated_custom_provider(
     reasoning_efforts: Option<String>,
     enable_thinking: bool,
 ) -> Result<CustomProviderConfig, ProviderStorageError> {
+    let config = validated_custom_provider_fields(
+        id,
+        name,
+        base_url,
+        protocol,
+        allow_insecure_http,
+        reasoning_efforts,
+        enable_thinking,
+    )?;
+    if config.base_url.starts_with("http://") {
+        if !http_endpoint_uses_loopback(&config.base_url) {
+            return Err(ProviderStorageError::http_loopback_required());
+        }
+        if config.allow_insecure_http != Some(true) {
+            return Err(ProviderStorageError::http_approval_required());
+        }
+    }
+    Ok(config)
+}
+
+/// Validates and normalizes persisted provider fields without granting HTTP approval.
+fn validated_custom_provider_fields(
+    id: String,
+    name: String,
+    base_url: String,
+    protocol: String,
+    allow_insecure_http: Option<bool>,
+    reasoning_efforts: Option<String>,
+    enable_thinking: bool,
+) -> Result<CustomProviderConfig, ProviderStorageError> {
     let name = name.trim();
     let base_url = normalized_base_url(&base_url).ok_or_else(ProviderStorageError::invalid)?;
     let uses_http = base_url.starts_with("http://");
-    if uses_http && allow_insecure_http == Some(false) {
-        return Err(ProviderStorageError::http_approval_required());
-    }
     if name.is_empty() || name.chars().count() > 80 || name.chars().any(char::is_control) {
         return Err(ProviderStorageError::invalid());
     }
@@ -674,7 +698,7 @@ fn validated_custom_provider(
     if protocol == "anthropic" && enable_thinking {
         return Err(ProviderStorageError::invalid());
     }
-    if !is_custom_provider_id(&id) {
+    if !openchat_local_service::provider_ids::is_custom_provider_id(&id) {
         return Err(ProviderStorageError::invalid());
     }
     let reasoning_efforts = parse_custom_reasoning_efforts(
@@ -691,6 +715,7 @@ fn validated_custom_provider(
         } else {
             Some(false)
         },
+        native_http_confirmed: false,
         reasoning_efforts,
         enable_thinking,
         legacy_reasoning_mode: None,
@@ -701,6 +726,7 @@ fn validated_custom_provider(
 fn validated_stored_custom_provider(
     stored: CustomProviderConfig,
 ) -> Result<CustomProviderConfig, ProviderStorageError> {
+    let native_http_confirmed = stored.native_http_confirmed;
     let (reasoning_efforts, enable_thinking) = match stored.legacy_reasoning_mode.as_deref() {
         Some("reasoningEffort") if stored.reasoning_efforts.is_empty() => (
             stored.legacy_reasoning_levels.clone(),
@@ -709,7 +735,7 @@ fn validated_stored_custom_provider(
         Some("chatTemplateThinking") => (stored.reasoning_efforts.clone(), true),
         _ => (stored.reasoning_efforts.clone(), stored.enable_thinking),
     };
-    validated_custom_provider(
+    let mut validated = validated_custom_provider_fields(
         stored.id,
         stored.name,
         stored.base_url,
@@ -717,7 +743,38 @@ fn validated_stored_custom_provider(
         stored.allow_insecure_http,
         Some(reasoning_efforts.join(",")),
         enable_thinking,
-    )
+    )?;
+    if native_http_confirmed
+        && (!validated.base_url.starts_with("http://")
+            || validated.allow_insecure_http != Some(true))
+    {
+        return Err(ProviderStorageError::invalid());
+    }
+    let http_is_approved = validated.base_url.starts_with("http://")
+        && http_endpoint_uses_loopback(&validated.base_url)
+        && validated.allow_insecure_http == Some(true)
+        && native_http_confirmed;
+    if validated.base_url.starts_with("http://") && !http_is_approved {
+        validated.allow_insecure_http = Some(false);
+    }
+    validated.native_http_confirmed = http_is_approved;
+    Ok(validated)
+}
+
+/// Returns true for localhost and literal IPv4 or IPv6 loopback endpoints.
+fn http_endpoint_uses_loopback(value: &str) -> bool {
+    let Ok(url) = url::Url::parse(value) else {
+        return false;
+    };
+    if url.scheme() != "http" {
+        return false;
+    }
+    match url.host() {
+        Some(url::Host::Ipv4(address)) => address.is_loopback(),
+        Some(url::Host::Ipv6(address)) => address.is_loopback(),
+        Some(url::Host::Domain(host)) => host.eq_ignore_ascii_case("localhost"),
+        None => false,
+    }
 }
 
 fn parse_custom_reasoning_efforts(
@@ -773,14 +830,6 @@ fn normalized_base_url(value: &str) -> Option<String> {
 }
 
 /// Accepts only application-generated custom provider IDs.
-fn is_custom_provider_id(value: &str) -> bool {
-    (19..=64).contains(&value.len())
-        && value.starts_with("custom_")
-        && value[7..]
-            .bytes()
-            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_')
-}
-
 /// Deserializes and revalidates persisted custom provider configuration before exposing it.
 fn load_custom_providers(
     values: &crate::mcp_storage::SecretMap,
@@ -816,7 +865,9 @@ fn custom_provider_summary(
         name: config.name.clone(),
         base_url: config.base_url.clone(),
         protocol: config.protocol.clone(),
-        allow_insecure_http: config.allow_insecure_http.unwrap_or(false),
+        allow_insecure_http: config.base_url.starts_with("http://")
+            && config.allow_insecure_http == Some(true)
+            && config.native_http_confirmed,
         reasoning_efforts: config.reasoning_efforts.clone(),
         enable_thinking: config.enable_thinking,
         is_configured: key.is_some_and(|value| !value.trim().is_empty()),
@@ -847,10 +898,9 @@ fn map_storage_error(_: McpStorageError) -> ProviderStorageError {
 mod tests {
     use super::{
         requires_native_http_approval, update_custom_provider_values, BoundedText,
-        CustomProviderConfig, HttpProviderDialogCopy, SaveCustomProviderInput,
-        MAXIMUM_DIALOG_COPY_FIELD_BYTES, MAXIMUM_KEY_BYTES, MAXIMUM_PROVIDER_ID_BYTES,
-        MAXIMUM_PROVIDER_NAME_BYTES, MAXIMUM_PROVIDER_PROTOCOL_BYTES, MAXIMUM_PROVIDER_URL_BYTES,
-        MAXIMUM_REASONING_EFFORTS_BYTES,
+        CustomProviderConfig, HttpProviderDialogCopy, SaveCustomProviderInput, MAXIMUM_KEY_BYTES,
+        MAXIMUM_PROVIDER_ID_BYTES, MAXIMUM_PROVIDER_NAME_BYTES, MAXIMUM_PROVIDER_PROTOCOL_BYTES,
+        MAXIMUM_PROVIDER_URL_BYTES, MAXIMUM_REASONING_EFFORTS_BYTES,
     };
     use crate::mcp_storage::SecretMap;
     use zeroize::Zeroizing;
@@ -899,24 +949,22 @@ mod tests {
         assert_text_boundary::<MAXIMUM_PROVIDER_NAME_BYTES>();
         assert_text_boundary::<MAXIMUM_PROVIDER_PROTOCOL_BYTES>();
         assert_text_boundary::<MAXIMUM_PROVIDER_URL_BYTES>();
-        assert_text_boundary::<MAXIMUM_DIALOG_COPY_FIELD_BYTES>();
         assert_text_boundary::<MAXIMUM_REASONING_EFFORTS_BYTES>();
     }
 
     #[test]
     fn custom_provider_save_payload_uses_bounded_camel_case_fields() {
         let input = serde_json::from_str::<SaveCustomProviderInput>(
-            r#"{"id":"custom_0123456789abcdef","name":"Provider","baseUrl":"https://provider.example/v1","protocol":"openAi","allowInsecureHttp":false,"apiKey":null,"dialogCopy":{"title":"Title","intro":"Intro","warning":"Warning","allow":"Allow","cancel":"Cancel"}}"#,
+            r#"{"id":"custom_0123456789abcdef","name":"Provider","baseUrl":"https://provider.example/v1","protocol":"openAi","allowInsecureHttp":false,"apiKey":null,"dialogLocale":"tr"}"#,
         )
-        .expect("bounded provider payload should deserialize");
+        .expect("supported locale provider payload should deserialize");
         assert_eq!(input.base_url.into_inner(), "https://provider.example/v1");
-        assert_eq!(input.dialog_copy.title, "Title");
-
-        let oversized_dialog_copy = format!(
-            r#"{{"id":"custom_0123456789abcdef","name":"Provider","baseUrl":"https://provider.example/v1","protocol":"openAi","allowInsecureHttp":false,"apiKey":null,"dialogCopy":{{"title":"{}","intro":"Intro","warning":"Warning","allow":"Allow","cancel":"Cancel"}}}}"#,
-            "x".repeat(MAXIMUM_DIALOG_COPY_FIELD_BYTES + 1)
-        );
-        assert!(serde_json::from_str::<SaveCustomProviderInput>(&oversized_dialog_copy).is_err());
+        assert!(matches!(
+            input.dialog_locale,
+            crate::local_service::dialogs::NativeDialogLocale::Tr
+        ));
+        let unsupported_locale = r#"{"id":"custom_0123456789abcdef","name":"Provider","baseUrl":"https://provider.example/v1","protocol":"openAi","allowInsecureHttp":false,"apiKey":null,"dialogLocale":"ja"}"#;
+        assert!(serde_json::from_str::<SaveCustomProviderInput>(unsupported_locale).is_err());
     }
 
     #[test]
@@ -1040,20 +1088,88 @@ mod tests {
         .expect("explicit HTTP approval should preserve local provider support");
         assert_eq!(allowed.allow_insecure_http, Some(true));
         assert!(requires_native_http_approval(&allowed));
+        let mut confirmed = allowed;
+        confirmed.native_http_confirmed = true;
+        assert!(!requires_native_http_approval(&confirmed));
 
         let secure = provider_config("Provider", "https://provider.example/v1", "openAi");
         assert!(!requires_native_http_approval(&secure));
     }
 
     #[test]
-    fn http_confirmation_copy_rejects_empty_or_control_text() {
-        let copy = HttpProviderDialogCopy {
-            title: "Title".to_owned(),
-            intro: "Intro".to_owned(),
-            warning: "Warning".to_owned(),
-            allow: "Allow".to_owned(),
-            cancel: "Cancel".to_owned(),
+    fn non_loopback_http_provider_is_rejected_and_existing_settings_remain_editable() {
+        for base_url in [
+            "http://provider.example/v1",
+            "http://192.168.1.12:8080/v1",
+            "http://127.0.0.1.provider.example/v1",
+            "http://0.0.0.0:8080/v1",
+            "http://[::ffff:127.0.0.1]:8080/v1",
+        ] {
+            let error = super::validated_custom_provider(
+                PROVIDER_ID.to_owned(),
+                "Provider".to_owned(),
+                base_url.to_owned(),
+                "openAi".to_owned(),
+                Some(true),
+                None,
+                false,
+            )
+            .expect_err("non-loopback HTTP must be rejected before confirmation");
+            assert_eq!(error.code, "custom_provider_http_loopback_required");
+        }
+
+        for base_url in [
+            "http://localhost:8080/v1",
+            "http://127.255.255.255:8080/v1",
+            "http://127.1:8080/v1",
+            "http://0177.0.0.1:8080/v1",
+            "http://[::1]:8080/v1",
+        ] {
+            assert!(
+                super::validated_custom_provider(
+                    PROVIDER_ID.to_owned(),
+                    "Provider".to_owned(),
+                    base_url.to_owned(),
+                    "openAi".to_owned(),
+                    Some(true),
+                    None,
+                    false,
+                )
+                .is_ok(),
+                "loopback provider {base_url} should remain supported"
+            );
+        }
+
+        let mut values = SecretMap::default();
+        let saved_remote = CustomProviderConfig {
+            id: PROVIDER_ID.to_owned(),
+            name: "Provider".to_owned(),
+            base_url: "http://provider.example/v1".to_owned(),
+            protocol: "openAi".to_owned(),
+            allow_insecure_http: Some(true),
+            native_http_confirmed: true,
+            reasoning_efforts: Vec::new(),
+            enable_thinking: false,
+            legacy_reasoning_mode: None,
+            legacy_reasoning_levels: Vec::new(),
         };
+        values.insert(
+            format!("{CONFIG_PREFIX}{PROVIDER_ID}"),
+            serde_json::to_string(&saved_remote).expect("existing settings should serialize"),
+        );
+        let providers = super::load_custom_providers(&values)
+            .expect("existing remote HTTP settings remain visible for editing");
+        assert_eq!(providers.len(), 1);
+        assert_eq!(providers[0].base_url, "http://provider.example/v1");
+        assert!(!providers[0].allow_insecure_http);
+    }
+
+    #[test]
+    fn http_confirmation_copy_rejects_empty_or_control_text() {
+        let copy = HttpProviderDialogCopy::for_locale(
+            crate::local_service::dialogs::NativeDialogLocale::En,
+        )
+        .expect("embedded HTTP copy should be valid");
         assert!(copy.validate().is_ok());
 
         let invalid = HttpProviderDialogCopy {
@@ -1066,7 +1182,16 @@ mod tests {
     #[test]
     fn legacy_http_provider_summary_requires_explicit_approval() {
         let mut values = SecretMap::default();
-        let legacy = provider_config("Provider", "http://127.0.0.1:8080/v1", "openAi");
+        let legacy = super::validated_custom_provider(
+            PROVIDER_ID.to_owned(),
+            "Provider".to_owned(),
+            "http://127.0.0.1:8080/v1".to_owned(),
+            "openAi".to_owned(),
+            Some(true),
+            None,
+            false,
+        )
+        .expect("a local HTTP provider with user approval should be valid");
         values.insert(
             format!("{CONFIG_PREFIX}{PROVIDER_ID}"),
             serde_json::to_string(&legacy).expect("legacy settings should serialize"),
@@ -1076,6 +1201,16 @@ mod tests {
             .expect("legacy HTTP provider settings remain visible for editing");
         assert_eq!(providers.len(), 1);
         assert!(!providers[0].allow_insecure_http);
+
+        let mut confirmed = legacy;
+        confirmed.native_http_confirmed = true;
+        values.insert(
+            format!("{CONFIG_PREFIX}{PROVIDER_ID}"),
+            serde_json::to_string(&confirmed).expect("confirmed settings should serialize"),
+        );
+        let providers = super::load_custom_providers(&values)
+            .expect("native-confirmed HTTP provider remains available");
+        assert!(providers[0].allow_insecure_http);
     }
 
     #[test]
@@ -1089,6 +1224,7 @@ mod tests {
             base_url: "https://provider.example/v1".to_owned(),
             protocol: "openAi".to_owned(),
             allow_insecure_http: None,
+            native_http_confirmed: false,
             reasoning_efforts: Vec::new(),
             enable_thinking: false,
             legacy_reasoning_mode: None,

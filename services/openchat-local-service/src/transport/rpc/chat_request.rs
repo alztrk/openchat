@@ -191,6 +191,11 @@ fn parse_subagent_models(value: Option<&Value>) -> Result<Vec<SubagentModelOptio
             Some(Value::Bool(value)) => Some(*value),
             _ => return Err(invalid_request_params()),
         };
+        let preferred = match object.get("preferred") {
+            None => false,
+            Some(Value::Bool(value)) => *value,
+            _ => return Err(invalid_request_params()),
+        };
         parsed.push(SubagentModelOption {
             key: read_string("key", 1024)?,
             provider_id,
@@ -202,6 +207,7 @@ fn parse_subagent_models(value: Option<&Value>) -> Result<Vec<SubagentModelOptio
             supports_tools,
             reasoning_levels,
             request_protocol,
+            preferred,
         });
     }
     let mut keys = std::collections::HashSet::with_capacity(parsed.len());
@@ -286,15 +292,17 @@ pub(super) fn parse_title_generation(
             {
                 return Err(invalid_request_params());
             }
-            Ok(TitleGenerationRequest::Model(TitleGenerationModel {
-                provider_id: provider_id.to_owned(),
-                model_id: model_id.to_owned(),
-                connection_id,
-                workspace_id,
-                api_key_connection_id,
-                api_key: None,
-                custom_provider: None,
-            }))
+            Ok(TitleGenerationRequest::Model(Box::new(
+                TitleGenerationModel {
+                    provider_id: provider_id.to_owned(),
+                    model_id: model_id.to_owned(),
+                    connection_id,
+                    workspace_id,
+                    api_key_connection_id,
+                    api_key: None,
+                    custom_provider: None,
+                },
+            )))
         }
         _ => Err(invalid_request_params()),
     }

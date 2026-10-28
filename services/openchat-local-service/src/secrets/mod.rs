@@ -37,24 +37,6 @@ const COMPATIBLE_KEY_PREFIX: &str = "openchat.compatible_provider.api_key.";
 const CUSTOM_PROVIDER_KEY_PREFIX: &str = "openchat.custom_provider.api_key.";
 const CUSTOM_PROVIDER_CONFIG_PREFIX: &str = "openchat.custom_provider.config.";
 const OPENCODE_KEY: &str = "openchat.opencode.console_api_key";
-const COMPATIBLE_PROVIDER_IDS: [&str; 16] = [
-    "gemini",
-    "groq",
-    "cerebras",
-    "openrouter",
-    "mistral",
-    "deepseek",
-    "xai",
-    "perplexity",
-    "together",
-    "sambanova",
-    "anthropic",
-    "fireworks",
-    "deepinfra",
-    "dashscope",
-    "cohere",
-    "kilo",
-];
 
 /// A validated secret-store operation error.
 #[derive(Debug, Eq, PartialEq)]
@@ -307,7 +289,7 @@ impl SecretMap {
                 }
                 OPENCODE_KEY.to_owned()
             }
-            provider_id if is_custom_provider_id(provider_id) => {
+            provider_id if crate::provider_ids::is_custom_provider_id(provider_id) => {
                 if connection_id.is_some_and(|id| id != provider_id)
                     || !self.contains_key(&format!("{CUSTOM_PROVIDER_CONFIG_PREFIX}{provider_id}"))
                 {
@@ -315,7 +297,7 @@ impl SecretMap {
                 }
                 format!("{CUSTOM_PROVIDER_KEY_PREFIX}{provider_id}")
             }
-            provider_id if COMPATIBLE_PROVIDER_IDS.contains(&provider_id) => {
+            provider_id if crate::provider_ids::is_compatible_provider_id(provider_id) => {
                 if connection_id.is_some_and(|id| id != provider_id) {
                     return Err(SecretStoreError::InvalidProviderRoute);
                 }
@@ -1253,14 +1235,6 @@ fn is_chatgpt_connection_id(value: &str) -> bool {
         && value
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
-}
-
-fn is_custom_provider_id(value: &str) -> bool {
-    (19..=64).contains(&value.len())
-        && value.starts_with("custom_")
-        && value[7..]
-            .bytes()
-            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_')
 }
 
 #[cfg(test)]

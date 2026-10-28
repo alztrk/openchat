@@ -5,6 +5,9 @@
 #![deny(missing_docs)]
 #![deny(clippy::undocumented_unsafe_blocks)]
 
+#[cfg(all(feature = "desktop-profile-test-support", not(debug_assertions)))]
+compile_error!("desktop profile test support is unavailable in optimized builds");
+
 // This direct dependency enables ORT's copy-dylibs feature for fastembed on Windows.
 #[cfg(windows)]
 use ort as _;
@@ -16,8 +19,8 @@ pub(crate) use domain::{
     git_inspection, git_worktrees, goals, history, hugging_face, image_library, instructions,
     local_engines, oauth, openai_api, openai_compatible, pending_archive_export, permissions,
     profile_archive, project_index, project_instructions, project_memory, project_skills,
-    provider_credentials, provider_schema, response_budget, temporary_conversation, tools,
-    usage_statistics, user_question_broker, workspace_settings,
+    provider_credentials, provider_schema, response_budget, security_scan, temporary_conversation,
+    tools, usage_statistics, user_question_broker, workspace_settings,
 };
 
 #[path = "adapters/filesystem.rs"]
@@ -36,11 +39,21 @@ mod storage_broker;
 
 #[cfg(windows)]
 #[path = "adapters/credentials.rs"]
-/// Windows Credential Manager access for OAuth tokens and scoped MCP secrets.
+/// Protected local-vault access for OAuth tokens and scoped MCP secrets, including legacy imports.
 pub mod credentials;
 
 /// Protected provider secrets storage.
 pub mod secrets;
+
+/// Shared attachment bounds used by the desktop host and local service.
+pub mod conversation_limits;
+
+/// Canonical provider identifier validation and enumeration.
+pub mod provider_ids;
+
+/// Isolated helpers for storage-broker integration tests.
+#[cfg(feature = "storage-broker-test-support")]
+pub mod storage_broker_test_support;
 
 /// Cross-platform process isolation and sandboxing.
 pub mod sandbox;

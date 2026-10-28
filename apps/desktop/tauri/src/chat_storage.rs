@@ -840,10 +840,8 @@ pub fn search_messages(
         .map_err(|_| ChatStorageError::unavailable())?;
 
     let mut results = Vec::new();
-    for row in rows {
-        if let Ok(message) = row {
-            results.push(message);
-        }
+    for message in rows.flatten() {
+        results.push(message);
     }
     Ok(results)
 }
@@ -916,9 +914,8 @@ pub fn save_message(input: SaveMessageInput) -> Result<(), ChatStorageError> {
     if content.chars().count() > MAX_MESSAGE_CHARS {
         return Err(ChatStorageError::invalid_input());
     }
-    let connection = open_database().map_err(|error| {
+    let connection = open_database().inspect_err(|_| {
         record_chat_storage_failure("database_open", None);
-        error
     })?;
     let created_at = input.created_at.unwrap_or(unix_time_milliseconds()?);
     let transaction = connection.unchecked_transaction().map_err(|error| {
@@ -1389,27 +1386,9 @@ fn validate_conversation_input(input: &CreateConversationInput) -> Result<(), Ch
     let has_oauth_route = input.connection_id.is_some() || input.workspace_id.is_some();
     let has_api_route = input.api_key_connection_id.is_some();
     let api_provider = provider_id == "chatgpt_api"
-        || [
-            "gemini",
-            "groq",
-            "cerebras",
-            "openrouter",
-            "mistral",
-            "deepseek",
-            "xai",
-            "perplexity",
-            "together",
-            "sambanova",
-            "anthropic",
-            "fireworks",
-            "deepinfra",
-            "dashscope",
-            "cohere",
-            "kilo",
-        ]
-        .contains(&provider_id);
+        || openchat_local_service::provider_ids::is_compatible_provider_id(provider_id);
     let local_provider = provider_id == "llama_cpp";
-    let custom_provider = is_custom_provider_id(provider_id);
+    let custom_provider = openchat_local_service::provider_ids::is_custom_provider_id(provider_id);
     let known_provider = provider_id == "chatgpt"
         || provider_id == "opencode"
         || local_provider
@@ -1481,27 +1460,9 @@ fn is_valid_agent_tool_name(value: &str) -> bool {
 }
 
 fn validate_model_favorite_input(input: &SetModelFavoriteInput) -> Result<(), ChatStorageError> {
-    const API_KEY_PROVIDERS: [&str; 17] = [
-        "chatgpt_api",
-        "gemini",
-        "groq",
-        "cerebras",
-        "openrouter",
-        "mistral",
-        "deepseek",
-        "xai",
-        "perplexity",
-        "together",
-        "sambanova",
-        "anthropic",
-        "fireworks",
-        "deepinfra",
-        "dashscope",
-        "cohere",
-        "kilo",
-    ];
-    let api_key_provider = API_KEY_PROVIDERS.contains(&input.provider_id.as_str())
-        || is_custom_provider_id(&input.provider_id);
+    let api_key_provider = input.provider_id == "chatgpt_api"
+        || openchat_local_service::provider_ids::is_compatible_provider_id(&input.provider_id)
+        || openchat_local_service::provider_ids::is_custom_provider_id(&input.provider_id);
     let known_provider = api_key_provider
         || matches!(
             input.provider_id.as_str(),
@@ -1612,16 +1573,6 @@ pub(crate) fn storage_root() -> Result<PathBuf, ChatStorageError> {
         .and_then(std::path::Path::parent)
         .map(PathBuf::from)
         .ok_or_else(ChatStorageError::unavailable)
-}
-
-fn is_custom_provider_id(provider_id: &str) -> bool {
-    let Some(suffix) = provider_id.strip_prefix("custom_") else {
-        return false;
-    };
-    (12..=64).contains(&suffix.len())
-        && suffix
-            .bytes()
-            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_')
 }
 
 fn database_path() -> Result<PathBuf, ChatStorageError> {

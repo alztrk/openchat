@@ -2,7 +2,7 @@
 
 use std::{
     fs::{self, File, OpenOptions},
-    io::{Read, Write},
+    io::{Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
     time::Duration,
 };
@@ -132,31 +132,57 @@ pub(crate) async fn install_signed_package(
         Err(_) => {}
     }
 
+    publish_verified_package(
+        &package_directory,
+        &executable_path,
+        &package_bytes,
+        &metadata,
+    )?;
+
+    Ok(package_reference(metadata))
+}
+
+fn publish_verified_package(
+    package_directory: &Path,
+    executable_path: &Path,
+    package_bytes: &[u8],
+    metadata: &InstalledPackageMetadata,
+) -> Result<(), PackageError> {
     let temporary_path = package_directory.join(format!(".download-{}.tmp", uuid::Uuid::new_v4()));
     let mut owns_executable = false;
     let result = (|| {
         let mut temporary = OpenOptions::new()
+            .read(true)
             .write(true)
             .create_new(true)
-            .open(&temporary_path)?;
-        temporary.write_all(&package_bytes)?;
-        temporary.sync_all()?;
+            .open(&temporary_path)
+            .map_err(|_| PackageError::Unavailable)?;
+        temporary
+            .write_all(package_bytes)
+            .map_err(|_| PackageError::Unavailable)?;
+        temporary
+            .sync_all()
+            .map_err(|_| PackageError::Unavailable)?;
+        temporary
+            .seek(SeekFrom::Start(0))
+            .map_err(|_| PackageError::Unavailable)?;
+        verify_authenticode_signature(&temporary, &temporary_path)?;
         drop(temporary);
-        fs::hard_link(&temporary_path, &executable_path)?;
+        fs::hard_link(&temporary_path, executable_path).map_err(|_| PackageError::Unavailable)?;
         owns_executable = true;
-        fs::remove_file(&temporary_path)?;
-        write_installed_metadata(&package_directory, &metadata)?;
-        Ok::<(), std::io::Error>(())
+        fs::remove_file(&temporary_path).map_err(|_| PackageError::Unavailable)?;
+        write_installed_metadata(package_directory, metadata)
+            .map_err(|_| PackageError::Unavailable)?;
+        Ok::<(), PackageError>(())
     })();
-    if result.is_err() {
+    if let Err(error) = result {
         let _ = fs::remove_file(&temporary_path);
         if owns_executable {
-            let _ = fs::remove_file(&executable_path);
+            let _ = fs::remove_file(executable_path);
         }
-        return Err(PackageError::Unavailable);
+        return Err(error);
     }
-
-    Ok(package_reference(metadata))
+    Ok(())
 }
 
 async fn fetch_package_bytes(url: &Url, expected_size: u64) -> Result<Vec<u8>, PackageError> {
@@ -226,8 +252,17 @@ pub(crate) fn resolve_installed_package(
     Ok((executable, directory))
 }
 
-/// Rechecks the installed bytes immediately before the process is launched.
+/// Rechecks installed package integrity and Authenticode trust immediately before launch.
 pub(crate) fn verify_installed_package(
+    executable: &Path,
+    reference: &InstalledPackageReference,
+) -> Result<(), PackageError> {
+    verify_installed_package_integrity(executable, reference)?;
+    let file = File::open(executable).map_err(|_| PackageError::Unavailable)?;
+    verify_authenticode_signature(&file, executable)
+}
+
+fn verify_installed_package_integrity(
     executable: &Path,
     reference: &InstalledPackageReference,
 ) -> Result<(), PackageError> {
@@ -292,7 +327,7 @@ pub(crate) fn remove_installed_package(
             return Err(PackageError::InvalidPackage);
         }
     } else if executable_exists {
-        verify_installed_package(&executable, reference)?;
+        verify_installed_package_integrity(&executable, reference)?;
     }
     remove_interrupted_downloads(&directory)?;
     if executable_exists {
@@ -567,6 +602,214 @@ fn is_windows_pe(bytes: &[u8]) -> bool {
     bytes
         .get(offset..offset.saturating_add(4))
         .is_some_and(|signature| signature == b"PE\0\0")
+}
+
+#[cfg(windows)]
+fn verify_authenticode_signature(file: &File, path: &Path) -> Result<(), PackageError> {
+    use std::{
+        os::windows::{ffi::OsStrExt, io::AsRawHandle},
+        ptr,
+    };
+    use windows_sys::Win32::Security::WinTrust::{
+        WINTRUST_ACTION_GENERIC_VERIFY_V2, WINTRUST_DATA, WINTRUST_DATA_0, WINTRUST_FILE_INFO,
+        WTD_CACHE_ONLY_URL_RETRIEVAL, WTD_CHOICE_FILE, WTD_REVOKE_NONE, WTD_STATEACTION_CLOSE,
+        WTD_STATEACTION_VERIFY, WTD_UI_NONE, WTD_UICONTEXT_INSTALL, WinVerifyTrustEx,
+    };
+
+    let wide_path = path
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect::<Vec<_>>();
+    let mut file_info = WINTRUST_FILE_INFO {
+        cbStruct: std::mem::size_of::<WINTRUST_FILE_INFO>() as u32,
+        pcwszFilePath: wide_path.as_ptr(),
+        hFile: file.as_raw_handle(),
+        pgKnownSubject: ptr::null_mut(),
+    };
+    let mut trust_data = WINTRUST_DATA {
+        cbStruct: std::mem::size_of::<WINTRUST_DATA>() as u32,
+        dwUIChoice: WTD_UI_NONE,
+        fdwRevocationChecks: WTD_REVOKE_NONE,
+        dwUnionChoice: WTD_CHOICE_FILE,
+        Anonymous: WINTRUST_DATA_0 {
+            pFile: &mut file_info,
+        },
+        dwStateAction: WTD_STATEACTION_VERIFY,
+        dwProvFlags: WTD_CACHE_ONLY_URL_RETRIEVAL,
+        dwUIContext: WTD_UICONTEXT_INSTALL,
+        ..Default::default()
+    };
+    let mut action = WINTRUST_ACTION_GENERIC_VERIFY_V2;
+
+    // SAFETY: WinVerifyTrustEx reads the file path and handle synchronously. Both remain valid for
+    // this call, the handle refers to the staged package, and the state is closed immediately after.
+    let status = unsafe { WinVerifyTrustEx(ptr::null_mut(), &mut action, &mut trust_data) };
+    trust_data.dwStateAction = WTD_STATEACTION_CLOSE;
+    // SAFETY: This releases any provider state created by the verification call above.
+    let close_status = unsafe { WinVerifyTrustEx(ptr::null_mut(), &mut action, &mut trust_data) };
+
+    if status != 0 {
+        Err(PackageError::InvalidPackage)
+    } else if close_status != 0 {
+        Err(PackageError::Unavailable)
+    } else {
+        Ok(())
+    }
+}
+
+#[cfg(not(windows))]
+fn verify_authenticode_signature(_file: &File, _path: &Path) -> Result<(), PackageError> {
+    Err(PackageError::InvalidPackage)
+}
+
+#[cfg(all(test, windows))]
+mod signature_tests {
+    use super::*;
+
+    #[test]
+    fn accepts_a_trusted_windows_system_binary() {
+        let system_root = std::env::var_os("SystemRoot").expect("Windows defines SystemRoot");
+        let path = PathBuf::from(system_root)
+            .join("System32")
+            .join("kernel32.dll");
+        let file = File::open(&path).expect("kernel32.dll is present");
+
+        assert_eq!(verify_authenticode_signature(&file, &path), Ok(()));
+    }
+
+    #[test]
+    fn rejects_the_unsigned_test_executable() {
+        let path = std::env::current_exe().expect("test executable path is available");
+        let file = File::open(&path).expect("test executable is readable");
+
+        assert_eq!(
+            verify_authenticode_signature(&file, &path),
+            Err(PackageError::InvalidPackage)
+        );
+    }
+
+    #[test]
+    fn publishes_and_launches_a_trusted_windows_binary() {
+        let system_root = std::env::var_os("SystemRoot").expect("Windows defines SystemRoot");
+        let system_binary = PathBuf::from(system_root)
+            .join("System32")
+            .join("kernel32.dll");
+        let package_bytes = fs::read(&system_binary).expect("kernel32.dll is readable");
+        assert!(is_windows_pe(&package_bytes));
+
+        let package_directory = std::env::temp_dir().join(format!(
+            "openchat-package-signature-{}",
+            uuid::Uuid::new_v4()
+        ));
+        fs::create_dir(&package_directory).expect("temporary package directory is created");
+        let executable_path = package_directory.join(EXECUTABLE_FILE);
+        let metadata = InstalledPackageMetadata {
+            id: "signature_test".to_owned(),
+            version: "1.0.0".to_owned(),
+            sha256: hex_digest(&Sha256::digest(&package_bytes)),
+            source_key_fingerprint: "0".repeat(64),
+            size_bytes: package_bytes.len() as u64,
+        };
+
+        let publish_result = publish_verified_package(
+            &package_directory,
+            &executable_path,
+            &package_bytes,
+            &metadata,
+        );
+        let reference = package_reference(metadata);
+        let launch_result = verify_installed_package(&executable_path, &reference);
+        let installed_bytes = fs::read(&executable_path).expect("published package is readable");
+        fs::remove_dir_all(&package_directory).expect("temporary package directory is removed");
+
+        assert_eq!(publish_result, Ok(()));
+        assert_eq!(launch_result, Ok(()));
+        assert_eq!(installed_bytes, package_bytes);
+    }
+
+    #[test]
+    fn requires_authenticode_for_install_and_launch_but_not_removal_integrity() {
+        let package_directory = std::env::temp_dir().join(format!(
+            "openchat-package-signature-{}",
+            uuid::Uuid::new_v4()
+        ));
+        fs::create_dir(&package_directory).expect("temporary package directory is created");
+        let executable_path = package_directory.join(EXECUTABLE_FILE);
+        let package_metadata_path = package_directory.join(PACKAGE_METADATA_FILE);
+        let unsigned_pe = unsigned_pe_fixture();
+        let metadata = InstalledPackageMetadata {
+            id: "signature_test".to_owned(),
+            version: "1.0.0".to_owned(),
+            sha256: hex_digest(&Sha256::digest(unsigned_pe)),
+            source_key_fingerprint: "0".repeat(64),
+            size_bytes: unsigned_pe.len() as u64,
+        };
+
+        let install_result = publish_verified_package(
+            &package_directory,
+            &executable_path,
+            &unsigned_pe,
+            &metadata,
+        );
+        let unpublished_files_remain = fs::read_dir(&package_directory)
+            .expect("temporary package directory is readable")
+            .next()
+            .is_some();
+
+        fs::write(&executable_path, unsigned_pe).expect("unsigned fixture is written");
+        let reference = package_reference(metadata);
+        let removal_integrity_result =
+            verify_installed_package_integrity(&executable_path, &reference);
+        let launch_result = verify_installed_package(&executable_path, &reference);
+        fs::remove_dir_all(&package_directory).expect("temporary package directory is removed");
+
+        assert_eq!(install_result, Err(PackageError::InvalidPackage));
+        assert!(!unpublished_files_remain);
+        assert!(!package_metadata_path.exists());
+        assert_eq!(removal_integrity_result, Ok(()));
+        assert_eq!(launch_result, Err(PackageError::InvalidPackage));
+    }
+
+    #[test]
+    fn removes_a_legacy_unsigned_package_without_authenticode_trust() {
+        let temporary_root =
+            std::env::temp_dir().join(format!("openchat-package-removal-{}", uuid::Uuid::new_v4()));
+        let storage_root = temporary_root.join("storage");
+        let project_root = temporary_root.join("project");
+        fs::create_dir_all(&storage_root).expect("temporary storage root is created");
+        fs::create_dir_all(&project_root).expect("temporary project root is created");
+        let project_root = fs::canonicalize(&project_root).expect("project root is canonical");
+        let id = "signature_test";
+        let version = "1.0.0";
+        let directory = package_directory(&storage_root, &project_root, id, version)
+            .expect("package directory can be resolved");
+        ensure_package_directory(&storage_root, &directory).expect("package directory is created");
+        let unsigned_pe = unsigned_pe_fixture();
+        let executable_path = directory.join(EXECUTABLE_FILE);
+        fs::write(&executable_path, unsigned_pe).expect("legacy unsigned package is written");
+        let reference = InstalledPackageReference {
+            version: version.to_owned(),
+            sha256: hex_digest(&Sha256::digest(unsigned_pe)),
+            source_key_fingerprint: "0".repeat(64),
+            size_bytes: unsigned_pe.len() as u64,
+        };
+
+        let removal_result = remove_installed_package(&storage_root, &project_root, id, &reference);
+        let package_directory_exists = directory.exists();
+        fs::remove_dir_all(&temporary_root).expect("temporary test directories are removed");
+
+        assert_eq!(removal_result, Ok(()));
+        assert!(!package_directory_exists);
+    }
+
+    fn unsigned_pe_fixture() -> [u8; 68] {
+        let mut bytes = [0u8; 68];
+        bytes[..2].copy_from_slice(b"MZ");
+        bytes[60..64].copy_from_slice(&64u32.to_le_bytes());
+        bytes[64..68].copy_from_slice(b"PE\0\0");
+        bytes
+    }
 }
 
 #[cfg(windows)]

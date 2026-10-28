@@ -385,13 +385,10 @@ fn canonicalize_cached_models(models: &[Value]) -> Vec<Value> {
                 Some("paid") => "paid",
                 _ => return None,
             };
-            let Some(base_url) = model
+            let base_url = model
                 .get("inferenceBaseUrl")
                 .and_then(Value::as_str)
-                .and_then(|value| inference_base_url(&json!({"provider": {"api": value}})))
-            else {
-                return None;
-            };
+                .and_then(|value| inference_base_url(&json!({"provider": {"api": value}})))?;
             let mut model = model.clone();
             let fields = model.as_object_mut()?;
             fields.insert("groupId".to_owned(), json!(group_id));
@@ -432,7 +429,7 @@ fn has_model_groups(models: &[Value]) -> bool {
                 && model
                     .get("inferenceBaseUrl")
                     .and_then(Value::as_str)
-                    .and_then(|value| validated_inference_base_url(value))
+                    .and_then(validated_inference_base_url)
                     .is_some()
                 && valid_group
         })
@@ -483,7 +480,7 @@ fn visible_models(models: &[Value], api_key: Option<&str>) -> Vec<Value> {
             model
                 .get("inferenceBaseUrl")
                 .and_then(Value::as_str)
-                .and_then(|value| validated_inference_base_url(value))
+                .and_then(validated_inference_base_url)
                 .is_some()
                 && (model.get("groupId").and_then(Value::as_str) != Some("paid")
                     || api_key.is_some())

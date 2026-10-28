@@ -478,6 +478,7 @@ mod tests {
                 output: Some(json!({"content": "theme = warm"})),
                 file_changes: Vec::new(),
                 file_changes_error: None,
+                recovery_checkpoint_id: None,
                 status: ToolActivityStatus::Completed,
                 target_path: Some("private/local/path".to_owned()),
             }],
@@ -535,6 +536,7 @@ mod tests {
             output: Some(json!({"content": "second result"})),
             file_changes: Vec::new(),
             file_changes_error: None,
+            recovery_checkpoint_id: None,
             status: ToolActivityStatus::Completed,
         };
         message.tool_activities.push(second_activity);

@@ -764,7 +764,7 @@ fn credential_error(error: CredentialStoreError) -> ServiceError {
         ),
         CredentialStoreError::TokenTooLarge => (
             "oauth_token_too_large",
-            "The ChatGPT token exceeds the Windows secure storage limit.",
+            "The ChatGPT token exceeds the supported credential storage limit.",
             false,
         ),
         CredentialStoreError::ReferenceAlreadyUsed => (
@@ -784,27 +784,27 @@ fn credential_error(error: CredentialStoreError) -> ServiceError {
         ),
         CredentialStoreError::IncompleteWrite => (
             "credential_manager_incomplete_write",
-            "Windows Credential Manager could not store the complete ChatGPT connection. Try again.",
+            "The protected credential store could not store the complete ChatGPT connection. Try again.",
             true,
         ),
         CredentialStoreError::StorageReadFailed => (
             "credential_manager_read_failed",
-            "Windows Credential Manager could not read the ChatGPT connection. Try signing in again.",
+            "The protected credential store could not read the ChatGPT connection. Try signing in again.",
             true,
         ),
         CredentialStoreError::StorageWriteFailed => (
             "credential_manager_write_failed",
-            "Windows Credential Manager could not save the ChatGPT connection. Try again.",
+            "The protected credential store could not save the ChatGPT connection. Try again.",
             true,
         ),
         CredentialStoreError::StorageDeleteFailed => (
             "credential_manager_delete_failed",
-            "Windows Credential Manager could not remove an old ChatGPT credential.",
+            "The protected credential store could not remove an old ChatGPT credential.",
             true,
         ),
         CredentialStoreError::StorageUnavailable | CredentialStoreError::LockUnavailable => (
             "secure_storage_unavailable",
-            "Windows Credential Manager could not access the ChatGPT connection. Try again.",
+            "The protected credential store could not access the ChatGPT connection. Try again.",
             true,
         ),
     };

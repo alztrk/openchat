@@ -34,6 +34,7 @@ pub(super) struct PrepareInputRequest<'a> {
     pub(super) service: &'a ChatGptService,
     pub(super) storage: &'a AppStorage,
     pub(super) conversation_id: &'a str,
+    pub(super) run_id: &'a str,
     pub(super) route: &'a ConversationRoute,
     pub(super) external_workspace_id: &'a str,
     pub(super) model: &'a ChatGptModel,
@@ -51,6 +52,7 @@ pub(super) async fn prepare_input(
         service,
         storage,
         conversation_id,
+        run_id,
         route,
         external_workspace_id,
         model,
@@ -101,7 +103,9 @@ pub(super) async fn prepare_input(
             RemoteCompactionRequest {
                 service,
                 conversation_id,
+                run_id,
                 connection_id: &route.connection_id,
+                workspace_id: &route.workspace_id,
                 external_workspace_id,
                 model_id: &model.id,
                 context_window,
@@ -285,7 +289,9 @@ fn compaction_input(
 struct RemoteCompactionRequest<'a> {
     service: &'a ChatGptService,
     conversation_id: &'a str,
+    run_id: &'a str,
     connection_id: &'a str,
+    workspace_id: &'a str,
     external_workspace_id: &'a str,
     model_id: &'a str,
     context_window: i64,
@@ -319,7 +325,11 @@ async fn request_remote_compaction(
             reasoning_effort: request.reasoning_effort,
             operation: "compaction",
             fast_requested: false,
-            run_id: None,
+            run_id: Some(request.run_id),
+            connection_id: Some(request.connection_id),
+            workspace_id: Some(request.workspace_id),
+            project_id: None,
+            parent_run_id: None,
         },
     )
     .map_err(database_error)?;
@@ -818,6 +828,7 @@ mod tests {
                 output: Some(json!({"content": "enabled"})),
                 file_changes: Vec::new(),
                 file_changes_error: None,
+                recovery_checkpoint_id: None,
                 status: crate::provider_schema::ToolActivityStatus::Completed,
             });
 
@@ -851,6 +862,7 @@ mod tests {
                 output: Some(json!({"content": full_tool_output})),
                 file_changes: Vec::new(),
                 file_changes_error: None,
+                recovery_checkpoint_id: None,
                 status: crate::provider_schema::ToolActivityStatus::Completed,
             });
         let messages = [assistant];

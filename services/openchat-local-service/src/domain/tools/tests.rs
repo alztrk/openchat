@@ -50,6 +50,26 @@ impl Drop for TestDirectory {
     }
 }
 
+#[cfg(unix)]
+fn create_directory_symlink(target: &Path, link: &Path) -> std::io::Result<()> {
+    std::os::unix::fs::symlink(target, link)
+}
+
+#[cfg(windows)]
+fn create_directory_symlink(target: &Path, link: &Path) -> std::io::Result<()> {
+    std::os::windows::fs::symlink_dir(target, link)
+}
+
+#[cfg(unix)]
+fn create_file_symlink(target: &Path, link: &Path) -> std::io::Result<()> {
+    std::os::unix::fs::symlink(target, link)
+}
+
+#[cfg(windows)]
+fn create_file_symlink(target: &Path, link: &Path) -> std::io::Result<()> {
+    std::os::windows::fs::symlink_file(target, link)
+}
+
 #[test]
 fn listing_hides_dot_directories_until_their_path_is_explicit() {
     let directory = TestDirectory::new();
@@ -68,6 +88,111 @@ fn listing_hides_dot_directories_until_their_path_is_explicit() {
         private_listing["entries"],
         json!([{"path": ".private/secret.txt", "type": "file"}])
     );
+}
+
+#[cfg(any(unix, windows))]
+#[test]
+fn listing_rejects_symlink_roots_and_nested_directory_targets() {
+    let directory = TestDirectory::new();
+    let workspace = directory.0.join("workspace");
+    let external = directory.0.join("external");
+    fs::create_dir(&workspace).expect("create workspace");
+    fs::create_dir(&external).expect("create external directory");
+    let external_file = external.join("secret.txt");
+    fs::write(&external_file, "keep private").expect("write external file");
+
+    let nested_link = workspace.join("external");
+    create_directory_symlink(&external, &nested_link).expect("create nested directory link");
+    let workspace_listing = list_files(workspace.to_str().expect("workspace path"), "", 0, 100)
+        .expect("list workspace root");
+    assert_eq!(workspace_listing["entries"], json!([]));
+    assert!(
+        list_files(
+            workspace.to_str().expect("workspace path"),
+            "external",
+            0,
+            100
+        )
+        .is_err()
+    );
+
+    let root_link = directory.0.join("linked-root");
+    create_directory_symlink(&external, &root_link).expect("create root directory link");
+    assert!(list_files(root_link, "", 0, 100).is_err());
+    assert_eq!(
+        fs::read_to_string(external_file).expect("read external file after rejected listings"),
+        "keep private"
+    );
+}
+
+#[cfg(any(unix, windows))]
+#[test]
+fn listing_rejects_symlinked_gitignore_rules() {
+    let directory = TestDirectory::new();
+    let workspace = directory.0.join("workspace");
+    let external = directory.0.join("external");
+    fs::create_dir(&workspace).expect("create workspace");
+    fs::create_dir(&external).expect("create external directory");
+    let external_rules = external.join("rules");
+    fs::write(&external_rules, "private.txt\n").expect("write external ignore rules");
+    fs::write(workspace.join("private.txt"), "workspace content").expect("write workspace file");
+    create_file_symlink(&external_rules, &workspace.join(".gitignore"))
+        .expect("create linked ignore rules");
+
+    assert!(list_files(workspace, "", 0, 100).is_err());
+    assert_eq!(
+        fs::read_to_string(external_rules).expect("read external ignore rules"),
+        "private.txt\n"
+    );
+}
+
+#[test]
+fn listing_rejects_hardlinked_gitignore_rules() {
+    let directory = TestDirectory::new();
+    let workspace = directory.0.join("workspace");
+    let external_rules = directory.0.join("external-rules");
+    fs::create_dir(&workspace).expect("create workspace");
+    fs::write(&external_rules, "private.txt\n").expect("write external ignore rules");
+    fs::hard_link(&external_rules, workspace.join(".gitignore"))
+        .expect("link external ignore rules");
+
+    assert!(list_files(workspace, "", 0, 100).is_err());
+    assert_eq!(
+        fs::read_to_string(external_rules).expect("read external ignore rules"),
+        "private.txt\n"
+    );
+}
+
+#[test]
+fn listing_rejects_oversized_gitignore_rules() {
+    let directory = TestDirectory::new();
+    directory.write("visible.txt", "content");
+    fs::write(
+        directory.0.join(".gitignore"),
+        vec![b'x'; super::MAX_GITIGNORE_FILE_BYTES + 1],
+    )
+    .expect("write oversized ignore rules");
+
+    assert!(list_files(directory.root(), "", 0, 100).is_err());
+}
+
+#[test]
+fn listing_preserves_nested_gitignore_precedence() {
+    let directory = TestDirectory::new();
+    directory.write(".gitignore", "src/*.txt\n");
+    directory.write("src/.gitignore", "!keep.txt\n");
+    directory.write("src/keep.txt", "keep");
+    directory.write("src/other.txt", "ignore");
+    directory.write("src/readme.md", "keep");
+
+    let listing = list_files(directory.root(), "src", 0, 100).expect("list source files");
+    let listed_paths = listing["entries"]
+        .as_array()
+        .expect("directory entries")
+        .iter()
+        .filter_map(|entry| entry["path"].as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(listed_paths, ["src/keep.txt", "src/readme.md"]);
 }
 
 #[test]
@@ -604,8 +729,8 @@ fn benchmark_tool_latency_and_output_size() {
         measure("list_files", || {
             list_files(root, "src", 0, 100).expect("benchmark list")
         }),
-        measure("list_files_direct_no_app_cache", || {
-            let listing = super::read_directory_listing(
+        measure("list_files_legacy_path_walker", || {
+            let listing = super::read_directory_listing_legacy(
                 &super::canonical_root(root)
                     .expect("canonical benchmark workspace root")
                     .join("src"),
@@ -1006,6 +1131,27 @@ fn write_file_rejects_parent_symlink_escape() {
     );
 }
 
+#[cfg(windows)]
+#[test]
+fn file_tools_reject_an_external_root_symlink() {
+    use std::os::windows::fs::symlink_dir;
+
+    let directory = TestDirectory::new();
+    let external = TestDirectory::new();
+    let external_file = external.0.join("secret.txt");
+    fs::write(&external_file, "keep private").expect("write external file");
+    let root_link = directory.0.join("linked-root");
+    symlink_dir(&external.0, &root_link).expect("create external root symlink");
+
+    assert!(super::read_file(&root_link, "secret.txt", 1, 10).is_err());
+    assert!(super::write_file(&root_link, "secret.txt", "replace").is_err());
+    assert!(super::edit_file(&root_link, "secret.txt", "keep", "replace").is_err());
+    assert_eq!(
+        fs::read_to_string(external_file).expect("read external file after rejected operations"),
+        "keep private"
+    );
+}
+
 #[test]
 #[cfg(windows)]
 fn read_and_edit_reject_file_symlink_escape() {
@@ -1125,6 +1271,55 @@ fn write_file_and_edit_file_flow_and_guards() {
     assert!(
         empty_target.is_err(),
         "edit_file must reject empty old_string"
+    );
+}
+
+#[test]
+fn direct_file_write_stays_bound_to_its_opened_root() {
+    let directory = TestDirectory::new();
+    let root = directory.0.join("workspace");
+    let moved_root = directory.0.join("moved-workspace");
+    fs::create_dir(&root).expect("create selected workspace");
+    fs::write(root.join("note.txt"), "before").expect("create workspace file");
+    let root_capability = crate::filesystem::open_absolute_directory_no_follow(&root)
+        .expect("open selected workspace capability");
+
+    #[cfg(unix)]
+    {
+        fs::rename(&root, &moved_root).expect("move original workspace root");
+        fs::create_dir(&root).expect("create replacement workspace root");
+        fs::write(root.join("note.txt"), "replacement").expect("create replacement workspace file");
+    }
+
+    #[cfg(windows)]
+    assert!(
+        fs::rename(&root, &moved_root).is_err(),
+        "an open workspace capability must prevent root replacement"
+    );
+
+    let _file_change_guard = crate::file_changes::lock_file_changes()
+        .expect("hold file-change lock for the direct tool mutation");
+    super::write_file_with_file_change_lock_held(&root_capability, "note.txt", "written")
+        .expect("write through the selected workspace capability");
+    super::edit_file_with_file_change_lock_held(&root_capability, "note.txt", "written", "edited")
+        .expect("edit through the selected workspace capability");
+
+    #[cfg(unix)]
+    {
+        assert_eq!(
+            fs::read_to_string(moved_root.join("note.txt")).expect("read original workspace"),
+            "edited"
+        );
+        assert_eq!(
+            fs::read_to_string(root.join("note.txt")).expect("read replacement workspace"),
+            "replacement"
+        );
+    }
+
+    #[cfg(windows)]
+    assert_eq!(
+        fs::read_to_string(root.join("note.txt")).expect("read selected workspace"),
+        "edited"
     );
 }
 
@@ -1614,13 +1809,15 @@ async fn completed_project_tool_terminates_descendants_before_waiting_for_pipe_e
     let execution = tokio::time::timeout(
         Duration::from_secs(5),
         TerminalSessionManager::global().execute_project_tool(
-            &program,
-            Path::new(directory.root()),
-            input,
-            30,
-            1024,
-            &mut cancellation,
-            false,
+            super::terminal::ProjectToolRequest {
+                program: &program,
+                workdir: Path::new(directory.root()),
+                input,
+                timeout_seconds: 30,
+                output_limit_bytes: 1024,
+                cancellation: &mut cancellation,
+                full_access: false,
+            },
         ),
     )
     .await;

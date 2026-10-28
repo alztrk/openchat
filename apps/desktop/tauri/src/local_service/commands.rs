@@ -10,7 +10,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_shell::{process::CommandEvent, ShellExt};
 use zeroize::{Zeroize, Zeroizing};
 
-use super::dialogs::PermissionDialogCopy;
+use super::dialogs::{NativeDialogLocale, PermissionDialogCopy};
 use super::process::*;
 use super::rpc_frame::*;
 use super::types::*;
@@ -57,8 +57,15 @@ fn start_local_service_process(
         .checked_add(1)
         .ok_or("The local service generation limit was reached.")?;
     let parent_pid = std::process::id().to_string();
+    let storage_root = state
+        .storage_root_override
+        .as_ref()
+        .map(|root| root.to_string_lossy().into_owned());
     let spawn = |sidecar_name: &str| {
-        app.shell().sidecar(sidecar_name).and_then(|command| {
+        app.shell().sidecar(sidecar_name).and_then(|mut command| {
+            if let Some(root) = storage_root.as_deref() {
+                command = command.args(["--data-root", root]);
+            }
             let command = if start_with_empty_storage {
                 command.args(["--start-with-empty-storage"])
             } else {
@@ -187,6 +194,10 @@ pub(crate) async fn request_local_service(
             | "storage.settings.delete"
             | "internal.secrets.map.read"
             | "internal.secrets.map.write"
+            | "internal.tool_permissions.global_status"
+            | "internal.tool_permissions.global_confirm"
+            | "internal.tool_permissions.project_status"
+            | "internal.tool_permissions.project_confirm"
     ) {
         return Err("The native host is not allowed to call this local-service method.".to_owned());
     }
@@ -383,18 +394,71 @@ pub(crate) async fn write_local_service(
     state: State<'_, LocalServiceState>,
     generation: u64,
     line: String,
-    permission_copy: PermissionDialogCopy,
+    permission_locale: NativeDialogLocale,
 ) -> Result<(), String> {
     let disposition = renderer_rpc_disposition(&line, MAX_RPC_FRAME_BYTES)
         .ok_or_else(|| "The local service request frame is invalid or too large.".to_owned())?;
-    if let RendererRpcDisposition::Confirm(details) = disposition {
-        let _confirmation_guard = PermissionPolicyConfirmationGuard::acquire(
-            &state.permission_policy_confirmation_active,
-        )?;
-        permission_copy.validate().map_err(str::to_owned)?;
-        let confirmed = confirm_permission_with_os(app, &details, &permission_copy).await?;
-        if !confirmed {
-            return Err("The permission policy change requires native confirmation.".to_owned());
+    let mut forwarded_line = line;
+    match disposition {
+        RendererRpcDisposition::Forward => {}
+        RendererRpcDisposition::Confirm(details) => {
+            let _confirmation_guard = PermissionPolicyConfirmationGuard::acquire(
+                &state.permission_policy_confirmation_active,
+            )?;
+            let permission_copy =
+                PermissionDialogCopy::for_locale(permission_locale).map_err(str::to_owned)?;
+            permission_copy.validate().map_err(str::to_owned)?;
+            let confirmed = confirm_permission_with_os(app, &details, &permission_copy).await?;
+            if !confirmed {
+                return Err("The permission policy change requires native confirmation.".to_owned());
+            }
+            forwarded_line = add_native_confirmation(&forwarded_line)?;
+        }
+        RendererRpcDisposition::CheckLegacyGlobal {
+            imported_full_access,
+        } => {
+            let _confirmation_guard = PermissionPolicyConfirmationGuard::acquire(
+                &state.permission_policy_confirmation_active,
+            )?;
+            let confirmation =
+                confirm_legacy_global_policy(&app, &state, permission_locale, imported_full_access)
+                    .await?;
+            match confirmation {
+                LegacyGlobalPolicyConfirmation::ExistingPolicy => {}
+                LegacyGlobalPolicyConfirmation::ConfirmedImport => {
+                    forwarded_line = add_native_confirmation(&forwarded_line)?;
+                }
+                LegacyGlobalPolicyConfirmation::DeclinedImport => {
+                    return Err(
+                        "The permission policy change requires native confirmation.".to_owned()
+                    );
+                }
+            }
+        }
+        RendererRpcDisposition::CheckLegacyProject {
+            project_id,
+            import_confirmation,
+        } => {
+            let _confirmation_guard = PermissionPolicyConfirmationGuard::acquire(
+                &state.permission_policy_confirmation_active,
+            )?;
+            let has_saved_policy =
+                confirm_legacy_project_policy(&app, &state, permission_locale, &project_id).await?;
+            if !has_saved_policy {
+                if let Some(details) = import_confirmation {
+                    let permission_copy = PermissionDialogCopy::for_locale(permission_locale)
+                        .map_err(str::to_owned)?;
+                    permission_copy.validate().map_err(str::to_owned)?;
+                    let confirmed =
+                        confirm_permission_with_os(app, &details, &permission_copy).await?;
+                    if !confirmed {
+                        return Err(
+                            "The permission policy change requires native confirmation.".to_owned()
+                        );
+                    }
+                    forwarded_line = add_native_confirmation(&forwarded_line)?;
+                }
+            }
         }
     }
 
@@ -410,8 +474,122 @@ pub(crate) async fn write_local_service(
     }
     current
         .child
-        .write(line.as_bytes())
+        .write(forwarded_line.as_bytes())
         .map_err(|_| "The local service connection was interrupted.".to_owned())
+}
+
+enum LegacyGlobalPolicyConfirmation {
+    ExistingPolicy,
+    ConfirmedImport,
+    DeclinedImport,
+}
+
+async fn confirm_legacy_global_policy(
+    app: &AppHandle,
+    state: &LocalServiceState,
+    locale: NativeDialogLocale,
+    imported_full_access: bool,
+) -> Result<LegacyGlobalPolicyConfirmation, String> {
+    let status =
+        request_local_service(state, "internal.tool_permissions.global_status", json!({})).await?;
+    let needs_confirmation = status
+        .get("needsConfirmation")
+        .and_then(Value::as_bool)
+        .ok_or("The local service returned invalid permission status.")?;
+    let has_saved_policy = status
+        .get("hasSavedPolicy")
+        .and_then(Value::as_bool)
+        .ok_or("The local service returned invalid permission status.")?;
+    if needs_confirmation && !has_saved_policy {
+        return Err("The local service returned invalid permission status.".to_owned());
+    }
+
+    if needs_confirmation {
+        let copy = PermissionDialogCopy::for_locale(locale).map_err(str::to_owned)?;
+        copy.validate().map_err(str::to_owned)?;
+        let confirmed =
+            confirm_permission_with_os(app.clone(), &PermissionDetails::EnableFullAccess, &copy)
+                .await?;
+        if confirmed {
+            let result =
+                request_local_service(state, "internal.tool_permissions.global_confirm", json!({}))
+                    .await?;
+            if result.get("confirmed").and_then(Value::as_bool).is_none() {
+                return Err("The local service returned invalid permission status.".to_owned());
+            }
+        }
+    }
+
+    if has_saved_policy || !imported_full_access {
+        return Ok(LegacyGlobalPolicyConfirmation::ExistingPolicy);
+    }
+    let copy = PermissionDialogCopy::for_locale(locale).map_err(str::to_owned)?;
+    copy.validate().map_err(str::to_owned)?;
+    if confirm_permission_with_os(app.clone(), &PermissionDetails::EnableFullAccess, &copy).await? {
+        Ok(LegacyGlobalPolicyConfirmation::ConfirmedImport)
+    } else {
+        Ok(LegacyGlobalPolicyConfirmation::DeclinedImport)
+    }
+}
+
+async fn confirm_legacy_project_policy(
+    app: &AppHandle,
+    state: &LocalServiceState,
+    locale: NativeDialogLocale,
+    project_id: &str,
+) -> Result<bool, String> {
+    let status = request_local_service(
+        state,
+        "internal.tool_permissions.project_status",
+        json!({"projectId": project_id}),
+    )
+    .await?;
+    let needs_confirmation = status
+        .get("needsConfirmation")
+        .and_then(Value::as_bool)
+        .ok_or("The local service returned invalid permission status.")?;
+    let has_saved_policy = status
+        .get("hasSavedPolicy")
+        .and_then(Value::as_bool)
+        .ok_or("The local service returned invalid permission status.")?;
+    if needs_confirmation && !has_saved_policy {
+        return Err("The local service returned invalid permission status.".to_owned());
+    }
+    if !needs_confirmation {
+        return Ok(has_saved_policy);
+    }
+    let rules_json = status
+        .get("rulesJson")
+        .and_then(Value::as_str)
+        .filter(|rules| rules.len() <= 131_072)
+        .ok_or("The local service returned invalid project permission rules.")?;
+    let rules: Value = serde_json::from_str(rules_json)
+        .map_err(|_| "The local service returned invalid project permission rules.")?;
+    let rules = rules
+        .as_object()
+        .ok_or("The local service returned invalid project permission rules.")?;
+    let display_rules = rules
+        .iter()
+        .map(|(name, rule)| Some((name.as_str(), rule.as_str()?)))
+        .collect::<Option<Vec<_>>>()
+        .ok_or("The local service returned invalid project permission rules.")?;
+    let details = project_allow_confirmation(project_id, display_rules.into_iter())
+        .ok_or("The local service returned invalid project permission rules.")?;
+    let copy = PermissionDialogCopy::for_locale(locale).map_err(str::to_owned)?;
+    copy.validate().map_err(str::to_owned)?;
+    if !confirm_permission_with_os(app.clone(), &details, &copy).await? {
+        return Ok(true);
+    }
+    let result = request_local_service(
+        state,
+        "internal.tool_permissions.project_confirm",
+        json!({"projectId": project_id, "rulesJson": rules_json}),
+    )
+    .await?;
+    if result.get("confirmed").and_then(Value::as_bool).is_none() {
+        return Err("The local service returned invalid permission status.".to_owned());
+    }
+    Ok(true)
 }
 
 /// Sends a permission decision only for a live service request and requires native consent to allow it.
@@ -422,13 +600,15 @@ pub(crate) async fn respond_local_service_permission(
     generation: u64,
     approval_request_id: String,
     approved: bool,
-    permission_copy: PermissionDialogCopy,
+    permission_locale: NativeDialogLocale,
 ) -> Result<bool, String> {
-    permission_copy.validate().map_err(str::to_owned)?;
     let process = Arc::clone(&state.process);
     let permissions = Arc::clone(&state.permissions);
     let request = begin_permission_response(&permissions, generation, &approval_request_id)?;
     let approved = if approved {
+        let permission_copy =
+            PermissionDialogCopy::for_locale(permission_locale).map_err(str::to_owned)?;
+        permission_copy.validate().map_err(str::to_owned)?;
         match confirm_permission_with_os(app, &request.details, &permission_copy).await {
             Ok(approved) => approved,
             Err(error) => {

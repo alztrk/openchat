@@ -19,6 +19,9 @@ use super::{chat_completion_tool, invalid_retry_target_error};
 pub(super) struct ProviderRequestOptions<'a> {
     pub(super) model_id: String,
     pub(super) provider_id: &'a str,
+    pub(super) is_security_scan: bool,
+    pub(super) security_scan_public_web_research: bool,
+    pub(super) workspace_roots: &'a [std::path::PathBuf],
     pub(super) excluded_assistant_message_id: Option<&'a str>,
     pub(super) custom_instructions: Option<&'a str>,
     pub(super) project_instructions: Option<&'a str>,
@@ -46,6 +49,9 @@ pub(super) fn build_provider_request(
     let ProviderRequestOptions {
         model_id,
         provider_id,
+        is_security_scan,
+        security_scan_public_web_research,
+        workspace_roots,
         excluded_assistant_message_id,
         custom_instructions,
         project_instructions,
@@ -131,11 +137,20 @@ pub(super) fn build_provider_request(
         ));
     }
 
-    let mut tools = tools::definitions_for_request(provider_id, supports_tool_calls);
-    if !supports_images {
+    let mut tools = if is_security_scan {
+        crate::security_scan::tool_definitions(security_scan_public_web_research)
+    } else {
+        tools::definitions_for_request(provider_id, supports_tool_calls)
+    };
+    if !is_security_scan && !supports_images {
         tools.retain(|tool| tool.name != "computer_use");
     }
-    if cfg!(windows) && has_project && !project_task_ids.is_empty() && !tools.is_empty() {
+    if !is_security_scan
+        && cfg!(windows)
+        && has_project
+        && !project_task_ids.is_empty()
+        && !tools.is_empty()
+    {
         tools.push(tools::project_tasks::tool_definition(project_task_ids));
     }
     if goal_objective.is_some() && tools.is_empty() {
@@ -145,13 +160,18 @@ pub(super) fn build_provider_request(
             false,
         ));
     }
-    if !tools.is_empty() {
+    if !is_security_scan && !tools.is_empty() {
         tools.extend(goals::control_tool_definitions());
     }
-    if permission_mode == ToolPermissionMode::Plan {
+    if !is_security_scan && permission_mode == ToolPermissionMode::Plan {
         tools::disable_tools_for_plan_mode(&mut tools);
     }
-    let mut shared_instructions =
+    let mut shared_instructions = if is_security_scan {
+        crate::security_scan::provider_instructions(
+            workspace_roots,
+            security_scan_public_web_research,
+        )?
+    } else {
         instructions::shared_instructions(instructions::SharedInstructionInput {
             custom: custom_instructions,
             project: project_instructions,
@@ -165,11 +185,12 @@ pub(super) fn build_provider_request(
             project_root,
             tools_available: !tools.is_empty(),
             provider_id,
-        });
-    if !tools.is_empty() {
+        })
+    };
+    if !is_security_scan && !tools.is_empty() {
         goals::append_goal_tool_instructions(&mut shared_instructions);
     }
-    if let Some(objective) = goal_objective {
+    if !is_security_scan && let Some(objective) = goal_objective {
         goals::append_goal_instructions(&mut shared_instructions, objective);
     }
 
@@ -946,6 +967,7 @@ mod tests {
                 output: Some(serde_json::json!({"content": "enabled"})),
                 file_changes: Vec::new(),
                 file_changes_error: None,
+                recovery_checkpoint_id: None,
                 status: crate::provider_schema::ToolActivityStatus::Completed,
             }],
             attachments: Vec::new(),

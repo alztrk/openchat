@@ -13,6 +13,11 @@ use std::{
     ptr::{null, null_mut},
     time::Duration,
 };
+#[cfg(feature = "storage-broker-test-support")]
+use std::{
+    marker::PhantomData,
+    ops::{Deref, DerefMut},
+};
 
 use tokio::{fs::File, time::sleep};
 use windows_sys::Win32::{
@@ -55,6 +60,103 @@ pub struct SandboxedProcess {
     stdout: Option<File>,
     stderr: Option<File>,
     _sandbox: Option<AppContainerSandbox>,
+}
+
+/// Owns a unique, disposable AppContainer profile for storage broker integration tests.
+#[cfg(feature = "storage-broker-test-support")]
+pub struct StorageBrokerTestProfile {
+    program: PathBuf,
+    profile: AppContainerSandbox,
+}
+
+#[cfg(feature = "storage-broker-test-support")]
+impl StorageBrokerTestProfile {
+    /// Creates an isolated storage profile that is deleted when this owner is dropped.
+    pub fn create(program: &Path) -> io::Result<Self> {
+        validate_win32_string(program.as_os_str())?;
+        let program = fs::canonicalize(program)?;
+        if !program.is_file() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "The storage broker test executable is unavailable.",
+            ));
+        }
+        let (profile, _staged_executable) =
+            AppContainerSandbox::create_temporary_storage_broker(&program)?;
+        Ok(Self { program, profile })
+    }
+
+    /// Starts a broker process using this profile's isolated persistent data directory.
+    pub fn spawn_broker(&self) -> io::Result<StorageBrokerTestProcess<'_>> {
+        let (sandbox, executable) = self
+            .profile
+            .create_temporary_storage_broker_instance(&self.program)?;
+        copy_storage_broker_runtime_dlls(&self.program, &executable)?;
+        let working_directory = sandbox.working_directory.clone();
+        let process = SandboxedProcess::spawn_process(
+            Some(sandbox),
+            executable,
+            vec![std::ffi::OsString::from("--storage-broker-stdio")],
+            working_directory,
+            &[],
+            SandboxOptions::default(),
+        )?;
+        Ok(StorageBrokerTestProcess {
+            process,
+            _profile: PhantomData,
+        })
+    }
+
+    /// Returns the isolated profile's persistent storage root for test fixture setup.
+    pub fn storage_root(&self) -> io::Result<PathBuf> {
+        let profile_root = self.profile.temp_directory.parent().ok_or_else(|| {
+            io::Error::other("The temporary storage broker profile root is unavailable.")
+        })?;
+        Ok(profile_root.join("OpenChatStorage"))
+    }
+}
+
+/// A broker process whose lifetime is tied to its disposable test profile.
+#[cfg(feature = "storage-broker-test-support")]
+pub struct StorageBrokerTestProcess<'profile> {
+    process: SandboxedProcess,
+    _profile: PhantomData<&'profile StorageBrokerTestProfile>,
+}
+
+#[cfg(feature = "storage-broker-test-support")]
+impl Deref for StorageBrokerTestProcess<'_> {
+    type Target = SandboxedProcess;
+
+    fn deref(&self) -> &Self::Target {
+        &self.process
+    }
+}
+
+#[cfg(feature = "storage-broker-test-support")]
+impl DerefMut for StorageBrokerTestProcess<'_> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.process
+    }
+}
+
+#[cfg(feature = "storage-broker-test-support")]
+fn copy_storage_broker_runtime_dlls(program: &Path, executable: &Path) -> io::Result<()> {
+    if let Some(runtime_source) = program.parent() {
+        let runtime_directory = executable
+            .parent()
+            .ok_or_else(|| io::Error::other("The broker runtime directory is unavailable."))?;
+        for entry in fs::read_dir(runtime_source)? {
+            let entry = entry?;
+            if entry.file_type()?.is_file()
+                && entry.path().extension().is_some_and(|extension| {
+                    extension.to_string_lossy().eq_ignore_ascii_case("dll")
+                })
+            {
+                fs::copy(entry.path(), runtime_directory.join(entry.file_name()))?;
+            }
+        }
+    }
+    Ok(())
 }
 
 impl SandboxedProcess {
@@ -276,8 +378,8 @@ impl SandboxedProcess {
         };
 
         let mut attribute_size = 0usize;
-        // SAFETY: The null probe asks Windows for the required size; the output integer is writable.
         let attribute_count = if sandbox.is_some() { 2 } else { 1 };
+        // SAFETY: The null probe asks Windows for the required size; the output integer is writable.
         unsafe {
             InitializeProcThreadAttributeList(null_mut(), attribute_count, 0, &mut attribute_size);
         }

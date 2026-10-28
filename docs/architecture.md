@@ -69,6 +69,16 @@ remain separate Rust processes with their existing storage and RPC boundaries.
   access pass through `apps/desktop/frontend/src/platform/tauri/`, and the
   sidecar client and its singleton live under
   `apps/desktop/frontend/src/platform/local-service/`.
+- User preferences remain renderer-owned and use the unified storage boundary.
+  Model reasoning defaults apply only when the selected model advertises the
+  saved reasoning level. Assistant execution preferences cover the default
+  profile, selected project Skills, preferred delegated model, and Goal runtime
+  limit. Design preferences persist generation defaults, presets, and library
+  filters. Notification quiet hours use the local clock and can mute projects.
+  Usage warnings require provider quota snapshots or locally priced usage; an
+  unavailable price estimate is shown as unavailable rather than as zero. The
+  Windows startup option writes the current user's Run registry entry, while
+  the close-window preference is applied by the native Tauri window handler.
 - Shared UI primitives now live under
   `apps/desktop/frontend/src/design-system/`; shared hooks, services, and
   utilities remain under `apps/desktop/frontend/src/shared/`.
@@ -85,18 +95,25 @@ remain separate Rust processes with their existing storage and RPC boundaries.
   dispatcher routes the `project.*` namespace to this domain module.
 - Security scans have a dedicated renderer module and persistent
   `security.scans.*` RPC records. Each record binds one project, selected
-  canonical workspace roots, provider route, conversation, and durable
-  lifecycle state. Scan runs use a fixed English instruction set and an exact
-  read-only allowlist (`list_files`, `search_files`, `read_file`,
-  `get_file_info`, `web_search`, `read_url_content`, and `goal_update`) with an
-  empty project context; the scan cannot inherit project instructions, Skills,
-  MCP tools, or ordinary chat tool permissions. The local service enforces the
-  selected-root boundary for filesystem calls. The dedicated page displays
+  canonical workspace roots, provider route, conversation, public-web-research
+  consent, and durable lifecycle state. Scan runs use a fixed English
+  instruction set and a read-only allowlist (`list_files`, `search_files`,
+  `read_file`, `get_file_info`, and `goal_update`); `web_search` and
+  `read_url_content` are added only when the scan record contains explicit
+  consent. Existing records default to no public web access. The model has no
+  direct filesystem or shell access,
+  and the scan cannot inherit project instructions, Skills, MCP tools, or
+  ordinary chat tool permissions. The local service enforces the selected-root
+  boundary for every filesystem call and the web-tool allowlist at execution.
+  A scan can be marked complete only with a non-empty summary and a non-empty
+  checklist whose items are all complete; this validates the model's reported
+  plan state, not independent review coverage. The dedicated page displays
   each scan's streamed assistant messages, actual tool activity, model-updated
   goal checklist, status, elapsed time, quota wait, and stop/resume
-  controls. Independent records and runtimes support parallel scans. Retry
-  deadlines and state are persisted; restart-safe automatic retry still needs
-  end-to-end validation.
+  controls. Independent records and runtimes support parallel scans. When the
+  local service becomes ready, the renderer initializes saved active scans and
+  restores persisted quota retry deadlines. Process-restart and quota recovery
+  still need end-to-end validation.
 - Local engine and model catalog routes, including Hugging Face model search
   and downloads, are dispatched by
   `services/openchat-local-service/src/transport/rpc/local_engine_models.rs`. The
@@ -109,6 +126,12 @@ remain separate Rust processes with their existing storage and RPC boundaries.
 - Conversation file-change history, diffs, reverts, and cleanup routes are
   dispatched by `services/openchat-local-service/src/transport/rpc/file_changes.rs`;
   the module preserves the existing validation and stable error contract.
+  A failed or cancelled tool activity carries an opaque recovery handle only
+  when its file changes were checkpointed. The renderer checks whether that
+  operation can still be undone and offers an explicit action inline. Recovery
+  restores only that operation's paths, rejects paths touched by later tool
+  operations, applies conflict checks before writing, and records the restore
+  as a new checkpoint.
 - Usage statistics and model-pricing routes are dispatched by
   `services/openchat-local-service/src/transport/rpc/statistics.rs`. Date ranges,
   filters, pagination, and batch size are validated at the RPC boundary. The
@@ -120,8 +143,10 @@ remain separate Rust processes with their existing storage and RPC boundaries.
   discovery are dispatched by
   `services/openchat-local-service/src/transport/rpc/providers.rs`. Provider secrets
   continue to resolve from saved credential references inside the service. Copilot
-  connections are keyed by GitHub user ID, keep per-account credentials in Windows
-  Credential Manager, and route requests through the explicitly selected account.
+  connections are keyed by GitHub user ID, keep per-account token pairs in the
+  DPAPI-protected SQLCipher vault, and route requests through the explicitly selected
+  account. Windows Credential Manager stores the profile key and may contain legacy
+  token entries that migrate into the vault on read.
 - Conversation memory, history search, context measurement, and archive routes
   are dispatched by
   `services/openchat-local-service/src/transport/rpc/conversations.rs`. Archive
@@ -193,8 +218,26 @@ remain separate Rust processes with their existing storage and RPC boundaries.
   missing chat columns and sort indexes, repairs known backend-derived indexes
   and triggers, and runs the backend migration ledger when needed. Migration
   steps use SQLite transactions so interrupted upgrades resume from the last
-  committed version. Windows full-profile restore remains unavailable until a
-  verified broker-owned database replacement protocol is implemented.
+  committed version. Verified pre-migration snapshots remain in a sibling
+  `backups` directory. OpenChat does not automatically expire or delete them,
+  and does not provide an in-app restore flow for these snapshots. Conversation
+  deletion and history clearing affect the active database only; older snapshots
+  can retain earlier copies of that content. Windows full-profile restore now
+  stages the replacement database and attachments inside the broker's private
+  profile, activates on startup, and preserves rollback until initialization
+  commits. The packaged workflow still needs end-to-end validation.
+  Windows SQLite files now use SQLCipher. The full-token sidecar reads the
+  profile key from Windows Credential Manager and sends it to the AppContainer
+  broker only over the inherited standard handles before the broker opens its
+  database. The broker verifies a keyed open and cipher integrity; missing keys
+  for encrypted data fail closed. Plaintext migrations export into a verified
+  keyed temporary database and use a recovery journal before replacement.
+  Snapshots, import rollback copies, retained legacy databases, and restore
+  stages are keyed as well. Portable full-profile archives keep a separate
+  database key inside the passphrase-encrypted age archive and re-encrypt the
+  restored database with the destination profile key. The packaged Windows
+  startup and archive workflows still need end-to-end validation. Historical
+  filesystem snapshots can retain plaintext blocks from before migration.
 - The local service reads newline-delimited JSON-RPC frames with a 24 MiB
   per-request limit, accepts string request IDs up to 256 UTF-8 bytes, and
   accepts method names up to 128 bytes. The parser materializes at most 100,000
@@ -262,8 +305,11 @@ remain separate Rust processes with their existing storage and RPC boundaries.
   index covers up to eight configured workspace roots, follows `.gitignore`,
   and applies shared limits of 20,000 files and 128 MiB scanned per sync, 64 MiB
   of indexed text, and 100,000 Tree-sitter symbols across Bash, C, C++, C#,
-  Go, Java, PHP, Python, Rust, JavaScript, and TypeScript. Indexed paths and
-  search results use canonical absolute paths. Symbol results include 1-based
+  Dart, Go, Java, Lua, PHP, Python, Ruby, Rust, Scala, SQL, Swift, JavaScript,
+  and TypeScript. Kotlin source remains searchable as text; its current
+  Tree-sitter grammar does not reliably parse class declarations, so Kotlin
+  symbols are not indexed. Indexed paths and search results use canonical
+  absolute paths. Symbol results include 1-based
   line ranges, declaration signatures, containing types, and inheritance or
   implementation relationships when the grammar exposes them. The richer
   structural details are extracted from cached indexed source when searching,
@@ -274,7 +320,12 @@ remain separate Rust processes with their existing storage and RPC boundaries.
   contents; the benchmark's comparison with the entire synthetic workspace is
   an upper bound, and reading one already identified narrow file can be cheaper
   than a search response. Exact savings depend on the repository, task, and
-  provider tokenizer.
+  provider tokenizer. Manual benchmark cases cover a synthetic workspace and
+  the current repository; they report byte-based token estimates, not provider
+  tokenizer counts. Backend migration 46 stores a per-file symbol extractor
+  version, backfills existing grammars, and marks enabled indexes stale. The
+  next sync refreshes files whose supported symbols are missing or stale while
+  reusing unchanged symbols from previously supported languages.
   The per-file index records whether symbol extraction has run, including files
   with no declarations, so unchanged files are not repeatedly parsed. Index
   updates to any configured workspace root mark the shared index stale.
@@ -294,16 +345,26 @@ remain separate Rust processes with their existing storage and RPC boundaries.
   diagnostic queries to the agent without adding an editor UI. It lazily starts
   a supported server only when requested, reuses at most two project/server
   sessions for up to five idle minutes, and never downloads a server. The
-  initial catalog includes TypeScript Language Server, Pyright, rust-analyzer,
-  gopls, clangd, csharp-ls, PHPactor, Bash Language Server, Ruby LSP, LuaLS,
-  sqls, and Biome diagnostics. TypeScript Language Server, Pyright, Bash
-  Language Server, and Biome can be launched from globally installed npm
-  packages when Node.js is on `PATH`. Dart uses `dart language-server`.
-  JavaScript/TypeScript diagnostics use
-  Biome when `biome.json` or `biome.jsonc` is present, and TypeScript Language
-  Server otherwise. Other catalog entries require their `.exe` on `PATH`;
-  npm-backed servers are resolved from global npm package directories found
-  through `PATH`, not from project-local `node_modules`.
+  catalog includes TypeScript Language Server, Pyright, rust-analyzer, gopls,
+  clangd, csharp-ls, PHPactor, Bash Language Server, Ruby LSP, LuaLS, sqls,
+  Eclipse JDT Language Server, Kotlin Language Server, SourceKit-LSP, and Biome
+  diagnostics. TypeScript Language Server, Pyright, Bash Language Server, and
+  Biome can be launched from globally installed npm packages when Node.js is on
+  `PATH`. Dart uses `dart language-server`. Java uses Eclipse JDT Language
+  Server, whose Python launcher requires Python 3.9+ and a Java 21+ runtime.
+  Kotlin uses the standalone Kotlin Language Server, and Swift uses SourceKit-LSP
+  from a Swift toolchain. Kotlin Language Server is currently in alpha. Other
+  entries need their native binary or launcher available through `PATH`. npm
+  servers prefer an installed project-local package, preserving the project's
+  dependency version. If the project declares an npm language-server package
+  but it is not installed locally, the tool reports that state instead of
+  silently using a global version; otherwise it can use a global installation
+  found through `PATH`. An unreadable or oversized `package.json` also blocks
+  global fallback because the requested project version cannot be determined.
+  The selected server's `initialize` capabilities govern which navigation
+  actions are available, and the tool never updates a server.
+  JavaScript/TypeScript diagnostics use Biome when `biome.json` or `biome.jsonc`
+  is present, and TypeScript Language Server otherwise.
   The sandboxed executor currently supports Windows only and denies network
   access.
 - Project code symbols, file text, durable notes, and prior project conversations
@@ -372,13 +433,15 @@ remain separate Rust processes with their existing storage and RPC boundaries.
   so all processes coordinate on the same file object; acquisition fails after
   30 seconds instead of writing without coordination. Null or absent DACLs are
   rejected because they cannot be safely narrowed.
-- Windows provider keys and global MCP credentials use per-user DPAPI storage.
+- Windows provider keys, MCP secrets, and OAuth token pairs use per-user DPAPI
+  protection in the SQLCipher database vault. Windows Credential Manager stores the
+  profile key and may contain legacy MCP or OAuth entries that migrate on read.
   Decrypted native plaintext and serialized secret-map buffers are zeroized;
   `SecretMap` also clears replaced, removed, and remaining Rust-owned values.
-  A profile-scoped lock file and Windows exclusive file lock cover each full
-  read-modify-write operation across processes and login sessions, so parallel
-  provider and MCP settings updates cannot overwrite one another. The empty
-  lock file remains beside the DPAPI map to preserve a stable lock target; lock
+  Secret-map read-modify-write updates use a profile-scoped lock file and
+  Windows exclusive file lock across processes and login sessions, so parallel
+  provider and global MCP settings updates cannot overwrite one another. The empty
+  lock file remains beside the profile database to preserve a stable lock target; lock
   acquisition fails after 30 seconds instead of writing without coordination.
   ChatGPT token endpoint responses are capped at 64 KiB before JSON parsing.
   The streaming read enforces this limit even when the endpoint omits its content
@@ -463,6 +526,11 @@ remain separate Rust processes with their existing storage and RPC boundaries.
   byte limits through the selected project's directory capability. MCP catalog
   replacement creates and renames the temporary file relative to the opened
   `.openchat` directory, preventing path swaps from redirecting the write.
+  An optional `catalogToolNames` field carries bounded catalog declarations into
+  project MCP settings. The explicit connection check compares those names with
+  the server's runtime tool list; runtime-discovered tools remain authoritative
+  for routing and permissions, and the catalog claims do not affect permission
+  fingerprints.
 - Windows CI runs RustSec audits for the service, sandbox, provider secret
   store, and Tauri lockfiles, plus a full npm audit for frontend dependencies.
   The frontend moved to Tailwind CSS 4.3.3 with the dedicated

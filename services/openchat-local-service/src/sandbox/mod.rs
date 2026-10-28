@@ -29,6 +29,8 @@ mod tests;
 pub(crate) use environment::fresh_path;
 #[cfg(windows)]
 pub use process::SandboxedProcess;
+#[cfg(all(windows, feature = "storage-broker-test-support"))]
+pub use process::{StorageBrokerTestProcess, StorageBrokerTestProfile};
 #[cfg(windows)]
 pub use types::{SandboxJobLimits, SandboxOptions};
 

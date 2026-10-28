@@ -8,7 +8,7 @@
 use std::{
     collections::HashSet,
     fs::{self, OpenOptions},
-    io::Write,
+    io::{self, Write},
     path::{Path, PathBuf},
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -16,10 +16,24 @@ use std::{
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use rusqlite::{OptionalExtension, params};
 use serde_json::{Map, Value, json};
+use zeroize::{Zeroize, Zeroizing};
 
 use crate::{
-    protocol::ServiceError,
-    storage::{AppStorage, StorageConnection, sqlite_error_code},
+    conversation_limits::{
+        MAXIMUM_ATTACHMENT_FILE_COUNT as MAX_ATTACHMENT_COUNT,
+        MAXIMUM_ATTACHMENT_IMAGE_BYTES as MAX_IMAGE_BYTES,
+        MAXIMUM_ATTACHMENT_IMAGE_COUNT as MAX_IMAGE_COUNT,
+        MAXIMUM_ATTACHMENT_KIND_BYTES as MAX_ATTACHMENT_KIND_BYTES,
+        MAXIMUM_ATTACHMENT_MIME_TYPE_BYTES as MAX_ATTACHMENT_MIME_BYTES,
+        MAXIMUM_ATTACHMENT_NAME_BYTES as MAX_ATTACHMENT_NAME_BYTES, MAXIMUM_ATTACHMENT_NAME_CHARS,
+        MAXIMUM_ATTACHMENT_TEXT_BYTES as MAX_TEXT_BYTES,
+        MAXIMUM_ATTACHMENT_TOTAL_BYTES as MAX_ATTACHMENT_BYTES, MESSAGE_CONTENT_PREFIX,
+    },
+    protocol::{
+        MAX_REQUEST_PARAMETER_NODES, ServiceError, clear_sensitive_json_values,
+        parse_bounded_json_value,
+    },
+    storage::{AppStorage, StorageConnection, StorageRow, sqlite_error_code},
 };
 
 use super::invalid_request_params;
@@ -29,19 +43,17 @@ const MAX_TITLE_CHARS: usize = 512;
 const MAX_MODEL_ID_CHARS: usize = 512;
 const MAX_MESSAGE_CONTENT_BYTES: usize = 4_000_000;
 const MAX_MESSAGE_METADATA_BYTES: usize = 4_000_000;
+const MAX_AGENT_METADATA_BYTES: usize = 128 * 1024;
+const MAX_EMBEDDED_METADATA_JSON_DEPTH: usize = 4;
+const MAX_EMBEDDED_METADATA_JSON_BYTES: usize = 4_000_000;
+const MAX_STRUCTURED_METADATA_JSON_NESTING: usize = 128;
+const SENSITIVE_METADATA_KEY_MARKERS: [&str; 5] =
+    ["apiKey", "secret", "passphrase", "secrets", "credential"];
 const MAX_CONVERSATION_IDS: usize = 500;
 const MAX_PROJECT_NAME_BYTES: usize = MAX_TITLE_CHARS * 4;
 const MAX_WORKSPACE_ROOT_BYTES: usize = 32 * 1024;
 const MAX_SEARCH_QUERY_BYTES: usize = 512;
 const MAX_SEARCH_RESULTS: usize = 100;
-const MAX_ATTACHMENT_COUNT: usize = 10;
-const MAX_IMAGE_COUNT: usize = 3;
-const MAX_ATTACHMENT_BYTES: usize = 14 * 1024 * 1024;
-const MAX_IMAGE_BYTES: usize = 10 * 1024 * 1024;
-const MAX_TEXT_BYTES: usize = 1024 * 1024;
-const MAX_ATTACHMENT_NAME_BYTES: usize = 255 * 4;
-const MAX_ATTACHMENT_MIME_BYTES: usize = 64;
-const MESSAGE_CONTENT_PREFIX: &str = "\u{1e}openchat-attachments-v1:";
 const MAX_ATTACHMENT_SCAN: usize = 10_000;
 const MAX_ATTACHMENT_PAGE: usize = 100;
 const ATTACHMENT_TEXT_INDEX_SETTING: &str = "attachment_text_index.enabled";
@@ -53,17 +65,7 @@ macro_rules! conversation_from_row {
     ($row:expr) => {{
         let row = $row;
         let agent_json = row.get::<_, Option<String>>(13)?;
-        let agent = agent_json
-            .map(|value| {
-                serde_json::from_str::<Value>(&value).map_err(|error| {
-                    rusqlite::Error::FromSqlConversionFailure(
-                        13,
-                        rusqlite::types::Type::Text,
-                        Box::new(error),
-                    )
-                })
-            })
-            .transpose()?;
+        let agent = agent_json.map(parse_stored_agent_json).transpose()?;
         Ok(json!({
             "id": row.get::<_, String>(0)?,
             "title": row.get::<_, String>(1)?,
@@ -83,28 +85,30 @@ macro_rules! conversation_from_row {
     }};
 }
 
-macro_rules! message_from_row {
-    ($row:expr) => {{
-        let row = $row;
-        Ok(json!({
-            "id": row.get::<_, String>(0)?,
-            "conversationId": row.get::<_, String>(1)?,
-            "role": row.get::<_, String>(2)?,
-            "content": row.get::<_, String>(3)?,
-            "createdAt": row.get::<_, Option<i64>>(4)?,
-            "outputTokens": row.get::<_, Option<i64>>(5)?,
-            "tokensPerSecond": row.get::<_, Option<f64>>(6)?,
-            "elapsedMicroseconds": row.get::<_, Option<i64>>(7)?,
-            "providerId": row.get::<_, Option<String>>(8)?,
-            "modelId": row.get::<_, Option<String>>(9)?,
-            "citationSources": row.get::<_, String>(10)?,
-            "personalMemoryFactIds": row.get::<_, String>(11)?,
-            "reasoningSummaries": row.get::<_, String>(12)?,
-            "toolActivities": row.get::<_, String>(13)?,
-            "status": row.get::<_, String>(14)?,
-            "failureCode": row.get::<_, Option<String>>(15)?,
-        }))
-    }};
+fn message_from_row(row: &StorageRow, remaining_nodes: &mut usize) -> rusqlite::Result<Value> {
+    let citation_sources = sanitize_stored_metadata(row.get(10)?, 10, false, remaining_nodes)?;
+    let personal_memory_fact_ids =
+        sanitize_stored_metadata(row.get(11)?, 11, false, remaining_nodes)?;
+    let reasoning_summaries = sanitize_stored_metadata(row.get(12)?, 12, false, remaining_nodes)?;
+    let tool_activities = sanitize_stored_metadata(row.get(13)?, 13, true, remaining_nodes)?;
+    Ok(json!({
+        "id": row.get::<_, String>(0)?,
+        "conversationId": row.get::<_, String>(1)?,
+        "role": row.get::<_, String>(2)?,
+        "content": row.get::<_, String>(3)?,
+        "createdAt": row.get::<_, Option<i64>>(4)?,
+        "outputTokens": row.get::<_, Option<i64>>(5)?,
+        "tokensPerSecond": row.get::<_, Option<f64>>(6)?,
+        "elapsedMicroseconds": row.get::<_, Option<i64>>(7)?,
+        "providerId": row.get::<_, Option<String>>(8)?,
+        "modelId": row.get::<_, Option<String>>(9)?,
+        "citationSources": citation_sources,
+        "personalMemoryFactIds": personal_memory_fact_ids,
+        "reasoningSummaries": reasoning_summaries,
+        "toolActivities": tool_activities,
+        "status": row.get::<_, String>(14)?,
+        "failureCode": row.get::<_, Option<String>>(15)?,
+    }))
 }
 
 /// Dispatches durable conversation, project, message, favorite, and attachment storage calls.
@@ -152,6 +156,9 @@ fn list_conversations(storage: &AppStorage) -> Result<Value, ServiceError> {
                     workspace_id, api_key_connection_id, project_id,
                     is_pinned, is_archived, created_at, updated_at, agent_json
              FROM conversations
+             WHERE NOT EXISTS (
+                SELECT 1 FROM security_scans WHERE security_scans.conversation_id = conversations.id
+             )
              ORDER BY is_pinned DESC, updated_at DESC, id ASC",
         )
         .map_err(storage_error)?;
@@ -193,7 +200,9 @@ fn create_conversation(params: &Value, storage: &AppStorage) -> Result<Value, Se
     let workspace_id = optional_safe_id(input, "workspaceId")?;
     let api_key_connection_id = optional_safe_id(input, "apiKeyConnectionId")?;
     let project_id = optional_safe_id(input, "projectId")?;
-    let agent_json = optional_json_object(input, "agent")?.map(|agent| agent.to_string());
+    let agent_json = optional_json_object(input, "agent")?
+        .map(serialize_json_without_sensitive_values)
+        .transpose()?;
     let now = unix_time_millis()?;
     let connection = storage.connect().map_err(storage_error)?;
     connection
@@ -251,7 +260,10 @@ fn set_conversation_route(params: &Value, storage: &AppStorage) -> Result<Value,
             "UPDATE conversations
              SET provider_id = ?1, model_id = ?2, connection_id = ?3,
                  workspace_id = ?4, api_key_connection_id = ?5, updated_at = ?6
-             WHERE id = ?7",
+             WHERE id = ?7
+               AND NOT EXISTS (
+                   SELECT 1 FROM security_scans WHERE security_scans.conversation_id = conversations.id
+               )",
             params![
                 provider_id,
                 model_id,
@@ -295,7 +307,7 @@ fn move_conversations(params: &Value, storage: &AppStorage) -> Result<Value, Ser
     let project_id = optional_safe_id(input, "projectId")?;
     let mut connection = storage.connect().map_err(storage_error)?;
     let transaction = connection.transaction().map_err(storage_error)?;
-    if let Some(project_id) = project_id.as_deref() {
+    if let Some(project_id) = project_id {
         let exists = transaction
             .query_row(
                 "SELECT EXISTS(SELECT 1 FROM projects WHERE id = ?1)",
@@ -310,7 +322,11 @@ fn move_conversations(params: &Value, storage: &AppStorage) -> Result<Value, Ser
     for id in &ids {
         let changed = transaction
             .execute(
-                "UPDATE conversations SET project_id = ?1, is_pinned = 0 WHERE id = ?2",
+                "UPDATE conversations SET project_id = ?1, is_pinned = 0
+                 WHERE id = ?2
+                   AND NOT EXISTS (
+                       SELECT 1 FROM security_scans WHERE security_scans.conversation_id = conversations.id
+                   )",
                 params![project_id, id],
             )
             .map_err(storage_error)?;
@@ -608,8 +624,11 @@ fn list_messages(params: &Value, storage: &AppStorage) -> Result<Value, ServiceE
              ORDER BY created_at ASC, id ASC LIMIT 10000",
         )
         .map_err(storage_error)?;
+    let mut remaining_nodes = MAX_REQUEST_PARAMETER_NODES;
     let rows = statement
-        .query_map([conversation_id], |row| message_from_row!(row))
+        .query_map([conversation_id], |row| {
+            message_from_row(row, &mut remaining_nodes)
+        })
         .map_err(storage_error)?;
     let mut messages = Vec::new();
     for row in rows {
@@ -627,10 +646,18 @@ fn save_message(params: &Value, storage: &AppStorage) -> Result<Value, ServiceEr
     let status = required_message_status(input, "status")?;
     let provider_id = optional_safe_id(input, "providerId")?;
     let model_id = optional_model_id(input, "modelId")?;
-    let citation_sources = optional_json_array(input, "citationSources")?;
-    let personal_memory_fact_ids = optional_json_array(input, "personalMemoryFactIds")?;
-    let reasoning_summaries = optional_json_array(input, "reasoningSummaries")?;
-    let tool_activities = optional_json_array(input, "toolActivities")?;
+    let mut remaining_metadata_nodes = MAX_REQUEST_PARAMETER_NODES;
+    let citation_sources =
+        optional_json_array(input, "citationSources", &mut remaining_metadata_nodes)?;
+    let personal_memory_fact_ids = optional_json_array(
+        input,
+        "personalMemoryFactIds",
+        &mut remaining_metadata_nodes,
+    )?;
+    let reasoning_summaries =
+        optional_json_array(input, "reasoningSummaries", &mut remaining_metadata_nodes)?;
+    let tool_activities =
+        optional_json_array(input, "toolActivities", &mut remaining_metadata_nodes)?;
     let failure_code = optional_failure_code(input, "failureCode")?;
     let created_at = input
         .get("createdAt")
@@ -779,8 +806,8 @@ fn search_messages(params: &Value, storage: &AppStorage) -> Result<Value, Servic
            AND (?3 = 0 OR content LIKE '%```%')
          ORDER BY created_at DESC, id DESC LIMIT ?4";
     let connection = storage.connect().map_err(storage_error)?;
-    let mut statement = connection.prepare(&sql).map_err(storage_error)?;
-    let normalized = normalize_search_text(&query);
+    let mut statement = connection.prepare(sql).map_err(storage_error)?;
+    let normalized = normalize_search_text(query);
     let role_value = role.unwrap_or("");
     let rows = statement
         .query_map(
@@ -1101,7 +1128,7 @@ fn list_conversation_attachments(
         }
     }
 
-    let next_offset = found_extra_at.or_else(|| {
+    let next_offset = found_extra_at.or({
         if reached_end {
             None
         } else if scanned >= MAX_ATTACHMENT_SCAN as u64 {
@@ -1372,7 +1399,7 @@ fn parse_attachment_inputs(value: Option<&Value>) -> Result<Vec<AttachmentInput>
         let name = required_bounded_string(object, "name", MAX_ATTACHMENT_NAME_BYTES, true)?;
         let mime_type =
             required_bounded_string(object, "mimeType", MAX_ATTACHMENT_MIME_BYTES, true)?;
-        let kind = required_bounded_string(object, "kind", 16, true)?;
+        let kind = required_bounded_string(object, "kind", MAX_ATTACHMENT_KIND_BYTES, true)?;
         if kind != "image" && kind != "text" {
             return Err(invalid_request_params());
         }
@@ -1410,7 +1437,7 @@ fn parse_attachment_inputs(value: Option<&Value>) -> Result<Vec<AttachmentInput>
             if images > MAX_IMAGE_COUNT {
                 return Err(invalid_request_params());
             }
-            if !valid_image_signature(&mime_type, &bytes) {
+            if !valid_image_signature(mime_type, &bytes) {
                 return Err(invalid_request_params());
             }
         } else if std::str::from_utf8(&bytes).is_err() {
@@ -1431,18 +1458,18 @@ fn parse_attachment_inputs(value: Option<&Value>) -> Result<Vec<AttachmentInput>
 fn parse_attachment_envelope(content: &str) -> Result<AttachmentEnvelope, ServiceError> {
     let encoded = content
         .strip_prefix(MESSAGE_CONTENT_PREFIX)
-        .ok_or_else(|| storage_unavailable())?;
+        .ok_or_else(storage_unavailable)?;
     let value: Value = serde_json::from_str(encoded).map_err(|_| storage_unavailable())?;
-    let object = value.as_object().ok_or_else(|| storage_unavailable())?;
+    let object = value.as_object().ok_or_else(storage_unavailable)?;
     let text = object
         .get("content")
         .and_then(Value::as_str)
-        .ok_or_else(|| storage_unavailable())?
+        .ok_or_else(storage_unavailable)?
         .to_owned();
     let items = object
         .get("attachments")
         .and_then(Value::as_array)
-        .ok_or_else(|| storage_unavailable())?;
+        .ok_or_else(storage_unavailable)?;
     if items.is_empty() || items.len() > MAX_ATTACHMENT_COUNT {
         return Err(storage_unavailable());
     }
@@ -1451,7 +1478,7 @@ fn parse_attachment_envelope(content: &str) -> Result<AttachmentEnvelope, Servic
     let mut image_count = 0_usize;
     let mut attachments = Vec::with_capacity(items.len());
     for item in items {
-        let object = item.as_object().ok_or_else(|| storage_unavailable())?;
+        let object = item.as_object().ok_or_else(storage_unavailable)?;
         let id = required_safe_id(object, "id")
             .map_err(|_| storage_unavailable())?
             .to_owned();
@@ -1463,14 +1490,14 @@ fn parse_attachment_envelope(content: &str) -> Result<AttachmentEnvelope, Servic
         let mime_type =
             required_bounded_string(object, "mimeType", MAX_ATTACHMENT_MIME_BYTES, true)
                 .map_err(|_| storage_unavailable())?;
-        let kind =
-            required_bounded_string(object, "kind", 16, true).map_err(|_| storage_unavailable())?;
+        let kind = required_bounded_string(object, "kind", MAX_ATTACHMENT_KIND_BYTES, true)
+            .map_err(|_| storage_unavailable())?;
         let size_bytes = object
             .get("sizeBytes")
             .and_then(Value::as_u64)
             .and_then(|size| usize::try_from(size).ok())
             .filter(|size| *size > 0)
-            .ok_or_else(|| storage_unavailable())?;
+            .ok_or_else(storage_unavailable)?;
         if kind != "image" && kind != "text" {
             return Err(storage_unavailable());
         }
@@ -1503,7 +1530,7 @@ fn parse_attachment_envelope(content: &str) -> Result<AttachmentEnvelope, Servic
 fn validate_attachment_metadata(metadata: &AttachmentMetadata) -> Result<(), ServiceError> {
     if !is_safe_identifier(&metadata.id)
         || metadata.name.trim().is_empty()
-        || metadata.name.chars().count() > 255
+        || metadata.name.chars().count() > MAXIMUM_ATTACHMENT_NAME_CHARS
         || metadata.name.chars().any(char::is_control)
         || metadata.size_bytes == 0
     {
@@ -1891,34 +1918,274 @@ fn optional_json_object<'a>(
     }
 }
 
-fn optional_json_array(object: &Map<String, Value>, name: &str) -> Result<String, ServiceError> {
-    match object.get(name) {
-        None | Some(Value::Null) => Ok("[]".to_owned()),
+fn optional_json_array(
+    object: &Map<String, Value>,
+    name: &str,
+    remaining_nodes: &mut usize,
+) -> Result<String, ServiceError> {
+    let mut value = match object.get(name) {
+        None | Some(Value::Null) => return Ok("[]".to_owned()),
         Some(Value::Array(value)) => {
-            let encoded = serde_json::to_string(value).map_err(|_| invalid_request_params())?;
-            if encoded.len() > MAX_MESSAGE_METADATA_BYTES {
+            let node_count = value.iter().fold(1usize, |count, item| {
+                count.saturating_add(json_value_node_count(item))
+            });
+            if node_count > *remaining_nodes {
                 return Err(invalid_request_params());
             }
-            Ok(encoded)
+            *remaining_nodes -= node_count;
+            Value::Array(value.clone())
         }
         Some(Value::String(value)) => {
-            if value.len() > MAX_MESSAGE_METADATA_BYTES
-                || serde_json::from_str::<Value>(value)
-                    .map(|v| !v.is_array())
-                    .unwrap_or(true)
-            {
+            if value.len() > MAX_MESSAGE_METADATA_BYTES {
                 return Err(invalid_request_params());
             }
-            Ok(value.clone())
+            let (parsed, node_count) = parse_bounded_json_value(value, *remaining_nodes)
+                .map_err(|_| invalid_request_params())?
+                .ok_or_else(invalid_request_params)?;
+            *remaining_nodes -= node_count;
+            if !parsed.is_array() {
+                return Err(invalid_request_params());
+            }
+            parsed
         }
-        _ => Err(invalid_request_params()),
+        _ => return Err(invalid_request_params()),
+    };
+    clear_sensitive_json_values(&mut value);
+    if name == "toolActivities" {
+        sanitize_tool_activity_metadata(&mut value, remaining_nodes, 0)?;
+    }
+    let encoded =
+        Zeroizing::new(serde_json::to_string(&value).map_err(|_| invalid_request_params())?);
+    if encoded.len() > MAX_MESSAGE_METADATA_BYTES {
+        return Err(invalid_request_params());
+    }
+    Ok(encoded.to_string())
+}
+
+fn serialize_json_without_sensitive_values(value: &Value) -> Result<String, ServiceError> {
+    let mut sanitized = value.clone();
+    clear_sensitive_json_values(&mut sanitized);
+    let encoded =
+        Zeroizing::new(serde_json::to_string(&sanitized).map_err(|_| invalid_request_params())?);
+    if encoded.len() > MAX_AGENT_METADATA_BYTES {
+        return Err(invalid_request_params());
+    }
+    Ok(encoded.to_string())
+}
+
+fn json_value_node_count(value: &Value) -> usize {
+    match value {
+        Value::Array(items) => items.iter().fold(1usize, |count, item| {
+            count.saturating_add(json_value_node_count(item))
+        }),
+        Value::Object(fields) => fields.values().fold(1usize, |count, value| {
+            count.saturating_add(json_value_node_count(value))
+        }),
+        _ => 1,
     }
 }
 
-fn required_content<'a>(
-    object: &'a Map<String, Value>,
-    name: &str,
-) -> Result<String, ServiceError> {
+fn sanitize_tool_activity_metadata(
+    value: &mut Value,
+    remaining_nodes: &mut usize,
+    encoded_json_depth: usize,
+) -> Result<bool, ServiceError> {
+    match value {
+        Value::Array(items) => {
+            let mut sanitized = false;
+            for item in items {
+                sanitized |=
+                    sanitize_tool_activity_metadata(item, remaining_nodes, encoded_json_depth)?;
+            }
+            Ok(sanitized)
+        }
+        Value::Object(fields) => {
+            let mut sanitized = false;
+            for (name, field_value) in fields {
+                if matches!(name.as_str(), "arguments" | "output") {
+                    sanitized |= sanitize_tool_activity_payload(
+                        field_value,
+                        remaining_nodes,
+                        encoded_json_depth,
+                    )?;
+                } else {
+                    sanitized |= sanitize_tool_activity_metadata(
+                        field_value,
+                        remaining_nodes,
+                        encoded_json_depth,
+                    )?;
+                }
+            }
+            Ok(sanitized)
+        }
+        _ => Ok(false),
+    }
+}
+
+fn sanitize_tool_activity_payload(
+    value: &mut Value,
+    remaining_nodes: &mut usize,
+    encoded_json_depth: usize,
+) -> Result<bool, ServiceError> {
+    match value {
+        Value::String(text) => {
+            sanitize_tool_activity_json_text(text, remaining_nodes, encoded_json_depth)
+        }
+        Value::Array(_) | Value::Object(_) => {
+            sanitize_tool_activity_metadata(value, remaining_nodes, encoded_json_depth)
+        }
+        _ => Ok(false),
+    }
+}
+
+fn sanitize_tool_activity_json_text(
+    text: &mut String,
+    remaining_nodes: &mut usize,
+    encoded_json_depth: usize,
+) -> Result<bool, ServiceError> {
+    let trimmed = text.trim_start();
+    if !trimmed.starts_with('{') && !trimmed.starts_with('[') && !trimmed.starts_with('"') {
+        return Ok(false);
+    }
+    if encoded_json_depth >= MAX_EMBEDDED_METADATA_JSON_DEPTH
+        || *remaining_nodes == 0
+        || text.len() > MAX_EMBEDDED_METADATA_JSON_BYTES
+        || (json_container_nesting_reaches_limit(text) && is_valid_json_value(text))
+    {
+        return Err(invalid_request_params());
+    }
+    let (mut parsed, node_count) = match parse_bounded_json_value(text, *remaining_nodes) {
+        Ok(Some(parsed)) => parsed,
+        Ok(None) => return Err(invalid_request_params()),
+        // Strings that resemble JSON but are not valid JSON remain ordinary tool text.
+        Err(_) => return Ok(false),
+    };
+    *remaining_nodes -= node_count;
+    let mut sanitized = clear_sensitive_json_values(&mut parsed);
+    match &mut parsed {
+        Value::String(nested) => {
+            sanitized |=
+                sanitize_tool_activity_json_text(nested, remaining_nodes, encoded_json_depth + 1)?;
+        }
+        Value::Array(_) | Value::Object(_) => {
+            sanitized |= sanitize_tool_activity_metadata(
+                &mut parsed,
+                remaining_nodes,
+                encoded_json_depth + 1,
+            )?;
+        }
+        _ => {}
+    }
+    if sanitized {
+        let encoded = serde_json::to_string(&parsed).map_err(|_| invalid_request_params())?;
+        text.zeroize();
+        *text = encoded;
+    }
+    Ok(sanitized)
+}
+
+fn json_container_nesting_reaches_limit(text: &str) -> bool {
+    let mut nesting = 0usize;
+    let mut inside_string = false;
+    let mut escaped = false;
+    for byte in text.bytes() {
+        if inside_string {
+            if escaped {
+                escaped = false;
+            } else if byte == b'\\' {
+                escaped = true;
+            } else if byte == b'"' {
+                inside_string = false;
+            }
+            continue;
+        }
+        match byte {
+            b'"' => inside_string = true,
+            b'{' | b'[' => {
+                nesting += 1;
+                if nesting >= MAX_STRUCTURED_METADATA_JSON_NESTING {
+                    return true;
+                }
+            }
+            b'}' | b']' => nesting = nesting.saturating_sub(1),
+            _ => {}
+        }
+    }
+    false
+}
+
+fn is_valid_json_value(text: &str) -> bool {
+    serde_json::from_str::<serde::de::IgnoredAny>(text).is_ok()
+}
+
+fn parse_stored_agent_json(raw: String) -> rusqlite::Result<Value> {
+    let conversion_error = || {
+        rusqlite::Error::FromSqlConversionFailure(
+            13,
+            rusqlite::types::Type::Text,
+            Box::new(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "stored agent metadata is invalid",
+            )),
+        )
+    };
+    if raw.len() > MAX_AGENT_METADATA_BYTES {
+        return Err(conversion_error());
+    }
+    let mut agent = serde_json::from_str::<Value>(&raw).map_err(|_| conversion_error())?;
+    clear_sensitive_json_values(&mut agent);
+    Ok(agent)
+}
+
+fn sanitize_stored_metadata(
+    raw: String,
+    column_index: usize,
+    tool_activities: bool,
+    remaining_nodes: &mut usize,
+) -> rusqlite::Result<String> {
+    let conversion_error = || {
+        rusqlite::Error::FromSqlConversionFailure(
+            column_index,
+            rusqlite::types::Type::Text,
+            Box::new(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "stored message metadata is invalid",
+            )),
+        )
+    };
+    if raw.len() > MAX_MESSAGE_METADATA_BYTES {
+        return Err(conversion_error());
+    }
+    if !raw.contains("\\u")
+        && !SENSITIVE_METADATA_KEY_MARKERS
+            .iter()
+            .any(|marker| raw.contains(marker))
+    {
+        return Ok(raw);
+    }
+    let (mut value, node_count) = parse_bounded_json_value(&raw, *remaining_nodes)
+        .map_err(|_| conversion_error())?
+        .ok_or_else(conversion_error)?;
+    if !value.is_array() {
+        return Err(conversion_error());
+    }
+    *remaining_nodes -= node_count;
+    let mut sanitized = clear_sensitive_json_values(&mut value);
+    if tool_activities {
+        sanitized |= sanitize_tool_activity_metadata(&mut value, remaining_nodes, 0)
+            .map_err(|_| conversion_error())?;
+    }
+    if !sanitized {
+        return Ok(raw);
+    }
+    let encoded = serde_json::to_string(&value).map_err(|_| conversion_error())?;
+    if encoded.len() > MAX_MESSAGE_METADATA_BYTES {
+        return Err(conversion_error());
+    }
+    Ok(encoded)
+}
+
+fn required_content(object: &Map<String, Value>, name: &str) -> Result<String, ServiceError> {
     let value = object
         .get(name)
         .and_then(Value::as_str)
@@ -2000,8 +2267,8 @@ fn optional_timestamp(
     optional_nonnegative_i64(object, name)
 }
 
-fn optional_filter_string<'a>(
-    object: &'a Map<String, Value>,
+fn optional_filter_string(
+    object: &Map<String, Value>,
     name: &str,
     max_bytes: usize,
 ) -> Result<Option<String>, ServiceError> {
@@ -2112,9 +2379,309 @@ mod tests {
     use serde_json::{Value, json};
     use uuid::Uuid;
 
-    use crate::storage::AppStorage;
+    use crate::{protocol::MAX_REQUEST_PARAMETER_NODES, storage::AppStorage};
 
-    use super::dispatch;
+    use super::{
+        dispatch, optional_json_array, parse_stored_agent_json, sanitize_stored_metadata,
+        sanitize_tool_activity_metadata, serialize_json_without_sensitive_values,
+    };
+
+    #[test]
+    fn rejects_embedded_metadata_json_over_the_node_limit() {
+        let nested_json = format!(
+            "[{}]",
+            std::iter::repeat_n("0", MAX_REQUEST_PARAMETER_NODES)
+                .collect::<Vec<_>>()
+                .join(",")
+        );
+        let mut metadata = json!({"arguments": nested_json});
+        let mut remaining_nodes = MAX_REQUEST_PARAMETER_NODES;
+
+        assert!(sanitize_tool_activity_metadata(&mut metadata, &mut remaining_nodes, 0).is_err());
+    }
+
+    #[test]
+    fn preserves_non_json_tool_activity_text_that_starts_with_a_delimiter() {
+        let mut metadata = json!([{
+            "arguments": "{tool output text",
+            "output": "\"unterminated"
+        }]);
+        let original = metadata.clone();
+        let mut remaining_nodes = MAX_REQUEST_PARAMETER_NODES;
+
+        assert!(
+            !sanitize_tool_activity_metadata(&mut metadata, &mut remaining_nodes, 0)
+                .expect("preserve ordinary tool text")
+        );
+        assert_eq!(metadata, original);
+    }
+
+    #[test]
+    fn preserves_invalid_deep_tool_activity_text() {
+        let invalid_nested_text = [
+            "[".repeat(super::MAX_STRUCTURED_METADATA_JSON_NESTING),
+            format!(
+                "{}x{}",
+                "[".repeat(super::MAX_STRUCTURED_METADATA_JSON_NESTING),
+                "]".repeat(super::MAX_STRUCTURED_METADATA_JSON_NESTING)
+            ),
+        ];
+
+        for text in invalid_nested_text {
+            let mut metadata = json!([{"arguments": text}]);
+            let original = metadata.clone();
+            let mut remaining_nodes = MAX_REQUEST_PARAMETER_NODES;
+
+            assert!(
+                !sanitize_tool_activity_metadata(&mut metadata, &mut remaining_nodes, 0)
+                    .expect("preserve invalid deep tool text")
+            );
+            assert_eq!(metadata, original);
+        }
+    }
+
+    #[test]
+    fn rejects_structured_tool_metadata_over_the_nesting_limit() {
+        let nested_json = format!(
+            "{}0{}",
+            "[".repeat(super::MAX_STRUCTURED_METADATA_JSON_NESTING),
+            "]".repeat(super::MAX_STRUCTURED_METADATA_JSON_NESTING)
+        );
+        let mut metadata = json!([{"arguments": nested_json}]);
+        let mut remaining_nodes = MAX_REQUEST_PARAMETER_NODES;
+
+        assert!(sanitize_tool_activity_metadata(&mut metadata, &mut remaining_nodes, 0).is_err());
+    }
+
+    #[test]
+    fn metadata_json_strings_share_one_node_budget() {
+        let values = std::iter::repeat_n("0", MAX_REQUEST_PARAMETER_NODES / 2)
+            .collect::<Vec<_>>()
+            .join(",");
+        let input = json!({
+            "citationSources": format!("[{values}]"),
+            "personalMemoryFactIds": format!("[{values}]")
+        });
+        let object = input.as_object().expect("metadata input is an object");
+        let mut remaining_nodes = MAX_REQUEST_PARAMETER_NODES;
+
+        optional_json_array(object, "citationSources", &mut remaining_nodes)
+            .expect("first bounded metadata array");
+        assert!(
+            optional_json_array(object, "personalMemoryFactIds", &mut remaining_nodes).is_err()
+        );
+    }
+
+    #[test]
+    fn serialized_agent_size_is_bounded() {
+        let value = json!({"instructions": "x".repeat(super::MAX_AGENT_METADATA_BYTES)});
+
+        assert!(serialize_json_without_sensitive_values(&value).is_err());
+    }
+
+    #[test]
+    fn stored_agent_json_is_size_checked_before_parsing() {
+        let oversized = " ".repeat(super::MAX_AGENT_METADATA_BYTES + 1);
+
+        assert!(parse_stored_agent_json(oversized).is_err());
+    }
+
+    #[tokio::test]
+    async fn persisted_conversation_and_message_metadata_clear_credential_fields() {
+        let directory = TestDirectory::new();
+        let storage = AppStorage::open_at(directory.0.join("data")).expect("open test storage");
+        storage
+            .prepare_chat_schema_migration(crate::CHAT_SCHEMA_VERSION)
+            .expect("prepare current chat schema");
+        storage
+            .initialize_backend_schema()
+            .expect("initialize current backend schema");
+
+        dispatch(
+            "storage.chat.conversations.create",
+            &json!({
+                "input": {
+                    "id": "credential-test-conversation",
+                    "title": "Credential cleanup",
+                    "providerId": "provider",
+                    "modelId": "model",
+                    "agent": {
+                        "name": "Coding",
+                        "instructions": "Use this JSON example: {\"credential\":\"placeholder\"}; preserve deeply nested JSON text: {\"a\":{\"b\":{\"c\":{\"d\":{\"e\":1}}}}}",
+                        "credential": "agent-secret"
+                    }
+                }
+            }),
+            &storage,
+        )
+        .await
+        .expect("create conversation");
+
+        let conversation = dispatch(
+            "storage.chat.conversations.get",
+            &json!({"conversationId": "credential-test-conversation"}),
+            &storage,
+        )
+        .await
+        .expect("read conversation");
+        assert_eq!(conversation["conversation"]["agent"]["credential"], "");
+        assert_eq!(conversation["conversation"]["agent"]["name"], "Coding");
+        assert_eq!(
+            conversation["conversation"]["agent"]["instructions"],
+            "Use this JSON example: {\"credential\":\"placeholder\"}; preserve deeply nested JSON text: {\"a\":{\"b\":{\"c\":{\"d\":{\"e\":1}}}}}"
+        );
+        storage
+            .connect()
+            .expect("reopen test storage")
+            .execute(
+                "UPDATE conversations SET agent_json = ?1 WHERE id = ?2",
+                [
+                    r#"{"name":"Coding","instructions":"Keep {\"credential\":\"example\"} as text.","credential":"legacy-agent-secret"}"#,
+                    "credential-test-conversation",
+                ],
+            )
+            .expect("insert legacy conversation credential");
+        let legacy_conversation = dispatch(
+            "storage.chat.conversations.get",
+            &json!({"conversationId": "credential-test-conversation"}),
+            &storage,
+        )
+        .await
+        .expect("read legacy conversation");
+        assert_eq!(
+            legacy_conversation["conversation"]["agent"]["credential"],
+            ""
+        );
+        assert_eq!(
+            legacy_conversation["conversation"]["agent"]["instructions"],
+            "Keep {\"credential\":\"example\"} as text."
+        );
+
+        let tool_activities = r#"[{"name":"search","credential":"tool-secret","arguments":"{\"credential\":\"argument-secret\",\"query\":\"keep\"}","output":"{\"passphrase\":\"output-secret\",\"result\":\"keep\"}"},{"name":"double-encoded","arguments":"\"{\\\"credential\\\":\\\"double-encoded-secret\\\",\\\"query\\\":\\\"keep-double\\\"}\""}]"#;
+        dispatch(
+            "storage.chat.messages.save",
+            &json!({
+                "input": {
+                    "id": "assistant-message",
+                    "conversationId": "credential-test-conversation",
+                    "role": "assistant",
+                    "content": "Saved response",
+                    "status": "completed",
+                    "citationSources": [{
+                        "credential": "citation-secret",
+                        "label": "Reference"
+                    }],
+                    "toolActivities": tool_activities
+                }
+            }),
+            &storage,
+        )
+        .await
+        .expect("save message");
+
+        let messages = dispatch(
+            "storage.chat.messages.list",
+            &json!({"conversationId": "credential-test-conversation"}),
+            &storage,
+        )
+        .await
+        .expect("read messages");
+        let message = &messages["messages"][0];
+        let citations: Value = serde_json::from_str(
+            message["citationSources"]
+                .as_str()
+                .expect("citation metadata is stored as JSON"),
+        )
+        .expect("parse citation metadata");
+        let activities: Value = serde_json::from_str(
+            message["toolActivities"]
+                .as_str()
+                .expect("tool activities are stored as JSON"),
+        )
+        .expect("parse tool activity metadata");
+        let arguments: Value = serde_json::from_str(
+            activities[0]["arguments"]
+                .as_str()
+                .expect("tool arguments remain JSON text"),
+        )
+        .expect("parse tool argument metadata");
+        let output: Value = serde_json::from_str(
+            activities[0]["output"]
+                .as_str()
+                .expect("tool output remains JSON text"),
+        )
+        .expect("parse tool output metadata");
+        assert_eq!(citations[0]["credential"], "");
+        assert_eq!(citations[0]["label"], "Reference");
+        assert_eq!(activities[0]["credential"], "");
+        assert_eq!(arguments["credential"], "");
+        assert_eq!(arguments["query"], "keep");
+        assert_eq!(output["passphrase"], "");
+        assert_eq!(output["result"], "keep");
+        let double_encoded_arguments: Value = serde_json::from_str(
+            activities[1]["arguments"]
+                .as_str()
+                .expect("double-encoded arguments remain JSON text"),
+        )
+        .expect("parse double-encoded argument layer");
+        let double_encoded_arguments: Value = serde_json::from_str(
+            double_encoded_arguments
+                .as_str()
+                .expect("first decoded layer remains a string"),
+        )
+        .expect("parse double-encoded argument object");
+        assert_eq!(double_encoded_arguments["credential"], "");
+        assert_eq!(double_encoded_arguments["query"], "keep-double");
+
+        let legacy_activity_json = r#"[{"arguments":"{\"credential\":\"legacy-secret\"}"}]"#;
+        let mut legacy_node_budget = MAX_REQUEST_PARAMETER_NODES;
+        let sanitized_legacy_json = sanitize_stored_metadata(
+            legacy_activity_json.to_owned(),
+            13,
+            true,
+            &mut legacy_node_budget,
+        )
+        .expect("sanitize legacy metadata JSON");
+        let sanitized_legacy_activities: Value = serde_json::from_str(&sanitized_legacy_json)
+            .expect("parse sanitized legacy metadata JSON");
+        let sanitized_legacy_arguments: Value = serde_json::from_str(
+            sanitized_legacy_activities[0]["arguments"]
+                .as_str()
+                .expect("legacy arguments remain JSON text"),
+        )
+        .expect("parse sanitized legacy arguments");
+        assert_eq!(sanitized_legacy_arguments["credential"], "");
+        storage
+            .connect()
+            .expect("reopen test storage")
+            .execute(
+                "UPDATE messages
+                 SET tool_activities = ?1
+                 WHERE id = 'assistant-message'",
+                [legacy_activity_json],
+            )
+            .expect("insert legacy credential metadata");
+        let messages = dispatch(
+            "storage.chat.messages.list",
+            &json!({"conversationId": "credential-test-conversation"}),
+            &storage,
+        )
+        .await
+        .expect("read legacy messages");
+        let legacy_activities: Value = serde_json::from_str(
+            messages["messages"][0]["toolActivities"]
+                .as_str()
+                .expect("legacy activity metadata is a string"),
+        )
+        .expect("parse sanitized legacy activity metadata");
+        let legacy_arguments: Value = serde_json::from_str(
+            legacy_activities[0]["arguments"]
+                .as_str()
+                .expect("legacy arguments remain JSON text"),
+        )
+        .expect("parse sanitized legacy arguments");
+        assert_eq!(legacy_arguments["credential"], "");
+    }
 
     #[tokio::test]
     async fn added_workspace_root_returns_canonical_path_and_can_be_removed() {
@@ -2149,19 +2716,24 @@ mod tests {
             .expect("secondary input path is valid UTF-8")
             .to_owned();
 
-        dispatch(
-            "storage.chat.projects.create",
-            &json!({
-                "input": {
-                    "id": "test-project",
-                    "name": "Test project",
-                    "folderPath": primary_path
-                }
-            }),
-            &storage,
-        )
-        .await
-        .expect("create project with primary root");
+        {
+            let connection = storage.connect().expect("open project fixture connection");
+            connection
+                .execute(
+                    "INSERT INTO projects (id, name, folder_path, created_at, updated_at)
+                     VALUES (?1, ?2, ?3, 0, 0)",
+                    rusqlite::params!["test-project", "Test project", &primary_path],
+                )
+                .expect("insert project fixture");
+            connection
+                .execute(
+                    "INSERT INTO project_workspace_roots
+                        (root_id, project_id, root_path, position, created_at)
+                     VALUES (lower(hex(randomblob(16))), ?1, ?2, 0, 0)",
+                    rusqlite::params!["test-project", &primary_path],
+                )
+                .expect("insert primary workspace root fixture");
+        }
 
         let added = dispatch(
             "storage.chat.projects.workspace.add",

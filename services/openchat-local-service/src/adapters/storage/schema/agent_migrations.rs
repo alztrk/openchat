@@ -1340,6 +1340,24 @@ pub(super) fn apply_agent_migrations(
         current_version = 42;
     }
 
+    if current_version < 43 && target_version >= 43 {
+        let transaction = connection.unchecked_transaction()?;
+        transaction.execute_batch(
+            "CREATE INDEX usage_events_model_filter_options_idx
+                ON usage_events(model_id)
+                WHERE event_kind = 'request' AND model_id IS NOT NULL;
+            CREATE INDEX usage_events_reasoning_filter_options_idx
+                ON usage_events(COALESCE(reasoning_effort, 'unspecified'))
+                WHERE event_kind = 'request';",
+        )?;
+        transaction.execute(
+            "INSERT INTO openchat_backend_migrations (version, applied_at_unix_ms) VALUES (43, ?1)",
+            [unix_time_millis()?],
+        )?;
+        transaction.commit()?;
+        current_version = 43;
+    }
+
     if current_version < 44 && target_version >= 44 {
         let transaction = connection.unchecked_transaction()?;
         transaction.execute_batch(
@@ -1365,6 +1383,276 @@ pub(super) fn apply_agent_migrations(
         )?;
         transaction.commit()?;
         current_version = 44;
+    }
+
+    if current_version < 45 && target_version >= 45 {
+        let transaction = connection.unchecked_transaction()?;
+        transaction.execute_batch(
+            "ALTER TABLE conversation_file_checkpoints
+                ADD COLUMN recovery_available INTEGER NOT NULL DEFAULT 0
+                    CHECK (recovery_available IN (0, 1));
+            ALTER TABLE conversation_file_checkpoints
+                ADD COLUMN recovered_at_unix_ms INTEGER
+                    CHECK (recovered_at_unix_ms IS NULL OR recovered_at_unix_ms >= 0);",
+        )?;
+        transaction.execute(
+            "INSERT INTO openchat_backend_migrations (version, applied_at_unix_ms) VALUES (45, ?1)",
+            [unix_time_millis()?],
+        )?;
+        transaction.commit()?;
+        current_version = 45;
+    }
+
+    if current_version < 46 && target_version >= 46 {
+        let transaction = connection.unchecked_transaction()?;
+        transaction.execute_batch(
+            "ALTER TABLE project_index_files
+                ADD COLUMN symbol_version INTEGER NOT NULL DEFAULT 0
+                    CHECK (symbol_version >= 0);
+            UPDATE project_index_files SET symbol_version = 1
+                WHERE lower(path) GLOB '*.bash'
+                    OR lower(path) GLOB '*.sh'
+                    OR lower(path) GLOB '*.zsh'
+                    OR lower(path) GLOB '*.c'
+                    OR lower(path) GLOB '*.h'
+                    OR lower(path) GLOB '*.cs'
+                    OR lower(path) GLOB '*.cc'
+                    OR lower(path) GLOB '*.cpp'
+                    OR lower(path) GLOB '*.cxx'
+                    OR lower(path) GLOB '*.hh'
+                    OR lower(path) GLOB '*.hpp'
+                    OR lower(path) GLOB '*.hxx'
+                    OR lower(path) GLOB '*.go'
+                    OR lower(path) GLOB '*.java'
+                    OR lower(path) GLOB '*.php'
+                    OR lower(path) GLOB '*.py'
+                    OR lower(path) GLOB '*.pyi'
+                    OR lower(path) GLOB '*.rs'
+                    OR lower(path) GLOB '*.js'
+                    OR lower(path) GLOB '*.jsx'
+                    OR lower(path) GLOB '*.mjs'
+                    OR lower(path) GLOB '*.cjs'
+                    OR lower(path) GLOB '*.ts'
+                    OR lower(path) GLOB '*.tsx'
+                    OR lower(path) GLOB '*.mts'
+                    OR lower(path) GLOB '*.cts';
+            UPDATE project_index_state SET status = 'stale' WHERE enabled = 1;",
+        )?;
+        transaction.execute(
+            "INSERT INTO openchat_backend_migrations (version, applied_at_unix_ms) VALUES (46, ?1)",
+            [unix_time_millis()?],
+        )?;
+        transaction.commit()?;
+        current_version = 46;
+    }
+
+    if current_version < 47 && target_version >= 47 {
+        let transaction = connection.unchecked_transaction()?;
+        transaction.execute_batch(
+            "CREATE TABLE security_scans (
+                id TEXT PRIMARY KEY NOT NULL,
+                conversation_id TEXT NOT NULL UNIQUE
+                    REFERENCES conversations(id) ON DELETE CASCADE,
+                project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                selected_roots_json TEXT NOT NULL CHECK (
+                    json_valid(selected_roots_json) = 1
+                    AND length(CAST(selected_roots_json AS BLOB)) <= 32768
+                ),
+                status TEXT NOT NULL CHECK (
+                    status IN ('queued', 'running', 'waiting_provider', 'paused',
+                               'interrupted', 'completed', 'cancelled', 'failed')
+                ),
+                active_run_id TEXT,
+                retry_count INTEGER NOT NULL DEFAULT 0 CHECK (retry_count >= 0),
+                next_retry_at_unix_ms INTEGER,
+                created_at_unix_ms INTEGER NOT NULL CHECK (created_at_unix_ms >= 0),
+                updated_at_unix_ms INTEGER NOT NULL CHECK (updated_at_unix_ms >= 0),
+                finished_at_unix_ms INTEGER,
+                failure_code TEXT
+            );
+
+            CREATE INDEX security_scans_updated_idx
+                ON security_scans(updated_at_unix_ms DESC, id DESC);
+            CREATE INDEX security_scans_status_idx
+                ON security_scans(status, updated_at_unix_ms DESC);",
+        )?;
+        transaction.execute(
+            "INSERT INTO openchat_backend_migrations (version, applied_at_unix_ms) VALUES (47, ?1)",
+            [unix_time_millis()?],
+        )?;
+        transaction.commit()?;
+        current_version = 47;
+    }
+
+    if current_version < 48 && target_version >= 48 {
+        let transaction = connection.unchecked_transaction()?;
+        transaction.execute_batch(
+            "ALTER TABLE conversation_file_changes
+                ADD COLUMN root_identity TEXT CHECK (
+                    root_identity IS NULL OR length(root_identity) BETWEEN 1 AND 128
+                );
+            ALTER TABLE conversation_file_checkpoint_files
+                ADD COLUMN root_identity TEXT CHECK (
+                    root_identity IS NULL OR length(root_identity) BETWEEN 1 AND 128
+                );",
+        )?;
+        transaction.execute(
+            "INSERT INTO openchat_backend_migrations (version, applied_at_unix_ms) VALUES (48, ?1)",
+            [unix_time_millis()?],
+        )?;
+        transaction.commit()?;
+        current_version = 48;
+    }
+
+    if current_version < 49 && target_version >= 49 {
+        let transaction = connection.unchecked_transaction()?;
+        transaction.execute_batch(
+            "ALTER TABLE tool_permission_mode
+                ADD COLUMN native_confirmed INTEGER NOT NULL DEFAULT 0
+                    CHECK (native_confirmed IN (0, 1));
+            ALTER TABLE project_tool_permission_rules
+                ADD COLUMN native_confirmed INTEGER NOT NULL DEFAULT 0
+                    CHECK (native_confirmed IN (0, 1));",
+        )?;
+        transaction.execute(
+            "INSERT INTO openchat_backend_migrations (version, applied_at_unix_ms) VALUES (49, ?1)",
+            [unix_time_millis()?],
+        )?;
+        transaction.commit()?;
+        current_version = 49;
+    }
+
+    if current_version < 50 && target_version >= 50 {
+        let transaction = connection.unchecked_transaction()?;
+        transaction.execute_batch(
+            "ALTER TABLE usage_events
+                ADD COLUMN first_output_latency_ms INTEGER CHECK (
+                    first_output_latency_ms IS NULL OR first_output_latency_ms >= 0
+                );",
+        )?;
+        transaction.execute(
+            "INSERT INTO openchat_backend_migrations (version, applied_at_unix_ms) VALUES (50, ?1)",
+            [unix_time_millis()?],
+        )?;
+        transaction.commit()?;
+        current_version = 50;
+    }
+
+    if current_version < 51 && target_version >= 51 {
+        let transaction = connection.unchecked_transaction()?;
+        transaction.execute_batch(
+            "ALTER TABLE usage_events ADD COLUMN connection_id TEXT;
+            ALTER TABLE usage_events ADD COLUMN workspace_id TEXT;
+            ALTER TABLE usage_events ADD COLUMN project_id TEXT;
+            ALTER TABLE usage_events ADD COLUMN parent_run_id TEXT;",
+        )?;
+        transaction.execute(
+            "INSERT INTO openchat_backend_migrations (version, applied_at_unix_ms) VALUES (51, ?1)",
+            [unix_time_millis()?],
+        )?;
+        transaction.commit()?;
+        current_version = 51;
+    }
+
+    if current_version < 52 && target_version >= 52 {
+        let transaction = connection.unchecked_transaction()?;
+        transaction.execute_batch(
+            "ALTER TABLE usage_events
+                ADD COLUMN provider_processing_ms INTEGER CHECK (
+                    provider_processing_ms IS NULL OR provider_processing_ms >= 0
+                );
+            ALTER TABLE usage_events
+                ADD COLUMN provider_queue_time_ms INTEGER CHECK (
+                    provider_queue_time_ms IS NULL OR provider_queue_time_ms >= 0
+                );
+            ALTER TABLE usage_events
+                ADD COLUMN provider_input_processing_ms INTEGER CHECK (
+                    provider_input_processing_ms IS NULL OR provider_input_processing_ms >= 0
+                );
+            ALTER TABLE usage_events
+                ADD COLUMN provider_output_processing_ms INTEGER CHECK (
+                    provider_output_processing_ms IS NULL OR provider_output_processing_ms >= 0
+                );",
+        )?;
+        transaction.execute(
+            "INSERT INTO openchat_backend_migrations (version, applied_at_unix_ms) VALUES (52, ?1)",
+            [unix_time_millis()?],
+        )?;
+        transaction.commit()?;
+        current_version = 52;
+    }
+
+    if current_version < 53 && target_version >= 53 {
+        let transaction = connection.unchecked_transaction()?;
+        transaction.execute_batch(
+            "ALTER TABLE usage_events
+                ADD COLUMN completion_reason TEXT CHECK (
+                    completion_reason IS NULL OR (
+                        length(completion_reason) BETWEEN 1 AND 64
+                        AND completion_reason NOT GLOB '*[^A-Za-z0-9_-]*'
+                    )
+                );",
+        )?;
+        transaction.execute(
+            "INSERT INTO openchat_backend_migrations (version, applied_at_unix_ms) VALUES (53, ?1)",
+            [unix_time_millis()?],
+        )?;
+        transaction.commit()?;
+        current_version = 53;
+    }
+
+    if current_version < 54 && target_version >= 54 {
+        let transaction = connection.unchecked_transaction()?;
+        transaction.execute_batch(
+            "ALTER TABLE usage_events
+                ADD COLUMN provider_rate_limits_json TEXT CHECK (
+                    provider_rate_limits_json IS NULL OR (
+                        json_valid(provider_rate_limits_json) = 1
+                        AND length(provider_rate_limits_json) <= 2048
+                    )
+                );",
+        )?;
+        transaction.execute(
+            "INSERT INTO openchat_backend_migrations (version, applied_at_unix_ms) VALUES (54, ?1)",
+            [unix_time_millis()?],
+        )?;
+        transaction.commit()?;
+        current_version = 54;
+    }
+
+    if current_version < 55 && target_version >= 55 {
+        let transaction = connection.unchecked_transaction()?;
+        transaction.execute_batch(
+            "ALTER TABLE security_scans
+                ADD COLUMN public_web_research INTEGER NOT NULL DEFAULT 0 CHECK (
+                    public_web_research IN (0, 1)
+                );",
+        )?;
+        transaction.execute(
+            "INSERT INTO openchat_backend_migrations (version, applied_at_unix_ms) VALUES (55, ?1)",
+            [unix_time_millis()?],
+        )?;
+        transaction.commit()?;
+        current_version = 55;
+    }
+
+    if current_version < 56 && target_version >= 56 {
+        let transaction = connection.unchecked_transaction()?;
+        transaction.execute_batch(
+            "ALTER TABLE security_scans
+                ADD COLUMN active_attempt_id TEXT CHECK (
+                    active_attempt_id IS NULL OR (
+                        length(active_attempt_id) = 32
+                        AND active_attempt_id NOT GLOB '*[^0-9a-f]*'
+                    )
+                );",
+        )?;
+        transaction.execute(
+            "INSERT INTO openchat_backend_migrations (version, applied_at_unix_ms) VALUES (56, ?1)",
+            [unix_time_millis()?],
+        )?;
+        transaction.commit()?;
+        current_version = 56;
     }
 
     Ok(current_version)

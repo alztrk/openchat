@@ -74,6 +74,7 @@ pub(crate) fn parse_pending_permission(data: &Value) -> Option<(String, Permissi
         .get("arguments")
         .filter(|value| value.is_object())
         .and_then(|value| serde_json::to_string(value).ok())
+        .map(|value| make_bidi_controls_visible(&value))
         .filter(|value| value.len() <= MAX_PERMISSION_ARGUMENTS_BYTES);
     let details = match (tool_name, target_path, arguments) {
         (Some(tool_name), Some(target_path), Some(arguments)) => PermissionDetails::Reviewable {
@@ -92,17 +93,41 @@ fn bounded_display_text(value: &Value, maximum_bytes: usize) -> Option<String> {
     if value.trim().is_empty() || value.len() > maximum_bytes {
         return None;
     }
-    Some(
-        value
-            .chars()
-            .map(|character| {
-                if character.is_control() {
-                    '\u{fffd}'
-                } else {
-                    character
-                }
-            })
-            .collect(),
+    let display_text = value
+        .chars()
+        .map(|character| {
+            if character.is_control() {
+                '\u{fffd}'
+            } else {
+                character
+            }
+        })
+        .collect::<String>();
+    let display_text = make_bidi_controls_visible(&display_text);
+    (display_text.len() <= maximum_bytes).then_some(display_text)
+}
+
+fn make_bidi_controls_visible(value: &str) -> String {
+    let mut visible = String::with_capacity(value.len());
+    for character in value.chars() {
+        if is_bidi_control(character) {
+            visible.push_str(&format!("<U+{:04X}>", character as u32));
+        } else {
+            visible.push(character);
+        }
+    }
+    visible
+}
+
+fn is_bidi_control(character: char) -> bool {
+    matches!(
+        character,
+        '\u{061c}'
+            | '\u{200e}'
+            | '\u{200f}'
+            | '\u{202a}'..='\u{202e}'
+            | '\u{2066}'..='\u{2069}'
+            | '\u{206a}'..='\u{206f}'
     )
 }
 

@@ -164,7 +164,7 @@ pub fn list_conversation_attachments(
         }
     }
 
-    let next_offset = found_extra_at.or_else(|| {
+    let next_offset = found_extra_at.or({
         if reached_end {
             None
         } else if scanned >= MAXIMUM_ATTACHMENT_LIBRARY_SCAN {

@@ -8,6 +8,7 @@ use std::{
     collections::{HashMap, HashSet},
     ffi::OsString,
     fs,
+    future::Future,
     io::{self, Write},
     path::{Path, PathBuf},
     pin::Pin,
@@ -23,6 +24,7 @@ use cap_std::{
     ambient_authority,
     fs::{Dir, OpenOptions},
 };
+use futures_util::stream::{self, StreamExt};
 use rmcp::{
     RoleClient, ServiceExt,
     model::{CallToolRequestParams, CallToolResult, Tool},
@@ -34,6 +36,7 @@ use rmcp::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
+use sha2::{Digest, Sha256};
 use tokio::{
     fs::File,
     io::{AsyncRead, AsyncReadExt, ReadBuf},
@@ -56,6 +59,7 @@ const MCP_STARTUP_TIMEOUT: Duration = Duration::from_secs(15);
 const MAX_MCP_TOOLS_PER_SERVER: usize = 128;
 const MAX_MCP_TOOLS_PER_REQUEST: usize = 256;
 const MAX_MCP_SERVERS_PER_REQUEST: usize = 8;
+const MAX_CONCURRENT_MCP_STARTUPS: usize = 4;
 const MAX_MCP_ARGUMENTS_PER_SERVER: usize = 64;
 const MAX_MCP_ARGUMENT_BYTES_PER_SERVER: usize = 32 * 1024;
 const MAX_MCP_ARGUMENT_BYTES: usize = 16 * 1024;
@@ -71,11 +75,14 @@ const MAX_MCP_CALL_TIMEOUT: Duration = Duration::from_secs(120);
 const MCP_CATALOG_DIRECTORY: &str = ".openchat";
 const MCP_CATALOG_FILE: &str = "mcp.json";
 const MAX_MCP_CATALOG_BYTES: u64 = 64 * 1024;
+const MAX_MCP_PERMISSION_RULE_NAME_BYTES: usize = 128;
+const MCP_PERMISSION_FINGERPRINT_HEX_BYTES: usize = 32;
 
 #[derive(Clone)]
 /// Validated process or remote transport settings for one project MCP server.
 pub(crate) struct StdioServerConfig {
     pub(crate) id: String,
+    pub(crate) permission_fingerprint: String,
     pub(crate) enabled: bool,
     pub(crate) program: PathBuf,
     pub(crate) package: Option<InstalledPackageReference>,
@@ -105,38 +112,81 @@ pub(crate) fn filter_denied_servers(
         .collect()
 }
 
-/// Returns the server-wide MCP rule, defaulting to asking the user.
+/// Returns the server rule bound to its current configuration, defaulting to asking the user.
 pub(crate) fn server_permission_rule(
     rules: &super::ToolPermissionRules,
     server_id: &str,
+    permission_fingerprint: &str,
 ) -> super::ToolPermissionRule {
+    let legacy_rule = rules.get(&format!("mcp__{server_id}__*"));
+    if legacy_rule == Some(&super::ToolPermissionRule::Deny) {
+        return super::ToolPermissionRule::Deny;
+    }
     rules
-        .get(&format!("mcp__{server_id}__*"))
+        .get(&server_permission_rule_name(
+            server_id,
+            permission_fingerprint,
+        ))
         .copied()
         .unwrap_or(super::ToolPermissionRule::Ask)
+}
+
+pub(crate) fn server_permission_rule_name(server_id: &str, permission_fingerprint: &str) -> String {
+    format!("mcpv1__{server_id}__*__{permission_fingerprint}")
+}
+
+pub(crate) fn tool_permission_rule_name(
+    server_id: &str,
+    tool_name: &str,
+    permission_fingerprint: &str,
+) -> String {
+    format!("mcpv1__{server_id}__{tool_name}__{permission_fingerprint}")
+}
+
+pub(crate) fn is_mcp_permission_rule_name(name: &str) -> bool {
+    name.starts_with("mcp__") || name.starts_with("mcpv1__")
+}
+
+pub(crate) fn is_bound_permission_rule_name(name: &str) -> bool {
+    let Some(suffix) = name.strip_prefix("mcpv1__") else {
+        return false;
+    };
+    valid_bound_permission_rule_suffix(suffix)
 }
 
 /// Connects enabled servers only after applying deny rules and collecting required approvals.
 ///
 /// # Errors
 /// Returns cancellation, approval broker, or connection errors without registering partial tools.
+pub(crate) struct McpApprovalContext<'a> {
+    pub(crate) rules: &'a super::ToolPermissionRules,
+    pub(crate) full_access: bool,
+    pub(crate) permission_broker: &'a ToolPermissionBroker,
+    pub(crate) request_id: &'a Value,
+    pub(crate) events: &'a EventSink,
+    pub(crate) cancellation: &'a mut tokio::sync::watch::Receiver<bool>,
+}
+
 pub(crate) async fn connect_with_approval(
     storage: &crate::storage::AppStorage,
     configs: Vec<StdioServerConfig>,
-    rules: &super::ToolPermissionRules,
-    full_access: bool,
-    permission_broker: &ToolPermissionBroker,
-    request_id: &Value,
-    events: &EventSink,
-    cancellation: &mut tokio::sync::watch::Receiver<bool>,
+    context: McpApprovalContext<'_>,
 ) -> Result<Option<McpRegistry>, ServiceError> {
+    let McpApprovalContext {
+        rules,
+        full_access,
+        permission_broker,
+        request_id,
+        events,
+        cancellation,
+    } = context;
     let mut approved_configs = Vec::with_capacity(configs.len());
     for config in configs {
         if !config.enabled {
             continue;
         }
 
-        match server_permission_rule(rules, &config.id) {
+        match server_permission_rule(rules, &config.id, &config.permission_fingerprint) {
             super::ToolPermissionRule::Deny => continue,
             super::ToolPermissionRule::Allow => approved_configs.push(config),
             super::ToolPermissionRule::Ask => {
@@ -202,6 +252,8 @@ struct StdioServerSettings {
     endpoint: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     auth_environment_variable: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    catalog_tool_names: Option<Vec<String>>,
 }
 
 fn stdio_transport() -> String {
@@ -247,9 +299,13 @@ fn parse_server_settings(
     let mut seen_ids = HashSet::with_capacity(settings.len());
     let mut servers = Vec::with_capacity(settings.len());
     for setting in settings {
-        if !valid_server_id(&setting.id) || !seen_ids.insert(setting.id.clone()) {
+        if !valid_server_id(&setting.id)
+            || !seen_ids.insert(setting.id.clone())
+            || !valid_catalog_tool_names(setting.catalog_tool_names.as_deref())
+        {
             return Err(invalid_mcp_servers());
         }
+        let permission_fingerprint = server_permission_fingerprint(&setting)?;
         let (program, package_directory, endpoint, auth_environment_variable) =
             match setting.transport.as_str() {
                 "stdio" => {
@@ -312,6 +368,7 @@ fn parse_server_settings(
             };
         servers.push(StdioServerConfig {
             id: setting.id,
+            permission_fingerprint,
             enabled: setting.enabled,
             program,
             package: setting.package,
@@ -588,9 +645,57 @@ fn invalid_mcp_servers() -> crate::protocol::ServiceError {
     )
 }
 
+fn server_permission_fingerprint(
+    setting: &StdioServerSettings,
+) -> Result<String, crate::protocol::ServiceError> {
+    let mut definition = setting.clone();
+    definition.enabled = true;
+    definition.catalog_tool_names = None;
+    let value = serde_json::to_value(definition).map_err(|_| invalid_mcp_servers())?;
+    permission_fingerprint(&value).map_err(|_| invalid_mcp_servers())
+}
+
+fn valid_catalog_tool_names(names: Option<&[String]>) -> bool {
+    let Some(names) = names else {
+        return true;
+    };
+    if names.len() > MAX_MCP_TOOLS_PER_SERVER {
+        return false;
+    }
+
+    let mut seen = HashSet::with_capacity(names.len());
+    names.iter().all(|name| {
+        !name.is_empty()
+            && name.len() <= 64
+            && name
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
+            && seen.insert(name.to_ascii_lowercase())
+    })
+}
+
+fn permission_fingerprint(value: &Value) -> Result<String, String> {
+    let bytes = serde_json::to_vec(value)
+        .map_err(|_| "The MCP definition could not be fingerprinted.".to_owned())?;
+    let digest = Sha256::digest(bytes);
+    Ok(digest[..MCP_PERMISSION_FINGERPRINT_HEX_BYTES / 2]
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect())
+}
+
+fn valid_permission_fingerprint(value: &str) -> bool {
+    value.len() == MCP_PERMISSION_FINGERPRINT_HEX_BYTES
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+}
+
 pub(crate) struct McpToolRoute {
     pub(crate) server_id: String,
+    pub(crate) server_permission_fingerprint: String,
     pub(crate) tool_name: String,
+    pub(crate) definition_fingerprint: String,
 }
 
 /// Owns connected MCP clients and the validated tool definitions they expose.
@@ -611,18 +716,37 @@ impl McpRegistry {
             return Err("The configured MCP server count exceeds the supported limit.".to_owned());
         }
 
+        let enabled_configs = configs
+            .into_iter()
+            .filter(|config| config.enabled)
+            .collect::<Vec<_>>();
+        let mut server_ids = HashSet::with_capacity(enabled_configs.len());
+        if enabled_configs
+            .iter()
+            .any(|config| !valid_server_id(&config.id) || !server_ids.insert(&config.id))
+        {
+            return Err(
+                "The configured MCP server identifiers are invalid or duplicated.".to_owned(),
+            );
+        }
+
+        let operations = enabled_configs
+            .into_iter()
+            .map(|config| async move {
+                let client = McpClient::connect(&config, full_access, storage).await?;
+                let tools = client.list_tools().await?;
+                Ok::<_, String>((config.id, config.permission_fingerprint, client, tools))
+            })
+            .collect::<Vec<_>>();
+        let connected_servers = connect_mcp_servers_concurrently(operations).await;
+
         let mut clients = HashMap::new();
         let mut definitions = Vec::new();
         let mut routes = HashMap::new();
-        for config in configs.into_iter().filter(|config| config.enabled) {
-            if !valid_server_id(&config.id) || clients.contains_key(&config.id) {
-                return Err(
-                    "The configured MCP server identifiers are invalid or duplicated.".to_owned(),
-                );
-            }
-            let client = McpClient::connect(&config, full_access, storage).await?;
-            let tools = client.list_tools().await?;
-            let (server_definitions, server_routes) = tool_definitions(&config.id, tools)?;
+        for connected_server in connected_servers {
+            let (server_id, server_permission_fingerprint, client, tools) = connected_server?;
+            let (server_definitions, server_routes) =
+                tool_definitions(&server_id, &server_permission_fingerprint, tools)?;
             if definitions.len().saturating_add(server_definitions.len())
                 > MAX_MCP_TOOLS_PER_REQUEST
                 || server_routes.keys().any(|name| routes.contains_key(name))
@@ -634,7 +758,7 @@ impl McpRegistry {
             }
             definitions.extend(server_definitions);
             routes.extend(server_routes);
-            clients.insert(config.id, client);
+            clients.insert(server_id, client);
         }
 
         if clients.is_empty() {
@@ -659,6 +783,38 @@ impl McpRegistry {
             .filter_map(|tool| tool.name.strip_prefix(&prefix))
             .map(str::to_owned)
             .collect()
+    }
+
+    pub(crate) fn permission_bindings_for_server(&self, server_id: &str) -> Vec<(String, String)> {
+        let mut bindings = self
+            .routes
+            .values()
+            .filter(|route| route.server_id == server_id)
+            .map(|route| {
+                (
+                    route.tool_name.clone(),
+                    tool_permission_rule_name(
+                        server_id,
+                        &route.tool_name,
+                        &route.definition_fingerprint,
+                    ),
+                )
+            })
+            .collect::<Vec<_>>();
+        bindings.sort_unstable_by(|left, right| left.0.cmp(&right.0));
+        bindings
+    }
+
+    pub(crate) fn permission_fingerprints_for_tool(
+        &self,
+        provider_tool_name: &str,
+    ) -> Option<(&str, &str)> {
+        self.routes.get(provider_tool_name).map(|route| {
+            (
+                route.server_permission_fingerprint.as_str(),
+                route.definition_fingerprint.as_str(),
+            )
+        })
     }
 
     pub(crate) fn server_id_for_tool(&self, provider_tool_name: &str) -> Option<&str> {
@@ -696,12 +852,36 @@ impl McpRegistry {
     }
 }
 
+async fn connect_mcp_servers_concurrently<F>(operations: Vec<F>) -> Vec<F::Output>
+where
+    F: Future,
+{
+    let mut completed = stream::iter(
+        operations
+            .into_iter()
+            .enumerate()
+            .map(|(index, operation)| async move { (index, operation.await) }),
+    )
+    .buffer_unordered(MAX_CONCURRENT_MCP_STARTUPS)
+    .collect::<Vec<_>>()
+    .await;
+    completed.sort_unstable_by_key(|(index, _)| *index);
+    completed
+        .into_iter()
+        .map(|(_, operation)| operation)
+        .collect()
+}
+
 /// Converts validated MCP tool metadata into provider function definitions.
 pub(crate) fn tool_definitions(
     server_id: &str,
+    server_permission_fingerprint: &str,
     tools: Vec<Tool>,
 ) -> Result<(Vec<ToolDefinition>, HashMap<String, McpToolRoute>), String> {
-    if !valid_server_id(server_id) || tools.len() > MAX_MCP_TOOLS_PER_SERVER {
+    if !valid_server_id(server_id)
+        || !valid_permission_fingerprint(server_permission_fingerprint)
+        || tools.len() > MAX_MCP_TOOLS_PER_SERVER
+    {
         return Err("The MCP server returned an unsupported tool catalog.".to_owned());
     }
 
@@ -713,7 +893,8 @@ pub(crate) fn tool_definitions(
                 "The MCP server returned a tool name that cannot be routed safely.".to_owned(),
             );
         }
-        let name = format!("mcp__{server_id}__{}", tool.name);
+        let tool_name = tool.name.into_owned();
+        let name = format!("mcp__{server_id}__{tool_name}");
         if name.len() > MAX_PROVIDER_TOOL_NAME_BYTES {
             return Err(
                 "The MCP server returned a tool name that exceeds the supported length.".to_owned(),
@@ -739,12 +920,22 @@ pub(crate) fn tool_definitions(
                     .to_owned(),
             );
         }
+        let definition = json!({
+            "serverFingerprint": server_permission_fingerprint,
+            "serverId": server_id,
+            "toolName": tool_name,
+            "description": description,
+            "inputSchema": parameters,
+        });
+        let definition_fingerprint = permission_fingerprint(&definition)?;
         if routes
             .insert(
                 name.clone(),
                 McpToolRoute {
                     server_id: server_id.to_owned(),
-                    tool_name: tool.name.into_owned(),
+                    server_permission_fingerprint: server_permission_fingerprint.to_owned(),
+                    tool_name,
+                    definition_fingerprint,
                 },
             )
             .is_some()
@@ -782,11 +973,34 @@ pub(crate) fn valid_permission_rule_suffix(value: &str) -> bool {
     if value.len().saturating_add("mcp__".len()) > MAX_PROVIDER_TOOL_NAME_BYTES {
         return false;
     }
-    if let Some(server_id) = value.strip_suffix("__*") {
-        return valid_server_id(server_id);
-    }
+    valid_mcp_permission_rule_suffix(value, false)
+}
+
+pub(crate) fn valid_bound_permission_rule_suffix(value: &str) -> bool {
+    value.len().saturating_add("mcpv1__".len()) <= MAX_MCP_PERMISSION_RULE_NAME_BYTES
+        && valid_mcp_permission_rule_suffix(value, true)
+}
+
+fn valid_mcp_permission_rule_suffix(value: &str, bound_only: bool) -> bool {
     value.match_indices("__").any(|(separator, _)| {
-        valid_server_id(&value[..separator]) && valid_tool_name(&value[separator + 2..])
+        let server_id = &value[..separator];
+        let remainder = &value[separator + 2..];
+        if !valid_server_id(server_id) {
+            return false;
+        }
+        if remainder == "*" {
+            return !bound_only;
+        }
+        if let Some(fingerprint) = remainder.strip_prefix("*__") {
+            return valid_permission_fingerprint(fingerprint);
+        }
+        if let Some((tool_name, fingerprint)) = remainder.rsplit_once("__")
+            && valid_tool_name(tool_name)
+            && valid_permission_fingerprint(fingerprint)
+        {
+            return true;
+        }
+        !bound_only && valid_tool_name(remainder)
     })
 }
 
@@ -1068,10 +1282,11 @@ impl Transport<RoleClient> for StdioTransport {
 #[cfg(test)]
 mod tests {
     use super::{
-        BoundedLineReader, MAX_MCP_ARGUMENTS_PER_SERVER, MAX_MCP_FRAME_BYTES, McpRegistry,
-        connect_with_approval, load_server_configs, parse_server_config, parse_server_configs,
-        save_server_catalog, server_catalog, start_streamable_http_service, tool_definitions,
-        valid_permission_rule_suffix,
+        BoundedLineReader, MAX_MCP_ARGUMENTS_PER_SERVER, MAX_MCP_FRAME_BYTES, McpApprovalContext,
+        McpRegistry, StdioServerSettings, connect_with_approval, load_server_configs,
+        parse_server_config, parse_server_configs, save_server_catalog, server_catalog,
+        server_permission_fingerprint, start_streamable_http_service, tool_definitions,
+        valid_bound_permission_rule_suffix, valid_permission_rule_suffix,
     };
     use crate::{permissions::ToolPermissionBroker, protocol::EventSink, storage::AppStorage};
     use rmcp::model::Tool;
@@ -1081,9 +1296,9 @@ mod tests {
         path::{Path, PathBuf},
         sync::{
             Arc,
-            atomic::{AtomicBool, Ordering},
+            atomic::{AtomicBool, AtomicUsize, Ordering},
         },
-        time::Duration,
+        time::{Duration, Instant},
     };
     use tokio::{
         io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader},
@@ -1120,9 +1335,13 @@ mod tests {
     }
 
     fn tool(name: &str) -> Tool {
+        tool_with_description(name, "Read a value from the configured server.")
+    }
+
+    fn tool_with_description(name: &str, description: &str) -> Tool {
         serde_json::from_value(serde_json::json!({
             "name": name,
-            "description": "Read a value from the configured server.",
+            "description": description,
             "inputSchema": {
                 "type": "object",
                 "properties": {"value": {"type": "string"}},
@@ -1131,6 +1350,8 @@ mod tests {
         }))
         .expect("valid MCP tool fixture")
     }
+
+    const TEST_SERVER_FINGERPRINT: &str = "0123456789abcdef0123456789abcdef";
 
     #[tokio::test]
     async fn bounded_stdio_reader_accepts_a_frame_at_the_limit() {
@@ -1177,8 +1398,12 @@ mod tests {
 
     #[test]
     fn creates_namespaced_provider_definitions_and_routes() {
-        let (definitions, routes) =
-            tool_definitions("workspace", vec![tool("read-value")]).expect("valid catalog");
+        let (definitions, routes) = tool_definitions(
+            "workspace",
+            TEST_SERVER_FINGERPRINT,
+            vec![tool("read-value")],
+        )
+        .expect("valid catalog");
 
         assert_eq!(definitions.len(), 1);
         assert_eq!(definitions[0].name, "mcp__workspace__read-value");
@@ -1193,12 +1418,29 @@ mod tests {
 
     #[test]
     fn rejects_unsafe_names_duplicate_names_and_oversized_tool_catalogs() {
-        assert!(tool_definitions("Uppercase", vec![tool("read")]).is_err());
-        assert!(tool_definitions("workspace", vec![tool("read/value")]).is_err());
-        assert!(tool_definitions("workspace", vec![tool("read"), tool("read")]).is_err());
+        assert!(
+            tool_definitions("Uppercase", TEST_SERVER_FINGERPRINT, vec![tool("read")]).is_err()
+        );
         assert!(
             tool_definitions(
                 "workspace",
+                TEST_SERVER_FINGERPRINT,
+                vec![tool("read/value")]
+            )
+            .is_err()
+        );
+        assert!(
+            tool_definitions(
+                "workspace",
+                TEST_SERVER_FINGERPRINT,
+                vec![tool("read"), tool("read")]
+            )
+            .is_err()
+        );
+        assert!(
+            tool_definitions(
+                "workspace",
+                TEST_SERVER_FINGERPRINT,
                 (0..=super::MAX_MCP_TOOLS_PER_SERVER)
                     .map(|index| tool(&format!("tool_{index}")))
                     .collect()
@@ -1330,18 +1572,77 @@ mod tests {
     fn validates_per_tool_permission_namespaces() {
         assert!(valid_permission_rule_suffix("local_docs__*"));
         assert!(valid_permission_rule_suffix("local__docs__read-file"));
+        assert!(valid_bound_permission_rule_suffix(
+            "local_docs__*__0123456789abcdef0123456789abcdef"
+        ));
+        assert!(valid_bound_permission_rule_suffix(
+            "local_docs__read-file__0123456789abcdef0123456789abcdef"
+        ));
         assert!(!valid_permission_rule_suffix("local_docs__read/file"));
         assert!(!valid_permission_rule_suffix("Invalid__read"));
         assert!(!valid_permission_rule_suffix("local_docs__"));
     }
 
     #[test]
+    fn permission_fingerprints_change_with_server_or_tool_definitions() {
+        let root = Path::new(r"C:\workspace");
+        let first_server = parse_server_configs(
+            Some(&json!([{
+                "id": "workspace",
+                "enabled": true,
+                "program": r"C:\tools\server.exe",
+                "arguments": ["--read-only"]
+            }])),
+            root,
+        )
+        .expect("valid first server definition");
+        let changed_server = parse_server_configs(
+            Some(&json!([{
+                "id": "workspace",
+                "enabled": true,
+                "program": r"C:\tools\other-server.exe",
+                "arguments": ["--read-only"]
+            }])),
+            root,
+        )
+        .expect("valid changed server definition");
+        assert_ne!(
+            first_server[0].permission_fingerprint,
+            changed_server[0].permission_fingerprint
+        );
+
+        let (_, first_routes) = tool_definitions(
+            "workspace",
+            TEST_SERVER_FINGERPRINT,
+            vec![tool("read-value")],
+        )
+        .expect("valid first tool definition");
+        let (_, changed_routes) = tool_definitions(
+            "workspace",
+            TEST_SERVER_FINGERPRINT,
+            vec![tool_with_description(
+                "read-value",
+                "Changed tool behavior.",
+            )],
+        )
+        .expect("valid changed tool definition");
+        assert_ne!(
+            first_routes["mcp__workspace__read-value"].definition_fingerprint,
+            changed_routes["mcp__workspace__read-value"].definition_fingerprint
+        );
+    }
+
+    #[test]
     fn registry_lists_only_the_selected_server_tool_names() {
-        let (first_definitions, first_routes) =
-            tool_definitions("local_docs", vec![tool("read-file"), tool("search")])
-                .expect("valid local tool catalog");
+        let (first_definitions, first_routes) = tool_definitions(
+            "local_docs",
+            TEST_SERVER_FINGERPRINT,
+            vec![tool("read-file"), tool("search")],
+        )
+        .expect("valid local tool catalog");
         let (second_definitions, second_routes) =
-            tool_definitions("other_docs", vec![tool("open")]).expect("valid other tool catalog");
+            tool_definitions("other_docs", TEST_SERVER_FINGERPRINT, vec![tool("open")])
+                .expect("valid other tool catalog");
         let mut definitions = first_definitions;
         definitions.extend(second_definitions);
         let mut routes = first_routes;
@@ -1439,6 +1740,63 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn concurrent_mcp_startup_is_bounded_and_preserves_config_order() {
+        let active = Arc::new(AtomicUsize::new(0));
+        let peak_active = Arc::new(AtomicUsize::new(0));
+        let operations = (0..8)
+            .map(|server_index| {
+                let active = Arc::clone(&active);
+                let peak_active = Arc::clone(&peak_active);
+                async move {
+                    let current = active.fetch_add(1, Ordering::SeqCst) + 1;
+                    peak_active.fetch_max(current, Ordering::SeqCst);
+                    tokio::time::sleep(Duration::from_millis(5)).await;
+                    active.fetch_sub(1, Ordering::SeqCst);
+                    server_index
+                }
+            })
+            .collect();
+
+        let connected = super::connect_mcp_servers_concurrently(operations).await;
+
+        assert_eq!(connected, (0..8).collect::<Vec<_>>());
+        assert!(
+            (2..=super::MAX_CONCURRENT_MCP_STARTUPS).contains(&peak_active.load(Ordering::SeqCst))
+        );
+    }
+
+    #[tokio::test]
+    #[ignore = "manual MCP startup scheduling benchmark"]
+    async fn benchmark_mcp_startup_scheduling() {
+        let startup_count = 8;
+        let simulated_io_delay = Duration::from_millis(25);
+        let started = Instant::now();
+        for _ in 0..startup_count {
+            tokio::time::sleep(simulated_io_delay).await;
+        }
+        let serial_elapsed = started.elapsed();
+
+        let operations = (0..startup_count)
+            .map(|server_index| async move {
+                tokio::time::sleep(simulated_io_delay).await;
+                server_index
+            })
+            .collect();
+        let started = Instant::now();
+        let results = super::connect_mcp_servers_concurrently(operations).await;
+        let concurrent_elapsed = started.elapsed();
+
+        assert_eq!(results.len(), startup_count);
+        assert!(concurrent_elapsed < serial_elapsed);
+        eprintln!(
+            "mcp_startup_scheduling servers={startup_count} concurrency={} serial_ms={:.3} bounded_parallel_ms={:.3}",
+            super::MAX_CONCURRENT_MCP_STARTUPS,
+            serial_elapsed.as_secs_f64() * 1000.0,
+            concurrent_elapsed.as_secs_f64() * 1000.0,
+        );
+    }
+
+    #[tokio::test]
     async fn ask_requests_approval_before_start_and_denial_skips_server() {
         let configs = parse_server_configs(
             Some(&json!([{
@@ -1462,12 +1820,14 @@ mod tests {
             connect_with_approval(
                 &task_storage,
                 configs,
-                &rules,
-                false,
-                &task_broker,
-                &request_id,
-                &events,
-                &mut cancellation,
+                McpApprovalContext {
+                    rules: &rules,
+                    full_access: false,
+                    permission_broker: &task_broker,
+                    request_id: &request_id,
+                    events: &events,
+                    cancellation: &mut cancellation,
+                },
             )
             .await
         });
@@ -1733,7 +2093,8 @@ mod tests {
                 "transport": "stdio",
                 "program": program.clone(),
                 "arguments": ["--read-only"],
-                "environmentVariables": []
+                "environmentVariables": [],
+                "catalogToolNames": ["search_records", "read_record"]
             }]
         });
         save_server_catalog(&project.0, &catalog).expect("save valid catalog");
@@ -1768,6 +2129,51 @@ mod tests {
         assert_eq!(
             std::fs::read(path).expect("read preserved catalog"),
             original
+        );
+    }
+
+    #[test]
+    fn project_catalog_validates_optional_manifest_tool_names() {
+        let program = std::env::current_exe()
+            .expect("resolve test executable")
+            .to_string_lossy()
+            .into_owned();
+        let valid = serde_json::json!([{
+            "id": "records",
+            "enabled": false,
+            "program": program,
+            "catalogToolNames": ["search_records", "read_record"]
+        }]);
+        assert!(parse_server_configs(Some(&valid), Path::new(".")).is_ok());
+
+        let invalid = serde_json::json!([{
+            "id": "records",
+            "enabled": false,
+            "program": std::env::current_exe()
+                .expect("resolve test executable")
+                .to_string_lossy(),
+            "catalogToolNames": ["search records"]
+        }]);
+        assert!(parse_server_configs(Some(&invalid), Path::new(".")).is_err());
+    }
+
+    #[test]
+    fn catalog_tool_claims_do_not_change_permission_fingerprints() {
+        let base: StdioServerSettings = serde_json::from_value(serde_json::json!({
+            "id": "records",
+            "enabled": false,
+            "program": std::env::current_exe()
+                .expect("resolve test executable")
+                .to_string_lossy()
+        }))
+        .expect("parse server settings without manifest claims");
+        let mut with_claims = base.clone();
+        with_claims.catalog_tool_names = Some(vec!["search_records".to_owned()]);
+
+        assert_eq!(
+            server_permission_fingerprint(&base).expect("fingerprint base server"),
+            server_permission_fingerprint(&with_claims).expect("fingerprint claimed server"),
+            "catalog declarations are display claims, not executable server identity"
         );
     }
 

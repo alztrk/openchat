@@ -1332,7 +1332,7 @@ fn credential_error(error: CredentialStoreError) -> ServiceError {
         | CredentialStoreError::StorageDeleteFailed
         | CredentialStoreError::LockUnavailable => (
             "secure_storage_unavailable",
-            "Windows secure credential storage is unavailable.",
+            "The protected credential storage is unavailable.",
             true,
         ),
     };

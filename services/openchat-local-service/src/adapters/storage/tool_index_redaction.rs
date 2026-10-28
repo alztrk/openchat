@@ -32,6 +32,11 @@ const SENSITIVE_KEYS: &[&str] = &[
     "access_token",
     "github_token",
     "private_key",
+    "credential",
+    "secret_key",
+    "secret-key",
+    "secretkey",
+    "secret",
     "password",
     "passwd",
     "api_key",
@@ -304,6 +309,8 @@ mod tests {
             concat!(
                 "api_key=short-secret ",
                 "openai_api_key=prefixed-secret ",
+                "secret=generic-secret credential=generic-credential ",
+                "SECRET_KEY=upper-secret secretKey:camel-secret secret-key=hyphen-secret ",
                 "\"client_secret\":\"json-secret\" ",
                 "Authorization: Bearer header-secret\n",
                 "sk-proj-abcdefghijklmnopqrstuvwxyz1234567890 ",
@@ -324,6 +331,11 @@ mod tests {
         for secret in [
             "short-secret",
             "prefixed-secret",
+            "generic-secret",
+            "generic-credential",
+            "upper-secret",
+            "camel-secret",
+            "hyphen-secret",
             "json-secret",
             "header-secret",
             "sk-proj-abcdefghijklmnopqrstuvwxyz1234567890",
@@ -339,7 +351,7 @@ mod tests {
         ] {
             assert!(!redacted.contains(secret), "secret remained: {secret}");
         }
-        assert_eq!(redacted.matches("[REDACTED]").count(), 14);
+        assert_eq!(redacted.matches("[REDACTED]").count(), 19);
     }
 
     #[test]

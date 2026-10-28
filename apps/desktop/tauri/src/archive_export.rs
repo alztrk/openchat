@@ -9,10 +9,12 @@ use std::{
 
 use crate::{
     file_ops::publish_file_without_replacing,
+    local_service::LocalServiceState,
     request_bounds::BoundedText,
     save_dialog::{select_save_file, SaveFileDialogError},
 };
 use serde::Serialize;
+use tauri::State;
 
 const MAX_CONVERSATION_ARCHIVE_BYTES: u64 = 8 * 1024 * 1024 * 1024;
 const MAX_PROFILE_ARCHIVE_BYTES: u64 = 64 * 1024 * 1024 * 1024;
@@ -111,6 +113,7 @@ impl ArchiveKind {
 #[tauri::command]
 pub(crate) async fn save_pending_archive_export(
     window: tauri::WebviewWindow,
+    state: State<'_, LocalServiceState>,
     kind: BoundedText<MAXIMUM_ARCHIVE_KIND_BYTES>,
     export_id: BoundedText<MAXIMUM_EXPORT_ID_BYTES>,
     file_name: BoundedText<MAXIMUM_ARCHIVE_FILE_NAME_BYTES>,
@@ -130,7 +133,7 @@ pub(crate) async fn save_pending_archive_export(
         return Err(ArchiveExportError::invalid());
     }
 
-    let directory = pending_export_directory()?;
+    let directory = pending_export_directory(state.storage_root_override.as_deref())?;
     let source = directory.join(format!("{export_id}.{}", kind.extension()));
     let pending_marker = directory.join(format!("{export_id}.pending"));
     let consuming_marker = directory.join(format!("{export_id}.consuming"));
@@ -169,18 +172,28 @@ pub(crate) async fn save_pending_archive_export(
 }
 
 /// Resolves the app-managed staging directory and rejects paths outside the canonical app root.
-fn pending_export_directory() -> Result<PathBuf, ArchiveExportError> {
-    let local_app_data = env::var_os("LOCALAPPDATA").ok_or_else(ArchiveExportError::unavailable)?;
-    let app_data_root = PathBuf::from(local_app_data).join("OpenChat");
-    let canonical_root =
-        fs::canonicalize(&app_data_root).map_err(|_| ArchiveExportError::unavailable())?;
-    let cache = app_data_root.join("cache");
+fn pending_export_directory(
+    storage_root_override: Option<&Path>,
+) -> Result<PathBuf, ArchiveExportError> {
+    let canonical_root = match storage_root_override {
+        Some(storage_root) => {
+            validate_directory(storage_root)?;
+            fs::canonicalize(storage_root).map_err(|_| ArchiveExportError::unavailable())?
+        }
+        None => {
+            let local_app_data =
+                env::var_os("LOCALAPPDATA").ok_or_else(ArchiveExportError::unavailable)?;
+            let app_data_root = PathBuf::from(local_app_data).join("OpenChat");
+            fs::canonicalize(app_data_root).map_err(|_| ArchiveExportError::unavailable())?
+        }
+    };
+    let cache = canonical_root.join("cache");
     let directory = cache.join("archive-exports");
     validate_directory(&cache)?;
     validate_directory(&directory)?;
     let canonical_directory =
         fs::canonicalize(&directory).map_err(|_| ArchiveExportError::unavailable())?;
-    if !canonical_directory.starts_with(canonical_root) {
+    if !canonical_directory.starts_with(&canonical_root) {
         return Err(ArchiveExportError::invalid());
     }
     Ok(canonical_directory)
@@ -189,10 +202,24 @@ fn pending_export_directory() -> Result<PathBuf, ArchiveExportError> {
 /// Requires an existing real directory rather than a symlink or reparse-backed directory.
 fn validate_directory(path: &Path) -> Result<(), ArchiveExportError> {
     let metadata = fs::symlink_metadata(path).map_err(|_| ArchiveExportError::unavailable())?;
-    if !metadata.is_dir() || metadata.file_type().is_symlink() {
+    if !metadata.is_dir() || is_reparse_point(&metadata) {
         return Err(ArchiveExportError::invalid());
     }
     Ok(())
+}
+
+fn is_reparse_point(metadata: &fs::Metadata) -> bool {
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        metadata.file_attributes()
+            & windows_sys::Win32::Storage::FileSystem::FILE_ATTRIBUTE_REPARSE_POINT
+            != 0
+    }
+    #[cfg(not(windows))]
+    {
+        metadata.file_type().is_symlink()
+    }
 }
 
 /// Confirms the service-created marker and staged archive match the requested kind and limits.
@@ -403,8 +430,8 @@ mod tests {
     };
 
     use super::{
-        copy_archive, is_export_id, is_safe_file_name, ArchiveExportError,
-        MAX_CONVERSATION_ARCHIVE_BYTES,
+        copy_archive, is_export_id, is_safe_file_name, pending_export_directory,
+        ArchiveExportError, MAX_CONVERSATION_ARCHIVE_BYTES,
     };
 
     struct TestDirectory(PathBuf);
@@ -444,6 +471,24 @@ mod tests {
             "openchatbackup"
         ));
         assert!(!is_safe_file_name("OpenChat.json", "openchatbackup"));
+    }
+
+    #[test]
+    fn pending_export_directory_uses_the_isolated_storage_root_when_supplied() {
+        let directory = TestDirectory::new();
+        let storage_root = directory.0.join("storage");
+        let staging = storage_root.join("cache").join("archive-exports");
+        fs::create_dir_all(&staging).expect("create isolated archive staging directory");
+
+        let resolved = pending_export_directory(Some(&storage_root))
+            .expect("resolve staging under the isolated profile");
+
+        assert_eq!(
+            resolved,
+            fs::canonicalize(staging).expect("canonicalize staging")
+        );
+        assert!(resolved
+            .starts_with(fs::canonicalize(storage_root).expect("canonicalize storage root")));
     }
 
     #[test]

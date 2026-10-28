@@ -1,4 +1,5 @@
 use std::{
+    collections::BTreeMap,
     ffi::OsString,
     fs,
     io::ErrorKind,
@@ -13,15 +14,21 @@ use tokio::io::AsyncReadExt;
 use windows_sys::Win32::{
     Foundation::HANDLE,
     Security::{
-        ACL,
-        Authorization::{ConvertStringSidToSidW, GetSecurityInfo, SE_FILE_OBJECT},
-        CONTAINER_INHERIT_ACE, DACL_SECURITY_INFORMATION, OBJECT_INHERIT_ACE,
+        ACE_HEADER, ACL,
+        Authorization::{ConvertStringSidToSidW, GetSecurityInfo, SE_FILE_OBJECT, SetSecurityInfo},
+        CONTAINER_INHERIT_ACE, DACL_SECURITY_INFORMATION, GetAce, GetLengthSid,
+        GetSecurityDescriptorControl, INHERIT_ONLY_ACE, OBJECT_INHERIT_ACE,
+        PROTECTED_DACL_SECURITY_INFORMATION, SE_DACL_AUTO_INHERIT_REQ, SE_DACL_AUTO_INHERITED,
+        SE_DACL_DEFAULTED, SE_DACL_PRESENT, SE_DACL_PROTECTED,
     },
     Storage::FileSystem::{
-        FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, FILE_GENERIC_READ,
-        FILE_READ_ATTRIBUTES, FILE_SHARE_READ, FILE_SHARE_WRITE, FILE_TRAVERSE, READ_CONTROL,
+        BY_HANDLE_FILE_INFORMATION, FILE_ATTRIBUTE_DIRECTORY, FILE_FLAG_BACKUP_SEMANTICS,
+        FILE_FLAG_OPEN_REPARSE_POINT, FILE_GENERIC_READ, FILE_READ_ATTRIBUTES, FILE_SHARE_READ,
+        FILE_SHARE_WRITE, FILE_TRAVERSE, GetFileInformationByHandle, READ_CONTROL, WRITE_DAC,
     },
-    System::JobObjects::JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+    System::{
+        JobObjects::JOBOBJECT_EXTENDED_LIMIT_INFORMATION, SystemServices::ACCESS_ALLOWED_ACE_TYPE,
+    },
 };
 use zeroize::Zeroizing;
 
@@ -29,8 +36,9 @@ use super::{
     job_objects::{create_kill_on_close_job, job_active_process_count},
     process::{SandboxedProcess, WAIT_INTERVAL, shell_invocation},
     security_acl::{
-        AppContainerAclLock, MAX_ACL_ENTRIES, app_container_acl_lock_path, require_non_null_acl,
-        schedule_acl_path, update_app_container_acl,
+        AppContainerAclLock, MAX_ACL_ENTRIES, app_container_acl_lock_path, lock_acl_path,
+        noninheriting_directory_control_value, require_non_null_acl, schedule_acl_path,
+        update_acl_handle, update_app_container_acl,
     },
     types::{SandboxJobLimits, SandboxOptions, owned_handle, wide_null},
 };
@@ -42,6 +50,15 @@ fn null_acl_update_results_are_rejected() {
         require_non_null_acl(null_mut()),
         Err(error) if error.kind() == ErrorKind::InvalidData
     ));
+}
+
+#[test]
+fn noninheriting_directory_control_clears_auto_propagation_requests() {
+    let original = SE_DACL_AUTO_INHERIT_REQ | SE_DACL_AUTO_INHERITED | SE_DACL_PROTECTED;
+    assert_eq!(
+        noninheriting_directory_control_value(original),
+        SE_DACL_AUTO_INHERITED | SE_DACL_PROTECTED
+    );
 }
 
 /// Rejects an embedded NUL before sandbox resources are created for a shell command.
@@ -301,6 +318,46 @@ async fn command_can_write_inside_its_workspace() {
     assert_eq!(
         fs::read_to_string(workspace.path().join("result.txt")).expect("read workspace result"),
         "workspace_write_ok\r\n"
+    );
+}
+
+#[tokio::test]
+async fn additional_workspace_root_is_writable_without_granting_its_sibling() {
+    let workspace = TestWorkspace::new();
+    let primary = workspace.path().join("primary");
+    let secondary = workspace.path().join("secondary");
+    let outside = workspace.path().join("outside");
+    fs::create_dir_all(&primary).expect("create primary workspace root");
+    fs::create_dir_all(&secondary).expect("create secondary workspace root");
+    fs::create_dir_all(&outside).expect("create ungranted sibling directory");
+    let (program, arguments) = shell_invocation(
+        "Set-Content -LiteralPath '..\\secondary\\allowed.txt' -Value 'secondary_root_write_ok'; try { Set-Content -LiteralPath '..\\outside\\denied.txt' -Value 'outside_write_bad' -ErrorAction Stop; exit 31 } catch { Write-Output 'outside_root_write_denied'; exit 0 }",
+        &primary,
+    );
+    let additional_workspace_paths = [secondary.clone()];
+    let process = SandboxedProcess::spawn_program_with_options(
+        &program,
+        &arguments,
+        &primary,
+        &[],
+        SandboxOptions {
+            additional_workspace_paths: &additional_workspace_paths,
+            ..SandboxOptions::default()
+        },
+    )
+    .expect("start process with one additional workspace root");
+    let (exit_code, stdout, stderr) = capture(process).await;
+
+    assert_eq!(exit_code, 0, "stdout: {stdout}; stderr: {stderr}");
+    assert!(stdout.contains("outside_root_write_denied"), "{stdout}");
+    assert_eq!(
+        fs::read_to_string(secondary.join("allowed.txt"))
+            .expect("read the file created in the additional root"),
+        "secondary_root_write_ok\r\n"
+    );
+    assert!(
+        !outside.join("denied.txt").exists(),
+        "an ungranted sibling root must remain unwritable"
     );
 }
 
@@ -575,8 +632,9 @@ fn noninheriting_directory_acl_updates_are_nonrecursive() {
     fs::write(&child, "existing child").expect("create existing ACL test child");
     let directory = fs::canonicalize(directory).expect("canonicalize ACL test directory");
     let child = fs::canonicalize(child).expect("canonicalize ACL test child");
-    let original_directory_ace_count = dacl_ace_count(&directory).expect("read directory DACL");
-    let original_child_ace_count = dacl_ace_count(&child).expect("read child DACL");
+    set_directory_dacl_protected(&directory).expect("protect ACL test directory DACL");
+    let original_directory_dacl = dacl_snapshot(&directory).expect("read original directory DACL");
+    let original_child_dacl = dacl_snapshot(&child).expect("read original child DACL");
 
     let sid_text = wide_null("S-1-15-2-1");
     let mut sid = null_mut();
@@ -584,6 +642,9 @@ fn noninheriting_directory_acl_updates_are_nonrecursive() {
     let converted = unsafe { ConvertStringSidToSidW(sid_text.as_ptr(), &mut sid) };
     assert_ne!(converted, 0);
     assert!(!sid.is_null());
+    let expected_allow_ace = expected_allow_ace(sid, FILE_TRAVERSE | FILE_READ_ATTRIBUTES, 0);
+    let target_sid_bytes = expected_allow_ace[8..].to_vec();
+    assert!(!dacl_has_sid(&original_directory_dacl, &target_sid_bytes));
 
     let update = update_app_container_acl(
         &directory,
@@ -592,8 +653,8 @@ fn noninheriting_directory_acl_updates_are_nonrecursive() {
         FILE_TRAVERSE | FILE_READ_ATTRIBUTES,
         0,
     );
-    let updated_directory_ace_count = dacl_ace_count(&directory);
-    let updated_child_ace_count = dacl_ace_count(&child);
+    let updated_directory_dacl = dacl_snapshot(&directory);
+    let updated_child_dacl = dacl_snapshot(&child);
     let revoke = update_app_container_acl(
         &directory,
         sid,
@@ -601,32 +662,143 @@ fn noninheriting_directory_acl_updates_are_nonrecursive() {
         FILE_TRAVERSE | FILE_READ_ATTRIBUTES,
         0,
     );
-    let revoked_directory_ace_count = dacl_ace_count(&directory);
-    let revoked_child_ace_count = dacl_ace_count(&child);
+    let revoked_directory_dacl = dacl_snapshot(&directory);
+    let revoked_child_dacl = dacl_snapshot(&child);
     // SAFETY: ConvertStringSidToSidW allocated `sid` with LocalAlloc.
     unsafe { windows_sys::Win32::Foundation::LocalFree(sid.cast()) };
 
     update.expect("update non-inheriting directory DACL");
     revoke.expect("revoke non-inheriting directory DACL");
+    let updated_directory_dacl = updated_directory_dacl.expect("read updated directory DACL");
+    let updated_child_dacl = updated_child_dacl.expect("read updated child DACL");
+    let expected_access_mask = FILE_TRAVERSE | FILE_READ_ATTRIBUTES;
+    let original_access = dacl_effective_allow_rights(&original_directory_dacl);
+    let mut expected_updated_access = original_access.clone();
+    *expected_updated_access
+        .entry(target_sid_bytes.clone())
+        .or_default() |= expected_access_mask;
     assert_eq!(
-        updated_directory_ace_count.expect("read updated directory DACL"),
-        original_directory_ace_count + 1,
-        "the grant must update the directory DACL"
+        updated_directory_dacl
+            .aces
+            .iter()
+            .filter(|ace| {
+                ace.get(8..)
+                    .is_some_and(|sid| sid == target_sid_bytes.as_slice())
+            })
+            .count(),
+        1,
+        "the grant must add only one ACE for the requested SID"
     );
     assert_eq!(
-        updated_child_ace_count.expect("read updated child DACL"),
-        original_child_ace_count,
-        "a non-inheriting directory grant must not update existing children"
+        updated_directory_dacl
+            .aces
+            .iter()
+            .filter(|ace| **ace == expected_allow_ace)
+            .count(),
+        1,
+        "the grant must use the requested allow mask and non-inheriting flags"
     );
     assert_eq!(
-        revoked_directory_ace_count.expect("read revoked directory DACL"),
-        original_directory_ace_count,
-        "revoking the grant must restore the directory DACL"
+        dacl_effective_allow_rights(&updated_directory_dacl),
+        expected_updated_access,
+        "the grant must add only the requested effective access while preserving all existing allow rights"
     );
     assert_eq!(
-        revoked_child_ace_count.expect("read revoked child DACL"),
-        original_child_ace_count,
-        "revoking a non-inheriting directory grant must not change existing children"
+        stable_dacl_control(updated_directory_dacl.control),
+        stable_dacl_control(original_directory_dacl.control),
+        "the grant must preserve stable DACL control flags"
+    );
+    assert_eq!(
+        updated_directory_dacl.acl_revision, original_directory_dacl.acl_revision,
+        "the grant must preserve the ACL revision"
+    );
+    assert_eq!(
+        updated_child_dacl, original_child_dacl,
+        "a non-inheriting directory grant must not change existing child ACLs"
+    );
+    let revoked_directory_dacl = revoked_directory_dacl.expect("read revoked directory DACL");
+    assert_eq!(
+        dacl_effective_allow_rights(&revoked_directory_dacl),
+        original_access,
+        "revoking the grant must restore the original effective allow rights"
+    );
+    assert_eq!(
+        stable_dacl_control(revoked_directory_dacl.control),
+        stable_dacl_control(original_directory_dacl.control),
+        "revoking the grant must restore stable DACL control flags"
+    );
+    assert_eq!(
+        revoked_directory_dacl.acl_revision, original_directory_dacl.acl_revision,
+        "revoking the grant must restore the ACL revision"
+    );
+    assert!(
+        !dacl_has_sid(&revoked_directory_dacl, &target_sid_bytes),
+        "revoking the grant must remove all ACEs for the AppContainer SID"
+    );
+    assert_eq!(
+        revoked_child_dacl.expect("read revoked child DACL"),
+        original_child_dacl,
+        "revoking a non-inheriting directory grant must leave existing child ACLs unchanged"
+    );
+}
+
+#[test]
+fn noninheriting_directory_acl_update_stays_on_the_inspected_handle() {
+    let workspace = TestWorkspace::new();
+    let directory = workspace.path().join("directory");
+    let moved_directory = workspace.path().join("moved-directory");
+    let child = directory.join("existing.txt");
+    fs::create_dir(&directory).expect("create ACL test directory");
+    fs::write(&child, "existing child").expect("create existing ACL test child");
+    let directory = fs::canonicalize(directory).expect("canonicalize ACL test directory");
+    let child = fs::canonicalize(child).expect("canonicalize ACL test child");
+    let original_child_dacl = dacl_snapshot(&child).expect("read original child DACL");
+
+    let sid_text = wide_null("S-1-15-2-1");
+    let mut sid = null_mut();
+    // SAFETY: `sid_text` is NUL-terminated and `sid` is a writable output pointer.
+    let converted = unsafe { ConvertStringSidToSidW(sid_text.as_ptr(), &mut sid) };
+    assert_ne!(converted, 0);
+    assert!(!sid.is_null());
+    let target_sid_bytes =
+        expected_allow_ace(sid, FILE_TRAVERSE | FILE_READ_ATTRIBUTES, 0)[8..].to_vec();
+
+    let (mut handles, inspected) = lock_acl_path(&directory, false).expect("inspect ACL path");
+    assert_ne!(inspected.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY, 0);
+    let target = handles
+        .pop()
+        .expect("retain the inspected directory handle");
+    fs::rename(&directory, &moved_directory).expect("move the inspected directory");
+    fs::create_dir(&directory).expect("create a replacement at the inspected path");
+    let replacement_dacl_before = dacl_snapshot(&directory).expect("read replacement DACL");
+
+    let update = update_acl_handle(
+        &target,
+        sid,
+        true,
+        FILE_TRAVERSE | FILE_READ_ATTRIBUTES,
+        0,
+        true,
+        false,
+    );
+    let moved_directory_dacl = dacl_snapshot(&moved_directory);
+    let replacement_dacl_after = dacl_snapshot(&directory);
+    let moved_child_dacl = dacl_snapshot(&moved_directory.join("existing.txt"));
+    // SAFETY: ConvertStringSidToSidW allocated `sid` with LocalAlloc.
+    unsafe { windows_sys::Win32::Foundation::LocalFree(sid.cast()) };
+
+    update.expect("update the inspected directory object");
+    let moved_directory_dacl = moved_directory_dacl.expect("read updated inspected directory DACL");
+    assert!(dacl_has_sid(&moved_directory_dacl, &target_sid_bytes));
+    assert_eq!(
+        replacement_dacl_after.expect("read replacement DACL after update"),
+        replacement_dacl_before,
+        "the path replacement must not receive the ACL update"
+    );
+    assert_eq!(
+        moved_child_dacl.expect("read moved child DACL"),
+        original_child_dacl,
+        "the non-inheriting update must preserve existing child DACLs"
     );
 }
 
@@ -744,8 +916,162 @@ async fn a_hard_link_in_the_workspace_is_rejected_before_access_is_granted() {
     );
 }
 
-/// Reads the number of ACEs in a file or directory DACL for inheritance regression checks.
+#[test]
+fn acl_path_handle_stays_bound_after_hard_link_and_path_replacement() {
+    let workspace = TestWorkspace::new();
+    let allowed = workspace.path().join("allowed");
+    fs::create_dir_all(&allowed).expect("create the allowed folder");
+    let target = allowed.join("target.txt");
+    let alias = workspace.path().join("alias.txt");
+    let renamed = allowed.join("renamed.txt");
+    fs::write(&target, "selected file").expect("create the target file");
+    let target = fs::canonicalize(target).expect("canonicalize the target file");
+
+    let (handles, inspected) = lock_acl_path(&target, false).expect("pin the ACL path");
+    assert_eq!(inspected.nNumberOfLinks, 1);
+
+    fs::hard_link(&target, &alias).expect("add an alias to the inspected file");
+    let alias_file = fs::File::open(&alias).expect("open the new alias");
+    let mut alias_information = BY_HANDLE_FILE_INFORMATION::default();
+    // SAFETY: `alias_file` owns a live file handle and `alias_information` is writable.
+    let alias_information_read = unsafe {
+        GetFileInformationByHandle(alias_file.as_raw_handle() as HANDLE, &mut alias_information)
+    };
+    assert_ne!(
+        alias_information_read, 0,
+        "read the new alias file identity"
+    );
+    assert_eq!(
+        (
+            alias_information.dwVolumeSerialNumber,
+            alias_information.nFileIndexHigh,
+            alias_information.nFileIndexLow,
+        ),
+        (
+            inspected.dwVolumeSerialNumber,
+            inspected.nFileIndexHigh,
+            inspected.nFileIndexLow,
+        ),
+        "a late hard link must name the same object selected for the ACL update"
+    );
+    assert_eq!(alias_information.nNumberOfLinks, 2);
+
+    fs::rename(&target, &renamed)
+        .expect("a same-user writer with parent delete-child access can rename the target");
+    fs::write(&target, "replacement file").expect("replace the target path");
+
+    let replacement_file = fs::File::open(&target).expect("open the replacement file");
+    let mut replacement_information = BY_HANDLE_FILE_INFORMATION::default();
+    // SAFETY: `replacement_file` owns a live file handle and the information structure is writable.
+    let replacement_information_read = unsafe {
+        GetFileInformationByHandle(
+            replacement_file.as_raw_handle() as HANDLE,
+            &mut replacement_information,
+        )
+    };
+    assert_ne!(
+        replacement_information_read, 0,
+        "read the replacement file identity"
+    );
+    assert_ne!(
+        (
+            replacement_information.dwVolumeSerialNumber,
+            replacement_information.nFileIndexHigh,
+            replacement_information.nFileIndexLow,
+        ),
+        (
+            inspected.dwVolumeSerialNumber,
+            inspected.nFileIndexHigh,
+            inspected.nFileIndexLow,
+        ),
+        "the target path now names a different file object"
+    );
+
+    let inspected_file = handles.last().expect("retain the inspected target handle");
+    let mut pinned_information = BY_HANDLE_FILE_INFORMATION::default();
+    // SAFETY: `inspected_file` owns a live handle and the information structure is writable.
+    let pinned_information_read = unsafe {
+        GetFileInformationByHandle(
+            inspected_file.as_raw_handle() as HANDLE,
+            &mut pinned_information,
+        )
+    };
+    assert_ne!(
+        pinned_information_read, 0,
+        "read the retained target identity"
+    );
+    assert_eq!(
+        (
+            pinned_information.dwVolumeSerialNumber,
+            pinned_information.nFileIndexHigh,
+            pinned_information.nFileIndexLow,
+        ),
+        (
+            inspected.dwVolumeSerialNumber,
+            inspected.nFileIndexHigh,
+            inspected.nFileIndexLow,
+        ),
+        "the ACL handle remains bound to the original file object"
+    );
+
+    drop(alias_file);
+    drop(replacement_file);
+    drop(handles);
+}
+
+#[derive(Debug, Eq, PartialEq)]
+struct DaclSnapshot {
+    control: u16,
+    acl_revision: u8,
+    aces: Vec<Vec<u8>>,
+}
+
+/// Returns the number of ACEs from a validated DACL snapshot.
 fn dacl_ace_count(path: &Path) -> std::io::Result<u16> {
+    let count = dacl_snapshot(path)?.aces.len();
+    u16::try_from(count).map_err(|_| {
+        std::io::Error::new(ErrorKind::InvalidData, "The test DACL has too many ACEs.")
+    })
+}
+
+/// Returns effective allow masks by SID for a DACL containing only standard allow ACEs.
+fn dacl_effective_allow_rights(snapshot: &DaclSnapshot) -> BTreeMap<Vec<u8>, u32> {
+    assert!(
+        snapshot
+            .aces
+            .iter()
+            .all(|ace| ace.first() == Some(&(ACCESS_ALLOWED_ACE_TYPE as u8))),
+        "effective allow rights require standard allow ACEs without deny entries"
+    );
+    let mut rights = BTreeMap::new();
+    for ace in &snapshot.aces {
+        assert!(
+            ace.len() >= 8,
+            "a standard allow ACE must contain its header and mask"
+        );
+        if u32::from(ace[1]) & INHERIT_ONLY_ACE != 0 {
+            continue;
+        }
+        let access_mask = u32::from_le_bytes([ace[4], ace[5], ace[6], ace[7]]);
+        *rights.entry(ace[8..].to_vec()).or_default() |= access_mask;
+    }
+    rights
+}
+
+fn stable_dacl_control(control: u16) -> u16 {
+    // The filesystem resource manager recalculates SE_DACL_AUTO_INHERITED on DACL updates.
+    control & (SE_DACL_PRESENT | SE_DACL_DEFAULTED | SE_DACL_PROTECTED)
+}
+
+fn dacl_has_sid(snapshot: &DaclSnapshot, sid: &[u8]) -> bool {
+    snapshot
+        .aces
+        .iter()
+        .any(|ace| ace.len() >= 8 && ace[0] == ACCESS_ALLOWED_ACE_TYPE as u8 && &ace[8..] == sid)
+}
+
+/// Reads a DACL snapshot while preserving ACE order because deny/allow order affects access checks.
+fn dacl_snapshot(path: &Path) -> std::io::Result<DaclSnapshot> {
     let mut options = fs::OpenOptions::new();
     options
         .access_mode(READ_CONTROL)
@@ -770,16 +1096,175 @@ fn dacl_ace_count(path: &Path) -> std::io::Result<u16> {
     if status != 0 {
         return Err(std::io::Error::from_raw_os_error(status as i32));
     }
-    let result = if dacl.is_null() {
-        Err(std::io::Error::new(
-            ErrorKind::InvalidData,
-            "The test child has no DACL.",
-        ))
-    } else {
-        // SAFETY: A successful GetSecurityInfo call returned a readable DACL pointer.
-        Ok(unsafe { (*dacl.cast::<ACL>()).AceCount })
-    };
+    let result = (|| {
+        if descriptor.is_null() || dacl.is_null() {
+            return Err(std::io::Error::new(
+                ErrorKind::InvalidData,
+                "The test object has no DACL security descriptor.",
+            ));
+        }
+        let mut control = 0;
+        let mut descriptor_revision = 0;
+        // SAFETY: `descriptor` is a live descriptor returned by GetSecurityInfo.
+        if unsafe {
+            GetSecurityDescriptorControl(descriptor, &mut control, &mut descriptor_revision)
+        } == 0
+        {
+            return Err(std::io::Error::last_os_error());
+        }
+        // SAFETY: `dacl` is a live ACL returned by GetSecurityInfo.
+        let (ace_count, acl_revision, acl_start, acl_end) = unsafe {
+            let acl_start = dacl.cast::<u8>() as usize;
+            let acl_size = usize::from((*dacl).AclSize);
+            let acl_end = acl_start.checked_add(acl_size);
+            ((*dacl).AceCount, (*dacl).AclRevision, acl_start, acl_end)
+        };
+        let acl_end = acl_end.ok_or_else(|| {
+            std::io::Error::new(ErrorKind::InvalidData, "The test DACL size overflows.")
+        })?;
+        let acl_header_end = acl_start.checked_add(size_of::<ACL>()).ok_or_else(|| {
+            std::io::Error::new(ErrorKind::InvalidData, "The test ACL overflows.")
+        })?;
+        if acl_header_end > acl_end {
+            return Err(std::io::Error::new(
+                ErrorKind::InvalidData,
+                "The test DACL is smaller than its header.",
+            ));
+        }
+        let mut aces = Vec::with_capacity(usize::from(ace_count));
+        for index in 0..ace_count {
+            let mut ace = null_mut();
+            // SAFETY: `dacl` is a live ACL and `ace` is a writable output pointer.
+            if unsafe { GetAce(dacl, u32::from(index), &mut ace) } == 0 || ace.is_null() {
+                return Err(std::io::Error::last_os_error());
+            }
+            let ace_start = ace as usize;
+            let ace_header_end =
+                ace_start
+                    .checked_add(size_of::<ACE_HEADER>())
+                    .ok_or_else(|| {
+                        std::io::Error::new(
+                            ErrorKind::InvalidData,
+                            "The test ACE header overflows.",
+                        )
+                    })?;
+            if ace_start < acl_header_end
+                || ace_header_end > acl_end
+                || !ace_start.is_multiple_of(std::mem::align_of::<ACE_HEADER>())
+            {
+                return Err(std::io::Error::new(
+                    ErrorKind::InvalidData,
+                    "The test DACL contains an invalid ACE header range.",
+                ));
+            }
+            // SAFETY: The complete ACE header was checked to lie within the live DACL buffer.
+            let ace_size = usize::from(unsafe { (*ace.cast::<ACE_HEADER>()).AceSize });
+            if ace_size < size_of::<ACE_HEADER>()
+                || !ace_size.is_multiple_of(std::mem::align_of::<ACE_HEADER>())
+            {
+                return Err(std::io::Error::new(
+                    ErrorKind::InvalidData,
+                    "The test DACL contains an invalid ACE size.",
+                ));
+            }
+            let ace_end = ace_start.checked_add(ace_size).ok_or_else(|| {
+                std::io::Error::new(ErrorKind::InvalidData, "The test ACE size overflows.")
+            })?;
+            if ace_start < acl_header_end || ace_end > acl_end {
+                return Err(std::io::Error::new(
+                    ErrorKind::InvalidData,
+                    "The test DACL contains an ACE outside its buffer.",
+                ));
+            }
+            // SAFETY: The ACE size comes from the validated ACE header in the live DACL.
+            aces.push(unsafe { std::slice::from_raw_parts(ace.cast::<u8>(), ace_size) }.to_vec());
+        }
+        let dacl_control_mask = SE_DACL_PRESENT
+            | SE_DACL_DEFAULTED
+            | SE_DACL_AUTO_INHERIT_REQ
+            | SE_DACL_AUTO_INHERITED
+            | SE_DACL_PROTECTED;
+        Ok(DaclSnapshot {
+            control: control & dacl_control_mask,
+            acl_revision,
+            aces,
+        })
+    })();
     // SAFETY: `descriptor` was allocated by GetSecurityInfo and has no remaining users.
     unsafe { windows_sys::Win32::Foundation::LocalFree(descriptor) };
     result
+}
+
+fn set_directory_dacl_protected(path: &Path) -> std::io::Result<()> {
+    let mut options = fs::OpenOptions::new();
+    options
+        .access_mode(READ_CONTROL | WRITE_DAC)
+        .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE)
+        .custom_flags(FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT);
+    let file = options.open(path)?;
+    let mut dacl = null_mut();
+    let mut descriptor = null_mut();
+    // SAFETY: `file` owns the directory handle and both output pointers are writable.
+    let status = unsafe {
+        GetSecurityInfo(
+            file.as_raw_handle() as HANDLE,
+            SE_FILE_OBJECT,
+            DACL_SECURITY_INFORMATION,
+            null_mut(),
+            null_mut(),
+            &mut dacl,
+            null_mut(),
+            &mut descriptor,
+        )
+    };
+    if status != 0 {
+        return Err(std::io::Error::from_raw_os_error(status as i32));
+    }
+    if dacl.is_null() {
+        // SAFETY: The descriptor was allocated by GetSecurityInfo and LocalFree accepts null.
+        unsafe { windows_sys::Win32::Foundation::LocalFree(descriptor) };
+        return Err(std::io::Error::new(
+            ErrorKind::InvalidData,
+            "The ACL test directory has no DACL.",
+        ));
+    }
+    // SAFETY: `file` owns the target handle and `dacl` is a valid ACL returned by GetSecurityInfo.
+    let status = unsafe {
+        SetSecurityInfo(
+            file.as_raw_handle() as HANDLE,
+            SE_FILE_OBJECT,
+            DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION,
+            null_mut(),
+            null_mut(),
+            dacl,
+            null_mut(),
+        )
+    };
+    // SAFETY: The descriptor was allocated by GetSecurityInfo and has no remaining users.
+    unsafe { windows_sys::Win32::Foundation::LocalFree(descriptor) };
+    if status == 0 {
+        Ok(())
+    } else {
+        Err(std::io::Error::from_raw_os_error(status as i32))
+    }
+}
+
+/// Encodes the exact non-object allow ACE expected from the tested directory grant.
+fn expected_allow_ace(
+    sid: windows_sys::Win32::Security::PSID,
+    access_mask: u32,
+    flags: u8,
+) -> Vec<u8> {
+    // SAFETY: `sid` is a valid SID allocated by ConvertStringSidToSidW and remains live here.
+    let sid_length = unsafe { GetLengthSid(sid) } as usize;
+    let ace_size = u16::try_from(8 + sid_length).expect("the test SID fits in an ACE");
+    let mut ace = Vec::with_capacity(usize::from(ace_size));
+    ace.push(u8::try_from(ACCESS_ALLOWED_ACE_TYPE).expect("ACE type fits in one byte"));
+    ace.push(flags);
+    ace.extend_from_slice(&ace_size.to_le_bytes());
+    ace.extend_from_slice(&access_mask.to_le_bytes());
+    // SAFETY: `sid` is a valid SID allocated by ConvertStringSidToSidW and GetLengthSid
+    // returned its readable byte length.
+    ace.extend_from_slice(unsafe { std::slice::from_raw_parts(sid.cast(), sid_length) });
+    ace
 }

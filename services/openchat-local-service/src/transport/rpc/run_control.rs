@@ -77,7 +77,16 @@ pub(super) async fn dispatch(
         "chat.goal.pause" => {
             let conversation_id = required_string(params, "conversationId")?;
             let run_id = required_string(params, "runId")?;
-            goals::pause_run(storage, conversation_id, run_id, "user_paused")
+            let reason = match params.get("reason") {
+                None => "user_paused",
+                Some(Value::String(reason))
+                    if matches!(reason.as_str(), "user_paused" | "budget_exceeded") =>
+                {
+                    reason.as_str()
+                }
+                _ => return Err(invalid_goal_pause_request()),
+            };
+            goals::pause_run(storage, conversation_id, run_id, reason)
         }
         "chat.goal.stop" => {
             let conversation_id = required_string(params, "conversationId")?;
@@ -136,6 +145,14 @@ pub(super) async fn dispatch(
             false,
         )),
     }
+}
+
+fn invalid_goal_pause_request() -> ServiceError {
+    ServiceError::new(
+        "invalid_request_params",
+        "The goal pause request is invalid.",
+        false,
+    )
 }
 
 fn invalid_run_list_request() -> ServiceError {

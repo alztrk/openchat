@@ -209,12 +209,15 @@ fn extract_word_text_runs(xml_fragment: &str) -> String {
     let mut rest = xml_fragment;
     while let Some(pos) = rest.find("<w:") {
         let tag_slice = &rest[pos..];
-        if tag_slice.starts_with("<w:tab") {
+        if let Some(stripped) = tag_slice.strip_prefix("<w:tab") {
             text.push('\t');
-            rest = &tag_slice[6..];
-        } else if tag_slice.starts_with("<w:br") || tag_slice.starts_with("<w:cr") {
+            rest = stripped;
+        } else if let Some(stripped) = tag_slice
+            .strip_prefix("<w:br")
+            .or_else(|| tag_slice.strip_prefix("<w:cr"))
+        {
             text.push('\n');
-            rest = &tag_slice[5..];
+            rest = stripped;
         } else if tag_slice.starts_with("<w:t>") || tag_slice.starts_with("<w:t ") {
             if let Some(gt) = tag_slice.find('>') {
                 let content_start = &tag_slice[gt + 1..];
@@ -627,7 +630,7 @@ fn extract_html(bytes: &[u8]) -> Result<ExtractedDocument, DocumentParseError> {
 fn open_bounded_zip(bytes: &[u8]) -> Result<ZipArchive<Cursor<&[u8]>>, DocumentParseError> {
     let mut archive =
         ZipArchive::new(Cursor::new(bytes)).map_err(|_| DocumentParseError::MalformedDocument)?;
-    if archive.len() == 0 || archive.len() > MAXIMUM_ZIP_ENTRIES {
+    if archive.is_empty() || archive.len() > MAXIMUM_ZIP_ENTRIES {
         return Err(DocumentParseError::ArchiveLimitExceeded);
     }
     let mut total_uncompressed = 0u64;

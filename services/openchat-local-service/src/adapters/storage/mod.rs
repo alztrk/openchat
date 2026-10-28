@@ -9,7 +9,7 @@ use std::{
     io::{self, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
     sync::{
-        Mutex,
+        Arc, Mutex,
         atomic::{AtomicBool, AtomicI64, Ordering},
     },
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
@@ -44,6 +44,7 @@ const LEGACY_IMPORT_ROLLBACK_NAME: &str = "storage-import-rollback.sqlite3";
 mod broker_connection;
 mod connection;
 mod database_guard;
+mod database_key;
 mod database_queue;
 pub(crate) mod ipc_protocol;
 #[cfg(windows)]
@@ -52,6 +53,7 @@ mod schema;
 pub(crate) mod tool_index_redaction;
 pub(crate) mod user_questions;
 pub(crate) use connection::{StorageConnection, StorageRow, StorageTransaction};
+pub(crate) use database_key::DatabaseKey;
 pub(crate) use database_queue::{DatabaseQueueHandle, QueuedConnection};
 use schema::{INITIAL_SCHEMA_VERSION, SCHEMA_VERSION, initialize_schema};
 
@@ -113,6 +115,7 @@ pub struct AppStorage {
     root: PathBuf,
     image_files_root: PathBuf,
     database_path: PathBuf,
+    database_key: Arc<database_key::DatabaseKey>,
     database_had_data_on_open: bool,
     schema_version: AtomicI64,
     migration_backup_created: AtomicBool,
@@ -176,6 +179,9 @@ impl AppStorage {
 
         let database_path = database_directory.join("openchat.sqlite3");
         let broker = BrokerConnection::connect()?;
+        let database_key = Arc::new(
+            database_key::read_stored_database_key()?.ok_or(rusqlite::Error::InvalidQuery)?,
+        );
         let image_files_root = appcontainer_image_files_root()?;
         let import_status = broker.legacy_import_status()?;
         let mut preserve_legacy_sources = matches!(
@@ -202,6 +208,11 @@ impl AppStorage {
                         .complete_empty_legacy_import(crate::secrets::SecretMap::default(), true)?;
                     preserve_legacy_sources = true;
                 } else if protected_legacy_profile {
+                    protect_legacy_profile_databases(
+                        &database_directory,
+                        &cache_directory,
+                        &database_key,
+                    )?;
                     return Err(rusqlite::Error::SqliteFailure(
                         ffi::Error::new(ffi::SQLITE_CANTOPEN),
                         Some(
@@ -220,7 +231,11 @@ impl AppStorage {
                             uuid::Uuid::new_v4().simple()
                         ));
                         let result = (|| {
-                            create_legacy_import_snapshot(&database_path, &snapshot_path)?;
+                            create_legacy_import_snapshot(
+                                &database_path,
+                                &snapshot_path,
+                                &database_key,
+                            )?;
                             broker.import_legacy_snapshot(&snapshot_path, secrets)
                         })();
                         let _ = fs::remove_file(&snapshot_path);
@@ -239,15 +254,29 @@ impl AppStorage {
             LegacyImportStatus::CompletedWithLegacySourcePreserved => {}
             LegacyImportStatus::ExistingData => {
                 if legacy_database_exists(&database_path)? {
+                    protect_legacy_profile_databases(
+                        &database_directory,
+                        &cache_directory,
+                        &database_key,
+                    )?;
                     return Err(rusqlite::Error::InvalidQuery);
                 }
             }
         }
 
         if !preserve_legacy_sources {
-            migrate_legacy_local_models(&database_directory.join("local_models.sqlite3"), &broker)?;
-            migrate_legacy_project_index(&cache_directory.join("project-index.sqlite3"), &broker)?;
+            migrate_legacy_local_models(
+                &database_directory.join("local_models.sqlite3"),
+                &broker,
+                &database_key,
+            )?;
+            migrate_legacy_project_index(
+                &cache_directory.join("project-index.sqlite3"),
+                &broker,
+                &database_key,
+            )?;
         }
+        protect_legacy_profile_databases(&database_directory, &cache_directory, &database_key)?;
 
         let schema_version = broker.query_row(
             "SELECT COALESCE(MAX(version), 0) FROM openchat_backend_migrations",
@@ -259,6 +288,7 @@ impl AppStorage {
             root,
             image_files_root,
             database_path,
+            database_key,
             database_had_data_on_open: false,
             schema_version: AtomicI64::new(schema_version),
             migration_backup_created: AtomicBool::new(true),
@@ -274,26 +304,50 @@ impl AppStorage {
     /// # Errors
     /// Returns a SQLite or filesystem error if recovery or database initialization fails.
     pub fn open_at(root: PathBuf) -> rusqlite::Result<Self> {
+        #[cfg(test)]
+        {
+            return Self::open_at_with_key(root, database_key::DatabaseKey::isolated_test_key());
+        }
+        #[cfg(all(feature = "desktop-profile-test-support", not(test)))]
+        {
+            let key = database_key::read_or_create_desktop_test_key(&root)?;
+            return Self::open_at_with_key(root, key);
+        }
+        #[cfg(all(not(test), not(feature = "desktop-profile-test-support")))]
+        {
+            let _ = root;
+            Err(rusqlite::Error::InvalidQuery)
+        }
+    }
+
+    pub(crate) fn open_at_with_key(
+        root: PathBuf,
+        key: database_key::DatabaseKey,
+    ) -> rusqlite::Result<Self> {
+        let key = Arc::new(key);
         ensure_supported_sqlite_runtime()?;
         #[cfg(windows)]
-        recover_interrupted_legacy_import(&root)?;
+        recover_interrupted_legacy_import(&root, &key)?;
         let profile_restore_pending_validation =
-            crate::profile_archive::activate_pending_restore(&root)?;
-        match Self::open_active_root(root.clone()) {
+            crate::profile_archive::activate_pending_restore(&root, &key)?;
+        match Self::open_active_root(root.clone(), key.clone()) {
             Ok(mut storage) => {
                 storage.profile_restore_pending_validation = profile_restore_pending_validation;
                 Ok(storage)
             }
             Err(error) => {
                 if profile_restore_pending_validation {
-                    crate::profile_archive::recover_unconfirmed_restore(&root)?;
+                    crate::profile_archive::recover_unconfirmed_restore(&root, &key)?;
                 }
                 Err(error)
             }
         }
     }
 
-    fn open_active_root(root: PathBuf) -> rusqlite::Result<Self> {
+    fn open_active_root(
+        root: PathBuf,
+        database_key: Arc<database_key::DatabaseKey>,
+    ) -> rusqlite::Result<Self> {
         let database_directory = root.join("db");
         let logs_directory = root.join("logs");
         let cache_directory = root.join("cache");
@@ -304,6 +358,7 @@ impl AppStorage {
             .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
         fs::create_dir_all(&cache_directory)
             .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
+        convert_retained_pre_migration_backups(&database_directory, &database_key)?;
 
         let database_path = database_directory.join("openchat.sqlite3");
         let database_had_data_on_open = match fs::metadata(&database_path) {
@@ -313,10 +368,7 @@ impl AppStorage {
                 return Err(rusqlite::Error::ToSqlConversionFailure(Box::new(error)));
             }
         };
-        let connection = Connection::open_with_flags(
-            &database_path,
-            OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_CREATE,
-        )?;
+        let (connection, _) = database_key.open_or_migrate(&database_path)?;
         disable_trusted_schema(&connection)?;
         connection.busy_timeout(Duration::from_secs(5))?;
         database_queue::acquire_exclusive_lock(&connection)?;
@@ -328,7 +380,7 @@ impl AppStorage {
         if database_had_data_on_open
             && database_guard::backend_schema_version(&connection)? < INITIAL_SCHEMA_VERSION
         {
-            database_guard::create_verified_backup(&connection, &database_path)?;
+            database_guard::create_verified_backup(&connection, &database_path, &database_key)?;
             migration_backup_created = true;
         }
 
@@ -343,11 +395,12 @@ impl AppStorage {
         )?;
         let schema_version = initialize_schema(&connection, INITIAL_SCHEMA_VERSION)?;
         ensure_service_metadata(&connection)?;
-        let database_queue = DatabaseQueueHandle::new(connection);
+        let database_queue = DatabaseQueueHandle::new(connection, database_key.clone());
         Ok(Self {
             image_files_root: root.clone(),
             root,
             database_path,
+            database_key,
             database_had_data_on_open,
             schema_version: AtomicI64::new(schema_version),
             migration_backup_created: AtomicBool::new(migration_backup_created),
@@ -371,6 +424,10 @@ impl AppStorage {
     /// Returns the SQLite database path owned by this storage instance.
     pub fn database_path(&self) -> &Path {
         &self.database_path
+    }
+
+    pub(crate) fn database_key(&self) -> &database_key::DatabaseKey {
+        &self.database_key
     }
 
     /// Returns the per-profile cache directory used by semantic memory indexes.
@@ -815,6 +872,10 @@ impl AppStorage {
     /// # Errors
     /// Returns a SQLite or filesystem error if the restore journal cannot be committed.
     pub fn commit_pending_profile_restore(&self) -> rusqlite::Result<()> {
+        #[cfg(windows)]
+        if self.database_queue.is_remote() {
+            return BrokerConnection::connect()?.commit_pending_profile_restore();
+        }
         if self.profile_restore_pending_validation {
             crate::profile_archive::commit_pending_restore(&self.root)?;
         }
@@ -902,7 +963,7 @@ impl AppStorage {
         destination: &Path,
     ) -> rusqlite::Result<()> {
         let connection = self.database_queue.connect_local()?;
-        database_guard::create_verified_snapshot(&connection, destination)
+        database_guard::create_verified_snapshot(&connection, destination, &self.database_key)
     }
 
     pub(crate) fn database_queue_handle(&self) -> DatabaseQueueHandle {
@@ -943,14 +1004,16 @@ impl AppStorage {
             return Err(rusqlite::Error::InvalidQuery);
         }
 
-        let source = Connection::open_with_flags(snapshot_path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+        let source = self
+            .database_key
+            .open(snapshot_path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
         disable_trusted_schema(&source)?;
         validate_legacy_import_snapshot(&source)?;
 
         let rollback_path = self.root.join("cache").join(LEGACY_IMPORT_ROLLBACK_NAME);
         {
             let current = self.database_queue.connect_local()?;
-            database_guard::create_verified_snapshot(&current, &rollback_path)?;
+            database_guard::create_verified_snapshot(&current, &rollback_path, &self.database_key)?;
         }
         write_legacy_import_journal(&self.root)?;
 
@@ -973,9 +1036,7 @@ impl AppStorage {
         })();
 
         if let Err(error) = import_result {
-            if let Err(restore_error) = restore_database_snapshot(&rollback_path, self) {
-                return Err(restore_error);
-            }
+            restore_database_snapshot(&rollback_path, self)?;
             self.schema_version.store(SCHEMA_VERSION, Ordering::Release);
             finish_legacy_import_journal(&self.root)?;
             return Err(error);
@@ -998,7 +1059,11 @@ impl AppStorage {
             return Ok(false);
         }
 
-        let _backup_path = database_guard::create_verified_backup(connection, &self.database_path)?;
+        let _backup_path = database_guard::create_verified_backup(
+            connection,
+            &self.database_path,
+            &self.database_key,
+        )?;
         self.migration_backup_created.store(true, Ordering::Release);
         Ok(true)
     }
@@ -1060,9 +1125,30 @@ struct LegacyProjectIndexState {
 }
 
 #[cfg(windows)]
+fn protect_legacy_database_file(
+    path: &Path,
+    database_key: &database_key::DatabaseKey,
+) -> rusqlite::Result<()> {
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(filesystem_error(error)),
+    };
+    if !metadata.is_file()
+        || metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
+        || metadata.len() < 16
+    {
+        return Err(rusqlite::Error::InvalidPath(path.to_path_buf()));
+    }
+    let (database, _) = database_key.open_or_migrate(path)?;
+    database_guard::verify_integrity(&database)
+}
+
+#[cfg(windows)]
 fn migrate_legacy_local_models(
     legacy_path: &Path,
     broker: &BrokerConnection,
+    database_key: &database_key::DatabaseKey,
 ) -> rusqlite::Result<()> {
     let completed = broker
         .query_row(
@@ -1081,12 +1167,13 @@ fn migrate_legacy_local_models(
     let mut models = Vec::new();
     match fs::symlink_metadata(legacy_path) {
         Ok(metadata) => {
-            if !metadata.is_file() || metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
+            if !metadata.is_file()
+                || metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
+                || metadata.len() < 16
             {
                 return Err(rusqlite::Error::InvalidPath(legacy_path.to_path_buf()));
             }
-            let source =
-                Connection::open_with_flags(legacy_path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+            let (source, _) = database_key.open_or_migrate(legacy_path)?;
             disable_trusted_schema(&source)?;
             database_guard::verify_integrity(&source)?;
             let has_catalog = source.query_row(
@@ -1165,6 +1252,7 @@ fn migrate_legacy_local_models(
 fn migrate_legacy_project_index(
     legacy_path: &Path,
     broker: &BrokerConnection,
+    database_key: &database_key::DatabaseKey,
 ) -> rusqlite::Result<()> {
     let completed = broker
         .query_row(
@@ -1183,12 +1271,13 @@ fn migrate_legacy_project_index(
     let mut states = Vec::new();
     match fs::symlink_metadata(legacy_path) {
         Ok(metadata) => {
-            if !metadata.is_file() || metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
+            if !metadata.is_file()
+                || metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
+                || metadata.len() < 16
             {
                 return Err(rusqlite::Error::InvalidPath(legacy_path.to_path_buf()));
             }
-            let source =
-                Connection::open_with_flags(legacy_path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+            let (source, _) = database_key.open_or_migrate(legacy_path)?;
             disable_trusted_schema(&source)?;
             database_guard::verify_integrity(&source)?;
             let has_state = source.query_row(
@@ -1417,10 +1506,14 @@ fn validate_legacy_import_snapshot(source: &Connection) -> rusqlite::Result<()> 
 }
 
 #[cfg(windows)]
-fn create_legacy_import_snapshot(source_path: &Path, snapshot_path: &Path) -> rusqlite::Result<()> {
+fn create_legacy_import_snapshot(
+    source_path: &Path,
+    snapshot_path: &Path,
+    database_key: &database_key::DatabaseKey,
+) -> rusqlite::Result<()> {
     let source = Connection::open_with_flags(source_path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
     disable_trusted_schema(&source)?;
-    database_guard::verify_integrity(&source)?;
+    database_guard::verify_plaintext_integrity(&source)?;
     let chat_schema_version = database_guard::chat_schema_version(&source)?;
     if chat_schema_version > crate::CHAT_SCHEMA_VERSION
         || database_guard::backend_schema_version(&source)? > SCHEMA_VERSION
@@ -1433,10 +1526,10 @@ fn create_legacy_import_snapshot(source_path: &Path, snapshot_path: &Path) -> ru
             return Err(rusqlite::Error::InvalidQuery);
         }
     }
-    database_guard::create_verified_snapshot(&source, snapshot_path)?;
+    database_key.export_plaintext_database(source_path, snapshot_path)?;
     drop(source);
 
-    let snapshot = Connection::open_with_flags(snapshot_path, OpenFlags::SQLITE_OPEN_READ_WRITE)?;
+    let snapshot = database_key.open(snapshot_path, OpenFlags::SQLITE_OPEN_READ_WRITE)?;
     disable_trusted_schema(&snapshot)?;
     let vault_exists = snapshot.query_row(
         "SELECT EXISTS (
@@ -1470,7 +1563,9 @@ fn verify_imported_secrets(
 
 #[cfg(windows)]
 fn restore_database_snapshot(snapshot_path: &Path, storage: &AppStorage) -> rusqlite::Result<()> {
-    let source = Connection::open_with_flags(snapshot_path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+    let source = storage
+        .database_key
+        .open(snapshot_path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
     disable_trusted_schema(&source)?;
     let mut destination = storage.database_queue.connect_local()?;
     copy_database(&source, &mut destination)?;
@@ -1498,8 +1593,45 @@ fn write_legacy_import_journal(root: &Path) -> rusqlite::Result<()> {
 }
 
 #[cfg(windows)]
-fn recover_interrupted_legacy_import(root: &Path) -> rusqlite::Result<()> {
+fn convert_interrupted_legacy_import_snapshots(
+    cache_directory: &Path,
+    database_key: &database_key::DatabaseKey,
+) -> rusqlite::Result<()> {
+    let entries = match fs::read_dir(cache_directory) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(filesystem_error(error)),
+    };
+    for entry in entries {
+        let entry = entry.map_err(filesystem_error)?;
+        let name = entry.file_name();
+        let Some(name) = name.to_str() else {
+            continue;
+        };
+        if !name.starts_with("storage-import-") || !name.ends_with(".sqlite3") {
+            continue;
+        }
+        let path = entry.path();
+        let metadata = fs::symlink_metadata(&path).map_err(filesystem_error)?;
+        if !metadata.is_file()
+            || metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
+            || metadata.len() < 16
+        {
+            return Err(rusqlite::Error::InvalidPath(path));
+        }
+        let (connection, _) = database_key.open_or_migrate(&path)?;
+        database_guard::verify_integrity(&connection)?;
+    }
+    Ok(())
+}
+
+#[cfg(windows)]
+fn recover_interrupted_legacy_import(
+    root: &Path,
+    database_key: &database_key::DatabaseKey,
+) -> rusqlite::Result<()> {
     let cache_directory = root.join("cache");
+    convert_interrupted_legacy_import_snapshots(&cache_directory, database_key)?;
     let journal_path = cache_directory.join(LEGACY_IMPORT_JOURNAL_NAME);
     let rollback_path = cache_directory.join(LEGACY_IMPORT_ROLLBACK_NAME);
     let journal_metadata = match fs::symlink_metadata(&journal_path) {
@@ -1528,20 +1660,26 @@ fn recover_interrupted_legacy_import(root: &Path) -> rusqlite::Result<()> {
     {
         return Err(rusqlite::Error::InvalidPath(rollback_path));
     }
-    let rollback = Connection::open_with_flags(&rollback_path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+    if rollback_metadata.len() < 16 {
+        return Err(rusqlite::Error::InvalidPath(rollback_path));
+    }
+    let (rollback, _) = database_key.open_or_migrate(&rollback_path)?;
     disable_trusted_schema(&rollback)?;
     database_guard::verify_integrity(&rollback)?;
     drop(rollback);
 
     let database_path = root.join("db").join("openchat.sqlite3");
-    if !legacy_import_completed_in_database(&database_path)? {
-        restore_snapshot_file(&rollback_path, &database_path)?;
+    if !legacy_import_completed_in_database(&database_path, database_key)? {
+        restore_snapshot_file(&rollback_path, &database_path, database_key)?;
     }
     finish_legacy_import_journal(root)
 }
 
 #[cfg(windows)]
-fn legacy_import_completed_in_database(database_path: &Path) -> rusqlite::Result<bool> {
+fn legacy_import_completed_in_database(
+    database_path: &Path,
+    database_key: &database_key::DatabaseKey,
+) -> rusqlite::Result<bool> {
     let metadata = match fs::symlink_metadata(database_path) {
         Ok(metadata) => metadata,
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
@@ -1550,7 +1688,10 @@ fn legacy_import_completed_in_database(database_path: &Path) -> rusqlite::Result
     if !metadata.is_file() || metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
         return Err(rusqlite::Error::InvalidPath(database_path.to_path_buf()));
     }
-    let connection = Connection::open_with_flags(database_path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+    if metadata.len() < 16 {
+        return Err(rusqlite::Error::InvalidPath(database_path.to_path_buf()));
+    }
+    let (connection, _) = database_key.open_or_migrate(database_path)?;
     disable_trusted_schema(&connection)?;
     database_guard::verify_integrity(&connection)?;
     let metadata_table_exists = connection.query_row(
@@ -1580,7 +1721,11 @@ fn legacy_import_completed_in_database(database_path: &Path) -> rusqlite::Result
 }
 
 #[cfg(windows)]
-fn restore_snapshot_file(snapshot_path: &Path, database_path: &Path) -> rusqlite::Result<()> {
+fn restore_snapshot_file(
+    snapshot_path: &Path,
+    database_path: &Path,
+    database_key: &database_key::DatabaseKey,
+) -> rusqlite::Result<()> {
     let database_directory = database_path
         .parent()
         .ok_or_else(|| rusqlite::Error::InvalidPath(database_path.to_path_buf()))?;
@@ -1589,9 +1734,9 @@ fn restore_snapshot_file(snapshot_path: &Path, database_path: &Path) -> rusqlite
     remove_internal_file(&recovery_path)?;
     remove_internal_file(&recovery_path.with_extension("backup.partial"))?;
 
-    let source = Connection::open_with_flags(snapshot_path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+    let source = database_key.open(snapshot_path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
     disable_trusted_schema(&source)?;
-    database_guard::create_verified_snapshot(&source, &recovery_path)?;
+    database_guard::create_verified_snapshot(&source, &recovery_path, database_key)?;
     drop(source);
 
     remove_sqlite_sidecar(&database_path.with_extension("sqlite3-wal"))?;
@@ -1599,7 +1744,7 @@ fn restore_snapshot_file(snapshot_path: &Path, database_path: &Path) -> rusqlite
     remove_internal_file(database_path)?;
     fs::rename(&recovery_path, database_path).map_err(filesystem_error)?;
 
-    let restored = Connection::open_with_flags(database_path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+    let restored = database_key.open(database_path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
     disable_trusted_schema(&restored)?;
     database_guard::verify_integrity(&restored)
 }
@@ -1701,6 +1846,51 @@ fn validate_sqlite_runtime(version_number: i32, version: &str) -> rusqlite::Resu
     ))
 }
 
+#[cfg(windows)]
+fn protect_legacy_profile_databases(
+    database_directory: &Path,
+    cache_directory: &Path,
+    database_key: &database_key::DatabaseKey,
+) -> rusqlite::Result<()> {
+    protect_legacy_database_file(&database_directory.join("openchat.sqlite3"), database_key)?;
+    protect_legacy_database_file(
+        &database_directory.join("local_models.sqlite3"),
+        database_key,
+    )?;
+    protect_legacy_database_file(&cache_directory.join("project-index.sqlite3"), database_key)?;
+    convert_retained_pre_migration_backups(database_directory, database_key)
+}
+
+fn convert_retained_pre_migration_backups(
+    database_directory: &Path,
+    database_key: &database_key::DatabaseKey,
+) -> rusqlite::Result<()> {
+    let backup_directory = database_directory.join("backups");
+    let entries = match fs::read_dir(&backup_directory) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(filesystem_error(error)),
+    };
+    for entry in entries {
+        let entry = entry.map_err(filesystem_error)?;
+        let name = entry.file_name();
+        let Some(name) = name.to_str() else {
+            continue;
+        };
+        if !name.starts_with("openchat.sqlite3.pre-migration-") || !name.ends_with(".backup") {
+            continue;
+        }
+        let path = entry.path();
+        let metadata = fs::symlink_metadata(&path).map_err(filesystem_error)?;
+        if !metadata.is_file() || metadata.file_type().is_symlink() || metadata.len() < 16 {
+            return Err(rusqlite::Error::InvalidPath(path));
+        }
+        let (connection, _) = database_key.open_or_migrate(&path)?;
+        database_guard::verify_integrity(&connection)?;
+    }
+    Ok(())
+}
+
 /// Runs the startup integrity check against an already opened database connection.
 pub(crate) fn verify_database_integrity(connection: &Connection) -> rusqlite::Result<()> {
     database_guard::verify_integrity(connection)
@@ -1709,6 +1899,10 @@ pub(crate) fn verify_database_integrity(connection: &Connection) -> rusqlite::Re
 /// Verifies an operation through the primary storage abstraction.
 pub(crate) fn verify_storage_integrity(connection: &StorageConnection<'_>) -> rusqlite::Result<()> {
     connection.verify_integrity()
+}
+
+pub(crate) fn verify_plaintext_database_integrity(connection: &Connection) -> rusqlite::Result<()> {
+    database_guard::verify_plaintext_integrity(connection)
 }
 
 /// Disables execution of non-innocuous application functions from database schema objects.
@@ -1789,8 +1983,8 @@ mod tests {
 
     use super::{
         AppStorage, CopilotCatalogFilterSummary, MAX_DIAGNOSTIC_LOG_BYTES,
-        MINIMUM_SQLITE_VERSION_NUMBER, database_guard, disable_trusted_schema, sqlite_error_code,
-        validate_sqlite_runtime,
+        MINIMUM_SQLITE_VERSION_NUMBER, database_guard, database_key::DatabaseKey,
+        disable_trusted_schema, sqlite_error_code, validate_sqlite_runtime,
     };
 
     #[test]
@@ -1807,12 +2001,89 @@ mod tests {
             Err(error) => error,
         };
 
-        assert!(database_guard::is_corrupt_database_error(&error));
+        assert_eq!(sqlite_error_code(&error), "sqlite_cannot_open");
         assert_eq!(
             fs::read(&database_path).expect("read database fixture"),
             original
         );
         assert!(!database_directory.join("openchat.sqlite3-wal").exists());
+    }
+
+    #[test]
+    fn startup_encrypts_retained_plaintext_pre_migration_backups() {
+        let directory = TestDirectory::new();
+        let backup_directory = directory.0.join("db/backups");
+        fs::create_dir_all(&backup_directory).expect("create backup directory");
+        let backup_path = backup_directory.join("openchat.sqlite3.pre-migration-legacy.backup");
+        let backup = Connection::open(&backup_path).expect("create legacy plaintext backup");
+        backup
+            .execute_batch(
+                "CREATE TABLE backup_probe (value TEXT NOT NULL);
+                 INSERT INTO backup_probe VALUES ('preserved');",
+            )
+            .expect("write backup fixture");
+        drop(backup);
+
+        let storage = AppStorage::open_at(directory.0.clone()).expect("open isolated profile");
+
+        let header = fs::read(&backup_path).expect("read converted backup");
+        assert_ne!(&header[..16], b"SQLite format 3\0");
+        let converted = DatabaseKey::isolated_test_key()
+            .open(&backup_path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .expect("open converted backup with profile key");
+        assert_eq!(
+            converted
+                .query_row("SELECT value FROM backup_probe", [], |row| row
+                    .get::<_, String>(0))
+                .expect("read converted backup data"),
+            "preserved"
+        );
+        drop(converted);
+        drop(storage);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn legacy_profile_database_sources_are_encrypted_without_creating_missing_files() {
+        let directory = TestDirectory::new();
+        let key = DatabaseKey::isolated_test_key();
+        let legacy_paths = [
+            directory.0.join("db/openchat.sqlite3"),
+            directory.0.join("db/local_models.sqlite3"),
+            directory.0.join("cache/project-index.sqlite3"),
+        ];
+        for path in &legacy_paths {
+            fs::create_dir_all(path.parent().expect("legacy database parent"))
+                .expect("create legacy database parent");
+            let database = Connection::open(path).expect("create legacy plaintext database");
+            database
+                .execute_batch(
+                    "CREATE TABLE retained_probe (value TEXT NOT NULL);
+                     INSERT INTO retained_probe VALUES ('preserved');",
+                )
+                .expect("write legacy database fixture");
+        }
+
+        for path in &legacy_paths {
+            super::protect_legacy_database_file(path, &key)
+                .expect("protect retained legacy database");
+            let bytes = fs::read(path).expect("read protected legacy database");
+            assert_ne!(&bytes[..16], b"SQLite format 3\0");
+            let database = key
+                .open(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+                .expect("open protected legacy database");
+            assert_eq!(
+                database
+                    .query_row("SELECT value FROM retained_probe", [], |row| row
+                        .get::<_, String>(0))
+                    .expect("read preserved legacy value"),
+                "preserved"
+            );
+        }
+        let missing_path = directory.0.join("cache/missing.sqlite3");
+        super::protect_legacy_database_file(&missing_path, &key)
+            .expect("ignore an absent legacy source");
+        assert!(!missing_path.exists());
     }
 
     #[test]
@@ -1936,7 +2207,13 @@ mod tests {
             .collect::<Result<Vec<_>, _>>()
             .expect("read migration backup entries");
         assert_eq!(backups.len(), 1);
-        let backup = Connection::open(backups[0].path()).expect("open verified backup");
+        let test_key = DatabaseKey::isolated_test_key();
+        let backup = test_key
+            .open(
+                &backups[0].path(),
+                rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+            )
+            .expect("open verified backup");
         let user_version =
             database_guard::chat_schema_version(&backup).expect("read backup schema version");
         let value = backup

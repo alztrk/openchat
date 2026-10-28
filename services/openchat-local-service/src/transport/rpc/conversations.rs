@@ -16,8 +16,8 @@ use crate::{
 };
 
 use super::{
-    invalid_request_params, is_custom_provider_id, optional_bool, optional_string,
-    required_secret_string, required_string, tool_permissions,
+    invalid_request_params, optional_bool, optional_string, required_secret_string,
+    required_string, tool_permissions,
 };
 
 /// Dispatches conversation memory, history, context-estimate, and archive requests.
@@ -206,7 +206,7 @@ pub(super) async fn dispatch(
                     | "cohere"
                     | "kilo"
                     | "llama_cpp"
-            ) && !is_custom_provider_id(provider_id)
+            ) && !crate::provider_ids::is_custom_provider_id(provider_id)
             {
                 return Err(invalid_context_usage_params());
             }

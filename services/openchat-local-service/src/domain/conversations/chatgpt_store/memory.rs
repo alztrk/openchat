@@ -320,7 +320,8 @@ pub async fn search_project_history(
     }
 
     for (conversation_id, conversation_title) in project_conversations {
-        match semantic::search_archive_existing(
+        // Semantic history is an optional ranking source; keyword results remain usable.
+        if let Ok(results) = semantic::search_archive_existing(
             storage.database_queue_handle(),
             cache_directory.clone(),
             conversation_id.clone(),
@@ -329,26 +330,22 @@ pub async fn search_project_history(
         )
         .await
         {
-            Ok(results) => {
-                for (rank, result) in results.into_iter().enumerate() {
-                    let excerpt = ProjectHistoryExcerpt {
-                        conversation_id: conversation_id.clone(),
-                        conversation_title: conversation_title.clone(),
-                        message_id: result.message_id,
-                        role: result.role,
-                        excerpt: result.content,
-                        created_at_unix_ms: result.created_at_unix_ms,
-                    };
-                    merge_project_history_candidate(
-                        &mut candidates,
-                        &mut candidate_positions,
-                        excerpt,
-                        rank,
-                    );
-                }
+            for (rank, result) in results.into_iter().enumerate() {
+                let excerpt = ProjectHistoryExcerpt {
+                    conversation_id: conversation_id.clone(),
+                    conversation_title: conversation_title.clone(),
+                    message_id: result.message_id,
+                    role: result.role,
+                    excerpt: result.content,
+                    created_at_unix_ms: result.created_at_unix_ms,
+                };
+                merge_project_history_candidate(
+                    &mut candidates,
+                    &mut candidate_positions,
+                    excerpt,
+                    rank,
+                );
             }
-            // Semantic history is an optional ranking source; keyword results remain usable.
-            Err(_) => {}
         }
     }
 
@@ -374,17 +371,14 @@ pub async fn rank_project_candidates(
     if candidates.is_empty() || !semantic::is_ready(&cache_directory).await {
         return None;
     }
-    match semantic::rerank_project_candidates(
+    semantic::rerank_project_candidates(
         storage.database_queue_handle(),
         cache_directory,
         query.to_owned(),
         candidates,
     )
     .await
-    {
-        Ok(ranked_indices) => Some(ranked_indices),
-        Err(_) => None,
-    }
+    .ok()
 }
 
 fn merge_project_history_candidate(

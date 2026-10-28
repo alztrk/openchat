@@ -24,7 +24,7 @@ pub enum TitleGenerationRequest {
     /// Generate a title using the model that handled the conversation.
     Conversation,
     /// Generate a title with an explicitly selected provider and model.
-    Model(TitleGenerationModel),
+    Model(Box<TitleGenerationModel>),
 }
 
 #[derive(Clone)]
@@ -87,6 +87,10 @@ pub struct ChatSendContext<'a> {
     pub tool_permission_rules: ToolPermissionRules,
     /// Optional tool allowlist imposed by the active profile.
     pub profile_tool_allowlist: Option<std::collections::HashSet<String>>,
+    /// Whether this operation uses the scanner's fixed prompt and tool schemas.
+    pub is_security_scan: bool,
+    /// Whether this security scan has persisted consent for public web research.
+    pub security_scan_public_web_research: bool,
     /// User-visible model routes the primary agent may select for child runs.
     pub available_subagent_models: Vec<SubagentModelOption>,
     #[cfg(windows)]
@@ -123,4 +127,5 @@ pub struct SubagentModelOption {
     pub supports_tools: Option<bool>,
     pub reasoning_levels: Vec<String>,
     pub request_protocol: String,
+    pub preferred: bool,
 }

@@ -10,7 +10,7 @@ pub(crate) fn is_valid_rpc_frame(frame: &str, maximum_bytes: usize) -> bool {
     !body.is_empty() && !body.iter().any(|&b| b == b'\n' || b == b'\r')
 }
 
-/// Blocks renderer-forged decisions and marks full-access mode changes for OS confirmation.
+/// Blocks renderer-forged decisions and identifies policies that need host review.
 pub(crate) fn renderer_rpc_disposition(
     frame: &str,
     maximum_bytes: usize,
@@ -42,15 +42,17 @@ pub(crate) fn renderer_rpc_disposition(
         let Some(params) = request.params else {
             return Some(RendererRpcDisposition::Forward);
         };
-        let requests_full_access = match method {
-            "tools.permissions.mode.set" => params.mode.as_deref() == Some("full_access"),
-            "tools.permissions.mode.get" => params.initial_mode.as_deref() == Some("full_access"),
-            _ => false,
-        };
-        return Some(if requests_full_access {
-            RendererRpcDisposition::Confirm(PermissionDetails::EnableFullAccess)
-        } else {
-            RendererRpcDisposition::Forward
+        if params.native_confirmation.is_some() {
+            return None;
+        }
+        return Some(match method {
+            "tools.permissions.mode.set" if params.mode.as_deref() == Some("full_access") => {
+                RendererRpcDisposition::Confirm(PermissionDetails::EnableFullAccess)
+            }
+            "tools.permissions.mode.get" => RendererRpcDisposition::CheckLegacyGlobal {
+                imported_full_access: params.initial_mode.as_deref() == Some("full_access"),
+            },
+            _ => RendererRpcDisposition::Forward,
         });
     }
     if matches!(
@@ -83,22 +85,102 @@ pub(crate) fn project_permission_rpc_disposition(
         return None;
     }
     let params = request.params?;
-    let rules = match method {
-        "project.tool_permissions.set" => params.rules.as_ref()?,
-        "project.tool_permissions.get" => {
-            let Some(rules) = params.initial_rules.as_ref() else {
-                return Some(RendererRpcDisposition::Forward);
-            };
-            rules
+    if params.native_confirmation.is_some() || !is_valid_project_id(params.project_id?) {
+        return None;
+    }
+    let project_id = params.project_id?;
+    match method {
+        "project.tool_permissions.set" => {
+            let rules = params.rules.as_ref()?;
+            if rules.len() > MAX_PROJECT_PERMISSION_RULE_COUNT {
+                return None;
+            }
+            Some(
+                project_allow_confirmation(
+                    project_id,
+                    rules.iter().map(|(name, rule)| (*name, *rule)),
+                )
+                .map(RendererRpcDisposition::Confirm)
+                .unwrap_or(RendererRpcDisposition::Forward),
+            )
         }
-        _ => return None,
-    };
-    if rules.len() > MAX_PROJECT_PERMISSION_RULE_COUNT {
+        "project.tool_permissions.get" => {
+            if params
+                .initial_rules
+                .as_ref()
+                .is_some_and(|rules| rules.len() > MAX_PROJECT_PERMISSION_RULE_COUNT)
+            {
+                return None;
+            }
+            let import_confirmation = params.initial_rules.as_ref().and_then(|rules| {
+                project_allow_confirmation(
+                    project_id,
+                    rules.iter().map(|(name, rule)| (*name, *rule)),
+                )
+            });
+            Some(RendererRpcDisposition::CheckLegacyProject {
+                project_id: project_id.to_owned(),
+                import_confirmation,
+            })
+        }
+        _ => None,
+    }
+}
+
+/// Adds the host-only marker after a native dialog approved an elevated RPC.
+pub(crate) fn add_native_confirmation(frame: &str) -> Result<String, String> {
+    if !is_valid_rpc_frame(frame, MAX_RPC_FRAME_BYTES) {
+        return Err("The permission request frame is invalid.".to_owned());
+    }
+    if !matches!(
+        renderer_rpc_disposition(frame, MAX_RPC_FRAME_BYTES),
+        Some(
+            RendererRpcDisposition::Confirm(_)
+                | RendererRpcDisposition::CheckLegacyGlobal {
+                    imported_full_access: true
+                }
+                | RendererRpcDisposition::CheckLegacyProject {
+                    import_confirmation: Some(_),
+                    ..
+                }
+        )
+    ) {
+        return Err("The request does not contain a confirmed elevated permission.".to_owned());
+    }
+    let mut request = serde_json::from_str::<serde_json::Value>(&frame[..frame.len() - 1])
+        .map_err(|_| "The permission request frame is invalid.")?;
+    let params = request
+        .as_object_mut()
+        .and_then(|request| request.get_mut("params"))
+        .and_then(serde_json::Value::as_object_mut)
+        .ok_or("The permission request parameters are invalid.")?;
+    if params.contains_key("nativeConfirmation") {
+        return Err("The permission request contains a reserved field.".to_owned());
+    }
+    params.insert(
+        "nativeConfirmation".to_owned(),
+        serde_json::Value::Bool(true),
+    );
+    let mut encoded = serde_json::to_string(&request)
+        .map_err(|_| "The permission request could not be encoded.")?;
+    encoded.push('\n');
+    if encoded.len() > MAX_RPC_FRAME_BYTES {
+        return Err("The confirmed permission request is too large.".to_owned());
+    }
+    Ok(encoded)
+}
+
+/// Builds bounded native-dialog details from a validated project policy map.
+pub(crate) fn project_allow_confirmation<'a>(
+    project_id: &str,
+    rules: impl Iterator<Item = (&'a str, &'a str)>,
+) -> Option<PermissionDetails> {
+    if !is_valid_project_id(project_id) {
         return None;
     }
     let mut allowed_names = Vec::new();
     for (name, rule) in rules {
-        if *rule != "allow" {
+        if rule != "allow" {
             continue;
         }
         if name.is_empty()
@@ -109,33 +191,31 @@ pub(crate) fn project_permission_rpc_disposition(
         {
             return None;
         }
-        allowed_names.push(*name);
+        allowed_names.push(name);
+        if allowed_names.len() > MAX_PROJECT_PERMISSION_RULE_COUNT {
+            return None;
+        }
     }
-    let allow_rule_count = allowed_names.len();
-    if allow_rule_count == 0 {
-        return Some(RendererRpcDisposition::Forward);
-    }
-
-    let project_id = params.project_id?;
-    if project_id.is_empty()
-        || project_id.len() > 128
-        || !project_id
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
-    {
+    if allowed_names.is_empty() {
         return None;
     }
     allowed_names.sort_unstable();
+    let allow_rule_count = allowed_names.len();
     let additional_rule_count =
         allow_rule_count.saturating_sub(MAX_PROJECT_PERMISSION_DIALOG_RULE_NAMES);
     allowed_names.truncate(MAX_PROJECT_PERMISSION_DIALOG_RULE_NAMES);
+    Some(PermissionDetails::AllowProjectRules {
+        project_id: project_id.to_owned(),
+        allow_rule_count,
+        rule_names: allowed_names.into_iter().map(str::to_owned).collect(),
+        additional_rule_count,
+    })
+}
 
-    Some(RendererRpcDisposition::Confirm(
-        PermissionDetails::AllowProjectRules {
-            project_id: project_id.to_owned(),
-            allow_rule_count,
-            rule_names: allowed_names.into_iter().map(str::to_owned).collect(),
-            additional_rule_count,
-        },
-    ))
+fn is_valid_project_id(project_id: &str) -> bool {
+    !project_id.is_empty()
+        && project_id.len() <= 128
+        && project_id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
 }

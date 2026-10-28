@@ -17,6 +17,7 @@ use rusqlite::{
 use rusqlite::Connection;
 
 use super::{
+    database_key::DatabaseKey,
     database_queue::QueuedConnection,
     ipc_protocol::{MAX_STORAGE_COLUMNS, MAX_STORAGE_ROWS},
 };
@@ -27,6 +28,7 @@ use super::broker_connection::{BrokerConnection, BrokerRows, BrokerStatement, Br
 /// A connection backed by the local operation queue or, on Windows, by the storage broker.
 pub(crate) struct StorageConnection<'a> {
     backend: StorageBackend<'a>,
+    database_key: Option<&'a DatabaseKey>,
 }
 
 enum StorageBackend<'a> {
@@ -39,9 +41,10 @@ enum StorageBackend<'a> {
 
 impl<'a> StorageConnection<'a> {
     /// Wraps a connection lease acquired from the local FIFO queue.
-    pub(crate) fn local(connection: QueuedConnection<'a>) -> Self {
+    pub(crate) fn local(connection: QueuedConnection<'a>, database_key: &'a DatabaseKey) -> Self {
         Self {
             backend: StorageBackend::Local(connection),
+            database_key: Some(database_key),
         }
     }
 
@@ -49,6 +52,7 @@ impl<'a> StorageConnection<'a> {
     pub(crate) fn standalone(connection: Connection) -> Self {
         Self {
             backend: StorageBackend::Standalone(connection),
+            database_key: None,
         }
     }
 
@@ -57,6 +61,7 @@ impl<'a> StorageConnection<'a> {
     pub(crate) fn remote(connection: BrokerConnection) -> Self {
         Self {
             backend: StorageBackend::Remote(connection),
+            database_key: None,
         }
     }
 
@@ -262,6 +267,14 @@ impl<'a> StorageConnection<'a> {
             }
             #[cfg(windows)]
             StorageBackend::Remote(connection) => {
+                let cipher_statement = connection.prepare("PRAGMA cipher_integrity_check")?;
+                let mut cipher_rows = cipher_statement.query([])?;
+                if cipher_rows.next()?.is_some() {
+                    return Err(Error::InvalidQuery);
+                }
+                drop(cipher_rows);
+                drop(cipher_statement);
+
                 let result = connection
                     .query_row("PRAGMA quick_check(1)", [], |row| row.get::<_, String>(0))?;
                 if result.eq_ignore_ascii_case("ok") {
@@ -277,12 +290,15 @@ impl<'a> StorageConnection<'a> {
     pub(crate) fn create_verified_snapshot(&self, destination: &Path) -> Result<()> {
         match &self.backend {
             StorageBackend::Local(connection) => {
-                super::database_guard::create_verified_snapshot(connection, destination)
+                let database_key = self.database_key.ok_or(Error::InvalidQuery)?;
+                super::database_guard::create_verified_snapshot(
+                    connection,
+                    destination,
+                    database_key,
+                )
             }
             #[cfg(test)]
-            StorageBackend::Standalone(connection) => {
-                super::database_guard::create_verified_snapshot(connection, destination)
-            }
+            StorageBackend::Standalone(_) => Err(Error::InvalidQuery),
             #[cfg(windows)]
             StorageBackend::Remote(connection) => connection.create_verified_snapshot(destination),
         }

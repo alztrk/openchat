@@ -285,7 +285,7 @@ mod tests {
 
         assert_eq!(
             consume_project_folder_selection(&selection_id).expect("consume selection"),
-            folder.0
+            canonical_path
         );
         assert!(consume_project_folder_selection(&selection_id).is_err());
     }
@@ -303,7 +303,7 @@ mod tests {
                 .expect("store first selection");
         let second_selection_id = store_selection(
             second_folder.0.clone(),
-            second_canonical_path,
+            second_canonical_path.clone(),
             Some(&first_selection_id),
         )
         .expect("store replacement selection");
@@ -311,7 +311,7 @@ mod tests {
         assert!(consume_project_folder_selection(&first_selection_id).is_err());
         assert_eq!(
             consume_project_folder_selection(&second_selection_id).expect("consume replacement"),
-            second_folder.0
+            second_canonical_path
         );
     }
 

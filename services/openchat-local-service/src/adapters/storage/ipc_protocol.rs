@@ -4,7 +4,7 @@ use base64::{Engine as _, engine::general_purpose::STANDARD};
 use rusqlite::{Connection, Error, Result, ffi, params_from_iter, types::Value};
 use serde::{Deserialize, Serialize};
 
-pub(crate) const STORAGE_PROTOCOL_VERSION: u32 = 2;
+pub(crate) const STORAGE_PROTOCOL_VERSION: u32 = 3;
 pub(crate) const MAX_STORAGE_FRAME_BYTES: usize = 32 * 1024 * 1024;
 pub(crate) const MAX_STORAGE_SQL_BYTES: usize = 256 * 1024;
 pub(crate) const MAX_STORAGE_PARAMETERS: usize = 2_000;
@@ -80,6 +80,7 @@ pub(crate) enum StorageRequest {
         import_id: String,
         secrets: crate::secrets::SecretMap,
     },
+    CommitPendingProfileRestore,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -275,8 +276,9 @@ fn handle_request_inner(
         | StorageRequest::CompleteEmptyLegacyImport { .. }
         | StorageRequest::BeginLegacyImport { .. }
         | StorageRequest::WriteLegacyImportChunk { .. }
-        | StorageRequest::CommitLegacyImport { .. } => Err(protocol_error(
-            "legacy database migration must use the dedicated storage handler",
+        | StorageRequest::CommitLegacyImport { .. }
+        | StorageRequest::CommitPendingProfileRestore => Err(protocol_error(
+            "profile operations must use their dedicated storage handler",
         )),
     }
 }

@@ -18,13 +18,18 @@ use std::{
     time::{Duration, Instant},
 };
 use windows_sys::Win32::{
-    Foundation::{ERROR_BROKEN_PIPE, ERROR_PIPE_NOT_CONNECTED, GetLastError, HANDLE},
+    Foundation::{
+        CloseHandle, ERROR_BROKEN_PIPE, ERROR_PIPE_NOT_CONNECTED, GetLastError, HANDLE,
+        WAIT_ABANDONED, WAIT_OBJECT_0, WAIT_TIMEOUT,
+    },
     System::Pipes::PeekNamedPipe,
+    System::Threading::{CreateMutexW, ReleaseMutex, WaitForSingleObject},
 };
 use zeroize::Zeroizing;
 
 use crate::sandbox::SandboxedProcess;
 
+use super::database_key::{DatabaseKey, read_stored_database_key, store_database_key};
 use super::ipc_protocol::{
     MAX_STORAGE_FRAME_BYTES, STORAGE_PROTOCOL_VERSION, StorageRequest, StorageResponse,
 };
@@ -161,7 +166,7 @@ impl RemoteStorageConnection {
 
         if result.as_ref().is_err_and(|error| {
             !matches!(error, RemoteStorageError::ServerRejected { .. })
-                && !(matches!(error, RemoteStorageError::FrameTooLarge) && !request_written)
+                && (request_written || !matches!(error, RemoteStorageError::FrameTooLarge))
         }) {
             self.poisoned.store(true, Ordering::Release);
             if invalidate_on_failure {
@@ -216,6 +221,7 @@ struct StorageBrokerRuntime {
 
 impl StorageBrokerRuntime {
     fn launch() -> Result<Self, RemoteStorageError> {
+        let _key_bootstrap_lock = acquire_database_key_bootstrap_lock()?;
         let executable = std::env::current_exe().map_err(|_| RemoteStorageError::Transport)?;
         let mut process = SandboxedProcess::spawn_storage_broker(&executable).map_err(|error| {
             eprintln!("storage_broker_launch_failed stage=spawn error={error}");
@@ -230,14 +236,21 @@ impl StorageBrokerRuntime {
         let stderr = process
             .take_stderr_blocking()
             .map_err(|_| RemoteStorageError::Transport)?;
-        let connection = RemoteStorageConnection {
-            pipe: Arc::new(Mutex::new(RemotePipeStream::new_split(output, input))),
-            poisoned: Arc::new(AtomicBool::new(false)),
-        };
         let stderr_worker = thread::Builder::new()
             .name("openchat-storage-broker-stderr".to_owned())
             .spawn(move || drain_broker_stderr(stderr))
             .map_err(|_| RemoteStorageError::Transport)?;
+        let mut reader = BufReader::new(output);
+        let mut writer = BufWriter::new(input);
+        if initialize_broker_database_key(&mut reader, &mut writer).is_err() {
+            drop(process);
+            let _ = stderr_worker.join();
+            return Err(RemoteStorageError::Transport);
+        }
+        let connection = RemoteStorageConnection {
+            pipe: Arc::new(Mutex::new(RemotePipeStream::new_buffered(reader, writer))),
+            poisoned: Arc::new(AtomicBool::new(false)),
+        };
         if let Err(error) = connection.handshake() {
             drop(process);
             let _ = stderr_worker.join();
@@ -248,6 +261,43 @@ impl StorageBrokerRuntime {
             connection,
             stderr_worker: Some(stderr_worker),
         })
+    }
+}
+
+struct DatabaseKeyBootstrapLock(HANDLE);
+
+fn acquire_database_key_bootstrap_lock() -> Result<DatabaseKeyBootstrapLock, RemoteStorageError> {
+    let mut name = "Local\\OpenChat.SqlCipherKeyBootstrap.v1"
+        .encode_utf16()
+        .collect::<Vec<_>>();
+    name.push(0);
+    // SAFETY: `name` is a valid NUL-terminated UTF-16 name and null attributes request defaults.
+    let handle = unsafe { CreateMutexW(std::ptr::null(), 0, name.as_ptr()) };
+    if handle.is_null() {
+        return Err(RemoteStorageError::Transport);
+    }
+    // SAFETY: `handle` is a live mutex returned by CreateMutexW.
+    match unsafe { WaitForSingleObject(handle, 30_000) } {
+        WAIT_OBJECT_0 | WAIT_ABANDONED => Ok(DatabaseKeyBootstrapLock(handle)),
+        WAIT_TIMEOUT => {
+            // SAFETY: This function owns the handle returned by CreateMutexW.
+            unsafe { CloseHandle(handle) };
+            Err(RemoteStorageError::TimedOut)
+        }
+        _ => {
+            // SAFETY: This function owns the handle returned by CreateMutexW.
+            unsafe { CloseHandle(handle) };
+            Err(RemoteStorageError::Transport)
+        }
+    }
+}
+
+impl Drop for DatabaseKeyBootstrapLock {
+    fn drop(&mut self) {
+        // SAFETY: This guard owns the mutex and is dropped on the thread that acquired it.
+        unsafe { ReleaseMutex(self.0) };
+        // SAFETY: This guard owns the live handle returned by CreateMutexW.
+        unsafe { CloseHandle(self.0) };
     }
 }
 
@@ -315,12 +365,115 @@ pub(crate) struct RemotePipeStream {
 }
 
 impl RemotePipeStream {
-    fn new_split(reader: File, writer: File) -> Self {
-        Self {
-            reader: BufReader::new(reader),
-            writer: BufWriter::new(writer),
+    fn new_buffered(reader: BufReader<File>, writer: BufWriter<File>) -> Self {
+        Self { reader, writer }
+    }
+}
+
+const DATABASE_KEY_BOOTSTRAP_MAGIC: &[u8; 4] = b"OCK1";
+
+fn initialize_broker_database_key(
+    reader: &mut BufReader<File>,
+    writer: &mut BufWriter<File>,
+) -> Result<(), RemoteStorageError> {
+    match read_stored_database_key().map_err(|_| RemoteStorageError::Transport)? {
+        Some(key) => {
+            write_key_bootstrap_request(writer, 1, Some(key.as_bytes()))?;
+            expect_key_bootstrap_status(reader, 2)?;
+        }
+        None => {
+            write_key_bootstrap_request(writer, 0, None)?;
+            expect_key_bootstrap_status(reader, 1)?;
+            let key = DatabaseKey::generate().map_err(|_| RemoteStorageError::Transport)?;
+            store_database_key(&key).map_err(|_| RemoteStorageError::Transport)?;
+            writer
+                .write_all(key.as_bytes())
+                .and_then(|()| writer.flush())
+                .map_err(|_| RemoteStorageError::Transport)?;
+            expect_key_bootstrap_status(reader, 2)?;
         }
     }
+    Ok(())
+}
+
+fn write_key_bootstrap_request(
+    writer: &mut BufWriter<File>,
+    key_present: u8,
+    key: Option<&[u8; 32]>,
+) -> Result<(), RemoteStorageError> {
+    let mut request = [0; 5];
+    request[..4].copy_from_slice(DATABASE_KEY_BOOTSTRAP_MAGIC);
+    request[4] = key_present;
+    writer
+        .write_all(&request)
+        .and_then(|()| {
+            if let Some(key) = key {
+                writer.write_all(key)?;
+            }
+            writer.flush()
+        })
+        .map_err(|_| RemoteStorageError::Transport)
+}
+
+fn expect_key_bootstrap_status(
+    reader: &mut BufReader<File>,
+    expected_status: u8,
+) -> Result<(), RemoteStorageError> {
+    let mut response = [0; 5];
+    read_exact_pipe(reader, &mut response, BROKER_RESPONSE_TIMEOUT)?;
+    if &response[..4] != DATABASE_KEY_BOOTSTRAP_MAGIC || response[4] != expected_status {
+        return Err(RemoteStorageError::InvalidResponse);
+    }
+    Ok(())
+}
+
+fn read_exact_pipe(
+    reader: &mut BufReader<File>,
+    mut destination: &mut [u8],
+    timeout: Duration,
+) -> Result<(), RemoteStorageError> {
+    let deadline = Instant::now() + timeout;
+    while !destination.is_empty() {
+        if Instant::now() >= deadline {
+            return Err(RemoteStorageError::TimedOut);
+        }
+        if reader.buffer().is_empty() {
+            let mut available = 0u32;
+            // SAFETY: The reader owns a live anonymous-pipe handle and `available` is writable.
+            let peeked = unsafe {
+                PeekNamedPipe(
+                    reader.get_ref().as_raw_handle() as HANDLE,
+                    std::ptr::null_mut(),
+                    0,
+                    std::ptr::null_mut(),
+                    &mut available,
+                    std::ptr::null_mut(),
+                )
+            };
+            if peeked == 0 {
+                return Err(RemoteStorageError::Transport);
+            }
+            if available == 0 {
+                thread::sleep(
+                    deadline
+                        .saturating_duration_since(Instant::now())
+                        .min(BROKER_PIPE_POLL_INTERVAL),
+                );
+                continue;
+            }
+        }
+        let available = reader
+            .fill_buf()
+            .map_err(|_| RemoteStorageError::Transport)?;
+        if available.is_empty() {
+            return Err(RemoteStorageError::UnexpectedEndOfStream);
+        }
+        let count = available.len().min(destination.len());
+        destination[..count].copy_from_slice(&available[..count]);
+        destination = &mut destination[count..];
+        reader.consume(count);
+    }
+    Ok(())
 }
 
 fn write_frame(
@@ -426,10 +579,8 @@ mod tests {
         let mut read = null_mut();
         let mut write = null_mut();
         // SAFETY: Both output pointers are writable and null security attributes request defaults.
-        assert_ne!(
-            unsafe { CreatePipe(&mut read, &mut write, null_mut(), 0) },
-            0
-        );
+        let created = unsafe { CreatePipe(&mut read, &mut write, null_mut(), 0) };
+        assert_ne!(created, 0);
         // SAFETY: CreatePipe returned two distinct owned handles transferred exactly once.
         unsafe {
             (

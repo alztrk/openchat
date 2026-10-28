@@ -329,15 +329,28 @@ pub(crate) fn responses_continuation_input() -> Value {
     })
 }
 
+pub(crate) struct ControlCallContext<'a> {
+    pub(crate) storage: &'a AppStorage,
+    pub(crate) run_id: &'a str,
+    pub(crate) conversation_id: &'a str,
+    pub(crate) request_id: &'a Value,
+    pub(crate) events: &'a EventSink,
+    pub(crate) is_security_scan: bool,
+}
+
 pub(crate) async fn process_control_calls(
     calls: &[ToolCall],
     execution: &mut Option<GoalExecution>,
-    storage: &AppStorage,
-    run_id: &str,
-    conversation_id: &str,
-    request_id: &Value,
-    events: &EventSink,
+    context: ControlCallContext<'_>,
 ) -> Result<Vec<ToolResult>, ServiceError> {
+    let ControlCallContext {
+        storage,
+        run_id,
+        conversation_id,
+        request_id,
+        events,
+        is_security_scan,
+    } = context;
     if calls.len() > 1 {
         return Err(ServiceError::new(
             "invalid_provider_response",
@@ -406,6 +419,17 @@ pub(crate) async fn process_control_calls(
                 }
                 if let Some(active_goal) = execution.as_mut() {
                     let summary = arguments.summary.trim().to_owned();
+                    if is_security_scan
+                        && arguments.state == "completed"
+                        && let Some(reason) =
+                            security_scan_completion_issue(&summary, &arguments.todos)
+                    {
+                        results.push(ToolResult {
+                            call_id: call.id.clone(),
+                            output: json!({"accepted": false, "reason": reason}),
+                        });
+                        continue;
+                    }
                     let (decision, state, pause_reason) = match arguments.state.as_str() {
                         "continue" => (GoalDecision::Continue, "running", Value::Null),
                         "completed" => (GoalDecision::Completed, "completed", Value::Null),
@@ -686,6 +710,53 @@ fn validate_todos(todos: &[GoalTodo]) -> Result<(), &'static str> {
     Ok(())
 }
 
+pub(crate) fn validate_security_scan_completion(
+    execution: Option<&GoalExecution>,
+) -> Result<(), ServiceError> {
+    let Some(execution) = execution else {
+        return Err(security_scan_completion_error(
+            "security_scan_checklist_required",
+            "A security scan cannot finish without its saved checklist.",
+        ));
+    };
+    if let Some(reason) = security_scan_completion_issue(&execution.progress, &execution.todos) {
+        return Err(security_scan_completion_error(
+            reason,
+            "A security scan cannot finish until its summary and every checklist item are complete.",
+        ));
+    }
+    Ok(())
+}
+
+pub(crate) fn validate_security_scan_final_status(
+    is_security_scan: bool,
+    status: &str,
+    execution: Option<&GoalExecution>,
+) -> Result<(), ServiceError> {
+    if is_security_scan && status == "completed" {
+        validate_security_scan_completion(execution)
+    } else {
+        Ok(())
+    }
+}
+
+fn security_scan_completion_issue(summary: &str, todos: &[GoalTodo]) -> Option<&'static str> {
+    if summary.trim().is_empty() {
+        return Some("security_scan_completion_summary_required");
+    }
+    if todos.is_empty() {
+        return Some("security_scan_checklist_required");
+    }
+    if todos.iter().any(|todo| !todo.completed) {
+        return Some("security_scan_checklist_incomplete");
+    }
+    None
+}
+
+fn security_scan_completion_error(code: &'static str, message: &'static str) -> ServiceError {
+    ServiceError::new(code, message, false)
+}
+
 fn checkpoint_error() -> ServiceError {
     ServiceError::new(
         "goal_checkpoint_invalid",
@@ -720,7 +791,10 @@ fn current_time_unix_ms() -> Result<i64, ServiceError> {
 
 #[cfg(test)]
 mod tests {
-    use super::{GoalTodo, MAX_TODO_ITEMS, MAX_TODO_TEXT_BYTES, validate_todos};
+    use super::{
+        GoalTodo, MAX_TODO_ITEMS, MAX_TODO_TEXT_BYTES, security_scan_completion_issue,
+        validate_security_scan_final_status, validate_todos,
+    };
 
     #[test]
     fn durable_todos_enforce_count_and_text_limits() {
@@ -756,5 +830,44 @@ mod tests {
             "access_token": "ignored"
         });
         assert!(serde_json::from_value::<GoalTodo>(value).is_err());
+    }
+
+    #[test]
+    fn security_scan_completion_requires_a_summary_and_fully_checked_list() {
+        let complete = [GoalTodo {
+            text: "Review provider boundary".to_owned(),
+            completed: true,
+        }];
+        assert_eq!(
+            security_scan_completion_issue(" ", &complete),
+            Some("security_scan_completion_summary_required")
+        );
+        assert_eq!(
+            security_scan_completion_issue("Reviewed", &[]),
+            Some("security_scan_checklist_required")
+        );
+        assert_eq!(
+            security_scan_completion_issue(
+                "Reviewed",
+                &[GoalTodo {
+                    text: "Review provider boundary".to_owned(),
+                    completed: false,
+                }]
+            ),
+            Some("security_scan_checklist_incomplete")
+        );
+        assert_eq!(security_scan_completion_issue("Reviewed", &complete), None);
+    }
+
+    #[test]
+    fn successful_security_scan_requires_saved_goal_state() {
+        assert_eq!(
+            validate_security_scan_final_status(true, "completed", None)
+                .expect_err("a successful scan without saved goal state must fail")
+                .code,
+            "security_scan_checklist_required"
+        );
+        assert!(validate_security_scan_final_status(true, "paused", None).is_ok());
+        assert!(validate_security_scan_final_status(false, "completed", None).is_ok());
     }
 }

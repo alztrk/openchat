@@ -69,9 +69,7 @@ pub(super) async fn dispatch(
 
 fn get_setting(params: &Value, storage: &AppStorage) -> Result<Value, ServiceError> {
     let key = required_setting_key(params, "key")?;
-    let connection = storage
-        .connect()
-        .map_err(|error| settings_sqlite_error(error))?;
+    let connection = storage.connect().map_err(settings_sqlite_error)?;
     let value = connection
         .query_row(
             "SELECT value_json FROM app_settings WHERE key = ?1",
@@ -101,9 +99,7 @@ fn validate_workspace_setting(params: &Value) -> Result<Value, ServiceError> {
 }
 
 pub(super) fn get_all_settings(storage: &AppStorage) -> Result<Map<String, Value>, ServiceError> {
-    let connection = storage
-        .connect()
-        .map_err(|error| settings_sqlite_error(error))?;
+    let connection = storage.connect().map_err(settings_sqlite_error)?;
     let mut statement = connection
         .prepare("SELECT key, value_json FROM app_settings")
         .map_err(settings_sqlite_error)?;
@@ -127,11 +123,9 @@ async fn set_setting(
 ) -> Result<Value, ServiceError> {
     let key = required_setting_key(params, "key")?;
     let value_json = required_setting_value(params, "valueJson")?;
-    let now = current_unix_millis().map_err(|detail| settings_clock_error(detail))?;
+    let now = current_unix_millis().map_err(settings_clock_error)?;
     {
-        let connection = storage
-            .connect()
-            .map_err(|error| settings_sqlite_error(error))?;
+        let connection = storage.connect().map_err(settings_sqlite_error)?;
         connection
             .execute(
                 "INSERT INTO app_settings (key, value_json, updated_at) VALUES (?1, ?2, ?3)
@@ -141,7 +135,7 @@ async fn set_setting(
             )
             .map_err(settings_sqlite_error)?;
     }
-    broadcast_setting_change(events, &key, &value_json).await?;
+    broadcast_setting_change(events, key, value_json).await?;
     Ok(json!({"saved": true}))
 }
 
@@ -151,11 +145,9 @@ async fn set_settings_batch(
     events: &EventSink,
 ) -> Result<Value, ServiceError> {
     let entries = parse_setting_entries(params, "entries")?;
-    let now = current_unix_millis().map_err(|detail| settings_clock_error(detail))?;
+    let now = current_unix_millis().map_err(settings_clock_error)?;
     {
-        let mut connection = storage
-            .connect()
-            .map_err(|error| settings_sqlite_error(error))?;
+        let mut connection = storage.connect().map_err(settings_sqlite_error)?;
         let transaction = connection.transaction().map_err(settings_sqlite_error)?;
         for (key, value_json) in &entries {
             transaction
@@ -182,21 +174,17 @@ async fn delete_setting(
 ) -> Result<Value, ServiceError> {
     let key = required_setting_key(params, "key")?;
     let deleted = {
-        let connection = storage
-            .connect()
-            .map_err(|error| settings_sqlite_error(error))?;
+        let connection = storage.connect().map_err(settings_sqlite_error)?;
         connection
             .execute("DELETE FROM app_settings WHERE key = ?1", [key])
             .map_err(settings_sqlite_error)?
     };
-    broadcast_setting_change(events, &key, "null").await?;
+    broadcast_setting_change(events, key, "null").await?;
     Ok(json!({"deleted": deleted > 0}))
 }
 
 fn list_personal_memory_facts(storage: &AppStorage) -> Result<Value, ServiceError> {
-    let connection = storage
-        .connect()
-        .map_err(|error| personal_memory_sqlite_error(error))?;
+    let connection = storage.connect().map_err(personal_memory_sqlite_error)?;
     let mut statement = connection
         .prepare(
             "SELECT id, fact_text, category, source_conversation_id, created_at, updated_at
@@ -230,15 +218,13 @@ fn list_personal_memory_facts(storage: &AppStorage) -> Result<Value, ServiceErro
 fn save_personal_memory_fact(params: &Value, storage: &AppStorage) -> Result<Value, ServiceError> {
     let fact_value = params.get("fact").unwrap_or(params);
     let fact = parse_personal_memory_fact(fact_value)?;
-    let now = current_unix_millis().map_err(|detail| personal_memory_clock_error(detail))?;
+    let now = current_unix_millis().map_err(personal_memory_clock_error)?;
     let created_at = if fact.created_at > 0 {
         fact.created_at
     } else {
         now
     };
-    let connection = storage
-        .connect()
-        .map_err(|error| personal_memory_sqlite_error(error))?;
+    let connection = storage.connect().map_err(personal_memory_sqlite_error)?;
     connection
         .execute(
             "INSERT INTO personal_memory_facts
@@ -267,9 +253,7 @@ fn delete_personal_memory_fact(
     storage: &AppStorage,
 ) -> Result<Value, ServiceError> {
     let id = required_bounded_string(params, "id", MAX_FACT_ID_BYTES, true)?;
-    let connection = storage
-        .connect()
-        .map_err(|error| personal_memory_sqlite_error(error))?;
+    let connection = storage.connect().map_err(personal_memory_sqlite_error)?;
     let deleted = connection
         .execute("DELETE FROM personal_memory_facts WHERE id = ?1", [id])
         .map_err(personal_memory_sqlite_error)?;
@@ -280,11 +264,9 @@ async fn clear_personal_memory_facts(
     storage: &AppStorage,
     events: &EventSink,
 ) -> Result<Value, ServiceError> {
-    let now = current_unix_millis().map_err(|detail| personal_memory_clock_error(detail))?;
+    let now = current_unix_millis().map_err(personal_memory_clock_error)?;
     {
-        let mut connection = storage
-            .connect()
-            .map_err(|error| personal_memory_sqlite_error(error))?;
+        let mut connection = storage.connect().map_err(personal_memory_sqlite_error)?;
         let transaction = connection
             .transaction()
             .map_err(personal_memory_sqlite_error)?;
@@ -313,10 +295,8 @@ async fn clear_personal_memory_facts(
 
 fn get_cache_entry(params: &Value, storage: &AppStorage) -> Result<Value, ServiceError> {
     let key = required_setting_key(params, "key")?;
-    let now = current_unix_millis().map_err(|detail| cache_clock_error(detail))?;
-    let connection = storage
-        .connect()
-        .map_err(|error| cache_sqlite_error(error))?;
+    let now = current_unix_millis().map_err(cache_clock_error)?;
+    let connection = storage.connect().map_err(cache_sqlite_error)?;
     let value = connection
         .query_row(
             "SELECT value_json FROM ephemeral_cache WHERE key = ?1 AND expires_at > ?2",
@@ -336,11 +316,9 @@ fn set_cache_entry(params: &Value, storage: &AppStorage) -> Result<Value, Servic
         .and_then(Value::as_i64)
         .filter(|value| (1..=MAX_CACHE_TTL_SECONDS).contains(value))
         .ok_or_else(invalid_request_params)?;
-    let now = current_unix_millis().map_err(|detail| cache_clock_error(detail))?;
+    let now = current_unix_millis().map_err(cache_clock_error)?;
     let expires_at = now.saturating_add(ttl_seconds.saturating_mul(1_000));
-    let mut connection = storage
-        .connect()
-        .map_err(|error| cache_sqlite_error(error))?;
+    let mut connection = storage.connect().map_err(cache_sqlite_error)?;
     let transaction = connection.transaction().map_err(cache_sqlite_error)?;
     transaction
         .execute("DELETE FROM ephemeral_cache WHERE expires_at <= ?1", [now])
@@ -374,11 +352,9 @@ async fn migrate_localstorage(
         .iter()
         .map(parse_personal_memory_fact)
         .collect::<Result<Vec<_>, _>>()?;
-    let now = current_unix_millis().map_err(|detail| settings_clock_error(detail))?;
+    let now = current_unix_millis().map_err(settings_clock_error)?;
     {
-        let mut connection = storage
-            .connect()
-            .map_err(|error| settings_sqlite_error(error))?;
+        let mut connection = storage.connect().map_err(settings_sqlite_error)?;
         let transaction = connection.transaction().map_err(settings_sqlite_error)?;
         for (key, value_json) in &settings {
             transaction

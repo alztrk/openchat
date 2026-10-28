@@ -5,18 +5,19 @@ use std::{
     ffi::OsString,
     fs::{self, File, OpenOptions},
     io::{self, BufRead, BufReader, Read, Seek, SeekFrom, Write},
-    os::windows::ffi::OsStringExt,
+    os::windows::{ffi::OsStringExt, fs::MetadataExt},
     path::{Path, PathBuf},
     ptr::null_mut,
 };
+use zeroize::Zeroize;
 
 use crate::{
-    storage::AppStorage,
     storage::ipc_protocol::{
         LegacyImportStatus, MAX_STORAGE_FRAME_BYTES, MAX_STORAGE_IMPORT_BYTES,
         MAX_STORAGE_SNAPSHOT_BYTES, MAX_STORAGE_TRANSFER_CHUNK_BYTES, STORAGE_PROTOCOL_VERSION,
         StorageRequest, StorageResponse, handle_request, storage_error_response,
     },
+    storage::{AppStorage, DatabaseKey},
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use sha2::{Digest, Sha256};
@@ -54,7 +55,19 @@ pub fn run_broker_stdio() -> Result<(), String> {
             safe_profile_path_suffix(&profile_root),
         ));
     }
-    let profile_root = fs::canonicalize(&profile_root)
+    let stdin = io::stdin();
+    let stdout = io::stdout();
+    let mut reader = BufReader::new(stdin.lock());
+    let mut writer = stdout.lock();
+    run_broker_profile(&profile_root, &mut reader, &mut writer)
+}
+
+fn run_broker_profile<R: BufRead, W: Write>(
+    profile_root: &Path,
+    reader: &mut R,
+    writer: &mut W,
+) -> Result<(), String> {
+    let profile_root = fs::canonicalize(profile_root)
         .map_err(|_| "The AppContainer storage profile path could not be resolved safely.")?;
     ensure_appcontainer_directory(&profile_root, &profile_root)?;
     ensure_appcontainer_directory(&profile_root, &profile_root.join("AppData"))?;
@@ -62,7 +75,11 @@ pub fn run_broker_stdio() -> Result<(), String> {
     ensure_appcontainer_directory(&profile_root, &profile_root.join("Temp"))?;
 
     let storage_root = profile_root.join("OpenChatStorage");
-    let profile = AppStorage::open_at(storage_root.clone())
+    ensure_appcontainer_directory(&profile_root, &storage_root)?;
+    let database_directory = storage_root.join("db");
+    ensure_appcontainer_directory(&profile_root, &database_directory)?;
+    let key = receive_database_key(reader, writer, &database_directory.join("openchat.sqlite3"))?;
+    let profile = AppStorage::open_at_with_key(storage_root.clone(), key)
         .map_err(|_| "The AppContainer storage profile could not open safely.".to_owned())?;
     profile
         .prepare_chat_schema_migration(crate::CHAT_SCHEMA_VERSION)
@@ -70,12 +87,217 @@ pub fn run_broker_stdio() -> Result<(), String> {
     profile
         .initialize_backend_schema()
         .map_err(|_| "The AppContainer storage schema could not be initialized.".to_owned())?;
+    clear_key_bootstrap_marker(&database_directory.join("openchat.sqlite3"))?;
 
-    let stdin = io::stdin();
-    let stdout = io::stdout();
-    let mut reader = BufReader::new(stdin.lock());
-    let mut writer = stdout.lock();
-    serve_profile_connection(&mut reader, &mut writer, &profile)
+    write_key_bootstrap_status(writer, 2)?;
+    serve_profile_connection(reader, writer, &profile)
+}
+
+const KEY_BOOTSTRAP_MAGIC: &[u8; 4] = b"OCK1";
+const KEY_BOOTSTRAP_MARKER_CONTENT: &[u8] = b"OpenChat SQLCipher initial key bootstrap v1\n";
+
+fn receive_database_key(
+    reader: &mut impl Read,
+    writer: &mut impl Write,
+    database_path: &Path,
+) -> Result<DatabaseKey, String> {
+    let mut request = [0; 5];
+    reader
+        .read_exact(&mut request)
+        .map_err(|_| "The storage broker key initialization frame is unavailable.")?;
+    if &request[..4] != KEY_BOOTSTRAP_MAGIC {
+        return Err("The storage broker key initialization frame is invalid.".to_owned());
+    }
+    match request[4] {
+        0 => {
+            if !prepare_keyless_database_bootstrap(database_path)? {
+                write_key_bootstrap_status(writer, 3)?;
+                return Err("The existing storage database has no usable key.".to_owned());
+            }
+            write_key_bootstrap_status(writer, 1)?;
+        }
+        1 => {
+            if !database_allows_existing_key(database_path)? {
+                write_key_bootstrap_status(writer, 3)?;
+                return Err(
+                    "The saved database key has no active or recoverable storage database."
+                        .to_owned(),
+                );
+            }
+        }
+        _ => return Err("The storage broker key initialization frame is invalid.".to_owned()),
+    }
+
+    let mut key_bytes = [0; 32];
+    let read_result = reader.read_exact(&mut key_bytes);
+    if read_result.is_err() {
+        key_bytes.zeroize();
+        return Err("The storage broker key initialization frame is incomplete.".to_owned());
+    }
+    let key_result = DatabaseKey::from_bytes(&key_bytes);
+    key_bytes.zeroize();
+    let key = key_result.map_err(|_| "The storage broker key initialization frame is invalid.")?;
+    Ok(key)
+}
+
+fn database_allows_key_creation(database_path: &Path) -> Result<bool, String> {
+    let metadata = match fs::symlink_metadata(database_path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(true),
+        Err(_) => return Err("The storage database state could not be checked safely.".to_owned()),
+    };
+    if !metadata.is_file() || metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+        return Err("The storage database path is not a regular file.".to_owned());
+    }
+    if metadata.len() == 0 {
+        return Ok(true);
+    }
+    if metadata.len() < 16 {
+        return Ok(false);
+    }
+    let mut file = File::open(database_path)
+        .map_err(|_| "The storage database state could not be checked safely.")?;
+    let mut header = [0; 16];
+    file.read_exact(&mut header)
+        .map_err(|_| "The storage database state could not be checked safely.")?;
+    Ok(&header == b"SQLite format 3\0")
+}
+
+fn prepare_keyless_database_bootstrap(database_path: &Path) -> Result<bool, String> {
+    if !database_allows_key_creation(database_path)? {
+        return Ok(false);
+    }
+    if database_needs_initialization_marker(database_path)? {
+        write_key_bootstrap_marker(database_path)?;
+    }
+    Ok(true)
+}
+
+fn database_needs_initialization_marker(database_path: &Path) -> Result<bool, String> {
+    match fs::symlink_metadata(database_path) {
+        Ok(metadata)
+            if !metadata.is_file()
+                || metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 =>
+        {
+            Err("The storage database path is not a regular file.".to_owned())
+        }
+        Ok(metadata) => Ok(metadata.len() == 0),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(true),
+        Err(_) => Err("The storage database state could not be checked safely.".to_owned()),
+    }
+}
+
+fn database_allows_existing_key(database_path: &Path) -> Result<bool, String> {
+    let metadata = match fs::symlink_metadata(database_path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            if key_bootstrap_marker_is_valid(database_path)? {
+                return Ok(true);
+            }
+            return DatabaseKey::has_recoverable_plaintext_migration(database_path).map_err(|_| {
+                "The interrupted storage migration could not be checked safely.".to_owned()
+            });
+        }
+        Err(_) => return Err("The storage database state could not be checked safely.".to_owned()),
+    };
+    if !metadata.is_file() || metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+        return Err("The storage database path is not a regular file.".to_owned());
+    }
+
+    if metadata.len() < 16 {
+        if key_bootstrap_marker_is_valid(database_path)? {
+            return Ok(true);
+        }
+        return DatabaseKey::has_recoverable_plaintext_migration(database_path).map_err(|_| {
+            "The interrupted storage migration could not be checked safely.".to_owned()
+        });
+    }
+
+    // The keyed open below verifies SQLCipher data, while plaintext headers enter the
+    // journaled migration path. Do not make a new profile when the active file is missing.
+    let _ = key_bootstrap_marker_is_valid(database_path)?;
+    Ok(true)
+}
+
+fn key_bootstrap_marker_path(database_path: &Path) -> PathBuf {
+    let mut path = database_path.as_os_str().to_os_string();
+    path.push(".sqlcipher-key-bootstrap");
+    PathBuf::from(path)
+}
+
+fn write_key_bootstrap_marker(database_path: &Path) -> Result<(), String> {
+    let marker_path = key_bootstrap_marker_path(database_path);
+    match OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&marker_path)
+    {
+        Ok(mut marker) => {
+            let result = marker
+                .write_all(KEY_BOOTSTRAP_MARKER_CONTENT)
+                .and_then(|()| marker.sync_all());
+            if result.is_ok() {
+                return Ok(());
+            }
+            let cleanup = fs::remove_file(&marker_path);
+            if cleanup.is_err() {
+                return Err(
+                    "The database key initialization state could not be saved safely.".to_owned(),
+                );
+            }
+            Err("The database key initialization state could not be saved.".to_owned())
+        }
+        Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
+            if key_bootstrap_marker_is_valid(database_path)? {
+                Ok(())
+            } else {
+                Err("The database key initialization state is invalid.".to_owned())
+            }
+        }
+        Err(_) => Err("The database key initialization state could not be saved.".to_owned()),
+    }
+}
+
+fn key_bootstrap_marker_is_valid(database_path: &Path) -> Result<bool, String> {
+    let marker_path = key_bootstrap_marker_path(database_path);
+    let metadata = match fs::symlink_metadata(&marker_path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
+        Err(_) => {
+            return Err("The database key initialization state could not be checked.".to_owned());
+        }
+    };
+    if !metadata.is_file()
+        || metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
+        || metadata.len() != KEY_BOOTSTRAP_MARKER_CONTENT.len() as u64
+    {
+        return Err("The database key initialization state is invalid.".to_owned());
+    }
+    let marker = fs::read(&marker_path)
+        .map_err(|_| "The database key initialization state could not be checked.")?;
+    if marker == KEY_BOOTSTRAP_MARKER_CONTENT {
+        Ok(true)
+    } else {
+        Err("The database key initialization state is invalid.".to_owned())
+    }
+}
+
+fn clear_key_bootstrap_marker(database_path: &Path) -> Result<(), String> {
+    if !key_bootstrap_marker_is_valid(database_path)? {
+        return Ok(());
+    }
+    fs::remove_file(key_bootstrap_marker_path(database_path))
+        .map_err(|_| "The database key initialization state could not be cleared.".to_owned())
+}
+
+fn write_key_bootstrap_status(writer: &mut impl Write, status: u8) -> Result<(), String> {
+    let mut response = [0; 5];
+    response[..4].copy_from_slice(KEY_BOOTSTRAP_MAGIC);
+    response[4] = status;
+    writer
+        .write_all(&response)
+        .and_then(|()| writer.flush())
+        .map_err(|_| "The storage broker key initialization response failed.".to_owned())
 }
 
 fn current_appcontainer_profile_root() -> Result<PathBuf, String> {
@@ -278,11 +500,7 @@ fn serve_profile_connection<R: BufRead, W: Write>(
     let mut pending_import = None;
     let mut pending_snapshot = None;
 
-    loop {
-        let request = match read_request_frame_optional(reader)? {
-            Some(request) => request,
-            None => break,
-        };
+    while let Some(request) = read_request_frame_optional(reader)? {
         let request = Zeroizing::new(request);
         let request = match serde_json::from_slice::<StorageRequest>(&request) {
             Ok(request) => request,
@@ -297,6 +515,22 @@ fn serve_profile_connection<R: BufRead, W: Write>(
                 break;
             }
         };
+
+        if matches!(&request, StorageRequest::CommitPendingProfileRestore) {
+            let response = if pending_import.is_some()
+                || pending_snapshot.is_some()
+                || transaction_connection.is_some()
+            {
+                storage_error_response(rusqlite::Error::InvalidQuery)
+            } else {
+                match profile.commit_pending_profile_restore() {
+                    Ok(()) => StorageResponse::Unit,
+                    Err(error) => storage_error_response(error),
+                }
+            };
+            write_response_frame(writer, &response)?;
+            continue;
+        }
 
         let Some(request) = handle_legacy_import_request(
             request,
@@ -365,12 +599,12 @@ fn serve_profile_connection<R: BufRead, W: Write>(
         }
     }
 
-    if let Some(connection) = transaction_connection {
-        if !connection.is_autocommit() {
-            connection.execute_batch("ROLLBACK").map_err(|error| {
-                format!("An abandoned database transaction could not roll back: {error}")
-            })?;
-        }
+    if let Some(connection) = transaction_connection
+        && !connection.is_autocommit()
+    {
+        connection.execute_batch("ROLLBACK").map_err(|error| {
+            format!("An abandoned database transaction could not roll back: {error}")
+        })?;
     }
     Ok(())
 }
@@ -676,9 +910,7 @@ fn handle_legacy_import_request(
                 || total_bytes == 0
                 || total_bytes > MAX_STORAGE_IMPORT_BYTES
                 || !valid_sha256(&sha256)
-            {
-                storage_error_response(rusqlite::Error::InvalidQuery)
-            } else if profile.legacy_import_status().ok() != Some(LegacyImportStatus::PendingEmpty)
+                || profile.legacy_import_status().ok() != Some(LegacyImportStatus::PendingEmpty)
             {
                 storage_error_response(rusqlite::Error::InvalidQuery)
             } else {
@@ -906,5 +1138,301 @@ impl Drop for HandleGuard {
             // SAFETY: The guard owns the handle returned by a successful Windows API call.
             unsafe { CloseHandle(self.0) };
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{fs, io::Cursor, path::PathBuf};
+
+    use rusqlite::{Connection, OpenFlags};
+    use serde_json::{Value, json};
+    use uuid::Uuid;
+
+    use super::{
+        KEY_BOOTSTRAP_MAGIC, KEY_BOOTSTRAP_MARKER_CONTENT, database_allows_existing_key,
+        key_bootstrap_marker_is_valid, key_bootstrap_marker_path,
+        prepare_keyless_database_bootstrap, receive_database_key, run_broker_profile,
+    };
+    use crate::storage::{DatabaseKey, ipc_protocol::STORAGE_PROTOCOL_VERSION};
+
+    struct TestDirectory(PathBuf);
+
+    impl TestDirectory {
+        fn new() -> Self {
+            let path = std::env::temp_dir().join(format!(
+                "openchat-storage-broker-{}",
+                Uuid::new_v4().simple()
+            ));
+            fs::create_dir(&path).expect("create isolated storage broker profile");
+            Self(path)
+        }
+
+        fn database_path(&self) -> PathBuf {
+            self.0.join("openchat.sqlite3")
+        }
+    }
+
+    impl Drop for TestDirectory {
+        fn drop(&mut self) {
+            fs::remove_dir_all(&self.0).expect("remove isolated storage broker profile");
+        }
+    }
+
+    #[test]
+    fn first_run_marker_allows_database_key_bootstrap_until_initialization_finishes() {
+        let directory = TestDirectory::new();
+        let database_path = directory.database_path();
+
+        assert!(
+            prepare_keyless_database_bootstrap(&database_path)
+                .expect("prepare first-run key bootstrap")
+        );
+        assert!(key_bootstrap_marker_is_valid(&database_path).expect("validate first-run marker"));
+        assert!(
+            database_allows_existing_key(&database_path)
+                .expect("recognize interrupted first-run bootstrap")
+        );
+
+        let key = DatabaseKey::from_bytes(&[0xA5; 32]).expect("create test database key");
+        let database = key
+            .open(
+                &database_path,
+                OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_CREATE,
+            )
+            .expect("create encrypted test database");
+        database
+            .execute_batch("CREATE TABLE probe (value TEXT NOT NULL);")
+            .expect("initialize encrypted test database");
+        drop(database);
+
+        super::clear_key_bootstrap_marker(&database_path)
+            .expect("clear completed first-run marker");
+        assert!(!key_bootstrap_marker_path(&database_path).exists());
+        assert!(
+            database_allows_existing_key(&database_path)
+                .expect("accept initialized encrypted database")
+        );
+    }
+
+    #[test]
+    fn saved_key_with_missing_database_fails_closed_without_recovery_evidence() {
+        let directory = TestDirectory::new();
+
+        assert!(
+            !database_allows_existing_key(&directory.database_path())
+                .expect("inspect missing isolated database")
+        );
+    }
+
+    #[test]
+    fn broker_protocol_rejects_saved_key_when_active_database_is_missing() {
+        let directory = TestDirectory::new();
+        let mut input = Vec::from(*KEY_BOOTSTRAP_MAGIC);
+        input.push(1);
+        input.extend_from_slice(&[0xA5; 32]);
+        let mut reader = Cursor::new(input);
+        let mut output = Vec::new();
+
+        let error = match receive_database_key(&mut reader, &mut output, &directory.database_path())
+        {
+            Ok(_) => panic!("missing active database must not initialize an empty profile"),
+            Err(error) => error,
+        };
+
+        assert!(error.contains("no active or recoverable storage database"));
+        let mut expected = Vec::from(*KEY_BOOTSTRAP_MAGIC);
+        expected.push(3);
+        assert_eq!(output, expected);
+    }
+
+    #[test]
+    fn broker_protocol_creates_recovery_marker_before_requesting_first_key() {
+        let directory = TestDirectory::new();
+        let database_path = directory.database_path();
+        let mut input = Vec::from(*KEY_BOOTSTRAP_MAGIC);
+        input.push(0);
+        input.extend_from_slice(&[0xA5; 32]);
+        let mut reader = Cursor::new(input);
+        let mut output = Vec::new();
+
+        let key = receive_database_key(&mut reader, &mut output, &database_path)
+            .expect("initialize first-run database key");
+
+        assert_eq!(key.as_bytes(), &[0xA5; 32]);
+        let mut expected = Vec::from(*KEY_BOOTSTRAP_MAGIC);
+        expected.push(1);
+        assert_eq!(output, expected);
+        assert!(
+            key_bootstrap_marker_is_valid(&database_path)
+                .expect("validate marker before database creation")
+        );
+    }
+
+    #[test]
+    fn interrupted_plaintext_migration_requires_a_valid_journal_and_source() {
+        let directory = TestDirectory::new();
+        let database_path = directory.database_path();
+        let source_path = directory
+            .0
+            .join("openchat.sqlite3.plaintext-migration-source");
+        let journal_path = directory.0.join("openchat.sqlite3.sqlcipher-migration");
+        let source = Connection::open(&source_path).expect("create plaintext recovery source");
+        source
+            .execute_batch("CREATE TABLE probe (value TEXT NOT NULL);")
+            .expect("write plaintext recovery source");
+        drop(source);
+        fs::write(&journal_path, b"OpenChat SQLCipher migration v1\n")
+            .expect("write migration recovery journal");
+
+        assert!(
+            database_allows_existing_key(&database_path)
+                .expect("accept valid interrupted migration")
+        );
+
+        fs::write(&journal_path, b"invalid\n").expect("corrupt migration recovery journal");
+        assert!(database_allows_existing_key(&database_path).is_err());
+    }
+
+    #[test]
+    fn keyless_bootstrap_rejects_encrypted_or_incomplete_existing_databases() {
+        let directory = TestDirectory::new();
+        let database_path = directory.database_path();
+        let key = DatabaseKey::from_bytes(&[0xA5; 32]).expect("create test database key");
+        let database = key
+            .open(
+                &database_path,
+                OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_CREATE,
+            )
+            .expect("create encrypted test database");
+        database
+            .execute_batch("CREATE TABLE probe (value TEXT NOT NULL);")
+            .expect("initialize encrypted test database");
+        drop(database);
+
+        assert!(
+            !prepare_keyless_database_bootstrap(&database_path)
+                .expect("reject keyless encrypted database")
+        );
+
+        fs::remove_file(&database_path).expect("remove only the isolated encrypted database");
+        fs::write(&database_path, b"partial").expect("create incomplete isolated database");
+        assert!(
+            !prepare_keyless_database_bootstrap(&database_path)
+                .expect("reject keyless incomplete database")
+        );
+    }
+
+    #[test]
+    fn malformed_bootstrap_marker_is_never_accepted() {
+        let directory = TestDirectory::new();
+        let database_path = directory.database_path();
+        let marker_path = key_bootstrap_marker_path(&database_path);
+        fs::write(&marker_path, KEY_BOOTSTRAP_MARKER_CONTENT)
+            .expect("write isolated bootstrap marker");
+        fs::write(&marker_path, b"invalid\n").expect("corrupt isolated bootstrap marker");
+
+        assert!(key_bootstrap_marker_is_valid(&database_path).is_err());
+        assert!(database_allows_existing_key(&database_path).is_err());
+    }
+
+    #[test]
+    fn broker_stdio_persists_encrypted_data_in_an_isolated_profile() {
+        let directory = TestDirectory::new();
+        let profile_root = directory.0.join("profile");
+        fs::create_dir(&profile_root).expect("create isolated broker profile");
+        let key = [0xA5; 32];
+        let hello = json!({
+            "operation": "hello",
+            "version": STORAGE_PROTOCOL_VERSION,
+        });
+        let create_and_insert = json!({
+            "operation": "execute_batch",
+            "sql": "CREATE TABLE broker_probe (value TEXT NOT NULL); INSERT INTO broker_probe VALUES ('persisted');",
+        });
+        let query = json!({
+            "operation": "query",
+            "sql": "SELECT value FROM broker_probe",
+            "parameters": [],
+        });
+
+        let first_output = run_test_broker(
+            &profile_root,
+            0,
+            &key,
+            &[hello.clone(), create_and_insert, query.clone()],
+        );
+        assert_eq!(&first_output[..5], b"OCK1\x01");
+        assert_eq!(&first_output[5..10], b"OCK1\x02");
+        let first_responses = parse_broker_responses(&first_output, 10);
+        assert_eq!(first_responses[0]["result"], "ready");
+        assert_eq!(first_responses[1]["result"], "unit");
+        assert_eq!(first_responses[2]["rows"][0][0]["value"], "persisted");
+
+        let database_path = profile_root
+            .join("OpenChatStorage")
+            .join("db")
+            .join("openchat.sqlite3");
+        let encrypted_database =
+            fs::read(&database_path).expect("read isolated encrypted database");
+        assert!(!encrypted_database.starts_with(b"SQLite format 3\0"));
+
+        let second_output = run_test_broker(&profile_root, 1, &key, &[hello, query]);
+        assert_eq!(&second_output[..5], b"OCK1\x02");
+        let second_responses = parse_broker_responses(&second_output, 5);
+        assert_eq!(second_responses[0]["result"], "ready");
+        assert_eq!(second_responses[1]["rows"][0][0]["value"], "persisted");
+    }
+
+    #[test]
+    fn broker_protocol_accepts_profile_restore_commit_requests() {
+        let directory = TestDirectory::new();
+        let profile_root = directory.0.join("restore-profile");
+        fs::create_dir(&profile_root).expect("create isolated broker profile");
+        let hello = json!({
+            "operation": "hello",
+            "version": STORAGE_PROTOCOL_VERSION,
+        });
+        let commit_restore = json!({
+            "operation": "commit_pending_profile_restore",
+        });
+
+        let output = run_test_broker(&profile_root, 0, &[0xA5; 32], &[hello, commit_restore]);
+
+        assert_eq!(&output[..5], b"OCK1\x01");
+        assert_eq!(&output[5..10], b"OCK1\x02");
+        let responses = parse_broker_responses(&output, 10);
+        assert_eq!(responses[0]["result"], "ready");
+        assert_eq!(responses[1]["result"], "unit");
+    }
+
+    fn run_test_broker(
+        profile_root: &std::path::Path,
+        bootstrap_mode: u8,
+        key: &[u8; 32],
+        requests: &[Value],
+    ) -> Vec<u8> {
+        let mut input = Vec::from(*KEY_BOOTSTRAP_MAGIC);
+        input.push(bootstrap_mode);
+        input.extend_from_slice(key);
+        for request in requests {
+            input.extend_from_slice(
+                &serde_json::to_vec(request).expect("encode broker test request"),
+            );
+            input.push(b'\n');
+        }
+        let mut reader = Cursor::new(input);
+        let mut output = Vec::new();
+        run_broker_profile(profile_root, &mut reader, &mut output)
+            .expect("run broker against isolated profile");
+        output
+    }
+
+    fn parse_broker_responses(output: &[u8], status_bytes: usize) -> Vec<Value> {
+        output[status_bytes..]
+            .split(|byte| *byte == b'\n')
+            .filter(|frame| !frame.is_empty())
+            .map(|frame| serde_json::from_slice(frame).expect("decode broker test response"))
+            .collect()
     }
 }

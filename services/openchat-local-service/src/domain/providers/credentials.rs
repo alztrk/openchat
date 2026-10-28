@@ -51,7 +51,7 @@ impl ProviderCredentials {
         &self,
         provider_id: &str,
     ) -> Result<CustomProviderConfig, ServiceError> {
-        if !is_custom_provider_id(provider_id) {
+        if !crate::provider_ids::is_custom_provider_id(provider_id) {
             return Err(invalid_request_params());
         }
         let key = format!("{CUSTOM_PROVIDER_CONFIG_PREFIX}{provider_id}");
@@ -69,7 +69,7 @@ impl ProviderCredentials {
 pub(crate) fn uses_saved_api_key(provider_id: &str) -> bool {
     provider_id == "opencode"
         || provider_id == "chatgpt_api"
-        || is_custom_provider_id(provider_id)
+        || crate::provider_ids::is_custom_provider_id(provider_id)
         || crate::openai_compatible::api_compatible_provider(provider_id).is_some()
 }
 
@@ -78,7 +78,7 @@ pub(crate) fn requires_saved_api_key(provider_id: &str) -> bool {
     provider_id == "chatgpt_api"
         || (provider_id != "opencode"
             && provider_id != "kilo"
-            && !is_custom_provider_id(provider_id)
+            && !crate::provider_ids::is_custom_provider_id(provider_id)
             && crate::openai_compatible::api_compatible_provider(provider_id).is_some())
 }
 
@@ -112,16 +112,6 @@ fn invalid_request_params() -> ServiceError {
         "A required local service parameter is missing or invalid.",
         false,
     )
-}
-
-fn is_custom_provider_id(provider_id: &str) -> bool {
-    let Some(suffix) = provider_id.strip_prefix("custom_") else {
-        return false;
-    };
-    (12..=57).contains(&suffix.len())
-        && suffix
-            .bytes()
-            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_')
 }
 
 #[cfg(test)]
@@ -201,10 +191,80 @@ mod tests {
             "baseUrl": "http://127.0.0.1:8080/v1",
             "protocol": "openAi",
             "allowInsecureHttp": true,
+            "nativeHttpConfirmed": true,
         });
         let config = super::CustomProviderConfig::from_value(&approved)
-            .expect("explicit HTTP approval should retain local provider access");
+            .expect("native-confirmed HTTP approval should retain local provider access");
         assert_eq!(config.base_url, "http://127.0.0.1:8080/v1");
+
+        for base_url in [
+            "http://localhost:8080/v1",
+            "http://[::1]:8080/v1",
+            "http://127.255.255.255:8080/v1",
+            "http://127.1:8080/v1",
+            "http://2130706433:8080/v1",
+            "http://0x7f000001:8080/v1",
+            "http://0177.0.0.1:8080/v1",
+        ] {
+            let local = serde_json::json!({
+                "id": provider_id,
+                "baseUrl": base_url,
+                "protocol": "openAi",
+                "allowInsecureHttp": true,
+                "nativeHttpConfirmed": true,
+            });
+            assert!(
+                super::CustomProviderConfig::from_value(&local).is_ok(),
+                "loopback provider {base_url} should remain supported"
+            );
+        }
+
+        for base_url in [
+            "http://provider.example/v1",
+            "http://192.168.1.12:8080/v1",
+            "http://127.0.0.1.provider.example/v1",
+            "http://localhost./v1",
+            "http://0.0.0.0:8080/v1",
+            "http://[::]:8080/v1",
+            "http://[::ffff:127.0.0.1]:8080/v1",
+        ] {
+            let remote = serde_json::json!({
+                "id": provider_id,
+                "baseUrl": base_url,
+                "protocol": "openAi",
+                "allowInsecureHttp": true,
+                "nativeHttpConfirmed": true,
+            });
+            assert_eq!(
+                super::CustomProviderConfig::from_value(&remote)
+                    .expect_err("non-loopback HTTP must fail before any provider request")
+                    .code,
+                "custom_provider_http_loopback_required",
+                "unexpected error for {base_url}"
+            );
+        }
+
+        let secure_remote = serde_json::json!({
+            "id": provider_id,
+            "baseUrl": "https://provider.example/v1",
+            "protocol": "openAi",
+            "allowInsecureHttp": false,
+            "nativeHttpConfirmed": false,
+        });
+        assert!(super::CustomProviderConfig::from_value(&secure_remote).is_ok());
+
+        let legacy_approval = serde_json::json!({
+            "id": provider_id,
+            "baseUrl": "http://127.0.0.1:8080/v1",
+            "protocol": "openAi",
+            "allowInsecureHttp": true,
+        });
+        assert_eq!(
+            super::CustomProviderConfig::from_value(&legacy_approval)
+                .expect_err("legacy approval has no native confirmation provenance")
+                .code,
+            "custom_provider_http_approval_required"
+        );
 
         let legacy = serde_json::json!({
             "id": provider_id,

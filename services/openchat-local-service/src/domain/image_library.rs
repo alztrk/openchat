@@ -129,17 +129,29 @@ pub(crate) fn recover_incomplete_generations(storage: &AppStorage) -> Result<(),
     Ok(())
 }
 
+pub(crate) struct ImageGenerationOrigin<'a> {
+    pub(crate) source_kind: &'a str,
+    pub(crate) provider_route: &'a str,
+    pub(crate) connection_id: Option<&'a str>,
+    pub(crate) workspace_id: Option<&'a str>,
+    pub(crate) conversation_id: Option<&'a str>,
+    pub(crate) message_id: Option<&'a str>,
+}
+
 /// Inserts the durable record before an image request starts.
 pub(crate) fn begin_generation(
     storage: &AppStorage,
     request: &ImageGenerationRequest,
-    source_kind: &str,
-    provider_route: &str,
-    connection_id: Option<&str>,
-    workspace_id: Option<&str>,
-    conversation_id: Option<&str>,
-    message_id: Option<&str>,
+    origin: ImageGenerationOrigin<'_>,
 ) -> Result<String, ServiceError> {
+    let ImageGenerationOrigin {
+        source_kind,
+        provider_route,
+        connection_id,
+        workspace_id,
+        conversation_id,
+        message_id,
+    } = origin;
     if !matches!(source_kind, "design" | "chat") || !matches!(provider_route, "oauth" | "api_key") {
         return Err(invalid_request());
     }

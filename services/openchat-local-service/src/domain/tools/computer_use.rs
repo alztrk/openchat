@@ -193,16 +193,17 @@ impl ComputerUseSession {
             }
             "click" | "double_click" | "move" => {
                 require_only(arguments, &["action", "x", "y", "frameId", "button"])?;
-                let frame = self.frame_for(arguments)?;
-                let point = map_point(
-                    &frame,
-                    read_coordinate(arguments, "x")?,
-                    read_coordinate(arguments, "y")?,
-                )?;
+                let x = read_coordinate(arguments, "x")?;
+                let y = read_coordinate(arguments, "y")?;
                 let button = arguments
                     .get("button")
                     .and_then(Value::as_str)
                     .unwrap_or("left");
+                if !matches!(button, "left" | "right" | "middle") {
+                    return Err(("invalid_tool_input", "The mouse button is not supported."));
+                }
+                let frame = self.take_frame_for(arguments)?;
+                let point = map_point(&frame, x, y)?;
                 match action {
                     "move" => send_mouse(point, MOUSEEVENTF_MOVE)?,
                     "click" => click(point, button)?,
@@ -218,17 +219,13 @@ impl ComputerUseSession {
             }
             "drag" => {
                 require_only(arguments, &["action", "x", "y", "endX", "endY", "frameId"])?;
-                let frame = self.frame_for(arguments)?;
-                let start = map_point(
-                    &frame,
-                    read_coordinate(arguments, "x")?,
-                    read_coordinate(arguments, "y")?,
-                )?;
-                let end = map_point(
-                    &frame,
-                    read_coordinate(arguments, "endX")?,
-                    read_coordinate(arguments, "endY")?,
-                )?;
+                let x = read_coordinate(arguments, "x")?;
+                let y = read_coordinate(arguments, "y")?;
+                let end_x = read_coordinate(arguments, "endX")?;
+                let end_y = read_coordinate(arguments, "endY")?;
+                let frame = self.take_frame_for(arguments)?;
+                let start = map_point(&frame, x, y)?;
+                let end = map_point(&frame, end_x, end_y)?;
                 drag(start, end)?;
                 Ok(ComputerUseResult {
                     output: json!({"ok": true}),
@@ -237,12 +234,8 @@ impl ComputerUseSession {
             }
             "scroll" => {
                 require_only(arguments, &["action", "x", "y", "frameId", "scrollY"])?;
-                let frame = self.frame_for(arguments)?;
-                let point = map_point(
-                    &frame,
-                    read_coordinate(arguments, "x")?,
-                    read_coordinate(arguments, "y")?,
-                )?;
+                let x = read_coordinate(arguments, "x")?;
+                let y = read_coordinate(arguments, "y")?;
                 let delta = arguments
                     .get("scrollY")
                     .and_then(Value::as_i64)
@@ -253,6 +246,8 @@ impl ComputerUseSession {
                         "The scroll amount must be between -1000 and 1000 and cannot be zero.",
                     ));
                 }
+                let frame = self.take_frame_for(arguments)?;
+                let point = map_point(&frame, x, y)?;
                 scroll(point, delta as i32)?;
                 Ok(ComputerUseResult {
                     output: json!({"ok": true}),
@@ -274,6 +269,7 @@ impl ComputerUseSession {
                         "Text must contain 1 to 2000 printable UTF-8 bytes.",
                     ));
                 }
+                self.invalidate_frame()?;
                 type_text(text)?;
                 Ok(ComputerUseResult {
                     output: json!({"ok": true, "characters": text.chars().count()}),
@@ -286,6 +282,8 @@ impl ComputerUseSession {
                     .get("key")
                     .and_then(Value::as_str)
                     .ok_or(("invalid_tool_input", "A key is required."))?;
+                key_code(key)?;
+                self.invalidate_frame()?;
                 press_key(key)?;
                 Ok(ComputerUseResult {
                     output: json!({"ok": true}),
@@ -312,6 +310,7 @@ impl ComputerUseSession {
                             .and_then(key_code)
                     })
                     .collect::<Result<Vec<_>, _>>()?;
+                self.invalidate_frame()?;
                 press_hotkey(&virtual_keys)?;
                 Ok(ComputerUseResult {
                     output: json!({"ok": true}),
@@ -325,24 +324,40 @@ impl ComputerUseSession {
         }
     }
 
-    fn frame_for(&self, arguments: &Value) -> Result<ScreenFrame, (&'static str, &'static str)> {
+    fn take_frame_for(
+        &self,
+        arguments: &Value,
+    ) -> Result<ScreenFrame, (&'static str, &'static str)> {
         let requested = arguments.get("frameId").and_then(Value::as_str).ok_or((
             "stale_screen_frame",
             "Take a screenshot before sending a coordinate action.",
         ))?;
-        let frame = self.frame.lock().map_err(|_| {
+        let mut frame = self.frame.lock().map_err(|_| {
             (
                 "computer_use_unavailable",
                 "Computer Use state is unavailable.",
             )
         })?;
-        let Some(frame) = frame.as_ref().filter(|frame| frame.id == requested) else {
+        if frame.as_ref().is_none_or(|frame| frame.id != requested) {
             return Err((
                 "stale_screen_frame",
                 "This coordinate action does not match the latest screenshot. Take a new screenshot.",
             ));
-        };
-        Ok(frame.clone())
+        }
+        frame.take().ok_or((
+            "stale_screen_frame",
+            "This screenshot was already used. Take a new screenshot before acting again.",
+        ))
+    }
+
+    fn invalidate_frame(&self) -> Result<(), (&'static str, &'static str)> {
+        *self.frame.lock().map_err(|_| {
+            (
+                "computer_use_unavailable",
+                "Computer Use state is unavailable.",
+            )
+        })? = None;
+        Ok(())
     }
 }
 
@@ -373,6 +388,8 @@ fn unregister_escape_stop(stopped: &Arc<AtomicBool>) {
     let has_active_sessions = sessions.iter().any(|session| session.strong_count() > 0);
     drop(sessions);
     if !has_active_sessions && let Some(active_monitor) = monitor.as_ref() {
+        // SAFETY: The listener thread is still owned by `monitor`, and its Windows thread ID was
+        // returned by that live thread before the monitor became visible to this function.
         let posted = unsafe { PostThreadMessageW(active_monitor.thread_id, WM_QUIT, 0, 0) };
         if posted != 0
             && let Some(active_monitor) = monitor.take()
@@ -391,6 +408,8 @@ fn start_escape_monitor() -> Result<EscapeMonitor, &'static str> {
     let (ready_tx, ready_rx) = mpsc::sync_channel(1);
     let thread = thread::Builder::new()
         .name("openchat-computer-use-escape".to_owned())
+        // SAFETY: The message buffer and thread ID are local to the spawned thread; the hook uses
+        // the static callback below and is removed on the same thread before it exits.
         .spawn(move || unsafe {
             let thread_id = GetCurrentThreadId();
             let mut message: MSG = zeroed();
@@ -415,6 +434,8 @@ fn start_escape_monitor() -> Result<EscapeMonitor, &'static str> {
 
 unsafe extern "system" fn escape_hook(code: i32, wparam: usize, lparam: isize) -> isize {
     if code >= 0 {
+        // SAFETY: Windows supplies a `KBDLLHOOKSTRUCT` pointer for nonnegative low-level hook
+        // codes, and this callback reads it only for the duration of the callback.
         let key = unsafe { &*(lparam as *const KBDLLHOOKSTRUCT) };
         if key.vkCode == VK_ESCAPE as u32
             && key.flags & LLKHF_INJECTED == 0
@@ -454,6 +475,8 @@ unsafe extern "system" fn escape_hook(code: i32, wparam: usize, lparam: isize) -
             }
         }
     }
+    // SAFETY: This forwards the callback arguments unchanged to the next hook; Windows ignores
+    // the hook handle parameter for this API.
     unsafe { CallNextHookEx(std::ptr::null_mut::<HHOOK>().cast(), code, wparam, lparam) }
 }
 
@@ -515,6 +538,8 @@ fn map_point(
 
 fn enumerate_displays() -> Result<Vec<RECT>, (&'static str, &'static str)> {
     let mut displays = Vec::new();
+    // SAFETY: `collect_display_bounds` receives the live `displays` pointer during this
+    // synchronous enumeration call and does not retain it after the callback returns.
     let success = unsafe {
         EnumDisplayMonitors(
             std::ptr::null_mut(),
@@ -538,7 +563,11 @@ unsafe extern "system" fn collect_display_bounds(
     if bounds.is_null() || data == 0 {
         return 0;
     }
+    // SAFETY: `data` was created from a live `Vec<RECT>` passed to the synchronous
+    // `EnumDisplayMonitors` call that invokes this callback.
     let displays = unsafe { &mut *(data as *mut Vec<RECT>) };
+    // SAFETY: Windows supplies a readable monitor rectangle for the duration of this callback;
+    // the null check above rejects the only invalid pointer value.
     displays.push(unsafe { *bounds });
     1
 }
@@ -546,6 +575,8 @@ unsafe extern "system" fn collect_display_bounds(
 fn capture_desktop(
     display_id: Option<&str>,
 ) -> Result<ScreenCapture, (&'static str, &'static str)> {
+    // SAFETY: Every returned GDI handle and bitmap pointer is checked before use, the requested
+    // dimensions are bounded, and the bitmap byte length is derived from those validated values.
     unsafe {
         let previous_dpi_context =
             SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
@@ -753,9 +784,17 @@ fn absolute_mouse_input(
     point: (i32, i32),
     flags: u32,
 ) -> Result<INPUT, (&'static str, &'static str)> {
+    // SAFETY: These calls use documented virtual-screen metric constants and have no pointer or
+    // handle arguments.
     let left = unsafe { GetSystemMetrics(SM_XVIRTUALSCREEN) };
+    // SAFETY: These calls use documented virtual-screen metric constants and have no pointer or
+    // handle arguments.
     let top = unsafe { GetSystemMetrics(SM_YVIRTUALSCREEN) };
+    // SAFETY: These calls use documented virtual-screen metric constants and have no pointer or
+    // handle arguments.
     let width = unsafe { GetSystemMetrics(SM_CXVIRTUALSCREEN) };
+    // SAFETY: These calls use documented virtual-screen metric constants and have no pointer or
+    // handle arguments.
     let height = unsafe { GetSystemMetrics(SM_CYVIRTUALSCREEN) };
     if width <= 1 || height <= 1 {
         return Err((
@@ -783,6 +822,8 @@ fn absolute_mouse_input(
 }
 
 fn send_inputs(inputs: &[INPUT]) -> Result<(), (&'static str, &'static str)> {
+    // SAFETY: `inputs` is a live slice and all internal callers pass at most three initialized
+    // INPUT values, so its count fits the API's u32 parameter.
     let inserted = unsafe {
         SendInput(
             inputs.len() as u32,
@@ -876,20 +917,20 @@ fn keyboard_input(vk: u16, flags: u32) -> INPUT {
 fn key_code(key: &str) -> Result<u16, (&'static str, &'static str)> {
     let key = key.to_ascii_lowercase();
     let key = match key.as_str() {
-        "enter" | "return" => VK_RETURN as u16,
-        "escape" | "esc" => VK_ESCAPE as u16,
-        "tab" => VK_TAB as u16,
-        "space" => VK_SPACE as u16,
-        "backspace" => VK_BACK as u16,
-        "delete" => VK_DELETE as u16,
-        "home" => VK_HOME as u16,
-        "end" => VK_END as u16,
-        "pageup" => VK_PRIOR as u16,
-        "pagedown" => VK_NEXT as u16,
-        "up" => VK_UP as u16,
-        "down" => VK_DOWN as u16,
-        "left" => VK_LEFT as u16,
-        "right" => VK_RIGHT as u16,
+        "enter" | "return" => VK_RETURN,
+        "escape" | "esc" => VK_ESCAPE,
+        "tab" => VK_TAB,
+        "space" => VK_SPACE,
+        "backspace" => VK_BACK,
+        "delete" => VK_DELETE,
+        "home" => VK_HOME,
+        "end" => VK_END,
+        "pageup" => VK_PRIOR,
+        "pagedown" => VK_NEXT,
+        "up" => VK_UP,
+        "down" => VK_DOWN,
+        "left" => VK_LEFT,
+        "right" => VK_RIGHT,
         "ctrl" | "control" => 0x11,
         "shift" => 0x10,
         "alt" => 0x12,
@@ -904,7 +945,7 @@ fn key_code(key: &str) -> Result<u16, (&'static str, &'static str)> {
 
 #[cfg(test)]
 mod tests {
-    use super::{ScreenFrame, key_code, map_point, require_only};
+    use super::{ComputerUseSession, ScreenFrame, key_code, map_point, require_only};
     use serde_json::json;
     use windows_sys::Win32::Foundation::RECT;
 
@@ -942,5 +983,60 @@ mod tests {
         assert_eq!(key_code("ENTER"), Ok(0x0d));
         assert_eq!(key_code("a"), Ok(b'A' as u16));
         assert!(key_code("launch-control-panel").is_err());
+    }
+
+    #[test]
+    fn a_coordinate_frame_is_consumed_by_one_action() {
+        let session = ComputerUseSession::default();
+        *session.frame.lock().unwrap() = Some(ScreenFrame {
+            id: "frame".to_owned(),
+            image_width: 100,
+            image_height: 100,
+            virtual_bounds: RECT {
+                left: 0,
+                top: 0,
+                right: 100,
+                bottom: 100,
+            },
+        });
+        let arguments = json!({"frameId": "frame"});
+
+        assert_eq!(
+            session.take_frame_for(&arguments).map(|frame| frame.id),
+            Ok("frame".to_owned())
+        );
+        assert_eq!(
+            session
+                .take_frame_for(&arguments)
+                .err()
+                .map(|error| error.0),
+            Some("stale_screen_frame")
+        );
+    }
+
+    #[test]
+    fn non_coordinate_actions_invalidate_the_latest_frame() {
+        let session = ComputerUseSession::default();
+        *session.frame.lock().unwrap() = Some(ScreenFrame {
+            id: "frame".to_owned(),
+            image_width: 100,
+            image_height: 100,
+            virtual_bounds: RECT {
+                left: 0,
+                top: 0,
+                right: 100,
+                bottom: 100,
+            },
+        });
+
+        session.invalidate_frame().unwrap();
+
+        assert_eq!(
+            session
+                .take_frame_for(&json!({"frameId": "frame"}))
+                .err()
+                .map(|error| error.0),
+            Some("stale_screen_frame")
+        );
     }
 }

@@ -11,7 +11,7 @@ use crate::{
     protocol::ServiceError,
     tools::{
         edit_file, get_file_info, list_files, read_file, search_files,
-        terminal::TerminalSessionManager,
+        terminal::{TerminalCommandRequest, TerminalSessionManager},
         web_search::{execute_read_url, execute_web_search},
         write_file,
     },
@@ -98,15 +98,15 @@ pub(crate) async fn execute_model_tool_with_workspace_roots(
             let manager = TerminalSessionManager::global();
             if let Some(cmd) = command {
                 match manager
-                    .execute_with_workspace_roots(
-                        cmd,
-                        &prepared.root,
+                    .execute_with_workspace_roots(TerminalCommandRequest {
+                        command_str: cmd,
+                        workdir: &prepared.root,
                         owner_conversation_id,
-                        *timeout_seconds,
-                        *wait_ms,
+                        timeout_seconds: *timeout_seconds,
+                        wait_ms: *wait_ms,
                         workspace_roots,
                         full_access,
-                    )
+                    })
                     .await
                 {
                     Ok(val) => return val,

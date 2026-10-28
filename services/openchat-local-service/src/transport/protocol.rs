@@ -85,54 +85,102 @@ impl fmt::Debug for Request {
 
 impl Drop for Request {
     fn drop(&mut self) {
-        zeroize_sensitive_request_fields(&mut self.params);
+        clear_sensitive_request_values(&mut self.params);
     }
 }
 
-/// Clears known credential fields recursively when an RPC request leaves service ownership.
-fn zeroize_sensitive_request_fields(value: &mut Value) {
+fn clear_sensitive_request_values(value: &mut Value) {
+    let _ = clear_sensitive_json_values_inner(value, true);
+}
+
+/// Clears known credential values recursively in a JSON tree.
+pub(crate) fn clear_sensitive_json_values(value: &mut Value) -> bool {
+    clear_sensitive_json_values_inner(value, false)
+}
+
+fn clear_sensitive_json_values_inner(value: &mut Value, clear_argument_text: bool) -> bool {
     match value {
         Value::Array(items) => {
+            let mut cleared = false;
             for item in items {
-                zeroize_sensitive_request_fields(item);
+                cleared |= clear_sensitive_json_values_inner(item, clear_argument_text);
             }
+            cleared
         }
         Value::Object(fields) => {
+            let mut cleared = false;
             for (name, field_value) in fields {
                 if matches!(
                     name.as_str(),
-                    "apiKey" | "secret" | "passphrase" | "secrets"
+                    "apiKey" | "secret" | "passphrase" | "secrets" | "credential"
                 ) {
-                    zeroize_request_json_strings(field_value);
+                    cleared |= zeroize_request_json_strings(field_value);
+                } else if matches!(
+                    name.as_str(),
+                    "citationSources"
+                        | "personalMemoryFactIds"
+                        | "reasoningSummaries"
+                        | "toolActivities"
+                ) {
+                    match field_value {
+                        Value::String(text) => {
+                            // These structured metadata strings may contain nested credential keys.
+                            text.zeroize();
+                            cleared = true;
+                        }
+                        value => {
+                            cleared |=
+                                clear_sensitive_json_values_inner(value, clear_argument_text);
+                        }
+                    }
+                } else if clear_argument_text && name == "arguments" {
+                    match field_value {
+                        Value::String(text) => {
+                            text.zeroize();
+                            cleared = true;
+                        }
+                        value => {
+                            cleared |=
+                                clear_sensitive_json_values_inner(value, clear_argument_text);
+                        }
+                    }
                 } else {
-                    zeroize_sensitive_request_fields(field_value);
+                    cleared |= clear_sensitive_json_values_inner(field_value, clear_argument_text);
                 }
             }
+            cleared
         }
-        _ => {}
+        _ => false,
     }
 }
 
 /// Zeroizes every string contained in one field known to hold credentials.
-fn zeroize_request_json_strings(value: &mut Value) {
+fn zeroize_request_json_strings(value: &mut Value) -> bool {
     match value {
-        Value::String(text) => text.zeroize(),
+        Value::String(text) => {
+            text.zeroize();
+            true
+        }
         Value::Array(items) => {
+            let mut cleared = false;
             for item in items {
-                zeroize_request_json_strings(item);
+                cleared |= zeroize_request_json_strings(item);
             }
+            cleared
         }
         Value::Object(fields) => {
+            let mut cleared = false;
             for field_value in fields.values_mut() {
-                zeroize_request_json_strings(field_value);
+                cleared |= zeroize_request_json_strings(field_value);
             }
+            cleared
         }
-        _ => {}
+        _ => false,
     }
 }
 
 /// Maximum number of JSON values the service retains from one request's parameters.
-const MAX_REQUEST_PARAMETER_NODES: usize = 100_000;
+pub(crate) const MAX_REQUEST_PARAMETER_NODES: usize = 100_000;
 
 /// A decoded request plus parser accounting used by the service admission budget.
 pub(crate) struct DecodedRequest {
@@ -163,9 +211,36 @@ pub(crate) fn decode_request(source: &str) -> Result<DecodedRequest, serde_json:
     })
 }
 
+/// Parses one JSON value with the same node budget used for RPC parameters.
+///
+/// `Ok(None)` means the value exceeded the materialized-node budget.
+pub(crate) fn parse_bounded_json_value(
+    source: &str,
+    max_nodes: usize,
+) -> Result<Option<(Value, usize)>, serde_json::Error> {
+    let mut deserializer = serde_json::Deserializer::from_str(source);
+    let mut budget = RequestValueBudget {
+        max_nodes,
+        ..RequestValueBudget::default()
+    };
+    let mut value = ParameterValueSeed {
+        budget: &mut budget,
+        root: false,
+    }
+    .deserialize(&mut deserializer)?;
+    deserializer.end()?;
+    if budget.too_complex {
+        let _ = clear_sensitive_json_values(&mut value);
+        Ok(None)
+    } else {
+        Ok(Some((value, budget.nodes)))
+    }
+}
+
 /// Tracks retained parameter complexity and envelope validation during one decode.
 struct RequestValueBudget {
     nodes: usize,
+    max_nodes: usize,
     parameters_are_object: bool,
     too_complex: bool,
 }
@@ -174,6 +249,7 @@ impl Default for RequestValueBudget {
     fn default() -> Self {
         Self {
             nodes: 0,
+            max_nodes: MAX_REQUEST_PARAMETER_NODES,
             parameters_are_object: true,
             too_complex: false,
         }
@@ -272,7 +348,7 @@ impl<'de> de::DeserializeSeed<'de> for ParameterValueSeed<'_> {
             let _: de::IgnoredAny = de::IgnoredAny::deserialize(deserializer)?;
             return Ok(Value::Null);
         }
-        if self.budget.nodes >= MAX_REQUEST_PARAMETER_NODES {
+        if self.budget.nodes >= self.budget.max_nodes {
             self.budget.too_complex = true;
             let _: de::IgnoredAny = de::IgnoredAny::deserialize(deserializer)?;
             return Ok(Value::Null);
@@ -443,7 +519,7 @@ impl<'de> de::Visitor<'de> for ParameterValueVisitor<'_> {
 
 #[cfg(test)]
 mod tests {
-    use super::{MAX_REQUEST_PARAMETER_NODES, decode_request, zeroize_sensitive_request_fields};
+    use super::{MAX_REQUEST_PARAMETER_NODES, clear_sensitive_request_values, decode_request};
 
     #[test]
     fn bounded_request_parser_counts_nested_parameter_values() {
@@ -562,16 +638,30 @@ mod tests {
             "nested": {
                 "secret": "mcp-secret",
                 "archive": {"passphrase": "archive-secret"},
+                "credential": {"accessToken": "extra-credential-secret"},
+                "credentialLabel": "ordinary credential label",
                 "content": "ordinary request content"
-            }
+            },
+            "toolActivities": [{"arguments": "{\"credential\":\"serialized-argument-secret\"}"}],
+            "ordinaryJson": "{\"credential\":\"not-a-metadata-field\"}"
         });
 
-        zeroize_sensitive_request_fields(&mut params);
+        clear_sensitive_request_values(&mut params);
 
         assert_eq!(params["apiKey"], "");
         assert_eq!(params["nested"]["secret"], "");
         assert_eq!(params["nested"]["archive"]["passphrase"], "");
+        assert_eq!(params["nested"]["credential"]["accessToken"], "");
+        assert_eq!(
+            params["nested"]["credentialLabel"],
+            "ordinary credential label"
+        );
         assert_eq!(params["nested"]["content"], "ordinary request content");
+        assert_eq!(params["toolActivities"][0]["arguments"], "");
+        assert_eq!(
+            params["ordinaryJson"],
+            "{\"credential\":\"not-a-metadata-field\"}"
+        );
     }
 
     #[test]

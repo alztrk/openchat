@@ -16,14 +16,17 @@ use serde_json::{Value, json};
 use uuid::Uuid;
 
 use crate::chatgpt_store::StoredAttachment;
-use crate::{protocol::ServiceError, storage::AppStorage};
-
-const MESSAGE_CONTENT_PREFIX: &str = "\u{1e}openchat-attachments-v1:";
-pub(crate) const MAXIMUM_FILE_COUNT: usize = 10;
-pub(crate) const MAXIMUM_IMAGE_COUNT: usize = 3;
-pub(crate) const MAXIMUM_IMAGE_BYTES: usize = 10 * 1024 * 1024;
-pub(crate) const MAXIMUM_TEXT_BYTES: usize = 1024 * 1024;
-pub(crate) const MAXIMUM_TOTAL_BYTES: usize = 14 * 1024 * 1024;
+use crate::{
+    conversation_limits::{
+        MAXIMUM_ATTACHMENT_FILE_COUNT as MAXIMUM_FILE_COUNT,
+        MAXIMUM_ATTACHMENT_IMAGE_BYTES as MAXIMUM_IMAGE_BYTES,
+        MAXIMUM_ATTACHMENT_IMAGE_COUNT as MAXIMUM_IMAGE_COUNT, MAXIMUM_ATTACHMENT_NAME_CHARS,
+        MAXIMUM_ATTACHMENT_TEXT_BYTES as MAXIMUM_TEXT_BYTES,
+        MAXIMUM_ATTACHMENT_TOTAL_BYTES as MAXIMUM_TOTAL_BYTES, MESSAGE_CONTENT_PREFIX,
+    },
+    protocol::ServiceError,
+    storage::AppStorage,
+};
 
 #[derive(Deserialize, Serialize)]
 struct MessageEnvelope {
@@ -96,7 +99,7 @@ pub(crate) fn validate_attachment_metadata(
 ) -> Result<(), AttachmentMetadataError> {
     if !is_safe_identifier(&metadata.id)
         || metadata.name.trim().is_empty()
-        || metadata.name.chars().count() > 255
+        || metadata.name.chars().count() > MAXIMUM_ATTACHMENT_NAME_CHARS
         || metadata.name.chars().any(char::is_control)
         || metadata.size_bytes == 0
     {
@@ -995,5 +998,37 @@ mod tests {
             "{prefix}{{\"content\":\"text\",\"attachments\":[{{\"id\":\"file-1\",\"name\":\"notes\\n.txt\",\"mimeType\":\"text/plain\",\"sizeBytes\":1,\"kind\":\"text\"}}]}}"
         );
         assert!(message_attachment_metadata(&control_character).is_err());
+    }
+
+    #[test]
+    fn portable_metadata_enforces_per_attachment_and_message_size_limits() {
+        let encoded = |attachments: serde_json::Value| {
+            format!(
+                "{MESSAGE_CONTENT_PREFIX}{}",
+                serde_json::to_string(&json!({ "content": "text", "attachments": attachments }))
+                    .expect("serialize attachment envelope")
+            )
+        };
+        let image = |id: &str, size_bytes| {
+            json!({
+                "id": id,
+                "name": format!("{id}.png"),
+                "mimeType": "image/png",
+                "sizeBytes": size_bytes,
+                "kind": "image",
+            })
+        };
+
+        let at_image_limit = encoded(json!([image("image-1", MAXIMUM_IMAGE_BYTES)]));
+        assert!(message_attachment_metadata(&at_image_limit).is_ok());
+
+        let oversized_image = encoded(json!([image("image-1", MAXIMUM_IMAGE_BYTES + 1)]));
+        assert!(message_attachment_metadata(&oversized_image).is_err());
+
+        let over_message_limit = encoded(json!([
+            image("image-1", 8 * 1024 * 1024),
+            image("image-2", 8 * 1024 * 1024),
+        ]));
+        assert!(message_attachment_metadata(&over_message_limit).is_err());
     }
 }

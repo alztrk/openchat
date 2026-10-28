@@ -68,6 +68,8 @@ pub(crate) mod provider_credentials;
 pub(crate) mod provider_schema;
 #[path = "providers/response_budget.rs"]
 pub(crate) mod response_budget;
+#[path = "conversations/security_scan.rs"]
+pub(crate) mod security_scan;
 #[path = "conversations/temporary_conversation.rs"]
 pub(crate) mod temporary_conversation;
 #[path = "tools/mod.rs"]

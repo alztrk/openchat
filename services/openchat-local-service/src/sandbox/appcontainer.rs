@@ -60,6 +60,8 @@ pub(crate) struct AppContainerSandbox {
     runtime_directory: Option<PathBuf>,
     /// Whether this profile is temporary and should be removed when the child exits.
     persistent_profile: bool,
+    /// Whether Windows supplies the AppContainer-mapped `LOCALAPPDATA` value.
+    map_appcontainer_localappdata: bool,
     /// Whether this sandbox changed window-station or desktop ACLs.
     manages_window_access: bool,
 }
@@ -169,6 +171,7 @@ impl AppContainerSandbox {
             granted_paths: Vec::new(),
             runtime_directory: None,
             persistent_profile: false,
+            map_appcontainer_localappdata: false,
             manages_window_access: true,
         };
         if let Err(error) = grant_user_objects_access(sid) {
@@ -209,6 +212,61 @@ impl AppContainerSandbox {
     /// The broker's data remains in the profile's AppContainer-local folder after the process
     /// exits. A private executable copy avoids changing ACLs on the installed application folder.
     pub(crate) fn create_storage_broker(executable: &Path) -> io::Result<(Self, PathBuf)> {
+        Self::create_storage_broker_profile(
+            executable,
+            STORAGE_BROKER_PROFILE_NAME.to_owned(),
+            true,
+        )
+    }
+
+    /// Creates a unique, disposable profile for an isolated broker integration test.
+    #[cfg(feature = "storage-broker-test-support")]
+    pub(crate) fn create_temporary_storage_broker(
+        executable: &Path,
+    ) -> io::Result<(Self, PathBuf)> {
+        Self::create_storage_broker_profile(
+            executable,
+            format!("OpenChatStorageBrokerTest{}", uuid::Uuid::new_v4().simple()),
+            false,
+        )
+    }
+
+    /// Creates another broker process sandbox that reuses a disposable test profile.
+    #[cfg(feature = "storage-broker-test-support")]
+    pub(crate) fn create_temporary_storage_broker_instance(
+        &self,
+        executable: &Path,
+    ) -> io::Result<(Self, PathBuf)> {
+        if self.persistent_profile {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "A disposable storage broker profile is required.",
+            ));
+        }
+        let terminator = self
+            .name
+            .iter()
+            .position(|unit| *unit == 0)
+            .ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "The temporary storage broker profile name is invalid.",
+                )
+            })?;
+        let profile_name = String::from_utf16(&self.name[..terminator]).map_err(|_| {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "The temporary storage broker profile name is invalid.",
+            )
+        })?;
+        Self::create_storage_broker_profile(executable, profile_name, true)
+    }
+
+    fn create_storage_broker_profile(
+        executable: &Path,
+        profile_name: String,
+        persistent_profile: bool,
+    ) -> io::Result<(Self, PathBuf)> {
         let executable = fs::canonicalize(executable)?;
         if !executable.is_file() {
             return Err(io::Error::new(
@@ -216,11 +274,22 @@ impl AppContainerSandbox {
                 "The storage broker executable is unavailable.",
             ));
         }
-        let name = wide_null(STORAGE_BROKER_PROFILE_NAME);
+        let name = wide_null(&profile_name);
         let display_name = wide_null(STORAGE_BROKER_PROFILE_DISPLAY_NAME);
         let description = wide_null(STORAGE_BROKER_PROFILE_DESCRIPTION);
-        let (sid, sid_string, profile_root) =
+        let (sid, sid_string, profile_root, profile_created) =
             create_profile_identity(&name, &display_name, &description)?;
+        if !persistent_profile && !profile_created {
+            // SAFETY: The profile identity helper returned newly owned allocations for this existing profile.
+            unsafe {
+                FreeSid(sid);
+                LocalFree(sid_string as _);
+            }
+            return Err(io::Error::new(
+                io::ErrorKind::AlreadyExists,
+                "The temporary storage broker profile name is already in use.",
+            ));
+        }
         let temp_directory = profile_root.join("Temp");
         let mut sandbox = Self {
             name,
@@ -230,7 +299,8 @@ impl AppContainerSandbox {
             temp_directory,
             granted_paths: Vec::new(),
             runtime_directory: None,
-            persistent_profile: true,
+            persistent_profile,
+            map_appcontainer_localappdata: true,
             manages_window_access: false,
         };
         let profile_metadata = match fs::symlink_metadata(&profile_root) {
@@ -280,7 +350,7 @@ impl AppContainerSandbox {
         let name = wide_null(STORAGE_BROKER_PROFILE_NAME);
         let display_name = wide_null(STORAGE_BROKER_PROFILE_DISPLAY_NAME);
         let description = wide_null(STORAGE_BROKER_PROFILE_DESCRIPTION);
-        let (sid, sid_string, profile_root) =
+        let (sid, sid_string, profile_root, _) =
             create_profile_identity(&name, &display_name, &description)?;
         // SAFETY: create_profile_identity returned these owned allocations for this profile.
         unsafe {
@@ -374,9 +444,9 @@ impl AppContainerSandbox {
         let isolated_appdata = isolated_profile.join("AppData").join("Roaming");
         let isolated_localappdata = isolated_profile.join("AppData").join("Local");
         fs::create_dir_all(&self.temp_directory)?;
-        // For persistent profiles, let Windows map inherited LOCALAPPDATA to the AppContainer root.
-        // Setting the mapped profile path explicitly makes Windows append the profile suffix twice.
-        if !self.persistent_profile {
+        // Let Windows map inherited LOCALAPPDATA for broker profiles; setting the mapped path
+        // explicitly makes Windows append the AppContainer profile suffix twice.
+        if !self.map_appcontainer_localappdata {
             let _ = fs::create_dir_all(&isolated_appdata);
             let _ = fs::create_dir_all(&isolated_localappdata);
             variables.insert(
@@ -513,8 +583,11 @@ impl AppContainerSandbox {
             if path.parent().is_none() {
                 break;
             }
-            set_app_container_traverse_access(path, self.sid as PSID, true)?;
-            self.granted_paths.push(path.to_path_buf());
+            match set_app_container_traverse_access(path, self.sid as PSID, true) {
+                Ok(()) => self.granted_paths.push(path.to_path_buf()),
+                Err(error) if error.kind() == io::ErrorKind::PermissionDenied => {}
+                Err(error) => return Err(error),
+            }
             ancestor = path.parent();
         }
 
@@ -571,8 +644,11 @@ impl AppContainerSandbox {
             if path.parent().is_none() {
                 break;
             }
-            set_app_container_traverse_access(path, self.sid as PSID, true)?;
-            self.granted_paths.push(path.to_path_buf());
+            match set_app_container_traverse_access(path, self.sid as PSID, true) {
+                Ok(()) => self.granted_paths.push(path.to_path_buf()),
+                Err(error) if error.kind() == io::ErrorKind::PermissionDenied => {}
+                Err(error) => return Err(error),
+            }
             ancestor = path.parent();
         }
 
@@ -649,12 +725,12 @@ impl Drop for AppContainerSandbox {
     }
 }
 
-/// Creates or resolves a named AppContainer profile and obtains its persistent local-data path.
+/// Creates or resolves a named AppContainer profile and obtains its local-data path.
 fn create_profile_identity(
     name: &[u16],
     display_name: &[u16],
     description: &[u16],
-) -> io::Result<(PSID, usize, PathBuf)> {
+) -> io::Result<(PSID, usize, PathBuf, bool)> {
     let mut sid = null_mut();
     // SAFETY: The strings are NUL-terminated and `sid` is a writable output pointer.
     let status = unsafe {
@@ -739,7 +815,7 @@ fn create_profile_identity(
     let package_root = PathBuf::from(unsafe { wide_os_string(app_container_data) });
     // SAFETY: `app_container_data` was allocated by GetAppContainerFolderPath.
     unsafe { CoTaskMemFree(app_container_data.cast()) };
-    Ok((sid, sid_string_value, package_root))
+    Ok((sid, sid_string_value, package_root, profile_created))
 }
 
 /// Owns SID arrays allocated while resolving the optional `internetClient` capability.

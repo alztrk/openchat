@@ -328,9 +328,8 @@ async fn fetch_models(
     let client = catalog_client()?;
     let user = fetch_user_with_client(&client, access_token)
         .await
-        .map_err(|error| {
+        .inspect_err(|error| {
             log_catalog_failure(storage, "user_metadata", error.code);
-            error
         })?;
     let Some(api_base) = user
         .pointer("/endpoints/api")
@@ -362,9 +361,8 @@ async fn fetch_models(
     }
     let value = read_json_response(response, MAX_MODEL_RESPONSE_BYTES)
         .await
-        .map_err(|error| {
+        .inspect_err(|error| {
             log_catalog_failure(storage, "model_body", error.code);
-            error
         })?;
     let items = value
         .get("data")
@@ -376,10 +374,10 @@ async fn fetch_models(
             error
         })?;
     let mut models = parse_models(items, &api_base);
-    if models.is_empty() {
-        if let Some(model) = parse_auto_model(items, &api_base) {
-            models.push(model);
-        }
+    if models.is_empty()
+        && let Some(model) = parse_auto_model(items, &api_base)
+    {
+        models.push(model);
     }
     if models.is_empty() {
         log_catalog_filter_summary(storage, items);

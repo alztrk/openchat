@@ -45,17 +45,30 @@ fn response_tool_names(payload: &Value) -> Vec<String> {
         .collect()
 }
 
+pub(super) struct StreamResponseRequest<'a> {
+    pub(super) context: ChatSendContext<'a>,
+    pub(super) route: &'a chatgpt_store::ConversationRoute,
+    pub(super) external_workspace_id: &'a str,
+    pub(super) model: &'a ChatGptModel,
+    pub(super) last_prompt_message_id: Option<&'a str>,
+    pub(super) tool_definitions: Vec<crate::provider_schema::ToolDefinition>,
+    pub(super) payload: Value,
+}
+
 impl ChatGptService {
     pub(super) async fn stream_response(
         self: &Arc<Self>,
-        context: ChatSendContext<'_>,
-        route: &chatgpt_store::ConversationRoute,
-        external_workspace_id: &str,
-        model: &ChatGptModel,
-        last_prompt_message_id: Option<&str>,
-        tool_definitions: Vec<crate::provider_schema::ToolDefinition>,
-        mut payload: Value,
+        request: StreamResponseRequest<'_>,
     ) -> Result<Value, ServiceError> {
+        let StreamResponseRequest {
+            context,
+            route,
+            external_workspace_id,
+            model,
+            last_prompt_message_id,
+            tool_definitions,
+            mut payload,
+        } = request;
         let ChatSendContext {
             request_id,
             conversation_id,
@@ -64,12 +77,14 @@ impl ChatGptService {
             project_instructions,
             project_memory_context,
             project_skills,
-            project_index_context,
+            mut project_index_context,
             project_root,
             workspace_roots,
             data_root,
             storage,
             permission_mode,
+            is_security_scan,
+            security_scan_public_web_research,
             tool_permission_rules,
             available_subagent_models,
             #[cfg(windows)]
@@ -157,6 +172,7 @@ impl ChatGptService {
             tool_permission_rules,
         )
         .with_workspace_roots(workspace_roots)
+        .with_security_scan_scope(is_security_scan, security_scan_public_web_research)
         .with_project_memory_context(project_memory_context.map(str::to_owned))
         .with_chat_service(self.as_ref().clone())
         .with_subagent_models(available_subagent_models)
@@ -182,7 +198,39 @@ impl ChatGptService {
         });
         let mut operation = "chat";
         let mut response_budget = ProviderResponseBudget::default();
+        let mut initial_provider_request = true;
         'model_turn: loop {
+            if !initial_provider_request && let Some(index_context) = project_index_context.take() {
+                let removed = match payload.get_mut("instructions") {
+                    Some(Value::String(instructions)) => {
+                        crate::instructions::remove_project_index_context(
+                            instructions,
+                            project_memory_context,
+                            &index_context,
+                            model.context_window,
+                        )
+                    }
+                    _ => false,
+                };
+                if !removed {
+                    let elapsed = started.elapsed();
+                    self.persist_terminal_message(AssistantMessageWrite {
+                        conversation_id,
+                        message_id: &message_id,
+                        content: &content,
+                        status: "failed",
+                        created_at_unix_ms: created_at,
+                        output_tokens,
+                        elapsed: Some(elapsed),
+                    })?;
+                    return Err(ServiceError::new(
+                        "project_index_context_cleanup_failed",
+                        "The project index context could not be removed before a follow-up request.",
+                        false,
+                    ));
+                }
+            }
+            initial_provider_request = false;
             if let Err(error) =
                 crate::context_compaction::validate_request_context(&payload, model.context_window)
             {
@@ -224,6 +272,10 @@ impl ChatGptService {
                         .and_then(Value::as_str)
                         .is_some_and(|tier| tier == "priority"),
                     run_id: Some(&run_id),
+                    connection_id: Some(&route.connection_id),
+                    workspace_id: Some(&route.workspace_id),
+                    project_id: None,
+                    parent_run_id: None,
                 },
             )
             .map_err(|_| {
@@ -247,6 +299,7 @@ impl ChatGptService {
             usage_request
                 .record_request_manifest(&payload, Some(&request_sources))
                 .map_err(database_error)?;
+            let provider_request_started = Instant::now();
             let response = match self
                 .authorized_stream_request(
                     StreamRequest {
@@ -472,6 +525,9 @@ impl ChatGptService {
                         }
                         let event = event_data.join("\n");
                         event_data.clear();
+                        if response_event_has_output(&event) {
+                            usage_request.record_first_output(provider_request_started.elapsed());
+                        }
                         match self
                             .process_response_event(
                                 &event,
@@ -838,11 +894,14 @@ impl ChatGptService {
                 let control_results = match goals::process_control_calls(
                     &control_calls,
                     &mut goal,
-                    storage,
-                    &run_id,
-                    conversation_id,
-                    &request_id,
-                    &events,
+                    goals::ControlCallContext {
+                        storage,
+                        run_id: &run_id,
+                        conversation_id,
+                        request_id: &request_id,
+                        events: &events,
+                        is_security_scan,
+                    },
                 )
                 .await
                 {
@@ -1118,6 +1177,7 @@ impl ChatGptService {
             Some(GoalDecision::Stopped) => "stopped",
             _ => "completed",
         };
+        goals::validate_security_scan_final_status(is_security_scan, status, goal.as_ref())?;
         self.persist_terminal_message(AssistantMessageWrite {
             conversation_id,
             message_id: &message_id,
@@ -1132,8 +1192,7 @@ impl ChatGptService {
             elapsed: Some(elapsed),
         })?;
         if let (Some(input_tokens), Some(last_message_id)) = (input_tokens, last_prompt_message_id)
-        {
-            if chatgpt_store::save_prompt_usage(
+            && chatgpt_store::save_prompt_usage(
                 &self.storage,
                 conversation_id,
                 chatgpt_store::PromptUsage {
@@ -1146,10 +1205,9 @@ impl ChatGptService {
                 },
             )
             .is_err()
-                && self.storage.log_context_usage_save_failure().is_err()
-            {
-                eprintln!("context_usage_diagnostic_write_failed");
-            }
+            && self.storage.log_context_usage_save_failure().is_err()
+        {
+            eprintln!("context_usage_diagnostic_write_failed");
         }
         self.record_chatgpt_event(
             "request_completed",
@@ -1191,7 +1249,7 @@ impl ChatGptService {
                                 &conversation_model_id,
                                 title_excluded_assistant_message_id.as_deref(),
                                 title_events,
-                                Some(target),
+                                Some(*target),
                             )
                             .await;
                     }
@@ -1201,7 +1259,7 @@ impl ChatGptService {
                             &service,
                             &title_storage,
                             &title_conversation_id,
-                            target,
+                            *target,
                             title_excluded_assistant_message_id.as_deref(),
                             title_events,
                         )
@@ -1229,6 +1287,25 @@ impl ChatGptService {
         }
         Ok(result)
     }
+}
+
+fn response_event_has_output(event_data: &str) -> bool {
+    let Ok(event) = serde_json::from_str::<Value>(event_data) else {
+        return false;
+    };
+    let Some(kind) = event.get("type").and_then(Value::as_str) else {
+        return false;
+    };
+    matches!(
+        kind,
+        "response.output_text.delta"
+            | "response.function_call_arguments.delta"
+            | "response.reasoning_text.delta"
+            | "response.reasoning_summary_text.delta"
+    ) && event
+        .get("delta")
+        .and_then(Value::as_str)
+        .is_some_and(|delta| !delta.is_empty())
 }
 
 impl ChatGptService {
@@ -1419,7 +1496,23 @@ impl ChatGptService {
 mod tool_policy_tests {
     use serde_json::json;
 
-    use super::response_tool_names;
+    use super::{response_event_has_output, response_tool_names};
+
+    #[test]
+    fn first_output_detection_ignores_empty_and_non_output_events() {
+        assert!(response_event_has_output(
+            r#"{"type":"response.output_text.delta","delta":"hello"}"#
+        ));
+        assert!(response_event_has_output(
+            r#"{"type":"response.function_call_arguments.delta","delta":"{}"}"#
+        ));
+        assert!(!response_event_has_output(
+            r#"{"type":"response.output_text.delta","delta":""}"#
+        ));
+        assert!(!response_event_has_output(
+            r#"{"type":"response.completed","response":{}}"#
+        ));
+    }
 
     #[test]
     fn executor_allowlist_matches_function_tools_in_the_responses_request() {

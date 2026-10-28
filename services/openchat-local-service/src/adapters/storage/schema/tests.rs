@@ -76,7 +76,7 @@ fn latest_schema_recreates_missing_conversation_context_state() {
 
 #[test]
 fn migration_40_indexes_usage_event_export_order() {
-    let connection = memory_index_repair_fixture(SCHEMA_VERSION - 1);
+    let connection = memory_index_repair_fixture(39);
 
     assert_eq!(
         initialize_schema(&connection, SCHEMA_VERSION).expect("add usage event export index"),
@@ -106,6 +106,618 @@ fn migration_40_indexes_usage_event_export_order() {
         plan.iter().all(|detail| !detail.contains("TEMP B-TREE")),
         "usage event export still sorts into a temporary B-tree: {plan:?}"
     );
+}
+
+#[test]
+fn migration_43_indexes_usage_event_filter_options() {
+    let connection = memory_index_repair_fixture(SCHEMA_VERSION - 1);
+
+    assert_eq!(
+        initialize_schema(&connection, SCHEMA_VERSION).expect("add filter option indexes"),
+        SCHEMA_VERSION
+    );
+
+    for (sql, expected_index) in [
+        (
+            "SELECT DISTINCT model_id FROM usage_events
+             WHERE event_kind = 'request' AND model_id IS NOT NULL ORDER BY model_id",
+            "usage_events_model_filter_options_idx",
+        ),
+        (
+            "SELECT DISTINCT COALESCE(reasoning_effort, 'unspecified')
+             FROM usage_events WHERE event_kind = 'request' ORDER BY 1",
+            "usage_events_reasoning_filter_options_idx",
+        ),
+    ] {
+        let plan = connection
+            .prepare(&format!("EXPLAIN QUERY PLAN {sql}"))
+            .expect("prepare filter options query plan")
+            .query_map([], |row| row.get::<_, String>(3))
+            .expect("explain filter options query")
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .expect("read filter options query plan");
+
+        assert!(
+            plan.iter().any(|detail| detail.contains(expected_index)),
+            "filter options did not select {expected_index}: {plan:?}"
+        );
+        assert!(
+            plan.iter().all(|detail| !detail.contains("TEMP B-TREE")),
+            "filter options still sorts into a temporary B-tree: {plan:?}"
+        );
+    }
+}
+
+#[test]
+fn migration_44_creates_the_project_symbol_lookup_index() {
+    let connection = memory_index_repair_fixture(42);
+    connection
+        .execute(
+            "INSERT INTO project_index_files (project_id, path, modified_ns, size, content)
+             VALUES ('project-1', 'src/lib.rs', 1, 0, '')",
+            [],
+        )
+        .expect("store an existing indexed project file");
+    connection
+        .execute(
+            "INSERT INTO project_index_state
+                (project_id, enabled, status, indexed_files, indexed_bytes)
+             VALUES ('project-1', 1, 'current', 1, 0)",
+            [],
+        )
+        .expect("store an existing project index state");
+
+    assert_eq!(
+        initialize_schema(&connection, 44).expect("add project symbol index"),
+        44
+    );
+    assert_eq!(
+        connection
+            .query_row(
+                "SELECT symbols_indexed FROM project_index_files
+                 WHERE project_id = 'project-1' AND path = 'src/lib.rs'",
+                [],
+                |row| row.get::<_, bool>(0),
+            )
+            .expect("read the symbol index state"),
+        false
+    );
+    assert_eq!(
+        connection
+            .query_row(
+                "SELECT status FROM project_index_state WHERE project_id = 'project-1'",
+                [],
+                |row| row.get::<_, String>(0),
+            )
+            .expect("read the migrated index status"),
+        "stale"
+    );
+    connection
+        .execute(
+            "INSERT INTO project_index_symbols
+                (project_id, path, name, kind, start_line, end_line)
+             VALUES ('project-1', 'src/lib.rs', 'launch', 'function', 4, 8)",
+            [],
+        )
+        .expect("store an indexed symbol");
+
+    assert_eq!(
+        connection
+            .query_row(
+                "SELECT name, start_line, end_line FROM project_index_symbols
+                 WHERE project_id = 'project-1' AND name = 'launch'",
+                [],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, i64>(1)?,
+                        row.get::<_, i64>(2)?,
+                    ))
+                },
+            )
+            .expect("read indexed symbol"),
+        ("launch".to_owned(), 4, 8)
+    );
+}
+
+#[test]
+fn migration_45_adds_checkpoint_recovery_state() {
+    let connection = memory_index_repair_fixture(44);
+    let checkpoint_columns = |connection: &Connection| {
+        let mut statement = connection
+            .prepare("PRAGMA table_info(conversation_file_checkpoints)")
+            .expect("inspect checkpoint columns");
+        statement
+            .query_map([], |row| row.get::<_, String>(1))
+            .expect("read checkpoint columns")
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .expect("collect checkpoint columns")
+    };
+
+    let before_columns = checkpoint_columns(&connection);
+    assert!(
+        !before_columns
+            .iter()
+            .any(|column| column == "recovery_available")
+    );
+    assert!(
+        !before_columns
+            .iter()
+            .any(|column| column == "recovered_at_unix_ms")
+    );
+    assert_eq!(
+        initialize_schema(&connection, 45).expect("add checkpoint recovery state"),
+        45
+    );
+    let after_columns = checkpoint_columns(&connection);
+    assert!(
+        after_columns
+            .iter()
+            .any(|column| column == "recovery_available")
+    );
+    assert!(
+        after_columns
+            .iter()
+            .any(|column| column == "recovered_at_unix_ms")
+    );
+}
+
+#[test]
+fn migration_46_versions_project_symbols_without_reindexing_existing_languages() {
+    let connection = memory_index_repair_fixture(45);
+    connection
+        .execute_batch(
+            "INSERT INTO project_index_files
+                (project_id, path, modified_ns, size, content, symbols_indexed)
+             VALUES
+                ('project-1', 'src/lib.rs', 1, 0, '', 1),
+                ('project-1', 'src/App.dart', 1, 0, '', 1);
+             INSERT INTO project_index_state
+                (project_id, enabled, status, indexed_files, indexed_bytes)
+             VALUES ('project-1', 1, 'current', 2, 0);",
+        )
+        .expect("store pre-migration project index data");
+
+    assert_eq!(
+        initialize_schema(&connection, 46).expect("version project symbol extraction"),
+        46
+    );
+    assert_eq!(
+        connection
+            .query_row(
+                "SELECT symbol_version FROM project_index_files
+                 WHERE project_id = 'project-1' AND path = 'src/lib.rs'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .expect("read the existing language symbol version"),
+        1
+    );
+    assert_eq!(
+        connection
+            .query_row(
+                "SELECT symbol_version FROM project_index_files
+                 WHERE project_id = 'project-1' AND path = 'src/App.dart'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .expect("read the new grammar symbol version"),
+        0
+    );
+    assert_eq!(
+        connection
+            .query_row(
+                "SELECT status FROM project_index_state WHERE project_id = 'project-1'",
+                [],
+                |row| row.get::<_, String>(0),
+            )
+            .expect("read the migrated project index state"),
+        "stale"
+    );
+}
+
+#[test]
+fn migration_48_preserves_legacy_file_records_without_root_identity() {
+    let connection = memory_index_repair_fixture(47);
+    connection
+        .execute_batch(
+            "INSERT INTO conversation_file_changes (
+                conversation_id, id, root, path, baseline_exists, expected_exists,
+                is_binary, diff_available, status
+             ) VALUES (
+                'conversation', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+                'C:/workspace', 'note.txt', 0, 0, 0, 1, 'active'
+             );
+             INSERT INTO conversation_file_checkpoints (
+                id, conversation_id, sequence, created_at_unix_ms, tool_name
+             ) VALUES ('bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', 'conversation', 1, 1, 'write_file');
+             INSERT INTO conversation_file_checkpoint_files (
+                checkpoint_id, file_id, root, path,
+                before_exists, after_exists
+             ) VALUES (
+                'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+                'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
+                'C:/workspace', 'note.txt', 0, 0
+             );",
+        )
+        .expect("insert legacy file tracking records");
+
+    assert_eq!(
+        initialize_schema(&connection, 48).expect("add stored workspace identities"),
+        48
+    );
+    assert_eq!(
+        connection
+            .query_row(
+                "SELECT root_identity FROM conversation_file_changes
+                 WHERE conversation_id = 'conversation'",
+                [],
+                |row| row.get::<_, Option<String>>(0),
+            )
+            .expect("read legacy tracked change identity"),
+        None
+    );
+    assert_eq!(
+        connection
+            .query_row(
+                "SELECT root_identity FROM conversation_file_checkpoint_files
+                 WHERE checkpoint_id = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'",
+                [],
+                |row| row.get::<_, Option<String>>(0),
+            )
+            .expect("read legacy checkpoint identity"),
+        None
+    );
+}
+
+#[test]
+fn migration_49_marks_existing_permission_settings_as_unconfirmed() {
+    let connection = memory_index_repair_fixture(48);
+    connection
+        .execute_batch(
+            "INSERT INTO tool_permission_mode (preference_id, mode)
+             VALUES (1, 'full_access');
+             INSERT INTO project_tool_permission_rules (project_id, rules_json)
+             VALUES ('project-1', '{\"read_file\":\"allow\"}');",
+        )
+        .expect("insert legacy elevated permission settings");
+
+    assert_eq!(
+        initialize_schema(&connection, 49).expect("add permission confirmation provenance"),
+        49
+    );
+    assert_eq!(
+        connection
+            .query_row(
+                "SELECT mode, native_confirmed FROM tool_permission_mode
+                 WHERE preference_id = 1",
+                [],
+                |row| Ok((row.get::<_, String>(0)?, row.get::<_, bool>(1)?)),
+            )
+            .expect("read preserved legacy global policy"),
+        ("full_access".to_owned(), false)
+    );
+    assert_eq!(
+        connection
+            .query_row(
+                "SELECT rules_json, native_confirmed FROM project_tool_permission_rules
+                 WHERE project_id = 'project-1'",
+                [],
+                |row| Ok((row.get::<_, String>(0)?, row.get::<_, bool>(1)?)),
+            )
+            .expect("read preserved legacy project policy"),
+        ("{\"read_file\":\"allow\"}".to_owned(), false)
+    );
+}
+
+#[test]
+fn migration_50_adds_nullable_first_output_latency() {
+    let connection = memory_index_repair_fixture(49);
+    connection
+        .execute(
+            "INSERT INTO usage_events (
+                event_id, event_kind, conversation_id, operation, status,
+                usage_source, started_at_unix_ms
+             ) VALUES ('existing-request', 'request', 'conversation', 'chat',
+                       'completed', 'unavailable', 1)",
+            [],
+        )
+        .expect("insert a pre-migration usage event");
+
+    assert_eq!(
+        initialize_schema(&connection, 50).expect("add first output latency"),
+        50
+    );
+
+    let historical_latency = connection
+        .query_row(
+            "SELECT first_output_latency_ms FROM usage_events
+             WHERE event_id = 'existing-request'",
+            [],
+            |row| row.get::<_, Option<i64>>(0),
+        )
+        .expect("read historical event latency");
+    assert_eq!(historical_latency, None);
+
+    assert!(
+        connection
+            .execute(
+                "UPDATE usage_events SET first_output_latency_ms = -1
+             WHERE event_id = 'existing-request'",
+                [],
+            )
+            .is_err()
+    );
+
+    let migration_version = connection
+        .query_row(
+            "SELECT MAX(version) FROM openchat_backend_migrations",
+            [],
+            |row| row.get::<_, i64>(0),
+        )
+        .expect("read migration version");
+    assert_eq!(migration_version, 50);
+}
+
+#[test]
+fn migration_51_adds_nullable_usage_attribution() {
+    let connection = memory_index_repair_fixture(50);
+    connection
+        .execute(
+            "INSERT INTO usage_events (
+                event_id, event_kind, conversation_id, operation, status,
+                usage_source, started_at_unix_ms
+             ) VALUES ('existing-request', 'request', 'conversation', 'chat',
+                       'completed', 'unavailable', 1)",
+            [],
+        )
+        .expect("insert a pre-migration usage event");
+
+    assert_eq!(
+        initialize_schema(&connection, 51).expect("add usage attribution"),
+        51
+    );
+
+    let attribution = connection
+        .query_row(
+            "SELECT connection_id, workspace_id, project_id, parent_run_id
+             FROM usage_events WHERE event_id = 'existing-request'",
+            [],
+            |row| {
+                Ok((
+                    row.get::<_, Option<String>>(0)?,
+                    row.get::<_, Option<String>>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                    row.get::<_, Option<String>>(3)?,
+                ))
+            },
+        )
+        .expect("read historical usage attribution");
+    assert_eq!(attribution, (None, None, None, None));
+
+    let migration_version = connection
+        .query_row(
+            "SELECT MAX(version) FROM openchat_backend_migrations",
+            [],
+            |row| row.get::<_, i64>(0),
+        )
+        .expect("read migration version");
+    assert_eq!(migration_version, 51);
+}
+
+#[test]
+fn migration_52_adds_nullable_provider_processing_time() {
+    let connection = memory_index_repair_fixture(51);
+    connection
+        .execute(
+            "INSERT INTO usage_events (
+                event_id, event_kind, conversation_id, operation, status,
+                usage_source, started_at_unix_ms
+             ) VALUES ('existing-request', 'request', 'conversation', 'chat',
+                       'completed', 'unavailable', 1)",
+            [],
+        )
+        .expect("insert a pre-migration usage event");
+
+    assert_eq!(
+        initialize_schema(&connection, 52).expect("add provider processing time"),
+        52
+    );
+
+    let historical_processing_time = connection
+        .query_row(
+            "SELECT provider_processing_ms, provider_queue_time_ms,
+                    provider_input_processing_ms, provider_output_processing_ms
+             FROM usage_events
+             WHERE event_id = 'existing-request'",
+            [],
+            |row| {
+                Ok((
+                    row.get::<_, Option<i64>>(0)?,
+                    row.get::<_, Option<i64>>(1)?,
+                    row.get::<_, Option<i64>>(2)?,
+                    row.get::<_, Option<i64>>(3)?,
+                ))
+            },
+        )
+        .expect("read historical provider timing fields");
+    assert_eq!(historical_processing_time, (None, None, None, None));
+
+    for column in [
+        "provider_processing_ms",
+        "provider_queue_time_ms",
+        "provider_input_processing_ms",
+        "provider_output_processing_ms",
+    ] {
+        assert!(
+            connection
+                .execute(
+                    &format!(
+                        "UPDATE usage_events SET {column} = -1
+                     WHERE event_id = 'existing-request'"
+                    ),
+                    [],
+                )
+                .is_err()
+        );
+    }
+
+    let migration_version = connection
+        .query_row(
+            "SELECT MAX(version) FROM openchat_backend_migrations",
+            [],
+            |row| row.get::<_, i64>(0),
+        )
+        .expect("read migration version");
+    assert_eq!(migration_version, 52);
+}
+
+#[test]
+fn migration_53_adds_nullable_bounded_provider_completion_reason() {
+    let connection = memory_index_repair_fixture(52);
+    connection
+        .execute(
+            "INSERT INTO usage_events (
+                event_id, event_kind, conversation_id, operation, status,
+                usage_source, started_at_unix_ms
+             ) VALUES ('existing-request', 'request', 'conversation', 'chat',
+                       'completed', 'unavailable', 1)",
+            [],
+        )
+        .expect("insert a pre-migration usage event");
+
+    assert_eq!(
+        initialize_schema(&connection, 53).expect("add completion reason"),
+        53
+    );
+    assert_eq!(
+        connection
+            .query_row(
+                "SELECT completion_reason FROM usage_events
+                 WHERE event_id = 'existing-request'",
+                [],
+                |row| row.get::<_, Option<String>>(0),
+            )
+            .expect("read historical completion reason"),
+        None
+    );
+    connection
+        .execute(
+            "UPDATE usage_events SET completion_reason = 'tool_calls'
+             WHERE event_id = 'existing-request'",
+            [],
+        )
+        .expect("store a bounded completion reason");
+
+    let too_long_reason = "x".repeat(65);
+    for invalid_reason in [
+        "reason with spaces",
+        "reason/with/slashes",
+        too_long_reason.as_str(),
+    ] {
+        assert!(
+            connection
+                .execute(
+                    "UPDATE usage_events SET completion_reason = ?1
+                     WHERE event_id = 'existing-request'",
+                    [invalid_reason],
+                )
+                .is_err(),
+            "invalid reason should be rejected: {invalid_reason}"
+        );
+    }
+}
+
+#[test]
+fn migration_54_adds_bounded_provider_rate_limit_observations() {
+    let connection = memory_index_repair_fixture(53);
+    connection
+        .execute(
+            "INSERT INTO usage_events (
+                event_id, event_kind, conversation_id, operation, status,
+                usage_source, started_at_unix_ms
+             ) VALUES ('existing-request', 'request', 'conversation', 'chat',
+                       'completed', 'unavailable', 1)",
+            [],
+        )
+        .expect("insert a pre-migration usage event");
+
+    assert_eq!(
+        initialize_schema(&connection, 54).expect("add provider rate-limit observations"),
+        54
+    );
+    assert_eq!(
+        connection
+            .query_row(
+                "SELECT provider_rate_limits_json FROM usage_events
+                 WHERE event_id = 'existing-request'",
+                [],
+                |row| row.get::<_, Option<String>>(0),
+            )
+            .expect("read historical provider rate-limit observation"),
+        None
+    );
+    connection
+        .execute(
+            "UPDATE usage_events SET provider_rate_limits_json = ?1
+             WHERE event_id = 'existing-request'",
+            [r#"{"observedAtUnixMs":1,"requestLimit":10}"#],
+        )
+        .expect("store a bounded provider rate-limit observation");
+    assert!(
+        connection
+            .execute(
+                "UPDATE usage_events SET provider_rate_limits_json = ?1
+             WHERE event_id = 'existing-request'",
+                ["not-json"],
+            )
+            .is_err()
+    );
+    assert!(
+        connection
+            .execute(
+                "UPDATE usage_events SET provider_rate_limits_json = ?1
+             WHERE event_id = 'existing-request'",
+                ["x".repeat(2049)],
+            )
+            .is_err()
+    );
+}
+
+#[test]
+fn migration_55_disables_public_web_research_for_existing_security_scans() {
+    let connection = memory_index_repair_fixture(54);
+    assert_eq!(
+        initialize_schema(&connection, 55).expect("add security scan web research consent"),
+        55
+    );
+    let default_value = connection
+        .query_row(
+            "SELECT dflt_value FROM pragma_table_info('security_scans')
+             WHERE name = 'public_web_research'",
+            [],
+            |row| row.get::<_, Option<String>>(0),
+        )
+        .expect("read security scan consent default");
+    assert_eq!(default_value.as_deref(), Some("0"));
+}
+
+#[test]
+fn migration_56_adds_a_separate_security_scan_attempt_id() {
+    let connection = memory_index_repair_fixture(55);
+    assert_eq!(
+        initialize_schema(&connection, 56).expect("add security scan attempt identity"),
+        56
+    );
+    let attempt_column = connection
+        .query_row(
+            "SELECT type, dflt_value FROM pragma_table_info('security_scans')
+             WHERE name = 'active_attempt_id'",
+            [],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?)),
+        )
+        .expect("read scan attempt column");
+    assert_eq!(attempt_column, ("TEXT".to_owned(), None));
 }
 
 fn memory_index_repair_fixture(version: i64) -> Connection {
@@ -1321,76 +1933,4 @@ fn credential_redaction_migration_rebuilds_derived_indexes_only() {
     assert!(inserted_index.contains("insertedvisibleword"));
     assert!(inserted_index.contains("[REDACTED]"));
     assert!(!inserted_index.contains("inserted-secret"));
-}
-
-#[test]
-fn migration_44_creates_the_project_symbol_lookup_index() {
-    let connection = memory_index_repair_fixture(42);
-    connection
-        .execute(
-            "INSERT INTO project_index_files (project_id, path, modified_ns, size, content)
-             VALUES ('project-1', 'src/lib.rs', 1, 0, '')",
-            [],
-        )
-        .expect("store an existing indexed project file");
-    connection
-        .execute(
-            "INSERT INTO project_index_state
-                (project_id, enabled, status, indexed_files, indexed_bytes)
-             VALUES ('project-1', 1, 'current', 1, 0)",
-            [],
-        )
-        .expect("store an existing project index state");
-
-    assert_eq!(
-        initialize_schema(&connection, 44).expect("add project symbol index"),
-        44
-    );
-    assert_eq!(
-        connection
-            .query_row(
-                "SELECT symbols_indexed FROM project_index_files
-                 WHERE project_id = 'project-1' AND path = 'src/lib.rs'",
-                [],
-                |row| row.get::<_, bool>(0),
-            )
-            .expect("read the symbol index state"),
-        false
-    );
-    assert_eq!(
-        connection
-            .query_row(
-                "SELECT status FROM project_index_state WHERE project_id = 'project-1'",
-                [],
-                |row| row.get::<_, String>(0),
-            )
-            .expect("read the migrated index status"),
-        "stale"
-    );
-    connection
-        .execute(
-            "INSERT INTO project_index_symbols
-                (project_id, path, name, kind, start_line, end_line)
-             VALUES ('project-1', 'src/lib.rs', 'launch', 'function', 4, 8)",
-            [],
-        )
-        .expect("store an indexed symbol");
-
-    assert_eq!(
-        connection
-            .query_row(
-                "SELECT name, start_line, end_line FROM project_index_symbols
-                 WHERE project_id = 'project-1' AND name = 'launch'",
-                [],
-                |row| {
-                    Ok((
-                        row.get::<_, String>(0)?,
-                        row.get::<_, i64>(1)?,
-                        row.get::<_, i64>(2)?,
-                    ))
-                },
-            )
-            .expect("read indexed symbol"),
-        ("launch".to_owned(), 4, 8)
-    );
 }

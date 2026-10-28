@@ -6,6 +6,10 @@ authors = ["OpenChat"]
 edition = "2021"
 publish = false
 
+[features]
+startup-benchmark = []
+desktop-profile-test-support = ["openchat_local_service/desktop-profile-test-support"]
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
@@ -22,7 +26,7 @@ url = "=2.5.8"
 uuid = { version = "1.28", features = ["v4"] }
 
 [dev-dependencies]
-rusqlite = { version = "0.40.2", features = ["bundled", "functions"] }
+rusqlite = { version = "0.40.2", features = ["bundled-sqlcipher-vendored-openssl", "functions"] }
 
 [target.'cfg(windows)'.dependencies]
 tokio = { version = "1", features = ["fs", "io-util", "rt", "sync", "time"] }
@@ -56,3 +60,4 @@ windows = { version = "=0.62.2", features = [
     "Win32_UI_WindowsAndMessaging",
 ] }
 windows-core = "=0.62.2"
+webview2-com = "=0.39.1"

@@ -271,12 +271,14 @@ async fn generate_design_image(
     let generation_id = image_library::begin_generation(
         storage,
         &request,
-        "design",
-        provider_route,
-        connection_id,
-        workspace_id,
-        None,
-        None,
+        image_library::ImageGenerationOrigin {
+            source_kind: "design",
+            provider_route,
+            connection_id,
+            workspace_id,
+            conversation_id: None,
+            message_id: None,
+        },
     )?;
 
     let generated_result = match input.auth {

@@ -652,7 +652,8 @@ fn supports_images(model: &Value, details: Option<&Value>) -> Option<bool> {
     if let Some(supported) = advertised_vision {
         return Some(supported);
     }
-    let modalities = [
+
+    [
         model.pointer("/architecture/input_modalities"),
         details.and_then(|details| details.pointer("/inputModalities")),
         details.and_then(|details| details.pointer("/modalities/input")),
@@ -663,8 +664,7 @@ fn supports_images(model: &Value, details: Option<&Value>) -> Option<bool> {
         modalities
             .as_array()
             .map(|values| values.iter().any(|value| value.as_str() == Some("image")))
-    });
-    modalities
+    })
 }
 
 pub(super) fn mistral_reasoning_levels(_model_id: &str) -> Vec<String> {

@@ -12,6 +12,17 @@ use crate::protocol::ServiceError;
 const MAX_LOCATIONS: usize = 25;
 const MAX_LSP_QUERY_BYTES: u64 = 2 * 1024 * 1024;
 
+pub(crate) struct LspQueryRequest<'a> {
+    pub(crate) cache_root: &'a Path,
+    pub(crate) root: &'a Path,
+    pub(crate) relative_path: &'a str,
+    pub(crate) action: &'a str,
+    pub(crate) line: Option<usize>,
+    pub(crate) character: Option<usize>,
+    pub(crate) limit: usize,
+    pub(crate) cancellation: &'a mut tokio::sync::watch::Receiver<bool>,
+}
+
 #[cfg(windows)]
 mod windows {
     use std::{
@@ -19,7 +30,7 @@ mod windows {
         ffi::OsString,
         fs,
         hash::{Hash, Hasher},
-        io,
+        io::{self, Read},
         path::{Path, PathBuf},
         sync::{Arc, OnceLock},
         time::{Duration, Instant},
@@ -39,7 +50,7 @@ mod windows {
         sandbox::{SandboxJobLimits, SandboxOptions, SandboxedProcess},
     };
 
-    use super::{MAX_LOCATIONS, MAX_LSP_QUERY_BYTES};
+    use super::{LspQueryRequest, MAX_LOCATIONS, MAX_LSP_QUERY_BYTES};
 
     const MAX_ACTIVE_SESSIONS: usize = 2;
     const MAX_LSP_MESSAGE_BYTES: usize = 1024 * 1024;
@@ -49,6 +60,13 @@ mod windows {
     const LSP_STARTUP_TIMEOUT: Duration = Duration::from_secs(30);
     const LSP_DIAGNOSTIC_WAIT: Duration = Duration::from_secs(2);
     const LSP_SESSION_IDLE_TTL: Duration = Duration::from_secs(5 * 60);
+    const MAX_NPM_MANIFEST_BYTES: u64 = 256 * 1024;
+
+    enum ProjectNpmPackageState {
+        Declared,
+        NotDeclared,
+        ManifestUnavailable,
+    }
 
     #[derive(Clone, Copy)]
     struct ServerSpec {
@@ -117,6 +135,21 @@ mod windows {
         program_names: &["dart.exe"],
         arguments: &["language-server"],
     };
+    const ECLIPSE_JDT_LS: ServerSpec = ServerSpec {
+        id: "eclipse-jdt-ls",
+        program_names: &["jdtls.exe"],
+        arguments: &[],
+    };
+    const KOTLIN_LSP: ServerSpec = ServerSpec {
+        id: "kotlin-lsp",
+        program_names: &["intellij-server.exe"],
+        arguments: &["--stdio"],
+    };
+    const SOURCEKIT_LSP: ServerSpec = ServerSpec {
+        id: "sourcekit-lsp",
+        program_names: &["sourcekit-lsp.exe"],
+        arguments: &[],
+    };
     const BIOME: ServerSpec = ServerSpec {
         id: "biome",
         program_names: &["biome.exe"],
@@ -127,11 +160,16 @@ mod windows {
     struct SessionKey {
         root: PathBuf,
         server_id: &'static str,
+        program: PathBuf,
+        arguments: Vec<OsString>,
     }
 
     impl PartialEq for SessionKey {
         fn eq(&self, other: &Self) -> bool {
-            self.root == other.root && self.server_id == other.server_id
+            self.root == other.root
+                && self.server_id == other.server_id
+                && self.program == other.program
+                && self.arguments == other.arguments
         }
     }
 
@@ -139,6 +177,8 @@ mod windows {
         fn hash<H: Hasher>(&self, state: &mut H) {
             self.root.hash(state);
             self.server_id.hash(state);
+            self.program.hash(state);
+            self.arguments.hash(state);
         }
     }
 
@@ -172,28 +212,8 @@ mod windows {
         limit: usize,
     }
 
-    pub(super) async fn execute(
-        cache_root: &Path,
-        root: &Path,
-        relative_path: &str,
-        action: &str,
-        line: Option<usize>,
-        character: Option<usize>,
-        limit: usize,
-        cancellation: &mut watch::Receiver<bool>,
-    ) -> Value {
-        match query(
-            cache_root,
-            root,
-            relative_path,
-            action,
-            line,
-            character,
-            limit,
-            cancellation,
-        )
-        .await
-        {
+    pub(super) async fn execute(request: LspQueryRequest<'_>) -> Value {
+        match query(request).await {
             Ok(value) => value,
             Err(error) if matches!(error.code, "operation_cancelled" | "request_cancelled") => {
                 json!({"status":"cancelled"})
@@ -208,16 +228,17 @@ mod windows {
         }
     }
 
-    async fn query(
-        cache_root: &Path,
-        root: &Path,
-        relative_path: &str,
-        action: &str,
-        line: Option<usize>,
-        character: Option<usize>,
-        limit: usize,
-        cancellation: &mut watch::Receiver<bool>,
-    ) -> Result<Value, ServiceError> {
+    async fn query(request: LspQueryRequest<'_>) -> Result<Value, ServiceError> {
+        let LspQueryRequest {
+            cache_root,
+            root,
+            relative_path,
+            action,
+            line,
+            character,
+            limit,
+            cancellation,
+        } = request;
         let root = fs::canonicalize(root).map_err(|_| project_root_error())?;
         if !root.is_dir() {
             return Err(project_root_error());
@@ -234,8 +255,7 @@ mod windows {
             .unwrap_or_default();
         let spec = server_for_extension(&root, &file, &extension, action)
             .ok_or_else(unsupported_language_error)?;
-        let (program, arguments) =
-            find_server_command(spec).ok_or_else(|| missing_server_error(spec.id))?;
+        let (program, arguments) = find_server_command(spec, &root, &file)?;
         let relative_file = file.strip_prefix(&root).map_err(|_| lsp_file_error())?;
         let source = crate::filesystem::read_bounded_file_under_root(
             &root,
@@ -264,6 +284,8 @@ mod windows {
         let key = SessionKey {
             root: root.clone(),
             server_id: spec.id,
+            program: program.clone(),
+            arguments: arguments.clone(),
         };
         let session = session_for(
             key.clone(),
@@ -307,7 +329,11 @@ mod windows {
             .get_or_init(|| Mutex::new(HashMap::new()))
             .lock()
             .await;
-        if result.is_err() {
+        let retain_session = result.as_ref().is_ok()
+            || result
+                .as_ref()
+                .is_err_and(|error| error.code == "lsp_capability_unsupported");
+        if !retain_session {
             sessions.remove(&key);
         } else if let Some(cached) = sessions.get_mut(&key) {
             cached.last_used = Instant::now();
@@ -434,8 +460,11 @@ mod windows {
             "bash" | "sh" | "zsh" => BASH_LANGUAGE_SERVER,
             "rb" | "rake" => RUBY_LSP,
             "dart" => DART,
+            "java" => ECLIPSE_JDT_LS,
+            "kt" | "kts" => KOTLIN_LSP,
             "lua" => LUA_LANGUAGE_SERVER,
             "sql" => SQLS,
+            "swift" => SOURCEKIT_LSP,
             _ => return None,
         })
     }
@@ -476,13 +505,45 @@ mod windows {
             "lua" => "lua",
             "sql" => "sql",
             "dart" => "dart",
+            "java" => "java",
+            "kt" | "kts" => "kotlin",
+            "swift" => "swift",
             _ => return None,
         })
     }
 
-    fn find_server_command(spec: ServerSpec) -> Option<(PathBuf, Vec<OsString>)> {
-        let path = std::env::var_os("PATH")?;
-        for directory in std::env::split_paths(&path) {
+    fn find_server_command(
+        spec: ServerSpec,
+        root: &Path,
+        file: &Path,
+    ) -> Result<(PathBuf, Vec<OsString>), ServiceError> {
+        let path = std::env::var_os("PATH").ok_or_else(|| missing_server_error(spec.id))?;
+        if let Some((package, entry)) = npm_server_entry(spec.id) {
+            if let Some(script) = find_project_npm_entry(root, file, package, entry) {
+                let node = find_program_in_path(&path, &["node.exe"])
+                    .ok_or_else(|| project_npm_runtime_missing_error(spec.id))?;
+                let mut arguments = vec![script.into_os_string()];
+                arguments.extend(spec.arguments.iter().map(OsString::from));
+                return Ok((node, arguments));
+            }
+            match project_npm_package_state(root, file, package) {
+                ProjectNpmPackageState::Declared => {
+                    return Err(project_npm_server_not_installed_error(spec.id, package));
+                }
+                ProjectNpmPackageState::ManifestUnavailable => {
+                    return Err(project_npm_manifest_unavailable_error(package));
+                }
+                ProjectNpmPackageState::NotDeclared => {}
+            }
+        }
+        find_server_command_in_path(spec, &path).ok_or_else(|| missing_server_error(spec.id))
+    }
+
+    fn find_server_command_in_path(
+        spec: ServerSpec,
+        path: &std::ffi::OsStr,
+    ) -> Option<(PathBuf, Vec<OsString>)> {
+        for directory in std::env::split_paths(path) {
             for program_name in spec.program_names {
                 let candidate = directory.join(program_name);
                 if candidate.is_file()
@@ -496,16 +557,86 @@ mod windows {
             }
         }
         if spec.id == DART.id
-            && let Some(program) = find_dart_sdk_program(&path)
+            && let Some(program) = find_dart_sdk_program(path)
         {
             return Some((program, spec.arguments.iter().map(OsString::from).collect()));
         }
+        if spec.id == ECLIPSE_JDT_LS.id
+            && let (Some(runtime), Some(script)) =
+                (find_python_runtime(path), find_jdtls_script(path))
+        {
+            return Some((
+                runtime,
+                vec![
+                    script.into_os_string(),
+                    OsString::from("--jvm-arg=-Xmx768m"),
+                ],
+            ));
+        }
         let (package, entry) = npm_server_entry(spec.id)?;
-        let node = find_program_in_path(&path, &["node.exe"])?;
-        let script = find_npm_entry(&path, package, entry)?;
+        let node = find_program_in_path(path, &["node.exe"])?;
+        let script = find_npm_entry(path, package, entry)?;
         let mut arguments = vec![script.into_os_string()];
         arguments.extend(spec.arguments.iter().map(OsString::from));
         Some((node, arguments))
+    }
+
+    fn find_python_runtime(path: &std::ffi::OsStr) -> Option<PathBuf> {
+        for directory in std::env::split_paths(path) {
+            for name in ["python.exe", "python3.exe"] {
+                let candidate = directory.join(name);
+                if candidate.is_file()
+                    && !candidate
+                        .to_string_lossy()
+                        .to_ascii_lowercase()
+                        .contains("\\windowsapps\\")
+                    && let Ok(canonical) = fs::canonicalize(candidate)
+                {
+                    return Some(canonical);
+                }
+            }
+        }
+        None
+    }
+
+    fn find_jdtls_script(path: &std::ffi::OsStr) -> Option<PathBuf> {
+        for directory in std::env::split_paths(path) {
+            for name in ["jdtls.py", "jdtls"] {
+                let candidate = directory.join(name);
+                if candidate.is_file()
+                    && let Ok(canonical) = fs::canonicalize(candidate)
+                {
+                    return Some(canonical);
+                }
+            }
+        }
+        None
+    }
+
+    fn java_runtime_directory() -> Option<PathBuf> {
+        if let Some(java_home) = std::env::var_os("JAVA_HOME") {
+            let java_home = PathBuf::from(java_home);
+            if java_home.is_dir()
+                && let Ok(java_home) = fs::canonicalize(java_home)
+            {
+                return Some(java_home);
+            }
+        }
+        let path = std::env::var_os("PATH")?;
+        for directory in std::env::split_paths(&path) {
+            let candidate = directory.join("java.exe");
+            if candidate.is_file()
+                && !candidate
+                    .to_string_lossy()
+                    .to_ascii_lowercase()
+                    .contains("\\windowsapps\\")
+                && let Ok(canonical) = fs::canonicalize(candidate)
+                && let Some(java_home) = canonical.parent().and_then(Path::parent)
+            {
+                return fs::canonicalize(java_home).ok();
+            }
+        }
+        None
     }
 
     fn find_program_in_path(path: &std::ffi::OsStr, names: &[&str]) -> Option<PathBuf> {
@@ -557,6 +688,89 @@ mod windows {
         None
     }
 
+    fn find_project_npm_entry(
+        root: &Path,
+        file: &Path,
+        package: &str,
+        entry: &str,
+    ) -> Option<PathBuf> {
+        let entry = Path::new(entry);
+        let mut directory = file.parent();
+        while let Some(current) = directory.filter(|current| current.starts_with(root)) {
+            let candidate = current.join("node_modules").join(package).join(entry);
+            if candidate.is_file()
+                && let Ok(canonical) = fs::canonicalize(candidate)
+                && canonical.starts_with(root)
+            {
+                return Some(canonical);
+            }
+            if current == root {
+                break;
+            }
+            directory = current.parent();
+        }
+        None
+    }
+
+    fn project_npm_package_state(
+        root: &Path,
+        file: &Path,
+        package: &str,
+    ) -> ProjectNpmPackageState {
+        let mut directory = file.parent();
+        while let Some(current) = directory.filter(|current| current.starts_with(root)) {
+            let manifest = current.join("package.json");
+            match fs::symlink_metadata(&manifest) {
+                Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+                Err(_) => return ProjectNpmPackageState::ManifestUnavailable,
+                Ok(metadata)
+                    if !metadata.is_file()
+                        || metadata.file_type().is_symlink()
+                        || metadata.len() > MAX_NPM_MANIFEST_BYTES =>
+                {
+                    return ProjectNpmPackageState::ManifestUnavailable;
+                }
+                Ok(_) => {
+                    let Ok(file) = fs::File::open(&manifest) else {
+                        return ProjectNpmPackageState::ManifestUnavailable;
+                    };
+                    let mut contents = Vec::new();
+                    if file
+                        .take(MAX_NPM_MANIFEST_BYTES + 1)
+                        .read_to_end(&mut contents)
+                        .is_err()
+                        || contents.len() as u64 > MAX_NPM_MANIFEST_BYTES
+                    {
+                        return ProjectNpmPackageState::ManifestUnavailable;
+                    }
+                    let Ok(value) = serde_json::from_slice::<Value>(&contents) else {
+                        return ProjectNpmPackageState::ManifestUnavailable;
+                    };
+                    if [
+                        "dependencies",
+                        "devDependencies",
+                        "optionalDependencies",
+                        "peerDependencies",
+                    ]
+                    .iter()
+                    .any(|section| {
+                        value
+                            .get(section)
+                            .and_then(Value::as_object)
+                            .is_some_and(|dependencies| dependencies.contains_key(package))
+                    }) {
+                        return ProjectNpmPackageState::Declared;
+                    }
+                }
+            }
+            if current == root {
+                break;
+            }
+            directory = current.parent();
+        }
+        ProjectNpmPackageState::NotDeclared
+    }
+
     impl LspSession {
         fn spawn(
             cache_root: &Path,
@@ -577,18 +791,29 @@ mod windows {
             {
                 read_only_paths.push(sdk_directory.to_path_buf());
             }
+            if (spec.id == KOTLIN_LSP.id || spec.id == SOURCEKIT_LSP.id)
+                && let Some(install_directory) = program.parent().and_then(Path::parent)
+            {
+                read_only_paths.push(install_directory.to_path_buf());
+            }
+            if spec.id == ECLIPSE_JDT_LS.id
+                && let Some(java_directory) = java_runtime_directory()
+            {
+                read_only_paths.push(java_directory);
+            }
             if let Some(script) = arguments
                 .first()
                 .map(|argument| PathBuf::from(argument.as_os_str()))
                 && script.is_file()
-                && let Some(package_directory) = script.parent().and_then(Path::parent)
             {
-                read_only_paths.push(package_directory.to_path_buf());
-                if let Some(dependency_directory) = package_directory.parent()
-                    && dependency_directory
+                if let Some(package_directory) = script.parent().and_then(Path::parent) {
+                    read_only_paths.push(package_directory.to_path_buf());
+                }
+                if let Some(dependency_directory) = script.ancestors().find(|directory| {
+                    directory
                         .file_name()
                         .is_some_and(|name| name == "node_modules")
-                {
+                }) {
                     read_only_paths.push(dependency_directory.to_path_buf());
                 }
             }
@@ -606,6 +831,19 @@ mod windows {
                 let mut cache_argument = OsString::from("--cache=");
                 cache_argument.push(cache_directory.as_os_str());
                 process_arguments.push(cache_argument);
+            }
+            if spec.id == ECLIPSE_JDT_LS.id {
+                let configuration_directory = cache_directory.join("jdtls-configuration");
+                let workspace_directory = cache_directory.join("jdtls-workspace");
+                fs::create_dir_all(&configuration_directory)
+                    .map_err(|_| lsp_start_error(spec.id))?;
+                fs::create_dir_all(&workspace_directory).map_err(|_| lsp_start_error(spec.id))?;
+                process_arguments.extend([
+                    OsString::from("-configuration"),
+                    configuration_directory.into_os_string(),
+                    OsString::from("-data"),
+                    workspace_directory.into_os_string(),
+                ]);
             }
             let mut process = SandboxedProcess::spawn_program_with_options(
                 program,
@@ -671,6 +909,11 @@ mod windows {
                 timeout(LSP_STARTUP_TIMEOUT, self.initialize())
                     .await
                     .map_err(|_| lsp_timeout_error())??;
+            }
+            if matches!(action, "definition" | "references" | "hover")
+                && !self.supports_action(action)
+            {
+                return Err(unsupported_capability_error(action));
             }
             self.notify(
                 "textDocument/didOpen",
@@ -801,6 +1044,18 @@ mod windows {
                 .collect::<Vec<_>>();
             let count = items.len();
             Ok(json!({"diagnostics":items,"count":count}))
+        }
+
+        fn supports_action(&self, action: &str) -> bool {
+            let capability = match action {
+                "definition" => "definitionProvider",
+                "references" => "referencesProvider",
+                "hover" => "hoverProvider",
+                _ => return false,
+            };
+            self.capabilities
+                .get(capability)
+                .is_some_and(|value| value == &Value::Bool(true) || value.is_object())
         }
 
         async fn request(&mut self, method: &str, params: Value) -> Result<Value, ServiceError> {
@@ -1053,7 +1308,45 @@ mod windows {
     fn missing_server_error(server_id: &str) -> ServiceError {
         ServiceError::new(
             "lsp_server_not_found",
-            format!("The {server_id} language server executable was not found on PATH."),
+            format!("The {server_id} language server was not found in the project or on PATH."),
+            false,
+        )
+    }
+
+    fn project_npm_server_not_installed_error(server_id: &str, package: &str) -> ServiceError {
+        ServiceError::new(
+            "lsp_project_server_not_installed",
+            format!(
+                "The project declares {package}, but its local installation was not found. Install the project's declared dependencies to use its resolved {server_id} version."
+            ),
+            false,
+        )
+    }
+
+    fn project_npm_manifest_unavailable_error(package: &str) -> ServiceError {
+        ServiceError::new(
+            "lsp_project_manifest_unavailable",
+            format!(
+                "The project's package.json could not be read safely, so the tool cannot select a global {package} version."
+            ),
+            false,
+        )
+    }
+
+    fn project_npm_runtime_missing_error(server_id: &str) -> ServiceError {
+        ServiceError::new(
+            "lsp_node_runtime_not_found",
+            format!(
+                "The project-local {server_id} package is installed, but node.exe was not found on PATH."
+            ),
+            false,
+        )
+    }
+
+    fn unsupported_capability_error(action: &str) -> ServiceError {
+        ServiceError::new(
+            "lsp_capability_unsupported",
+            format!("The selected language server does not advertise {action} support."),
             false,
         )
     }
@@ -1109,11 +1402,15 @@ mod windows {
     #[cfg(test)]
     mod tests {
         use std::{
+            ffi::OsString,
             fs,
             path::{Path, PathBuf},
         };
 
-        use super::{find_dart_sdk_program, find_npm_entry, npm_server_entry};
+        use super::{
+            ECLIPSE_JDT_LS, KOTLIN_LSP, SOURCEKIT_LSP, find_dart_sdk_program, find_npm_entry,
+            find_server_command_in_path, npm_server_entry,
+        };
 
         struct TemporaryProject {
             root: std::path::PathBuf,
@@ -1145,15 +1442,11 @@ mod windows {
         }
 
         async fn stop_cached_session(root: &Path, server_id: &'static str) {
-            let key = super::SessionKey {
-                root: root.to_path_buf(),
-                server_id,
-            };
             super::SESSIONS
                 .get_or_init(|| tokio::sync::Mutex::new(std::collections::HashMap::new()))
                 .lock()
                 .await
-                .remove(&key);
+                .retain(|key, _| key.root.as_path() != root || key.server_id != server_id);
         }
 
         #[test]
@@ -1245,6 +1538,67 @@ mod windows {
         }
 
         #[test]
+        fn jdtls_uses_its_python_launcher_without_a_shell() {
+            let root =
+                std::env::temp_dir().join(format!("openchat-lsp-test-{}", uuid::Uuid::new_v4()));
+            fs::create_dir_all(&root).expect("create server fixture");
+            let python = root.join("python.exe");
+            let script = root.join("jdtls");
+            fs::write(&python, "").expect("create Python runtime fixture");
+            fs::write(&script, "").expect("create JDTLS launcher fixture");
+
+            let (program, arguments) =
+                find_server_command_in_path(ECLIPSE_JDT_LS, root.as_os_str())
+                    .expect("resolve the JDTLS Python launcher");
+
+            assert_eq!(program, python.canonicalize().expect("canonicalize Python"));
+            assert_eq!(
+                arguments.first().map(OsString::as_os_str),
+                Some(
+                    script
+                        .canonicalize()
+                        .expect("canonicalize launcher")
+                        .as_os_str()
+                )
+            );
+            assert!(
+                arguments
+                    .iter()
+                    .any(|argument| argument == "--jvm-arg=-Xmx768m")
+            );
+            fs::remove_dir_all(root).expect("remove server fixture");
+        }
+
+        #[test]
+        fn standalone_kotlin_and_swift_servers_resolve_from_path() {
+            let root =
+                std::env::temp_dir().join(format!("openchat-lsp-test-{}", uuid::Uuid::new_v4()));
+            fs::create_dir_all(&root).expect("create server fixture");
+            let kotlin = root.join("intellij-server.exe");
+            let swift = root.join("sourcekit-lsp.exe");
+            fs::write(&kotlin, "").expect("create Kotlin server fixture");
+            fs::write(&swift, "").expect("create Swift server fixture");
+
+            assert_eq!(
+                find_server_command_in_path(KOTLIN_LSP, root.as_os_str())
+                    .map(|(program, arguments)| (program, arguments)),
+                Some((
+                    kotlin.canonicalize().expect("canonicalize Kotlin server"),
+                    vec![OsString::from("--stdio")]
+                ))
+            );
+            assert_eq!(
+                find_server_command_in_path(SOURCEKIT_LSP, root.as_os_str())
+                    .map(|(program, arguments)| (program, arguments)),
+                Some((
+                    swift.canonicalize().expect("canonicalize Swift server"),
+                    vec![]
+                ))
+            );
+            fs::remove_dir_all(root).expect("remove server fixture");
+        }
+
+        #[test]
         fn popular_source_extensions_select_a_server_and_language_id() {
             let root =
                 std::env::temp_dir().join(format!("openchat-lsp-test-{}", uuid::Uuid::new_v4()));
@@ -1262,6 +1616,10 @@ mod windows {
                 ("lua", "lua-language-server"),
                 ("sql", "sqls"),
                 ("dart", "dart"),
+                ("java", "eclipse-jdt-ls"),
+                ("kt", "kotlin-lsp"),
+                ("kts", "kotlin-lsp"),
+                ("swift", "sourcekit-lsp"),
             ];
 
             for (extension, server_id) in cases {
@@ -1302,16 +1660,16 @@ mod windows {
             let root = fs::canonicalize(&project.root).expect("canonicalize fixture root");
             let (_cancel, mut cancellation) = watch::channel(false);
 
-            let result = super::query(
-                &project.cache_root,
-                &root,
-                "src/main.rs",
-                "definition",
-                Some(2),
-                Some(13),
-                10,
-                &mut cancellation,
-            )
+            let result = super::query(super::LspQueryRequest {
+                cache_root: &project.cache_root,
+                root: &root,
+                relative_path: "src/main.rs",
+                action: "definition",
+                line: Some(2),
+                character: Some(13),
+                limit: 10,
+                cancellation: &mut cancellation,
+            })
             .await;
             stop_cached_session(&root, super::RUST_ANALYZER.id).await;
             let result = result.expect("Rust Analyzer should resolve the reference");
@@ -1343,16 +1701,16 @@ mod windows {
             let root = fs::canonicalize(&project.root).expect("canonicalize fixture root");
             let (_cancel, mut cancellation) = watch::channel(false);
 
-            let result = super::query(
-                &project.cache_root,
-                &root,
-                "main.dart",
-                "hover",
-                Some(1),
-                Some(6),
-                10,
-                &mut cancellation,
-            )
+            let result = super::query(super::LspQueryRequest {
+                cache_root: &project.cache_root,
+                root: &root,
+                relative_path: "main.dart",
+                action: "hover",
+                line: Some(1),
+                character: Some(6),
+                limit: 10,
+                cancellation: &mut cancellation,
+            })
             .await;
             stop_cached_session(&root, super::DART.id).await;
             let result = result.expect("Dart language server should answer hover");
@@ -1367,40 +1725,12 @@ mod windows {
 }
 
 #[cfg(windows)]
-pub(crate) async fn execute_lsp_query(
-    cache_root: &Path,
-    root: &Path,
-    relative_path: &str,
-    action: &str,
-    line: Option<usize>,
-    character: Option<usize>,
-    limit: usize,
-    cancellation: &mut tokio::sync::watch::Receiver<bool>,
-) -> Value {
-    windows::execute(
-        cache_root,
-        root,
-        relative_path,
-        action,
-        line,
-        character,
-        limit,
-        cancellation,
-    )
-    .await
+pub(crate) async fn execute_lsp_query(request: LspQueryRequest<'_>) -> Value {
+    windows::execute(request).await
 }
 
 #[cfg(not(windows))]
-pub(crate) async fn execute_lsp_query(
-    _cache_root: &Path,
-    _root: &Path,
-    _relative_path: &str,
-    _action: &str,
-    _line: Option<usize>,
-    _character: Option<usize>,
-    _limit: usize,
-    _cancellation: &mut tokio::sync::watch::Receiver<bool>,
-) -> Value {
+pub(crate) async fn execute_lsp_query(_request: LspQueryRequest<'_>) -> Value {
     let error = ServiceError::new(
         "lsp_platform_unsupported",
         "Sandboxed language server tools are not available on this platform.",

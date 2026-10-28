@@ -9,7 +9,7 @@ use std::{
     sync::atomic::{AtomicUsize, Ordering},
 };
 
-use cap_std::{ambient_authority, fs::Dir, fs::OpenOptions};
+use cap_std::fs::OpenOptions;
 use ignore::WalkBuilder;
 use serde_json::{Value, json};
 
@@ -108,14 +108,14 @@ struct SearchFileResult {
 }
 
 struct SearchDirectoryCache<'a> {
-    root: &'a Dir,
+    root: &'a crate::filesystem::OpenedDirectory,
     relative_directory: Option<PathBuf>,
-    directory: Option<Dir>,
+    directory: Option<crate::filesystem::OpenedDirectory>,
     read_options: OpenOptions,
 }
 
 impl<'a> SearchDirectoryCache<'a> {
-    fn new(root: &'a Dir) -> Self {
+    fn new(root: &'a crate::filesystem::OpenedDirectory) -> Self {
         let mut read_options = OpenOptions::new();
         read_options.read(true);
         Self {
@@ -126,7 +126,10 @@ impl<'a> SearchDirectoryCache<'a> {
         }
     }
 
-    fn open_file(&mut self, relative_path: &Path) -> std::io::Result<cap_std::fs::File> {
+    fn open_file(
+        &mut self,
+        relative_path: &Path,
+    ) -> std::io::Result<crate::filesystem::OpenedFile> {
         let relative_directory = relative_path
             .parent()
             .filter(|path| !path.as_os_str().is_empty())
@@ -135,7 +138,7 @@ impl<'a> SearchDirectoryCache<'a> {
             let directory = if relative_directory.as_os_str().is_empty() {
                 self.root.try_clone()?
             } else {
-                self.root.open_dir(relative_directory)?
+                crate::filesystem::open_directory_from_directory(self.root, relative_directory)?
             };
             self.relative_directory = Some(relative_directory.to_path_buf());
             self.directory = Some(directory);
@@ -211,7 +214,7 @@ pub(super) fn search_files_direct(
     limit: usize,
 ) -> Result<Value, ServiceError> {
     let pattern = SearchPattern::new(query);
-    let root_directory = Dir::open_ambient_dir(root, ambient_authority())
+    let root_directory = crate::filesystem::open_absolute_directory_no_follow(root)
         .map_err(|_| unavailable("The active tool root could not be opened safely."))?;
     let mut serial_directory_cache = SearchDirectoryCache::new(&root_directory);
     let mut file_count = 0usize;
@@ -449,7 +452,7 @@ pub(super) fn search_files_direct(
 /// search-wide read limit. Worker failures are returned to the caller.
 fn process_search_candidate_batch(
     root: &Path,
-    root_directory: &Dir,
+    root_directory: &crate::filesystem::OpenedDirectory,
     serial_directory_cache: &mut SearchDirectoryCache<'_>,
     pattern: &SearchPattern,
     candidates: &[SearchCandidate],
@@ -656,7 +659,7 @@ fn scan_search_file(
 }
 
 fn scan_search_candidates(
-    root_directory: &Dir,
+    root_directory: &crate::filesystem::OpenedDirectory,
     candidates: &[SearchCandidate],
     pattern: &SearchPattern,
     retained_matches: usize,
@@ -763,8 +766,6 @@ pub(super) fn contains_ascii_case_insensitive(
 mod tests {
     use std::{fs, os::windows::fs::symlink_file, path::PathBuf};
 
-    use cap_std::{ambient_authority, fs::Dir};
-
     use super::{SearchCandidate, SearchDirectoryCache, SearchPattern, scan_search_file};
 
     struct TestDirectory(PathBuf);
@@ -789,8 +790,8 @@ mod tests {
         let root = TestDirectory::new();
         let candidate_path = root.0.join("candidate.txt");
         fs::write(&candidate_path, "safe marker\n").expect("write initial candidate");
-        let root_directory =
-            Dir::open_ambient_dir(&root.0, ambient_authority()).expect("open search capability");
+        let root_directory = crate::filesystem::open_absolute_directory_no_follow(&root.0)
+            .expect("open search capability");
         let outside_directory = TestDirectory::new();
         let outside = outside_directory.0.join("private.txt");
         fs::write(&outside, "private marker\n").expect("write outside fixture");

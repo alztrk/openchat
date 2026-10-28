@@ -31,6 +31,7 @@ const SUMMARY_PROMPT_OVERHEAD_BYTES: usize = 128;
 pub(super) struct HistorySummaryRequest<'a> {
     pub(super) storage: Option<&'a AppStorage>,
     pub(super) conversation_id: Option<&'a str>,
+    pub(super) run_id: Option<&'a str>,
     pub(super) route: &'a ChatRoute,
     pub(super) api_key: Option<&'a str>,
     pub(super) session_id: Option<&'a str>,
@@ -42,6 +43,7 @@ pub(super) struct HistorySummaryRequest<'a> {
 struct TranscriptSummaryRequest<'a> {
     storage: Option<&'a AppStorage>,
     conversation_id: Option<&'a str>,
+    run_id: Option<&'a str>,
     route: &'a ChatRoute,
     api_key: Option<&'a str>,
     session_id: Option<&'a str>,
@@ -63,6 +65,7 @@ pub(super) async fn summarize_history(
     summarize_history_with_storage(HistorySummaryRequest {
         storage: None,
         conversation_id: None,
+        run_id: None,
         route,
         api_key,
         session_id,
@@ -79,6 +82,7 @@ pub(super) async fn summarize_history_with_storage(
     let HistorySummaryRequest {
         storage,
         conversation_id,
+        run_id,
         route,
         api_key,
         session_id,
@@ -142,6 +146,7 @@ pub(super) async fn summarize_history_with_storage(
                 summarize_transcript_with_storage(TranscriptSummaryRequest {
                     storage,
                     conversation_id,
+                    run_id,
                     route,
                     api_key,
                     session_id,
@@ -164,6 +169,7 @@ pub(super) async fn summarize_history_with_storage(
             summarize_transcript_with_storage(TranscriptSummaryRequest {
                 storage,
                 conversation_id,
+                run_id,
                 route,
                 api_key,
                 session_id,
@@ -193,6 +199,7 @@ async fn summarize_transcript(
     summarize_transcript_with_storage(TranscriptSummaryRequest {
         storage: None,
         conversation_id: None,
+        run_id: None,
         route,
         api_key,
         session_id,
@@ -210,6 +217,7 @@ async fn summarize_transcript_with_storage(
     let TranscriptSummaryRequest {
         storage,
         conversation_id,
+        run_id,
         route,
         api_key,
         session_id,
@@ -289,7 +297,11 @@ async fn summarize_transcript_with_storage(
                         .and_then(Value::as_str),
                     operation: "compaction",
                     fast_requested: false,
-                    run_id: None,
+                    run_id,
+                    connection_id: route.connection_id.as_deref(),
+                    workspace_id: None,
+                    project_id: route.project_id.as_deref(),
+                    parent_run_id: None,
                 },
             )
             .map_err(|_| {
@@ -618,6 +630,7 @@ mod tests {
                 output: Some(serde_json::json!({"content": "toolhistorydetail"})),
                 file_changes: Vec::new(),
                 file_changes_error: None,
+                recovery_checkpoint_id: None,
                 status: crate::provider_schema::ToolActivityStatus::Completed,
             }],
             attachments: Vec::new(),

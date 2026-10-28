@@ -6,7 +6,7 @@
 //! path builds its own HTTP/1.1 client on top of OpenSSL with an explicit
 //! cipher configuration. Everything else in the service keeps using `reqwest`.
 
-use std::{pin::Pin, sync::OnceLock};
+use std::{pin::Pin, sync::OnceLock, time::Duration};
 
 use bytes::Bytes;
 use futures_util::{Stream, stream};
@@ -19,6 +19,7 @@ use hyper_util::{
 };
 use openssl::ssl::{SslConnector, SslMethod, SslVerifyMode, SslVersion};
 use openssl::x509::X509;
+use tokio::time::Instant;
 
 use crate::protocol::ServiceError;
 
@@ -35,6 +36,8 @@ ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:\
 ECDHE-ECDSA-AES128-SHA:ECDHE-RSA-AES128-SHA:\
 ECDHE-ECDSA-AES256-SHA:ECDHE-RSA-AES256-SHA:\
 AES128-GCM-SHA256:AES256-GCM-SHA384:AES128-SHA:AES256-SHA";
+
+const FREE_TIER_REQUEST_TIMEOUT: Duration = Duration::from_secs(300);
 
 type FreeClient = Client<HttpsConnector<HttpConnector>, Full<Bytes>>;
 type FreeBody = Pin<Box<dyn Stream<Item = Result<Bytes, String>> + Send>>;
@@ -100,6 +103,15 @@ pub(super) async fn send(
     headers: HeaderMap,
     body: Vec<u8>,
 ) -> Result<FreeResponse, ServiceError> {
+    send_with_timeout(url, headers, body, FREE_TIER_REQUEST_TIMEOUT).await
+}
+
+async fn send_with_timeout(
+    url: &str,
+    headers: HeaderMap,
+    body: Vec<u8>,
+    timeout: Duration,
+) -> Result<FreeResponse, ServiceError> {
     let uri = url
         .parse::<Uri>()
         .map_err(|error| network_error().with_details(format!("invalid provider URL: {error}")))?;
@@ -112,9 +124,10 @@ pub(super) async fn send(
         .body(Full::new(Bytes::from(body)))
         .map_err(|error| network_error().with_details(error.to_string()))?;
 
-    let response = client()?
-        .request(request)
+    let deadline = Instant::now() + timeout;
+    let response = tokio::time::timeout_at(deadline, client()?.request(request))
         .await
+        .map_err(|_| network_error().with_details("provider request timed out"))?
         .map_err(|error| network_error().with_details(error.to_string()))?;
     let status = response.status();
     let retry_after = response
@@ -125,23 +138,104 @@ pub(super) async fn send(
         .filter(|seconds| (1..=86_400).contains(seconds));
 
     let incoming = response.into_body();
-    let body = stream::unfold(incoming, |mut incoming| async move {
-        loop {
-            match incoming.frame().await {
-                None => return None,
-                Some(Err(error)) => return Some((Err(error.to_string()), incoming)),
-                Some(Ok(frame)) => {
-                    if let Ok(data) = frame.into_data() {
-                        return Some((Ok(data), incoming));
+    let body = stream::unfold(
+        (incoming, deadline, false),
+        |(mut incoming, deadline, done)| async move {
+            if done {
+                return None;
+            }
+            loop {
+                let frame = match tokio::time::timeout_at(deadline, incoming.frame()).await {
+                    Ok(frame) => frame,
+                    Err(_) => {
+                        return Some((
+                            Err("provider response timed out".to_owned()),
+                            (incoming, deadline, true),
+                        ));
+                    }
+                };
+                match frame {
+                    None => return None,
+                    Some(Err(error)) => {
+                        return Some((Err(error.to_string()), (incoming, deadline, true)));
+                    }
+                    Some(Ok(frame)) => {
+                        if let Ok(data) = frame.into_data() {
+                            return Some((Ok(data), (incoming, deadline, false)));
+                        }
                     }
                 }
             }
-        }
-    });
+        },
+    );
 
     Ok(FreeResponse {
         status,
         retry_after,
         body: Box::pin(body),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use futures_util::StreamExt;
+    use http::HeaderMap;
+    use tokio::{
+        io::{AsyncReadExt, AsyncWriteExt},
+        net::TcpListener,
+        sync::oneshot,
+    };
+
+    use super::send_with_timeout;
+
+    #[tokio::test]
+    async fn response_body_uses_the_request_deadline() {
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind local HTTP fixture");
+        let address = listener.local_addr().expect("read fixture address");
+        let (started_sender, started_receiver) = oneshot::channel();
+        let (release_sender, release_receiver) = oneshot::channel();
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.expect("accept request");
+            let mut request = Vec::new();
+            loop {
+                let mut chunk = [0_u8; 1024];
+                let count = socket.read(&mut chunk).await.expect("read request headers");
+                assert_ne!(count, 0, "request ended before its headers");
+                request.extend_from_slice(&chunk[..count]);
+                if request.windows(4).any(|part| part == b"\r\n\r\n") {
+                    break;
+                }
+            }
+            socket
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 10\r\n\r\n")
+                .await
+                .expect("write response headers");
+            let _ = started_sender.send(());
+            let _ = release_receiver.await;
+        });
+
+        let mut response = send_with_timeout(
+            &format!("http://{address}/v1/chat/completions"),
+            HeaderMap::new(),
+            Vec::new(),
+            Duration::from_millis(500),
+        )
+        .await
+        .expect("receive provider response headers");
+        started_receiver
+            .await
+            .expect("fixture should start the response");
+
+        let chunk = tokio::time::timeout(Duration::from_secs(2), response.body.next())
+            .await
+            .expect("response body deadline should be bounded");
+        assert_eq!(chunk, Some(Err("provider response timed out".to_owned())));
+
+        let _ = release_sender.send(());
+        server.await.expect("fixture server should finish");
+    }
 }

@@ -10,37 +10,47 @@ use super::types::*;
 
 #[test]
 fn full_access_mode_changes_require_native_confirmation() {
-    for frame in [
-        "{\"id\":1,\"method\":\"tools.permissions.mode.set\",\"params\":{\"mode\":\"full_access\"}}\n",
-        "{\"id\":1,\"method\":\"tools.permissions.mode.get\",\"params\":{\"initialMode\":\"full_access\"}}\n",
-    ] {
-        assert_eq!(
-            renderer_rpc_disposition(frame, 256),
-            Some(RendererRpcDisposition::Confirm(
-                PermissionDetails::EnableFullAccess
-            ))
-        );
-    }
+    let set_frame =
+        "{\"id\":1,\"method\":\"tools.permissions.mode.set\",\"params\":{\"mode\":\"full_access\"}}\n";
+    let import_frame =
+        "{\"id\":1,\"method\":\"tools.permissions.mode.get\",\"params\":{\"initialMode\":\"full_access\"}}\n";
+
+    assert_eq!(
+        renderer_rpc_disposition(set_frame, 256),
+        Some(RendererRpcDisposition::Confirm(
+            PermissionDetails::EnableFullAccess
+        ))
+    );
+    assert_eq!(
+        renderer_rpc_disposition(import_frame, 256),
+        Some(RendererRpcDisposition::CheckLegacyGlobal {
+            imported_full_access: true
+        })
+    );
 }
 
 #[test]
 fn project_allow_rules_require_native_confirmation_for_save_and_import() {
-    for frame in [
-        "{\"id\":1,\"method\":\"project.tool_permissions.set\",\"params\":{\"projectId\":\"project-1\",\"rules\":{\"read_file\":\"allow\"}}}\n",
-        "{\"id\":1,\"method\":\"project.tool_permissions.get\",\"params\":{\"projectId\":\"project-1\",\"initialRules\":{\"read_file\":\"allow\"}}}\n",
-    ] {
-        assert_eq!(
-            renderer_rpc_disposition(frame, 256),
-            Some(RendererRpcDisposition::Confirm(
-                PermissionDetails::AllowProjectRules {
-                    project_id: "project-1".to_owned(),
-                    allow_rule_count: 1,
-                    rule_names: vec!["read_file".to_owned()],
-                    additional_rule_count: 0,
-                }
-            ))
-        );
-    }
+    let set_frame = "{\"id\":1,\"method\":\"project.tool_permissions.set\",\"params\":{\"projectId\":\"project-1\",\"rules\":{\"read_file\":\"allow\"}}}\n";
+    let import_frame = "{\"id\":1,\"method\":\"project.tool_permissions.get\",\"params\":{\"projectId\":\"project-1\",\"initialRules\":{\"read_file\":\"allow\"}}}\n";
+    let expected = PermissionDetails::AllowProjectRules {
+        project_id: "project-1".to_owned(),
+        allow_rule_count: 1,
+        rule_names: vec!["read_file".to_owned()],
+        additional_rule_count: 0,
+    };
+
+    assert_eq!(
+        renderer_rpc_disposition(set_frame, 256),
+        Some(RendererRpcDisposition::Confirm(expected.clone()))
+    );
+    assert_eq!(
+        renderer_rpc_disposition(import_frame, 256),
+        Some(RendererRpcDisposition::CheckLegacyProject {
+            project_id: "project-1".to_owned(),
+            import_confirmation: Some(expected),
+        })
+    );
 }
 
 #[test]
@@ -71,20 +81,60 @@ fn project_confirmation_lists_all_rules_without_git_tools() {
 }
 
 #[test]
+fn native_confirmation_marker_is_added_only_after_host_confirmation() {
+    for elevated in [
+        "{\"id\":1,\"method\":\"tools.permissions.mode.set\",\"params\":{\"mode\":\"full_access\"}}\n",
+        "{\"id\":1,\"method\":\"tools.permissions.mode.get\",\"params\":{\"initialMode\":\"full_access\"}}\n",
+        "{\"id\":1,\"method\":\"project.tool_permissions.get\",\"params\":{\"projectId\":\"project-1\",\"initialRules\":{\"read_file\":\"allow\"}}}\n",
+    ] {
+        let confirmed = add_native_confirmation(elevated).expect("mark host-confirmed policy");
+        assert!(confirmed.contains("\"nativeConfirmation\":true"));
+        assert_eq!(
+            renderer_rpc_disposition(&confirmed, MAX_RPC_FRAME_BYTES),
+            None
+        );
+    }
+
+    let forged = "{\"id\":1,\"method\":\"tools.permissions.mode.set\",\"params\":{\"mode\":\"full_access\",\"nativeConfirmation\":true}}\n";
+    assert_eq!(renderer_rpc_disposition(forged, 256), None);
+    assert!(add_native_confirmation("{\"id\":1,\"method\":\"chat.send\"}\n").is_err());
+}
+
+#[test]
 fn restricted_permission_modes_and_unrelated_calls_do_not_need_confirmation() {
     for frame in [
         "{\"id\":1,\"method\":\"tools.permissions.mode.set\",\"params\":{\"mode\":\"require_approval\"}}\n",
         "{\"id\":1,\"method\":\"tools.permissions.mode.set\",\"params\":{\"mode\":\"approve_safe_operations\"}}\n",
-        "{\"id\":1,\"method\":\"tools.permissions.mode.get\",\"params\":{}}\n",
         "{\"id\":1,\"method\":\"project.tool_permissions.set\",\"params\":{\"projectId\":\"project-1\",\"rules\":{\"read_file\":\"ask\",\"write_file\":\"deny\"}}}\n",
-        "{\"id\":1,\"method\":\"project.tool_permissions.get\",\"params\":{\"projectId\":\"project-1\",\"initialRules\":{\"read_file\":\"deny\"}}}\n",
-        "{\"id\":1,\"method\":\"project.tool_permissions.get\",\"params\":{\"projectId\":\"project-1\"}}\n",
         "{\"id\":1,\"method\":\"chat.send\",\"params\":{}}\n",
     ] {
         assert_eq!(
             renderer_rpc_disposition(frame, 256),
             Some(RendererRpcDisposition::Forward)
         );
+    }
+
+    assert_eq!(
+        renderer_rpc_disposition(
+            "{\"id\":1,\"method\":\"tools.permissions.mode.get\",\"params\":{}}\n",
+            256
+        ),
+        Some(RendererRpcDisposition::CheckLegacyGlobal {
+            imported_full_access: false
+        })
+    );
+
+    for frame in [
+        "{\"id\":1,\"method\":\"project.tool_permissions.get\",\"params\":{\"projectId\":\"project-1\",\"initialRules\":{\"read_file\":\"deny\"}}}\n",
+        "{\"id\":1,\"method\":\"project.tool_permissions.get\",\"params\":{\"projectId\":\"project-1\"}}\n",
+    ] {
+        assert!(matches!(
+            renderer_rpc_disposition(frame, 256),
+            Some(RendererRpcDisposition::CheckLegacyProject {
+                import_confirmation: None,
+                ..
+            })
+        ));
     }
 }
 
@@ -265,4 +315,28 @@ fn oversized_permission_details_cannot_be_approved() {
     });
     let (_, details) = parse_pending_permission(&data).expect("valid approval ID");
     assert!(matches!(details, PermissionDetails::TooLargeToReview));
+}
+
+#[test]
+fn permission_details_show_bidi_controls_as_visible_codes() {
+    let data = json!({
+        "approvalRequestId": "0123456789abcdef0123456789abcdef",
+        "toolName": "read_file\u{202e}",
+        "targetPath": "D:/safe\u{2066}target",
+        "arguments": {"path": "report\u{202e}.txt"}
+    });
+
+    let (_, details) = parse_pending_permission(&data).expect("valid approval ID");
+    let PermissionDetails::Reviewable {
+        tool_name,
+        target_path,
+        arguments,
+    } = details
+    else {
+        panic!("bounded permission details should remain reviewable");
+    };
+
+    assert_eq!(tool_name, "read_file<U+202E>");
+    assert_eq!(target_path, "D:/safe<U+2066>target");
+    assert!(arguments.contains("report<U+202E>.txt"));
 }

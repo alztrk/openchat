@@ -12,24 +12,21 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-#[cfg(any(not(windows), test))]
 use std::{
     iter,
     sync::{Mutex, OnceLock},
 };
 
-#[cfg(any(not(windows), test))]
 use age::{Decryptor, scrypt::Identity};
 use age::{Encryptor, secrecy::SecretString};
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
-#[cfg(any(not(windows), test))]
 use tar::Archive;
 use tar::{Builder, EntryType, Header};
 use uuid::Uuid;
-use zeroize::Zeroizing;
+use zeroize::{Zeroize, Zeroizing};
 
 use crate::{
     attachments::{
@@ -40,20 +37,19 @@ use crate::{
 };
 
 const ARCHIVE_FORMAT: &str = "openchat-profile";
-const ARCHIVE_VERSION: u32 = 1;
+const ARCHIVE_VERSION: u32 = 2;
+const RESTORE_STATE_VERSION: u32 = 1;
 const ARCHIVE_EXTENSION: &str = "openchatprofilebackup";
 const MANIFEST_PATH: &str = "manifest.json";
 const DATABASE_PATH: &str = "database/openchat.sqlite3";
 const MIN_PASSPHRASE_CHARACTERS: usize = 12;
 const MAX_PASSPHRASE_BYTES: usize = 512;
-#[cfg(any(not(windows), test))]
 const MAX_ARCHIVE_BYTES: u64 = 64 * 1024 * 1024 * 1024;
 const MAX_DATABASE_BYTES: u64 = 32 * 1024 * 1024 * 1024;
 const MAX_ATTACHMENT_BYTES: u64 = 24 * 1024 * 1024 * 1024;
 const MAX_ATTACHMENTS: usize = 100_000;
 const MAX_MANIFEST_BYTES: u64 = 128 * 1024 * 1024;
 const MAX_RESTORE_STATE_BYTES: u64 = 4 * 1024;
-#[cfg(any(not(windows), test))]
 const MAX_AGE_SCRYPT_LOG_N: u8 = 18;
 const PROFILE_ARCHIVE_ROOT: &str = "profile-archives";
 const RESTORE_ROOT: &str = "profile-restore";
@@ -62,7 +58,6 @@ const RESTORE_APPLYING_FILE: &str = "restore.applying.json";
 const RESTORE_AWAITING_FILE: &str = "restore.awaiting.json";
 const RESTORE_COMMITTED_FILE: &str = "restore.committed.json";
 const RECOVERY_DIRECTORY: &str = "profile-restores";
-#[cfg(any(not(windows), test))]
 static RESTORE_OPERATION_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -76,7 +71,17 @@ struct ProfileManifest {
     conversation_count: u64,
     message_count: u64,
     database: FileRecord,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    database_key: Option<Vec<u8>>,
     attachments: Vec<FileRecord>,
+}
+
+impl Drop for ProfileManifest {
+    fn drop(&mut self) {
+        if let Some(key) = &mut self.database_key {
+            key.zeroize();
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -121,14 +126,10 @@ enum ArchiveFailure {
     InvalidPassphrase,
     NotFound,
     Conflict,
-    #[cfg(any(not(windows), test))]
     Busy,
     Storage,
     LimitExceeded,
-    #[cfg(any(not(windows), test))]
     UnsupportedSchema,
-    #[cfg(all(windows, not(test)))]
-    WindowsRestoreUnavailable,
 }
 
 impl From<rusqlite::Error> for ArchiveFailure {
@@ -171,7 +172,6 @@ impl TemporaryDirectory {
         &self.path
     }
 
-    #[cfg(any(not(windows), test))]
     fn preserve(&mut self) {
         self.active = false;
     }
@@ -235,7 +235,6 @@ fn service_error(failure: ArchiveFailure) -> ServiceError {
             "A profile backup is already waiting to be restored, or the output file exists.",
             false,
         ),
-        #[cfg(any(not(windows), test))]
         ArchiveFailure::Busy => ServiceError::new(
             "profile_archive_busy",
             "Another profile backup operation is in progress.",
@@ -251,16 +250,9 @@ fn service_error(failure: ArchiveFailure) -> ServiceError {
             "The profile backup exceeds a supported size or item limit.",
             false,
         ),
-        #[cfg(any(not(windows), test))]
         ArchiveFailure::UnsupportedSchema => ServiceError::new(
             "profile_archive_schema_unsupported",
             "This profile backup was created by a newer OpenChat database schema.",
-            false,
-        ),
-        #[cfg(all(windows, not(test)))]
-        ArchiveFailure::WindowsRestoreUnavailable => ServiceError::new(
-            "profile_archive_restore_unavailable",
-            "Full-profile restore is temporarily unavailable on Windows while the protected storage service owns the database. Your current profile and encrypted backup were not changed.",
             false,
         ),
     }
@@ -286,25 +278,180 @@ pub(crate) fn prepare_restore(
     passphrase: Zeroizing<String>,
     current_chat_schema_version: i64,
 ) -> Result<Value, ServiceError> {
-    #[cfg(all(windows, not(test)))]
-    {
-        let _ = (storage, path, passphrase, current_chat_schema_version);
-        Err(service_error(ArchiveFailure::WindowsRestoreUnavailable))
+    validate_passphrase(&passphrase).map_err(service_error)?;
+    if !(1..=100).contains(&current_chat_schema_version) {
+        return Err(service_error(ArchiveFailure::InvalidRequest));
     }
-    #[cfg(any(not(windows), test))]
+    prepare_restore_inner(
+        storage,
+        storage.image_files_root(),
+        Path::new(path),
+        passphrase.as_str(),
+        current_chat_schema_version,
+    )
+    .map_err(service_error)
+}
+
+#[cfg(feature = "storage-broker-test-support")]
+pub(crate) fn create_broker_test_archive(
+    source_root: &Path,
+    archive_path: &Path,
+    conversation_id: &str,
+    passphrase: Zeroizing<String>,
+) -> io::Result<()> {
+    if conversation_id.is_empty()
+        || conversation_id.len() > 128
+        || !conversation_id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
     {
-        validate_passphrase(&passphrase).map_err(service_error)?;
-        if !(1..=100).contains(&current_chat_schema_version) {
-            return Err(service_error(ArchiveFailure::InvalidRequest));
-        }
-        prepare_restore_inner(
-            storage,
-            Path::new(path),
-            passphrase.as_str(),
-            current_chat_schema_version,
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "The storage broker test conversation identifier is invalid.",
+        ));
+    }
+    validate_passphrase(&passphrase).map_err(|_| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "The test passphrase is invalid.",
         )
-        .map_err(service_error)
-    }
+    })?;
+
+    let database_directory = source_root.join("db");
+    fs::create_dir_all(&database_directory)?;
+    let database_path = database_directory.join("openchat.sqlite3");
+    drop(
+        OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&database_path)?,
+    );
+
+    let database = Connection::open(&database_path).map_err(io::Error::other)?;
+    database
+        .execute_batch(
+            "PRAGMA foreign_keys = ON;
+             CREATE TABLE projects (
+                id TEXT PRIMARY KEY NOT NULL,
+                name TEXT NOT NULL,
+                folder_path TEXT NOT NULL,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+             );
+             CREATE TABLE conversations (
+                id TEXT PRIMARY KEY NOT NULL,
+                title TEXT NOT NULL,
+                title_source TEXT NOT NULL DEFAULT 'automatic',
+                connection_id TEXT,
+                workspace_id TEXT,
+                api_key_connection_id TEXT,
+                provider_id TEXT,
+                model_id TEXT,
+                project_id TEXT REFERENCES projects(id) ON DELETE SET NULL,
+                is_pinned INTEGER NOT NULL DEFAULT 0,
+                is_archived INTEGER NOT NULL DEFAULT 0,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+             );
+             CREATE TABLE messages (
+                id TEXT NOT NULL,
+                conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+                role TEXT NOT NULL,
+                content TEXT NOT NULL,
+                created_at INTEGER,
+                output_tokens INTEGER,
+                tokens_per_second REAL,
+                elapsed_microseconds INTEGER,
+                reasoning_summaries TEXT NOT NULL DEFAULT '[]',
+                tool_activities TEXT NOT NULL DEFAULT '[]',
+                status TEXT NOT NULL,
+                failure_code TEXT,
+                PRIMARY KEY (conversation_id, id)
+             );
+             PRAGMA user_version = 11;",
+        )
+        .map_err(io::Error::other)?;
+    database
+        .execute(
+            "INSERT INTO conversations (id, title, created_at, updated_at)
+             VALUES (?1, 'Restored broker profile', 1, 1)",
+            [conversation_id],
+        )
+        .map_err(io::Error::other)?;
+
+    let attachment_bytes = b"broker archive attachment";
+    let attachment = json!({
+        "id": "broker-archive-attachment",
+        "name": "archive.txt",
+        "mimeType": "text/plain",
+        "sizeBytes": attachment_bytes.len(),
+        "kind": "text"
+    });
+    let envelope = json!({
+        "content": "profile archive integration fixture",
+        "attachments": [attachment]
+    });
+    let message_content = format!("\u{1e}openchat-attachments-v1:{envelope}");
+    database
+        .execute(
+            "INSERT INTO messages (conversation_id, id, role, content, status, created_at)
+             VALUES (?1, 'broker-archive-message', 'user', ?2, 'completed', 1)",
+            rusqlite::params![conversation_id, message_content],
+        )
+        .map_err(io::Error::other)?;
+    drop(database);
+
+    let storage_key = crate::storage::DatabaseKey::generate().map_err(io::Error::other)?;
+    let storage = AppStorage::open_at_with_key(source_root.to_path_buf(), storage_key)
+        .map_err(io::Error::other)?;
+    storage
+        .initialize_backend_schema()
+        .map_err(io::Error::other)?;
+    let attachment_directory = source_root
+        .join("attachments")
+        .join(conversation_id)
+        .join("broker-archive-message");
+    fs::create_dir_all(&attachment_directory)?;
+    fs::write(
+        attachment_directory.join("broker-archive-attachment.data"),
+        attachment_bytes,
+    )?;
+
+    export_inner(&storage, archive_path, &passphrase)
+        .map(|_| ())
+        .map_err(|_| io::Error::other("The encrypted test profile archive could not be created."))
+}
+
+#[cfg(feature = "storage-broker-test-support")]
+pub(crate) fn stage_broker_test_restore(
+    destination_root: &Path,
+    archive_path: &Path,
+    database_key: &[u8],
+    passphrase: Zeroizing<String>,
+) -> io::Result<()> {
+    let archive_path = archive_path.to_str().ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "The test profile archive path is not valid UTF-8.",
+        )
+    })?;
+    let database_key =
+        crate::storage::DatabaseKey::from_bytes(database_key).map_err(io::Error::other)?;
+    let storage = AppStorage::open_at_with_key(destination_root.to_path_buf(), database_key)
+        .map_err(io::Error::other)?;
+    prepare_restore(
+        &storage,
+        archive_path,
+        passphrase,
+        crate::CHAT_SCHEMA_VERSION,
+    )
+    .map(|_| ())
+    .map_err(|error| {
+        io::Error::other(format!(
+            "The encrypted test profile archive could not be staged ({}).",
+            error.code
+        ))
+    })
 }
 
 fn export_inner(
@@ -320,17 +467,30 @@ fn export_inner(
         &storage.root().join("cache").join(PROFILE_ARCHIVE_ROOT),
         "export",
     )?;
-    let database_snapshot_path = archive_temp.path().join("openchat.sqlite3");
-    crate::storage::create_verified_storage_snapshot(&source, &database_snapshot_path)
+    let local_database_snapshot_path = archive_temp.path().join("openchat.local.sqlite3");
+    crate::storage::create_verified_storage_snapshot(&source, &local_database_snapshot_path)
         .map_err(|_| ArchiveFailure::Storage)?;
     drop(source);
-    strip_workspace_file_changes(&database_snapshot_path)?;
+    strip_workspace_file_changes(&local_database_snapshot_path, storage.database_key())?;
 
-    let database = Connection::open_with_flags(
-        &database_snapshot_path,
-        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
-    )
-    .map_err(|_| ArchiveFailure::Storage)?;
+    let archive_database_key =
+        crate::storage::DatabaseKey::generate().map_err(|_| ArchiveFailure::Storage)?;
+    let database_snapshot_path = archive_temp.path().join("openchat.sqlite3");
+    storage
+        .database_key()
+        .export_encrypted_database(
+            &local_database_snapshot_path,
+            &database_snapshot_path,
+            &archive_database_key,
+        )
+        .map_err(|_| ArchiveFailure::Storage)?;
+
+    let database = archive_database_key
+        .open(
+            &database_snapshot_path,
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+        )
+        .map_err(|_| ArchiveFailure::Storage)?;
     crate::storage::disable_trusted_schema(&database).map_err(|_| ArchiveFailure::Storage)?;
     storage::verify_database_integrity(&database).map_err(|_| ArchiveFailure::Storage)?;
     verify_foreign_keys(&database)?;
@@ -341,7 +501,7 @@ fn export_inner(
     let conversation_count = count_rows(&database, "conversations")?;
     let message_count = count_rows(&database, "messages")?;
     let database_record = file_record(DATABASE_PATH, &database_snapshot_path, MAX_DATABASE_BYTES)?;
-    let attachments = collect_attachments(&database, storage.root())?;
+    let attachments = collect_attachments(&database, storage.image_files_root())?;
     drop(database);
 
     let attachment_bytes = attachments
@@ -362,13 +522,15 @@ fn export_inner(
         conversation_count,
         message_count,
         database: database_record.clone(),
+        database_key: Some(archive_database_key.as_bytes().to_vec()),
         attachments: attachments
             .iter()
             .map(|attachment| attachment.record.clone())
             .collect(),
     };
     validate_manifest(&manifest)?;
-    let manifest_json = serde_json::to_vec(&manifest).map_err(|_| ArchiveFailure::Storage)?;
+    let manifest_json =
+        Zeroizing::new(serde_json::to_vec(&manifest).map_err(|_| ArchiveFailure::Storage)?);
     if manifest_json.len() as u64 > MAX_MANIFEST_BYTES {
         return Err(ArchiveFailure::LimitExceeded);
     }
@@ -407,8 +569,13 @@ fn export_inner(
     Ok(archive_summary(&manifest, false))
 }
 
-fn strip_workspace_file_changes(database_path: &Path) -> Result<(), ArchiveFailure> {
-    let database = Connection::open(database_path).map_err(|_| ArchiveFailure::Storage)?;
+fn strip_workspace_file_changes(
+    database_path: &Path,
+    database_key: &crate::storage::DatabaseKey,
+) -> Result<(), ArchiveFailure> {
+    let database = database_key
+        .open(database_path, rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE)
+        .map_err(|_| ArchiveFailure::Storage)?;
     crate::storage::disable_trusted_schema(&database).map_err(|_| ArchiveFailure::Storage)?;
     crate::storage::tool_index_redaction::register_sqlite_function(&database)
         .map_err(|_| ArchiveFailure::Storage)?;
@@ -449,15 +616,14 @@ fn strip_workspace_file_changes(database_path: &Path) -> Result<(), ArchiveFailu
         .map_err(|_| ArchiveFailure::Storage)
 }
 
-#[cfg(any(not(windows), test))]
 fn prepare_restore_inner(
     storage: &AppStorage,
+    restore_base: &Path,
     archive_path: &Path,
     passphrase: &str,
     current_chat_schema_version: i64,
 ) -> Result<Value, ArchiveFailure> {
-    let root = storage.root();
-    let restore_root = root.join("cache").join(RESTORE_ROOT);
+    let restore_root = restore_base.join("cache").join(RESTORE_ROOT);
     fs::create_dir_all(&restore_root).map_err(|_| ArchiveFailure::Storage)?;
     let _lock = RESTORE_OPERATION_LOCK
         .get_or_init(|| Mutex::new(()))
@@ -479,18 +645,19 @@ fn prepare_restore_inner(
         .filter(|id| safe_identifier(id))
         .ok_or(ArchiveFailure::Storage)?
         .to_owned();
-    let result = read_archive_to_stage(
+    let manifest = read_archive_to_stage(
         archive_path,
         passphrase,
         stage.path(),
         current_chat_schema_version,
-    );
-    let manifest = result?;
+        storage.database_key(),
+    )?;
     let manifest_path = stage.path().join(MANIFEST_PATH);
-    let manifest_bytes = serde_json::to_vec(&manifest).map_err(|_| ArchiveFailure::Storage)?;
+    let manifest_bytes =
+        Zeroizing::new(serde_json::to_vec(&manifest).map_err(|_| ArchiveFailure::Storage)?);
     write_new_bytes(&manifest_path, &manifest_bytes)?;
     let marker = RestoreMarker {
-        version: ARCHIVE_VERSION,
+        version: RESTORE_STATE_VERSION,
         stage_id,
         chat_schema_version: current_chat_schema_version,
     };
@@ -581,7 +748,11 @@ fn write_archive(
     passphrase: &str,
 ) -> Result<(), ArchiveFailure> {
     let secret = SecretString::from(passphrase.to_owned());
-    let encrypted = Encryptor::with_user_passphrase(secret)
+    let mut recipient = age::scrypt::Recipient::new(secret);
+    // Keep new archives within the same bounded work factor that restore accepts.
+    recipient.set_work_factor(MAX_AGE_SCRYPT_LOG_N);
+    let encrypted = Encryptor::with_recipients(iter::once(&recipient as &dyn age::Recipient))
+        .map_err(|_| ArchiveFailure::Storage)?
         .wrap_output(output)
         .map_err(|_| ArchiveFailure::Storage)?;
     let mut archive = Builder::new(encrypted);
@@ -666,12 +837,12 @@ impl<R: Read> Read for HashingReader<R> {
     }
 }
 
-#[cfg(any(not(windows), test))]
 fn read_archive_to_stage(
     path: &Path,
     passphrase: &str,
     stage: &Path,
     current_chat_schema_version: i64,
+    local_database_key: &crate::storage::DatabaseKey,
 ) -> Result<ProfileManifest, ArchiveFailure> {
     let file = validate_input_path(path)?;
     let decryptor =
@@ -695,8 +866,21 @@ fn read_archive_to_stage(
         .map_err(|_| ArchiveFailure::InvalidArchive)?
         .ok_or(ArchiveFailure::InvalidArchive)?;
     validate_tar_entry(&first, MANIFEST_PATH)?;
-    let manifest: ProfileManifest = read_entry_json(first, MAX_MANIFEST_BYTES)?;
+    let mut manifest: ProfileManifest = read_entry_json(first, MAX_MANIFEST_BYTES)?;
     validate_manifest(&manifest)?;
+    let archive_database_key = match manifest.version {
+        1 if manifest.database_key.is_none() => None,
+        2 => Some(
+            crate::storage::DatabaseKey::from_bytes(
+                manifest
+                    .database_key
+                    .as_deref()
+                    .ok_or(ArchiveFailure::InvalidArchive)?,
+            )
+            .map_err(|_| ArchiveFailure::InvalidArchive)?,
+        ),
+        _ => return Err(ArchiveFailure::InvalidArchive),
+    };
     if manifest.chat_schema_version > current_chat_schema_version
         || manifest.backend_schema_version > storage::backend_schema_version()
     {
@@ -750,7 +934,37 @@ fn read_archive_to_stage(
     {
         return Err(ArchiveFailure::LimitExceeded);
     }
-    validate_staged_profile(stage, &manifest, current_chat_schema_version)?;
+    validate_staged_profile(
+        stage,
+        &manifest,
+        current_chat_schema_version,
+        archive_database_key.as_ref(),
+    )?;
+
+    let database_path = stage.join(DATABASE_PATH);
+    let converted_database_path = stage.join("database/openchat.sqlite3.local-encrypted-partial");
+    match archive_database_key.as_ref() {
+        Some(archive_key) => archive_key
+            .export_encrypted_database(&database_path, &converted_database_path, local_database_key)
+            .map_err(|_| ArchiveFailure::Storage)?,
+        None => local_database_key
+            .export_plaintext_database(&database_path, &converted_database_path)
+            .map_err(|_| ArchiveFailure::Storage)?,
+    }
+    drop(archive_database_key);
+    fs::remove_file(&database_path).map_err(|_| ArchiveFailure::Storage)?;
+    fs::rename(&converted_database_path, &database_path).map_err(|_| ArchiveFailure::Storage)?;
+    if let Some(key) = &mut manifest.database_key {
+        key.zeroize();
+    }
+    manifest.database_key = None;
+    manifest.database = file_record(DATABASE_PATH, &database_path, MAX_DATABASE_BYTES)?;
+    validate_staged_profile(
+        stage,
+        &manifest,
+        current_chat_schema_version,
+        Some(local_database_key),
+    )?;
     Ok(manifest)
 }
 
@@ -758,6 +972,7 @@ fn validate_staged_profile(
     stage: &Path,
     manifest: &ProfileManifest,
     current_chat_schema_version: i64,
+    database_key: Option<&crate::storage::DatabaseKey>,
 ) -> Result<(), ArchiveFailure> {
     let database_path = stage.join(DATABASE_PATH);
     let metadata = fs::metadata(&database_path).map_err(|_| ArchiveFailure::Storage)?;
@@ -766,12 +981,22 @@ fn validate_staged_profile(
     {
         return Err(ArchiveFailure::InvalidArchive);
     }
-    let database =
-        Connection::open_with_flags(&database_path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
-            .map_err(|_| ArchiveFailure::InvalidArchive)?;
+    let database = match database_key {
+        Some(key) => key
+            .open(&database_path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .map_err(|_| ArchiveFailure::InvalidArchive)?,
+        None => {
+            Connection::open_with_flags(&database_path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+                .map_err(|_| ArchiveFailure::InvalidArchive)?
+        }
+    };
     crate::storage::disable_trusted_schema(&database)
         .map_err(|_| ArchiveFailure::InvalidArchive)?;
-    storage::verify_database_integrity(&database).map_err(|_| ArchiveFailure::InvalidArchive)?;
+    match database_key {
+        Some(_) => storage::verify_database_integrity(&database),
+        None => storage::verify_plaintext_database_integrity(&database),
+    }
+    .map_err(|_| ArchiveFailure::InvalidArchive)?;
     verify_foreign_keys(&database)?;
     let chat_schema_version = database
         .query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0))
@@ -819,7 +1044,6 @@ fn validate_staged_profile(
     Ok(())
 }
 
-#[cfg(any(not(windows), test))]
 fn copy_verified_entry<R: Read>(
     mut entry: tar::Entry<'_, R>,
     mut output: File,
@@ -852,7 +1076,6 @@ fn copy_verified_entry<R: Read>(
     output.sync_all().map_err(|_| ArchiveFailure::Storage)
 }
 
-#[cfg(any(not(windows), test))]
 fn create_stage_file(stage: &Path, archive_path: &str) -> Result<File, ArchiveFailure> {
     let relative = safe_archive_path(archive_path)?;
     let output = stage.join(relative);
@@ -865,7 +1088,6 @@ fn create_stage_file(stage: &Path, archive_path: &str) -> Result<File, ArchiveFa
         .map_err(|_| ArchiveFailure::Storage)
 }
 
-#[cfg(any(not(windows), test))]
 fn validate_tar_entry<R: Read>(
     entry: &tar::Entry<'_, R>,
     expected: &str,
@@ -876,7 +1098,6 @@ fn validate_tar_entry<R: Read>(
     Ok(())
 }
 
-#[cfg(any(not(windows), test))]
 fn tar_path<R: Read>(entry: &tar::Entry<'_, R>) -> Result<String, ArchiveFailure> {
     let path = entry.path().map_err(|_| ArchiveFailure::InvalidArchive)?;
     let path = path.to_str().ok_or(ArchiveFailure::InvalidArchive)?;
@@ -913,7 +1134,6 @@ fn validate_attachment_path(value: &str) -> Result<(), ArchiveFailure> {
     }
 }
 
-#[cfg(any(not(windows), test))]
 fn read_entry_json<T: DeserializeOwned, R: Read>(
     entry: tar::Entry<'_, R>,
     maximum: u64,
@@ -922,8 +1142,9 @@ fn read_entry_json<T: DeserializeOwned, R: Read>(
         return Err(ArchiveFailure::LimitExceeded);
     }
     let size = entry.size();
-    let mut bytes =
-        Vec::with_capacity(usize::try_from(size).map_err(|_| ArchiveFailure::LimitExceeded)?);
+    let mut bytes = Zeroizing::new(Vec::with_capacity(
+        usize::try_from(size).map_err(|_| ArchiveFailure::LimitExceeded)?,
+    ));
     entry
         .take(maximum.saturating_add(1))
         .read_to_end(&mut bytes)
@@ -936,7 +1157,7 @@ fn read_entry_json<T: DeserializeOwned, R: Read>(
 
 fn validate_manifest(manifest: &ProfileManifest) -> Result<(), ArchiveFailure> {
     if manifest.format != ARCHIVE_FORMAT
-        || manifest.version != ARCHIVE_VERSION
+        || !(1..=ARCHIVE_VERSION).contains(&manifest.version)
         || manifest.created_at_unix_ms <= 0
         || !(1..=100).contains(&manifest.chat_schema_version)
         || manifest.backend_schema_version < 1
@@ -944,6 +1165,11 @@ fn validate_manifest(manifest: &ProfileManifest) -> Result<(), ArchiveFailure> {
         || manifest.message_count > 2_000_000
         || manifest.attachments.len() > MAX_ATTACHMENTS
         || manifest.database.path != DATABASE_PATH
+        || (manifest.version == 1 && manifest.database_key.is_some())
+        || manifest
+            .database_key
+            .as_ref()
+            .is_some_and(|key| key.len() != 32)
     {
         return Err(ArchiveFailure::InvalidArchive);
     }
@@ -1071,7 +1297,6 @@ fn archive_summary(manifest: &ProfileManifest, requires_restart: bool) -> Value 
     })
 }
 
-#[cfg(any(not(windows), test))]
 fn validate_input_path(path: &Path) -> Result<File, ArchiveFailure> {
     let metadata = fs::symlink_metadata(path).map_err(|error| {
         if error.kind() == io::ErrorKind::NotFound {
@@ -1086,7 +1311,44 @@ fn validate_input_path(path: &Path) -> Result<File, ArchiveFailure> {
     {
         return Err(ArchiveFailure::LimitExceeded);
     }
-    File::open(path).map_err(ArchiveFailure::from)
+    let file = open_profile_archive(path).map_err(ArchiveFailure::from)?;
+    let opened_metadata = file.metadata().map_err(|_| ArchiveFailure::Storage)?;
+    if !opened_metadata.is_file()
+        || opened_metadata.len() > MAX_ARCHIVE_BYTES
+        || profile_archive_handle_is_reparse_point(&opened_metadata)
+    {
+        return Err(ArchiveFailure::LimitExceeded);
+    }
+    Ok(file)
+}
+
+#[cfg(windows)]
+fn open_profile_archive(path: &Path) -> io::Result<File> {
+    use std::os::windows::fs::OpenOptionsExt;
+    use windows_sys::Win32::Storage::FileSystem::FILE_FLAG_OPEN_REPARSE_POINT;
+
+    OpenOptions::new()
+        .read(true)
+        .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
+        .open(path)
+}
+
+#[cfg(not(windows))]
+fn open_profile_archive(path: &Path) -> io::Result<File> {
+    File::open(path)
+}
+
+#[cfg(windows)]
+fn profile_archive_handle_is_reparse_point(metadata: &fs::Metadata) -> bool {
+    use std::os::windows::fs::MetadataExt;
+    use windows_sys::Win32::Storage::FileSystem::FILE_ATTRIBUTE_REPARSE_POINT;
+
+    metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
+}
+
+#[cfg(not(windows))]
+fn profile_archive_handle_is_reparse_point(_: &fs::Metadata) -> bool {
+    false
 }
 
 fn validate_output_path(path: &Path) -> Result<PathBuf, ArchiveFailure> {
@@ -1171,8 +1433,101 @@ fn write_new_json<T: Serialize>(path: &Path, value: &T) -> Result<(), ArchiveFai
     write_new_bytes(path, &bytes)
 }
 
-pub(crate) fn activate_pending_restore(root: &Path) -> rusqlite::Result<bool> {
-    recover_unconfirmed_restore(root)?;
+fn ensure_staged_database_encrypted(
+    stage: &Path,
+    manifest: &mut ProfileManifest,
+    current_chat_schema_version: i64,
+    database_key: &crate::storage::DatabaseKey,
+) -> Result<(), ArchiveFailure> {
+    if manifest.database_key.is_some() {
+        return Err(ArchiveFailure::InvalidArchive);
+    }
+    let database_path = stage.join(DATABASE_PATH);
+    let journal_path = append_path_suffix(&database_path, ".sqlcipher-migration");
+    let database_exists = match fs::symlink_metadata(&database_path) {
+        Ok(metadata)
+            if metadata.is_file() && !metadata.file_type().is_symlink() && metadata.len() >= 16 =>
+        {
+            true
+        }
+        Ok(_) => return Err(ArchiveFailure::InvalidArchive),
+        Err(error) if error.kind() == io::ErrorKind::NotFound && journal_path.exists() => false,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            return Err(ArchiveFailure::InvalidArchive);
+        }
+        Err(_) => return Err(ArchiveFailure::Storage),
+    };
+    if database_exists && has_plaintext_sqlite_header(&database_path)? {
+        validate_staged_profile(stage, manifest, current_chat_schema_version, None)?;
+    }
+    let (database, _) = database_key
+        .open_or_migrate(&database_path)
+        .map_err(|_| ArchiveFailure::Storage)?;
+    storage::verify_database_integrity(&database).map_err(|_| ArchiveFailure::InvalidArchive)?;
+    drop(database);
+    manifest.database = file_record(DATABASE_PATH, &database_path, MAX_DATABASE_BYTES)?;
+    Ok(())
+}
+
+fn convert_retained_restore_databases(
+    root: &Path,
+    database_key: &crate::storage::DatabaseKey,
+) -> rusqlite::Result<()> {
+    let directory = root.join("backups").join(RECOVERY_DIRECTORY);
+    match fs::symlink_metadata(&directory) {
+        Ok(metadata) if metadata.is_dir() && !metadata.file_type().is_symlink() => {}
+        Ok(_) => return Err(rusqlite::Error::InvalidPath(directory)),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(io_to_sql_error(error)),
+    }
+    for entry in fs::read_dir(&directory).map_err(io_to_sql_error)? {
+        let entry = entry.map_err(io_to_sql_error)?;
+        let file_type = entry.file_type().map_err(io_to_sql_error)?;
+        if !file_type.is_dir() || file_type.is_symlink() {
+            continue;
+        }
+        let Some(identifier) = entry.file_name().to_str().map(str::to_owned) else {
+            continue;
+        };
+        if !safe_recovery_id(&identifier) {
+            continue;
+        }
+        let database_path = entry.path().join("db/openchat.sqlite3");
+        match fs::symlink_metadata(&database_path) {
+            Ok(metadata)
+                if metadata.is_file()
+                    && !metadata.file_type().is_symlink()
+                    && metadata.len() >= 16 => {}
+            Ok(_) => return Err(rusqlite::Error::InvalidPath(database_path)),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
+            Err(error) => return Err(io_to_sql_error(error)),
+        }
+        let (database, _) = database_key.open_or_migrate(&database_path)?;
+        crate::storage::verify_database_integrity(&database)?;
+    }
+    Ok(())
+}
+
+fn has_plaintext_sqlite_header(path: &Path) -> Result<bool, ArchiveFailure> {
+    let mut file = File::open(path).map_err(|_| ArchiveFailure::Storage)?;
+    let mut header = [0_u8; 16];
+    file.read_exact(&mut header)
+        .map_err(|_| ArchiveFailure::InvalidArchive)?;
+    Ok(&header == b"SQLite format 3\0")
+}
+
+fn append_path_suffix(path: &Path, suffix: &str) -> PathBuf {
+    let mut value = path.as_os_str().to_os_string();
+    value.push(suffix);
+    PathBuf::from(value)
+}
+
+pub(crate) fn activate_pending_restore(
+    root: &Path,
+    database_key: &crate::storage::DatabaseKey,
+) -> rusqlite::Result<bool> {
+    recover_unconfirmed_restore(root, database_key)?;
+    convert_retained_restore_databases(root, database_key)?;
     let restore_root = restore_root(root);
     let marker_path = restore_pending_path(&restore_root);
     if !marker_path.exists() {
@@ -1182,9 +1537,22 @@ pub(crate) fn activate_pending_restore(root: &Path) -> rusqlite::Result<bool> {
     let marker = read_marker(&marker_path)?;
     cleanup_orphaned_stages(&restore_root, Some(&marker.stage_id)).map_err(io_to_sql_error)?;
     let stage = restore_stage_path(&restore_root, &marker.stage_id);
-    let manifest: ProfileManifest = read_json(&stage.join(MANIFEST_PATH), MAX_MANIFEST_BYTES)?;
+    let mut manifest: ProfileManifest = read_json(&stage.join(MANIFEST_PATH), MAX_MANIFEST_BYTES)?;
     validate_manifest(&manifest).map_err(to_sql_error)?;
-    validate_staged_profile(&stage, &manifest, marker.chat_schema_version).map_err(to_sql_error)?;
+    ensure_staged_database_encrypted(
+        &stage,
+        &mut manifest,
+        marker.chat_schema_version,
+        database_key,
+    )
+    .map_err(to_sql_error)?;
+    validate_staged_profile(
+        &stage,
+        &manifest,
+        marker.chat_schema_version,
+        Some(database_key),
+    )
+    .map_err(to_sql_error)?;
 
     let recovery_id = format!(
         "{}-{}",
@@ -1198,7 +1566,7 @@ pub(crate) fn activate_pending_restore(root: &Path) -> rusqlite::Result<bool> {
     let database_directory = root.join("db");
     let attachments_directory = root.join("attachments");
     let journal = RestoreJournal {
-        version: ARCHIVE_VERSION,
+        version: RESTORE_STATE_VERSION,
         stage_id: marker.stage_id,
         recovery_id,
         phase: RestorePhase::Applying,
@@ -1223,7 +1591,7 @@ pub(crate) fn activate_pending_restore(root: &Path) -> rusqlite::Result<bool> {
             .map_err(|_| ArchiveFailure::Storage)
     });
     if let Err(error) = apply_result {
-        recover_unconfirmed_restore(root).map_err(|_| to_sql_error(error))?;
+        recover_unconfirmed_restore(root, database_key).map_err(|_| to_sql_error(error))?;
         return Err(to_sql_error(error));
     }
     Ok(true)
@@ -1256,12 +1624,15 @@ fn apply_directory_swap(
     Ok(())
 }
 
-pub(crate) fn recover_unconfirmed_restore(root: &Path) -> rusqlite::Result<()> {
+pub(crate) fn recover_unconfirmed_restore(
+    root: &Path,
+    database_key: &crate::storage::DatabaseKey,
+) -> rusqlite::Result<()> {
     let restore_root = restore_root(root);
     let Some((_, journal)) = read_restore_journal(&restore_root)? else {
         return Ok(());
     };
-    if journal.version != ARCHIVE_VERSION
+    if journal.version != RESTORE_STATE_VERSION
         || !safe_identifier(&journal.stage_id)
         || !safe_recovery_id(&journal.recovery_id)
     {
@@ -1271,6 +1642,20 @@ pub(crate) fn recover_unconfirmed_restore(root: &Path) -> rusqlite::Result<()> {
         cleanup_restore_stage(&restore_root, &journal.stage_id).map_err(io_to_sql_error)?;
         remove_restore_journals(&restore_root).map_err(io_to_sql_error)?;
         return Ok(());
+    }
+    let recovery_database = recovery_path(root, &journal.recovery_id)
+        .join("db")
+        .join("openchat.sqlite3");
+    match fs::symlink_metadata(&recovery_database) {
+        Ok(metadata)
+            if metadata.is_file() && !metadata.file_type().is_symlink() && metadata.len() >= 16 =>
+        {
+            let (connection, _) = database_key.open_or_migrate(&recovery_database)?;
+            crate::storage::verify_database_integrity(&connection)?;
+        }
+        Ok(_) => return Err(rusqlite::Error::InvalidPath(recovery_database)),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        Err(error) => return Err(io_to_sql_error(error)),
     }
     rollback_directory_swap(root, &restore_root, &journal).map_err(io_to_sql_error)?;
     remove_restore_journals(&restore_root).map_err(io_to_sql_error)?;
@@ -1370,7 +1755,7 @@ pub(crate) fn commit_pending_restore(root: &Path) -> rusqlite::Result<()> {
 
 fn read_marker(path: &Path) -> rusqlite::Result<RestoreMarker> {
     let marker = read_json::<RestoreMarker>(path, MAX_RESTORE_STATE_BYTES)?;
-    if marker.version != ARCHIVE_VERSION
+    if marker.version != RESTORE_STATE_VERSION
         || !safe_identifier(&marker.stage_id)
         || !(1..=100).contains(&marker.chat_schema_version)
     {
@@ -1408,7 +1793,7 @@ fn read_restore_journal(root: &Path) -> rusqlite::Result<Option<(PathBuf, Restor
             continue;
         }
         let journal = read_json::<RestoreJournal>(&path, MAX_RESTORE_STATE_BYTES)?;
-        if journal.version != ARCHIVE_VERSION
+        if journal.version != RESTORE_STATE_VERSION
             || journal.phase != phase
             || !safe_identifier(&journal.stage_id)
             || !safe_recovery_id(&journal.recovery_id)
@@ -1521,21 +1906,29 @@ fn io_to_sql_error(error: io::Error) -> rusqlite::Error {
 }
 
 mod storage {
-    pub(super) use crate::storage::{backend_schema_version, verify_database_integrity};
+    pub(super) use crate::storage::{
+        backend_schema_version, verify_database_integrity, verify_plaintext_database_integrity,
+    };
 }
 
 #[cfg(test)]
 mod tests {
-    use std::{fs, path::PathBuf};
+    use std::{
+        fs::{self, OpenOptions},
+        path::PathBuf,
+    };
 
     use rusqlite::{Connection, params};
     use serde_json::json;
     use sha2::{Digest, Sha256};
     use std::sync::Mutex;
     use uuid::Uuid;
+    use zeroize::Zeroizing;
 
     use super::{
-        ArchiveFailure, MAX_RESTORE_STATE_BYTES, export, export_inner, prepare_restore, read_json,
+        ARCHIVE_FORMAT, ArchiveFailure, DATABASE_PATH, FileRecord, MAX_DATABASE_BYTES,
+        MAX_RESTORE_STATE_BYTES, ProfileManifest, count_rows, export, export_inner, file_record,
+        prepare_restore, read_backend_schema_version, read_json, unix_time_millis, write_archive,
     };
     use crate::storage::AppStorage;
 
@@ -1549,7 +1942,8 @@ mod tests {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         let source_directory = TestDirectory::new("source");
-        let source = seed_profile(&source_directory.0, "source-chat", true);
+        let source_key = [0x11; 32];
+        let source = seed_profile(&source_directory.0, "source-chat", true, &source_key);
         let local_snapshot_path = add_workspace_file_change(&source);
         assert!(local_snapshot_path.is_file());
         let export_result =
@@ -1570,7 +1964,13 @@ mod tests {
         assert!(local_snapshot_path.is_file());
 
         let destination_directory = TestDirectory::new("destination");
-        let destination = seed_profile(&destination_directory.0, "existing-chat", true);
+        let destination_key = [0x22; 32];
+        let destination = seed_profile(
+            &destination_directory.0,
+            "existing-chat",
+            true,
+            &destination_key,
+        );
         let invalid_passphrase = prepare_restore(
             &destination,
             archive_path.to_str().expect("archive path is UTF-8"),
@@ -1592,8 +1992,12 @@ mod tests {
         assert_eq!(read_chat_count(&destination), 1);
         drop(destination);
 
-        let restored = AppStorage::open_at(destination_directory.0.clone())
-            .expect("activate staged profile during startup");
+        let restored = AppStorage::open_at_with_key(
+            destination_directory.0.clone(),
+            crate::storage::DatabaseKey::from_bytes(&destination_key)
+                .expect("restore destination database key"),
+        )
+        .expect("activate staged profile during startup");
         assert_eq!(read_chat_count(&restored), 1);
         assert!(chat_exists(&restored, "source-chat"));
         assert!(!chat_exists(&restored, "existing-chat"));
@@ -1640,14 +2044,21 @@ mod tests {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         let source_directory = TestDirectory::new("rollback-source");
-        let source = seed_profile(&source_directory.0, "source-chat", false);
+        let source_key = [0x13; 32];
+        let source = seed_profile(&source_directory.0, "source-chat", false, &source_key);
         let archive_directory = source_directory.0.join("exports");
         fs::create_dir(&archive_directory).expect("create export directory");
         let archive_path = archive_directory.join("profile.openchatprofilebackup");
         export_inner(&source, &archive_path, PASSPHRASE).expect("export profile");
 
         let destination_directory = TestDirectory::new("rollback-destination");
-        let destination = seed_profile(&destination_directory.0, "existing-chat", false);
+        let destination_key = [0x23; 32];
+        let destination = seed_profile(
+            &destination_directory.0,
+            "existing-chat",
+            false,
+            &destination_key,
+        );
         prepare_restore(
             &destination,
             archive_path.to_str().expect("archive path is UTF-8"),
@@ -1657,13 +2068,21 @@ mod tests {
         .expect("stage profile restore");
         drop(destination);
 
-        let unconfirmed =
-            AppStorage::open_at(destination_directory.0.clone()).expect("activate staged profile");
+        let unconfirmed = AppStorage::open_at_with_key(
+            destination_directory.0.clone(),
+            crate::storage::DatabaseKey::from_bytes(&destination_key)
+                .expect("open destination profile key"),
+        )
+        .expect("activate staged profile");
         assert!(chat_exists(&unconfirmed, "source-chat"));
         drop(unconfirmed);
 
-        let rolled_back = AppStorage::open_at(destination_directory.0.clone())
-            .expect("roll back the unconfirmed restore");
+        let rolled_back = AppStorage::open_at_with_key(
+            destination_directory.0.clone(),
+            crate::storage::DatabaseKey::from_bytes(&destination_key)
+                .expect("reopen destination profile key"),
+        )
+        .expect("roll back the unconfirmed restore");
         assert!(chat_exists(&rolled_back, "existing-chat"));
         assert!(!chat_exists(&rolled_back, "source-chat"));
         assert!(
@@ -1675,9 +2094,131 @@ mod tests {
     }
 
     #[test]
+    fn version_one_archive_is_converted_to_the_destination_key_before_staging() {
+        let _guard = RESTORE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let source_directory = TestDirectory::new("legacy-archive-source");
+        let source_key = [0x31; 32];
+        let source = seed_profile(
+            &source_directory.0,
+            "legacy-source-chat",
+            false,
+            &source_key,
+        );
+        let legacy_database_path = source_directory.0.join("legacy-plaintext.sqlite3");
+        let source_database = source
+            .connect_owned_database()
+            .expect("connect to source database");
+        source
+            .database_key()
+            .export_test_plaintext_database(&source_database, &legacy_database_path)
+            .expect("export a plaintext v1 archive database fixture");
+        drop(source_database);
+
+        let database_record = file_record(DATABASE_PATH, &legacy_database_path, MAX_DATABASE_BYTES)
+            .expect("record legacy database file");
+        let database = Connection::open_with_flags(
+            &legacy_database_path,
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+        )
+        .expect("open legacy database copy");
+        let manifest = ProfileManifest {
+            format: ARCHIVE_FORMAT.to_owned(),
+            version: 1,
+            created_at_unix_ms: unix_time_millis().expect("read test clock"),
+            chat_schema_version: database
+                .query_row("PRAGMA user_version", [], |row| row.get(0))
+                .expect("read chat schema version"),
+            backend_schema_version: read_backend_schema_version(&database)
+                .expect("read backend schema version"),
+            conversation_count: count_rows(&database, "conversations")
+                .expect("count conversations"),
+            message_count: count_rows(&database, "messages").expect("count messages"),
+            database: database_record.clone(),
+            database_key: None,
+            attachments: Vec::<FileRecord>::new(),
+        };
+        drop(database);
+
+        let archive_directory = source_directory.0.join("exports");
+        fs::create_dir(&archive_directory).expect("create archive directory");
+        let archive_path = archive_directory.join("legacy.openchatprofilebackup");
+        let output = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&archive_path)
+            .expect("create legacy archive file");
+        let manifest_json = Zeroizing::new(
+            serde_json::to_vec(&manifest).expect("serialize legacy archive manifest"),
+        );
+        write_archive(
+            output,
+            &manifest_json,
+            &database_record,
+            &legacy_database_path,
+            &[],
+            PASSPHRASE,
+        )
+        .expect("write legacy archive");
+
+        let destination_directory = TestDirectory::new("legacy-archive-destination");
+        let destination_key = [0x41; 32];
+        let destination = seed_profile(
+            &destination_directory.0,
+            "existing-chat",
+            false,
+            &destination_key,
+        );
+        prepare_restore(
+            &destination,
+            archive_path.to_str().expect("archive path is UTF-8"),
+            PASSPHRASE.to_owned().into(),
+            CHAT_SCHEMA_VERSION,
+        )
+        .expect("stage legacy archive");
+        let marker = super::read_marker(
+            &destination_directory
+                .0
+                .join("cache/profile-restore/restore.pending"),
+        )
+        .expect("read restore marker");
+        let stage = super::restore_stage_path(
+            &destination_directory.0.join("cache/profile-restore"),
+            &marker.stage_id,
+        );
+        let staged_database = fs::read(stage.join(DATABASE_PATH)).expect("read staged database");
+        assert_ne!(&staged_database[..16], b"SQLite format 3\0");
+        let mut staged_manifest: ProfileManifest =
+            read_json(&stage.join(super::MANIFEST_PATH), super::MAX_MANIFEST_BYTES)
+                .expect("read staged manifest");
+        assert!(staged_manifest.database_key.is_none());
+        let staged_database_path = stage.join(DATABASE_PATH);
+        fs::remove_file(&staged_database_path).expect("remove encrypted stage fixture");
+        fs::copy(&legacy_database_path, &staged_database_path)
+            .expect("restore old plaintext stage fixture");
+        staged_manifest.database = database_record.clone();
+        fs::write(
+            stage.join(super::MANIFEST_PATH),
+            serde_json::to_vec(&staged_manifest).expect("serialize old stage manifest"),
+        )
+        .expect("write old stage manifest");
+        drop(destination);
+
+        let restored = crate::storage::AppStorage::open_at_with_key(
+            destination_directory.0.clone(),
+            crate::storage::DatabaseKey::from_bytes(&destination_key)
+                .expect("reopen destination database key"),
+        )
+        .expect("activate legacy archive restore");
+        assert!(chat_exists(&restored, "legacy-source-chat"));
+    }
+
+    #[test]
     fn profile_export_does_not_overwrite_an_existing_archive() {
         let source_directory = TestDirectory::new("no-overwrite");
-        let source = seed_profile(&source_directory.0, "source-chat", false);
+        let source_key = [0x14; 32];
+        let source = seed_profile(&source_directory.0, "source-chat", false, &source_key);
         let archive_directory = source_directory.0.join("exports");
         fs::create_dir(&archive_directory).expect("create export directory");
         let archive_path = archive_directory.join("profile.openchatprofilebackup");
@@ -1746,6 +2287,7 @@ mod tests {
         root: &std::path::Path,
         conversation_id: &str,
         with_attachment: bool,
+        database_key: &[u8; 32],
     ) -> AppStorage {
         let database_directory = root.join("db");
         fs::create_dir_all(&database_directory).expect("create database directory");
@@ -1835,7 +2377,12 @@ mod tests {
             .expect("insert message");
         drop(connection);
 
-        let storage = AppStorage::open_at(root.to_path_buf()).expect("open test storage");
+        let storage = AppStorage::open_at_with_key(
+            root.to_path_buf(),
+            crate::storage::DatabaseKey::from_bytes(database_key)
+                .expect("create test database key"),
+        )
+        .expect("open test storage");
         storage
             .initialize_backend_schema()
             .expect("initialize current backend schema");

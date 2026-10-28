@@ -21,7 +21,7 @@ use crate::{
     goals, instructions, openai_compatible,
     permissions::ToolPermissionBroker,
     protocol::{EventSink, Request, Response, ServiceError},
-    provider_credentials,
+    provider_credentials, provider_ids,
     service::OperationGate,
     storage::AppStorage,
     tools::{self, ToolPermissionMode},
@@ -51,6 +51,8 @@ mod projects;
 mod providers;
 #[path = "rpc/run_control.rs"]
 mod run_control;
+#[path = "rpc/security_scans.rs"]
+mod security_scans;
 #[path = "rpc/statistics.rs"]
 mod statistics;
 #[path = "rpc/storage_attachment_index.rs"]
@@ -93,6 +95,9 @@ pub(crate) async fn dispatch(context: RpcDispatchContext<'_>) -> Result<Value, S
         startup_recovered,
     } = context;
     let method = request.method.clone();
+    if method.starts_with("internal.tool_permissions.") {
+        return tool_permissions::dispatch_internal(&method, &request.params, storage);
+    }
     if method.starts_with("internal.") {
         return internal_secrets::dispatch(&method, &mut request.params, storage);
     }
@@ -110,6 +115,9 @@ pub(crate) async fn dispatch(context: RpcDispatchContext<'_>) -> Result<Value, S
     }
     if method.starts_with("chat.file_changes.") {
         return file_changes::dispatch(&method, &request.params, storage);
+    }
+    if method.starts_with("security.scans.") {
+        return security_scans::dispatch(&method, &request.params, storage);
     }
     if method.starts_with("design.images.")
         || method.starts_with("design.generations.")
@@ -313,7 +321,31 @@ pub(crate) async fn dispatch(context: RpcDispatchContext<'_>) -> Result<Value, S
                 available_subagent_models,
             } = chat_request;
             let route = chat_execution::load_saved_route(storage, conversation_id)?;
-            let permission_mode = if plan_mode_requested {
+            let security_scan_scope =
+                security_scans::scope_for_conversation(storage, conversation_id)?;
+            if let Some(scope) = security_scan_scope.as_ref() {
+                if route.project_id.as_deref() != Some(scope.project_id.as_str())
+                    || (resume_run_id.is_none() && excluded_assistant_message_id.is_some())
+                {
+                    return Err(invalid_request_params());
+                }
+                if matches!(scope.status.as_str(), "completed" | "cancelled" | "failed") {
+                    return Err(ServiceError::new(
+                        "security_scan_not_active",
+                        "This security scan has already finished.",
+                        false,
+                    ));
+                }
+            }
+            let requested_goal_objective =
+                if security_scan_scope.is_some() && resume_run_id.is_none() {
+                    Some(crate::security_scan::OBJECTIVE)
+                } else {
+                    requested_goal_objective
+                };
+            let permission_mode = if security_scan_scope.is_some() {
+                ToolPermissionMode::FullAccess
+            } else if plan_mode_requested {
                 ToolPermissionMode::Plan
             } else {
                 let connection = storage.connect().map_err(|_| {
@@ -332,22 +364,41 @@ pub(crate) async fn dispatch(context: RpcDispatchContext<'_>) -> Result<Value, S
                     false,
                 ));
             }
-            let tool_permission_rules = route
-                .project_id
-                .as_deref()
-                .map(|project_id| {
-                    let connection = storage.connect().map_err(|_| {
-                        ServiceError::new(
-                            "tool_permissions_unavailable",
-                            "Tool permissions could not be loaded from local storage.",
-                            true,
-                        )
-                    })?;
-                    tool_permissions::load_project_rules(&connection, project_id)
-                })
-                .transpose()?
-                .unwrap_or_default();
-            let (api_key_secret, custom_provider) = route.resolve_credentials(storage)?;
+            let tool_permission_rules = if security_scan_scope.is_some() {
+                tools::ToolPermissionRules::new()
+            } else {
+                route
+                    .project_id
+                    .as_deref()
+                    .map(|project_id| {
+                        let connection = storage.connect().map_err(|_| {
+                            ServiceError::new(
+                                "tool_permissions_unavailable",
+                                "Tool permissions could not be loaded from local storage.",
+                                true,
+                            )
+                        })?;
+                        tool_permissions::load_project_rules(&connection, project_id)
+                    })
+                    .transpose()?
+                    .unwrap_or_default()
+            };
+            // Defer scan credential checks until the attempt is claimed so failures can be finalized.
+            let credentials_for_resume = if resume_run_id.is_some() && security_scan_scope.is_none()
+            {
+                let credentials = route.resolve_credentials(storage)?;
+                if route
+                    .provider_id
+                    .as_deref()
+                    .is_some_and(provider_credentials::requires_saved_api_key)
+                    && credentials.0.is_none()
+                {
+                    return Err(provider_credentials::missing_credentials());
+                }
+                Some(credentials)
+            } else {
+                None
+            };
             let resuming_question_run = resume_run_id.is_some();
             let prepared_run = chat_execution::prepare_run(chat_execution::RunPreparation {
                 storage,
@@ -355,12 +406,32 @@ pub(crate) async fn dispatch(context: RpcDispatchContext<'_>) -> Result<Value, S
                 route: &route,
                 resume_run_id,
                 requested_reasoning_effort,
-                requested_fast_mode,
+                requested_fast_mode: requested_fast_mode && security_scan_scope.is_none(),
                 requested_goal_objective,
-                requested_custom_instructions,
-                requested_project_skill_ids,
+                requested_custom_instructions: if security_scan_scope.is_some() {
+                    Some(crate::security_scan::INSTRUCTIONS)
+                } else {
+                    requested_custom_instructions
+                },
+                requested_project_skill_ids: if security_scan_scope.is_some() {
+                    Vec::new()
+                } else {
+                    requested_project_skill_ids
+                },
                 permission_mode,
-                profile_tool_allowlist,
+                is_security_scan: security_scan_scope.is_some(),
+                security_scan_public_web_research: security_scan_scope
+                    .as_ref()
+                    .is_some_and(|scope| scope.public_web_research),
+                profile_tool_allowlist: if security_scan_scope.is_some() {
+                    Some(crate::security_scan::allowed_tool_names(
+                        security_scan_scope
+                            .as_ref()
+                            .is_some_and(|scope| scope.public_web_research),
+                    ))
+                } else {
+                    profile_tool_allowlist
+                },
             })
             .await?;
             let chat_execution::PreparedChatRun {
@@ -375,16 +446,93 @@ pub(crate) async fn dispatch(context: RpcDispatchContext<'_>) -> Result<Value, S
                 goal_execution,
                 profile_tool_allowlist,
             } = prepared_run;
-            let workspace_roots = route
-                .project_id
+            let is_security_scan = security_scan_scope.is_some();
+            let scan_attempt_id = uuid::Uuid::new_v4().simple().to_string();
+            if is_security_scan
+                && !security_scans::mark_running(
+                    storage,
+                    conversation_id,
+                    &run_id,
+                    &scan_attempt_id,
+                )?
+            {
+                return chat_execution::finish_run(
+                    chat_execution::ChatRunFinalization {
+                        storage,
+                        conversation_id,
+                        run_id: &run_id,
+                        scan_attempt_id: &scan_attempt_id,
+                        is_security_scan,
+                        resuming_question_run,
+                        shutdown_requested: &shutdown_requested,
+                        user_question_broker: &user_question_broker,
+                    },
+                    Err(crate::permissions::operation_cancelled_error()),
+                )
+                .await;
+            }
+            let (api_key_secret, custom_provider) = match credentials_for_resume {
+                Some(credentials) => credentials,
+                None => match route.resolve_credentials(storage) {
+                    Ok(credentials) => credentials,
+                    Err(error) => {
+                        return chat_execution::finish_run(
+                            chat_execution::ChatRunFinalization {
+                                storage,
+                                conversation_id,
+                                run_id: &run_id,
+                                scan_attempt_id: &scan_attempt_id,
+                                is_security_scan,
+                                resuming_question_run,
+                                shutdown_requested: &shutdown_requested,
+                                user_question_broker: &user_question_broker,
+                            },
+                            Err(error),
+                        )
+                        .await;
+                    }
+                },
+            };
+            if route
+                .provider_id
                 .as_deref()
-                .map(|project_id| {
-                    projects::project_workspace_roots_for_project(storage, project_id)
-                })
-                .transpose()?
-                .unwrap_or_default();
+                .is_some_and(provider_credentials::requires_saved_api_key)
+                && api_key_secret.is_none()
+            {
+                return chat_execution::finish_run(
+                    chat_execution::ChatRunFinalization {
+                        storage,
+                        conversation_id,
+                        run_id: &run_id,
+                        scan_attempt_id: &scan_attempt_id,
+                        is_security_scan,
+                        resuming_question_run,
+                        shutdown_requested: &shutdown_requested,
+                        user_question_broker: &user_question_broker,
+                    },
+                    Err(provider_credentials::missing_credentials()),
+                )
+                .await;
+            }
+            let workspace_roots = if let Some(scope) = security_scan_scope.as_ref() {
+                scope.roots.clone()
+            } else {
+                route
+                    .project_id
+                    .as_deref()
+                    .map(|project_id| {
+                        projects::project_workspace_roots_for_project(storage, project_id)
+                    })
+                    .transpose()?
+                    .unwrap_or_default()
+            };
+            let project_instructions = if security_scan_scope.is_some() {
+                None
+            } else {
+                project_instructions
+            };
             let mut project_instructions = project_instructions;
-            if workspace_roots.len() > 1 {
+            if security_scan_scope.is_none() && workspace_roots.len() > 1 {
                 let root_list = workspace_roots
                     .iter()
                     .enumerate()
@@ -409,57 +557,56 @@ pub(crate) async fn dispatch(context: RpcDispatchContext<'_>) -> Result<Value, S
             let chat_execution::SavedChatRoute {
                 provider_id,
                 project_name,
-                project_root,
+                project_root: saved_project_root,
                 project_id,
                 stored_api_key_connection_id,
                 model_id: _,
                 connection_id: _,
                 workspace_id: _,
             } = route;
-            if let Some(goal) = goal_execution.as_ref() {
-                events
+            let project_root = security_scan_scope
+                .as_ref()
+                .and_then(|scope| scope.roots.first())
+                .map(|root| root.to_string_lossy().into_owned())
+                .or(saved_project_root);
+            if let Some(goal) = goal_execution.as_ref()
+                && events
                     .send(&Response::event(
                         request.id.clone(),
                         "chat.goal.updated",
                         goals::goal_value(goal, "running", None),
                     ))
                     .await
-                    .map_err(|_| {
-                        ServiceError::new(
-                            "protocol_unavailable",
-                            "The active goal could not be shown in the application.",
-                            true,
-                        )
-                    })?;
+                    .is_err()
+            {
+                return chat_execution::finish_run(
+                    chat_execution::ChatRunFinalization {
+                        storage,
+                        conversation_id,
+                        run_id: &run_id,
+                        scan_attempt_id: &scan_attempt_id,
+                        is_security_scan,
+                        resuming_question_run,
+                        shutdown_requested: &shutdown_requested,
+                        user_question_broker: &user_question_broker,
+                    },
+                    Err(ServiceError::new(
+                        "protocol_unavailable",
+                        "The active goal could not be shown in the application.",
+                        true,
+                    )),
+                )
+                .await;
             }
             #[cfg(windows)]
-            let mcp_configs = if permission_mode != ToolPermissionMode::Plan
-                && matches!(
-                    provider_id.as_deref(),
-                    Some(
-                        "chatgpt"
-                            | "chatgpt_api"
-                            | "opencode"
-                            | "copilot"
-                            | "gemini"
-                            | "groq"
-                            | "cerebras"
-                            | "openrouter"
-                            | "mistral"
-                            | "deepseek"
-                            | "xai"
-                            | "perplexity"
-                            | "together"
-                            | "sambanova"
-                            | "anthropic"
-                            | "fireworks"
-                            | "deepinfra"
-                            | "dashscope"
-                            | "cohere"
-                            | "kilo"
-                            | "llama_cpp"
-                    )
-                ) {
+            let mcp_configs = if security_scan_scope.is_none()
+                && permission_mode != ToolPermissionMode::Plan
+                && provider_id.as_deref().is_some_and(|provider_id| {
+                    matches!(
+                        provider_id,
+                        "chatgpt" | "chatgpt_api" | "opencode" | "copilot" | "llama_cpp"
+                    ) || provider_ids::is_compatible_provider_id(provider_id)
+                }) {
                 match project_root.as_deref() {
                     Some(project_root) => {
                         match tools::mcp::load_server_configs_with_storage_root(
@@ -510,7 +657,15 @@ pub(crate) async fn dispatch(context: RpcDispatchContext<'_>) -> Result<Value, S
                 permission_mode,
                 tool_permission_rules,
                 profile_tool_allowlist,
-                available_subagent_models,
+                is_security_scan: security_scan_scope.is_some(),
+                security_scan_public_web_research: security_scan_scope
+                    .as_ref()
+                    .is_some_and(|scope| scope.public_web_research),
+                available_subagent_models: if security_scan_scope.is_some() {
+                    Vec::new()
+                } else {
+                    available_subagent_models
+                },
                 #[cfg(windows)]
                 mcp_configs,
                 #[cfg(windows)]
@@ -520,55 +675,62 @@ pub(crate) async fn dispatch(context: RpcDispatchContext<'_>) -> Result<Value, S
                 cancellation: &mut cancellation,
                 events,
                 context_limit_override,
-                title_generation,
+                title_generation: if security_scan_scope.is_some() {
+                    crate::chat_operation::TitleGenerationRequest::Disabled
+                } else {
+                    title_generation
+                },
             };
             let api_key = api_key_secret.as_ref().map(|secret| secret.as_str());
-            if provider_id
-                .as_deref()
-                .is_some_and(provider_credentials::requires_saved_api_key)
-                && api_key.is_none()
-            {
-                return Err(provider_credentials::missing_credentials());
-            }
             let result = match provider_id.as_deref() {
-                Some(id) if id.starts_with("custom_") => {
+                Some(id) if provider_ids::is_custom_provider_id(id) => {
                     openai_compatible::send_message(
                         service,
                         context,
                         openai_compatible::ProviderChatOptions {
                             api_key,
-                            requested_api_key_connection_id: api_key_connection_id,
-                            stored_api_key_connection_id,
+                            requested_api_key_connection_id: if security_scan_scope.is_some() {
+                                stored_api_key_connection_id.as_deref()
+                            } else {
+                                api_key_connection_id
+                            },
+                            stored_api_key_connection_id: stored_api_key_connection_id.clone(),
                             custom_provider,
                             reasoning_effort: reasoning_effort.as_deref(),
-                            fast_mode,
+                            fast_mode: fast_mode && security_scan_scope.is_none(),
                         },
                     )
                     .await
                 }
-                Some(
-                    "opencode" | "chatgpt_api" | "copilot" | "gemini" | "groq" | "cerebras"
-                    | "openrouter" | "mistral" | "deepseek" | "xai" | "perplexity" | "together"
-                    | "sambanova" | "anthropic" | "fireworks" | "deepinfra" | "dashscope"
-                    | "cohere" | "kilo" | "llama_cpp",
-                ) => {
+                Some(id)
+                    if matches!(id, "opencode" | "chatgpt_api" | "copilot" | "llama_cpp")
+                        || provider_ids::is_compatible_provider_id(id) =>
+                {
                     openai_compatible::send_message(
                         service,
                         context,
                         openai_compatible::ProviderChatOptions {
                             api_key,
-                            requested_api_key_connection_id: api_key_connection_id,
-                            stored_api_key_connection_id,
+                            requested_api_key_connection_id: if security_scan_scope.is_some() {
+                                stored_api_key_connection_id.as_deref()
+                            } else {
+                                api_key_connection_id
+                            },
+                            stored_api_key_connection_id: stored_api_key_connection_id.clone(),
                             custom_provider: None,
                             reasoning_effort: reasoning_effort.as_deref(),
-                            fast_mode,
+                            fast_mode: fast_mode && security_scan_scope.is_none(),
                         },
                     )
                     .await
                 }
                 Some("chatgpt") | None => {
                     service
-                        .send_message(context, reasoning_effort.as_deref(), fast_mode)
+                        .send_message(
+                            context,
+                            reasoning_effort.as_deref(),
+                            fast_mode && security_scan_scope.is_none(),
+                        )
                         .await
                 }
                 Some(_) => Err(ServiceError::new(
@@ -582,6 +744,8 @@ pub(crate) async fn dispatch(context: RpcDispatchContext<'_>) -> Result<Value, S
                     storage,
                     conversation_id,
                     run_id: &run_id,
+                    scan_attempt_id: &scan_attempt_id,
+                    is_security_scan,
                     resuming_question_run,
                     shutdown_requested: &shutdown_requested,
                     user_question_broker: &user_question_broker,
@@ -618,16 +782,6 @@ fn bounded_route_id<'a>(params: &'a Value, name: &str) -> Result<&'a str, Servic
         return Err(invalid_request_params());
     }
     Ok(value)
-}
-
-fn is_custom_provider_id(provider_id: &str) -> bool {
-    let Some(suffix) = provider_id.strip_prefix("custom_") else {
-        return false;
-    };
-    (12..=57).contains(&suffix.len())
-        && suffix
-            .bytes()
-            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_')
 }
 
 /// Moves an optional API key out of JSON params and enforces its input limits.

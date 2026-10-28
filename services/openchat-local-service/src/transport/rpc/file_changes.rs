@@ -37,10 +37,32 @@ pub(super) fn dispatch(
             )
             .map_err(file_changes_unavailable)
         }
+        "chat.file_changes.checkpoints.recovery_status" => {
+            let conversation_id = required_string(params, "conversationId")?;
+            let checkpoint_id = required_string(params, "checkpointId")?;
+            let status = file_changes::checkpoints::checkpoint_recovery_state(
+                storage,
+                conversation_id,
+                checkpoint_id,
+            )
+            .map_err(map_checkpoint_restore_error)?;
+            Ok(json!({"status": status}))
+        }
         "chat.file_changes.checkpoints.restore" => {
             let conversation_id = required_string(params, "conversationId")?;
             let checkpoint_id = required_string(params, "checkpointId")?;
             let changes = file_changes::checkpoints::restore_checkpoint(
+                storage,
+                conversation_id,
+                checkpoint_id,
+            )
+            .map_err(map_checkpoint_restore_error)?;
+            Ok(json!({"changes": changes}))
+        }
+        "chat.file_changes.checkpoints.revert_operation" => {
+            let conversation_id = required_string(params, "conversationId")?;
+            let checkpoint_id = required_string(params, "checkpointId")?;
+            let changes = file_changes::checkpoints::revert_checkpoint_operation(
                 storage,
                 conversation_id,
                 checkpoint_id,
@@ -124,6 +146,16 @@ fn map_revert_error(error: file_changes::RevertError) -> ServiceError {
             "This file change has already been reverted.",
             false,
         ),
+        file_changes::RevertError::AppliedButResponseUnavailable => ServiceError::new(
+            "file_change_applied_response_unavailable",
+            "The file-change update was saved, but its current state could not be read. Refresh file changes before retrying.",
+            false,
+        ),
+        file_changes::RevertError::RollbackFailed => ServiceError::new(
+            "file_change_rollback_failed",
+            "A file change could not be saved, and restoring its previous contents did not complete. Inspect the current file before continuing.",
+            false,
+        ),
         file_changes::RevertError::Unavailable => file_changes_unavailable(()),
     }
 }
@@ -134,12 +166,22 @@ fn map_checkpoint_restore_error(
     match error {
         file_changes::checkpoints::CheckpointRestoreError::Conflict => ServiceError::new(
             "file_checkpoint_conflict",
-            "The workspace changed after the recorded checkpoint. No files were restored.",
+            "A file changed after this failed operation. No files were restored.",
+            false,
+        ),
+        file_changes::checkpoints::CheckpointRestoreError::AlreadyRestored => ServiceError::new(
+            "file_checkpoint_already_restored",
+            "The failed operation has already been restored.",
             false,
         ),
         file_changes::checkpoints::CheckpointRestoreError::NotFound => ServiceError::new(
             "file_checkpoint_not_found",
             "The selected checkpoint is no longer available.",
+            false,
+        ),
+        file_changes::checkpoints::CheckpointRestoreError::NotRecoverable => ServiceError::new(
+            "file_checkpoint_not_recoverable",
+            "This checkpoint is not eligible for failed-operation recovery.",
             false,
         ),
         file_changes::checkpoints::CheckpointRestoreError::RollbackFailed => ServiceError::new(
@@ -160,4 +202,19 @@ fn file_changes_unavailable<T>(_: T) -> ServiceError {
         "Conversation file changes could not be loaded or updated.",
         true,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::map_revert_error;
+    use crate::file_changes::RevertError;
+
+    #[test]
+    fn committed_update_with_unavailable_response_uses_refresh_error() {
+        let error = map_revert_error(RevertError::AppliedButResponseUnavailable);
+
+        assert_eq!(error.code, "file_change_applied_response_unavailable");
+        assert!(!error.retryable);
+        assert!(error.message.contains("Refresh file changes"));
+    }
 }

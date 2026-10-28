@@ -783,6 +783,7 @@ mod tests {
                 output: Some(serde_json::json!({"content": "x".repeat(500)})),
                 file_changes: Vec::new(),
                 file_changes_error: None,
+                recovery_checkpoint_id: None,
                 status: crate::provider_schema::ToolActivityStatus::Completed,
             });
 

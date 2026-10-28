@@ -80,16 +80,26 @@ pub(crate) fn project_task_permission_rule<'a>(
 fn mcp_tool_permission_rule(
     rules: &ToolPermissionRules,
     server_id: &str,
+    server_permission_fingerprint: &str,
     tool_name: &str,
+    definition_fingerprint: &str,
 ) -> ToolPermissionRule {
-    let server_rule = super::mcp::server_permission_rule(rules, server_id);
+    let server_rule =
+        super::mcp::server_permission_rule(rules, server_id, server_permission_fingerprint);
     if server_rule == ToolPermissionRule::Deny {
         return ToolPermissionRule::Deny;
     }
-    rules
-        .get(&format!("mcp__{server_id}__{tool_name}"))
-        .copied()
-        .unwrap_or(server_rule)
+    if rules.get(&format!("mcp__{server_id}__{tool_name}")) == Some(&ToolPermissionRule::Deny) {
+        return ToolPermissionRule::Deny;
+    }
+    if let Some(rule) = rules.get(&super::mcp::tool_permission_rule_name(
+        server_id,
+        tool_name,
+        definition_fingerprint,
+    )) {
+        return *rule;
+    }
+    ToolPermissionRule::Ask
 }
 
 pub(crate) fn parse_tool_permission_rules(
@@ -130,6 +140,15 @@ fn is_permission_rule_tool(name: &str) -> bool {
     }
     if super::project_tools::is_permission_rule_name(name) {
         return true;
+    }
+    if let Some(mcp_tool_prefix) = name.strip_prefix("mcpv1__") {
+        #[cfg(windows)]
+        return super::mcp::valid_bound_permission_rule_suffix(mcp_tool_prefix);
+        #[cfg(not(windows))]
+        return {
+            let _ = mcp_tool_prefix;
+            false
+        };
     }
     if let Some(mcp_tool_prefix) = name.strip_prefix("mcp__") {
         #[cfg(windows)]
@@ -387,6 +406,8 @@ pub struct ToolExecutor {
     project_root: Option<PathBuf>,
     project_memory_context: Option<String>,
     project_roots: Vec<PathBuf>,
+    security_scan_scope_only: bool,
+    security_scan_public_web_research: bool,
     data_root: PathBuf,
     permission_mode: ToolPermissionMode,
     turn_state: StdMutex<ToolTurnState>,
@@ -417,9 +438,15 @@ struct ToolTurnState {
 
 enum PendingFileChangeCapture {
     File {
+        directory: std::sync::Arc<crate::filesystem::OpenedDirectory>,
         path: String,
-        before:
-            Result<Option<crate::file_changes::FileSnapshot>, crate::file_changes::TrackingError>,
+        before: Result<
+            (
+                crate::file_changes::DirectoryIdentity,
+                Option<crate::file_changes::FileSnapshot>,
+            ),
+            crate::file_changes::TrackingError,
+        >,
     },
     Workspace {
         before: Vec<(
@@ -482,6 +509,8 @@ impl ToolExecutor {
             project_root: project_root.map(Path::to_path_buf),
             project_memory_context: None,
             project_roots: project_root.map(Path::to_path_buf).into_iter().collect(),
+            security_scan_scope_only: false,
+            security_scan_public_web_research: false,
             data_root: data_root.to_path_buf(),
             permission_mode,
             turn_state: StdMutex::new(ToolTurnState::default()),
@@ -506,6 +535,23 @@ impl ToolExecutor {
 
     pub(crate) fn with_workspace_roots(mut self, roots: Vec<PathBuf>) -> Self {
         self.project_roots = roots;
+        self
+    }
+
+    pub(crate) fn with_security_scan_scope(
+        mut self,
+        enabled: bool,
+        public_web_research: bool,
+    ) -> Self {
+        self.security_scan_scope_only = enabled;
+        self.security_scan_public_web_research = enabled && public_web_research;
+        if enabled {
+            // Security scans expose only read-only tools, so they can run independently of the
+            // user's normal plan/approval mode while the path resolver enforces selected roots.
+            self.permission_mode = ToolPermissionMode::FullAccess;
+            self.allowed_tool_names =
+                crate::security_scan::allowed_tool_names(self.security_scan_public_web_research);
+        }
         self
     }
 
@@ -572,6 +618,10 @@ impl ToolExecutor {
             self.permission_rules.clone(),
         )
         .with_workspace_roots(self.project_roots.clone())
+        .with_security_scan_scope(
+            self.security_scan_scope_only,
+            self.security_scan_public_web_research,
+        )
         .with_project_memory_context(self.project_memory_context.clone())
         .with_subagent_tool_definitions(definitions);
         if let Some(service) = self.chat_service.clone() {
@@ -1136,6 +1186,8 @@ impl ToolExecutor {
         let call = &activity_call;
 
         let rule = self.permission_rule(call, &prepared.operation, Some(&prepared.target_path));
+        let mut approved_file_root = None;
+        let mut approved_file_root_identity = None;
         if rule == ToolPermissionRule::Deny {
             let output = tool_error(
                 "permission_denied",
@@ -1208,6 +1260,65 @@ impl ToolExecutor {
 
         if rule == ToolPermissionRule::Ask {
             let approved_target = prepared.target_path.clone();
+            let approved_root = prepared.root.clone();
+            let approved_relative_path = prepared.relative_path.clone();
+            if matches!(
+                &prepared.operation,
+                ToolOperation::Write { .. } | ToolOperation::Edit { .. }
+            ) {
+                let opened_root = crate::file_changes::open_workspace_directory(&approved_root);
+                match opened_root {
+                    Ok((directory, canonical_root)) if canonical_root == approved_root => {
+                        match crate::file_changes::workspace_directory_identity(&directory) {
+                            Ok(identity) => approved_file_root_identity = Some(identity),
+                            Err(_) => {
+                                let output = tool_error(
+                                    "workspace_unavailable",
+                                    "The active project folder identity could not be read safely before approval.",
+                                );
+                                self.emit_activity(
+                                    storage,
+                                    ToolActivity::finished(
+                                        call,
+                                        Some(approved_target.to_string_lossy().into_owned()),
+                                        output.clone(),
+                                    ),
+                                    request_id,
+                                    snapshot,
+                                    events,
+                                )
+                                .await?;
+                                return Ok(ToolResult {
+                                    call_id: call.id.clone(),
+                                    output,
+                                });
+                            }
+                        }
+                    }
+                    Ok(_) | Err(_) => {
+                        let output = tool_error(
+                            "workspace_unavailable",
+                            "The active project folder could not be pinned safely before approval.",
+                        );
+                        self.emit_activity(
+                            storage,
+                            ToolActivity::finished(
+                                call,
+                                Some(approved_target.to_string_lossy().into_owned()),
+                                output.clone(),
+                            ),
+                            request_id,
+                            snapshot,
+                            events,
+                        )
+                        .await?;
+                        return Ok(ToolResult {
+                            call_id: call.id.clone(),
+                            output,
+                        });
+                    }
+                }
+            }
             let target_path = prepared.target_path.to_string_lossy().into_owned();
             self.emit_activity(
                 storage,
@@ -1277,7 +1388,7 @@ impl ToolExecutor {
             }
 
             let is_non_fs = matches!(
-                prepared.operation,
+                &prepared.operation,
                 ToolOperation::Bash { .. }
                     | ToolOperation::SendTerminalInput { .. }
                     | ToolOperation::WebSearch { .. }
@@ -1293,7 +1404,39 @@ impl ToolExecutor {
                     prepared.operation.targets_directory(),
                     prepared.operation.can_create_file(),
                 ) {
-                    Ok((root, relative_path, target, scope)) if target == approved_target => {
+                    Ok((root, relative_path, target, scope))
+                        if target == approved_target
+                            && (approved_file_root_identity.is_none()
+                                || (root == approved_root
+                                    && relative_path == approved_relative_path)) =>
+                    {
+                        if let Some(expected_identity) = approved_file_root_identity {
+                            match open_approved_file_root(&root, expected_identity) {
+                                Ok(directory) => {
+                                    approved_file_root = Some(std::sync::Arc::new(directory));
+                                }
+                                Err(code) => {
+                                    let message = if code == "permission_target_changed" {
+                                        "The active project folder changed after approval. Request permission again."
+                                    } else {
+                                        "The active project folder could not be checked safely after approval."
+                                    };
+                                    let output = tool_error(code, message);
+                                    self.emit_activity(
+                                        storage,
+                                        ToolActivity::denied(call, target_path, output.clone()),
+                                        request_id,
+                                        snapshot,
+                                        events,
+                                    )
+                                    .await?;
+                                    return Ok(ToolResult {
+                                        call_id: call.id.clone(),
+                                        output,
+                                    });
+                                }
+                            }
+                        }
                         prepared.root = root;
                         prepared.relative_path = relative_path;
                         prepared.target_path = target;
@@ -1395,55 +1538,68 @@ impl ToolExecutor {
             .await?;
             return Err(crate::permissions::operation_cancelled_error());
         }
-        let file_change_capture = capture_file_change_before(&prepared, &self.project_roots);
-        let mut output = match &prepared.operation {
-            ToolOperation::SaveMemory { fact } => {
-                save_personal_memory(storage, &snapshot.conversation_id, fact)
-            }
-            ToolOperation::SaveProjectMemory { note } => {
-                save_project_memory(storage, &snapshot.conversation_id, note)
-            }
-            ToolOperation::ListSubagentModels => json!({
-                "models": self.subagent_models.iter().map(|model| json!({
-                    "modelKey": model.key,
-                    "providerId": model.provider_id,
-                    "modelId": model.model_id,
-                    "displayName": model.display_name,
-                    "supportsTools": model.supports_tools,
-                    "reasoningLevels": model.reasoning_levels,
-                })).collect::<Vec<_>>()
-            }),
-            ToolOperation::DelegateTask {
-                model_key,
-                reasoning_effort,
-                task,
-                context,
-            } => {
-                match self
-                    .subagent_models
-                    .iter()
-                    .find(|model| model.key == *model_key)
-                    .cloned()
-                {
-                    Some(model) => match self.chat_service.clone() {
-                        Some(service) => {
-                            let route = crate::chatgpt::subagents::resolve_child_run_route(
-                                &service,
-                                storage,
-                                &model,
-                                reasoning_effort.as_deref(),
-                                cancellation,
-                            )
-                            .await;
-                            match route {
-                                Ok(route) => {
-                                    let child_image_generation = image_generation
+        let (mut output, file_changes, file_changes_error, recovery_checkpoint_id) = if matches!(
+            &prepared.operation,
+            ToolOperation::Write { .. } | ToolOperation::Edit { .. }
+        ) {
+            execute_direct_file_change_with_tracking(
+                storage,
+                &snapshot.conversation_id,
+                &call.name,
+                &prepared,
+                approved_file_root,
+            )
+        } else {
+            let file_change_capture = capture_file_change_before(&prepared, &self.project_roots);
+            let output = match &prepared.operation {
+                ToolOperation::SaveMemory { fact } => {
+                    save_personal_memory(storage, &snapshot.conversation_id, fact)
+                }
+                ToolOperation::SaveProjectMemory { note } => {
+                    save_project_memory(storage, &snapshot.conversation_id, note)
+                }
+                ToolOperation::ListSubagentModels => json!({
+                    "models": self.subagent_models.iter().map(|model| json!({
+                        "modelKey": model.key,
+                        "providerId": model.provider_id,
+                        "modelId": model.model_id,
+                        "displayName": model.display_name,
+                        "supportsTools": model.supports_tools,
+                        "reasoningLevels": model.reasoning_levels,
+                        "preferred": model.preferred,
+                    })).collect::<Vec<_>>()
+                }),
+                ToolOperation::DelegateTask {
+                    model_key,
+                    reasoning_effort,
+                    task,
+                    context,
+                } => {
+                    match self
+                        .subagent_models
+                        .iter()
+                        .find(|model| model.key == *model_key)
+                        .cloned()
+                    {
+                        Some(model) => match self.chat_service.clone() {
+                            Some(service) => {
+                                let route = crate::chatgpt::subagents::resolve_child_run_route(
+                                    &service,
+                                    storage,
+                                    &model,
+                                    reasoning_effort.as_deref(),
+                                    cancellation,
+                                )
+                                .await;
+                                match route {
+                                    Ok(route) => {
+                                        let child_image_generation = image_generation
                                         .map(crate::chatgpt::subagents::OwnedImageGenerationContext::from_borrowed);
-                                    let child_executor = self.child_executor(
-                                        model.supports_tools,
-                                        child_image_generation.is_some(),
-                                    );
-                                    crate::chatgpt::subagents::start_child_analysis(
+                                        let child_executor = self.child_executor(
+                                            model.supports_tools,
+                                            child_image_generation.is_some(),
+                                        );
+                                        crate::chatgpt::subagents::start_child_analysis(
                                         crate::chatgpt::subagents::ChildRunTask {
                                             service: service.clone(),
                                             call: call.clone(),
@@ -1465,119 +1621,135 @@ impl ToolExecutor {
                                         route,
                                     )
                                     .unwrap_or_else(|error| json!({"error":{"code":error.code,"message":error.message}}))
-                                }
-                                Err(error) => {
-                                    json!({"error":{"code":error.code,"message":error.message}})
+                                    }
+                                    Err(error) => {
+                                        json!({"error":{"code":error.code,"message":error.message}})
+                                    }
                                 }
                             }
-                        }
+                            None => {
+                                json!({"error":{"code":"subagent_unavailable","message":"Delegated work is unavailable for this provider route."}})
+                            }
+                        },
                         None => {
-                            json!({"error":{"code":"subagent_unavailable","message":"Delegated work is unavailable for this provider route."}})
+                            json!({"error":{"code":"invalid_subagent_model","message":"The selected child model is no longer available. List the available models again."}})
                         }
-                    },
-                    None => {
-                        json!({"error":{"code":"invalid_subagent_model","message":"The selected child model is no longer available. List the available models again."}})
                     }
                 }
-            }
-            ToolOperation::GetSubagentResult { run_id } => {
-                crate::chatgpt::subagents::child_run_result(
-                    storage,
-                    &snapshot.conversation_id,
-                    run_id,
-                )
-                .unwrap_or_else(
-                    |error| json!({"error":{"code":error.code,"message":error.message}}),
-                )
-            }
-            ToolOperation::CancelSubagent { run_id } => {
-                crate::chatgpt::subagents::cancel_child_analysis(
-                    storage,
-                    &snapshot.conversation_id,
-                    run_id,
-                )
-                .unwrap_or_else(
-                    |error| json!({"error":{"code":error.code,"message":error.message}}),
-                )
-            }
-            ToolOperation::WebSearch { .. } => {
-                execute_model_tool_with_workspace_roots(
-                    &prepared,
-                    &snapshot.conversation_id,
-                    &self.project_roots,
-                    self.permission_mode == ToolPermissionMode::FullAccess,
-                )
-                .await
-            }
-            ToolOperation::CodeSearch { query, mode, limit } => execute_project_code_search(
-                storage,
-                &snapshot.conversation_id,
-                &prepared,
-                &self.project_roots,
-                query,
-                mode,
-                *limit,
-            ),
-            ToolOperation::LspQuery {
-                action,
-                line,
-                character,
-                limit,
-            } => {
-                crate::tools::lsp::execute_lsp_query(
-                    &self.data_root,
-                    &prepared.root,
-                    &prepared.relative_path,
-                    action,
-                    *line,
-                    *character,
-                    *limit,
-                    cancellation,
-                )
-                .await
-            }
-            #[cfg(windows)]
-            ToolOperation::ProjectTool {
-                executable,
-                input,
-                timeout_seconds,
-                output_limit_bytes,
-            } => match serde_json::to_string(input) {
-                Ok(serialized_input) => match super::terminal::TerminalSessionManager::global()
-                    .execute_project_tool(
-                        executable,
-                        &prepared.root,
-                        &serialized_input,
-                        *timeout_seconds,
-                        *output_limit_bytes,
-                        cancellation,
+                ToolOperation::GetSubagentResult { run_id } => {
+                    crate::chatgpt::subagents::child_run_result(
+                        storage,
+                        &snapshot.conversation_id,
+                        run_id,
+                    )
+                    .unwrap_or_else(
+                        |error| json!({"error":{"code":error.code,"message":error.message}}),
+                    )
+                }
+                ToolOperation::CancelSubagent { run_id } => {
+                    crate::chatgpt::subagents::cancel_child_analysis(
+                        storage,
+                        &snapshot.conversation_id,
+                        run_id,
+                    )
+                    .unwrap_or_else(
+                        |error| json!({"error":{"code":error.code,"message":error.message}}),
+                    )
+                }
+                ToolOperation::WebSearch { .. } => {
+                    execute_model_tool_with_workspace_roots(
+                        &prepared,
+                        &snapshot.conversation_id,
+                        &self.project_roots,
                         self.permission_mode == ToolPermissionMode::FullAccess,
                     )
                     .await
-                {
-                    Ok(output) => output,
-                    Err(error) => {
-                        let mut output =
-                            json!({"error":{"code":error.code,"message":error.message}});
-                        if let Some(details) = error.details {
-                            output["error"]["details"] = Value::String(details);
+                }
+                ToolOperation::CodeSearch { query, mode, limit } => execute_project_code_search(
+                    storage,
+                    &snapshot.conversation_id,
+                    &prepared,
+                    &self.project_roots,
+                    query,
+                    mode,
+                    *limit,
+                ),
+                ToolOperation::LspQuery {
+                    action,
+                    line,
+                    character,
+                    limit,
+                } => {
+                    crate::tools::lsp::execute_lsp_query(crate::tools::lsp::LspQueryRequest {
+                        cache_root: &self.data_root,
+                        root: &prepared.root,
+                        relative_path: &prepared.relative_path,
+                        action,
+                        line: *line,
+                        character: *character,
+                        limit: *limit,
+                        cancellation,
+                    })
+                    .await
+                }
+                #[cfg(windows)]
+                ToolOperation::ProjectTool {
+                    executable,
+                    input,
+                    timeout_seconds,
+                    output_limit_bytes,
+                } => match serde_json::to_string(input) {
+                    Ok(serialized_input) => match super::terminal::TerminalSessionManager::global()
+                        .execute_project_tool(super::terminal::ProjectToolRequest {
+                            program: executable,
+                            workdir: &prepared.root,
+                            input: &serialized_input,
+                            timeout_seconds: *timeout_seconds,
+                            output_limit_bytes: *output_limit_bytes,
+                            cancellation,
+                            full_access: self.permission_mode == ToolPermissionMode::FullAccess,
+                        })
+                        .await
+                    {
+                        Ok(output) => output,
+                        Err(error) => {
+                            let mut output =
+                                json!({"error":{"code":error.code,"message":error.message}});
+                            if let Some(details) = error.details {
+                                output["error"]["details"] = Value::String(details);
+                            }
+                            output
                         }
-                        output
+                    },
+                    Err(_) => {
+                        json!({"error":{"code":"project_tool_failed","message":"The configured tool input could not be encoded."}})
                     }
                 },
-                Err(_) => {
-                    json!({"error":{"code":"project_tool_failed","message":"The configured tool input could not be encoded."}})
+                _ => {
+                    execute_model_tool_with_workspace_roots(
+                        &prepared,
+                        &snapshot.conversation_id,
+                        &self.project_roots,
+                        self.permission_mode == ToolPermissionMode::FullAccess,
+                    )
+                    .await
                 }
-            },
-            _ => {
-                execute_model_tool_with_workspace_roots(
-                    &prepared,
+            };
+            let (file_changes, file_changes_error, recovery_checkpoint_id) =
+                finish_file_change_capture(
+                    storage,
                     &snapshot.conversation_id,
-                    &self.project_roots,
-                    self.permission_mode == ToolPermissionMode::FullAccess,
-                )
-                .await
-            }
+                    &call.name,
+                    &prepared,
+                    file_change_capture,
+                    false,
+                );
+            (
+                output,
+                file_changes,
+                file_changes_error,
+                recovery_checkpoint_id,
+            )
         };
         if matches!(
             call.name.as_str(),
@@ -1587,13 +1759,6 @@ impl ToolExecutor {
         }
         qualify_output_paths(&mut output, &prepared, &self.project_roots);
         redact_tool_output(&mut output);
-        let (file_changes, file_changes_error) = finish_file_change_capture(
-            storage,
-            &snapshot.conversation_id,
-            &call.name,
-            &prepared,
-            file_change_capture,
-        );
         let target = prepared.target_path.to_string_lossy().into_owned();
         #[cfg(windows)]
         let is_cancelled = output.get("status").and_then(Value::as_str) == Some("cancelled");
@@ -1607,6 +1772,20 @@ impl ToolExecutor {
         let mut activity = ToolActivity::finished(call, Some(target), output.clone());
         activity.file_changes = file_changes;
         activity.file_changes_error = file_changes_error;
+        let operation_failed = ToolActivity::output_indicates_failure(&output)
+            || output.get("status").and_then(Value::as_str) == Some("cancelled");
+        if operation_failed && let Some(checkpoint_id) = recovery_checkpoint_id {
+            match crate::file_changes::checkpoints::mark_checkpoint_recovery_available(
+                storage,
+                &snapshot.conversation_id,
+                &checkpoint_id,
+            ) {
+                Ok(()) => activity.recovery_checkpoint_id = Some(checkpoint_id),
+                Err(_) => {
+                    activity.file_changes_error = Some("recovery_unavailable".to_owned());
+                }
+            }
+        }
         self.emit_activity(storage, activity, request_id, snapshot, events)
             .await?;
         #[cfg(windows)]
@@ -1654,8 +1833,23 @@ impl ToolExecutor {
                 false,
             ));
         };
+        let Some((server_permission_fingerprint, definition_fingerprint)) =
+            registry.permission_fingerprints_for_tool(&call.name)
+        else {
+            return Err(ServiceError::new(
+                "invalid_provider_response",
+                "The provider requested an MCP tool that is not active for this request.",
+                false,
+            ));
+        };
         let target = format!("MCP server {server_id}, tool {tool_name}");
-        let tool_rule = mcp_tool_permission_rule(&self.permission_rules, server_id, tool_name);
+        let tool_rule = mcp_tool_permission_rule(
+            &self.permission_rules,
+            server_id,
+            server_permission_fingerprint,
+            tool_name,
+            definition_fingerprint,
+        );
         if tool_rule == ToolPermissionRule::Deny {
             let output = tool_error(
                 "permission_denied",
@@ -1946,22 +2140,26 @@ impl ToolExecutor {
             } => crate::image_library::begin_generation(
                 storage,
                 &request,
-                "chat",
-                "oauth",
-                Some(connection_id),
-                Some(workspace_id),
-                Some(&snapshot.conversation_id),
-                Some(&snapshot.message_id),
+                crate::image_library::ImageGenerationOrigin {
+                    source_kind: "chat",
+                    provider_route: "oauth",
+                    connection_id: Some(connection_id),
+                    workspace_id: Some(workspace_id),
+                    conversation_id: Some(&snapshot.conversation_id),
+                    message_id: Some(&snapshot.message_id),
+                },
             ),
             ImageGenerationContext::ApiKey { .. } => crate::image_library::begin_generation(
                 storage,
                 &request,
-                "chat",
-                "api_key",
-                None,
-                None,
-                Some(&snapshot.conversation_id),
-                Some(&snapshot.message_id),
+                crate::image_library::ImageGenerationOrigin {
+                    source_kind: "chat",
+                    provider_route: "api_key",
+                    connection_id: None,
+                    workspace_id: None,
+                    conversation_id: Some(&snapshot.conversation_id),
+                    message_id: Some(&snapshot.message_id),
+                },
             ),
             ImageGenerationContext::CompatibleApiKey { .. }
             | ImageGenerationContext::LocalEndpoint { .. } => Err(ServiceError::new(
@@ -2183,10 +2381,8 @@ impl ToolExecutor {
                 &generation_id,
                 "image_storage_persistence_failed",
             );
-            let error = if cleanup_result.is_err() {
+            let error = if cleanup_result.is_err() || revert_result.is_err() {
                 image_storage_cleanup_error()
-            } else if revert_result.is_err() {
-                image_storage_persistence_error()
             } else {
                 image_storage_persistence_error()
             };
@@ -2303,17 +2499,156 @@ fn qualify_citation_source_ids(output: &mut Value, call_id: &str) {
     }
 }
 
+fn execute_direct_file_change_with_tracking(
+    storage: &crate::storage::AppStorage,
+    conversation_id: &str,
+    tool_name: &str,
+    prepared: &PreparedToolCall,
+    approved_root_directory: Option<std::sync::Arc<crate::filesystem::OpenedDirectory>>,
+) -> (
+    Value,
+    Vec<crate::file_changes::FileChangeSummary>,
+    Option<String>,
+    Option<String>,
+) {
+    let guard = match crate::file_changes::lock_file_changes() {
+        Ok(guard) => guard,
+        Err(_) => {
+            return (
+                tool_error(
+                    "storage_unavailable",
+                    "File changes could not be coordinated safely.",
+                ),
+                Vec::new(),
+                Some("storage_unavailable".to_owned()),
+                None,
+            );
+        }
+    };
+    let root_directory = match approved_root_directory {
+        Some(directory) => {
+            match crate::file_changes::workspace_directory_matches_path(&prepared.root, &directory)
+            {
+                Ok(true) => {}
+                Ok(false) => {
+                    return (
+                        tool_error(
+                            "permission_target_changed",
+                            "The active project folder changed after approval. Request permission again.",
+                        ),
+                        Vec::new(),
+                        Some("workspace_unavailable".to_owned()),
+                        None,
+                    );
+                }
+                Err(_) => {
+                    return (
+                        tool_error(
+                            "workspace_unavailable",
+                            "The active project folder could not be checked safely after approval.",
+                        ),
+                        Vec::new(),
+                        Some("workspace_unavailable".to_owned()),
+                        None,
+                    );
+                }
+            }
+            directory
+        }
+        None => match crate::file_changes::open_workspace_directory(&prepared.root) {
+            Ok((directory, _)) => std::sync::Arc::new(directory),
+            Err(error) => {
+                let code = tracking_error_code(error);
+                return (
+                    tool_error(
+                        code,
+                        "The active project folder could not be opened safely.",
+                    ),
+                    Vec::new(),
+                    Some(code.to_owned()),
+                    None,
+                );
+            }
+        },
+    };
+    let capture = capture_direct_file_change_before(prepared, root_directory.clone());
+    let result = match &prepared.operation {
+        ToolOperation::Write { content } => crate::tools::write_file_with_file_change_lock_held(
+            &root_directory,
+            &prepared.relative_path,
+            content,
+        ),
+        ToolOperation::Edit {
+            old_string,
+            new_string,
+        } => crate::tools::edit_file_with_file_change_lock_held(
+            &root_directory,
+            &prepared.relative_path,
+            old_string,
+            new_string,
+        ),
+        _ => Err(ServiceError::new(
+            "tool_execution_unavailable",
+            "This operation is not a direct file change.",
+            false,
+        )),
+    };
+    let output = result.unwrap_or_else(|error| {
+        let mut output = tool_error(error.code, &error.message);
+        if let Some(details) = error.details {
+            output["error"]["details"] = json!(details);
+        }
+        output
+    });
+    let (file_changes, file_changes_error, recovery_checkpoint_id) =
+        finish_file_change_capture(storage, conversation_id, tool_name, prepared, capture, true);
+    drop(guard);
+    (
+        output,
+        file_changes,
+        file_changes_error,
+        recovery_checkpoint_id,
+    )
+}
+
+fn open_approved_file_root(
+    root: &Path,
+    expected_identity: crate::file_changes::DirectoryIdentity,
+) -> Result<crate::filesystem::OpenedDirectory, &'static str> {
+    let (directory, canonical_root) =
+        crate::file_changes::open_workspace_directory(root).map_err(|_| "workspace_unavailable")?;
+    if canonical_root != root {
+        return Err("permission_target_changed");
+    }
+    match crate::file_changes::workspace_directory_identity(&directory) {
+        Ok(identity) if identity == expected_identity => Ok(directory),
+        Ok(_) => Err("permission_target_changed"),
+        Err(_) => Err("workspace_unavailable"),
+    }
+}
+
+fn capture_direct_file_change_before(
+    prepared: &PreparedToolCall,
+    directory: std::sync::Arc<crate::filesystem::OpenedDirectory>,
+) -> PendingFileChangeCapture {
+    let path = prepared.relative_path.clone();
+    let before = crate::file_changes::capture_file_with_root_identity_from_directory(
+        &directory,
+        Path::new(&path),
+    );
+    PendingFileChangeCapture::File {
+        directory,
+        path,
+        before,
+    }
+}
+
 fn capture_file_change_before(
     prepared: &PreparedToolCall,
     project_roots: &[PathBuf],
 ) -> PendingFileChangeCapture {
     match &prepared.operation {
-        ToolOperation::Write { .. } | ToolOperation::Edit { .. } => {
-            PendingFileChangeCapture::File {
-                path: prepared.relative_path.clone(),
-                before: crate::file_changes::capture_file(&prepared.root, &prepared.relative_path),
-            }
-        }
+        ToolOperation::Write { .. } | ToolOperation::Edit { .. } => PendingFileChangeCapture::None,
         ToolOperation::Bash { .. } | ToolOperation::SendTerminalInput { .. } => {
             PendingFileChangeCapture::Workspace {
                 before: if project_roots.is_empty() {
@@ -2346,17 +2681,39 @@ fn finish_file_change_capture(
     tool_name: &str,
     prepared: &PreparedToolCall,
     capture: PendingFileChangeCapture,
-) -> (Vec<crate::file_changes::FileChangeSummary>, Option<String>) {
+    file_change_lock_held: bool,
+) -> (
+    Vec<crate::file_changes::FileChangeSummary>,
+    Option<String>,
+    Option<String>,
+) {
     let grouped_deltas = match capture {
-        PendingFileChangeCapture::None => return (Vec::new(), None),
-        PendingFileChangeCapture::File { path, before } => {
-            let Ok(before) = before else {
-                return (Vec::new(), Some("snapshot_unavailable".to_owned()));
+        PendingFileChangeCapture::None => return (Vec::new(), None, None),
+        PendingFileChangeCapture::File {
+            directory,
+            path,
+            before,
+        } => {
+            let Ok((before_root_identity, before)) = before else {
+                return (Vec::new(), Some("snapshot_unavailable".to_owned()), None);
             };
-            let after = match crate::file_changes::capture_file(&prepared.root, &path) {
-                Ok(after) => after,
-                Err(error) => return (Vec::new(), Some(tracking_error_code(error).to_owned())),
-            };
+            let (after_root_identity, after) =
+                match crate::file_changes::capture_file_with_root_identity_from_directory(
+                    &directory,
+                    Path::new(&path),
+                ) {
+                    Ok(after) => after,
+                    Err(error) => {
+                        return (
+                            Vec::new(),
+                            Some(tracking_error_code(error).to_owned()),
+                            None,
+                        );
+                    }
+                };
+            if before_root_identity != after_root_identity {
+                return (Vec::new(), Some("workspace_unavailable".to_owned()), None);
+            }
             let before_hash = before.as_ref().map(|file| file.hash.as_str());
             let after_hash = after.as_ref().map(|file| file.hash.as_str());
             if before_hash == after_hash {
@@ -2365,6 +2722,7 @@ fn finish_file_change_capture(
                 vec![(
                     prepared.root.clone(),
                     vec![crate::file_changes::FileChangeDelta {
+                        root_identity: before_root_identity,
                         path,
                         before,
                         after,
@@ -2379,15 +2737,28 @@ fn finish_file_change_capture(
                     return (
                         Vec::new(),
                         Some("workspace_snapshot_unavailable".to_owned()),
+                        None,
                     );
                 };
                 let after = match crate::file_changes::capture_workspace(&root) {
                     Ok(after) => after,
-                    Err(error) => return (Vec::new(), Some(tracking_error_code(error).to_owned())),
+                    Err(error) => {
+                        return (
+                            Vec::new(),
+                            Some(tracking_error_code(error).to_owned()),
+                            None,
+                        );
+                    }
                 };
                 let deltas = match crate::file_changes::workspace_deltas(&before, &after) {
                     Ok(deltas) => deltas,
-                    Err(error) => return (Vec::new(), Some(tracking_error_code(error).to_owned())),
+                    Err(error) => {
+                        return (
+                            Vec::new(),
+                            Some(tracking_error_code(error).to_owned()),
+                            None,
+                        );
+                    }
                 };
                 if !deltas.is_empty() {
                     changes.push((root, deltas));
@@ -2398,23 +2769,44 @@ fn finish_file_change_capture(
     };
 
     if grouped_deltas.is_empty() {
-        return (Vec::new(), None);
+        return (Vec::new(), None, None);
     }
-    let mut changes = Vec::new();
-    for (root, deltas) in &grouped_deltas {
-        match crate::file_changes::record_deltas(storage, conversation_id, root, deltas.clone()) {
-            Ok(root_changes) => changes.extend(root_changes),
-            Err(error) => return (Vec::new(), Some(tracking_error_code(error).to_owned())),
+    let changes = match if file_change_lock_held {
+        crate::file_changes::record_deltas_batch_locked(storage, conversation_id, &grouped_deltas)
+    } else {
+        crate::file_changes::record_deltas_batch(storage, conversation_id, &grouped_deltas)
+    } {
+        Ok(changes) => changes,
+        Err(error) => {
+            return (
+                Vec::new(),
+                Some(tracking_error_code(error).to_owned()),
+                None,
+            );
         }
-    }
-    match crate::file_changes::checkpoints::persist_checkpoint(
-        storage,
-        conversation_id,
-        tool_name,
-        &grouped_deltas,
-    ) {
-        Ok(()) => (changes, None),
-        Err(error) => (Vec::new(), Some(tracking_error_code(error).to_owned())),
+    };
+    let checkpoint = if file_change_lock_held {
+        crate::file_changes::checkpoints::persist_checkpoint_locked(
+            storage,
+            conversation_id,
+            tool_name,
+            &grouped_deltas,
+        )
+    } else {
+        crate::file_changes::checkpoints::persist_checkpoint(
+            storage,
+            conversation_id,
+            tool_name,
+            &grouped_deltas,
+        )
+    };
+    match checkpoint {
+        Ok(checkpoint_id) => (changes, None, checkpoint_id),
+        Err(error) => (
+            Vec::new(),
+            Some(tracking_error_code(error).to_owned()),
+            None,
+        ),
     }
 }
 
@@ -2440,6 +2832,7 @@ mod policy_tests {
         PreparedToolCall, ToolCall, ToolExecutor, ToolPermissionMode, ToolPermissionRule,
         ToolPermissionRules, parse_tool_permission_rules, qualify_citation_source_ids,
     };
+    use crate::storage::AppStorage;
     use crate::tools::executor::{paths::ToolPathScope, validation::ToolOperation};
 
     struct TestDirectory(PathBuf);
@@ -2461,6 +2854,81 @@ mod policy_tests {
         }
     }
 
+    struct TestStorage {
+        storage: AppStorage,
+        _directory: TestDirectory,
+    }
+
+    impl TestStorage {
+        fn new() -> Self {
+            let directory = TestDirectory::new();
+            let storage = AppStorage::open_at(directory.0.clone()).expect("open test storage");
+            storage
+                .connect()
+                .expect("connect test storage")
+                .execute_batch(
+                    "CREATE TABLE projects (
+                        id TEXT PRIMARY KEY NOT NULL,
+                        name TEXT NOT NULL,
+                        folder_path TEXT NOT NULL,
+                        created_at INTEGER NOT NULL,
+                        updated_at INTEGER NOT NULL
+                    );
+                    CREATE TABLE conversations (
+                        id TEXT PRIMARY KEY NOT NULL,
+                        title TEXT NOT NULL,
+                        title_source TEXT NOT NULL DEFAULT 'automatic',
+                        connection_id TEXT,
+                        workspace_id TEXT,
+                        api_key_connection_id TEXT,
+                        provider_id TEXT,
+                        model_id TEXT,
+                        project_id TEXT REFERENCES projects(id) ON DELETE SET NULL,
+                        is_pinned INTEGER NOT NULL DEFAULT 0,
+                        created_at INTEGER NOT NULL,
+                        updated_at INTEGER NOT NULL
+                    );
+                    CREATE TABLE messages (
+                        rowid INTEGER PRIMARY KEY,
+                        id TEXT NOT NULL,
+                        conversation_id TEXT NOT NULL
+                            REFERENCES conversations(id) ON DELETE CASCADE,
+                        role TEXT NOT NULL,
+                        content TEXT NOT NULL,
+                        created_at INTEGER,
+                        output_tokens INTEGER,
+                        tokens_per_second REAL,
+                        elapsed_microseconds INTEGER,
+                        reasoning_summaries TEXT NOT NULL DEFAULT '[]',
+                        tool_activities TEXT NOT NULL DEFAULT '[]',
+                        status TEXT NOT NULL,
+                        failure_code TEXT,
+                        UNIQUE (conversation_id, id)
+                    );",
+                )
+                .expect("create test conversation tables");
+            storage
+                .initialize_backend_schema()
+                .expect("initialize test backend schema");
+            Self {
+                storage,
+                _directory: directory,
+            }
+        }
+
+        fn add_conversation(&self, conversation_id: &str) {
+            self.storage
+                .connect()
+                .expect("connect test storage")
+                .execute(
+                    "INSERT INTO conversations (id, title, created_at, updated_at)
+                     VALUES (?1, ?1, 1, 1)",
+                    [conversation_id],
+                )
+                .expect("insert test conversation");
+        }
+    }
+
     #[test]
     fn rejects_calls_that_were_not_advertised_to_the_model() {
         let executor = ToolExecutor::with_allowed_tool_names(
@@ -2477,6 +2945,215 @@ mod policy_tests {
                 .expect_err("unadvertised question tool must be rejected")
                 .code,
             "invalid_provider_response"
+        );
+    }
+
+    #[test]
+    fn security_scan_enforces_the_public_web_consent_allowlist() {
+        let executor = ToolExecutor::with_allowed_tool_names(
+            None,
+            Path::new("."),
+            ToolPermissionMode::FullAccess,
+            ["web_search".to_owned(), "read_file".to_owned()],
+        )
+        .with_security_scan_scope(true, false);
+        assert!(executor.validate_tool_name("read_file").is_ok());
+        assert_eq!(
+            executor
+                .validate_tool_name("web_search")
+                .expect_err("public web research must be denied without stored consent")
+                .code,
+            "invalid_provider_response"
+        );
+
+        let opted_in_executor = ToolExecutor::with_allowed_tool_names(
+            None,
+            Path::new("."),
+            ToolPermissionMode::FullAccess,
+            ["web_search".to_owned(), "read_file".to_owned()],
+        )
+        .with_security_scan_scope(true, true);
+        assert!(opted_in_executor.validate_tool_name("web_search").is_ok());
+    }
+
+    #[test]
+    fn direct_file_tool_keeps_one_lock_through_capture_and_checkpoint_persistence() {
+        let workspace = TestDirectory::new();
+        let storage = TestStorage::new();
+        let conversation_id = "direct-file-tool-lock";
+        storage.add_conversation(conversation_id);
+        fs::write(workspace.0.join("note.txt"), "before").expect("create workspace file");
+
+        let write = PreparedToolCall {
+            root: workspace.0.clone(),
+            relative_path: "note.txt".to_owned(),
+            requested_path: "note.txt".to_owned(),
+            target_path: workspace.0.join("note.txt"),
+            scope: ToolPathScope::Project,
+            operation: ToolOperation::Write {
+                content: "after".to_owned(),
+            },
+        };
+        let (write_output, write_changes, write_error, write_checkpoint) =
+            super::execute_direct_file_change_with_tracking(
+                &storage.storage,
+                conversation_id,
+                "write_file",
+                &write,
+                None,
+            );
+        assert_eq!(write_output["success"].as_bool(), Some(true));
+        assert_eq!(write_changes.len(), 1);
+        assert_eq!(write_error, None);
+        assert!(write_checkpoint.is_some());
+
+        let edit = PreparedToolCall {
+            operation: ToolOperation::Edit {
+                old_string: "after".to_owned(),
+                new_string: "edited".to_owned(),
+            },
+            ..write
+        };
+        let (edit_output, edit_changes, edit_error, edit_checkpoint) =
+            super::execute_direct_file_change_with_tracking(
+                &storage.storage,
+                conversation_id,
+                "edit_file",
+                &edit,
+                None,
+            );
+        assert_eq!(edit_output["success"].as_bool(), Some(true));
+        assert_eq!(edit_changes.len(), 1);
+        assert_eq!(edit_error, None);
+        assert!(edit_checkpoint.is_some());
+        assert_eq!(
+            fs::read_to_string(workspace.0.join("note.txt")).expect("read edited file"),
+            "edited"
+        );
+    }
+
+    #[test]
+    fn direct_file_write_rejects_a_root_capability_from_another_approved_path() {
+        let approved_workspace = TestDirectory::new();
+        let active_workspace = TestDirectory::new();
+        let storage = TestStorage::new();
+        let conversation_id = "direct-file-root-approval";
+        storage.add_conversation(conversation_id);
+        fs::write(active_workspace.0.join("note.txt"), "before")
+            .expect("create active workspace file");
+        let (approved_directory, _) =
+            crate::file_changes::open_workspace_directory(&approved_workspace.0)
+                .expect("open approved workspace");
+        let prepared = PreparedToolCall {
+            root: active_workspace.0.clone(),
+            relative_path: "note.txt".to_owned(),
+            requested_path: "note.txt".to_owned(),
+            target_path: active_workspace.0.join("note.txt"),
+            scope: ToolPathScope::Project,
+            operation: ToolOperation::Write {
+                content: "after".to_owned(),
+            },
+        };
+
+        let (output, changes, tracking_error, checkpoint) =
+            super::execute_direct_file_change_with_tracking(
+                &storage.storage,
+                conversation_id,
+                "write_file",
+                &prepared,
+                Some(std::sync::Arc::new(approved_directory)),
+            );
+
+        assert_eq!(
+            output["error"]["code"].as_str(),
+            Some("permission_target_changed")
+        );
+        assert!(changes.is_empty());
+        assert_eq!(tracking_error.as_deref(), Some("workspace_unavailable"));
+        assert!(checkpoint.is_none());
+        assert_eq!(
+            fs::read_to_string(active_workspace.0.join("note.txt"))
+                .expect("read unchanged active file"),
+            "before"
+        );
+    }
+
+    #[test]
+    fn approved_file_root_identity_rejects_replacement_at_the_same_path() {
+        let workspace = TestDirectory::new();
+        let (directory, _) = crate::file_changes::open_workspace_directory(&workspace.0)
+            .expect("open approved workspace");
+        let identity = crate::file_changes::workspace_directory_identity(&directory)
+            .expect("read approved workspace identity");
+        drop(directory);
+        let moved_root = workspace.0.with_extension("approved-original");
+        fs::rename(&workspace.0, &moved_root).expect("move approved workspace root");
+        fs::create_dir_all(&workspace.0).expect("create replacement workspace root");
+
+        let result = match super::open_approved_file_root(&workspace.0, identity) {
+            Ok(directory) => {
+                drop(directory);
+                None
+            }
+            Err(code) => Some(code),
+        };
+
+        fs::remove_dir_all(&workspace.0).expect("remove replacement workspace root");
+        fs::rename(&moved_root, &workspace.0).expect("restore approved workspace root");
+        assert_eq!(result, Some("permission_target_changed"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn direct_file_write_rejects_a_same_path_root_replaced_after_approval() {
+        let workspace = TestDirectory::new();
+        let storage = TestStorage::new();
+        let conversation_id = "direct-file-replaced-approval-root";
+        storage.add_conversation(conversation_id);
+        fs::write(workspace.0.join("note.txt"), "original")
+            .expect("create original workspace file");
+        let (approved_directory, _) = crate::file_changes::open_workspace_directory(&workspace.0)
+            .expect("open approved workspace");
+        let moved_root = workspace.0.with_extension("approved-original");
+        fs::rename(&workspace.0, &moved_root).expect("move approved workspace root");
+        fs::create_dir_all(&workspace.0).expect("create replacement workspace root");
+        fs::write(workspace.0.join("note.txt"), "replacement")
+            .expect("create replacement workspace file");
+        let prepared = PreparedToolCall {
+            root: workspace.0.clone(),
+            relative_path: "note.txt".to_owned(),
+            requested_path: "note.txt".to_owned(),
+            target_path: workspace.0.join("note.txt"),
+            scope: ToolPathScope::Project,
+            operation: ToolOperation::Write {
+                content: "after".to_owned(),
+            },
+        };
+
+        let (output, changes, tracking_error, checkpoint) =
+            super::execute_direct_file_change_with_tracking(
+                &storage.storage,
+                conversation_id,
+                "write_file",
+                &prepared,
+                Some(std::sync::Arc::new(approved_directory)),
+            );
+
+        let replacement_contents = fs::read_to_string(workspace.0.join("note.txt"))
+            .expect("read unchanged replacement file");
+        fs::remove_dir_all(&workspace.0).expect("remove replacement workspace root");
+        fs::rename(&moved_root, &workspace.0).expect("restore original workspace root");
+        assert_eq!(
+            output["error"]["code"].as_str(),
+            Some("permission_target_changed")
+        );
+        assert!(changes.is_empty());
+        assert_eq!(tracking_error.as_deref(), Some("workspace_unavailable"));
+        assert!(checkpoint.is_none());
+        assert_eq!(replacement_contents, "replacement");
+        assert_eq!(
+            fs::read_to_string(workspace.0.join("note.txt")).expect("read restored original file"),
+            "original"
         );
     }
 
@@ -2782,24 +3459,65 @@ mod policy_tests {
 
     #[cfg(windows)]
     #[test]
-    fn mcp_server_permission_defaults_to_ask_and_uses_local_project_override() {
+    fn mcp_permissions_are_bound_to_server_and_tool_definition_fingerprints() {
+        const SERVER_FINGERPRINT: &str = "0123456789abcdef0123456789abcdef";
+        const OTHER_SERVER_FINGERPRINT: &str = "abcdef0123456789abcdef0123456789";
+        const TOOL_FINGERPRINT: &str = "11111111111111111111111111111111";
+        const OTHER_TOOL_FINGERPRINT: &str = "22222222222222222222222222222222";
         let mut rules = ToolPermissionRules::new();
         assert_eq!(
-            crate::tools::mcp::server_permission_rule(&rules, "local_docs"),
+            crate::tools::mcp::server_permission_rule(&rules, "local_docs", SERVER_FINGERPRINT),
             ToolPermissionRule::Ask
         );
         rules.insert("mcp__local_docs__*".to_owned(), ToolPermissionRule::Allow);
         rules.insert("mcp__remote_docs__*".to_owned(), ToolPermissionRule::Deny);
         assert_eq!(
-            crate::tools::mcp::server_permission_rule(&rules, "local_docs"),
+            crate::tools::mcp::server_permission_rule(&rules, "local_docs", SERVER_FINGERPRINT),
+            ToolPermissionRule::Ask
+        );
+        assert_eq!(
+            crate::tools::mcp::server_permission_rule(&rules, "remote_docs", SERVER_FINGERPRINT),
+            ToolPermissionRule::Deny
+        );
+        let server_rule =
+            crate::tools::mcp::server_permission_rule_name("local_docs", SERVER_FINGERPRINT);
+        rules.insert(server_rule, ToolPermissionRule::Allow);
+        assert_eq!(
+            crate::tools::mcp::server_permission_rule(&rules, "local_docs", SERVER_FINGERPRINT),
             ToolPermissionRule::Allow
         );
         assert_eq!(
-            crate::tools::mcp::server_permission_rule(&rules, "remote_docs"),
-            ToolPermissionRule::Deny
+            crate::tools::mcp::server_permission_rule(
+                &rules,
+                "local_docs",
+                OTHER_SERVER_FINGERPRINT
+            ),
+            ToolPermissionRule::Ask
         );
         assert_eq!(
-            super::mcp_tool_permission_rule(&rules, "local_docs", "read-file"),
+            super::mcp_tool_permission_rule(
+                &rules,
+                "local_docs",
+                SERVER_FINGERPRINT,
+                "read-file",
+                TOOL_FINGERPRINT,
+            ),
+            ToolPermissionRule::Ask
+        );
+        let tool_rule = crate::tools::mcp::tool_permission_rule_name(
+            "local_docs",
+            "read-file",
+            TOOL_FINGERPRINT,
+        );
+        rules.insert(tool_rule, ToolPermissionRule::Allow);
+        assert_eq!(
+            super::mcp_tool_permission_rule(
+                &rules,
+                "local_docs",
+                SERVER_FINGERPRINT,
+                "read-file",
+                TOOL_FINGERPRINT,
+            ),
             ToolPermissionRule::Allow
         );
         rules.insert(
@@ -2807,16 +3525,34 @@ mod policy_tests {
             ToolPermissionRule::Deny,
         );
         assert_eq!(
-            super::mcp_tool_permission_rule(&rules, "local_docs", "read-file"),
+            super::mcp_tool_permission_rule(
+                &rules,
+                "local_docs",
+                SERVER_FINGERPRINT,
+                "read-file",
+                TOOL_FINGERPRINT,
+            ),
             ToolPermissionRule::Deny
         );
         assert_eq!(
-            super::mcp_tool_permission_rule(&rules, "local_docs", "write-file"),
-            ToolPermissionRule::Allow
+            super::mcp_tool_permission_rule(
+                &rules,
+                "local_docs",
+                SERVER_FINGERPRINT,
+                "write-file",
+                OTHER_TOOL_FINGERPRINT,
+            ),
+            ToolPermissionRule::Ask
         );
         rules.insert("mcp__local_docs__*".to_owned(), ToolPermissionRule::Deny);
         assert_eq!(
-            super::mcp_tool_permission_rule(&rules, "local_docs", "write-file"),
+            super::mcp_tool_permission_rule(
+                &rules,
+                "local_docs",
+                SERVER_FINGERPRINT,
+                "read-file",
+                TOOL_FINGERPRINT,
+            ),
             ToolPermissionRule::Deny
         );
     }
@@ -2863,6 +3599,7 @@ mod policy_tests {
     fn redact_tool_output_masks_live_credentials_in_json() {
         let mut output = json!({
             "stdout": "Loaded configuration:\nOPENAI_API_KEY=sk-proj-abcdefghijklmnopqrstuvwxyz1234567890\nDone.",
+            "keyVariants": "SECRET_KEY=upper-secret secretKey:camel-secret secret-key=hyphen-secret",
             "nested": {
                 "token": "ghp_abcdefghijklmnopqrstuvwxyz0123456789",
                 "normal": "hello world"
@@ -2878,6 +3615,10 @@ mod policy_tests {
         let stdout = output["stdout"].as_str().unwrap();
         assert!(!stdout.contains("sk-proj-abcdefghijklmnopqrstuvwxyz1234567890"));
         assert!(stdout.contains("[REDACTED]"));
+        let key_variants = output["keyVariants"].as_str().unwrap();
+        for secret in ["upper-secret", "camel-secret", "hyphen-secret"] {
+            assert!(!key_variants.contains(secret));
+        }
 
         let nested_token = output["nested"]["token"].as_str().unwrap();
         assert!(!nested_token.contains("ghp_abcdefghijklmnopqrstuvwxyz0123456789"));
@@ -3170,6 +3911,28 @@ fn execute_project_code_search(
         } else {
             Vec::new()
         };
+        let current_state = crate::project_index::snapshot(&connection, &project_id)?;
+        if current_state.status != "current" {
+            let roots = if project_roots.is_empty() {
+                vec![prepared.root.clone()]
+            } else {
+                project_roots.to_vec()
+            };
+            let index_scheduled = crate::project_index::schedule_sync_roots_on_connection(
+                &connection,
+                storage.database_queue_handle(),
+                &project_id,
+                &roots,
+            )
+            .is_ok();
+            return Ok(json!({
+                "status": if index_scheduled { "indexing" } else { "stale" },
+                "indexScheduled": index_scheduled,
+                "indexedFiles": current_state.indexed_files,
+                "indexedSymbols": current_state.indexed_symbols,
+                "memory": memory
+            }));
+        }
         let roots = if project_roots.is_empty() {
             vec![prepared.root.clone()]
         } else {

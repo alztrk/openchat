@@ -170,6 +170,9 @@ pub struct ToolActivity {
     /// Safe display message when file-change details could not be collected.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub file_changes_error: Option<String>,
+    /// Opaque checkpoint handle for an explicit recovery after this operation failed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recovery_checkpoint_id: Option<String>,
     /// Current tool activity lifecycle state.
     pub status: ToolActivityStatus,
 }
@@ -187,6 +190,7 @@ impl ToolActivity {
             output: None,
             file_changes: Vec::new(),
             file_changes_error: None,
+            recovery_checkpoint_id: None,
             status: ToolActivityStatus::AwaitingApproval,
         }
     }
@@ -203,6 +207,7 @@ impl ToolActivity {
             output: None,
             file_changes: Vec::new(),
             file_changes_error: None,
+            recovery_checkpoint_id: None,
             status: ToolActivityStatus::Running,
         }
     }
@@ -219,13 +224,14 @@ impl ToolActivity {
             output: None,
             file_changes: Vec::new(),
             file_changes_error: None,
+            recovery_checkpoint_id: None,
             status: ToolActivityStatus::WaitingForUser,
         }
     }
 
     /// Creates a terminal activity, deriving success or failure from its output.
     pub fn finished(call: &ToolCall, target_path: Option<String>, output: Value) -> Self {
-        let status = if output.get("error").is_some() {
+        let status = if Self::output_indicates_failure(&output) {
             ToolActivityStatus::Failed
         } else {
             ToolActivityStatus::Completed
@@ -240,8 +246,30 @@ impl ToolActivity {
             output: Some(output),
             file_changes: Vec::new(),
             file_changes_error: None,
+            recovery_checkpoint_id: None,
             status,
         }
+    }
+
+    /// Returns whether a tool output represents a failed process or operation.
+    pub(crate) fn output_indicates_failure(output: &Value) -> bool {
+        if output.get("error").is_some()
+            || matches!(
+                output.get("status").and_then(Value::as_str),
+                Some("failed") | Some("timed_out")
+            )
+        {
+            return true;
+        }
+
+        if output.get("is_running").and_then(Value::as_bool) == Some(true) {
+            return false;
+        }
+
+        output
+            .get("exit_code")
+            .and_then(Value::as_i64)
+            .is_some_and(|exit_code| exit_code != 0)
     }
 
     /// Creates a terminal activity for a denied tool invocation.
@@ -256,6 +284,7 @@ impl ToolActivity {
             output: Some(output),
             file_changes: Vec::new(),
             file_changes_error: None,
+            recovery_checkpoint_id: None,
             status: ToolActivityStatus::Denied,
         }
     }
@@ -272,8 +301,65 @@ impl ToolActivity {
             output: Some(output),
             file_changes: Vec::new(),
             file_changes_error: None,
+            recovery_checkpoint_id: None,
             status: ToolActivityStatus::Cancelled,
         }
+    }
+}
+
+#[cfg(test)]
+mod tool_activity_tests {
+    use super::{ToolActivity, ToolActivityStatus, ToolCall};
+    use serde_json::json;
+
+    fn call() -> ToolCall {
+        ToolCall {
+            id: "process-result".to_owned(),
+            name: "execute_command".to_owned(),
+            arguments: json!({"command": "example"}),
+        }
+    }
+
+    #[test]
+    fn nonzero_process_exit_is_a_failed_tool_activity() {
+        let shell_result =
+            ToolActivity::finished(&call(), None, json!({"is_running": false, "exit_code": 7}));
+        let project_tool_result = ToolActivity::finished(
+            &call(),
+            None,
+            json!({"status": "completed", "exit_code": 7}),
+        );
+
+        assert!(matches!(shell_result.status, ToolActivityStatus::Failed));
+        assert!(matches!(
+            project_tool_result.status,
+            ToolActivityStatus::Failed
+        ));
+    }
+
+    #[test]
+    fn timeout_is_a_failed_tool_activity() {
+        let activity = ToolActivity::finished(
+            &call(),
+            None,
+            json!({"status": "timed_out", "exit_code": null}),
+        );
+
+        assert!(matches!(activity.status, ToolActivityStatus::Failed));
+    }
+
+    #[test]
+    fn successful_or_still_running_commands_are_not_failed() {
+        let successful =
+            ToolActivity::finished(&call(), None, json!({"is_running": false, "exit_code": 0}));
+        let running = ToolActivity::finished(
+            &call(),
+            None,
+            json!({"is_running": true, "exit_code": null}),
+        );
+
+        assert!(matches!(successful.status, ToolActivityStatus::Completed));
+        assert!(matches!(running.status, ToolActivityStatus::Completed));
     }
 }
 
