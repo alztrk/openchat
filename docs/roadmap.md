@@ -328,7 +328,7 @@ Fresh 2026-10-28 `usage_statistics` tests passed 22/22, with one manual benchmar
 - Add semantic accessibility assertions alongside screenshot tests for Turkish, English, German, Spanish, and French.
 - **Post-release update:** validate native Windows UI Automation and screen-reader workflows after the first stable release.
 
-Project-instruction and memory-note fields now have labels associated with their input elements, and stale Skill controls expose a localized accessible name. The targeted Biome check passes for those components. Fresh 2026-10-28 checks passed the frontend suite 107/107, `npm run build`, and `npm run check:locales` across de, en, es, fr, and tr. Native Windows display-scaling, UI Automation, and screen-reader workflows remain open.
+Project-instruction and memory-note fields now have labels associated with their input elements, and stale Skill controls expose a localized accessible name. The targeted Biome check passes for those components. Fresh 2026-10-28 checks passed the frontend suite 110/110, `npm run build`, and `npm run check:locales` across de, en, es, fr, and tr. Native Windows display-scaling, UI Automation, and screen-reader workflows remain open.
 
 **Exit criteria:** core chat, settings, model selection, tool approval, and local-model workflows pass the accessibility matrix in all supported locales.
 
@@ -779,7 +779,7 @@ Hosted sharing remains out of scope under the current product decision.
 
 - Phone and tablet breakpoint layouts can be generated as separate, profile-local SVG variants, revised with their own bounded history, restored, previewed at the selected width, and exported. Missing variants use an explicitly labeled scaled base preview. The cancel path keeps a successful provider response when the service rejects cancellation and discards it when cancellation is accepted; focused request-settlement tests cover both outcomes and a pending cancellation decision. Provider-backed generation/cancellation, rendered persistence-error recovery, and packaged Windows WebView behavior still need end-to-end validation.
 
-The fresh frontend suite passed 107/107 and the production build passed. The suite covers profile-local storage round-trips, visible save failures, and accepted or rejected cancellation decisions; it does not exercise a configured live provider.
+The fresh frontend suite passed 110/110 and the production build passed. The suite covers profile-local storage round-trips, visible save failures, and accepted or rejected cancellation decisions; it does not exercise a configured live provider.
 
 - Provide an interactive, infinite visual canvas for prototyping screens, component layouts, and design-system tokens directly within OpenChat.
 - Support bidirectional generation: convert natural language prompts into live vector UI frames, and export visually selected canvas elements directly into clean React, HTML/Tailwind, or SVG code.
