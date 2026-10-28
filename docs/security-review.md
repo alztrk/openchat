@@ -311,6 +311,8 @@ Custom provider URLs intentionally accept HTTP because locally run inference ser
 
 New loopback HTTP configuration writes require both the form switch and native operating-system confirmation. Provider records store `nativeHttpConfirmed`, which the native host writes only after the OS dialog accepts. Older records without confirmation remain intact, appear unapproved in settings, and are rejected by the service until the user saves them again through the confirmation flow. The service requires both the HTTP setting and native confirmation marker, then rejects non-loopback hosts before any provider request. The focused service and Tauri regressions cover remote-host rejection and preserve localhost, IPv4 loopback, IPv6 loopback, and HTTPS endpoints. The OS dialog has not been interactively exercised, so A-013 remains partial. Loopback HTTP still has no transport encryption and can be observed by processes on the same machine. Fresh 2026-10-28 tests passed: the focused Tauri `provider_storage` filter (12/12) and `every_supported_locale_has_host_owned_permission_and_http_copy` (1/1). These validate storage/consent and embedded localized copy, not operating-system dialog rendering.
 
+Follow-up, 2026-10-28: the custom-provider form warning and native confirmation warning now state in all five supported locales that unencrypted loopback traffic may be observable by other processes on the same device. The form warning keeps the localhost/loopback restriction explicit. This clarifies the local-process risk without changing provider transport or approval behavior; native OS dialog rendering remains unverified.
+
 ### Resolved: custom-provider edits could rebind a saved key to another endpoint
 
 Severity: high when the renderer is compromised and a custom provider has a saved key, because the key could be sent to an attacker-controlled endpoint without being read by the renderer.
@@ -611,6 +613,8 @@ This Windows implementation gives up atomic publication for guarded writes: read
 Legacy file-change imports without a persisted root identity now report `diffAvailable: false`, and the diff endpoint returns an unavailable result without reopening an unbound workspace path. The legacy import regression verifies this behavior.
 
 Fresh A-023 revalidation, 2026-10-28: `cargo test --locked --offline -p openchat-local-service --lib file_changes::tests --target-dir target/security-scans-validation -- --test-threads=1` passed 44/44 on the current Windows checkout. The suite covers root identity rejection, no-follow workspace operations, interrupted-restore retry, conflict preservation, and rollback after persistence failures. It does not exercise an external writer in the comparison-to-rename interval, so A-023 remains partial.
+
+Latest A-023 Windows revalidation, 2026-10-28: `cargo test --locked --offline -p openchat-local-service --lib file_changes::workspace::windows_mutation_tests --target-dir target/security-scans-validation -- --test-threads=1 --nocapture` passed 6/6, including POSIX-style replacement attempts during writes and pending deletes. `cargo test --locked --offline -p openchat-local-service --lib domain::file_changes --target-dir target/security-scans-validation -- --test-threads=1` passed 51/51. These tests confirm the Windows handle guard; in-place write interruption and intermediate reader visibility remain, and A-023 stays partial.
 
 ### Partial: legacy elevated tool-permission provenance (2026-10-27)
 
