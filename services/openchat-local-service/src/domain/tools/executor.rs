@@ -294,6 +294,7 @@ enum PendingFileChangeCapture {
             ),
             crate::file_changes::TrackingError,
         >,
+        target: crate::filesystem::OpenedFile,
     },
     Workspace {
         before: Vec<(
@@ -2418,22 +2419,30 @@ fn execute_direct_file_change_with_tracking(
             }
         },
     };
-    let capture = capture_direct_file_change_before(prepared, root_directory.clone());
-    let result = match &prepared.operation {
-        ToolOperation::Write { content } => crate::tools::write_file_with_file_change_lock_held(
-            &root_directory,
-            &prepared.relative_path,
-            content,
-        ),
-        ToolOperation::Edit {
-            old_string,
-            new_string,
-        } => crate::tools::edit_file_with_file_change_lock_held(
-            &root_directory,
-            &prepared.relative_path,
-            old_string,
-            new_string,
-        ),
+    let mut capture = match capture_direct_file_change_before(prepared, root_directory.clone()) {
+        Ok(capture) => capture,
+        Err(error) => {
+            let mut output = tool_error(error.code, &error.message);
+            if let Some(details) = error.details {
+                output["error"]["details"] = json!(details);
+            }
+            drop(guard);
+            return (output, Vec::new(), Some(error.code.to_owned()), None);
+        }
+    };
+    let result = match (&mut capture, &prepared.operation) {
+        (PendingFileChangeCapture::File { target, .. }, ToolOperation::Write { content }) => {
+            crate::tools::write_opened_file(target, &prepared.relative_path, content)
+        }
+        (
+            PendingFileChangeCapture::File { target, .. },
+            ToolOperation::Edit {
+                old_string,
+                new_string,
+            },
+        ) => {
+            crate::tools::edit_opened_file(target, &prepared.relative_path, old_string, new_string)
+        }
         _ => Err(ServiceError::new(
             "tool_execution_unavailable",
             "This operation is not a direct file change.",
@@ -2477,17 +2486,44 @@ fn open_approved_file_root(
 fn capture_direct_file_change_before(
     prepared: &PreparedToolCall,
     directory: std::sync::Arc<crate::filesystem::OpenedDirectory>,
-) -> PendingFileChangeCapture {
+) -> Result<PendingFileChangeCapture, ServiceError> {
     let path = prepared.relative_path.clone();
-    let before = crate::file_changes::capture_file_with_root_identity_from_directory(
-        &directory,
-        Path::new(&path),
-    );
-    PendingFileChangeCapture::File {
+    let root_identity =
+        crate::file_changes::workspace_directory_identity(&directory).map_err(|error| {
+            ServiceError::new(
+                tracking_error_code(error),
+                "The active project folder could not be tracked safely.",
+                false,
+            )
+        })?;
+    let (mut target, created) = match &prepared.operation {
+        ToolOperation::Write { content } => {
+            crate::tools::open_file_for_direct_write(&directory, &path, content.len())?
+        }
+        ToolOperation::Edit { old_string, .. } => (
+            crate::tools::open_file_for_direct_edit(&directory, &path, old_string)?,
+            false,
+        ),
+        _ => {
+            return Err(ServiceError::new(
+                "tool_execution_unavailable",
+                "This operation is not a direct file change.",
+                false,
+            ));
+        }
+    };
+    let before = if created {
+        Ok((root_identity, None))
+    } else {
+        crate::file_changes::snapshot_opened_file(&mut target)
+            .map(|snapshot| (root_identity, Some(snapshot)))
+    };
+    Ok(PendingFileChangeCapture::File {
         directory,
         path,
         before,
-    }
+        target,
+    })
 }
 
 fn capture_file_change_before(
@@ -2534,22 +2570,58 @@ fn finish_file_change_capture(
     Option<String>,
     Option<String>,
 ) {
+    let mut retained_target = None;
     let grouped_deltas = match capture {
         PendingFileChangeCapture::None => return (Vec::new(), None, None),
         PendingFileChangeCapture::File {
             directory,
             path,
             before,
+            mut target,
         } => {
             let Ok((before_root_identity, before)) = before else {
                 return (Vec::new(), Some("snapshot_unavailable".to_owned()), None);
             };
-            let (after_root_identity, after) =
-                match crate::file_changes::capture_file_with_root_identity_from_directory(
-                    &directory,
-                    Path::new(&path),
-                ) {
-                    Ok(after) => after,
+            let target_matches_path = crate::filesystem::opened_file_matches_directory_entry(
+                directory.as_ref(),
+                Path::new(&path),
+                &target,
+            );
+            match target_matches_path {
+                Ok(true) => {}
+                Ok(false) => {
+                    return (Vec::new(), Some("workspace_unavailable".to_owned()), None);
+                }
+                Err(_) => {
+                    return (Vec::new(), Some("snapshot_unavailable".to_owned()), None);
+                }
+            }
+            let after = match crate::file_changes::snapshot_opened_file(&mut target) {
+                Ok(after) => Some(after),
+                Err(error) => {
+                    return (
+                        Vec::new(),
+                        Some(tracking_error_code(error).to_owned()),
+                        None,
+                    );
+                }
+            };
+            match crate::filesystem::opened_file_matches_directory_entry(
+                directory.as_ref(),
+                Path::new(&path),
+                &target,
+            ) {
+                Ok(true) => {}
+                Ok(false) => {
+                    return (Vec::new(), Some("workspace_unavailable".to_owned()), None);
+                }
+                Err(_) => {
+                    return (Vec::new(), Some("snapshot_unavailable".to_owned()), None);
+                }
+            }
+            if before_root_identity
+                != match crate::file_changes::workspace_directory_identity(&directory) {
+                    Ok(identity) => identity,
                     Err(error) => {
                         return (
                             Vec::new(),
@@ -2557,12 +2629,13 @@ fn finish_file_change_capture(
                             None,
                         );
                     }
-                };
-            if before_root_identity != after_root_identity {
+                }
+            {
                 return (Vec::new(), Some("workspace_unavailable".to_owned()), None);
             }
             let before_hash = before.as_ref().map(|file| file.hash.as_str());
             let after_hash = after.as_ref().map(|file| file.hash.as_str());
+            retained_target = Some(target);
             if before_hash == after_hash {
                 Vec::new()
             } else {
@@ -2647,14 +2720,16 @@ fn finish_file_change_capture(
             &grouped_deltas,
         )
     };
-    match checkpoint {
+    let result = match checkpoint {
         Ok(checkpoint_id) => (changes, None, checkpoint_id),
         Err(error) => (
             Vec::new(),
             Some(tracking_error_code(error).to_owned()),
             None,
         ),
-    }
+    };
+    drop(retained_target);
+    result
 }
 
 fn tracking_error_code(error: crate::file_changes::TrackingError) -> &'static str {

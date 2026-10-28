@@ -1323,6 +1323,63 @@ fn direct_file_write_stays_bound_to_its_opened_root() {
     );
 }
 
+#[cfg(windows)]
+#[test]
+fn direct_file_mutation_handle_blocks_same_path_writes_and_replacement() {
+    use std::fs::OpenOptions as StandardOpenOptions;
+
+    let directory = TestDirectory::new();
+    directory.write("note.txt", "before");
+    let root = crate::filesystem::open_absolute_directory_no_follow(&directory.0)
+        .expect("open workspace capability");
+    let path = directory.0.join("note.txt");
+    let moved_path = directory.0.join("moved-note.txt");
+
+    let writer = StandardOpenOptions::new()
+        .write(true)
+        .open(&path)
+        .expect("open competing writer before the mutation handle");
+    let mut options = cap_std::fs::OpenOptions::new();
+    options.read(true).write(true);
+    assert!(
+        crate::filesystem::open_mutation_file_from_directory(
+            &root,
+            Path::new("note.txt"),
+            &options,
+        )
+        .is_err(),
+        "the mutation handle must fail while a competing writer is open"
+    );
+    drop(writer);
+
+    let (mutation_handle, _) = crate::filesystem::open_mutation_file_from_directory(
+        &root,
+        Path::new("note.txt"),
+        &options,
+    )
+    .expect("open restrictive mutation handle");
+    assert!(
+        StandardOpenOptions::new().write(true).open(&path).is_err(),
+        "a second writer must not open while the mutation handle is retained"
+    );
+    assert!(
+        fs::rename(&path, &moved_path).is_err(),
+        "the file path must not be replaceable while the mutation handle is retained"
+    );
+    assert!(
+        crate::filesystem::opened_file_matches_directory_entry(
+            &root,
+            Path::new("note.txt"),
+            &mutation_handle,
+        )
+        .expect("check the opened file identity"),
+        "the retained handle must still match its workspace entry"
+    );
+
+    drop(mutation_handle);
+    fs::rename(&path, &moved_path).expect("rename succeeds after releasing the handle");
+}
+
 #[test]
 fn read_file_bounds_large_single_lines_to_the_output_limit() {
     let directory = TestDirectory::new();

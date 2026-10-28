@@ -716,7 +716,16 @@ pub(crate) fn write_file_with_file_change_lock_held(
     path: &str,
     content: &str,
 ) -> Result<Value, ServiceError> {
-    if content.len() > 10 * 1024 * 1024 {
+    let (mut file, _) = open_file_for_direct_write(directory, path, content.len())?;
+    write_opened_file(&mut file, path, content)
+}
+
+pub(crate) fn open_file_for_direct_write(
+    directory: &crate::filesystem::OpenedDirectory,
+    path: &str,
+    content_length: usize,
+) -> Result<(crate::filesystem::OpenedFile, bool), ServiceError> {
+    if content_length > 10 * 1024 * 1024 {
         return Err(invalid("The file content exceeds the 10MB write limit."));
     }
     let requested = safe_relative_path(path)?;
@@ -727,21 +736,47 @@ pub(crate) fn write_file_with_file_change_lock_held(
         crate::filesystem::create_directory_chain_from_directory(directory, parent)
             .map_err(|error| filesystem_error(&error, "creating the parent directory"))?;
     }
-    let mut options = OpenOptions::new();
-    options.write(true).create(true);
-    let mut file = crate::filesystem::open_file_from_directory(directory, &requested, &options)
-        .map_err(|error| filesystem_error(&error, "creating or opening the file"))?;
+
+    let mut create_options = OpenOptions::new();
+    create_options.read(true).write(true).create_new(true);
+    match crate::filesystem::open_mutation_file_from_directory(
+        directory,
+        &requested,
+        &create_options,
+    ) {
+        Ok((file, _)) => Ok((file, true)),
+        Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
+            let mut options = OpenOptions::new();
+            options.read(true).write(true);
+            crate::filesystem::open_mutation_file_from_directory(directory, &requested, &options)
+                .map(|(file, _)| (file, false))
+                .map_err(|error| filesystem_error(&error, "opening the file for writing"))
+        }
+        Err(error) => Err(filesystem_error(&error, "creating or opening the file")),
+    }
+}
+
+pub(crate) fn write_opened_file(
+    file: &mut crate::filesystem::OpenedFile,
+    path: &str,
+    content: &str,
+) -> Result<Value, ServiceError> {
+    if content.len() > 10 * 1024 * 1024 {
+        return Err(invalid("The file content exceeds the 10MB write limit."));
+    }
     let metadata = file
         .metadata()
         .map_err(|error| filesystem_error(&error, "reading file metadata"))?;
-    if !metadata.is_file() || has_multiple_links(&file)? {
+    if !metadata.is_file() || has_multiple_links(file)? {
         return Err(invalid(
             "The requested file is not a regular, independently linked file.",
         ));
     }
+    file.seek(SeekFrom::Start(0))
+        .map_err(|error| filesystem_error(&error, "seeking within the file"))?;
     file.set_len(0)
         .map_err(|error| filesystem_error(&error, "truncating the file"))?;
-    let mut writer = BufWriter::new(&mut file);
+    let mut writer = BufWriter::new(&mut *file);
     writer
         .write_all(content.as_bytes())
         .map_err(|error| filesystem_error(&error, "writing the file"))?;
@@ -749,7 +784,9 @@ pub(crate) fn write_file_with_file_change_lock_held(
         .flush()
         .map_err(|error| filesystem_error(&error, "flushing the file"))?;
 
-    let relative = requested.to_string_lossy().replace('\\', "/");
+    let relative = safe_relative_path(path)?
+        .to_string_lossy()
+        .replace('\\', "/");
     Ok(json!({
         "path": relative,
         "bytesWritten": content.len(),
@@ -782,20 +819,51 @@ pub(crate) fn edit_file_with_file_change_lock_held(
     old_string: &str,
     new_string: &str,
 ) -> Result<Value, ServiceError> {
+    let mut file = open_file_for_direct_edit(directory, path, old_string)?;
+    edit_opened_file(&mut file, path, old_string, new_string)
+}
+
+pub(crate) fn open_file_for_direct_edit(
+    directory: &crate::filesystem::OpenedDirectory,
+    path: &str,
+    old_string: &str,
+) -> Result<crate::filesystem::OpenedFile, ServiceError> {
     if old_string.is_empty() {
         return Err(invalid("The target text to replace cannot be empty."));
     }
+    let relative_path = safe_relative_path(path)?;
     let mut options = OpenOptions::new();
     options.read(true).write(true);
+    crate::filesystem::open_mutation_file_from_directory(directory, &relative_path, &options)
+        .map(|(file, _)| file)
+        .map_err(|error| filesystem_error(&error, "opening the requested file"))
+}
+
+pub(crate) fn edit_opened_file(
+    file: &mut crate::filesystem::OpenedFile,
+    path: &str,
+    old_string: &str,
+    new_string: &str,
+) -> Result<Value, ServiceError> {
+    if old_string.is_empty() {
+        return Err(invalid("The target text to replace cannot be empty."));
+    }
     let relative_path = safe_relative_path(path)?;
-    let (mut file, metadata) =
-        crate::filesystem::open_regular_file_from_directory(directory, &relative_path, &options)
-            .map_err(|error| filesystem_error(&error, "opening the requested file"))?;
+    let metadata = file
+        .metadata()
+        .map_err(|error| filesystem_error(&error, "reading file metadata"))?;
+    if !metadata.is_file() || has_multiple_links(file)? {
+        return Err(invalid(
+            "The requested file is not a regular, independently linked file.",
+        ));
+    }
     if metadata.len() > MAX_EDIT_BYTES as u64 {
         return Err(invalid("The file exceeds the 10MB edit limit."));
     }
     let mut content = String::with_capacity(metadata.len() as usize);
-    (&mut file)
+    file.seek(SeekFrom::Start(0))
+        .map_err(|error| filesystem_error(&error, "seeking within the file"))?;
+    (&mut *file)
         .take(MAX_EDIT_BYTES as u64 + 1)
         .read_to_string(&mut content)
         .map_err(|error| filesystem_error(&error, "reading the file as UTF-8 text"))?;

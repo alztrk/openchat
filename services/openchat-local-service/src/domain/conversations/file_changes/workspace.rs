@@ -3,7 +3,7 @@
 use std::{
     collections::BTreeMap,
     fs::{self, OpenOptions},
-    io::{self, Read, Write},
+    io::{self, Read, Seek, SeekFrom, Write},
     path::{Component, Path, PathBuf},
 };
 
@@ -23,16 +23,6 @@ pub(crate) fn capture_file(
     let relative = safe_relative_path(relative_path)?;
     let (directory, _) = open_workspace_directory(root)?;
     capture_file_from_directory(&directory, &relative)
-}
-
-pub(crate) fn capture_file_with_root_identity_from_directory(
-    directory: &crate::filesystem::OpenedDirectory,
-    relative_path: &Path,
-) -> Result<(DirectoryIdentity, Option<FileSnapshot>), TrackingError> {
-    let identity =
-        directory_identity(directory).map_err(|_| TrackingError::WorkspaceUnavailable)?;
-    let snapshot = capture_file_from_directory(directory, relative_path)?;
-    Ok((identity, snapshot))
 }
 
 pub(crate) fn capture_file_from_directory<D>(
@@ -299,6 +289,18 @@ pub(crate) fn snapshot_file(file: impl Read, size: u64) -> Result<FileSnapshot, 
         hash: format!("{:x}", hasher.finalize()),
         content,
     })
+}
+
+pub(crate) fn snapshot_opened_file(
+    file: &mut crate::filesystem::OpenedFile,
+) -> Result<FileSnapshot, TrackingError> {
+    let size = file
+        .metadata()
+        .map_err(|_| TrackingError::SnapshotUnavailable)?
+        .len();
+    file.seek(SeekFrom::Start(0))
+        .map_err(|_| TrackingError::SnapshotUnavailable)?;
+    snapshot_file(file, size)
 }
 
 pub(crate) fn read_bounded_file(path: &Path, max_bytes: usize) -> io::Result<Option<Vec<u8>>> {

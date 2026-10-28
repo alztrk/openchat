@@ -132,6 +132,27 @@ pub(crate) fn open_regular_file_from_directory(
     Ok((file, metadata))
 }
 
+/// Opens a regular file for mutation while denying concurrent writes and replacement on Windows.
+///
+/// The returned handle still permits other readers. On Windows, callers must retain it through
+/// their complete compare, mutation, and tracking sequence; the restrictive share mode is scoped
+/// to the handle lifetime. Other platforms retain their existing capability and no-follow checks.
+pub(crate) fn open_mutation_file_from_directory(
+    directory: &(impl DirectoryCapability + ?Sized),
+    relative_path: &Path,
+    options: &OpenOptions,
+) -> io::Result<(OpenedFile, Metadata)> {
+    let mut options = options.clone();
+    #[cfg(windows)]
+    {
+        use cap_std::fs::OpenOptionsExt;
+        use windows_sys::Win32::Storage::FileSystem::FILE_SHARE_READ;
+
+        options.share_mode(FILE_SHARE_READ);
+    }
+    open_regular_file_from_directory(directory, relative_path, &options)
+}
+
 /// Opens a candidate file and rejects hard links using the opened handle.
 ///
 /// Callers that enumerate files first must retain their enumeration checks for file type and
@@ -422,6 +443,70 @@ pub(crate) fn file_has_multiple_links(file: &File) -> io::Result<bool> {
     {
         let _ = file;
         Ok(true)
+    }
+}
+
+/// Checks that a workspace-relative entry still names the opened file object.
+pub(crate) fn opened_file_matches_directory_entry<D>(
+    directory: &D,
+    relative_path: &Path,
+    expected: &OpenedFile,
+) -> io::Result<bool>
+where
+    D: DirectoryCapability + ?Sized,
+{
+    let mut options = OpenOptions::new();
+    options.read(true);
+    let (current, _) = open_regular_file_from_directory(directory, relative_path, &options)?;
+    same_file_object(&expected.file, &current.file)
+}
+
+fn same_file_object(left: &File, right: &File) -> io::Result<bool> {
+    #[cfg(unix)]
+    {
+        use cap_std::fs::MetadataExt;
+
+        let left = left.metadata()?;
+        let right = right.metadata()?;
+        Ok(left.dev() == right.dev() && left.ino() == right.ino())
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::io::AsRawHandle;
+        use windows_sys::Win32::{
+            Foundation::HANDLE,
+            Storage::FileSystem::{BY_HANDLE_FILE_INFORMATION, GetFileInformationByHandle},
+        };
+
+        let mut left_information = BY_HANDLE_FILE_INFORMATION::default();
+        let mut right_information = BY_HANDLE_FILE_INFORMATION::default();
+        // SAFETY: Both files own live handles and the information outputs are writable.
+        if unsafe {
+            GetFileInformationByHandle(left.as_raw_handle() as HANDLE, &mut left_information)
+        } == 0
+        {
+            return Err(io::Error::last_os_error());
+        }
+        // SAFETY: Both files own live handles and the information outputs are writable.
+        if unsafe {
+            GetFileInformationByHandle(right.as_raw_handle() as HANDLE, &mut right_information)
+        } == 0
+        {
+            return Err(io::Error::last_os_error());
+        }
+        Ok(
+            left_information.dwVolumeSerialNumber == right_information.dwVolumeSerialNumber
+                && left_information.nFileIndexHigh == right_information.nFileIndexHigh
+                && left_information.nFileIndexLow == right_information.nFileIndexLow,
+        )
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        let _ = (left, right);
+        Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "workspace file identity is not supported on this platform",
+        ))
     }
 }
 
