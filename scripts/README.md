@@ -6,6 +6,7 @@ it through the frontend npm script from `apps/desktop/frontend`:
 ```bash
 npm run openchat -- dev
 npm run openchat -- dev-test-profile
+npm run openchat -- dev-test-profile --cleanup-profile
 npm run openchat -- dev-test-profile --profile-root "<absolute OS temporary path>"
 npm run openchat -- startup-benchmark
 npm run openchat -- build
@@ -26,6 +27,12 @@ path and keeps that profile after the app closes so it can be reused for a secon
 launch. The host accepts only `openchat-desktop-test-<UUID>` directories directly
 under the canonical temporary directory. Remove that exact profile directory when
 the test is complete.
+
+For interactive checks that should leave no generated profile behind, pass
+`--cleanup-profile` without `--profile-root`. The CLI then removes only the
+UUID-named profile it created directly under the OS temporary directory after
+the app exits, including when the build or launch fails. The option cannot be
+combined with a caller-supplied profile path.
 
 `startup-benchmark` builds a debug local-service sidecar with isolated-profile
 support, starts a Tauri debug build with startup timing enabled, and measures the

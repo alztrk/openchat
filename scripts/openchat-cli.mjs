@@ -138,44 +138,78 @@ function dev(args) {
 function devTestProfile(args) {
   if (args.length === 1 && (args[0] === '--help' || args[0] === '-h')) {
     process.stdout.write(
-      'Usage: npm run openchat -- dev-test-profile [--profile-root <absolute-temp-path>]\n' +
-        'Creates a UUID-named OS temporary profile when --profile-root is omitted.\n',
+      'Usage: npm run openchat -- dev-test-profile [--cleanup-profile] [--profile-root <absolute-temp-path>]\n' +
+        'Creates a UUID-named OS temporary profile when --profile-root is omitted.\n' +
+        '--cleanup-profile removes only an automatically created profile after the app exits.\n',
     );
     return;
   }
 
-  let profileRoot;
-  if (args.length === 0) {
-    profileRoot = path.join(tmpdir(), 'openchat-desktop-test-' + randomUUID());
-  } else if (
-    args.length === 2 &&
-    args[0] === '--profile-root' &&
-    path.isAbsolute(args[1])
-  ) {
-    profileRoot = path.normalize(args[1]);
-  } else {
+  let cleanupProfileOnExit = false;
+  let explicitProfileRoot;
+  for (let index = 0; index < args.length; index += 1) {
+    const argument = args[index];
+    if (argument === '--cleanup-profile' && !cleanupProfileOnExit) {
+      cleanupProfileOnExit = true;
+      continue;
+    }
+    if (argument === '--profile-root' && explicitProfileRoot === undefined) {
+      const value = args[index + 1];
+      if (!value || !path.isAbsolute(value)) {
+        throw new Error('--profile-root requires an absolute path.');
+      }
+      explicitProfileRoot = path.normalize(value);
+      index += 1;
+      continue;
+    }
     throw new Error(
-      'Use --profile-root with an absolute path, or omit it to create an isolated temporary profile.',
+      'Use --cleanup-profile and/or --profile-root with an absolute path; cleanup requires an automatically created profile.',
     );
   }
 
-  buildLocalService('debug', false, ['desktop-profile-test-support']);
-  ensureFrontendDependencies();
-  process.stdout.write('Isolated desktop test profile: ' + profileRoot + '\n');
-  runNpm(
-    [
-      'run',
-      'tauri:dev',
-      '--',
-      '--features',
-      'desktop-profile-test-support',
-      '--',
-      '--',
-      '--desktop-test-profile-root',
-      profileRoot,
-    ],
-    frontendDirectory,
-  );
+  if (cleanupProfileOnExit && explicitProfileRoot !== undefined) {
+    throw new Error('--cleanup-profile cannot be used with --profile-root.');
+  }
+  const profileRoot =
+    explicitProfileRoot ?? path.join(tmpdir(), 'openchat-desktop-test-' + randomUUID());
+  if (cleanupProfileOnExit && existsSync(profileRoot)) {
+    throw new Error('Refusing to clean up an existing desktop test profile.');
+  }
+
+  let launchError;
+  try {
+    buildLocalService('debug', false, ['desktop-profile-test-support']);
+    ensureFrontendDependencies();
+    process.stdout.write('Isolated desktop test profile: ' + profileRoot + '\n');
+    runNpm(
+      [
+        'run',
+        'tauri:dev',
+        '--',
+        '--features',
+        'desktop-profile-test-support',
+        '--',
+        '--',
+        '--desktop-test-profile-root',
+        profileRoot,
+      ],
+      frontendDirectory,
+    );
+  } catch (error) {
+    launchError = error;
+  }
+
+  if (cleanupProfileOnExit) {
+    try {
+      removeTemporaryTestProfile(profileRoot);
+    } catch (cleanupError) {
+      if (launchError) {
+        throw new AggregateError([launchError, cleanupError], 'Desktop test and profile cleanup failed.');
+      }
+      throw cleanupError;
+    }
+  }
+  if (launchError) throw launchError;
 }
 
 function startupBenchmark(args) {
@@ -241,7 +275,7 @@ function startupBenchmark(args) {
   }
 
   try {
-    removeStartupBenchmarkProfile(profileRoot);
+    removeTemporaryTestProfile(profileRoot);
   } catch (cleanupError) {
     if (benchmarkError) {
       throw new AggregateError([benchmarkError, cleanupError], 'Startup benchmark and cleanup failed.');
@@ -252,13 +286,13 @@ function startupBenchmark(args) {
   if (benchmarkError) throw benchmarkError;
 }
 
-function removeStartupBenchmarkProfile(profileRoot) {
+function removeTemporaryTestProfile(profileRoot) {
   if (!existsSync(profileRoot)) return;
 
   const temporaryRoot = realpathSync(tmpdir());
   const metadata = lstatSync(profileRoot);
   if (!metadata.isDirectory() || metadata.isSymbolicLink()) {
-    throw new Error('Refusing to remove an invalid startup benchmark profile.');
+    throw new Error('Refusing to remove an invalid desktop test profile.');
   }
 
   const canonicalProfileRoot = realpathSync(profileRoot);
@@ -270,7 +304,7 @@ function removeStartupBenchmarkProfile(profileRoot) {
       profileName,
     )
   ) {
-    throw new Error('Refusing to remove a profile outside the startup benchmark temporary scope.');
+    throw new Error('Refusing to remove a profile outside the desktop test temporary scope.');
   }
 
   rmSync(canonicalProfileRoot, { recursive: true });
