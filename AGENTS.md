@@ -2,11 +2,38 @@
 
 Welcome to OpenChat. This repository contains the OpenChat desktop application, comprising a Rust local sidecar service, a Tauri v2 desktop host, and a React/TypeScript frontend.
 
-As an AI engineering agent working in this repository, you **MUST** strictly adhere to the following build, workflow, and architecture rules.
+As an AI engineering agent working in this repository, you **MUST** strictly adhere to the following build, workflow, git, and architecture rules.
 
 ---
 
-## 1. Mandatory Target Directory and Cargo Rules
+## 1. Mandatory Pre-Commit Build Gate (Zero Errors)
+
+* **Mandatory Build Before Any Commit:**
+  * Before committing ANY change, agents **MUST** execute the build and verification suite:
+    ```bash
+    npm run openchat -- check
+    ```
+    (or the specific build commands covering the affected frontend/backend subsystem).
+  * **Zero Error Tolerance:** The build, linter, formatting checks, and tests **MUST pass with ZERO errors and ZERO warnings/failures**.
+  * **NEVER** commit broken code, failing tests, or unverified changes under any circumstances unless explicitly asked by the user for an emergency checkpoint commit.
+  * If a check fails, diagnose the root cause, fix it cleanly, and verify again until all checks pass cleanly before creating a commit.
+
+---
+
+## 2. Strictly Scoped Git Staging and Commits
+
+* **Stage ONLY Your Own Changes:**
+  * Agents **MUST ONLY** stage and commit the exact files belonging to the completed and verified task.
+  * **NEVER use `git add .` or `git add -A`.**
+  * **NEVER** stage or commit unrelated modified files, user changes in progress, temporary debug scripts, research notes, benchmark dumps, or untracked clutter.
+  * Always run `git status --short` and `git diff --cached` before committing to verify that no extraneous files are staged.
+* **Commit Authorization and Boundaries:**
+  * An instruction to implement, fix, or update code authorizes committing the verified change.
+  * It **DOES NOT** authorize running `git push`, opening pull requests, switching branches, rebasing, resetting, or altering remote git state without explicit approval.
+
+---
+
+## 3. Mandatory Target Directory and Cargo Rules
 
 ### Strict Single Target Directory Policy: `target/debug`
 * **Agents MUST use only the single standard default target directory: `target/debug`.**
@@ -36,7 +63,7 @@ npm run openchat -- maintain-target --apply
 
 ---
 
-## 2. Target Directory Disk Budget and Hygiene
+## 4. Target Directory Disk Budget and Hygiene
 
 * The target directory has a strict soft ceiling of **20 GiB**.
 * Before ending tasks involving heavy builds, verify that no temporary artifacts or orphaned target directories were left behind.
@@ -48,7 +75,7 @@ npm run openchat -- maintain-target --apply
 
 ---
 
-## 3. Engineering and Safety Standards
+## 5. Engineering and Safety Standards
 
 ### Architecture and Boundaries
 * **Local Sidecar Service (`services/openchat-local-service`):**
