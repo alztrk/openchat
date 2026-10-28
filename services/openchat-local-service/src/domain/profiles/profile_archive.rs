@@ -50,6 +50,10 @@ const MAX_ATTACHMENT_BYTES: u64 = 24 * 1024 * 1024 * 1024;
 const MAX_ATTACHMENTS: usize = 100_000;
 const MAX_MANIFEST_BYTES: u64 = 128 * 1024 * 1024;
 const MAX_RESTORE_STATE_BYTES: u64 = 4 * 1024;
+#[cfg(not(any(test, feature = "desktop-profile-test-support")))]
+const DEFAULT_AGE_SCRYPT_LOG_N: u8 = 18;
+#[cfg(any(test, feature = "desktop-profile-test-support"))]
+const DEFAULT_AGE_SCRYPT_LOG_N: u8 = 10;
 const MAX_AGE_SCRYPT_LOG_N: u8 = 18;
 const PROFILE_ARCHIVE_ROOT: &str = "profile-archives";
 const RESTORE_ROOT: &str = "profile-restore";
@@ -750,7 +754,7 @@ fn write_archive(
     let secret = SecretString::from(passphrase.to_owned());
     let mut recipient = age::scrypt::Recipient::new(secret);
     // Keep new archives within the same bounded work factor that restore accepts.
-    recipient.set_work_factor(MAX_AGE_SCRYPT_LOG_N);
+    recipient.set_work_factor(DEFAULT_AGE_SCRYPT_LOG_N);
     let encrypted = Encryptor::with_recipients(iter::once(&recipient as &dyn age::Recipient))
         .map_err(|_| ArchiveFailure::Storage)?
         .wrap_output(output)
