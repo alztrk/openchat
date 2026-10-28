@@ -602,6 +602,8 @@ Further follow-up, 2026-10-28: direct built-in `write_file` and `edit_file` oper
 
 Legacy file-change imports without a persisted root identity now report `diffAvailable: false`, and the diff endpoint returns an unavailable result without reopening an unbound workspace path. The legacy import regression verifies this behavior.
 
+Fresh A-023 revalidation, 2026-10-28: `cargo test --locked --offline -p openchat-local-service --lib file_changes::tests --target-dir target/security-scans-validation -- --test-threads=1` passed 44/44 on the current Windows checkout. The suite covers root identity rejection, no-follow workspace operations, interrupted-restore retry, conflict preservation, and rollback after persistence failures. It does not exercise an external writer in the comparison-to-rename interval, so A-023 remains partial.
+
 ### Partial: legacy elevated tool-permission provenance (2026-10-27)
 
 Schema version 49 adds `native_confirmed` to the global and per-project permission rows. The migration preserves existing values and defaults their provenance to false. The service treats legacy global `full_access` as `require_approval` and removes legacy project `allow` rules from the effective policy until the native host confirms the stored policy. New elevated writes require a host-added `nativeConfirmation` marker; the Tauri bridge rejects renderer-supplied markers and requests the operating-system confirmation before adding one. Stale renderer cache imports are ignored when the service already has a saved policy, so a declined legacy confirmation still returns the safe effective policy.
