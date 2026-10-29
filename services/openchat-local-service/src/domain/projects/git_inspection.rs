@@ -344,6 +344,7 @@ mod tests {
             ));
             std::fs::create_dir_all(&root).expect("create isolated Git repository directory");
             run_git(&root, &["init", "--quiet"]);
+            run_git(&root, &["config", "core.autocrlf", "false"]);
             Self(root)
         }
 

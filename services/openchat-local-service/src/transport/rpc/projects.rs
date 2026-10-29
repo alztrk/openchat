@@ -1105,6 +1105,15 @@ mod tests {
             .expect("initialize the task test repository");
         assert!(git_status.success(), "git init should succeed");
         let git_status = Command::new(crate::git_inspection::git_program())
+            .args(["config", "core.autocrlf", "false"])
+            .current_dir(&repository)
+            .status()
+            .expect("configure task test repository line endings");
+        assert!(
+            git_status.success(),
+            "Git line-ending configuration should succeed"
+        );
+        let git_status = Command::new(crate::git_inspection::git_program())
             .args(["add", "README.md", ".openchat/tasks.json"])
             .current_dir(&repository)
             .status()

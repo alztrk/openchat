@@ -472,6 +472,12 @@ mod tests {
                 .expect("initialize test repository");
             assert!(status.success());
             let status = Command::new(git_inspection::git_program())
+                .args(["config", "core.autocrlf", "false"])
+                .current_dir(&repository)
+                .status()
+                .expect("configure test repository line endings");
+            assert!(status.success());
+            let status = Command::new(git_inspection::git_program())
                 .args(["add", "README.md", ".openchat/tasks.json"])
                 .current_dir(&repository)
                 .status()

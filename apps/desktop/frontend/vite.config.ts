@@ -31,19 +31,27 @@ export default defineConfig({
   build: {
     target: 'es2022',
     emptyOutDir: true,
+    // Shiki's single C++ grammar is 501 kB minified and cannot be split further by Rollup.
+    chunkSizeWarningLimit: 512,
     rollupOptions: {
       output: {
         manualChunks(id) {
-          if (id.includes('node_modules/react-dom') || id.includes('node_modules/react/')) {
+          const moduleId = id.replaceAll('\\', '/');
+          const shikiLanguageModule = moduleId.match(/\/node_modules\/@shikijs\/langs\/dist\/([^/]+)\.mjs$/u);
+          if (shikiLanguageModule) {
+            const languageName = shikiLanguageModule[1] === 'bash' ? 'shellscript' : shikiLanguageModule[1];
+            return `shiki-language-${languageName}`;
+          }
+          if (moduleId.includes('node_modules/react-dom') || moduleId.includes('node_modules/react/')) {
             return 'react-vendor';
           }
-          if (id.includes('node_modules/lucide-react')) {
+          if (moduleId.includes('node_modules/lucide-react')) {
             return 'icons-vendor';
           }
-          if (id.includes('node_modules/@radix-ui')) {
+          if (moduleId.includes('node_modules/@radix-ui')) {
             return 'radix-vendor';
           }
-          if (id.includes('node_modules/shiki') || id.includes('node_modules/@shikijs')) {
+          if (moduleId.includes('node_modules/shiki') || moduleId.includes('node_modules/@shikijs')) {
             return 'shiki-vendor';
           }
           return undefined;
