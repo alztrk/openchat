@@ -84,7 +84,7 @@ export function SecurityScanPage() {
   );
 
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-surface">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background">
       <header className="flex min-h-16 items-center justify-between gap-4 border-b border-border px-4 py-3 md:px-6">
         <div className="flex min-w-0 items-center gap-3">
           <ShieldCheck aria-hidden="true" className="shrink-0 text-accent" size={21} />
@@ -111,7 +111,7 @@ export function SecurityScanPage() {
       ) : null}
 
       <div className="grid min-h-0 flex-1 grid-cols-1 overflow-hidden xl:grid-cols-5">
-        <aside className="flex min-h-0 flex-col border-b border-border xl:col-span-1 xl:border-b-0 xl:border-r">
+        <aside className="flex min-h-0 flex-col border-b border-border bg-navigation xl:col-span-1 xl:border-b-0 xl:border-r">
           <div className="flex items-center justify-between px-4 py-3">
             <h2 className="text-sm font-medium text-secondary-text">{t('securityScanList')}</h2>
             <span className="tabular-nums text-xs text-secondary-text">{scans.length}</span>
@@ -142,7 +142,7 @@ export function SecurityScanPage() {
           </div>
         </aside>
 
-        <main className="flex min-h-0 min-w-0 flex-col overflow-hidden xl:col-span-4">
+        <main className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-background xl:col-span-4">
           {showCreateForm ? (
             <NewScanForm
               capableModels={capableModels}
