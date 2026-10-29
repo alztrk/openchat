@@ -84,65 +84,65 @@ export function SecurityScanPage() {
   );
 
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background">
-      <header className="flex min-h-16 items-center justify-between gap-4 border-b border-border px-4 py-3 md:px-6">
-        <div className="flex min-w-0 items-center gap-3">
-          <ShieldCheck aria-hidden="true" className="shrink-0 text-accent" size={21} />
-          <h1 className="truncate text-lg font-semibold text-text">{t('securityScansTitle')}</h1>
+    <div className="flex min-h-0 min-w-0 flex-1 flex-row overflow-hidden bg-background">
+      <aside className="conversation-sidebar app-content-divider flex h-full shrink-0 flex-col border-y-0 border-r bg-navigation">
+        <div className="flex min-h-16 items-center gap-3 border-b border-border px-4 py-3">
+          <ShieldCheck aria-hidden="true" className="shrink-0 text-accent" size={20} />
+          <h1 className="min-w-0 truncate text-base font-semibold text-text">{t('securityScansTitle')}</h1>
         </div>
-        <Button
-          onClick={() => {
-            setShowCreateForm((current) => !current);
-            setError(null);
-          }}
-          size="small"
-          variant={showCreateForm ? 'secondary' : 'primary'}
-        >
-          <Plus aria-hidden="true" size={16} />
-          {t(showCreateForm ? 'securityScanCloseCreate' : 'securityScanNew')}
-        </Button>
-      </header>
-
-      {error ? (
-        <div className="mx-4 mt-3 flex items-start gap-2 rounded-control border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive md:mx-6">
-          <CircleAlert aria-hidden="true" className="mt-0.5 shrink-0" size={16} />
-          <p role="alert">{error}</p>
+        <div className="flex items-center justify-between px-4 py-3">
+          <h2 className="text-sm font-medium text-secondary-text">{t('securityScanList')}</h2>
+          <span className="tabular-nums text-xs text-secondary-text">{scans.length}</span>
         </div>
-      ) : null}
+        <div className="openchat-scroll-area conversation-sidebar-scroll-area min-w-0 flex-1 px-2.5 pb-4 pt-1">
+          {isLoading ? (
+            <p className="px-2 py-3 text-sm text-secondary-text" role="status">
+              {t('securityScansLoading')}
+            </p>
+          ) : scans.length === 0 ? (
+            <p className="px-2 py-3 text-sm text-secondary-text">{t('securityScansEmpty')}</p>
+          ) : (
+            <ul className="grid gap-1">
+              {scans.map((scan) => (
+                <ScanListItem
+                  key={scan.id}
+                  active={scan.id === selectedScanId}
+                  now={refreshTime}
+                  onSelect={() => {
+                    setShowCreateForm(false);
+                    setSelectedScanId(scan.id);
+                  }}
+                  scan={scan}
+                />
+              ))}
+            </ul>
+          )}
+        </div>
+      </aside>
 
-      <div className="grid min-h-0 flex-1 grid-cols-1 overflow-hidden xl:grid-cols-5">
-        <aside className="flex min-h-0 flex-col border-b border-border bg-navigation xl:col-span-1 xl:border-b-0 xl:border-r">
-          <div className="flex items-center justify-between px-4 py-3">
-            <h2 className="text-sm font-medium text-secondary-text">{t('securityScanList')}</h2>
-            <span className="tabular-nums text-xs text-secondary-text">{scans.length}</span>
-          </div>
-          <div className="openchat-scroll-area min-h-0 flex-1 overflow-y-auto px-2 pb-3">
-            {isLoading ? (
-              <p className="px-2 py-3 text-sm text-secondary-text" role="status">
-                {t('securityScansLoading')}
-              </p>
-            ) : scans.length === 0 ? (
-              <p className="px-2 py-3 text-sm text-secondary-text">{t('securityScansEmpty')}</p>
-            ) : (
-              <ul className="grid gap-1">
-                {scans.map((scan) => (
-                  <ScanListItem
-                    key={scan.id}
-                    active={scan.id === selectedScanId}
-                    now={refreshTime}
-                    onSelect={() => {
-                      setShowCreateForm(false);
-                      setSelectedScanId(scan.id);
-                    }}
-                    scan={scan}
-                  />
-                ))}
-              </ul>
-            )}
-          </div>
-        </aside>
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background">
+        <header className="flex min-h-16 shrink-0 items-center justify-end gap-4 border-b border-border px-4 py-3 md:px-6">
+          <Button
+            onClick={() => {
+              setShowCreateForm((current) => !current);
+              setError(null);
+            }}
+            size="small"
+            variant={showCreateForm ? 'secondary' : 'primary'}
+          >
+            <Plus aria-hidden="true" size={16} />
+            {t(showCreateForm ? 'securityScanCloseCreate' : 'securityScanNew')}
+          </Button>
+        </header>
 
-        <main className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-background xl:col-span-4">
+        {error ? (
+          <div className="mx-4 mt-3 flex items-start gap-2 rounded-control border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive md:mx-6">
+            <CircleAlert aria-hidden="true" className="mt-0.5 shrink-0" size={16} />
+            <p role="alert">{error}</p>
+          </div>
+        ) : null}
+
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           {showCreateForm ? (
             <NewScanForm
               capableModels={capableModels}
@@ -188,7 +188,7 @@ export function SecurityScanPage() {
           ) : (
             <EmptySelection isLoading={isLoading} onCreate={() => setShowCreateForm(true)} />
           )}
-        </main>
+        </div>
       </div>
     </div>
   );
