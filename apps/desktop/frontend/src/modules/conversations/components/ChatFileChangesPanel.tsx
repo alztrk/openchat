@@ -32,7 +32,7 @@ import { LocalServiceError } from '@/platform/local-service';
 import { FileChangeRow } from './ChatFileChangeRow';
 import { DiffContent } from './ChatFileChangesDiffViewer';
 import { EmbeddedBrowserPanel } from './EmbeddedBrowserPanel';
-import { detectFileLanguage } from './message/FileSyntaxHighlight';
+import { detectFileLanguage } from './message/detectFileLanguage';
 import { SubagentsPanel } from './SubagentsPanel';
 import { type FileWorkspaceTab, WorkspaceFileView } from './WorkspaceFileView';
 

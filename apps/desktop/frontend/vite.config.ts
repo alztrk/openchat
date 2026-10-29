@@ -37,6 +37,15 @@ export default defineConfig({
           if (id.includes('node_modules/react-dom') || id.includes('node_modules/react/')) {
             return 'react-vendor';
           }
+          if (id.includes('node_modules/lucide-react')) {
+            return 'icons-vendor';
+          }
+          if (id.includes('node_modules/@radix-ui')) {
+            return 'radix-vendor';
+          }
+          if (id.includes('node_modules/shiki') || id.includes('node_modules/@shikijs')) {
+            return 'shiki-vendor';
+          }
           return undefined;
         },
       },
