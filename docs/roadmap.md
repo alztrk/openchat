@@ -330,7 +330,7 @@ Fresh 2026-10-28 `usage_statistics` tests passed 22/22, with one manual benchmar
 
 Project-instruction and memory-note fields now have labels associated with their input elements, and stale Skill controls expose a localized accessible name. The targeted Biome check passes for those components. Fresh 2026-10-28 checks passed the frontend suite 110/110, `npm run build`, and `npm run check:locales` across de, en, es, fr, and tr. Native Windows display-scaling, UI Automation, and screen-reader workflows remain open.
 
-Fresh 2026-10-29 frontend validation passed `npm test` 112/112, `npm run check:locales` across de, en, es, fr, and tr, and `npm run build`. Vite reported a 2,202.52 kB `FileSyntaxHighlight` chunk-size warning. These checks do not validate native Windows display scaling, UI Automation, or screen-reader workflows; those remain open.
+Fresh 2026-10-29 frontend validation passed `npm test` 112/112, `npm run check:locales` across de, en, es, fr, and tr, and `npm run openchat -- check`. Shiki language modules are emitted as language-specific lazy chunks; the largest single grammar is 501.34 kB, below the configured 512 kB warning threshold, and the production build emitted no chunk-size warning. These checks do not validate native Windows display scaling, UI Automation, or screen-reader workflows; those remain open.
 
 **Exit criteria:** core chat, settings, model selection, tool approval, and local-model workflows pass the accessibility matrix in all supported locales.
 
