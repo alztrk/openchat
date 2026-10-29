@@ -338,15 +338,19 @@ fn validate_goal_start(
     let Some(objective) = objective else {
         return Ok(());
     };
-    let messages =
-        chatgpt_store::conversation_messages(storage, conversation_id).map_err(|error| {
-            log_chat_storage_failure(storage, "chat.send.goal_history_read", &error);
-            ServiceError::new(
-                "storage_unavailable",
-                "Chat history could not be read.",
-                false,
-            )
-        })?;
+    let messages = chatgpt_store::conversation_messages_on_connection(
+        connection,
+        storage.root(),
+        conversation_id,
+    )
+    .map_err(|error| {
+        log_chat_storage_failure(storage, "chat.send.goal_history_read", &error);
+        ServiceError::new(
+            "storage_unavailable",
+            "Chat history could not be read.",
+            false,
+        )
+    })?;
     if messages
         .last()
         .is_none_or(|message| message.role != "user" || message.content.trim() != objective)
