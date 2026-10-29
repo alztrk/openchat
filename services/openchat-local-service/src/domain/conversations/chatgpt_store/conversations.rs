@@ -129,11 +129,10 @@ fn is_date_title(text: &str) -> bool {
     false
 }
 
-pub fn should_generate_automatic_title(
-    storage: &AppStorage,
+pub fn should_generate_automatic_title_on_connection(
+    database: &StorageConnection<'_>,
     conversation_id: &str,
 ) -> rusqlite::Result<bool> {
-    let database = storage.connect()?;
     let row = database
         .query_row(
             "SELECT title, title_source FROM conversations WHERE id = ?1",
@@ -188,6 +187,14 @@ pub fn should_generate_automatic_title(
     }
 
     Ok(false)
+}
+
+pub fn should_generate_automatic_title(
+    storage: &AppStorage,
+    conversation_id: &str,
+) -> rusqlite::Result<bool> {
+    let database = storage.connect()?;
+    should_generate_automatic_title_on_connection(&database, conversation_id)
 }
 
 pub fn conversation_messages(
@@ -317,8 +324,8 @@ pub fn apply_generated_title(
     Ok(changed == 1)
 }
 
-pub fn save_assistant_message(
-    storage: &AppStorage,
+pub fn save_assistant_message_on_connection(
+    database: &StorageConnection<'_>,
     message: AssistantMessageWrite<'_>,
 ) -> rusqlite::Result<()> {
     let elapsed_microseconds = message
@@ -328,7 +335,6 @@ pub fn save_assistant_message(
         let seconds = message.elapsed?.as_secs_f64();
         (seconds > 0.0).then_some(tokens as f64 / seconds)
     });
-    let database = storage.connect()?;
     let existing_content = database
         .query_row(
             "SELECT content FROM messages
@@ -369,6 +375,14 @@ pub fn save_assistant_message(
         params![message.conversation_id, message.created_at_unix_ms],
     )?;
     Ok(())
+}
+
+pub fn save_assistant_message(
+    storage: &AppStorage,
+    message: AssistantMessageWrite<'_>,
+) -> rusqlite::Result<()> {
+    let database = storage.connect()?;
+    save_assistant_message_on_connection(&database, message)
 }
 
 pub fn save_assistant_tool_checkpoint(

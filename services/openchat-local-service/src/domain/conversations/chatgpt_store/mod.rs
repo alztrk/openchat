@@ -19,6 +19,7 @@ mod usage;
 pub use compaction::{
     ConversationContextState, PromptUsage, load_conversation_context_state,
     reset_conversation_context, save_compaction_state, save_prompt_usage,
+    save_prompt_usage_on_connection,
 };
 pub use connections::{
     complete_credential_deletion, connection_id_for_external_user, connection_workspace,
@@ -33,8 +34,9 @@ pub use conversations::{
     apply_generated_title, conversation_messages, conversation_messages_from_boundary,
     conversation_messages_on_connection, conversation_route, conversation_title_is_automatic,
     create_title_job, finish_title_job, is_custom_title, is_default_title,
-    is_retryable_latest_assistant_message, save_assistant_message, save_assistant_tool_checkpoint,
-    should_generate_automatic_title,
+    is_retryable_latest_assistant_message, save_assistant_message,
+    save_assistant_message_on_connection, save_assistant_tool_checkpoint,
+    should_generate_automatic_title, should_generate_automatic_title_on_connection,
 };
 pub use memory::{
     ArchiveIndexSettings, ArchiveIndexTool, ArchivedMemoryExcerpt, HistorySearchFilterOptions,

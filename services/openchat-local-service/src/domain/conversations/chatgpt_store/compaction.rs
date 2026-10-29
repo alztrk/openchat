@@ -144,8 +144,8 @@ fn reset_conversation_context_from_connection(
     )? > 0)
 }
 
-pub fn save_prompt_usage(
-    storage: &AppStorage,
+pub fn save_prompt_usage_on_connection(
+    database: &StorageConnection<'_>,
     conversation_id: &str,
     usage: PromptUsage<'_>,
 ) -> rusqlite::Result<()> {
@@ -153,7 +153,7 @@ pub fn save_prompt_usage(
         return Err(rusqlite::Error::InvalidQuery);
     }
     let updated_at = unix_time_millis()?;
-    storage.connect()?.execute(
+    database.execute(
         "INSERT INTO conversation_context_state (
             conversation_id, last_prompt_tokens, last_prompt_message_id,
             last_prompt_provider_id, last_prompt_model_id,
@@ -180,6 +180,15 @@ pub fn save_prompt_usage(
         ],
     )?;
     Ok(())
+}
+
+pub fn save_prompt_usage(
+    storage: &AppStorage,
+    conversation_id: &str,
+    usage: PromptUsage<'_>,
+) -> rusqlite::Result<()> {
+    let database = storage.connect()?;
+    save_prompt_usage_on_connection(&database, conversation_id, usage)
 }
 
 fn unix_time_millis() -> rusqlite::Result<i64> {

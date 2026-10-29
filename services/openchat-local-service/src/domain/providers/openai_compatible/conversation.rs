@@ -923,8 +923,16 @@ pub async fn send_message(
     };
     goals::validate_security_scan_final_status(is_security_scan, status, goal.as_ref())?;
     let elapsed = started.elapsed();
-    save_message(
-        storage,
+    let database = storage.connect().map_err(|error| {
+        super::log_send_storage_failure(
+            storage,
+            "chat.send.compatible_assistant_persist",
+            crate::storage::sqlite_error_code(&error),
+        );
+        storage_error()
+    })?;
+    chatgpt_store::save_assistant_message_on_connection(
+        &database,
         AssistantMessageWrite {
             conversation_id,
             message_id: &message_id,
@@ -938,11 +946,19 @@ pub async fn send_message(
             output_tokens,
             elapsed: Some(elapsed),
         },
-    )?;
+    )
+    .map_err(|error| {
+        super::log_send_storage_failure(
+            storage,
+            "chat.send.compatible_assistant_persist",
+            crate::storage::sqlite_error_code(&error),
+        );
+        storage_error()
+    })?;
     if status == "completed"
         && let Some(input_tokens) = input_tokens
-        && chatgpt_store::save_prompt_usage(
-            storage,
+        && chatgpt_store::save_prompt_usage_on_connection(
+            &database,
             conversation_id,
             chatgpt_store::PromptUsage {
                 input_tokens,
@@ -958,13 +974,15 @@ pub async fn send_message(
     {
         eprintln!("context_usage_diagnostic_write_failed");
     }
-    if status == "completed"
-        && chatgpt_store::should_generate_automatic_title(storage, conversation_id).unwrap_or(false)
+    let should_generate_title = status == "completed"
+        && chatgpt_store::should_generate_automatic_title_on_connection(&database, conversation_id)
+            .unwrap_or(false)
         && !matches!(
             &title_generation,
             crate::chat_operation::TitleGenerationRequest::Disabled
-        )
-    {
+        );
+    drop(database);
+    if should_generate_title {
         let title_storage = image_service.storage_handle();
         let title_conversation_id = conversation_id.to_owned();
         let title_events = events.clone();

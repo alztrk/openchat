@@ -753,6 +753,25 @@ fn create_run<'storage>(input: CreateRun<'_, 'storage>) -> Result<PreparedRunSta
 ///
 /// # Errors
 /// Returns a stable storage or goal-state error if finalization cannot complete.
+async fn connect_storage_with_retry<'a>(
+    storage: &'a AppStorage,
+) -> rusqlite::Result<StorageConnection<'a>> {
+    let mut backoff = std::time::Duration::from_millis(150);
+    for attempt in 0..3 {
+        match storage.connect() {
+            Ok(connection) => return Ok(connection),
+            Err(error) => {
+                if attempt == 2 {
+                    return Err(error);
+                }
+                tokio::time::sleep(backoff).await;
+                backoff *= 2;
+            }
+        }
+    }
+    storage.connect()
+}
+
 pub(super) async fn finish_run(
     context: ChatRunFinalization<'_>,
     result: Result<Value, ServiceError>,
@@ -768,8 +787,8 @@ pub(super) async fn finish_run(
         user_question_broker,
     } = context;
     let mut result = result;
-    let (current_run, is_goal_run, mut outcome) = {
-        let connection = storage.connect().map_err(|error| {
+    let outcome_result = async {
+        let connection = connect_storage_with_retry(storage).await.map_err(|error| {
             log_chat_storage_failure(storage, "chat.send.finish_open", &error);
             storage_unavailable()
         })?;
@@ -791,7 +810,19 @@ pub(super) async fn finish_run(
             resuming_question_run,
             shutdown_requested.load(Ordering::SeqCst),
         );
-        (current_run, is_goal_run, outcome)
+        Ok::<_, ServiceError>((current_run, is_goal_run, outcome))
+    }
+    .await;
+
+    let (current_run, is_goal_run, mut outcome) = match outcome_result {
+        Ok(values) => values,
+        Err(error) => {
+            if result.is_ok() && !is_security_scan {
+                eprintln!("chat.send.finish_open_failed_but_response_completed: {error:?}");
+                return result;
+            }
+            return Err(error);
+        }
     };
 
     if is_security_scan && outcome == RunOutcome::Completed {
@@ -872,9 +903,16 @@ pub(super) async fn finish_run(
         result.as_ref().err().map(|error| error.code),
     )?;
 
-    user_question_broker
+    if let Err(error) = user_question_broker
         .finish_run(storage, conversation_id, run_id, outcome)
-        .await?;
+        .await
+    {
+        if result.is_ok() && !is_security_scan {
+            eprintln!("user_question_broker.finish_run_failed_but_response_completed: {error:?}");
+            return result;
+        }
+        return Err(error);
+    }
     result
 }
 
