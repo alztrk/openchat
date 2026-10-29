@@ -108,6 +108,14 @@ export function ToolActivityAccordion({
     'idle' | 'checking' | 'available' | 'alreadyRestored' | 'conflict' | 'checkFailed' | 'failed' | 'partial'
   >('idle');
   const [isRestoring, setIsRestoring] = useState(false);
+  const [expandedRecovery, setExpandedRecovery] = useState<{
+    conversationId: string;
+    checkpointId: string;
+  } | null>(null);
+  const recoveryPathsExpanded =
+    expandedRecovery !== null &&
+    expandedRecovery.conversationId === conversationId &&
+    expandedRecovery.checkpointId === recoveryCheckpointId;
   const statusLabel = t(statusKeys[activity.status]);
   const toolLabel = toolName(activity.name, t);
   const requestedPath =
@@ -202,16 +210,40 @@ export function ToolActivityAccordion({
               ))}
             </ul>
             {activity.fileChanges.length > 3 ? (
-              <p className="text-xs text-secondary-text">
-                {t('fileChangesRecoveryMore', { count: activity.fileChanges.length - 3 })}
-              </p>
+              <details
+                className="rounded-control border border-border px-2 py-1"
+                onToggle={(event) => {
+                  if (!conversationId || !recoveryCheckpointId || !event.currentTarget.open) {
+                    setExpandedRecovery(null);
+                    return;
+                  }
+                  setExpandedRecovery({ conversationId, checkpointId: recoveryCheckpointId });
+                }}
+                open={recoveryPathsExpanded}
+              >
+                <summary className="cursor-pointer text-xs text-secondary-text">
+                  {t('fileChangesRecoveryMore', { count: activity.fileChanges.length - 3 })}
+                </summary>
+                {recoveryPathsExpanded ? (
+                  <ul
+                    aria-label={t('fileChangesRecoveryFiles')}
+                    className="mt-2 grid max-h-40 gap-1 overflow-y-auto text-xs text-secondary-text"
+                  >
+                    {activity.fileChanges.slice(3).map((change) => (
+                      <li className="truncate" key={change.id} title={change.path}>
+                        {change.path}
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+              </details>
             ) : null}
             {recoveryStatus === 'checking' ? (
               <p className="text-xs text-secondary-text" role="status">
                 {t('fileChangesRecoveryChecking')}
               </p>
             ) : null}
-            {recoveryStatus === 'available' ? (
+            {recoveryStatus === 'available' && (activity.fileChanges.length <= 3 || recoveryPathsExpanded) ? (
               <Button
                 className="w-fit"
                 disabled={isRestoring}
