@@ -1,5 +1,5 @@
 import { Check, Copy } from 'lucide-react';
-import { Fragment, type ReactNode, useMemo, useState } from 'react';
+import { Fragment, memo, type ReactNode, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Button } from '@/design-system';
@@ -126,7 +126,12 @@ interface MarkdownBlocksProps {
   sourceById: ReadonlyMap<string, CitationSource>;
 }
 
-function MarkdownBlocks({ content, onCitationSelect, options, sourceById }: MarkdownBlocksProps) {
+const MarkdownBlocks = memo(function MarkdownBlocks({
+  content,
+  onCitationSelect,
+  options,
+  sourceById,
+}: MarkdownBlocksProps) {
   const lines = content.replaceAll('\r\n', '\n').replaceAll('\r', '\n').split('\n');
   const blocks: ReactNode[] = [];
   const headingOccurrences = new Map<string, number>();
@@ -256,7 +261,7 @@ function MarkdownBlocks({ content, onCitationSelect, options, sourceById }: Mark
     blockIndex += 1;
   }
   return blocks;
-}
+});
 
 interface MarkdownHeadingProps {
   content: string;
