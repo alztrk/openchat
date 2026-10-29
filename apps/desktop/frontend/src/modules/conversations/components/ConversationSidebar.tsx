@@ -53,6 +53,10 @@ import {
 } from '@/modules/conversations/data/sidebarPreferences';
 import { useConversationSidebarActions } from '@/modules/conversations/hooks/useConversationSidebarActions';
 import { useChatStore } from '@/modules/conversations/stores/chatStore';
+import {
+  formatServiceErrorMessage,
+  isRedundantHistoryError,
+} from '@/modules/conversations/stores/chatStoreErrorDetails';
 import { ProjectSidebarSection } from '@/modules/projects/components/ProjectSidebarSection';
 import { type AssistantAgentSnapshot, snapshotAssistantProfile } from '@/modules/settings/data/assistantProfiles';
 import { useAssistantProfilesStore } from '@/modules/settings/stores/assistantProfilesStore';
@@ -741,9 +745,9 @@ export function ConversationSidebar({
                     <RefreshCw aria-hidden="true" size={14} />
                   </Button>
                 </div>
-                {serviceErrorMessage ? (
+                {serviceErrorMessage && !isRedundantHistoryError(serviceErrorMessage) ? (
                   <p className="break-words text-xs text-secondary-text">
-                    {t('chatErrorDetails')}: {serviceErrorMessage}
+                    {t('chatErrorDetails')}: {formatServiceErrorMessage(serviceErrorMessage, t)}
                   </p>
                 ) : null}
               </div>

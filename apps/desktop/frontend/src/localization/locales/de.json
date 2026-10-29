@@ -2477,7 +2477,6 @@
   "workspaceFileContent": "Inhalt von {name}",
   "workspaceFileLineCount": "{count} Zeilen",
   "workspaceFileEmpty": "Diese Datei ist leer.",
-  "design": "Bildstudio",
   "designLoading": "Bildstudio wird geöffnet…",
   "designTitle": "Bildstudio",
   "designCanvasTitle": "Vektor-Designfläche",
@@ -2828,7 +2827,6 @@
   "keyboardShortcutClear": "Löschen",
   "keyboardShortcutResetAction": "Zurücksetzen",
   "keyboardShortcutRecordHelp": "Drücken Sie eine Tastenkombination. Escape kann zugewiesen werden; zum Beenden der Aufnahme die Abbrechen-Schaltfläche verwenden.",
-  "keyboardShortcutModifierRequired": "Globale Tastenkürzel benötigen Strg, Alt oder Meta.",
   "keyboardShortcutModifierRequired": "Verwenden Sie für diese Tastenkombination eine Zusatztaste wie Strg, Alt oder Befehl.",
   "keyboardShortcutCustomPreset": "Benutzerdefinierte Tastenkürzel",
   "keyboardShortcutConflictDetails": "Diese Kombination ist zugewiesen an: {{actions}}. Beim Neuzuweisen werden diese Kürzel gelöscht.",
@@ -2894,5 +2892,12 @@
   "usageCostAlertDisabled": "Deaktiviert",
   "usageCostAlertUnavailable": "Für diesen Monat liegen keine bepreisten Nutzungsdaten vor. Das Kostenlimit kann daher nicht ausgewertet werden.",
   "monthlyCostWarningReached": "Die geschätzte bepreiste Nutzung dieses Monats beträgt ${cost} und hat {percent}% des Warnlimits von {limit} USD erreicht.",
-  "quotaWarningReached": "Die Kontingentnutzung beträgt {percent}% und liegt über der Warnschwelle von {threshold}%."
+  "quotaWarningReached": "Die Kontingentnutzung beträgt {percent}% und liegt über der Warnschwelle von {threshold}%.",
+  "chatContextUsageUnavailable": "Die Nutzung des Chat-Kontexts konnte nicht gemessen werden.",
+  "storageUnavailable": "Lokaler Konversationsspeicher ist nicht verfügbar.",
+  "databaseQueueTimeout": "Zeitüberschreitung beim Warten auf die Datenbank-Warteschlange. Versuchen Sie es erneut.",
+  "databaseQueueFull": "Die Datenbank-Warteschlange ist voll. Versuchen Sie es erneut.",
+  "invalidProviderResponse": "Der Modellanbieter hat eine Antwort zurückgegeben, die OpenChat nicht lesen konnte.",
+  "conversationNotFound": "Die angeforderte Konversation wurde nicht gefunden.",
+  "messageNotFound": "Die angeforderte Nachricht wurde nicht gefunden."
 }

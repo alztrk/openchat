@@ -535,13 +535,15 @@ export function createSendMessageAction(
               ? 'messageSaveFailed'
               : error instanceof LocalServiceError && error.code === 'message_save_failed'
                 ? 'messageSaveFailed'
-                : error instanceof LocalServiceError && error.code === 'invalid_request_params'
-                  ? 'chatRequestFailed'
-                  : error instanceof LocalServiceError && error.code === 'provider_credentials_missing'
-                    ? 'providerCredentialMissing'
-                    : error instanceof LocalServiceError && error.code === 'connection_unavailable'
-                      ? 'providerConnectionUnavailable'
-                      : 'chatRequestFailed';
+                : error instanceof LocalServiceError && error.code === 'storage_unavailable'
+                  ? 'chatHistoryUnavailable'
+                  : error instanceof LocalServiceError && error.code === 'invalid_request_params'
+                    ? 'chatRequestFailed'
+                    : error instanceof LocalServiceError && error.code === 'provider_credentials_missing'
+                      ? 'providerCredentialMissing'
+                      : error instanceof LocalServiceError && error.code === 'connection_unavailable'
+                        ? 'providerConnectionUnavailable'
+                        : 'chatRequestFailed';
       const errorMessage =
         error instanceof LocalServiceError ? (error.details ?? error.message).trim().slice(0, 1000) || null : null;
       setRequestError(code, errorMessage, getOpenCodeRetryAtUnixMs(error, selectedModel.providerId));

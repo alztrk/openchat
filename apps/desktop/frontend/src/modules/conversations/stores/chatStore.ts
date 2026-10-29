@@ -68,6 +68,7 @@ export interface ChatToolPermissionRequest {
 }
 
 export type ChatErrorCode =
+  | 'chatHistoryUnavailable'
   | 'messageHistoryLoadFailed'
   | 'messageSaveFailed'
   | 'conversationCreateFailed'

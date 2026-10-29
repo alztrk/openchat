@@ -923,65 +923,91 @@ pub async fn send_message(
     };
     goals::validate_security_scan_final_status(is_security_scan, status, goal.as_ref())?;
     let elapsed = started.elapsed();
-    let database = storage.connect().map_err(|error| {
-        super::log_send_storage_failure(
-            storage,
-            "chat.send.compatible_assistant_persist",
-            crate::storage::sqlite_error_code(&error),
-        );
-        storage_error()
-    })?;
-    chatgpt_store::save_assistant_message_on_connection(
-        &database,
-        AssistantMessageWrite {
-            conversation_id,
-            message_id: &message_id,
-            content: &content,
-            status: if status == "paused" {
-                message_status
-            } else {
-                status
-            },
-            created_at_unix_ms: created_at,
-            output_tokens,
-            elapsed: Some(elapsed),
-        },
-    )
-    .map_err(|error| {
-        super::log_send_storage_failure(
-            storage,
-            "chat.send.compatible_assistant_persist",
-            crate::storage::sqlite_error_code(&error),
-        );
-        storage_error()
-    })?;
-    if status == "completed"
-        && let Some(input_tokens) = input_tokens
-        && chatgpt_store::save_prompt_usage_on_connection(
-            &database,
-            conversation_id,
-            chatgpt_store::PromptUsage {
-                input_tokens,
-                last_message_id: &message_id,
-                provider_id,
-                model_id: &route.model_id,
-                connection_id: route.connection_id.as_deref(),
-                workspace_id: None,
-            },
-        )
-        .is_err()
-        && storage.log_context_usage_save_failure().is_err()
-    {
-        eprintln!("context_usage_diagnostic_write_failed");
+    let mut persist_success = false;
+    let mut should_generate_title = false;
+    let mut persist_backoff = std::time::Duration::from_millis(100);
+
+    for attempt in 0..4 {
+        let outcome: Result<bool, rusqlite::Error> = (|| {
+            let database = storage.connect()?;
+            chatgpt_store::save_assistant_message_on_connection(
+                &database,
+                AssistantMessageWrite {
+                    conversation_id,
+                    message_id: &message_id,
+                    content: &content,
+                    status: if status == "paused" {
+                        message_status
+                    } else {
+                        status
+                    },
+                    created_at_unix_ms: created_at,
+                    output_tokens,
+                    elapsed: Some(elapsed),
+                },
+            )?;
+            if status == "completed"
+                && let Some(input_tokens) = input_tokens
+                && chatgpt_store::save_prompt_usage_on_connection(
+                    &database,
+                    conversation_id,
+                    chatgpt_store::PromptUsage {
+                        input_tokens,
+                        last_message_id: &message_id,
+                        provider_id,
+                        model_id: &route.model_id,
+                        connection_id: route.connection_id.as_deref(),
+                        workspace_id: None,
+                    },
+                )
+                .is_err()
+                && storage.log_context_usage_save_failure().is_err()
+            {
+                eprintln!("context_usage_diagnostic_write_failed");
+            }
+            let title_flag = status == "completed"
+                && chatgpt_store::should_generate_automatic_title_on_connection(
+                    &database,
+                    conversation_id,
+                )
+                .unwrap_or(false)
+                && !matches!(
+                    &title_generation,
+                    crate::chat_operation::TitleGenerationRequest::Disabled
+                );
+            Ok(title_flag)
+        })();
+
+        match outcome {
+            Ok(flag) => {
+                persist_success = true;
+                should_generate_title = flag;
+                break;
+            }
+            Err(error) if attempt < 3 => {
+                super::log_send_storage_failure(
+                    storage,
+                    "chat.send.compatible_assistant_persist_retry",
+                    crate::storage::sqlite_error_code(&error),
+                );
+                tokio::time::sleep(persist_backoff).await;
+                persist_backoff *= 2;
+            }
+            Err(error) => {
+                super::log_send_storage_failure(
+                    storage,
+                    "chat.send.compatible_assistant_persist",
+                    crate::storage::sqlite_error_code(&error),
+                );
+                return Err(storage_error());
+            }
+        }
     }
-    let should_generate_title = status == "completed"
-        && chatgpt_store::should_generate_automatic_title_on_connection(&database, conversation_id)
-            .unwrap_or(false)
-        && !matches!(
-            &title_generation,
-            crate::chat_operation::TitleGenerationRequest::Disabled
-        );
-    drop(database);
+
+    if !persist_success {
+        return Err(storage_error());
+    }
+
     if should_generate_title {
         let title_storage = image_service.storage_handle();
         let title_conversation_id = conversation_id.to_owned();

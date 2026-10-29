@@ -2477,7 +2477,6 @@
   "workspaceFileContent": "Contenu de {name}",
   "workspaceFileLineCount": "{count} lignes",
   "workspaceFileEmpty": "Ce fichier est vide.",
-  "design": "Studio d’images",
   "designLoading": "Ouverture du studio d’images…",
   "designTitle": "Studio d’images",
   "designCanvasTitle": "Canevas de conception vectorielle",
@@ -2828,7 +2827,6 @@
   "keyboardShortcutClear": "Effacer",
   "keyboardShortcutResetAction": "Réinitialiser",
   "keyboardShortcutRecordHelp": "Appuyez sur une combinaison de touches. Escape peut être attribuée ; utilisez le bouton d’annulation pour arrêter la saisie.",
-  "keyboardShortcutModifierRequired": "Les raccourcis globaux nécessitent Ctrl, Alt ou Meta.",
   "keyboardShortcutModifierRequired": "Utilisez une touche de modification comme Ctrl, Alt ou Commande pour ce raccourci.",
   "keyboardShortcutCustomPreset": "Raccourcis personnalisés",
   "keyboardShortcutConflictDetails": "Cette combinaison est attribuée à : {{actions}}. La réattribuer effacera ces raccourcis.",
@@ -2894,5 +2892,12 @@
   "usageCostAlertDisabled": "Désactivées",
   "usageCostAlertUnavailable": "Aucune utilisation tarifée n’est disponible pour ce mois ; la limite de coût ne peut pas être évaluée.",
   "monthlyCostWarningReached": "L’utilisation tarifée estimée de ce mois est de ${cost} ; elle a atteint {percent} % de votre limite d’alerte de {limit} USD.",
-  "quotaWarningReached": "L’utilisation du quota est de {percent} %, au-dessus de votre seuil d’alerte de {threshold} %."
+  "quotaWarningReached": "L’utilisation du quota est de {percent} %, au-dessus de votre seuil d’alerte de {threshold} %.",
+  "chatContextUsageUnavailable": "L'utilisation du contexte de discussion n'a pas pu être mesurée.",
+  "storageUnavailable": "Le stockage local des conversations est indisponible.",
+  "databaseQueueTimeout": "Le délai d'attente de la file d'attente de la base de données a expiré. Réessayez.",
+  "databaseQueueFull": "La file d'attente des opérations de la base de données est pleine. Réessayez.",
+  "invalidProviderResponse": "Le fournisseur de modèle a renvoyé une réponse que OpenChat ne peut pas lire.",
+  "conversationNotFound": "La conversation demandée est introuvable.",
+  "messageNotFound": "Le message demandé est introuvable."
 }

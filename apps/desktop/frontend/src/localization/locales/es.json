@@ -2477,7 +2477,6 @@
   "workspaceFileContent": "Contenido de {name}",
   "workspaceFileLineCount": "{count} líneas",
   "workspaceFileEmpty": "El archivo está vacío.",
-  "design": "Estudio de imágenes",
   "designLoading": "Abriendo el estudio de imágenes…",
   "designTitle": "Estudio de imágenes",
   "designCanvasTitle": "Lienzo de diseño vectorial",
@@ -2828,7 +2827,6 @@
   "keyboardShortcutClear": "Borrar",
   "keyboardShortcutResetAction": "Restablecer",
   "keyboardShortcutRecordHelp": "Pulsa una combinación de teclas. Escape se puede asignar; usa el botón para cancelar la grabación.",
-  "keyboardShortcutModifierRequired": "Los atajos globales requieren Ctrl, Alt o Meta.",
   "keyboardShortcutModifierRequired": "Usa una tecla modificadora como Ctrl, Alt o Command para este atajo.",
   "keyboardShortcutCustomPreset": "Atajos personalizados",
   "keyboardShortcutConflictDetails": "Esta combinación está asignada a: {{actions}}. Al reasignarla se borrarán esos atajos.",
@@ -2894,5 +2892,12 @@
   "usageCostAlertDisabled": "Desactivada",
   "usageCostAlertUnavailable": "Este mes no hay uso con precio disponible, así que no se puede evaluar el límite de coste.",
   "monthlyCostWarningReached": "El uso estimado con precio de este mes es ${cost}; alcanzó el {percent}% del límite de alerta de {limit} USD.",
-  "quotaWarningReached": "El uso de cuota es del {percent}%, por encima del umbral de aviso del {threshold}%."
+  "quotaWarningReached": "El uso de cuota es del {percent}%, por encima del umbral de aviso del {threshold}%.",
+  "chatContextUsageUnavailable": "No se pudo medir el uso del contexto del chat.",
+  "storageUnavailable": "El almacenamiento local de conversaciones no está disponible.",
+  "databaseQueueTimeout": "Se agotó el tiempo de espera en la cola de la base de datos. Vuelve a intentarlo.",
+  "databaseQueueFull": "La cola de operaciones de la base de datos está llena. Vuelve a intentarlo.",
+  "invalidProviderResponse": "El proveedor del modelo devolvió una respuesta que OpenChat no pudo leer.",
+  "conversationNotFound": "No se encontró la conversación solicitada.",
+  "messageNotFound": "No se encontró el mensaje solicitado."
 }
