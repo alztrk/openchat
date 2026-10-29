@@ -31,15 +31,17 @@ the test is complete.
 For interactive checks that should leave no generated profile behind, pass
 `--cleanup-profile` without `--profile-root`. The CLI then removes only the
 UUID-named profile it created directly under the OS temporary directory after
-the app exits, including when the build or launch fails. The option cannot be
-combined with a caller-supplied profile path.
+the app exits, including when the build or launch fails. When interrupted with
+Ctrl+C, it waits for the child process to exit before removing that profile.
+The option cannot be combined with a caller-supplied profile path.
 
 `startup-benchmark` builds a debug local-service sidecar with isolated-profile
 support, starts a Tauri debug build with startup timing enabled, and measures the
 process-to-React-ready interval. It requires the normal OpenChat application shell
 and verifies the temporary active database has no plaintext SQLite header before
 reporting a result. The command removes its UUID-named temporary profile after the
-run. This is a debug startup measurement, not a release-package result.
+run, including when interrupted with Ctrl+C. This is a debug startup measurement,
+not a release-package result.
 
 `maintain-target` reports Cargo target sizes and previews cleanup by default. Add
 `--apply` only when you want to clean those Cargo target directories.

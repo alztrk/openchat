@@ -14,6 +14,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { reserveTemporaryTestProfileRoot } from './temporaryTestProfile.mjs';
+import { runInterruptibleCommand, runTemporaryProfileSession } from './temporaryProfileSession.mjs';
 
 const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
 const workspaceRoot = path.resolve(scriptDirectory, '..');
@@ -53,9 +54,21 @@ function runNpm(args, cwd = frontendDirectory) {
   return runCommand(process.execPath, [npmCliPath, ...args], { cwd });
 }
 
-function runTask(task) {
+async function runNpmInterruptibly(args, interruptController, cwd = frontendDirectory) {
+  const npmCliPath = process.env.npm_execpath;
+  if (!npmCliPath) {
+    throw new Error('Run this task through its npm script so it can invoke npm without a shell.');
+  }
+
+  return runInterruptibleCommand(process.execPath, [npmCliPath, ...args], {
+    cwd,
+    interruptController,
+  });
+}
+
+async function runTask(task) {
   try {
-    task();
+    await task();
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     process.stderr.write(message + '\n');
@@ -73,21 +86,35 @@ function isWithinDirectory(parent, candidate) {
   );
 }
 
-function rustHostTargetTriple() {
-  const result = runCommand('rustc', ['-vV'], { captureOutput: true });
-  const match = /^host: ([^\r\n]+)$/mu.exec(result.stdout ?? '');
+function parseRustHostTargetTriple(stdout) {
+  const match = /^host: ([^\r\n]+)$/mu.exec(stdout ?? '');
   if (!match?.[1]) {
     throw new Error('rustc did not report a host target triple.');
   }
   return match[1];
 }
 
-function buildLocalService(profile, locked, features = []) {
+function rustHostTargetTriple() {
+  const result = runCommand('rustc', ['-vV'], { captureOutput: true });
+  return parseRustHostTargetTriple(result.stdout);
+}
+
+async function rustHostTargetTripleInterruptibly(interruptController) {
+  const result = await runInterruptibleCommand('rustc', ['-vV'], {
+    captureOutput: true,
+    interruptController,
+  });
+  return parseRustHostTargetTriple(result.stdout);
+}
+
+function validateLocalServiceProfile(profile) {
   if (profile !== 'debug' && profile !== 'release') {
     throw new Error('The local-service build profile is invalid.');
   }
+}
 
-  const targetTriple = rustHostTargetTriple();
+function localServiceBuildArgs(profile, locked, features, targetTriple) {
+  validateLocalServiceProfile(profile);
   const args = [
     'build',
     '--target',
@@ -100,8 +127,10 @@ function buildLocalService(profile, locked, features = []) {
   if (profile === 'release') args.push('--release');
   if (locked) args.push('--locked');
   if (features.length > 0) args.push('--features', features.join(','));
-  runCommand('cargo', args);
+  return args;
+}
 
+function installLocalServiceSidecar(profile, targetTriple) {
   const extension = targetTriple.split('-').includes('windows') ? '.exe' : '';
   const source = path.join(
     workspaceRoot,
@@ -121,6 +150,25 @@ function buildLocalService(profile, locked, features = []) {
   process.stdout.write('Prepared the local-service sidecar for ' + targetTriple + '.\n');
 }
 
+function buildLocalService(profile, locked, features = []) {
+  validateLocalServiceProfile(profile);
+  const targetTriple = rustHostTargetTriple();
+  runCommand('cargo', localServiceBuildArgs(profile, locked, features, targetTriple));
+  installLocalServiceSidecar(profile, targetTriple);
+}
+
+async function buildLocalServiceInterruptibly(profile, locked, features, interruptController) {
+  validateLocalServiceProfile(profile);
+  const targetTriple = await rustHostTargetTripleInterruptibly(interruptController);
+  interruptController.throwIfInterrupted();
+  await runInterruptibleCommand(
+    'cargo',
+    localServiceBuildArgs(profile, locked, features, targetTriple),
+    { interruptController },
+  );
+  installLocalServiceSidecar(profile, targetTriple);
+}
+
 function ensureNoArguments(command, args) {
   if (args.length > 0) {
     throw new Error('The ' + command + ' task does not accept additional arguments.');
@@ -135,7 +183,7 @@ function dev(args) {
   runNpm(['run', 'tauri:dev'], frontendDirectory);
 }
 
-function devTestProfile(args) {
+async function devTestProfile(args) {
   if (args.length === 1 && (args[0] === '--help' || args[0] === '-h')) {
     process.stdout.write(
       'Usage: npm run openchat -- dev-test-profile [--cleanup-profile] [--profile-root <absolute-temp-path>]\n' +
@@ -170,116 +218,118 @@ function devTestProfile(args) {
   if (cleanupProfileOnExit && explicitProfileRoot !== undefined) {
     throw new Error('--cleanup-profile cannot be used with --profile-root.');
   }
-  const profileRoot = explicitProfileRoot ?? reserveTemporaryTestProfileRoot();
+  let profileRoot = explicitProfileRoot;
+  const { interruptedSignal } = await runTemporaryProfileSession({
+    run: async (interruptController) => {
+      profileRoot ??= reserveTemporaryTestProfileRoot();
+      await buildLocalServiceInterruptibly(
+        'debug',
+        false,
+        ['desktop-profile-test-support'],
+        interruptController,
+      );
+      interruptController.throwIfInterrupted();
+      await ensureFrontendDependenciesInterruptibly(interruptController);
+      interruptController.throwIfInterrupted();
+      process.stdout.write('Isolated desktop test profile: ' + profileRoot + '\n');
+      await runNpmInterruptibly(
+        [
+          'run',
+          'tauri:dev',
+          '--',
+          '--features',
+          'desktop-profile-test-support',
+          '--',
+          '--',
+          '--desktop-test-profile-root',
+          profileRoot,
+        ],
+        interruptController,
+        frontendDirectory,
+      );
+    },
+    cleanup: () => {
+      if (cleanupProfileOnExit && profileRoot) removeTemporaryTestProfile(profileRoot);
+    },
+  });
 
-  let launchError;
-  try {
-    buildLocalService('debug', false, ['desktop-profile-test-support']);
-    ensureFrontendDependencies();
-    process.stdout.write('Isolated desktop test profile: ' + profileRoot + '\n');
-    runNpm(
-      [
-        'run',
-        'tauri:dev',
-        '--',
-        '--features',
-        'desktop-profile-test-support',
-        '--',
-        '--',
-        '--desktop-test-profile-root',
-        profileRoot,
-      ],
-      frontendDirectory,
-    );
-  } catch (error) {
-    launchError = error;
-  }
-
-  if (cleanupProfileOnExit) {
-    try {
-      removeTemporaryTestProfile(profileRoot);
-    } catch (cleanupError) {
-      if (launchError) {
-        throw new AggregateError([launchError, cleanupError], 'Desktop test and profile cleanup failed.');
-      }
-      throw cleanupError;
-    }
-  }
-  if (launchError) throw launchError;
+  if (interruptedSignal) process.exitCode = interruptedSignal === 'SIGINT' ? 130 : 143;
 }
 
-function startupBenchmark(args) {
+async function startupBenchmark(args) {
   if (args.length === 1 && (args[0] === '--help' || args[0] === '-h')) {
     process.stdout.write('Usage: npm run openchat -- startup-benchmark\n');
     return;
   }
   ensureNoArguments('startup-benchmark', args);
 
-  const profileRoot = reserveTemporaryTestProfileRoot();
-  const resultPath = path.join(profileRoot, 'result.json');
-  let benchmarkError;
+  let profileRoot;
+  const { interruptedSignal } = await runTemporaryProfileSession({
+    run: async (interruptController) => {
+      profileRoot = reserveTemporaryTestProfileRoot();
+      const resultPath = path.join(profileRoot, 'result.json');
+      await buildLocalServiceInterruptibly(
+        'debug',
+        false,
+        ['desktop-profile-test-support'],
+        interruptController,
+      );
+      interruptController.throwIfInterrupted();
+      await ensureFrontendDependenciesInterruptibly(interruptController);
+      interruptController.throwIfInterrupted();
+      await runNpmInterruptibly(
+        [
+          'run',
+          'tauri:dev',
+          '--',
+          '--features',
+          'startup-benchmark',
+          '--',
+          '--',
+          '--startup-benchmark-root',
+          profileRoot,
+        ],
+        interruptController,
+        frontendDirectory,
+      );
+      interruptController.throwIfInterrupted();
 
-  try {
-    buildLocalService('debug', false, ['desktop-profile-test-support']);
-    ensureFrontendDependencies();
-    runNpm(
-      [
-        'run',
-        'tauri:dev',
-        '--',
-        '--features',
-        'startup-benchmark',
-        '--',
-        '--',
-        '--startup-benchmark-root',
-        profileRoot,
-      ],
-      frontendDirectory,
-    );
+      const result = JSON.parse(readFileSync(resultPath, 'utf8'));
+      const elapsedMs = result?.processToReactReadyMs;
+      const renderedRootClass = result?.performanceSnapshot?.renderedRootClass;
+      if (
+        typeof elapsedMs !== 'number' ||
+        !Number.isFinite(elapsedMs) ||
+        elapsedMs <= 0 ||
+        typeof renderedRootClass !== 'string' ||
+        !renderedRootClass.split(/\s+/u).includes('app-shell') ||
+        renderedRootClass.includes('startup-error-page')
+      ) {
+        throw new Error('The desktop did not reach the OpenChat application shell.');
+      }
 
-    const result = JSON.parse(readFileSync(resultPath, 'utf8'));
-    const elapsedMs = result?.processToReactReadyMs;
-    const renderedRootClass = result?.performanceSnapshot?.renderedRootClass;
-    if (
-      typeof elapsedMs !== 'number' ||
-      !Number.isFinite(elapsedMs) ||
-      elapsedMs <= 0 ||
-      typeof renderedRootClass !== 'string' ||
-      !renderedRootClass.split(/\s+/u).includes('app-shell') ||
-      renderedRootClass.includes('startup-error-page')
-    ) {
-      throw new Error('The desktop did not reach the OpenChat application shell.');
-    }
+      const databasePath = path.join(profileRoot, 'storage', 'db', 'openchat.sqlite3');
+      if (!existsSync(databasePath)) {
+        throw new Error('The benchmark profile did not create the active database.');
+      }
+      const databaseHeader = readFileSync(databasePath).subarray(0, 16);
+      if (
+        databaseHeader.length !== 16 ||
+        databaseHeader.equals(Buffer.from('SQLite format 3\0', 'ascii'))
+      ) {
+        throw new Error('The benchmark profile database is missing or plaintext SQLite.');
+      }
 
-    const databasePath = path.join(profileRoot, 'storage', 'db', 'openchat.sqlite3');
-    if (!existsSync(databasePath)) {
-      throw new Error('The benchmark profile did not create the active database.');
-    }
-    const databaseHeader = readFileSync(databasePath).subarray(0, 16);
-    if (
-      databaseHeader.length !== 16 ||
-      databaseHeader.equals(Buffer.from('SQLite format 3\0', 'ascii'))
-    ) {
-      throw new Error('The benchmark profile database is missing or plaintext SQLite.');
-    }
+      process.stdout.write(
+        'Debug startup to React ready: ' + elapsedMs.toFixed(1) + ' ms; app shell and encrypted database verified.\n',
+      );
+    },
+    cleanup: () => {
+      if (profileRoot) removeTemporaryTestProfile(profileRoot);
+    },
+  });
 
-    process.stdout.write(
-      'Debug startup to React ready: ' + elapsedMs.toFixed(1) + ' ms; app shell and encrypted database verified.\n',
-    );
-  } catch (error) {
-    benchmarkError = error;
-  }
-
-  try {
-    removeTemporaryTestProfile(profileRoot);
-  } catch (cleanupError) {
-    if (benchmarkError) {
-      throw new AggregateError([benchmarkError, cleanupError], 'Startup benchmark and cleanup failed.');
-    }
-    throw cleanupError;
-  }
-
-  if (benchmarkError) throw benchmarkError;
+  if (interruptedSignal) process.exitCode = interruptedSignal === 'SIGINT' ? 130 : 143;
 }
 
 function removeTemporaryTestProfile(profileRoot) {
@@ -309,6 +359,12 @@ function removeTemporaryTestProfile(profileRoot) {
 function ensureFrontendDependencies() {
   if (!existsSync(path.join(frontendDirectory, 'node_modules'))) {
     runNpm(['ci'], frontendDirectory);
+  }
+}
+
+async function ensureFrontendDependenciesInterruptibly(interruptController) {
+  if (!existsSync(path.join(frontendDirectory, 'node_modules'))) {
+    await runNpmInterruptibly(['ci'], interruptController, frontendDirectory);
   }
 }
 
@@ -760,7 +816,7 @@ function ensureOpenSslEnvironment() {
   }
 }
 
-function main() {
+async function main() {
   loadLocalEnv();
   ensureOpenSslEnvironment();
   const [taskName, ...args] = process.argv.slice(2);
@@ -783,7 +839,7 @@ function main() {
     throw new Error('Unknown task: ' + taskName + '. Run npm run openchat -- --help for usage.');
   }
 
-  task(args);
+  await task(args);
 }
 
 runTask(main);
