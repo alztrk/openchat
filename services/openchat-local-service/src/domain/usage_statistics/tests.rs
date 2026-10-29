@@ -267,6 +267,66 @@ mod usage_data_tests {
     }
 
     #[test]
+    fn gemini_generate_content_usage_maps_prompt_cache_candidates_and_thoughts() {
+        let usage = UsageData::from_chat_completion_event(
+            &json!({
+                "candidates": [{"finishReason": "STOP"}],
+                "usageMetadata": {
+                    "promptTokenCount": 120,
+                    "cachedContentTokenCount": 30,
+                    "candidatesTokenCount": 35,
+                    "thoughtsTokenCount": 8,
+                    "toolUsePromptTokenCount": 9,
+                    "totalTokenCount": 163,
+                    "serviceTier": "SERVICE_TIER_DEFAULT"
+                }
+            }),
+            "gemini",
+        );
+
+        assert_eq!(usage.input_tokens, Some(120));
+        assert_eq!(usage.output_tokens, Some(35));
+        assert_eq!(usage.reasoning_tokens, Some(8));
+        assert_eq!(usage.cached_input_tokens, Some(30));
+        assert_eq!(usage.cache_write_tokens, None);
+        assert_eq!(usage.reported_cost_usd, None);
+        assert_eq!(usage.service_tier.as_deref(), Some("SERVICE_TIER_DEFAULT"));
+        assert_eq!(usage.completion_reason.as_deref(), Some("STOP"));
+
+        let compatible_usage = UsageData::from_chat_completion_event(
+            &json!({
+                "usage": {
+                    "prompt_tokens": 70,
+                    "completion_tokens": 12,
+                    "completion_tokens_details": {"reasoning_tokens": 4},
+                    "prompt_tokens_details": {"cached_tokens": 20}
+                }
+            }),
+            "gemini",
+        );
+        assert_eq!(compatible_usage.input_tokens, Some(70));
+        assert_eq!(compatible_usage.output_tokens, Some(12));
+        assert_eq!(compatible_usage.reasoning_tokens, Some(4));
+        assert_eq!(compatible_usage.cached_input_tokens, Some(20));
+
+        let invalid_metadata = UsageData::from_chat_completion_event(
+            &json!({
+                "usageMetadata": {
+                    "promptTokenCount": -1,
+                    "cachedContentTokenCount": "30",
+                    "candidatesTokenCount": null,
+                    "thoughtsTokenCount": 1e100
+                }
+            }),
+            "gemini",
+        );
+        assert_eq!(invalid_metadata.input_tokens, None);
+        assert_eq!(invalid_metadata.cached_input_tokens, None);
+        assert_eq!(invalid_metadata.output_tokens, None);
+        assert_eq!(invalid_metadata.reasoning_tokens, None);
+    }
+
+    #[test]
     fn groq_chat_completion_usage_maps_provider_timing_fields() {
         let usage = UsageData::from_chat_completion_event(
             &json!({

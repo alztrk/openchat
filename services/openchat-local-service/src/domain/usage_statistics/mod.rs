@@ -98,6 +98,29 @@ impl UsageData {
 
     /// Extracts usage fields from a Chat Completions response event.
     pub(crate) fn from_chat_completion_event(value: &Value, provider_id: &str) -> Self {
+        if provider_id == "gemini"
+            && let Some(usage) = value.get("usageMetadata").filter(|usage| usage.is_object())
+        {
+            return Self {
+                input_tokens: nonnegative_token(usage.get("promptTokenCount")),
+                output_tokens: nonnegative_token(usage.get("candidatesTokenCount")),
+                reasoning_tokens: nonnegative_token(usage.get("thoughtsTokenCount")),
+                cached_input_tokens: nonnegative_token(usage.get("cachedContentTokenCount")),
+                cache_write_tokens: None,
+                reported_cost_usd: None,
+                service_tier: usage
+                    .get("serviceTier")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned),
+                completion_reason: provider_reason(value.pointer("/candidates/0/finishReason")),
+                provider_processing_ms: None,
+                provider_queue_time_ms: None,
+                provider_input_processing_ms: None,
+                provider_output_processing_ms: None,
+                provider_rate_limits: None,
+            };
+        }
+
         let usage = value.get("usage");
         Self {
             input_tokens: nonnegative_token(usage.and_then(|usage| usage.get("prompt_tokens"))),
