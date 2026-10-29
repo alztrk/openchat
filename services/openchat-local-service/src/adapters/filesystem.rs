@@ -210,18 +210,134 @@ pub(crate) fn create_directory_chain_from_directory(
         match open_directory_child(&current, name) {
             Ok(child) => current.push_child(child),
             Err(error) if error.kind() == io::ErrorKind::NotFound => {
-                match current.create_dir(name) {
-                    Ok(()) => {}
-                    Err(create_error) if create_error.kind() == io::ErrorKind::AlreadyExists => {}
-                    Err(create_error) => return Err(create_error),
-                }
-                let child = open_directory_child(&current, name)?;
+                let child = create_or_open_directory_child(&current, name)?;
                 current.push_child(child);
             }
             Err(error) => return Err(error),
         }
     }
     Ok(current)
+}
+
+fn create_or_open_directory_child(directory: &Dir, name: &OsStr) -> io::Result<Dir> {
+    #[cfg(windows)]
+    {
+        match create_directory_child_windows(directory, name) {
+            Ok(child) => Ok(child),
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
+                open_directory_child(directory, name)
+            }
+            Err(error) => Err(error),
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        match directory.create_dir(name) {
+            Ok(()) => open_directory_child(directory, name),
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
+                open_directory_child(directory, name)
+            }
+            Err(error) => Err(error),
+        }
+    }
+}
+
+#[cfg(windows)]
+fn create_directory_child_windows(directory: &Dir, name: &OsStr) -> io::Result<Dir> {
+    use std::{
+        mem::size_of,
+        os::windows::{
+            ffi::OsStrExt,
+            io::{AsRawHandle, FromRawHandle},
+        },
+        ptr::{null, null_mut},
+    };
+    use windows_sys::{
+        Wdk::{
+            Foundation::OBJECT_ATTRIBUTES,
+            Storage::FileSystem::{
+                FILE_CREATE, FILE_DIRECTORY_FILE, FILE_SYNCHRONOUS_IO_NONALERT, NtCreateFile,
+            },
+        },
+        Win32::{
+            Foundation::{
+                HANDLE, OBJ_CASE_INSENSITIVE, OBJ_DONT_REPARSE, RtlNtStatusToDosError,
+                STATUS_OBJECT_NAME_COLLISION, UNICODE_STRING,
+            },
+            Storage::FileSystem::{
+                FILE_ATTRIBUTE_DIRECTORY, FILE_LIST_DIRECTORY, FILE_READ_ATTRIBUTES,
+                FILE_SHARE_READ, FILE_SHARE_WRITE, SYNCHRONIZE,
+            },
+            System::IO::IO_STATUS_BLOCK,
+        },
+    };
+
+    let mut name: Vec<u16> = name.encode_wide().collect();
+    let name_length = name
+        .len()
+        .checked_mul(size_of::<u16>())
+        .and_then(|length| u16::try_from(length).ok())
+        .filter(|length| *length > 0)
+        .filter(|_| !name.contains(&0))
+        .ok_or_else(invalid_path_error)?;
+    let mut object_name = UNICODE_STRING {
+        Length: name_length,
+        MaximumLength: name_length,
+        Buffer: name.as_mut_ptr(),
+    };
+    let parent = directory.try_clone()?.into_std_file();
+    let object_attributes = OBJECT_ATTRIBUTES {
+        Length: size_of::<OBJECT_ATTRIBUTES>() as u32,
+        RootDirectory: parent.as_raw_handle() as HANDLE,
+        ObjectName: &mut object_name,
+        Attributes: OBJ_CASE_INSENSITIVE | OBJ_DONT_REPARSE,
+        SecurityDescriptor: null(),
+        SecurityQualityOfService: null(),
+    };
+    let mut handle: HANDLE = null_mut();
+    let mut io_status = IO_STATUS_BLOCK::default();
+    // SAFETY: The parent handle and all pointers remain valid for the synchronous call. The
+    // one-component name was validated, FILE_CREATE prevents opening an existing entry, and
+    // OBJ_DONT_REPARSE rejects a reparse point that races with the initial lookup.
+    let status = unsafe {
+        NtCreateFile(
+            &mut handle,
+            FILE_LIST_DIRECTORY | FILE_READ_ATTRIBUTES | SYNCHRONIZE,
+            &object_attributes,
+            &mut io_status,
+            null(),
+            FILE_ATTRIBUTE_DIRECTORY,
+            FILE_SHARE_READ | FILE_SHARE_WRITE,
+            FILE_CREATE,
+            FILE_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT,
+            null(),
+            0,
+        )
+    };
+    if status < 0 {
+        if status == STATUS_OBJECT_NAME_COLLISION {
+            return Err(io::Error::new(
+                io::ErrorKind::AlreadyExists,
+                "The workspace directory already exists.",
+            ));
+        }
+        // SAFETY: NtCreateFile returns a documented NTSTATUS value that RtlNtStatusToDosError maps.
+        let error_code = unsafe { RtlNtStatusToDosError(status) };
+        return Err(io::Error::from_raw_os_error(error_code as i32));
+    }
+    if handle.is_null() {
+        return Err(io::Error::other(
+            "Windows returned no handle for a created workspace directory.",
+        ));
+    }
+
+    // SAFETY: NtCreateFile succeeded and transferred ownership of this handle to the caller.
+    let child = unsafe { std::fs::File::from_raw_handle(handle) };
+    let metadata = child.metadata()?;
+    if metadata_is_reparse_point_std(&metadata) || !metadata.is_dir() {
+        return Err(invalid_file_error());
+    }
+    Ok(Dir::from_std_file(child))
 }
 
 /// Opens an absolute directory path one component at a time without following links.
@@ -564,4 +680,87 @@ fn invalid_file_error() -> io::Error {
         io::ErrorKind::InvalidInput,
         "The file must be a regular, independently linked file.",
     )
+}
+
+#[cfg(all(test, windows))]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    struct TestDirectory(PathBuf);
+
+    impl TestDirectory {
+        fn new() -> Self {
+            let path = std::env::temp_dir().join(format!(
+                "openchat-filesystem-{}-{}",
+                std::process::id(),
+                uuid::Uuid::new_v4()
+            ));
+            std::fs::create_dir(&path).expect("create isolated filesystem test directory");
+            Self(path)
+        }
+    }
+
+    impl Drop for TestDirectory {
+        fn drop(&mut self) {
+            std::fs::remove_dir_all(&self.0).expect("remove isolated filesystem test directory");
+        }
+    }
+
+    #[test]
+    fn created_directory_chain_is_opened_before_its_path_can_be_replaced() {
+        let temporary = TestDirectory::new();
+        let root_path = temporary.0.join("workspace");
+        std::fs::create_dir(&root_path).expect("create workspace root");
+        let root = open_absolute_directory_no_follow(&root_path).expect("open workspace root");
+        let created = create_directory_chain_from_directory(&root, Path::new("nested/leaf"))
+            .expect("create nested directories");
+        let nested = root_path.join("nested");
+        let moved = root_path.join("moved");
+
+        assert!(std::fs::rename(&nested, &moved).is_err());
+        drop(created);
+        std::fs::rename(&nested, &moved).expect("rename after releasing created directory handles");
+    }
+
+    #[test]
+    fn create_collision_opens_only_a_valid_existing_directory() {
+        let temporary = TestDirectory::new();
+        let root_path = temporary.0.join("workspace");
+        std::fs::create_dir(&root_path).expect("create workspace root");
+        std::fs::create_dir(root_path.join("existing")).expect("create existing directory");
+        std::fs::write(root_path.join("file"), b"content").expect("create non-directory entry");
+        let root = open_absolute_directory_no_follow(&root_path).expect("open workspace root");
+
+        let existing = create_or_open_directory_child(&root, OsStr::new("existing"))
+            .expect("open the existing directory after create collision");
+        assert!(
+            existing
+                .try_clone()
+                .expect("clone existing directory handle")
+                .into_std_file()
+                .metadata()
+                .expect("read existing metadata")
+                .is_dir()
+        );
+        assert!(create_or_open_directory_child(&root, OsStr::new("file")).is_err());
+    }
+
+    #[test]
+    fn create_only_rejects_a_reparse_point_added_after_the_initial_lookup() {
+        use std::os::windows::fs::symlink_dir;
+
+        let temporary = TestDirectory::new();
+        let root_path = temporary.0.join("workspace");
+        let external_path = temporary.0.join("external");
+        std::fs::create_dir(&root_path).expect("create workspace root");
+        std::fs::create_dir(&external_path).expect("create external directory");
+        let root = open_absolute_directory_no_follow(&root_path).expect("open workspace root");
+        let external_target = external_path.join("created-through-link");
+        symlink_dir(&external_target, root_path.join("redirect"))
+            .expect("create directory symlink after opening workspace root");
+
+        assert!(create_directory_child_windows(&root, OsStr::new("redirect")).is_err());
+        assert!(!external_target.exists());
+    }
 }
