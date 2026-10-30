@@ -1544,3 +1544,88 @@ async fn stalled_local_response_uses_the_request_timeout_error_path() {
         .expect("release fixture server after timeout");
     server.await.expect("fixture server should close");
 }
+
+#[tokio::test]
+async fn consecutive_rounds_separate_visible_text_and_preserve_per_round_reasoning_summaries() {
+    let mut round_one = Vec::new();
+    round_one.extend(sse_event(
+        json!({"choices": [{"delta": {"reasoning_content": "Inspecting workspace tree."}}]}),
+        true,
+    ));
+    round_one.extend(sse_event(
+        json!({"choices": [{"finish_reason": "stop", "delta": {"content": "I'll start by reconnoitering the project structure."}}]}),
+        true,
+    ));
+
+    let mut round_two = Vec::new();
+    round_two.extend(sse_event(
+        json!({"choices": [{"delta": {"reasoning_content": "Building security scan checklist."}}]}),
+        true,
+    ));
+    round_two.extend(sse_event(
+        json!({"choices": [{"finish_reason": "stop", "delta": {"content": "Now let me establish my scan plan."}}]}),
+        true,
+    ));
+
+    let client = fixture_client(Duration::from_secs(5));
+    let (events, _event_receiver) = EventSink::test_channel();
+    let (_cancel_sender, mut cancellation) = watch::channel(false);
+    let body = json!({"model": "test-model", "messages": []});
+    let mut content = String::new();
+    let mut reasoning = String::new();
+    let mut reasoning_summaries = Vec::new();
+    let mut output_tokens = None;
+    let mut input_tokens = None;
+    let request_id = json!("fixture-request");
+    let mut response_budget = ProviderResponseBudget::default();
+
+    for payload in [round_one, round_two] {
+        let (url, server) = spawn_fixture_server(200, payload).await;
+        let mut turn_route = route("opencode");
+        turn_route.chat_url = url;
+        turn_route.is_opencode = true;
+        let turn = receive_for_test(
+            &client,
+            ResponseStreamRequest {
+                route: &turn_route,
+                api_key: Some("fixture-api-key"),
+                session_id: None,
+                body: &body,
+                request_id: &request_id,
+                conversation_id: "fixture-conversation",
+                message_id: "fixture-message",
+                created_at: 1,
+                content: &mut content,
+                reasoning_content: &mut reasoning,
+                reasoning_summaries: &mut reasoning_summaries,
+                output_tokens: &mut output_tokens,
+                input_tokens: &mut input_tokens,
+                started: Instant::now(),
+                first_output_recorder: None,
+                rate_limit_observation: None,
+                cancellation: &mut cancellation,
+                events: &events,
+                response_budget: &mut response_budget,
+            },
+        )
+        .await
+        .expect("round should succeed");
+        assert!(!turn.round_content.starts_with('\n'));
+        server.await.expect("fixture server should finish");
+    }
+
+    assert_eq!(
+        content,
+        "I'll start by reconnoitering the project structure.\n\nNow let me establish my scan plan."
+    );
+    assert_eq!(reasoning_summaries.len(), 2);
+    assert_eq!(reasoning_summaries[0].id, "reasoning_fixture-message");
+    assert_eq!(reasoning_summaries[0].content, "Inspecting workspace tree.");
+    assert!(reasoning_summaries[0].is_complete);
+    assert_eq!(reasoning_summaries[1].id, "reasoning_fixture-message_2");
+    assert_eq!(
+        reasoning_summaries[1].content,
+        "Building security scan checklist."
+    );
+    assert!(reasoning_summaries[1].is_complete);
+}

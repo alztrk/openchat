@@ -1703,7 +1703,7 @@ fn checked_child_directory(
     checked_directory(parent, name, create)
 }
 
-fn remove_attachment_directory(
+pub(super) fn remove_attachment_directory(
     storage_root: &Path,
     conversation_id: &str,
 ) -> Result<(), ServiceError> {

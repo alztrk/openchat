@@ -48,6 +48,7 @@ export function useVirtualMessageList(messages: ChatMessage[], conversationId: s
   const rowHeights = useRef(new Map<string, number>());
   const rowObserver = useRef<ResizeObserver | null>(null);
   const followLatestMessage = useRef(true);
+  const lastScrollTop = useRef(0);
   const measuredViewportWidth = useRef(0);
   const [layoutRevision, setLayoutRevision] = useState(0);
   const [viewport, setViewport] = useState<Viewport>({ scrollTop: 0, height: 0, width: 0 });
@@ -72,8 +73,13 @@ export function useVirtualMessageList(messages: ChatMessage[], conversationId: s
   const handleScroll = useCallback(() => {
     const element = containerRef.current;
     if (!element) return;
-    followLatestMessage.current =
-      Math.max(0, element.scrollHeight - element.clientHeight - element.scrollTop) <= latestMessageThreshold;
+    const distanceFromBottom = Math.max(0, element.scrollHeight - element.clientHeight - element.scrollTop);
+    if (distanceFromBottom <= latestMessageThreshold) {
+      followLatestMessage.current = true;
+    } else if (element.scrollTop < lastScrollTop.current - 2) {
+      followLatestMessage.current = false;
+    }
+    lastScrollTop.current = element.scrollTop;
     updateViewport();
   }, [updateViewport]);
 
@@ -118,6 +124,7 @@ export function useVirtualMessageList(messages: ChatMessage[], conversationId: s
   // biome-ignore lint/correctness/useExhaustiveDependencies: Conversation identity resets the retained virtual measurements.
   useEffect(() => {
     followLatestMessage.current = true;
+    lastScrollTop.current = 0;
     rowHeights.current.clear();
     rowCallbacks.current.clear();
     measuredViewportWidth.current = 0;
@@ -238,7 +245,10 @@ export function useVirtualMessageList(messages: ChatMessage[], conversationId: s
     if (!element) return;
     followLatestMessage.current = true;
     element.scrollTop = element.scrollHeight;
+    lastScrollTop.current = element.scrollTop;
   }, []);
+
+  const totalHeight = offsetAt(offsets, messages.length);
 
   return {
     bottomPadding: layout.bottomPadding,
@@ -250,6 +260,7 @@ export function useVirtualMessageList(messages: ChatMessage[], conversationId: s
     scrollToMessage,
     stopFollowingLatest,
     topPadding: layout.topPadding,
+    totalHeight,
   };
 }
 
@@ -264,7 +275,9 @@ function estimateMessageHeight(message: ChatMessage, charsPerLine: number): numb
   const lines = estimateWrappedLineCount(message.content, charsPerLine);
   const contentHeight = message.content ? lines * 26 + 48 : 64;
   const attachmentHeight = message.attachments.length * 132;
-  return Math.max(88, contentHeight + attachmentHeight + rowGap);
+  const toolEstimate = message.toolActivities !== '[]' ? 96 : 0;
+  const reasoningEstimate = message.reasoningSummaries !== '[]' ? 96 : 0;
+  return Math.max(88, contentHeight + attachmentHeight + toolEstimate + reasoningEstimate + rowGap);
 }
 
 /**

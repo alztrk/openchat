@@ -12,6 +12,7 @@ import { LocalServiceError, localServiceClient, type ServiceOperation } from '@/
 import { retryDelayFromProviderDetails } from './securityScanRetry';
 import {
   cancelSecurityScan,
+  deleteSecurityScan,
   listSecurityScans,
   type SecurityScan,
   type SecurityScanStatus,
@@ -24,6 +25,7 @@ export type SecurityScanErrorKey =
   | 'securityScanRouteMissing'
   | 'securityScanNoResumableCheckpoint'
   | 'securityScanStopFailed'
+  | 'securityScanDeleteFailed'
   | 'securityScanStatusInvalid'
   | 'securityScansLoadFailed'
   | 'securityScanCreateFailed';
@@ -68,9 +70,14 @@ const listeners = new Map<string, Set<() => void>>();
 const operations = new Map<string, ServiceOperation>();
 const operationStarts = new Map<string, Promise<ServiceOperation>>();
 const inFlight = new Set<string>();
+const refreshingScans = new Set<string>();
+const deletedScans = new Set<string>();
 const retryTimers = new Map<string, number>();
 const resumeAfterOperation = new Set<string>();
 const initialized = new Set<string>();
+
+const STREAM_SAVE_THROTTLE_MS = 2_500;
+const streamTextEncoder = new TextEncoder();
 
 export function useSecurityScanRuntime(scanId: string | null): SecurityScanRuntimeSnapshot {
   const subscribe = (listener: () => void) => {
@@ -222,15 +229,54 @@ export async function stopSecurityScan(scan: SecurityScan): Promise<void> {
   }
 }
 
+export async function deleteSecurityScanRuntime(scan: SecurityScan): Promise<void> {
+  deletedScans.add(scan.id);
+  clearRetryTimer(scan.id);
+  resumeAfterOperation.delete(scan.id);
+  try {
+    let operation = operations.get(scan.id);
+    const pendingStart = operationStarts.get(scan.id);
+    if (!operation && pendingStart) {
+      try {
+        operation = await pendingStart;
+      } catch {
+        operation = undefined;
+      }
+    }
+    if (operation) {
+      await operation.cancel().catch(() => false);
+      try {
+        await operation.result;
+      } catch {
+        // Cancelled or failed operation has finished unwinding before database deletion.
+      }
+    }
+    await deleteSecurityScan(scan.id);
+    operations.delete(scan.id);
+    operationStarts.delete(scan.id);
+    inFlight.delete(scan.id);
+    refreshingScans.delete(scan.id);
+    initialized.delete(scan.id);
+    snapshots.delete(scan.id);
+    for (const listener of listeners.get(scan.id) ?? []) listener();
+  } catch (error) {
+    deletedScans.delete(scan.id);
+    throw error;
+  }
+}
+
 export async function refreshSecurityScan(scan: SecurityScan): Promise<void> {
-  if (operations.has(scan.id) || inFlight.has(scan.id)) return;
+  if (deletedScans.has(scan.id) || operations.has(scan.id) || inFlight.has(scan.id) || refreshingScans.has(scan.id)) {
+    return;
+  }
+  refreshingScans.add(scan.id);
   try {
     const existing = snapshots.get(scan.id);
     const [messages, activeGoal] = await Promise.all([
       getMessages(scan.conversationId),
       readActiveGoal(scan.conversationId),
     ]);
-    if (operations.has(scan.id) || inFlight.has(scan.id)) return;
+    if (deletedScans.has(scan.id) || operations.has(scan.id) || inFlight.has(scan.id)) return;
     const goal = resolveRetainedGoal(activeGoal, existing?.goal ?? null, scan.conversationId, scan.status);
     update(scan.id, {
       messages,
@@ -243,7 +289,7 @@ export async function refreshSecurityScan(scan: SecurityScan): Promise<void> {
       scheduleQuotaResume(scan, goal);
     }
   } catch (error) {
-    if (operations.has(scan.id) || inFlight.has(scan.id)) return;
+    if (deletedScans.has(scan.id) || operations.has(scan.id) || inFlight.has(scan.id)) return;
     const isMappedError =
       error instanceof LocalServiceError ||
       error instanceof SecurityScanUiError ||
@@ -251,11 +297,13 @@ export async function refreshSecurityScan(scan: SecurityScan): Promise<void> {
     update(scan.id, {
       error: isMappedError ? error : new SecurityScanUiError('securityScansLoadFailed'),
     });
+  } finally {
+    refreshingScans.delete(scan.id);
   }
 }
 
 async function startOperation(scan: SecurityScan, resumeRunId: string | null): Promise<void> {
-  if (operations.has(scan.id) || inFlight.has(scan.id)) return;
+  if (deletedScans.has(scan.id) || operations.has(scan.id) || inFlight.has(scan.id)) return;
   if (!scan.providerId || !scan.modelId) {
     update(scan.id, { error: new SecurityScanUiError('securityScanRouteMissing') });
     return;
@@ -264,15 +312,25 @@ async function startOperation(scan: SecurityScan, resumeRunId: string | null): P
   update(scan.id, { isActive: true, error: null });
   let assistantMessage: ChatMessage | null = null;
   let pendingMessage: ChatMessage | null = null;
+  let throttledMessage: ChatMessage | null = null;
+  let throttleTimer: number | undefined;
+  let lastSaveStartedAt = 0;
   let persistWorker: Promise<void> | null = null;
   let pendingTextBytes = 0;
   let persistenceError: unknown = null;
   let operationPromise: Promise<ServiceOperation> | null = null;
 
+  const clearThrottleTimer = (): void => {
+    if (throttleTimer !== undefined) {
+      window.clearTimeout(throttleTimer);
+      throttleTimer = undefined;
+    }
+  };
   const persistLatest = (): void => {
-    if (!pendingMessage || persistWorker) return;
+    if (deletedScans.has(scan.id) || !pendingMessage || persistWorker) return;
+    lastSaveStartedAt = Date.now();
     persistWorker = (async () => {
-      while (pendingMessage) {
+      while (pendingMessage && !deletedScans.has(scan.id)) {
         const message = pendingMessage;
         pendingMessage = null;
         await saveMessage(message);
@@ -283,12 +341,45 @@ async function startOperation(scan: SecurityScan, resumeRunId: string | null): P
       })
       .finally(() => {
         persistWorker = null;
-        if (pendingMessage) persistLatest();
+        if (pendingMessage && !deletedScans.has(scan.id)) persistLatest();
       });
   };
-  const enqueueSave = (message: ChatMessage): void => {
+  const enqueueSaveImmediate = (message: ChatMessage): void => {
+    if (deletedScans.has(scan.id)) return;
+    clearThrottleTimer();
+    throttledMessage = null;
     pendingMessage = message;
     persistLatest();
+  };
+  const scheduleCheckpointSave = (message: ChatMessage): void => {
+    if (deletedScans.has(scan.id)) return;
+    const elapsedSinceSave = Date.now() - lastSaveStartedAt;
+    if (lastSaveStartedAt === 0 || elapsedSinceSave >= STREAM_SAVE_THROTTLE_MS) {
+      enqueueSaveImmediate(message);
+      return;
+    }
+    throttledMessage = message;
+    if (throttleTimer !== undefined) return;
+    throttleTimer = window.setTimeout(
+      () => {
+        throttleTimer = undefined;
+        if (throttledMessage && !deletedScans.has(scan.id)) {
+          const next = throttledMessage;
+          throttledMessage = null;
+          pendingMessage = next;
+          persistLatest();
+        }
+      },
+      Math.max(50, STREAM_SAVE_THROTTLE_MS - elapsedSinceSave),
+    );
+  };
+  const flushScheduledSave = (): void => {
+    clearThrottleTimer();
+    if (throttledMessage && !deletedScans.has(scan.id)) {
+      pendingMessage = throttledMessage;
+      throttledMessage = null;
+      persistLatest();
+    }
   };
   const latestAssistantMessage = (): ChatMessage | null => assistantMessage;
 
@@ -300,6 +391,7 @@ async function startOperation(scan: SecurityScan, resumeRunId: string | null): P
         ...(resumeRunId ? { resumeRunId } : { goal: true, goalObjective: securityScanObjective }),
       },
       (event) => {
+        if (deletedScans.has(scan.id)) return;
         if (event.name === 'chat.goal.updated') {
           try {
             const goal = parseChatGoal(event.data);
@@ -319,15 +411,20 @@ async function startOperation(scan: SecurityScan, resumeRunId: string | null): P
         if (!message) return;
         assistantMessage = message;
         update(scan.id, { messages: upsertMessage(snapshots.get(scan.id)?.messages ?? [], message) });
+        if (event.name === 'chat.started') {
+          pendingTextBytes = 0;
+          enqueueSaveImmediate(message);
+          return;
+        }
         if (event.name === 'chat.text.delta' && typeof event.data.delta === 'string') {
-          pendingTextBytes += new TextEncoder().encode(event.data.delta).byteLength;
+          pendingTextBytes += streamTextEncoder.encode(event.data.delta).byteLength;
         }
         if (
           pendingTextBytes >= 256 * 1024 ||
-          ['chat.started', 'chat.delta', 'chat.tool.updated', 'chat.citations.updated'].includes(event.name)
+          ['chat.delta', 'chat.reasoning.delta', 'chat.tool.updated', 'chat.citations.updated'].includes(event.name)
         ) {
           pendingTextBytes = 0;
-          enqueueSave(message);
+          scheduleCheckpointSave(message);
         }
       },
     );
@@ -335,6 +432,8 @@ async function startOperation(scan: SecurityScan, resumeRunId: string | null): P
     const operation = await operationPromise;
     operations.set(scan.id, operation);
     const result = await operation.result;
+    if (deletedScans.has(scan.id)) return;
+    flushScheduledSave();
     const finalStatus = result.status === 'stopped' ? 'stopped' : 'completed';
     const completedMessage = latestAssistantMessage();
     if (completedMessage) {
@@ -346,7 +445,7 @@ async function startOperation(scan: SecurityScan, resumeRunId: string | null): P
         tokensPerSecond: numberOrNull(result.tokensPerSecond) ?? completedMessage.tokensPerSecond,
       };
       update(scan.id, { messages: upsertMessage(snapshots.get(scan.id)?.messages ?? [], assistantMessage) });
-      enqueueSave(assistantMessage);
+      enqueueSaveImmediate(assistantMessage);
     }
     await waitForPersistence(
       () => persistWorker,
@@ -366,12 +465,15 @@ async function startOperation(scan: SecurityScan, resumeRunId: string | null): P
       scheduleQuotaResume(scan, goal);
     }
   } catch (error) {
+    clearThrottleTimer();
+    throttledMessage = null;
+    if (deletedScans.has(scan.id)) return;
     const failureCode = resolveServiceFailureCode(error, 'security_scan_request_failed');
     const failedMessage = latestAssistantMessage();
     if (failedMessage) {
       assistantMessage = { ...failedMessage, status: 'failed', failureCode };
       update(scan.id, { messages: upsertMessage(snapshots.get(scan.id)?.messages ?? [], assistantMessage) });
-      enqueueSave(assistantMessage);
+      enqueueSaveImmediate(assistantMessage);
     }
     try {
       await waitForPersistence(
@@ -397,14 +499,17 @@ async function startOperation(scan: SecurityScan, resumeRunId: string | null): P
       globalThis.reportError(new Error('The security scan state could not be refreshed.', { cause: goalError }));
     }
   } finally {
+    clearThrottleTimer();
     if (operationPromise && operationStarts.get(scan.id) === operationPromise) {
       operationStarts.delete(scan.id);
     }
     operations.delete(scan.id);
     inFlight.delete(scan.id);
-    const interruptedGoal = snapshots.get(scan.id)?.goal;
-    if (resumeAfterOperation.delete(scan.id) && interruptedGoal?.status === 'interrupted') {
-      void resumeSecurityScan(scan, interruptedGoal);
+    if (!deletedScans.has(scan.id)) {
+      const interruptedGoal = snapshots.get(scan.id)?.goal;
+      if (resumeAfterOperation.delete(scan.id) && interruptedGoal?.status === 'interrupted') {
+        void resumeSecurityScan(scan, interruptedGoal);
+      }
     }
   }
 }

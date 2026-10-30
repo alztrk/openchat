@@ -52,6 +52,20 @@ pub(super) struct StreamedTurn {
     pub(super) first_output_latency: Option<Duration>,
 }
 
+struct RoundReasoningState {
+    summary_id: Option<String>,
+    started_at: Option<Instant>,
+}
+
+impl RoundReasoningState {
+    fn new() -> Self {
+        Self {
+            summary_id: None,
+            started_at: None,
+        }
+    }
+}
+
 async fn append_visible_text(
     request: &mut ResponseStreamRequest<'_>,
     round_content: &mut String,
@@ -59,6 +73,28 @@ async fn append_visible_text(
 ) -> Result<(), ServiceError> {
     if text.is_empty() {
         return Ok(());
+    }
+    let needs_round_separator = round_content.is_empty()
+        && !request.content.is_empty()
+        && !request.content.ends_with('\n')
+        && !text.starts_with('\n');
+    if needs_round_separator {
+        let separated = format!("\n\n{text}");
+        request.content.push_str(&separated);
+        round_content.push_str(text);
+        return request
+            .events
+            .send(
+                &ChatStreamEvent::TextAppended(ChatStreamDelta::new(
+                    request.conversation_id,
+                    request.message_id,
+                    &separated,
+                    request.created_at,
+                ))
+                .into_rpc(request.request_id.clone()),
+            )
+            .await
+            .map_err(|_| protocol_error());
     }
     request.content.push_str(text);
     round_content.push_str(text);
@@ -80,11 +116,12 @@ async fn append_visible_text(
 async fn append_think_output(
     request: &mut ResponseStreamRequest<'_>,
     round_content: &mut String,
+    round_reasoning: &mut RoundReasoningState,
     output: super::think_tag_filter::ThinkTagOutput,
 ) -> Result<(), ServiceError> {
     append_visible_text(request, round_content, &output.visible).await?;
     if !output.reasoning.is_empty() {
-        append_legacy_reasoning(request, &output.reasoning).await?;
+        append_legacy_reasoning(request, round_reasoning, &output.reasoning).await?;
     }
     Ok(())
 }
@@ -161,18 +198,26 @@ async fn update_reasoning_summary(
 
 async fn finish_reasoning_summaries(
     request: &mut ResponseStreamRequest<'_>,
+    round_reasoning: &RoundReasoningState,
 ) -> Result<(), ServiceError> {
-    if request.route.provider_id.as_deref() != Some("chatgpt_api") {
-        return Ok(());
-    }
-    let elapsed_microseconds =
-        i64::try_from(request.started.elapsed().as_micros()).unwrap_or(i64::MAX);
+    let fallback_elapsed = i64::try_from(request.started.elapsed().as_micros()).unwrap_or(i64::MAX);
+    let round_elapsed = round_reasoning
+        .started_at
+        .map(|started| i64::try_from(started.elapsed().as_micros()).unwrap_or(i64::MAX));
     let summaries = {
         let summaries = &mut *request.reasoning_summaries;
         let mut changed = false;
         for summary in summaries.iter_mut().filter(|summary| !summary.is_complete) {
             summary.is_complete = true;
-            summary.elapsed_microseconds = elapsed_microseconds;
+            summary.elapsed_microseconds = if round_reasoning
+                .summary_id
+                .as_deref()
+                .is_some_and(|id| id == summary.id)
+            {
+                round_elapsed.unwrap_or(fallback_elapsed)
+            } else {
+                fallback_elapsed
+            };
             changed = true;
         }
         changed.then(|| summaries.clone())
@@ -185,17 +230,51 @@ async fn finish_reasoning_summaries(
 
 async fn append_legacy_reasoning(
     request: &mut ResponseStreamRequest<'_>,
+    round_reasoning: &mut RoundReasoningState,
     reasoning: &str,
 ) -> Result<(), ServiceError> {
+    if reasoning.is_empty() {
+        return Ok(());
+    }
     request.reasoning_content.push_str(reasoning);
-    let summary = ReasoningSummary {
-        id: format!("reasoning_{}", request.message_id),
-        content: request.reasoning_content.clone(),
-        elapsed_microseconds: i64::try_from(request.started.elapsed().as_micros())
-            .unwrap_or(i64::MAX),
-        is_complete: false,
+    let started_at = *round_reasoning.started_at.get_or_insert_with(Instant::now);
+    let elapsed_microseconds = i64::try_from(started_at.elapsed().as_micros()).unwrap_or(i64::MAX);
+    let summaries = {
+        let summaries = &mut *request.reasoning_summaries;
+        let summary_id = round_reasoning.summary_id.get_or_insert_with(|| {
+            if summaries.is_empty() {
+                format!("reasoning_{}", request.message_id)
+            } else {
+                format!(
+                    "reasoning_{}_{}",
+                    request.message_id,
+                    summaries.len().saturating_add(1)
+                )
+            }
+        });
+        let position = match summaries
+            .iter()
+            .position(|summary| summary.id == *summary_id)
+        {
+            Some(position) => position,
+            None => {
+                summaries.push(ReasoningSummary {
+                    id: summary_id.clone(),
+                    content: String::new(),
+                    elapsed_microseconds,
+                    is_complete: false,
+                });
+                summaries.len().saturating_sub(1)
+            }
+        };
+        let Some(summary) = summaries.get_mut(position) else {
+            return Err(invalid_response_error());
+        };
+        summary.content.push_str(reasoning);
+        summary.elapsed_microseconds = elapsed_microseconds;
+        summaries.clone()
     };
-    send_reasoning_summaries(request, vec![summary]).await
+    send_reasoning_summaries(request, summaries).await
 }
 
 fn request_contains_tool_payload(body: &Value) -> bool {
@@ -620,6 +699,7 @@ async fn receive_with_client(
     }
     let mut pending = Vec::new();
     let mut round_content = String::new();
+    let mut round_reasoning = RoundReasoningState::new();
     let mut tool_calls = BTreeMap::<usize, StreamedToolCall>::new();
     let mut think_filter = ThinkTagFilter::new();
     let supports_provider_citations = matches!(
@@ -758,8 +838,13 @@ async fn receive_with_client(
                                     .and_then(Value::as_str)
                                 {
                                     let output = think_filter.push(text);
-                                    append_think_output(&mut request, &mut round_content, output)
-                                        .await?;
+                                    append_think_output(
+                                        &mut request,
+                                        &mut round_content,
+                                        &mut round_reasoning,
+                                        output,
+                                    )
+                                    .await?;
                                 }
                             }
                             Some("thinking_delta") => {
@@ -767,7 +852,12 @@ async fn receive_with_client(
                                     .and_then(|delta| delta.get("thinking"))
                                     .and_then(Value::as_str)
                                 {
-                                    append_legacy_reasoning(&mut request, reasoning).await?;
+                                    append_legacy_reasoning(
+                                        &mut request,
+                                        &mut round_reasoning,
+                                        reasoning,
+                                    )
+                                    .await?;
                                 }
                             }
                             Some("input_json_delta") => {
@@ -870,11 +960,18 @@ async fn receive_with_client(
                 match handle_responses_api_event(&value, &mut tool_calls)? {
                     ResponsesStreamEffect::TextDelta(text) => {
                         let output = think_filter.push(&text);
-                        append_think_output(&mut request, &mut round_content, output).await?;
+                        append_think_output(
+                            &mut request,
+                            &mut round_content,
+                            &mut round_reasoning,
+                            output,
+                        )
+                        .await?;
                     }
                     ResponsesStreamEffect::ReasoningDelta(reasoning) => {
                         if request.route.provider_id.as_deref() != Some("chatgpt_api") {
-                            append_legacy_reasoning(&mut request, &reasoning).await?;
+                            append_legacy_reasoning(&mut request, &mut round_reasoning, &reasoning)
+                                .await?;
                         }
                     }
                     ResponsesStreamEffect::ReasoningSummaryDelta {
@@ -893,7 +990,8 @@ async fn receive_with_client(
                             )
                             .await?;
                         } else {
-                            append_legacy_reasoning(&mut request, &delta).await?;
+                            append_legacy_reasoning(&mut request, &mut round_reasoning, &delta)
+                                .await?;
                         }
                     }
                     ResponsesStreamEffect::ReasoningSummaryDone {
@@ -917,11 +1015,11 @@ async fn receive_with_client(
                         *request.output_tokens =
                             Some(request.output_tokens.unwrap_or(0).saturating_add(tokens));
                         saw_done = true;
-                        finish_reasoning_summaries(&mut request).await?;
+                        finish_reasoning_summaries(&mut request, &round_reasoning).await?;
                     }
                     ResponsesStreamEffect::Completed => {
                         saw_done = true;
-                        finish_reasoning_summaries(&mut request).await?;
+                        finish_reasoning_summaries(&mut request, &round_reasoning).await?;
                     }
                     ResponsesStreamEffect::Failed(msg) => {
                         return Err(ServiceError::new("model_response_failed", msg, false));
@@ -992,7 +1090,8 @@ async fn receive_with_client(
                 }
             }
             if !output.reasoning.is_empty() {
-                append_legacy_reasoning(&mut request, &output.reasoning).await?;
+                append_legacy_reasoning(&mut request, &mut round_reasoning, &output.reasoning)
+                    .await?;
             }
             if let Some(delta) = mistral_delta.as_ref() {
                 for reference_id in &delta.reference_ids {
@@ -1006,7 +1105,7 @@ async fn receive_with_client(
             }
             append_visible_text(&mut request, &mut round_content, &visible_delta).await?;
             if let Some(reasoning) = reasoning {
-                append_legacy_reasoning(&mut request, reasoning).await?;
+                append_legacy_reasoning(&mut request, &mut round_reasoning, reasoning).await?;
             }
             update_chat_completion_usage(&value, request.input_tokens, request.output_tokens);
             update_provider_request_usage(
@@ -1024,31 +1123,15 @@ async fn receive_with_client(
     }
 
     let trailing_output = think_filter.finish();
-    append_think_output(&mut request, &mut round_content, trailing_output).await?;
+    append_think_output(
+        &mut request,
+        &mut round_content,
+        &mut round_reasoning,
+        trailing_output,
+    )
+    .await?;
 
-    if !request.reasoning_content.is_empty() {
-        let summary = ReasoningSummary {
-            id: format!("reasoning_{}", request.message_id),
-            content: request.reasoning_content.clone(),
-            elapsed_microseconds: request.started.elapsed().as_micros() as i64,
-            is_complete: true,
-        };
-        let _ = request
-            .events
-            .send(
-                &ChatStreamEvent::ReasoningSummariesUpdated {
-                    snapshot: ChatStreamSnapshot::new(
-                        request.conversation_id,
-                        request.message_id,
-                        request.content,
-                        request.created_at,
-                    ),
-                    summaries: vec![summary],
-                }
-                .into_rpc(request.request_id.clone()),
-            )
-            .await;
-    }
+    let _ = finish_reasoning_summaries(&mut request, &round_reasoning).await;
     if !stream_is_complete(saw_done, saw_finish_reason) {
         return Err(invalid_response_error());
     }

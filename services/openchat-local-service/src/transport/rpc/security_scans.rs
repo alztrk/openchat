@@ -32,6 +32,7 @@ pub(super) fn dispatch(
         "security.scans.create" => create_scan(params, storage),
         "security.scans.list" => list_scans(storage),
         "security.scans.cancel" => cancel_scan(params, storage),
+        "security.scans.delete" => delete_scan(params, storage),
         "security.scans.retry.schedule" => schedule_retry(params, storage),
         _ => Err(ServiceError::new(
             "method_not_found",
@@ -403,6 +404,53 @@ fn cancel_scan(params: &Value, storage: &AppStorage) -> Result<Value, ServiceErr
         "The security scan has already finished.",
         false,
     ))
+}
+
+fn delete_scan(params: &Value, storage: &AppStorage) -> Result<Value, ServiceError> {
+    let input = input_object(params)?;
+    let scan_id = required_id(input, "scanId")?;
+    let mut connection = storage.connect().map_err(|_| storage_error())?;
+    let transaction = connection.transaction().map_err(|_| storage_error())?;
+    let conversation_id = transaction
+        .query_row(
+            "SELECT conversation_id FROM security_scans WHERE id = ?1",
+            [scan_id],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(|_| storage_error())?
+        .ok_or_else(|| not_found("security scan"))?;
+    transaction
+        .execute(
+            "DELETE FROM attachment_text_index WHERE conversation_id = ?1",
+            [&conversation_id],
+        )
+        .map_err(|_| storage_error())?;
+    transaction
+        .execute(
+            "DELETE FROM saved_output_versions WHERE conversation_id = ?1",
+            [&conversation_id],
+        )
+        .map_err(|_| storage_error())?;
+    transaction
+        .execute(
+            "DELETE FROM saved_outputs WHERE conversation_id = ?1",
+            [&conversation_id],
+        )
+        .map_err(|_| storage_error())?;
+    let deleted = transaction
+        .execute(
+            "DELETE FROM conversations WHERE id = ?1",
+            [&conversation_id],
+        )
+        .map_err(|_| storage_error())?;
+    if deleted != 1 {
+        return Err(not_found("security scan"));
+    }
+    transaction.commit().map_err(|_| storage_error())?;
+    drop(connection);
+    super::storage_chat::remove_attachment_directory(storage.root(), &conversation_id)?;
+    Ok(json!({"deleted": true}))
 }
 
 fn parse_and_validate_roots(
@@ -1070,5 +1118,90 @@ mod tests {
             )
             .expect("terminal scan must not resume")
         );
+    }
+
+    #[tokio::test]
+    async fn deleting_scan_removes_scan_record_and_hidden_conversation() {
+        let directory = TestDirectory::new();
+        let project_root = directory.0.join("project");
+        fs::create_dir_all(&project_root).expect("create project root");
+        let storage = AppStorage::open_at(directory.0.join("data")).expect("open storage");
+        storage
+            .prepare_chat_schema_migration(crate::CHAT_SCHEMA_VERSION)
+            .expect("prepare current chat schema");
+        storage
+            .initialize_backend_schema()
+            .expect("initialize current backend schema");
+        let project_root_text = insert_test_project(&storage, "project-del", &project_root);
+
+        dispatch(
+            "security.scans.create",
+            &json!({
+                "input": {
+                    "scanId": "scan-del-1",
+                    "conversationId": "scan-del-conv-1",
+                    "projectId": "project-del",
+                    "providerId": "opencode",
+                    "modelId": "security-model",
+                    "selectedRoots": [project_root_text]
+                }
+            }),
+            &storage,
+        )
+        .expect("create scan");
+
+        storage_chat::dispatch(
+            "storage.chat.messages.save",
+            &json!({
+                "input": {
+                    "id": "msg-del-1",
+                    "conversationId": "scan-del-conv-1",
+                    "role": "assistant",
+                    "content": "Initial findings",
+                    "status": "completed"
+                }
+            }),
+            &storage,
+        )
+        .await
+        .expect("save scan message");
+
+        let deleted = dispatch(
+            "security.scans.delete",
+            &json!({"input": {"scanId": "scan-del-1"}}),
+            &storage,
+        )
+        .expect("delete scan");
+        assert_eq!(deleted["deleted"], json!(true));
+
+        let remaining =
+            dispatch("security.scans.list", &json!({}), &storage).expect("list after delete");
+        assert_eq!(remaining["scans"], json!([]));
+
+        let conversation = storage_chat::dispatch(
+            "storage.chat.conversations.get",
+            &json!({"input": {"conversationId": "scan-del-conv-1"}}),
+            &storage,
+        )
+        .await
+        .expect("read deleted conversation");
+        assert_eq!(conversation["conversation"], Value::Null);
+
+        let messages = storage_chat::dispatch(
+            "storage.chat.messages.list",
+            &json!({"input": {"conversationId": "scan-del-conv-1"}}),
+            &storage,
+        )
+        .await
+        .expect("read deleted messages");
+        assert_eq!(messages["messages"], json!([]));
+
+        let missing = dispatch(
+            "security.scans.delete",
+            &json!({"input": {"scanId": "scan-del-1"}}),
+            &storage,
+        )
+        .expect_err("deleting unknown scan must fail");
+        assert_eq!(missing.code, "security_scan_not_found");
     }
 }

@@ -85,6 +85,11 @@ export async function cancelSecurityScan(scanId: string): Promise<void> {
   if (response.cancelled !== true) throw new Error('The security scan could not be stopped.');
 }
 
+export async function deleteSecurityScan(scanId: string): Promise<void> {
+  const response = await localServiceClient.call('security.scans.delete', { input: { scanId } });
+  if (response.deleted !== true) throw new Error('The security scan could not be deleted.');
+}
+
 export function isSecurityScan(value: unknown): value is SecurityScan {
   if (
     !isObject(value) ||

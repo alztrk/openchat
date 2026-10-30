@@ -15,7 +15,12 @@ import { FileChangesSummaryCard } from './message/FileChangesSummaryCard';
 import { separateInBandReasoning } from './message/inBandReasoning';
 import { MessageCopyMenu } from './message/MessageCopyMenu';
 import { MessageMarkdown } from './message/MessageMarkdown';
-import { parseCitationSources, parseReasoningSummaries, parseToolActivities } from './message/messageData';
+import {
+  buildAssistantTimeline,
+  parseCitationSources,
+  parseReasoningSummaries,
+  parseToolActivities,
+} from './message/messageData';
 import { ReasoningSummary } from './message/ReasoningSummary';
 import { ToolActivityAccordion } from './message/ToolActivityAccordion';
 
@@ -72,21 +77,19 @@ export function MessageItem({
   const personalMemoryFactIds = parsePersonalMemoryFactIds(message.personalMemoryFactIds) ?? [];
   const citationSources = isUser ? [] : parseCitationSources(message.citationSources);
   const parsedReasoningSummaries = isUser ? [] : parseReasoningSummaries(message.reasoningSummaries);
-  const reasoningSummaries =
-    message.providerId?.startsWith('custom_') === true
-      ? parsedReasoningSummaries.filter((summary) => summary.id === `reasoning_${message.id}`)
-      : message.providerId === 'chatgpt' || message.providerId === 'chatgpt_api'
-        ? parsedReasoningSummaries
-        : [];
+  const reasoningSummaries = [...parsedReasoningSummaries];
   if (inBandReasoning.reasoningContent.trim().length > 0) {
     reasoningSummaries.push({
-      id: `reasoning_${message.id}`,
+      id: `inband_reasoning_${message.id}`,
       content: inBandReasoning.reasoningContent,
       elapsedMicroseconds: null,
       isComplete: message.status !== 'streaming',
     });
   }
   const toolActivities = isUser ? [] : parseToolActivities(message.toolActivities);
+  const assistantTimeline = isUser
+    ? []
+    : buildAssistantTimeline(message.content, inBandReasoning, reasoningSummaries, toolActivities);
   const canRetry = !isUser && onRetryMessage !== undefined && message.status !== 'streaming';
   const hasResponseVersions =
     !isUser &&
@@ -162,42 +165,51 @@ export function MessageItem({
             onSelect={(index) => onSelectResponseVersion?.(message, index)}
           />
         ) : null}
-        {!isUser && reasoningSummaries.length > 0 ? (
-          <div className="mt-2 grid gap-2">
-            {reasoningSummaries
-              .filter((summary) => summary.content.trim().length > 0)
-              .map((summary) => (
-                <ReasoningSummary key={summary.id} summary={summary} />
-              ))}
-          </div>
-        ) : null}
-        {!isUser && toolActivities.length > 0 ? (
-          <div className="mt-2 grid gap-2">
-            {toolActivities.map((activity) => (
-              <ToolActivityAccordion
-                activity={activity}
-                conversationId={message.conversationId}
-                isResponseInProgress={message.status === 'streaming'}
-                key={activity.callId}
-                onCheckpointRestored={onCheckpointRestored}
-                onOpenFileChanges={onOpenFileChanges}
-                onOpenFile={(path, content) => onOpenWorkspaceFile?.({ path, content })}
-              />
-            ))}
-          </div>
-        ) : null}
-        {message.status === 'streaming' && inBandReasoning.visibleContent.trim().length === 0 && !isUser ? (
-          <ResponseSkeleton />
-        ) : inBandReasoning.visibleContent ? (
-          isUser ? (
+        {isUser ? (
+          inBandReasoning.visibleContent ? (
             <p className="conversation-message-content whitespace-pre-wrap break-words text-text">
               {inBandReasoning.visibleContent}
             </p>
-          ) : (
-            <MessageMarkdown content={inBandReasoning.visibleContent} citationSources={citationSources} />
-          )
-        ) : null}
-        {message.status === 'streaming' && inBandReasoning.visibleContent.trim().length > 0 && !isUser ? (
+          ) : null
+        ) : (
+          <>
+            {assistantTimeline.map((segment) => {
+              if (segment.kind === 'reasoning') {
+                return (
+                  <div className="mt-2 grid gap-2" key={segment.key}>
+                    {segment.summaries.map((summary) => (
+                      <ReasoningSummary key={summary.id} summary={summary} />
+                    ))}
+                  </div>
+                );
+              }
+              if (segment.kind === 'tools') {
+                return (
+                  <div className="mt-2 grid gap-2" key={segment.key}>
+                    {segment.activities.map((activity) => (
+                      <ToolActivityAccordion
+                        activity={activity}
+                        conversationId={message.conversationId}
+                        isResponseInProgress={message.status === 'streaming'}
+                        key={activity.callId}
+                        onCheckpointRestored={onCheckpointRestored}
+                        onOpenFileChanges={onOpenFileChanges}
+                        onOpenFile={(path, content) => onOpenWorkspaceFile?.({ path, content })}
+                      />
+                    ))}
+                  </div>
+                );
+              }
+              return (
+                <div className="mt-2" key={segment.key}>
+                  <MessageMarkdown citationSources={citationSources} content={segment.content} />
+                </div>
+              );
+            })}
+            {message.status === 'streaming' && assistantTimeline.length === 0 ? <ResponseSkeleton /> : null}
+          </>
+        )}
+        {message.status === 'streaming' && assistantTimeline.some((segment) => segment.kind === 'text') && !isUser ? (
           <span
             aria-label={t('responseInProgress')}
             className="ml-1 inline-block h-4 w-1 animate-pulse rounded-xs bg-accent align-middle motion-reduce:animate-none"

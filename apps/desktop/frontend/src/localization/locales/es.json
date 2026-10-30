@@ -2910,5 +2910,11 @@
   "localServiceTimeout": "El servicio local no respondió a tiempo. Vuelve a intentarlo.",
   "localServiceUnavailable": "El servicio local no está disponible en este momento. Vuelve a intentarlo.",
   "conversationNotFound": "No se encontró la conversación solicitada.",
-  "messageNotFound": "No se encontró el mensaje solicitado."
+  "messageNotFound": "No se encontró el mensaje solicitado.",
+  "securityScanDelete": "Eliminar análisis",
+  "securityScanDeleteAria": "Eliminar el análisis de “{project}”",
+  "securityScanDeleteConfirmTitle": "¿Eliminar análisis de seguridad?",
+  "securityScanDeleteConfirmBody": "El análisis de seguridad de “{project}” y todos sus resultados se eliminarán permanentemente de este dispositivo. Esta acción no se puede deshacer.",
+  "securityScanDeletePermanently": "Eliminar análisis",
+  "securityScanDeleteFailed": "No se pudo eliminar el análisis de seguridad."
 }

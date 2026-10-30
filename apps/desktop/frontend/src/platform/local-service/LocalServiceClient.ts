@@ -6,7 +6,7 @@
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 
-const requestTimeoutMs = 15_000;
+const requestTimeoutMs = 30_000;
 const maximumMessageBytes = 24 * 1024 * 1024;
 const maximumActiveOperations = 64;
 const maximumActiveRequestBytes = 64 * 1024 * 1024;

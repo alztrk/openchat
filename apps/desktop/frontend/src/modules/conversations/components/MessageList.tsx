@@ -53,11 +53,15 @@ export function MessageList({
   const locale = i18n.resolvedLanguage ?? i18n.language;
   const storeMessages = useChatStore((state) => state.messages);
   const storeIsLoadingMessages = useChatStore((state) => state.isLoadingMessages);
-  const searchTargetMessageId = useChatStore((state) => state.searchTargetMessageId);
-  const searchHighlightMessageId = useChatStore((state) => state.searchHighlightMessageId);
-  const searchHighlightQuery = useChatStore((state) => state.searchHighlightQuery);
+  const storeSearchTargetMessageId = useChatStore((state) => state.searchTargetMessageId);
+  const storeSearchHighlightMessageId = useChatStore((state) => state.searchHighlightMessageId);
+  const storeSearchHighlightQuery = useChatStore((state) => state.searchHighlightQuery);
   const clearSearchTarget = useChatStore((state) => state.clearSearchTarget);
   const storeActiveConversationId = useChatStore((state) => state.activeConversationId);
+  const isOverridden = messagesOverride !== undefined;
+  const searchTargetMessageId = isOverridden ? null : storeSearchTargetMessageId;
+  const searchHighlightMessageId = isOverridden ? null : storeSearchHighlightMessageId;
+  const searchHighlightQuery = isOverridden ? '' : storeSearchHighlightQuery;
   const messages = messagesOverride ?? storeMessages;
   const isLoadingMessages = isLoadingMessagesOverride ?? storeIsLoadingMessages;
   const activeConversationId =
@@ -204,10 +208,14 @@ export function MessageList({
     isLoadingMessages,
     messages.length,
     messages.at(-1)?.content,
+    messages.at(-1)?.reasoningSummaries,
+    messages.at(-1)?.status,
+    messages.at(-1)?.toolActivities,
     searchTargetMessageId,
     shouldShowAssistantLoading,
     virtualList.isFollowingLatest,
     virtualList.scrollToBottom,
+    virtualList.totalHeight,
   ]);
 
   if (isLoadingMessages) {

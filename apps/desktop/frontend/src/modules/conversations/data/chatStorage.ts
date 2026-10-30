@@ -333,9 +333,9 @@ export async function getMessages(conversationId: string): Promise<ChatMessage[]
   let value: unknown;
   try {
     value = await Promise.race([
-      localServiceClient.call('storage.chat.messages.list', { conversationId }, 15_000),
+      localServiceClient.call('storage.chat.messages.list', { conversationId }, 30_000),
       new Promise<never>((_, reject) => {
-        timeoutId = window.setTimeout(() => reject(new Error('Loading conversation messages timed out.')), 15_000);
+        timeoutId = window.setTimeout(() => reject(new Error('Loading conversation messages timed out.')), 30_000);
       }),
     ]);
   } finally {

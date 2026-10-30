@@ -2910,5 +2910,11 @@
   "localServiceTimeout": "Yerel servis zamanında yanıt vermedi. Lütfen tekrar dene.",
   "localServiceUnavailable": "Yerel servis şu anda kullanılamıyor. Lütfen tekrar dene.",
   "conversationNotFound": "İstenen sohbet bulunamadı.",
-  "messageNotFound": "İstenen mesaj bulunamadı."
+  "messageNotFound": "İstenen mesaj bulunamadı.",
+  "securityScanDelete": "Taramayı sil",
+  "securityScanDeleteAria": "“{project}” taramasını sil",
+  "securityScanDeleteConfirmTitle": "Güvenlik taraması silinsin mi?",
+  "securityScanDeleteConfirmBody": "“{project}” güvenlik taraması ve tüm çıktıları bu cihazdan kalıcı olarak silinecek. Bu işlem geri alınamaz.",
+  "securityScanDeletePermanently": "Taramayı sil",
+  "securityScanDeleteFailed": "Güvenlik taraması silinemedi."
 }

@@ -2910,5 +2910,11 @@
   "localServiceTimeout": "Der lokale Dienst hat nicht rechtzeitig geantwortet. Versuchen Sie es erneut.",
   "localServiceUnavailable": "Der lokale Dienst ist derzeit nicht verfügbar. Versuchen Sie es erneut.",
   "conversationNotFound": "Die angeforderte Konversation wurde nicht gefunden.",
-  "messageNotFound": "Die angeforderte Nachricht wurde nicht gefunden."
+  "messageNotFound": "Die angeforderte Nachricht wurde nicht gefunden.",
+  "securityScanDelete": "Scan löschen",
+  "securityScanDeleteAria": "Scan „{project}“ löschen",
+  "securityScanDeleteConfirmTitle": "Sicherheitsscan löschen?",
+  "securityScanDeleteConfirmBody": "Der Sicherheitsscan „{project}“ und alle zugehörigen Ergebnisse werden dauerhaft von diesem Gerät gelöscht. Diese Aktion kann nicht rückgängig gemacht werden.",
+  "securityScanDeletePermanently": "Scan löschen",
+  "securityScanDeleteFailed": "Der Sicherheitsscan konnte nicht gelöscht werden."
 }

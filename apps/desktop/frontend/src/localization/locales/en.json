@@ -2910,5 +2910,11 @@
   "localServiceTimeout": "The local service did not respond in time. Try again.",
   "localServiceUnavailable": "The local service is currently unavailable. Try again.",
   "conversationNotFound": "The requested conversation was not found.",
-  "messageNotFound": "The requested message was not found."
+  "messageNotFound": "The requested message was not found.",
+  "securityScanDelete": "Delete scan",
+  "securityScanDeleteAria": "Delete “{project}” scan",
+  "securityScanDeleteConfirmTitle": "Delete security scan?",
+  "securityScanDeleteConfirmBody": "The “{project}” security scan and all of its output will be permanently deleted from this device. This action cannot be undone.",
+  "securityScanDeletePermanently": "Delete scan",
+  "securityScanDeleteFailed": "The security scan could not be deleted."
 }

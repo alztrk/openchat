@@ -52,16 +52,19 @@ export function applyStreamEvent(
           failureCode: null,
         };
 
+  const nextContent = isTextDelta ? base.content + streamContent : streamContent;
+  const nextToolActivities = isObject(data.toolActivity)
+    ? mergeToolActivity(base.toolActivities, data.toolActivity)
+    : base.toolActivities;
+
   return {
     ...base,
-    content: isTextDelta ? base.content + streamContent : streamContent,
+    content: nextContent,
     createdAt: data.createdAtUnixMs,
     reasoningSummaries: Array.isArray(data.reasoningGroups)
-      ? JSON.stringify(data.reasoningGroups)
+      ? mergeReasoningSummaries(base.reasoningSummaries, data.reasoningGroups, nextContent, nextToolActivities)
       : base.reasoningSummaries,
-    toolActivities: isObject(data.toolActivity)
-      ? mergeToolActivity(base.toolActivities, data.toolActivity)
-      : base.toolActivities,
+    toolActivities: nextToolActivities,
     citationSources: Array.isArray(data.sources) ? JSON.stringify(data.sources) : base.citationSources,
   };
 }
@@ -104,4 +107,57 @@ function mergeToolActivity(encoded: string, activity: JsonObject): string {
   if (index < 0) parsed.push(activity);
   else parsed[index] = activity;
   return JSON.stringify(parsed);
+}
+
+const utf8Encoder = new TextEncoder();
+
+function mergeReasoningSummaries(
+  existingEncoded: string,
+  incomingGroups: unknown[],
+  currentContent: string,
+  toolActivitiesEncoded: string,
+): string {
+  let existingList: unknown[] = [];
+  try {
+    const parsed: unknown = JSON.parse(existingEncoded);
+    if (Array.isArray(parsed)) existingList = parsed;
+  } catch {
+    existingList = [];
+  }
+  const existingById = new Map<string, JsonObject>();
+  for (const item of existingList) {
+    if (isObject(item) && typeof item.id === 'string') {
+      existingById.set(item.id, item);
+    }
+  }
+  let toolCount = 0;
+  try {
+    const parsedTools: unknown = JSON.parse(toolActivitiesEncoded);
+    if (Array.isArray(parsedTools)) toolCount = parsedTools.length;
+  } catch {
+    toolCount = 0;
+  }
+  const contentByteLength = utf8Encoder.encode(currentContent).byteLength;
+  const merged = incomingGroups.map((group) => {
+    if (!isObject(group) || typeof group.id !== 'string') return group;
+    const previous = existingById.get(group.id);
+    const assistantTextBeforeByteOffset =
+      typeof group.assistantTextBeforeByteOffset === 'number'
+        ? group.assistantTextBeforeByteOffset
+        : typeof previous?.assistantTextBeforeByteOffset === 'number'
+          ? previous.assistantTextBeforeByteOffset
+          : contentByteLength;
+    const toolActivityCountBefore =
+      typeof group.toolActivityCountBefore === 'number'
+        ? group.toolActivityCountBefore
+        : typeof previous?.toolActivityCountBefore === 'number'
+          ? previous.toolActivityCountBefore
+          : toolCount;
+    return {
+      ...group,
+      assistantTextBeforeByteOffset,
+      toolActivityCountBefore,
+    };
+  });
+  return JSON.stringify(merged);
 }

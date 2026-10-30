@@ -17,7 +17,7 @@ use super::{connection::StorageConnection, database_key::DatabaseKey};
 use super::broker_connection::BrokerConnection;
 
 const MAX_QUEUED_OPERATIONS: usize = 64;
-const DATABASE_QUEUE_WAIT_TIMEOUT: Duration = Duration::from_secs(5);
+const DATABASE_QUEUE_WAIT_TIMEOUT: Duration = Duration::from_secs(15);
 
 #[derive(Clone)]
 pub(crate) struct DatabaseQueueHandle {

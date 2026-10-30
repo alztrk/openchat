@@ -2910,5 +2910,11 @@
   "localServiceTimeout": "Le service local n’a pas répondu à temps. Réessayez.",
   "localServiceUnavailable": "Le service local est actuellement indisponible. Réessayez.",
   "conversationNotFound": "La conversation demandée est introuvable.",
-  "messageNotFound": "Le message demandé est introuvable."
+  "messageNotFound": "Le message demandé est introuvable.",
+  "securityScanDelete": "Supprimer l’analyse",
+  "securityScanDeleteAria": "Supprimer l’analyse « {project} »",
+  "securityScanDeleteConfirmTitle": "Supprimer l’analyse de sécurité ?",
+  "securityScanDeleteConfirmBody": "L’analyse de sécurité « {project} » et tous ses résultats seront définitivement supprimés de cet appareil. Cette action est irréversible.",
+  "securityScanDeletePermanently": "Supprimer l’analyse",
+  "securityScanDeleteFailed": "L’analyse de sécurité n’a pas pu être supprimée."
 }

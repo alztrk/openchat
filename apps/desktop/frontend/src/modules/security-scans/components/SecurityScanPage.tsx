@@ -8,17 +8,20 @@ import {
   Plus,
   ShieldCheck,
   StopCircle,
+  Trash2,
 } from 'lucide-react';
-import { useCallback, useEffect, useId, useMemo, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button, Checkbox, Select } from '@/design-system';
+import { Button, Checkbox, Dialog, Select } from '@/design-system';
 import { MessageList } from '@/modules/conversations/components/MessageList';
 import type { ChatProject } from '@/modules/conversations/data/chatStorage';
 import { useChatStore } from '@/modules/conversations/stores/chatStore';
 import { formatFailureCodeMessage } from '@/modules/conversations/stores/chatStoreErrorDetails';
+import { ProviderIcon } from '@/modules/providers/components/ProviderIcon';
 import type { ChatModel } from '@/modules/providers/data/chatModels';
 import {
+  deleteSecurityScanRuntime,
   formatSecurityScanError,
   initializeSecurityScan,
   refreshSecurityScan,
@@ -42,19 +45,27 @@ export function SecurityScanPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
   const [showCreateForm, setShowCreateForm] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<SecurityScan | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [refreshTime, setRefreshTime] = useState(Date.now());
+  const isRefreshingScansRef = useRef(false);
 
   const refreshScans = useCallback(async () => {
+    if (isRefreshingScansRef.current) return;
+    isRefreshingScansRef.current = true;
     try {
       const savedScans = await listSecurityScans();
       setScans(savedScans);
       setError(null);
       for (const scan of savedScans) void initializeSecurityScan(scan);
-      setSelectedScanId((current) => current ?? savedScans[0]?.id ?? null);
+      setSelectedScanId((current) =>
+        current && savedScans.some((scan) => scan.id === current) ? current : (savedScans[0]?.id ?? null),
+      );
     } catch (cause) {
       setError(formatSecurityScanError(cause, t, 'securityScansLoadFailed'));
     } finally {
+      isRefreshingScansRef.current = false;
       setIsLoading(false);
     }
   }, [t]);
@@ -70,14 +81,41 @@ export function SecurityScanPage() {
   }, [refreshScans]);
 
   const selectedScan = scans.find((scan) => scan.id === selectedScanId) ?? null;
-  const runtime = useSecurityScanRuntime(selectedScan?.id ?? null);
+  const activeScanId = selectedScan?.id ?? null;
+  const selectedScanRef = useRef<SecurityScan | null>(selectedScan);
+  selectedScanRef.current = selectedScan;
+  const runtime = useSecurityScanRuntime(activeScanId);
 
   useEffect(() => {
-    if (!selectedScan) return;
-    void refreshSecurityScan(selectedScan);
-    const timer = window.setInterval(() => void refreshSecurityScan(selectedScan), 2500);
+    const current = selectedScanRef.current;
+    if (!activeScanId || !current || current.id !== activeScanId || runtime.isActive) return;
+    void refreshSecurityScan(current);
+    const timer = window.setInterval(() => {
+      const latest = selectedScanRef.current;
+      if (latest && latest.id === activeScanId) void refreshSecurityScan(latest);
+    }, 2500);
     return () => window.clearInterval(timer);
-  }, [selectedScan]);
+  }, [activeScanId, runtime.isActive]);
+
+  const confirmDeleteScan = async () => {
+    if (!deleteTarget || isDeleting) return;
+    const target = deleteTarget;
+    setIsDeleting(true);
+    setError(null);
+    try {
+      await deleteSecurityScanRuntime(target);
+      setScans((current) => {
+        const remaining = current.filter((item) => item.id !== target.id);
+        setSelectedScanId((selected) => (selected === target.id ? (remaining[0]?.id ?? null) : selected));
+        return remaining;
+      });
+      setDeleteTarget(null);
+    } catch (cause) {
+      setError(formatSecurityScanError(cause, t, 'securityScanDeleteFailed'));
+    } finally {
+      setIsDeleting(false);
+    }
+  };
 
   const capableModels = useMemo(() => models.filter((model) => model.supportsTools !== false), [models]);
   const providers = useMemo(
@@ -109,7 +147,9 @@ export function SecurityScanPage() {
                 <ScanListItem
                   key={scan.id}
                   active={scan.id === selectedScanId}
+                  modelLabel={resolveScanModelLabel(scan, models, t('securityScanModelUnavailable'))}
                   now={refreshTime}
+                  onDelete={() => setDeleteTarget(scan)}
                   onSelect={() => {
                     setShowCreateForm(false);
                     setSelectedScanId(scan.id);
@@ -181,7 +221,9 @@ export function SecurityScanPage() {
               goal={runtime.goal}
               isActive={runtime.isActive}
               messages={runtime.messages}
+              modelLabel={resolveScanModelLabel(selectedScan, models, t('securityScanModelUnavailable'))}
               now={refreshTime}
+              onDelete={() => setDeleteTarget(selectedScan)}
               onResume={() => void resumeSecurityScan(selectedScan, runtime.goal)}
               onStop={() => void stopSecurityScan(selectedScan)}
               scan={selectedScan}
@@ -192,13 +234,44 @@ export function SecurityScanPage() {
           )}
         </div>
       </div>
+
+      <Dialog
+        onOpenChange={(open) => {
+          if (!open && !isDeleting) setDeleteTarget(null);
+        }}
+        open={deleteTarget !== null}
+        title={t('securityScanDeleteConfirmTitle')}
+      >
+        {deleteTarget ? (
+          <div className="grid gap-5">
+            <p className="text-sm text-secondary-text">
+              {t('securityScanDeleteConfirmBody', { project: deleteTarget.projectName })}
+            </p>
+            <div className="flex justify-end gap-2 border-t border-border pt-4">
+              <Button disabled={isDeleting} onClick={() => setDeleteTarget(null)} variant="ghost">
+                {t('cancel')}
+              </Button>
+              <Button
+                disabled={isDeleting}
+                loading={isDeleting}
+                onClick={() => void confirmDeleteScan()}
+                variant="destructive"
+              >
+                {t('securityScanDeletePermanently')}
+              </Button>
+            </div>
+          </div>
+        ) : null}
+      </Dialog>
     </div>
   );
 }
 
 interface ScanListItemProps {
   active: boolean;
+  modelLabel: string;
   now: number;
+  onDelete(): void;
   onSelect(): void;
   scan: SecurityScan;
 }
@@ -214,26 +287,39 @@ const statusLabels = {
   failed: 'securityScanStatusFailed',
 } as const satisfies Record<SecurityScanStatus, `securityScanStatus${string}`>;
 
-function ScanListItem({ active, now, onSelect, scan }: ScanListItemProps) {
+function ScanListItem({ active, modelLabel, now, onDelete, onSelect, scan }: ScanListItemProps) {
   const { t } = useTranslation();
   const status = visibleScanStatus(scan, null);
   return (
-    <li>
+    <li className="group relative">
       <button
         aria-current={active ? 'true' : undefined}
         className={`w-full rounded-control border px-3 py-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus ${active ? 'border-border bg-selected' : 'border-transparent hover:bg-hover'}`}
         onClick={onSelect}
         type="button"
       >
-        <span className="flex min-w-0 items-center justify-between gap-2">
+        <span className="flex min-w-0 items-center justify-between gap-2 pr-7">
           <span className="truncate text-sm font-medium text-text">{scan.projectName}</span>
           <StatusDot status={status} />
+        </span>
+        <span className="mt-1 flex min-w-0 items-center gap-1.5 pr-7 text-xs text-secondary-text">
+          {scan.providerId ? <ProviderIcon providerId={scan.providerId} size={13} /> : null}
+          <span className="truncate">{modelLabel}</span>
         </span>
         <span className="mt-1.5 flex items-center justify-between gap-2 text-xs text-secondary-text">
           <span className="truncate">{t(statusLabelKey(status))}</span>
           <span className="shrink-0 tabular-nums">{formatElapsed(scan, now)}</span>
         </span>
       </button>
+      <Button
+        aria-label={t('securityScanDeleteAria', { project: scan.projectName })}
+        className="absolute right-1.5 top-1.5 size-7 opacity-0 transition-opacity focus-visible:opacity-100 group-focus-within:opacity-100 group-hover:opacity-100"
+        onClick={onDelete}
+        size="icon"
+        variant="ghost"
+      >
+        <Trash2 aria-hidden="true" size={14} />
+      </Button>
     </li>
   );
 }
@@ -418,14 +504,27 @@ interface ScanDetailProps {
   goal: ReturnType<typeof useSecurityScanRuntime>['goal'];
   isActive: boolean;
   messages: ReturnType<typeof useSecurityScanRuntime>['messages'];
+  modelLabel: string;
   now: number;
+  onDelete(): void;
   onResume(): void;
   onStop(): void;
   scan: SecurityScan;
   runtimeError: string | null;
 }
 
-function ScanDetail({ goal, isActive, messages, now, onResume, onStop, scan, runtimeError }: ScanDetailProps) {
+function ScanDetail({
+  goal,
+  isActive,
+  messages,
+  modelLabel,
+  now,
+  onDelete,
+  onResume,
+  onStop,
+  scan,
+  runtimeError,
+}: ScanDetailProps) {
   const { t } = useTranslation();
   const status = visibleScanStatus(scan, goal);
   const pendingStepIndex = goal?.todos.findIndex((todo) => !todo.completed) ?? -1;
@@ -451,7 +550,10 @@ function ScanDetail({ goal, isActive, messages, now, onResume, onStop, scan, run
             <StatusBadge status={status} />
           </div>
           <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-secondary-text">
-            <span>{scan.modelId ?? t('securityScanModelUnavailable')}</span>
+            <span className="inline-flex min-w-0 items-center gap-1.5">
+              {scan.providerId ? <ProviderIcon providerId={scan.providerId} size={13} /> : null}
+              <span className="truncate">{modelLabel}</span>
+            </span>
             <span className="inline-flex items-center gap-1 tabular-nums">
               <Clock3 aria-hidden="true" size={13} />
               {formatElapsed(scan, now)}
@@ -470,6 +572,10 @@ function ScanDetail({ goal, isActive, messages, now, onResume, onStop, scan, run
               {t('securityScanStop')}
             </Button>
           ) : null}
+          <Button onClick={onDelete} size="small" variant="ghost">
+            <Trash2 aria-hidden="true" size={15} />
+            {t('securityScanDelete')}
+          </Button>
         </div>
       </header>
 
@@ -528,7 +634,6 @@ function ScanDetail({ goal, isActive, messages, now, onResume, onStop, scan, run
             </ol>
           </div>
         ) : null}
-        {goal?.progress ? <p className="mt-2 line-clamp-2 text-xs text-secondary-text">{goal.progress}</p> : null}
       </section>
 
       {status === 'waiting_provider' ? (
@@ -551,6 +656,7 @@ function ScanDetail({ goal, isActive, messages, now, onResume, onStop, scan, run
           conversationIdOverride={scan.conversationId}
           isLoadingMessagesOverride={false}
           messagesOverride={messages}
+          showAssistantLoading={isActive && messages.at(-1)?.role !== 'assistant'}
         />
       ) : (
         <div className="flex min-h-0 flex-1 items-center justify-center p-6">
@@ -662,4 +768,12 @@ function formatElapsed(scan: SecurityScan, now: number): string {
   return hours > 0
     ? `${hours}:${String(minutes).padStart(2, '0')}:${String(remainder).padStart(2, '0')}`
     : `${minutes}:${String(remainder).padStart(2, '0')}`;
+}
+
+function resolveScanModelLabel(scan: SecurityScan, models: readonly ChatModel[], fallback: string): string {
+  if (!scan.modelId) return fallback;
+  const providerMatch = models.find((model) => model.providerId === scan.providerId && model.modelId === scan.modelId);
+  if (providerMatch) return providerMatch.displayName;
+  const modelMatch = models.find((model) => model.modelId === scan.modelId);
+  return modelMatch?.displayName ?? scan.modelId;
 }
