@@ -5,7 +5,7 @@
 
 mod models_dev_pricing;
 
-use rusqlite::{params, params_from_iter};
+use rusqlite::{OptionalExtension, params, params_from_iter};
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, HashMap};
 use std::sync::{
@@ -562,23 +562,24 @@ fn invalidate_cached_event_cost(
     database: &StorageConnection<'_>,
     event_id: &str,
 ) -> rusqlite::Result<()> {
-    match database.execute(
-        "DELETE FROM temp.models_dev_event_costs WHERE event_id = ?1",
-        [event_id],
-    ) {
-        Ok(_) => Ok(()),
-        Err(rusqlite::Error::SqliteFailure(failure, Some(message)))
-            if failure.code == rusqlite::ErrorCode::Unknown
-                && matches!(
-                    message.as_str(),
-                    "no such table: temp.models_dev_event_costs"
-                        | "no such table: models_dev_event_costs"
-                ) =>
-        {
-            Ok(())
-        }
-        Err(error) => Err(error),
+    // The estimated-cost cache is a per-connection temp table that exists only after a pricing
+    // query ran on this connection. The storage broker replaces SQLite error text with a generic
+    // message, so a missing table must be detected up front instead of by matching error text.
+    let cache_exists = database
+        .query_row(
+            "SELECT 1 FROM temp.sqlite_master WHERE type = 'table' AND name = 'models_dev_event_costs'",
+            [],
+            |_| Ok(()),
+        )
+        .optional()?
+        .is_some();
+    if cache_exists {
+        database.execute(
+            "DELETE FROM temp.models_dev_event_costs WHERE event_id = ?1",
+            [event_id],
+        )?;
     }
+    Ok(())
 }
 
 fn request_data_manifest(payload: &Value, sources: Option<&RequestDataSources>) -> Value {

@@ -479,6 +479,8 @@ const failureKeys: Partial<Record<string, TranslationKey>> = {
   tool_response_limit: 'toolResponseLimit',
   message_save_failed: 'messageSaveFailed',
   attachment_save_failed: 'attachmentSaveFailed',
+  storage_unavailable: 'chatHistoryUnavailable',
+  storage_chat_unavailable: 'chatHistoryUnavailable',
 };
 
 function failureTranslationKey(code: string | null): TranslationKey {
