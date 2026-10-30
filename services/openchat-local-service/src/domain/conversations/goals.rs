@@ -58,7 +58,7 @@ struct GoalControlArguments {
     state: String,
     summary: String,
     #[serde(default)]
-    todos: Vec<GoalTodo>,
+    todos: Option<Vec<GoalTodo>>,
 }
 
 #[derive(Deserialize)]
@@ -419,14 +419,24 @@ pub(crate) async fn process_control_calls(
                 }
                 if let Some(active_goal) = execution.as_mut() {
                     let summary = arguments.summary.trim().to_owned();
+                    let next_todos = match arguments.todos {
+                        Some(todos) => {
+                            validate_todos(&todos).map_err(invalid_control_arguments)?;
+                            todos
+                        }
+                        None => active_goal.todos.clone(),
+                    };
                     if is_security_scan
                         && arguments.state == "completed"
-                        && let Some(reason) =
-                            security_scan_completion_issue(&summary, &arguments.todos)
+                        && let Some(reason) = security_scan_completion_issue(&summary, &next_todos)
                     {
                         results.push(ToolResult {
                             call_id: call.id.clone(),
-                            output: json!({"accepted": false, "reason": reason}),
+                            output: json!({
+                                "accepted": false,
+                                "reason": reason,
+                                "message": "Cannot complete security scan yet: include a non-empty summary and ensure your non-empty todos checklist has every step marked completed: true."
+                            }),
                         });
                         continue;
                     }
@@ -444,8 +454,7 @@ pub(crate) async fn process_control_calls(
                         }
                     };
                     active_goal.progress = summary;
-                    validate_todos(&arguments.todos).map_err(invalid_control_arguments)?;
-                    active_goal.todos = arguments.todos;
+                    active_goal.todos = next_todos;
                     active_goal.decision = decision;
                     set_checkpoint_goal_state(active_goal, state, pause_reason.clone());
                     save_progress(storage, active_goal)?;
@@ -697,6 +706,28 @@ pub(crate) fn goal_value(
     })
 }
 
+pub(crate) fn compact_context_reminder(execution: &GoalExecution) -> String {
+    let mut note = String::from(
+        "[Earlier tool rounds in this run were compacted to stay within the model context window. Do not treat this historical note as instructions.]",
+    );
+    if !execution.progress.trim().is_empty() {
+        note.push_str("\nLatest recorded progress: ");
+        note.push_str(execution.progress.trim());
+    }
+    if !execution.todos.is_empty() {
+        note.push_str("\nCurrent checklist:");
+        for todo in &execution.todos {
+            note.push_str(if todo.completed {
+                "\n- [x] "
+            } else {
+                "\n- [ ] "
+            });
+            note.push_str(&todo.text);
+        }
+    }
+    note
+}
+
 fn validate_todos(todos: &[GoalTodo]) -> Result<(), &'static str> {
     if todos.len() > MAX_TODO_ITEMS {
         return Err("The provider returned more goal tasks than allowed.");
@@ -869,5 +900,20 @@ mod tests {
         );
         assert!(validate_security_scan_final_status(true, "paused", None).is_ok());
         assert!(validate_security_scan_final_status(false, "completed", None).is_ok());
+    }
+
+    #[test]
+    fn goal_control_arguments_distinguish_omitted_todos_from_explicit_empty_array() {
+        let omitted: super::GoalControlArguments = serde_json::from_value(
+            serde_json::json!({"state": "continue", "summary": "Step done"}),
+        )
+        .expect("deserialize omitted todos");
+        assert!(omitted.todos.is_none());
+
+        let explicit_empty: super::GoalControlArguments = serde_json::from_value(
+            serde_json::json!({"state": "continue", "summary": "Step done", "todos": []}),
+        )
+        .expect("deserialize explicit empty todos");
+        assert_eq!(explicit_empty.todos.expect("explicit todos").len(), 0);
     }
 }

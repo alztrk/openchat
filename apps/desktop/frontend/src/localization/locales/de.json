@@ -2906,6 +2906,9 @@
   "securityScanNoResumableCheckpoint": "Dieser Scan verfügt über keinen fortsetzbaren Prüfpunkt.",
   "securityScanStopFailed": "Der Sicherheitsscan konnte nicht gestoppt werden.",
   "securityScanStatusInvalid": "Der Status des Sicherheitsscans konnte nicht überprüft werden.",
+  "securityScanIncompleteChecklist": "Das Modell hat den Scan beendet, bevor alle Planschritte und die Zusammenfassung abgeschlossen waren.",
+  "localServiceTimeout": "Der lokale Dienst hat nicht rechtzeitig geantwortet. Versuchen Sie es erneut.",
+  "localServiceUnavailable": "Der lokale Dienst ist derzeit nicht verfügbar. Versuchen Sie es erneut.",
   "conversationNotFound": "Die angeforderte Konversation wurde nicht gefunden.",
   "messageNotFound": "Die angeforderte Nachricht wurde nicht gefunden."
 }

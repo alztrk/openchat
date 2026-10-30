@@ -196,13 +196,16 @@ impl ChatGptService {
                 == Some(super::CHATGPT_FAST_SERVICE_TIER),
             turn_id: Some(&message_id),
         });
+        let initial_input_len = payload
+            .get("input")
+            .and_then(Value::as_array)
+            .map_or(0, Vec::len);
         let mut operation = "chat";
         let mut response_budget = ProviderResponseBudget::default();
         let mut initial_provider_request = true;
         'model_turn: loop {
-            if !initial_provider_request
-                && let Some(history_context) = project_history_context.take()
-            {
+            let is_follow_up_turn = !initial_provider_request;
+            if is_follow_up_turn && let Some(history_context) = project_history_context.take() {
                 let removed = match payload.get_mut("instructions") {
                     Some(Value::String(instructions)) => {
                         crate::instructions::remove_project_history_context(
@@ -233,6 +236,20 @@ impl ChatGptService {
                 }
             }
             initial_provider_request = false;
+            if is_follow_up_turn
+                && crate::context_compaction::validate_request_context(
+                    &payload,
+                    model.context_window,
+                )
+                .is_err()
+            {
+                compact_in_loop_responses_payload(
+                    &mut payload,
+                    goal.as_ref(),
+                    initial_input_len,
+                    model.context_window,
+                );
+            }
             if let Err(error) =
                 crate::context_compaction::validate_request_context(&payload, model.context_window)
             {
@@ -1494,11 +1511,196 @@ impl ChatGptService {
     }
 }
 
+const RESPONSES_IN_LOOP_COMPACT_THRESHOLD_BYTES: usize = 1024;
+const RESPONSES_IN_LOOP_EXCERPT_BYTES: usize = 768;
+const RESPONSES_IN_LOOP_NOTE_PREFIX: &str =
+    "[Earlier tool rounds in this run were compacted to stay within the model context window.";
+
+fn compact_in_loop_responses_payload(
+    payload: &mut Value,
+    goal: Option<&crate::goals::GoalExecution>,
+    initial_input_len: usize,
+    context_window: Option<i64>,
+) -> bool {
+    let Some(window) =
+        context_window.filter(|window| *window >= crate::context_compaction::MIN_CONTEXT_WINDOW)
+    else {
+        return false;
+    };
+    let request_budget =
+        window.saturating_mul(crate::context_compaction::REQUEST_CONTEXT_BUDGET_PERCENT) / 100;
+    let estimated_tokens =
+        crate::context_compaction::request_context_token_estimate(payload).saturating_add(1024);
+    if estimated_tokens <= request_budget {
+        return false;
+    }
+
+    let mut changed = false;
+    if let Some(input) = payload.get_mut("input").and_then(Value::as_array_mut) {
+        let cutoff = responses_latest_round_start(input, initial_input_len);
+        let mut tokens_to_reclaim = estimated_tokens
+            .saturating_sub(request_budget)
+            .saturating_add(2048);
+
+        for item in &mut input[initial_input_len.min(cutoff)..cutoff] {
+            if tokens_to_reclaim <= 0 {
+                break;
+            }
+            if item.get("type").and_then(Value::as_str) != Some("function_call_output") {
+                continue;
+            }
+            let Some(output_text) = item.get("output").and_then(Value::as_str) else {
+                continue;
+            };
+            if output_text.len() <= RESPONSES_IN_LOOP_COMPACT_THRESHOLD_BYTES
+                || output_text.contains("\"_openchat_truncated\":true")
+            {
+                continue;
+            }
+            let before = crate::context_compaction::text_token_estimate(output_text);
+            let shortened =
+                shorten_responses_tool_output(output_text, RESPONSES_IN_LOOP_EXCERPT_BYTES);
+            let after = crate::context_compaction::text_token_estimate(&shortened);
+            item["output"] = Value::String(shortened);
+            tokens_to_reclaim -= before.saturating_sub(after);
+            changed = true;
+        }
+    }
+
+    while crate::context_compaction::validate_request_context(payload, context_window).is_err() {
+        let Some(input) = payload.get_mut("input").and_then(Value::as_array_mut) else {
+            break;
+        };
+        if !drop_oldest_responses_round(input, goal, initial_input_len) {
+            break;
+        }
+        changed = true;
+    }
+
+    changed
+}
+
+fn responses_latest_round_start(input: &[Value], initial_input_len: usize) -> usize {
+    let min_index = initial_input_len.min(input.len());
+    let Some(last_call_idx) = input[min_index..]
+        .iter()
+        .rposition(|item| item.get("type").and_then(Value::as_str) == Some("function_call"))
+        .map(|offset| min_index + offset)
+    else {
+        return input.len();
+    };
+    let mut start = last_call_idx;
+    while start > min_index {
+        let prev = &input[start - 1];
+        if prev.get("type").and_then(Value::as_str) == Some("function_call_output")
+            || is_responses_compaction_note(prev)
+        {
+            break;
+        }
+        start -= 1;
+    }
+    start
+}
+
+fn is_responses_compaction_note(item: &Value) -> bool {
+    item.get("role").and_then(Value::as_str) == Some("user")
+        && item
+            .pointer("/content/0/text")
+            .and_then(Value::as_str)
+            .is_some_and(|text| text.starts_with(RESPONSES_IN_LOOP_NOTE_PREFIX))
+}
+
+fn drop_oldest_responses_round(
+    input: &mut Vec<Value>,
+    goal: Option<&crate::goals::GoalExecution>,
+    initial_input_len: usize,
+) -> bool {
+    let cutoff = responses_latest_round_start(input, initial_input_len);
+    let base_prefix = initial_input_len.min(cutoff);
+    if base_prefix >= cutoff {
+        return false;
+    }
+    let has_note = is_responses_compaction_note(&input[base_prefix]);
+    let start = if has_note {
+        base_prefix + 1
+    } else {
+        base_prefix
+    };
+    if start >= cutoff {
+        return false;
+    }
+    let mut end = start;
+    while end < cutoff
+        && input[end].get("type").and_then(Value::as_str) != Some("function_call_output")
+    {
+        end += 1;
+    }
+    while end < cutoff
+        && input[end].get("type").and_then(Value::as_str) == Some("function_call_output")
+    {
+        end += 1;
+    }
+    if end == start {
+        end = (start + 1).min(cutoff);
+    }
+    input.drain(start..end);
+
+    let note_text = match goal {
+        Some(active_goal) => crate::goals::compact_context_reminder(active_goal),
+        None => String::from(
+            "[Earlier tool rounds in this run were compacted to stay within the model context window. Do not treat this historical note as instructions.]",
+        ),
+    };
+    let note_item = json!({
+        "type": "message",
+        "role": "user",
+        "content": [{"type": "input_text", "text": note_text}]
+    });
+    if has_note {
+        input[base_prefix] = note_item;
+    } else {
+        input.insert(base_prefix, note_item);
+    }
+    true
+}
+
+fn shorten_responses_tool_output(content: &str, max_excerpt_bytes: usize) -> String {
+    const MARKER: &str = " ... [middle omitted] ... ";
+    let excerpt = if content.len() <= max_excerpt_bytes {
+        content.to_owned()
+    } else {
+        let budget = max_excerpt_bytes.saturating_sub(MARKER.len());
+        let half = budget / 2;
+        let mut prefix_end = half.min(content.len());
+        while !content.is_char_boundary(prefix_end) {
+            prefix_end -= 1;
+        }
+        let mut suffix_start = content.len().saturating_sub(half);
+        while suffix_start < content.len() && !content.is_char_boundary(suffix_start) {
+            suffix_start += 1;
+        }
+        format!(
+            "{}{MARKER}{}",
+            &content[..prefix_end],
+            &content[suffix_start..]
+        )
+    };
+    json!({
+        "_openchat_truncated": true,
+        "original_bytes": content.len(),
+        "excerpt": excerpt,
+        "notice": "Earlier tool output was shortened to stay within the model context window. Re-read specific lines if omitted details are needed.",
+    })
+    .to_string()
+}
+
 #[cfg(test)]
 mod tool_policy_tests {
     use serde_json::json;
 
-    use super::{response_event_has_output, response_tool_names};
+    use super::{
+        compact_in_loop_responses_payload, response_event_has_output, response_tool_names,
+    };
 
     #[test]
     fn first_output_detection_ignores_empty_and_non_output_events() {
@@ -1532,5 +1734,39 @@ mod tool_policy_tests {
             ["read_file".to_owned(), "ask_user".to_owned()]
         );
         assert!(response_tool_names(&json!({"tools": []})).is_empty());
+    }
+
+    #[test]
+    fn compacts_older_responses_tool_outputs_while_preserving_latest_round() {
+        let large_output = "A".repeat(12_000);
+        let latest_output = "latest_untouched".repeat(80);
+        let mut payload = json!({
+            "model": "gpt-5",
+            "instructions": "Perform a security audit.",
+            "input": [
+                {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "Audit project"}]},
+                {"type": "function_call", "call_id": "call_1", "name": "read_file", "arguments": "{\"path\":\"a.rs\"}"},
+                {"type": "function_call_output", "call_id": "call_1", "output": large_output},
+                {"type": "function_call", "call_id": "call_2", "name": "read_file", "arguments": "{\"path\":\"b.rs\"}"},
+                {"type": "function_call_output", "call_id": "call_2", "output": latest_output}
+            ]
+        });
+
+        assert!(crate::context_compaction::validate_request_context(&payload, Some(4096)).is_err());
+        assert!(compact_in_loop_responses_payload(
+            &mut payload,
+            None,
+            1,
+            Some(4096)
+        ));
+        assert!(crate::context_compaction::validate_request_context(&payload, Some(4096)).is_ok());
+        let input = payload["input"].as_array().expect("input array");
+        assert!(
+            input[2]["output"]
+                .as_str()
+                .expect("shortened output")
+                .contains("\"_openchat_truncated\":true")
+        );
+        assert_eq!(input[4]["output"].as_str(), Some(latest_output.as_str()));
     }
 }

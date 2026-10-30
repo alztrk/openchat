@@ -2906,6 +2906,9 @@
   "securityScanNoResumableCheckpoint": "Este análisis no tiene un punto de control reanudable.",
   "securityScanStopFailed": "No se pudo detener el análisis de seguridad.",
   "securityScanStatusInvalid": "No se pudo verificar el estado del análisis de seguridad.",
+  "securityScanIncompleteChecklist": "El modelo finalizó el análisis antes de completar todos los pasos del plan y su resumen.",
+  "localServiceTimeout": "El servicio local no respondió a tiempo. Vuelve a intentarlo.",
+  "localServiceUnavailable": "El servicio local no está disponible en este momento. Vuelve a intentarlo.",
   "conversationNotFound": "No se encontró la conversación solicitada.",
   "messageNotFound": "No se encontró el mensaje solicitado."
 }

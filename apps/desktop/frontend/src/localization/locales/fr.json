@@ -2906,6 +2906,9 @@
   "securityScanNoResumableCheckpoint": "Cette analyse ne comporte aucun point de reprise.",
   "securityScanStopFailed": "L’analyse de sécurité n’a pas pu être arrêtée.",
   "securityScanStatusInvalid": "L’état de l’analyse de sécurité n’a pas pu être vérifié.",
+  "securityScanIncompleteChecklist": "Le modèle a terminé l’analyse avant d’achever toutes les étapes du plan et son résumé.",
+  "localServiceTimeout": "Le service local n’a pas répondu à temps. Réessayez.",
+  "localServiceUnavailable": "Le service local est actuellement indisponible. Réessayez.",
   "conversationNotFound": "La conversation demandée est introuvable.",
   "messageNotFound": "Le message demandé est introuvable."
 }

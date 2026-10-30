@@ -2906,6 +2906,9 @@
   "securityScanNoResumableCheckpoint": "Bu taramada sürdürülebilecek bir kontrol noktası yok.",
   "securityScanStopFailed": "Güvenlik taraması durdurulamadı.",
   "securityScanStatusInvalid": "Güvenlik taramasının durumu doğrulanamadı.",
+  "securityScanIncompleteChecklist": "Model tüm plan adımlarını ve özetini tamamlamadan taramayı bitirdi.",
+  "localServiceTimeout": "Yerel servis zamanında yanıt vermedi. Lütfen tekrar dene.",
+  "localServiceUnavailable": "Yerel servis şu anda kullanılamıyor. Lütfen tekrar dene.",
   "conversationNotFound": "İstenen sohbet bulunamadı.",
   "messageNotFound": "İstenen mesaj bulunamadı."
 }

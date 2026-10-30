@@ -15,6 +15,9 @@ const knownServiceErrorKeyMap: Record<string, string> = {
   'the requested message was not found.': 'messageNotFound',
   'the assistant response could not be saved.': 'messageSaveFailed',
   'the conversation could not be opened.': 'conversationUnavailable',
+  'loading conversation messages timed out.': 'localServiceTimeout',
+  'the saved chat goal is invalid.': 'securityScanStatusInvalid',
+  'the saved chat goal checklist is invalid.': 'securityScanStatusInvalid',
 };
 
 const serviceErrorCodeKeyMap: Record<string, string> = {
@@ -38,6 +41,7 @@ const serviceErrorCodeKeyMap: Record<string, string> = {
   local_model_inference_failed: 'localModelInferenceFailed',
   context_window_exceeded: 'contextWindowExceeded',
   context_compaction_input_too_large: 'contextWindowExceeded',
+  context_compaction_failed: 'contextWindowExceeded',
   attachment_unavailable: 'attachmentUnavailable',
   model_does_not_support_images: 'modelDoesNotSupportImages',
   provider_request_failed: 'providerRequestFailed',
@@ -49,9 +53,40 @@ const serviceErrorCodeKeyMap: Record<string, string> = {
   attachment_save_failed: 'attachmentSaveFailed',
   storage_unavailable: 'chatHistoryUnavailable',
   storage_chat_unavailable: 'chatHistoryUnavailable',
+  goal_storage_unavailable: 'chatHistoryUnavailable',
+  security_scan_storage_unavailable: 'chatHistoryUnavailable',
+  goal_checkpoint_invalid: 'securityScanStatusInvalid',
+  goal_state_changed: 'securityScanStatusInvalid',
+  security_scan_completion_summary_required: 'securityScanIncompleteChecklist',
+  security_scan_checklist_required: 'securityScanIncompleteChecklist',
+  security_scan_checklist_incomplete: 'securityScanIncompleteChecklist',
+  service_timeout: 'localServiceTimeout',
+  service_unavailable: 'localServiceUnavailable',
+  local_service_operation_failed: 'localServiceUnavailable',
+  protocol_unavailable: 'localServiceUnavailable',
   conversation_not_found: 'conversationNotFound',
   message_not_found: 'messageNotFound',
   security_scan_request_failed: 'securityScanRequestFailed',
+};
+
+export function formatFailureCodeMessage(
+  failureCode: string | null | undefined,
+  t: TFunction,
+  fallbackKey = 'securityScanRequestFailed',
+): string | null {
+  if (!failureCode) return null;
+  const key = serviceErrorCodeKeyMap[failureCode] ?? fallbackKey;
+  return t(key, { defaultValue: key });
+}
+
+const knownServiceErrorCodeMap: Record<string, string> = {
+  'chat history could not be updated.': 'storage_chat_unavailable',
+  'chat history could not be read.': 'storage_chat_unavailable',
+  'local conversation storage is unavailable.': 'storage_unavailable',
+  'loading conversation messages timed out.': 'service_timeout',
+  'the saved chat goal is invalid.': 'goal_checkpoint_invalid',
+  'the saved chat goal checklist is invalid.': 'goal_checkpoint_invalid',
+  'the provider requested a tool that was not included in the request.': 'provider_unlisted_tool',
 };
 
 export function resolveServiceFailureCode(error: unknown, fallbackCode: string): string {
@@ -64,6 +99,18 @@ export function resolveServiceFailureCode(error: unknown, fallbackCode: string):
     }
     return error.code;
   }
+  if (error instanceof Error) {
+    const lower = error.message.trim().toLowerCase();
+    const mappedCode = knownServiceErrorCodeMap[lower];
+    if (mappedCode) {
+      return mappedCode;
+    }
+    for (const [pattern, code] of Object.entries(knownServiceErrorCodeMap)) {
+      if (lower.includes(pattern)) {
+        return code;
+      }
+    }
+  }
   return fallbackCode;
 }
 
@@ -74,6 +121,17 @@ export function formatUnknownServiceError(error: unknown, t: TFunction, fallback
     if (codeKey) {
       return t(codeKey, { defaultValue: codeKey });
     }
+    const lower = error.message.trim().toLowerCase();
+    const messageKey = knownServiceErrorKeyMap[lower];
+    if (messageKey) {
+      return t(messageKey, { defaultValue: messageKey });
+    }
+    for (const [pattern, key] of Object.entries(knownServiceErrorKeyMap)) {
+      if (lower.includes(pattern)) {
+        return t(key, { defaultValue: key });
+      }
+    }
+  } else if (error instanceof Error) {
     const lower = error.message.trim().toLowerCase();
     const messageKey = knownServiceErrorKeyMap[lower];
     if (messageKey) {

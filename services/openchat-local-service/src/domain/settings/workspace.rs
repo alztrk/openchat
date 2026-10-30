@@ -116,7 +116,11 @@ pub(crate) fn prompt_workspace_path(path: &Path) -> Option<String> {
     Some(strip_verbatim_prefix(text))
 }
 
-fn strip_verbatim_prefix(text: &str) -> String {
+pub(crate) fn display_canonical_path(path: &Path) -> String {
+    strip_verbatim_prefix(&path.to_string_lossy())
+}
+
+pub(crate) fn strip_verbatim_prefix(text: &str) -> String {
     if let Some(rest) = text.strip_prefix(r"\\?\UNC\") {
         return format!(r"\\{rest}");
     }

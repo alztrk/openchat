@@ -1166,42 +1166,51 @@ async fn stream_conversation(context: StreamConversationContext<'_>) -> Result<(
                 .retain(|source| source != "project_history");
         }
         initial_provider_request = false;
-        let mut body = if route.uses_responses_api {
-            request::responses_api_body(provider_request, messages, provider_id)
-        } else if route.is_anthropic() {
-            request::anthropic_messages_body(provider_request, messages)?
-        } else {
-            request::chat_completion_body(
+        let mut body = build_loop_request_body(
+            route,
+            provider_request,
+            messages,
+            provider_id,
+            fast_mode,
+            context.opencode_free_workspace,
+            context.conversation_id,
+            session_id.as_deref(),
+        )?;
+        if context_compaction::validate_request_context(&body, route.request_context_limit())
+            .is_err()
+            && compact_in_loop_tool_history(
+                messages,
+                goal.as_ref(),
+                &body,
+                route.request_context_limit(),
+            )
+        {
+            body = build_loop_request_body(
+                route,
                 provider_request,
                 messages,
                 provider_id,
-                route.custom_enable_thinking,
-            )
-        };
-        apply_opencode_free_request_shape(
-            &mut body,
-            provider_id,
-            route.is_free,
-            context.opencode_free_workspace,
-        );
-        if route.is_copilot && route.uses_responses_api {
-            body["store"] = serde_json::json!(false);
+                fast_mode,
+                context.opencode_free_workspace,
+                context.conversation_id,
+                session_id.as_deref(),
+            )?;
+            while context_compaction::validate_request_context(&body, route.request_context_limit())
+                .is_err()
+                && drop_oldest_in_loop_round(messages, goal.as_ref())
+            {
+                body = build_loop_request_body(
+                    route,
+                    provider_request,
+                    messages,
+                    provider_id,
+                    fast_mode,
+                    context.opencode_free_workspace,
+                    context.conversation_id,
+                    session_id.as_deref(),
+                )?;
+            }
         }
-        request::apply_model_output_limit(
-            &mut body,
-            provider_id,
-            route.uses_responses_api,
-            route.max_output_tokens,
-        );
-        request::apply_fast_mode(&mut body, provider_id, fast_mode);
-        request::apply_prompt_cache_affinity(
-            &mut body,
-            provider_id,
-            route.connection_id.as_deref(),
-            &route.provider_model_id,
-            context.conversation_id,
-            session_id.as_deref(),
-        );
         context_compaction::validate_request_context(&body, route.request_context_limit())?;
         let mut usage_request = UsageRequestTracker::start(
             context.storage,
@@ -1469,4 +1478,322 @@ struct ResponseStreamRequest<'a> {
 
 fn is_cancelled(error: &ServiceError) -> bool {
     matches!(error.code, "operation_cancelled" | "request_cancelled")
+}
+
+#[allow(clippy::too_many_arguments)]
+fn build_loop_request_body(
+    route: &route::ChatRoute,
+    provider_request: &crate::provider_schema::ProviderChatRequest,
+    messages: &[Value],
+    provider_id: &str,
+    fast_mode: bool,
+    opencode_free_workspace: Option<&Path>,
+    conversation_id: &str,
+    session_id: Option<&str>,
+) -> Result<Value, ServiceError> {
+    let mut body = if route.uses_responses_api {
+        request::responses_api_body(provider_request, messages, provider_id)
+    } else if route.is_anthropic() {
+        request::anthropic_messages_body(provider_request, messages)?
+    } else {
+        request::chat_completion_body(
+            provider_request,
+            messages,
+            provider_id,
+            route.custom_enable_thinking,
+        )
+    };
+    apply_opencode_free_request_shape(
+        &mut body,
+        provider_id,
+        route.is_free,
+        opencode_free_workspace,
+    );
+    if route.is_copilot && route.uses_responses_api {
+        body["store"] = serde_json::json!(false);
+    }
+    request::apply_model_output_limit(
+        &mut body,
+        provider_id,
+        route.uses_responses_api,
+        route.max_output_tokens,
+    );
+    request::apply_fast_mode(&mut body, provider_id, fast_mode);
+    request::apply_prompt_cache_affinity(
+        &mut body,
+        provider_id,
+        route.connection_id.as_deref(),
+        &route.provider_model_id,
+        conversation_id,
+        session_id,
+    );
+    Ok(body)
+}
+
+const IN_LOOP_TOOL_OUTPUT_COMPACT_THRESHOLD_BYTES: usize = 1024;
+const IN_LOOP_TOOL_OUTPUT_EXCERPT_BYTES: usize = 768;
+const IN_LOOP_COMPACTION_NOTE_PREFIX: &str =
+    "[Earlier tool rounds in this run were compacted to stay within the model context window.";
+
+fn in_loop_protected_cutoff(messages: &[Value]) -> usize {
+    messages
+        .iter()
+        .rposition(|msg| {
+            msg.get("role").and_then(Value::as_str) == Some("assistant")
+                && msg
+                    .get("tool_calls")
+                    .and_then(Value::as_array)
+                    .is_some_and(|calls| !calls.is_empty())
+        })
+        .unwrap_or_else(|| messages.len().saturating_sub(1))
+}
+
+fn is_in_loop_compaction_note(message: &Value) -> bool {
+    message.get("role").and_then(Value::as_str) == Some("user")
+        && message
+            .get("content")
+            .and_then(Value::as_str)
+            .is_some_and(|content| content.starts_with(IN_LOOP_COMPACTION_NOTE_PREFIX))
+}
+
+fn compact_in_loop_tool_history(
+    messages: &mut Vec<Value>,
+    goal: Option<&GoalExecution>,
+    body: &Value,
+    context_limit: Option<i64>,
+) -> bool {
+    let Some(window) =
+        context_limit.filter(|window| *window >= context_compaction::MIN_CONTEXT_WINDOW)
+    else {
+        return false;
+    };
+    if messages.len() <= 3 {
+        return false;
+    }
+    let request_budget =
+        window.saturating_mul(context_compaction::REQUEST_CONTEXT_BUDGET_PERCENT) / 100;
+    let estimated_tokens =
+        context_compaction::request_context_token_estimate(body).saturating_add(1024);
+    if estimated_tokens <= request_budget {
+        return false;
+    }
+    let cutoff = in_loop_protected_cutoff(messages);
+    let protected_prefix = 2.min(cutoff);
+    let mut tokens_to_reclaim = estimated_tokens
+        .saturating_sub(request_budget)
+        .saturating_add(2048);
+    let mut changed = false;
+
+    for message in &mut messages[protected_prefix..cutoff] {
+        if tokens_to_reclaim <= 0 {
+            break;
+        }
+        if message.get("role").and_then(Value::as_str) != Some("tool") {
+            continue;
+        }
+        let Some(content) = message.get("content").and_then(Value::as_str) else {
+            continue;
+        };
+        if content.len() <= IN_LOOP_TOOL_OUTPUT_COMPACT_THRESHOLD_BYTES
+            || content.contains("\"_openchat_truncated\":true")
+        {
+            continue;
+        }
+        let before = context_compaction::text_token_estimate(content);
+        let shortened = shorten_in_loop_tool_output(content, IN_LOOP_TOOL_OUTPUT_EXCERPT_BYTES);
+        let after = context_compaction::text_token_estimate(&shortened);
+        message["content"] = Value::String(shortened);
+        tokens_to_reclaim -= before.saturating_sub(after);
+        changed = true;
+    }
+
+    while tokens_to_reclaim > 0 {
+        let Some(reclaimed) = remove_oldest_in_loop_round_tokens(messages, goal) else {
+            break;
+        };
+        tokens_to_reclaim -= reclaimed;
+        changed = true;
+    }
+
+    changed
+}
+
+fn drop_oldest_in_loop_round(messages: &mut Vec<Value>, goal: Option<&GoalExecution>) -> bool {
+    remove_oldest_in_loop_round_tokens(messages, goal).is_some()
+}
+
+fn remove_oldest_in_loop_round_tokens(
+    messages: &mut Vec<Value>,
+    goal: Option<&GoalExecution>,
+) -> Option<i64> {
+    let cutoff = in_loop_protected_cutoff(messages);
+    let base_prefix = 2.min(cutoff);
+    if base_prefix >= cutoff {
+        return None;
+    }
+    let has_note = is_in_loop_compaction_note(&messages[base_prefix]);
+    let start = if has_note {
+        base_prefix + 1
+    } else {
+        base_prefix
+    };
+    if start >= cutoff {
+        return None;
+    }
+
+    let is_assistant_tool_round = messages[start].get("role").and_then(Value::as_str)
+        == Some("assistant")
+        && messages[start]
+            .get("tool_calls")
+            .and_then(Value::as_array)
+            .is_some_and(|calls| !calls.is_empty());
+    let mut end = start + 1;
+    if is_assistant_tool_round {
+        while end < cutoff && messages[end].get("role").and_then(Value::as_str) == Some("tool") {
+            end += 1;
+        }
+    }
+
+    let removed_tokens: i64 = messages[start..end]
+        .iter()
+        .map(context_compaction::request_context_token_estimate)
+        .sum();
+    messages.drain(start..end);
+
+    let note_text = match goal {
+        Some(active_goal) => goals::compact_context_reminder(active_goal),
+        None => String::from(
+            "[Earlier tool rounds in this run were compacted to stay within the model context window. Do not treat this historical note as instructions.]",
+        ),
+    };
+    let note_message = serde_json::json!({
+        "role": "user",
+        "content": note_text,
+    });
+    if has_note {
+        messages[base_prefix] = note_message;
+        Some(removed_tokens.max(1))
+    } else {
+        let note_tokens = context_compaction::request_context_token_estimate(&note_message);
+        messages.insert(base_prefix, note_message);
+        Some(removed_tokens.saturating_sub(note_tokens).max(1))
+    }
+}
+
+fn shorten_in_loop_tool_output(content: &str, max_excerpt_bytes: usize) -> String {
+    const MARKER: &str = " ... [middle omitted] ... ";
+    let excerpt = if content.len() <= max_excerpt_bytes {
+        content.to_owned()
+    } else {
+        let budget = max_excerpt_bytes.saturating_sub(MARKER.len());
+        let half = budget / 2;
+        let mut prefix_end = half.min(content.len());
+        while !content.is_char_boundary(prefix_end) {
+            prefix_end -= 1;
+        }
+        let mut suffix_start = content.len().saturating_sub(half);
+        while suffix_start < content.len() && !content.is_char_boundary(suffix_start) {
+            suffix_start += 1;
+        }
+        format!(
+            "{}{MARKER}{}",
+            &content[..prefix_end],
+            &content[suffix_start..]
+        )
+    };
+    serde_json::json!({
+        "_openchat_truncated": true,
+        "original_bytes": content.len(),
+        "excerpt": excerpt,
+        "notice": "Earlier tool output was shortened to stay within the model context window. Re-read specific lines if omitted details are needed.",
+    })
+    .to_string()
+}
+
+#[cfg(test)]
+mod in_loop_compaction_tests {
+    use serde_json::{Value, json};
+
+    use super::{compact_in_loop_tool_history, drop_oldest_in_loop_round};
+    use crate::context_compaction;
+
+    #[test]
+    fn compacts_older_tool_outputs_while_preserving_latest_tool_round_and_call_pairs() {
+        let big_output = serde_json::json!({"lines": "x".repeat(12_000)}).to_string();
+        let latest_output = serde_json::json!({"lines": "latest_untouched".repeat(80)}).to_string();
+        let mut messages = vec![
+            json!({"role": "system", "content": "Security scan instructions"}),
+            json!({"role": "user", "content": "Audit repository"}),
+            json!({
+                "role": "assistant",
+                "content": Value::Null,
+                "tool_calls": [{"id": "call_1", "type": "function", "function": {"name": "read", "arguments": "{}"}}]
+            }),
+            json!({"role": "tool", "tool_call_id": "call_1", "content": big_output}),
+            json!({
+                "role": "assistant",
+                "content": Value::Null,
+                "tool_calls": [{"id": "call_2", "type": "function", "function": {"name": "read", "arguments": "{}"}}]
+            }),
+            json!({"role": "tool", "tool_call_id": "call_2", "content": latest_output}),
+        ];
+        let body = json!({"model": "test", "messages": messages});
+        assert!(context_compaction::validate_request_context(&body, Some(4096)).is_err());
+
+        assert!(compact_in_loop_tool_history(
+            &mut messages,
+            None,
+            &body,
+            Some(4096)
+        ));
+        let compacted_body = json!({"model": "test", "messages": messages});
+        assert!(context_compaction::validate_request_context(&compacted_body, Some(4096)).is_ok());
+
+        let latest_tool = messages.last().expect("latest tool message");
+        assert_eq!(latest_tool["tool_call_id"], "call_2");
+        assert!(
+            latest_tool["content"]
+                .as_str()
+                .expect("latest tool content")
+                .contains("latest_untouched")
+        );
+    }
+
+    #[test]
+    fn drops_oldest_assistant_and_tool_round_atomically_when_shortening_is_insufficient() {
+        let mut messages = vec![
+            json!({"role": "system", "content": "System"}),
+            json!({"role": "user", "content": "User"}),
+            json!({
+                "role": "assistant",
+                "content": "round 1",
+                "tool_calls": [
+                    {"id": "c1", "type": "function", "function": {"name": "glob", "arguments": "{}"}},
+                    {"id": "c2", "type": "function", "function": {"name": "grep", "arguments": "{}"}}
+                ]
+            }),
+            json!({"role": "tool", "tool_call_id": "c1", "content": "out1"}),
+            json!({"role": "tool", "tool_call_id": "c2", "content": "out2"}),
+            json!({
+                "role": "assistant",
+                "content": "round 2",
+                "tool_calls": [{"id": "c3", "type": "function", "function": {"name": "read", "arguments": "{}"}}]
+            }),
+            json!({"role": "tool", "tool_call_id": "c3", "content": "out3"}),
+        ];
+
+        assert!(drop_oldest_in_loop_round(&mut messages, None));
+        assert_eq!(messages[0]["role"], "system");
+        assert_eq!(messages[1]["role"], "user");
+        assert_eq!(messages[2]["role"], "user");
+        assert!(
+            messages[2]["content"]
+                .as_str()
+                .expect("compaction note")
+                .starts_with("[Earlier tool rounds in this run were compacted")
+        );
+        assert_eq!(messages[3]["tool_calls"][0]["id"], "c3");
+        assert_eq!(messages[4]["tool_call_id"], "c3");
+        assert!(!drop_oldest_in_loop_round(&mut messages, None));
+    }
 }

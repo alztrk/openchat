@@ -23,8 +23,13 @@ const compiled = ts.transpileModule(errorDetailsSource, {
   compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
 }).outputText;
 
-const { LocalServiceError, formatServiceErrorMessage, formatUnknownServiceError, resolveServiceFailureCode } =
-  await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`);
+const {
+  LocalServiceError,
+  formatFailureCodeMessage,
+  formatServiceErrorMessage,
+  formatUnknownServiceError,
+  resolveServiceFailureCode,
+} = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`);
 
 const trLocale = JSON.parse(fs.readFileSync(path.resolve('src/localization/locales/tr.json'), 'utf8'));
 const translateTr = (key, options) => trLocale[key] ?? options?.defaultValue ?? key;
@@ -60,6 +65,34 @@ test('never leaks unmapped English LocalServiceError messages when formatting sc
   );
 });
 
+test('maps context window, timeout, and incomplete checklist scan failures to specific Turkish copy', () => {
+  const timeoutError = new LocalServiceError('service_timeout', 'Local service call timed out.', true);
+  assert.equal(
+    formatUnknownServiceError(timeoutError, translateTr, 'securityScanRequestFailed'),
+    trLocale.localServiceTimeout,
+  );
+
+  const messageLoadTimeout = new Error('Loading conversation messages timed out.');
+  assert.equal(resolveServiceFailureCode(messageLoadTimeout, 'unmapped_refresh_error'), 'service_timeout');
+  assert.equal(
+    formatUnknownServiceError(messageLoadTimeout, translateTr, 'securityScanRequestFailed'),
+    trLocale.localServiceTimeout,
+  );
+
+  const checklistError = new LocalServiceError(
+    'security_scan_checklist_incomplete',
+    'Complete every security scan checklist item before finishing.',
+    false,
+  );
+  assert.equal(
+    formatUnknownServiceError(checklistError, translateTr, 'securityScanRequestFailed'),
+    trLocale.securityScanIncompleteChecklist,
+  );
+
+  assert.equal(formatFailureCodeMessage('context_window_exceeded', translateTr), trLocale.contextWindowExceeded);
+  assert.equal(formatFailureCodeMessage('context_compaction_failed', translateTr), trLocale.contextWindowExceeded);
+});
+
 test('all supported locales include security scan and unavailable tool error translations', () => {
   const requiredKeys = [
     'providerRequestedUnlistedTool',
@@ -70,6 +103,9 @@ test('all supported locales include security scan and unavailable tool error tra
     'securityScanNoResumableCheckpoint',
     'securityScanStopFailed',
     'securityScanStatusInvalid',
+    'securityScanIncompleteChecklist',
+    'localServiceTimeout',
+    'localServiceUnavailable',
   ];
 
   for (const localeName of ['de', 'en', 'es', 'fr', 'tr']) {

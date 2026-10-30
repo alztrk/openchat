@@ -2906,6 +2906,9 @@
   "securityScanNoResumableCheckpoint": "This scan has no resumable checkpoint.",
   "securityScanStopFailed": "The security scan could not be stopped.",
   "securityScanStatusInvalid": "The security scan status could not be verified.",
+  "securityScanIncompleteChecklist": "The model ended the scan before completing all plan steps and its summary.",
+  "localServiceTimeout": "The local service did not respond in time. Try again.",
+  "localServiceUnavailable": "The local service is currently unavailable. Try again.",
   "conversationNotFound": "The requested conversation was not found.",
   "messageNotFound": "The requested message was not found."
 }

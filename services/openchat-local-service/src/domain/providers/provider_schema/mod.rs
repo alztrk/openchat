@@ -178,15 +178,33 @@ pub struct ToolActivity {
 }
 
 impl ToolActivity {
+    fn normalize_arguments(arguments: &Value) -> Value {
+        let mut normalized = arguments.clone();
+        if let Some(object) = normalized.as_object_mut() {
+            for key in ["path", "filePath", "file_path"] {
+                if let Some(value) = object.get_mut(key)
+                    && let Some(text) = value.as_str()
+                    && text.starts_with(r"\\?\")
+                {
+                    *value = Value::String(crate::workspace_settings::strip_verbatim_prefix(text));
+                }
+            }
+        }
+        normalized
+    }
+
+    fn normalize_target_path(target_path: String) -> String {
+        crate::workspace_settings::strip_verbatim_prefix(&target_path)
+    }
     /// Creates a tool activity that awaits explicit user approval.
     pub fn awaiting_approval(call: &ToolCall, target_path: String) -> Self {
         Self {
             call_id: call.id.clone(),
             name: call.name.clone(),
-            arguments: call.arguments.clone(),
+            arguments: Self::normalize_arguments(&call.arguments),
             round_id: None,
             assistant_text_before_byte_offset: None,
-            target_path: Some(target_path),
+            target_path: Some(Self::normalize_target_path(target_path)),
             output: None,
             file_changes: Vec::new(),
             file_changes_error: None,
@@ -200,10 +218,10 @@ impl ToolActivity {
         Self {
             call_id: call.id.clone(),
             name: call.name.clone(),
-            arguments: call.arguments.clone(),
+            arguments: Self::normalize_arguments(&call.arguments),
             round_id: None,
             assistant_text_before_byte_offset: None,
-            target_path,
+            target_path: target_path.map(Self::normalize_target_path),
             output: None,
             file_changes: Vec::new(),
             file_changes_error: None,
@@ -217,7 +235,7 @@ impl ToolActivity {
         Self {
             call_id: call.id.clone(),
             name: call.name.clone(),
-            arguments: call.arguments.clone(),
+            arguments: Self::normalize_arguments(&call.arguments),
             round_id: None,
             assistant_text_before_byte_offset: None,
             target_path: None,
@@ -239,10 +257,10 @@ impl ToolActivity {
         Self {
             call_id: call.id.clone(),
             name: call.name.clone(),
-            arguments: call.arguments.clone(),
+            arguments: Self::normalize_arguments(&call.arguments),
             round_id: None,
             assistant_text_before_byte_offset: None,
-            target_path,
+            target_path: target_path.map(Self::normalize_target_path),
             output: Some(output),
             file_changes: Vec::new(),
             file_changes_error: None,
@@ -277,10 +295,10 @@ impl ToolActivity {
         Self {
             call_id: call.id.clone(),
             name: call.name.clone(),
-            arguments: call.arguments.clone(),
+            arguments: Self::normalize_arguments(&call.arguments),
             round_id: None,
             assistant_text_before_byte_offset: None,
-            target_path: Some(target_path),
+            target_path: Some(Self::normalize_target_path(target_path)),
             output: Some(output),
             file_changes: Vec::new(),
             file_changes_error: None,
@@ -294,10 +312,10 @@ impl ToolActivity {
         Self {
             call_id: call.id.clone(),
             name: call.name.clone(),
-            arguments: call.arguments.clone(),
+            arguments: Self::normalize_arguments(&call.arguments),
             round_id: None,
             assistant_text_before_byte_offset: None,
-            target_path: Some(target_path),
+            target_path: Some(Self::normalize_target_path(target_path)),
             output: Some(output),
             file_changes: Vec::new(),
             file_changes_error: None,
@@ -360,6 +378,29 @@ mod tool_activity_tests {
 
         assert!(matches!(successful.status, ToolActivityStatus::Completed));
         assert!(matches!(running.status, ToolActivityStatus::Completed));
+    }
+
+    #[test]
+    fn tool_activity_strips_windows_verbatim_path_prefixes() {
+        let call = ToolCall {
+            id: "read-1".to_owned(),
+            name: "read_file".to_owned(),
+            arguments: json!({"path": r"\\?\D:\projects\OpenChat\Cargo.toml", "startLine": 1}),
+        };
+        let activity = ToolActivity::finished(
+            &call,
+            Some(r"\\?\D:\projects\OpenChat\Cargo.toml".to_owned()),
+            json!({"path": "Cargo.toml"}),
+        );
+
+        assert_eq!(
+            activity.target_path.as_deref(),
+            Some(r"D:\projects\OpenChat\Cargo.toml")
+        );
+        assert_eq!(
+            activity.arguments["path"].as_str(),
+            Some(r"D:\projects\OpenChat\Cargo.toml")
+        );
     }
 }
 

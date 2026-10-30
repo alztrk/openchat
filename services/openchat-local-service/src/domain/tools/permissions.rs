@@ -81,7 +81,7 @@ impl ToolPermissionBroker {
             json!({
                 "approvalRequestId": approval_request_id,
                 "toolName": tool_name,
-                "targetPath": target_path,
+                "targetPath": crate::workspace_settings::strip_verbatim_prefix(target_path),
                 "arguments": arguments,
             }),
         );

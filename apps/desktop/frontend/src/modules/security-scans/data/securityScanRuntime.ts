@@ -14,6 +14,7 @@ import {
   cancelSecurityScan,
   listSecurityScans,
   type SecurityScan,
+  type SecurityScanStatus,
   scheduleSecurityScanRetry,
   securityScanObjective,
 } from './securityScans';
@@ -110,10 +111,11 @@ async function reconcileActiveSecurityScan(scan: SecurityScan): Promise<void> {
 
   try {
     const hasActiveOperation = operations.has(scan.id) || inFlight.has(scan.id);
-    const [messages, goal] = await Promise.all([
+    const [messages, activeGoal] = await Promise.all([
       hasActiveOperation ? Promise.resolve(existing.messages) : getMessages(scan.conversationId),
       readActiveGoal(scan.conversationId),
     ]);
+    const goal = resolveRetainedGoal(activeGoal, existing.goal, scan.conversationId, scan.status);
     update(scan.id, { messages, goal, error: null });
 
     if (goal?.status === 'interrupted') {
@@ -221,16 +223,34 @@ export async function stopSecurityScan(scan: SecurityScan): Promise<void> {
 }
 
 export async function refreshSecurityScan(scan: SecurityScan): Promise<void> {
+  if (operations.has(scan.id) || inFlight.has(scan.id)) return;
   try {
-    const [messages, goal] = await Promise.all([getMessages(scan.conversationId), readActiveGoal(scan.conversationId)]);
-    update(scan.id, { messages, goal });
+    const existing = snapshots.get(scan.id);
+    const [messages, activeGoal] = await Promise.all([
+      getMessages(scan.conversationId),
+      readActiveGoal(scan.conversationId),
+    ]);
+    if (operations.has(scan.id) || inFlight.has(scan.id)) return;
+    const goal = resolveRetainedGoal(activeGoal, existing?.goal ?? null, scan.conversationId, scan.status);
+    update(scan.id, {
+      messages,
+      goal,
+      ...(scan.status !== 'failed' ? { error: null } : {}),
+    });
     if (goal?.status === 'interrupted' && !operations.has(scan.id)) {
       void resumeSecurityScan(scan, goal);
     } else if (goal?.status === 'paused' && goal.pauseReason === 'quota') {
       scheduleQuotaResume(scan, goal);
     }
   } catch (error) {
-    update(scan.id, { error });
+    if (operations.has(scan.id) || inFlight.has(scan.id)) return;
+    const isMappedError =
+      error instanceof LocalServiceError ||
+      error instanceof SecurityScanUiError ||
+      resolveServiceFailureCode(error, 'unmapped_refresh_error') !== 'unmapped_refresh_error';
+    update(scan.id, {
+      error: isMappedError ? error : new SecurityScanUiError('securityScansLoadFailed'),
+    });
   }
 }
 
@@ -334,7 +354,13 @@ async function startOperation(scan: SecurityScan, resumeRunId: string | null): P
     );
     if (persistenceError) throw persistenceError;
     update(scan.id, { isActive: false });
-    const goal = await readActiveGoal(scan.conversationId);
+    const activeGoal = await readActiveGoal(scan.conversationId);
+    const goal = resolveRetainedGoal(
+      activeGoal,
+      snapshots.get(scan.id)?.goal ?? null,
+      scan.conversationId,
+      finalStatus === 'stopped' ? 'cancelled' : 'completed',
+    );
     update(scan.id, { goal });
     if (goal?.status === 'paused' && goal.pauseReason === 'quota') {
       scheduleQuotaResume(scan, goal);
@@ -357,7 +383,8 @@ async function startOperation(scan: SecurityScan, resumeRunId: string | null): P
     }
     update(scan.id, { isActive: false, error: failedMessage ? null : error });
     try {
-      const goal = await readActiveGoal(scan.conversationId);
+      const activeGoal = await readActiveGoal(scan.conversationId);
+      const goal = resolveRetainedGoal(activeGoal, snapshots.get(scan.id)?.goal ?? null, scan.conversationId, 'failed');
       update(scan.id, { goal });
       if (goal?.status === 'paused' && goal.pauseReason === 'quota') {
         scheduleQuotaResume(
@@ -438,8 +465,10 @@ async function saveInitialMessage(scan: SecurityScan): Promise<void> {
 }
 
 async function refreshMessages(scan: SecurityScan): Promise<void> {
+  const existing = snapshots.get(scan.id);
   const messages = await getMessages(scan.conversationId);
-  const goal = await readActiveGoal(scan.conversationId);
+  const activeGoal = await readActiveGoal(scan.conversationId);
+  const goal = resolveRetainedGoal(activeGoal, existing?.goal ?? null, scan.conversationId, 'cancelled');
   update(scan.id, { messages, goal });
 }
 
@@ -476,4 +505,18 @@ async function waitForPersistence(
 
 function numberOrNull(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function resolveRetainedGoal(
+  activeGoal: ChatGoal | null,
+  previousGoal: ChatGoal | null,
+  conversationId: string,
+  scanStatus: SecurityScanStatus,
+): ChatGoal | null {
+  if (activeGoal) return activeGoal;
+  if (!previousGoal || previousGoal.conversationId !== conversationId) return null;
+  if (scanStatus === 'completed' || scanStatus === 'cancelled' || scanStatus === 'failed') {
+    return previousGoal.status === scanStatus ? previousGoal : { ...previousGoal, status: scanStatus };
+  }
+  return previousGoal;
 }

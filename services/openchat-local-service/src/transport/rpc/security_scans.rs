@@ -174,7 +174,7 @@ fn create_scan(params: &Value, storage: &AppStorage) -> Result<Value, ServiceErr
     }
     let roots_for_response = roots
         .iter()
-        .map(|root| root.to_string_lossy().into_owned())
+        .map(|root| crate::workspace_settings::display_canonical_path(root))
         .collect::<Vec<_>>();
     let roots_json =
         serde_json::to_string(&roots_for_response).map_err(|_| invalid_request_params())?;
@@ -440,7 +440,10 @@ fn parse_roots_for_display(roots_json: &str) -> Result<Vec<String>, ServiceError
     {
         return Err(storage_error());
     }
-    Ok(roots)
+    Ok(roots
+        .into_iter()
+        .map(|root| crate::workspace_settings::strip_verbatim_prefix(&root))
+        .collect())
 }
 
 fn input_object(params: &Value) -> Result<&serde_json::Map<String, Value>, ServiceError> {

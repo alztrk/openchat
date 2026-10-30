@@ -16,6 +16,7 @@ import { Button, Checkbox, Select } from '@/design-system';
 import { MessageList } from '@/modules/conversations/components/MessageList';
 import type { ChatProject } from '@/modules/conversations/data/chatStorage';
 import { useChatStore } from '@/modules/conversations/stores/chatStore';
+import { formatFailureCodeMessage } from '@/modules/conversations/stores/chatStoreErrorDetails';
 import type { ChatModel } from '@/modules/providers/data/chatModels';
 import {
   formatSecurityScanError,
@@ -427,20 +428,23 @@ interface ScanDetailProps {
 function ScanDetail({ goal, isActive, messages, now, onResume, onStop, scan, runtimeError }: ScanDetailProps) {
   const { t } = useTranslation();
   const status = visibleScanStatus(scan, goal);
-  const pendingStep = goal?.todos.find((todo) => !todo.completed)?.text ?? null;
+  const pendingStepIndex = goal?.todos.findIndex((todo) => !todo.completed) ?? -1;
+  const pendingStep = pendingStepIndex >= 0 ? (goal?.todos[pendingStepIndex]?.text ?? null) : null;
   const completedSteps = goal?.todos.filter((todo) => todo.completed).length ?? 0;
   const totalSteps = goal?.todos.length ?? 0;
   const canStop = isActive || !['completed', 'cancelled', 'failed'].includes(status);
   const hasFailedMessage = messages.some((message) => message.status === 'failed');
+  const displayedError =
+    runtimeError ?? (!hasFailedMessage && status === 'failed' ? formatFailureCodeMessage(scan.failureCode, t) : null);
   const canResume =
     status === 'paused' ||
     status === 'interrupted' ||
     status === 'waiting_provider' ||
-    (status === 'queued' && (runtimeError !== null || hasFailedMessage));
+    (status === 'queued' && (displayedError !== null || hasFailedMessage));
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-      <header className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-border px-4 py-3 md:px-6">
+      <header className="flex shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-border px-4 py-3 md:px-6">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="max-w-full truncate text-base font-semibold text-text">{scan.projectName}</h2>
@@ -469,7 +473,7 @@ function ScanDetail({ goal, isActive, messages, now, onResume, onStop, scan, run
         </div>
       </header>
 
-      <section aria-label={t('securityScanPlan')} className="border-b border-border px-4 py-3 md:px-6">
+      <section aria-label={t('securityScanPlan')} className="shrink-0 border-b border-border px-4 py-3 md:px-6">
         <div className="flex items-center justify-between gap-3">
           <div className="flex min-w-0 items-center gap-2">
             {status === 'running' ? (
@@ -496,34 +500,47 @@ function ScanDetail({ goal, isActive, messages, now, onResume, onStop, scan, run
           />
         ) : null}
         {goal?.todos.length ? (
-          <ol className="openchat-scroll-area mt-2 flex max-h-24 flex-wrap gap-x-4 gap-y-1 overflow-y-auto">
-            {goal.todos.map((todo) => (
-              <li className="flex min-w-0 items-center gap-1.5 text-xs text-secondary-text" key={todo.text}>
-                {todo.completed ? (
-                  <CircleCheck aria-hidden="true" className="shrink-0 text-success" size={13} />
-                ) : todo.text === pendingStep ? (
-                  <span aria-hidden="true" className="size-2 shrink-0 rounded-full bg-accent" />
-                ) : (
-                  <span aria-hidden="true" className="size-2 shrink-0 rounded-full border border-border" />
-                )}
-                <span className={todo.completed ? 'line-through' : ''}>{todo.text}</span>
-              </li>
-            ))}
-          </ol>
+          <div className="openchat-scroll-area conversation-sidebar-scroll-area mt-2.5 max-h-36 rounded-control border border-border bg-surface p-1.5">
+            <ol className="grid grid-cols-1 gap-1">
+              {goal.todos.map((todo, index) => {
+                const isCurrentStep = !todo.completed && index === pendingStepIndex;
+                const duplicateIndex = goal.todos.slice(0, index).filter((item) => item.text === todo.text).length;
+                return (
+                  <li
+                    className={`flex min-w-0 items-start gap-2 rounded-control px-2 py-1 text-xs ${
+                      isCurrentStep ? 'bg-selected font-medium text-text' : 'text-secondary-text'
+                    }`}
+                    key={`${todo.text}:${duplicateIndex}`}
+                  >
+                    {todo.completed ? (
+                      <CircleCheck aria-hidden="true" className="mt-0.5 shrink-0 text-success" size={14} />
+                    ) : isCurrentStep ? (
+                      <span aria-hidden="true" className="mt-1.5 size-2 shrink-0 rounded-full bg-accent" />
+                    ) : (
+                      <span aria-hidden="true" className="mt-1.5 size-2 shrink-0 rounded-full border border-border" />
+                    )}
+                    <span className={`min-w-0 flex-1 break-words leading-5 ${todo.completed ? 'line-through' : ''}`}>
+                      {todo.text}
+                    </span>
+                  </li>
+                );
+              })}
+            </ol>
+          </div>
         ) : null}
         {goal?.progress ? <p className="mt-2 line-clamp-2 text-xs text-secondary-text">{goal.progress}</p> : null}
       </section>
 
       {status === 'waiting_provider' ? (
-        <div className="mx-4 mt-3 flex items-start gap-2 rounded-control border border-border bg-background px-3 py-2 text-sm text-secondary-text md:mx-6">
+        <div className="mx-4 mt-3 flex shrink-0 items-start gap-2 rounded-control border border-border bg-background px-3 py-2 text-sm text-secondary-text md:mx-6">
           <Clock3 aria-hidden="true" className="mt-0.5 shrink-0" size={15} />
           <p>{t('securityScanQuotaWaiting')}</p>
         </div>
       ) : null}
-      {runtimeError ? (
-        <div className="mx-4 mt-3 flex items-start gap-2 rounded-control border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive md:mx-6">
+      {displayedError ? (
+        <div className="mx-4 mt-3 flex shrink-0 items-start gap-2 rounded-control border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive md:mx-6">
           <CircleAlert aria-hidden="true" className="mt-0.5 shrink-0" size={15} />
-          <p role="alert">{runtimeError}</p>
+          <p role="alert">{displayedError}</p>
         </div>
       ) : null}
 

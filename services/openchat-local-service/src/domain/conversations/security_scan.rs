@@ -177,7 +177,7 @@ pub(crate) fn provider_instructions_for_provider(
 ) -> Result<String, ServiceError> {
     let root_paths = roots
         .iter()
-        .map(|root| root.to_string_lossy().into_owned())
+        .map(|root| crate::workspace_settings::display_canonical_path(root))
         .collect::<Vec<_>>();
     let serialized_roots = serde_json::to_string(&root_paths).map_err(|_| {
         ServiceError::new(
@@ -277,5 +277,11 @@ mod tests {
         assert!(!opencode_instructions.contains("`list_files`"));
         assert!(!opencode_instructions.contains("`search_files`"));
         assert!(!opencode_instructions.contains("`read_file`"));
+
+        let verbatim_roots = vec![PathBuf::from(r"\\?\D:\security-project")];
+        let normalized_instructions =
+            super::provider_instructions(&verbatim_roots, false).expect("strip verbatim prefix");
+        assert!(normalized_instructions.contains(r#"["D:\\security-project"]"#));
+        assert!(!normalized_instructions.contains(r"\\?\"));
     }
 }
