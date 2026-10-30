@@ -916,20 +916,24 @@ pub fn opencode_wire_name(internal_name: &str) -> String {
     }
 }
 
+pub(crate) fn canonical_tool_alias(name: &str) -> Option<&'static str> {
+    match name {
+        "read" => Some("read_file"),
+        "write" => Some("write_file"),
+        "edit" => Some("edit_file"),
+        "glob" | "list_directory" => Some("list_files"),
+        "grep" => Some("search_files"),
+        "bash" => Some("execute_command"),
+        "read_url" => Some("read_url_content"),
+        _ => None,
+    }
+}
+
 pub fn internal_tool_name(is_opencode: bool, wire_name: &str) -> String {
     if is_opencode {
-        match wire_name {
-            "read" => "read_file".to_owned(),
-            "write" => "write_file".to_owned(),
-            "edit" => "edit_file".to_owned(),
-            "glob" => "list_files".to_owned(),
-            "grep" => "search_files".to_owned(),
-            "bash" => "execute_command".to_owned(),
-            "send_terminal_input" => "send_terminal_input".to_owned(),
-            "web_search" => "web_search".to_owned(),
-            "read_url_content" | "read_url" => "read_url_content".to_owned(),
-            _ => wire_name.to_owned(),
-        }
+        canonical_tool_alias(wire_name)
+            .unwrap_or(wire_name)
+            .to_owned()
     } else {
         wire_name.to_owned()
     }
@@ -1069,25 +1073,52 @@ pub fn opencode_wire_tool(tool: &ToolDefinition) -> Value {
 }
 
 pub fn opencode_wire_tools(defs: &[ToolDefinition]) -> Vec<Value> {
-    let mut tools = defs.iter().map(opencode_wire_tool).collect::<Vec<_>>();
-    if !tools
-        .iter()
-        .any(|t| t.pointer("/function/name").and_then(Value::as_str) == Some("bash"))
-    {
-        tools.push(opencode_wire_tool(&ToolDefinition {
-            name: "execute_command".to_owned(),
-            description: "Command execution is unavailable in this client.".to_owned(),
-            parameters: json!({"type": "object", "properties": {"command": {"type": "string"}}, "required": ["command"]}),
+    let mut seen_names = std::collections::HashSet::with_capacity(defs.len() + 2);
+    let mut tools = Vec::with_capacity(defs.len() + 2);
+    for def in defs {
+        let wire_tool = opencode_wire_tool(def);
+        if let Some(name) = wire_tool.pointer("/function/name").and_then(Value::as_str)
+            && seen_names.insert(name.to_owned())
+        {
+            tools.push(wire_tool);
+        }
+    }
+    // OpenCode's gateway requires `bash` and `read` entries in the wire tool list.
+    // When the active profile intentionally omits `execute_command` or `read_file`
+    // (for example, read-only security scans), emit inert gate stubs rather than
+    // advertising active shell or file tools to the model.
+    if seen_names.insert("bash".to_owned()) {
+        tools.push(json!({
+            "type": "function",
+            "function": {
+                "name": "bash",
+                "description": "Command execution is unavailable in this session. Never call this tool.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "command": {"type": "string"}
+                    },
+                    "required": ["command"],
+                    "additionalProperties": false
+                }
+            }
         }));
     }
-    if !tools
-        .iter()
-        .any(|t| t.pointer("/function/name").and_then(Value::as_str) == Some("read"))
-    {
-        tools.push(opencode_wire_tool(&ToolDefinition {
-            name: "read_file".to_owned(),
-            description: "Read a bounded range of lines from a file.".to_owned(),
-            parameters: json!({"type": "object", "properties": {"filePath": {"type": "string"}}}),
+    if seen_names.insert("read".to_owned()) {
+        tools.push(json!({
+            "type": "function",
+            "function": {
+                "name": "read",
+                "description": "File reading is unavailable in this session. Never call this tool.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "filePath": {"type": "string"}
+                    },
+                    "required": ["filePath"],
+                    "additionalProperties": false
+                }
+            }
         }));
     }
     tools

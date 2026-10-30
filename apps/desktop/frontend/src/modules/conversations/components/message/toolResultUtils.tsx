@@ -56,7 +56,8 @@ export function safeTimestamp(value: unknown): number | null {
 }
 
 export function getRequestedToolPath(activity: ToolActivity): string | null {
-  const argumentPath = stringValue(asRecord(activity.arguments)?.path)?.trim();
+  const args = asRecord(activity.arguments);
+  const argumentPath = stringValue(args?.path)?.trim() || stringValue(args?.filePath)?.trim();
   if (argumentPath) return argumentPath;
   const targetPath = activity.targetPath?.trim();
   return targetPath || null;
@@ -101,6 +102,7 @@ const toolErrorTranslationKeys: Record<string, string> = {
   operation_cancelled: 'toolCancelled',
   permission_denied: 'toolDenied',
   permission_scope_denied: 'toolErrorPermissionScopeDenied',
+  plan_mode_tools_disabled: 'toolErrorPlanModeDisabled',
   project_required: 'toolErrorProjectRequired',
   project_tool_failed: 'toolErrorProjectToolFailed',
   project_tool_unavailable: 'toolOperationUnavailable',
@@ -114,6 +116,7 @@ const toolErrorTranslationKeys: Record<string, string> = {
   terminal_session_limit: 'toolErrorTerminalSessionLimit',
   tool_activity_storage_failed: 'toolErrorActivitySaveFailed',
   tool_execution_unavailable: 'toolOperationUnavailable',
+  tool_not_available: 'toolErrorNotAvailable',
   tool_path_unavailable: 'toolErrorPathUnavailable',
 };
 

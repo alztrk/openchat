@@ -2898,6 +2898,14 @@
   "databaseQueueTimeout": "Se agotó el tiempo de espera en la cola de la base de datos. Vuelve a intentarlo.",
   "databaseQueueFull": "La cola de operaciones de la base de datos está llena. Vuelve a intentarlo.",
   "invalidProviderResponse": "El proveedor del modelo devolvió una respuesta que OpenChat no pudo leer.",
+  "providerRequestedUnlistedTool": "El modelo intentó repetidamente usar una herramienta no disponible en esta sesión.",
+  "toolErrorNotAvailable": "Esta herramienta no está disponible en esta sesión.",
+  "toolErrorPlanModeDisabled": "Las herramientas están desactivadas mientras el modo Plan está activo.",
+  "securityScanRequestFailed": "No se pudo completar el análisis de seguridad.",
+  "securityScanRouteMissing": "Falta el proveedor o el modelo guardado para este análisis.",
+  "securityScanNoResumableCheckpoint": "Este análisis no tiene un punto de control reanudable.",
+  "securityScanStopFailed": "No se pudo detener el análisis de seguridad.",
+  "securityScanStatusInvalid": "No se pudo verificar el estado del análisis de seguridad.",
   "conversationNotFound": "No se encontró la conversación solicitada.",
   "messageNotFound": "No se encontró el mensaje solicitado."
 }

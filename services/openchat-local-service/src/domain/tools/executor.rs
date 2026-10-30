@@ -276,11 +276,14 @@ pub struct ToolExecutor {
     mcp_registry: Option<std::sync::Arc<super::mcp::McpRegistry>>,
 }
 
+const MAX_DENIED_UNADVERTISED_TOOL_CALLS_PER_TURN: usize = 8;
+
 #[derive(Default)]
 struct ToolTurnState {
     round_sequence: usize,
     current_round_id: Option<String>,
     project_rule_prechecks: HashSet<String>,
+    unadvertised_tool_denials: usize,
 }
 
 enum PendingFileChangeCapture {
@@ -655,16 +658,91 @@ impl ToolExecutor {
         self
     }
 
-    fn validate_tool_name(&self, tool_name: &str) -> Result<(), ServiceError> {
+    fn validate_tool_name(&self, tool_name: &str) -> Result<String, ServiceError> {
         if self.allowed_tool_names.contains(tool_name) {
-            Ok(())
-        } else {
-            Err(ServiceError::new(
-                "invalid_provider_response",
-                "The provider requested a tool that was not included in the request.",
-                false,
-            ))
+            return Ok(tool_name.to_owned());
         }
+        if let Some(canonical) = crate::tools::canonical_tool_alias(tool_name)
+            && self.allowed_tool_names.contains(canonical)
+        {
+            return Ok(canonical.to_owned());
+        }
+        Err(ServiceError::new(
+            "invalid_provider_response",
+            "The provider requested a tool that was not included in the request.",
+            false,
+        ))
+    }
+
+    async fn deny_unadvertised_tool(
+        &self,
+        call: &ToolCall,
+        rejection_error: ServiceError,
+        provider_id: &str,
+        request_id: &Value,
+        snapshot: &ChatStreamSnapshot,
+        events: &EventSink,
+        storage: &AppStorage,
+    ) -> Result<ToolResult, ServiceError> {
+        if !is_valid_wire_tool_name(&call.name) {
+            return Err(rejection_error);
+        }
+        let exceeded_limit = {
+            let mut turn_state = self
+                .turn_state
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            turn_state.unadvertised_tool_denials =
+                turn_state.unadvertised_tool_denials.saturating_add(1);
+            turn_state.unadvertised_tool_denials > MAX_DENIED_UNADVERTISED_TOOL_CALLS_PER_TURN
+        };
+        if exceeded_limit {
+            return Err(rejection_error);
+        }
+
+        let is_opencode = provider_id == "opencode";
+        let display_name = if is_opencode {
+            crate::tools::opencode_wire_name(&call.name)
+        } else {
+            call.name.clone()
+        };
+        let mut allowed = self
+            .allowed_tool_names
+            .iter()
+            .filter(|name| !matches!(name.as_str(), "start_goal" | "stop_goal"))
+            .map(|name| {
+                if is_opencode {
+                    crate::tools::opencode_wire_name(name)
+                } else {
+                    name.clone()
+                }
+            })
+            .collect::<Vec<_>>();
+        allowed.sort();
+        allowed.dedup();
+        let message = if allowed.is_empty() {
+            format!(
+                "Tool '{display_name}' is not available in this session. Do not call tools; respond directly."
+            )
+        } else {
+            format!(
+                "Tool '{display_name}' is not available in this session. Use only the available tools: {}.",
+                allowed.join(", ")
+            )
+        };
+        let output = tool_error("tool_not_available", &message);
+        self.emit_activity(
+            storage,
+            ToolActivity::denied(call, String::new(), output.clone()),
+            request_id,
+            snapshot,
+            events,
+        )
+        .await?;
+        Ok(ToolResult {
+            call_id: call.id.clone(),
+            output,
+        })
     }
 
     async fn deny_plan_mode_tool(
@@ -834,7 +912,29 @@ impl ToolExecutor {
             user_questions,
             image_generation,
         } = context;
-        self.validate_tool_name(&call.name)?;
+        let resolved_call: std::borrow::Cow<'_, ToolCall> =
+            match self.validate_tool_name(&call.name) {
+                Ok(resolved_name) if resolved_name == call.name => std::borrow::Cow::Borrowed(call),
+                Ok(resolved_name) => std::borrow::Cow::Owned(ToolCall {
+                    id: call.id.clone(),
+                    name: resolved_name,
+                    arguments: call.arguments.clone(),
+                }),
+                Err(error) => {
+                    return self
+                        .deny_unadvertised_tool(
+                            call,
+                            error,
+                            provider_id,
+                            request_id,
+                            snapshot,
+                            events,
+                            storage,
+                        )
+                        .await;
+                }
+            };
+        let call = resolved_call.as_ref();
         if self.permission_mode == ToolPermissionMode::Plan {
             return self
                 .deny_plan_mode_tool(call, request_id, snapshot, events, storage)
@@ -2268,6 +2368,11 @@ impl ToolExecutor {
         activity
     }
 
+    #[cfg(test)]
+    pub(crate) async fn recorded_activities(&self) -> Vec<ToolActivity> {
+        self.tool_activities.lock().await.clone()
+    }
+
     async fn record_activity(&self, activity: &ToolActivity) -> Vec<ToolActivity> {
         let mut activities = self.tool_activities.lock().await;
         if let Some(existing) = activities
@@ -2824,6 +2929,14 @@ fn image_storage_cleanup_error() -> ServiceError {
 
 fn is_image_cancellation(error: &ServiceError) -> bool {
     matches!(error.code, "operation_cancelled" | "request_cancelled")
+}
+
+fn is_valid_wire_tool_name(name: &str) -> bool {
+    !name.is_empty()
+        && name.len() <= 128
+        && name
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-' | b'.'))
 }
 
 fn tool_error(code: &str, message: &str) -> Value {

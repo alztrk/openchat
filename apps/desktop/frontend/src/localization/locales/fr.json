@@ -2898,6 +2898,14 @@
   "databaseQueueTimeout": "Le délai d'attente de la file d'attente de la base de données a expiré. Réessayez.",
   "databaseQueueFull": "La file d'attente des opérations de la base de données est pleine. Réessayez.",
   "invalidProviderResponse": "Le fournisseur de modèle a renvoyé une réponse que OpenChat ne peut pas lire.",
+  "providerRequestedUnlistedTool": "Le modèle a tenté à plusieurs reprises d’utiliser un outil indisponible dans cette session.",
+  "toolErrorNotAvailable": "Cet outil n’est pas disponible dans cette session.",
+  "toolErrorPlanModeDisabled": "Les outils sont désactivés tant que le mode Plan est actif.",
+  "securityScanRequestFailed": "L’analyse de sécurité n’a pas pu être terminée.",
+  "securityScanRouteMissing": "Le fournisseur ou le modèle enregistré pour cette analyse est manquant.",
+  "securityScanNoResumableCheckpoint": "Cette analyse ne comporte aucun point de reprise.",
+  "securityScanStopFailed": "L’analyse de sécurité n’a pas pu être arrêtée.",
+  "securityScanStatusInvalid": "L’état de l’analyse de sécurité n’a pas pu être vérifié.",
   "conversationNotFound": "La conversation demandée est introuvable.",
   "messageNotFound": "Le message demandé est introuvable."
 }

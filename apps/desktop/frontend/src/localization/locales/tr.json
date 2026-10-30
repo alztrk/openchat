@@ -2898,6 +2898,14 @@
   "databaseQueueTimeout": "Veritabanı işlem kuyruğu zaman aşımına uğradı. Lütfen tekrar dene.",
   "databaseQueueFull": "Veritabanı işlem kuyruğu dolu. Lütfen tekrar dene.",
   "invalidProviderResponse": "Model sağlayıcısı okunamayan bir yanıt döndürdü.",
+  "providerRequestedUnlistedTool": "Model bu oturumda kullanılamayan bir aracı art arda çağırmayı denedi.",
+  "toolErrorNotAvailable": "Bu araç bu oturumda kullanılamıyor.",
+  "toolErrorPlanModeDisabled": "Plan modu açıkken araçlar devre dışıdır.",
+  "securityScanRequestFailed": "Güvenlik taraması tamamlanamadı.",
+  "securityScanRouteMissing": "Bu tarama için kayıtlı sağlayıcı veya model bilgisi eksik.",
+  "securityScanNoResumableCheckpoint": "Bu taramada sürdürülebilecek bir kontrol noktası yok.",
+  "securityScanStopFailed": "Güvenlik taraması durdurulamadı.",
+  "securityScanStatusInvalid": "Güvenlik taramasının durumu doğrulanamadı.",
   "conversationNotFound": "İstenen sohbet bulunamadı.",
   "messageNotFound": "İstenen mesaj bulunamadı."
 }

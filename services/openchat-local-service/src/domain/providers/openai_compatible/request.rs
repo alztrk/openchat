@@ -170,9 +170,10 @@ pub(super) fn build_provider_request(
         tools::disable_tools_for_plan_mode(&mut tools);
     }
     let mut shared_instructions = if is_security_scan {
-        crate::security_scan::provider_instructions(
+        crate::security_scan::provider_instructions_for_provider(
             workspace_roots,
             security_scan_public_web_research,
+            Some(provider_id),
         )?
     } else {
         instructions::shared_instructions(instructions::SharedInstructionInput {

@@ -27,12 +27,11 @@ export function ToolActivityResults({ activity, onOpenFile }: ToolActivityResult
   const errorMessage = translateToolError(output, t);
 
   if (activity.status === 'denied' || activity.status === 'cancelled') {
-    return (
-      <ToolResultNotice
-        message={t(activity.status === 'denied' ? 'toolDenied' : 'toolCancelled')}
-        path={requestedPath}
-      />
-    );
+    const message =
+      activity.status === 'denied' && errorMessage !== null
+        ? errorMessage
+        : t(activity.status === 'denied' ? 'toolDenied' : 'toolCancelled');
+    return <ToolResultNotice message={message} path={requestedPath} />;
   }
   if (activity.name === 'ask_user' && activity.status === 'waitingForUser') {
     return <ToolResultNotice message={t('toolQuestionReplyInPanel')} />;

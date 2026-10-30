@@ -18,6 +18,7 @@ import type { ChatProject } from '@/modules/conversations/data/chatStorage';
 import { useChatStore } from '@/modules/conversations/stores/chatStore';
 import type { ChatModel } from '@/modules/providers/data/chatModels';
 import {
+  formatSecurityScanError,
   initializeSecurityScan,
   refreshSecurityScan,
   resumeSecurityScan,
@@ -51,7 +52,7 @@ export function SecurityScanPage() {
       for (const scan of savedScans) void initializeSecurityScan(scan);
       setSelectedScanId((current) => current ?? savedScans[0]?.id ?? null);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : t('securityScansLoadFailed'));
+      setError(formatSecurityScanError(cause, t, 'securityScansLoadFailed'));
     } finally {
       setIsLoading(false);
     }
@@ -165,7 +166,7 @@ export function SecurityScanPage() {
                   setShowCreateForm(false);
                   await initializeSecurityScan(scan);
                 } catch (cause) {
-                  setError(cause instanceof Error ? cause.message : t('securityScanCreateFailed'));
+                  setError(formatSecurityScanError(cause, t, 'securityScanCreateFailed'));
                 } finally {
                   setIsCreating(false);
                 }
@@ -183,7 +184,7 @@ export function SecurityScanPage() {
               onResume={() => void resumeSecurityScan(selectedScan, runtime.goal)}
               onStop={() => void stopSecurityScan(selectedScan)}
               scan={selectedScan}
-              runtimeError={runtime.error}
+              runtimeError={formatSecurityScanError(runtime.error, t)}
             />
           ) : (
             <EmptySelection isLoading={isLoading} onCreate={() => setShowCreateForm(true)} />
@@ -430,11 +431,12 @@ function ScanDetail({ goal, isActive, messages, now, onResume, onStop, scan, run
   const completedSteps = goal?.todos.filter((todo) => todo.completed).length ?? 0;
   const totalSteps = goal?.todos.length ?? 0;
   const canStop = isActive || !['completed', 'cancelled', 'failed'].includes(status);
+  const hasFailedMessage = messages.some((message) => message.status === 'failed');
   const canResume =
     status === 'paused' ||
     status === 'interrupted' ||
     status === 'waiting_provider' ||
-    (status === 'queued' && runtimeError !== null);
+    (status === 'queued' && (runtimeError !== null || hasFailedMessage));
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">

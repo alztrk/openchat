@@ -2898,6 +2898,14 @@
   "databaseQueueTimeout": "Database operation queue wait timed out. Try again.",
   "databaseQueueFull": "Database operation queue is full. Try again.",
   "invalidProviderResponse": "The model provider returned a response OpenChat could not read.",
+  "providerRequestedUnlistedTool": "The model repeatedly tried to use a tool that is not available in this session.",
+  "toolErrorNotAvailable": "This tool is not available in this session.",
+  "toolErrorPlanModeDisabled": "Tools are disabled while Plan mode is active.",
+  "securityScanRequestFailed": "The security scan could not be completed.",
+  "securityScanRouteMissing": "The saved provider or model for this scan is missing.",
+  "securityScanNoResumableCheckpoint": "This scan has no resumable checkpoint.",
+  "securityScanStopFailed": "The security scan could not be stopped.",
+  "securityScanStatusInvalid": "The security scan status could not be verified.",
   "conversationNotFound": "The requested conversation was not found.",
   "messageNotFound": "The requested message was not found."
 }

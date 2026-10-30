@@ -2898,6 +2898,14 @@
   "databaseQueueTimeout": "Zeitüberschreitung beim Warten auf die Datenbank-Warteschlange. Versuchen Sie es erneut.",
   "databaseQueueFull": "Die Datenbank-Warteschlange ist voll. Versuchen Sie es erneut.",
   "invalidProviderResponse": "Der Modellanbieter hat eine Antwort zurückgegeben, die OpenChat nicht lesen konnte.",
+  "providerRequestedUnlistedTool": "Das Modell hat wiederholt versucht, ein in dieser Sitzung nicht verfügbares Tool zu verwenden.",
+  "toolErrorNotAvailable": "Dieses Tool ist in dieser Sitzung nicht verfügbar.",
+  "toolErrorPlanModeDisabled": "Tools sind deaktiviert, solange der Planmodus aktiv ist.",
+  "securityScanRequestFailed": "Der Sicherheitsscan konnte nicht abgeschlossen werden.",
+  "securityScanRouteMissing": "Der gespeicherte Anbieter oder das Modell für diesen Scan fehlt.",
+  "securityScanNoResumableCheckpoint": "Dieser Scan verfügt über keinen fortsetzbaren Prüfpunkt.",
+  "securityScanStopFailed": "Der Sicherheitsscan konnte nicht gestoppt werden.",
+  "securityScanStatusInvalid": "Der Status des Sicherheitsscans konnte nicht überprüft werden.",
   "conversationNotFound": "Die angeforderte Konversation wurde nicht gefunden.",
   "messageNotFound": "Die angeforderte Nachricht wurde nicht gefunden."
 }

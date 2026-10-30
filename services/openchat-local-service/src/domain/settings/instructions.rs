@@ -174,7 +174,11 @@ pub fn shared_instructions(input: SharedInstructionInput<'_>) -> String {
         instructions.push_str("\n\nTool permission mode: Plan. Do not call tools or access external data. Use only the conversation and general knowledge to propose an actionable plan. Present it for the user's review and wait for explicit approval before taking action. No tools are available, and the service rejects every tool call.");
     } else if tools_available {
         instructions.push_str("\n\n");
-        instructions.push_str(TOOL_INSTRUCTIONS);
+        if provider_id == "opencode" {
+            instructions.push_str(&TOOL_INSTRUCTIONS.replace("- `execute_command`:", "- `bash`:"));
+        } else {
+            instructions.push_str(TOOL_INSTRUCTIONS);
+        }
         instructions.push_str("\n\n");
         let mode_instructions = match permission_mode {
             ToolPermissionMode::Plan => None,

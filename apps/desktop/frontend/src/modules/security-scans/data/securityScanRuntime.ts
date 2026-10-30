@@ -1,7 +1,12 @@
+import type { TFunction } from 'i18next';
 import { useSyncExternalStore } from 'react';
 
 import { type ChatGoal, parseChatGoal } from '@/modules/conversations/data/chatGoals';
 import { type ChatMessage, getMessages, saveMessage } from '@/modules/conversations/data/chatStorage';
+import {
+  formatUnknownServiceError,
+  resolveServiceFailureCode,
+} from '@/modules/conversations/stores/chatStoreErrorDetails';
 import { applyStreamEvent, upsertMessage } from '@/modules/conversations/stores/chatStoreUtils';
 import { LocalServiceError, localServiceClient, type ServiceOperation } from '@/platform/local-service';
 import { retryDelayFromProviderDetails } from './securityScanRetry';
@@ -13,11 +18,42 @@ import {
   securityScanObjective,
 } from './securityScans';
 
+export type SecurityScanErrorKey =
+  | 'securityScanRequestFailed'
+  | 'securityScanRouteMissing'
+  | 'securityScanNoResumableCheckpoint'
+  | 'securityScanStopFailed'
+  | 'securityScanStatusInvalid'
+  | 'securityScansLoadFailed'
+  | 'securityScanCreateFailed';
+
+export class SecurityScanUiError extends Error {
+  readonly translationKey: SecurityScanErrorKey;
+
+  constructor(translationKey: SecurityScanErrorKey) {
+    super(translationKey);
+    this.name = 'SecurityScanUiError';
+    this.translationKey = translationKey;
+  }
+}
+
+export function formatSecurityScanError(
+  error: unknown,
+  t: TFunction,
+  fallbackKey: SecurityScanErrorKey = 'securityScanRequestFailed',
+): string | null {
+  if (error === null || error === undefined) return null;
+  if (error instanceof SecurityScanUiError) {
+    return t(error.translationKey);
+  }
+  return formatUnknownServiceError(error, t, fallbackKey);
+}
+
 export interface SecurityScanRuntimeSnapshot {
   messages: ChatMessage[];
   goal: ChatGoal | null;
   isActive: boolean;
-  error: string | null;
+  error: unknown;
 }
 
 const emptySnapshot: SecurityScanRuntimeSnapshot = {
@@ -64,8 +100,10 @@ async function reconcileActiveSecurityScan(scan: SecurityScan): Promise<void> {
   if (!existing) {
     await initializeSecurityScan(scan);
     const initializedSnapshot = snapshots.get(scan.id);
-    if (!initializedSnapshot || initializedSnapshot.error) {
-      throw new Error(initializedSnapshot?.error ?? 'The security scan could not be initialized.');
+    if (!initializedSnapshot || initializedSnapshot.error !== null) {
+      throw initializedSnapshot?.error instanceof Error
+        ? initializedSnapshot.error
+        : new SecurityScanUiError('securityScanRequestFailed');
     }
     return;
   }
@@ -88,7 +126,7 @@ async function reconcileActiveSecurityScan(scan: SecurityScan): Promise<void> {
       void startSecurityScan(scan);
     }
   } catch (error) {
-    update(scan.id, { error: errorMessage(error) });
+    update(scan.id, { error });
     throw error;
   }
 }
@@ -116,7 +154,7 @@ export async function initializeSecurityScan(scan: SecurityScan): Promise<void> 
     }
   } catch (error) {
     initialized.delete(scan.id);
-    update(scan.id, { error: errorMessage(error) });
+    update(scan.id, { error });
   }
 }
 
@@ -135,14 +173,14 @@ export async function resumeSecurityScan(scan: SecurityScan, goal?: ChatGoal | n
       return;
     }
     if (!activeGoal || !['paused', 'interrupted'].includes(activeGoal.status)) {
-      update(scan.id, { error: 'This scan has no resumable checkpoint.' });
+      update(scan.id, { error: new SecurityScanUiError('securityScanNoResumableCheckpoint') });
       return;
     }
     clearRetryTimer(scan.id);
     update(scan.id, { goal: activeGoal, error: null });
     await startOperation(scan, activeGoal.runId);
   } catch (error) {
-    update(scan.id, { error: errorMessage(error) });
+    update(scan.id, { error });
   }
 }
 
@@ -163,7 +201,7 @@ export async function stopSecurityScan(scan: SecurityScan): Promise<void> {
     if (operation) {
       const cancellationAccepted = await operation.cancel();
       if (!cancellationAccepted) {
-        throw new Error('The active security scan did not accept the stop request.');
+        throw new SecurityScanUiError('securityScanStopFailed');
       }
     } else if (goal) {
       const response = await localServiceClient.call('chat.goal.stop', {
@@ -171,14 +209,14 @@ export async function stopSecurityScan(scan: SecurityScan): Promise<void> {
         runId: goal.runId,
       });
       const stoppedGoal = parseChatGoal(response);
-      if (!stoppedGoal) throw new Error('The security scan plan could not be stopped.');
+      if (!stoppedGoal) throw new SecurityScanUiError('securityScanStopFailed');
       update(scan.id, { goal: stoppedGoal });
     }
     await cancelSecurityScan(scan.id);
     update(scan.id, { isActive: operations.has(scan.id) || inFlight.has(scan.id), error: null });
     await refreshMessages(scan);
   } catch (error) {
-    update(scan.id, { error: errorMessage(error) });
+    update(scan.id, { error });
   }
 }
 
@@ -192,14 +230,14 @@ export async function refreshSecurityScan(scan: SecurityScan): Promise<void> {
       scheduleQuotaResume(scan, goal);
     }
   } catch (error) {
-    update(scan.id, { error: errorMessage(error) });
+    update(scan.id, { error });
   }
 }
 
 async function startOperation(scan: SecurityScan, resumeRunId: string | null): Promise<void> {
   if (operations.has(scan.id) || inFlight.has(scan.id)) return;
   if (!scan.providerId || !scan.modelId) {
-    update(scan.id, { error: 'The saved provider route is missing.' });
+    update(scan.id, { error: new SecurityScanUiError('securityScanRouteMissing') });
     return;
   }
   inFlight.add(scan.id);
@@ -246,11 +284,11 @@ async function startOperation(scan: SecurityScan, resumeRunId: string | null): P
           try {
             const goal = parseChatGoal(event.data);
             if (!goal || goal.conversationId !== scan.conversationId) {
-              throw new Error('The security scan plan is invalid.');
+              throw new SecurityScanUiError('securityScanStatusInvalid');
             }
             update(scan.id, { goal });
           } catch (error) {
-            update(scan.id, { error: errorMessage(error) });
+            update(scan.id, { error });
           }
         }
         const message = applyStreamEvent(event, assistantMessage, {
@@ -302,9 +340,10 @@ async function startOperation(scan: SecurityScan, resumeRunId: string | null): P
       scheduleQuotaResume(scan, goal);
     }
   } catch (error) {
+    const failureCode = resolveServiceFailureCode(error, 'security_scan_request_failed');
     const failedMessage = latestAssistantMessage();
     if (failedMessage) {
-      assistantMessage = { ...failedMessage, status: 'failed', failureCode: 'security_scan_request_failed' };
+      assistantMessage = { ...failedMessage, status: 'failed', failureCode };
       update(scan.id, { messages: upsertMessage(snapshots.get(scan.id)?.messages ?? [], assistantMessage) });
       enqueueSave(assistantMessage);
     }
@@ -316,7 +355,7 @@ async function startOperation(scan: SecurityScan, resumeRunId: string | null): P
     } catch (persistenceFailure) {
       globalThis.reportError(new Error('A security scan message could not be saved.', { cause: persistenceFailure }));
     }
-    update(scan.id, { isActive: false, error: errorMessage(error) });
+    update(scan.id, { isActive: false, error: failedMessage ? null : error });
     try {
       const goal = await readActiveGoal(scan.conversationId);
       update(scan.id, { goal });
@@ -370,11 +409,11 @@ function scheduleQuotaResume(scan: SecurityScan, goal: ChatGoal, authoritativeDe
       );
       retryTimers.set(scan.id, timer);
     })
-    .catch((error: unknown) => update(scan.id, { error: errorMessage(error) }));
+    .catch((error: unknown) => update(scan.id, { error }));
 }
 
 async function saveInitialMessage(scan: SecurityScan): Promise<void> {
-  if (!scan.providerId || !scan.modelId) throw new Error('The saved provider route is missing.');
+  if (!scan.providerId || !scan.modelId) throw new SecurityScanUiError('securityScanRouteMissing');
   const message: ChatMessage = {
     id: crypto.randomUUID().replaceAll('-', ''),
     conversationId: scan.conversationId,
@@ -406,9 +445,9 @@ async function refreshMessages(scan: SecurityScan): Promise<void> {
 
 async function readActiveGoal(conversationId: string): Promise<ChatGoal | null> {
   const response = await localServiceClient.call('chat.goal.active', { conversationId });
-  if (!('goal' in response)) throw new Error('The security scan status is invalid.');
+  if (!('goal' in response)) throw new SecurityScanUiError('securityScanStatusInvalid');
   const goal = parseChatGoal(response.goal);
-  if (goal && goal.conversationId !== conversationId) throw new Error('The security scan status is invalid.');
+  if (goal && goal.conversationId !== conversationId) throw new SecurityScanUiError('securityScanStatusInvalid');
   return goal;
 }
 
@@ -437,8 +476,4 @@ async function waitForPersistence(
 
 function numberOrNull(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : 'The security scan could not be completed.';
 }

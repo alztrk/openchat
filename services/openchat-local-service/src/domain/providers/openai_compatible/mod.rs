@@ -722,6 +722,7 @@ pub(super) fn ensure_opencode_free_read_tool(body: &mut Value) {
         Some(tools) => {
             let has_read = tools.iter().any(|tool| {
                 tool.pointer("/function/name")
+                    .or_else(|| tool.get("name"))
                     .and_then(Value::as_str)
                     .is_some_and(|name| name == "read")
             });
