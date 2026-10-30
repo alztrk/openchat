@@ -205,6 +205,10 @@ mod tests {
             "http://2130706433:8080/v1",
             "http://0x7f000001:8080/v1",
             "http://0177.0.0.1:8080/v1",
+            "http://0.0.0.0:8080/v1",
+            "http://192.168.1.12:8080/v1",
+            "http://100.71.24.117:30000/v1",
+            "http://8.8.8.8:8080/v1",
         ] {
             let local = serde_json::json!({
                 "id": provider_id,
@@ -215,16 +219,14 @@ mod tests {
             });
             assert!(
                 super::CustomProviderConfig::from_value(&local).is_ok(),
-                "loopback provider {base_url} should remain supported"
+                "IP or loopback provider {base_url} should remain supported"
             );
         }
 
         for base_url in [
             "http://provider.example/v1",
-            "http://192.168.1.12:8080/v1",
             "http://127.0.0.1.provider.example/v1",
             "http://localhost./v1",
-            "http://0.0.0.0:8080/v1",
             "http://[::]:8080/v1",
             "http://[::ffff:127.0.0.1]:8080/v1",
         ] {
@@ -237,9 +239,9 @@ mod tests {
             });
             assert_eq!(
                 super::CustomProviderConfig::from_value(&remote)
-                    .expect_err("non-loopback HTTP must fail before any provider request")
+                    .expect_err("domain-based HTTP must fail before any provider request")
                     .code,
-                "custom_provider_http_loopback_required",
+                "custom_provider_http_ip_or_loopback_required",
                 "unexpected error for {base_url}"
             );
         }

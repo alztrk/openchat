@@ -135,8 +135,8 @@ impl CustomProviderConfig {
             .ok_or_else(invalid)?;
         let url = url::Url::parse(base_url).map_err(|_| invalid())?;
         let uses_http = url.scheme() == "http";
-        if uses_http && !http_endpoint_uses_loopback(&url) {
-            return Err(insecure_http_loopback_required());
+        if uses_http && !http_endpoint_uses_ip_or_loopback(&url) {
+            return Err(insecure_http_ip_or_loopback_required());
         }
         let allow_insecure_http = match value.get("allowInsecureHttp") {
             Some(Value::Bool(allowed)) => *allowed,
@@ -243,24 +243,24 @@ fn insecure_http_approval_required() -> ServiceError {
     )
 }
 
-/// Allows cleartext provider traffic only when it remains on the local machine.
-fn http_endpoint_uses_loopback(url: &url::Url) -> bool {
+/// Allows cleartext provider traffic for localhost and literal IP addresses.
+fn http_endpoint_uses_ip_or_loopback(url: &url::Url) -> bool {
     if url.scheme() != "http" {
         return false;
     }
     match url.host() {
-        Some(url::Host::Ipv4(address)) => address.is_loopback(),
+        Some(url::Host::Ipv4(_)) => true,
         Some(url::Host::Ipv6(address)) => address.is_loopback(),
         Some(url::Host::Domain(host)) => host.eq_ignore_ascii_case("localhost"),
         None => false,
     }
 }
 
-/// Returns the settings action required before using HTTP outside the local machine.
-fn insecure_http_loopback_required() -> ServiceError {
+/// Returns the settings action required before using HTTP for a domain-based host.
+fn insecure_http_ip_or_loopback_required() -> ServiceError {
     ServiceError::new(
-        "custom_provider_http_loopback_required",
-        "Use HTTPS for remote providers. Unencrypted HTTP is available only for localhost or loopback IP addresses.",
+        "custom_provider_http_ip_or_loopback_required",
+        "Use HTTPS for domain-based providers. Unencrypted HTTP is available for localhost and IP addresses.",
         false,
     )
 }

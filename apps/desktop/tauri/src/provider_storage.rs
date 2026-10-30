@@ -80,10 +80,10 @@ impl ProviderStorageError {
         }
     }
 
-    fn http_loopback_required() -> Self {
+    fn http_ip_or_loopback_required() -> Self {
         Self {
-            code: "custom_provider_http_loopback_required",
-            message: "Use HTTPS for remote providers. Unencrypted HTTP is available only for localhost or loopback IP addresses.",
+            code: "custom_provider_http_ip_or_loopback_required",
+            message: "Use HTTPS for domain-based providers. Unencrypted HTTP is available for localhost and IP addresses.",
         }
     }
 
@@ -666,8 +666,8 @@ fn validated_custom_provider(
         enable_thinking,
     )?;
     if config.base_url.starts_with("http://") {
-        if !http_endpoint_uses_loopback(&config.base_url) {
-            return Err(ProviderStorageError::http_loopback_required());
+        if !http_endpoint_uses_ip_or_loopback(&config.base_url) {
+            return Err(ProviderStorageError::http_ip_or_loopback_required());
         }
         if config.allow_insecure_http != Some(true) {
             return Err(ProviderStorageError::http_approval_required());
@@ -751,7 +751,7 @@ fn validated_stored_custom_provider(
         return Err(ProviderStorageError::invalid());
     }
     let http_is_approved = validated.base_url.starts_with("http://")
-        && http_endpoint_uses_loopback(&validated.base_url)
+        && http_endpoint_uses_ip_or_loopback(&validated.base_url)
         && validated.allow_insecure_http == Some(true)
         && native_http_confirmed;
     if validated.base_url.starts_with("http://") && !http_is_approved {
@@ -761,8 +761,8 @@ fn validated_stored_custom_provider(
     Ok(validated)
 }
 
-/// Returns true for localhost and literal IPv4 or IPv6 loopback endpoints.
-fn http_endpoint_uses_loopback(value: &str) -> bool {
+/// Returns true for localhost and literal IP endpoints (any IPv4, loopback IPv6).
+fn http_endpoint_uses_ip_or_loopback(value: &str) -> bool {
     let Ok(url) = url::Url::parse(value) else {
         return false;
     };
@@ -770,7 +770,7 @@ fn http_endpoint_uses_loopback(value: &str) -> bool {
         return false;
     }
     match url.host() {
-        Some(url::Host::Ipv4(address)) => address.is_loopback(),
+        Some(url::Host::Ipv4(_)) => true,
         Some(url::Host::Ipv6(address)) => address.is_loopback(),
         Some(url::Host::Domain(host)) => host.eq_ignore_ascii_case("localhost"),
         None => false,
@@ -1097,12 +1097,12 @@ mod tests {
     }
 
     #[test]
-    fn non_loopback_http_provider_is_rejected_and_existing_settings_remain_editable() {
+    fn domain_http_provider_is_rejected_and_existing_settings_remain_editable() {
         for base_url in [
             "http://provider.example/v1",
-            "http://192.168.1.12:8080/v1",
             "http://127.0.0.1.provider.example/v1",
-            "http://0.0.0.0:8080/v1",
+            "http://localhost./v1",
+            "http://[::]:8080/v1",
             "http://[::ffff:127.0.0.1]:8080/v1",
         ] {
             let error = super::validated_custom_provider(
@@ -1114,8 +1114,8 @@ mod tests {
                 None,
                 false,
             )
-            .expect_err("non-loopback HTTP must be rejected before confirmation");
-            assert_eq!(error.code, "custom_provider_http_loopback_required");
+            .expect_err("domain-based HTTP must be rejected before confirmation");
+            assert_eq!(error.code, "custom_provider_http_ip_or_loopback_required");
         }
 
         for base_url in [
@@ -1124,6 +1124,9 @@ mod tests {
             "http://127.1:8080/v1",
             "http://0177.0.0.1:8080/v1",
             "http://[::1]:8080/v1",
+            "http://0.0.0.0:8080/v1",
+            "http://192.168.1.12:8080/v1",
+            "http://100.71.24.117:30000/v1",
         ] {
             assert!(
                 super::validated_custom_provider(
@@ -1136,7 +1139,7 @@ mod tests {
                     false,
                 )
                 .is_ok(),
-                "loopback provider {base_url} should remain supported"
+                "IP or loopback provider {base_url} should remain supported"
             );
         }
 

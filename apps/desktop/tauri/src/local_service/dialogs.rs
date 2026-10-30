@@ -157,15 +157,27 @@ mod tests {
 
     #[test]
     fn every_supported_locale_has_host_owned_permission_and_http_copy() {
-        for (locale, local_process_phrase) in [
-            (NativeDialogLocale::De, "anderen Prozessen auf diesem Gerät"),
-            (NativeDialogLocale::En, "other processes on this device"),
-            (NativeDialogLocale::Es, "otros procesos en este dispositivo"),
+        for (locale, network_phrase) in [
+            (
+                NativeDialogLocale::De,
+                "anderen Geräten oder Prozessen im Netzwerk",
+            ),
+            (
+                NativeDialogLocale::En,
+                "other devices or processes on the network",
+            ),
+            (
+                NativeDialogLocale::Es,
+                "otros dispositivos o procesos de la red",
+            ),
             (
                 NativeDialogLocale::Fr,
-                "d’autres processus sur cet appareil",
+                "d’autres appareils ou processus du réseau",
             ),
-            (NativeDialogLocale::Tr, "bu cihazdaki diğer süreçler"),
+            (
+                NativeDialogLocale::Tr,
+                "ağdaki diğer cihazlar veya süreçler",
+            ),
         ] {
             let copy = PermissionDialogCopy::for_locale(locale)
                 .expect("permission translations should be present");
@@ -189,8 +201,8 @@ mod tests {
                     .message(key)
                     .expect("HTTP warning translations should be present");
                 assert!(
-                    message.contains(local_process_phrase),
-                    "{key} should disclose same-device process visibility"
+                    message.contains(network_phrase),
+                    "{key} should disclose network-level visibility"
                 );
             }
         }

@@ -56,7 +56,7 @@ export function CustomProviderDialog({
   const [errorKey, setErrorKey] = useState<
     | 'customProviderInvalid'
     | 'customProviderUrlInvalid'
-    | 'customProviderHttpLoopbackRequired'
+    | 'customProviderHttpIpOrLoopbackRequired'
     | 'customProviderHttpApprovalRequired'
     | 'customProviderReasoningLevelRequired'
     | 'apiKeyInvalidFormat'
@@ -94,8 +94,8 @@ export function CustomProviderDialog({
       setErrorKey('customProviderUrlInvalid');
       return;
     }
-    if (isHttpUrl(normalizedUrl) && !isLoopbackHttpUrl(normalizedUrl)) {
-      setErrorKey('customProviderHttpLoopbackRequired');
+    if (isHttpUrl(normalizedUrl) && !isIpOrLoopbackHttpUrl(normalizedUrl)) {
+      setErrorKey('customProviderHttpIpOrLoopbackRequired');
       return;
     }
     if (isHttpUrl(normalizedUrl) && !allowInsecureHttp) {
@@ -304,18 +304,19 @@ function isHttpUrl(value: string): boolean {
   }
 }
 
-/** Restricts unencrypted HTTP providers to endpoints on this device. */
-function isLoopbackHttpUrl(value: string): boolean {
+/** Restricts unencrypted HTTP providers to loopback endpoints and direct IP addresses. */
+function isIpOrLoopbackHttpUrl(value: string): boolean {
   try {
     const hostname = new URL(value.trim()).hostname.toLowerCase();
-    return (
-      hostname === 'localhost' ||
-      hostname === '[::1]' ||
-      /^127(?:\.(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$/.test(hostname)
-    );
+    return hostname === 'localhost' || hostname === '[::1]' || isIpv4Literal(hostname);
   } catch {
     return false;
   }
+}
+
+/** Matches a normalized dotted-decimal IPv4 address literal. */
+function isIpv4Literal(hostname: string): boolean {
+  return /^(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(?:\.(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$/.test(hostname);
 }
 
 /** Creates a provider identifier using the platform cryptographic UUID source. */

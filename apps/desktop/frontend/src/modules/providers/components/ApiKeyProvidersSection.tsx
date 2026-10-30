@@ -387,8 +387,8 @@ export function ApiKeyProvidersSection({
         t(
           code === 'custom_provider_key_required_for_endpoint_change'
             ? 'customProviderKeyRequiredForEndpointChange'
-            : code === 'custom_provider_http_loopback_required'
-              ? 'customProviderHttpLoopbackRequired'
+            : code === 'custom_provider_http_ip_or_loopback_required'
+              ? 'customProviderHttpIpOrLoopbackRequired'
               : code === 'custom_provider_http_approval_required'
                 ? 'customProviderHttpApprovalRequired'
                 : code === 'custom_provider_http_approval_denied'
