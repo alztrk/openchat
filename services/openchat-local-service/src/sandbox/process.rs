@@ -715,29 +715,33 @@ fn shell_invocation_with_state(
     working_directory: &Path,
     state_file: Option<&Path>,
 ) -> (PathBuf, Vec<std::ffi::OsString>) {
-    let pwsh = Path::new(r"C:\Program Files\PowerShell\7\pwsh.exe");
-    if pwsh.exists() {
-        return (
-            pwsh.to_path_buf(),
-            vec![
-                "-NoProfile".into(),
-                "-NonInteractive".into(),
-                "-Command".into(),
-                powershell_command_with_state(command, working_directory, state_file).into(),
-            ],
-        );
+    // Try to locate pwsh dynamically (supports non-default installs, Scoop, winget, etc.)
+    if let Some(pwsh) = find_shell_binary("pwsh") {
+        if pwsh.exists() {
+            return (
+                pwsh,
+                vec![
+                    "-NoProfile".into(),
+                    "-NonInteractive".into(),
+                    "-Command".into(),
+                    powershell_command_with_state(command, working_directory, state_file).into(),
+                ],
+            );
+        }
     }
-    let powershell = Path::new(r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe");
-    if powershell.exists() {
-        return (
-            powershell.to_path_buf(),
-            vec![
-                "-NoProfile".into(),
-                "-NonInteractive".into(),
-                "-Command".into(),
-                powershell_command_with_state(command, working_directory, state_file).into(),
-            ],
-        );
+    // Fallback: try PowerShell 5.x
+    if let Some(powershell) = find_shell_binary("powershell") {
+        if powershell.exists() {
+            return (
+                powershell,
+                vec![
+                    "-NoProfile".into(),
+                    "-NonInteractive".into(),
+                    "-Command".into(),
+                    powershell_command_with_state(command, working_directory, state_file).into(),
+                ],
+            );
+        }
     }
     // The cmd.exe fallback cannot report its final directory without changing command semantics.
     let command = format!(
@@ -745,9 +749,37 @@ fn shell_invocation_with_state(
         quote_windows_argument(working_directory.as_os_str())
     );
     (
-        PathBuf::from(r"C:\Windows\System32\cmd.exe"),
+        PathBuf::from("cmd.exe"),
         vec!["/D".into(), "/S".into(), "/C".into(), command.into()],
     )
+}
+
+/// Locates a shell binary by PATH search, falling back to Windows system paths.
+fn find_shell_binary(name: &str) -> Option<PathBuf> {
+    // Try PATH first (supports Scoop, winget, custom installs)
+    which::which(name).ok()
+        .or_else(|| {
+            // Fallback: known Windows system locations
+            let sysroot = std::env::var("SystemRoot").ok()?;
+            if name == "cmd.exe" || name == "powershell.exe" {
+                Some(PathBuf::from(sysroot).join("System32").join(name))
+            } else {
+                // PowerShell 7+ default location
+                let program_files = std::env::var("ProgramFiles").unwrap_or_else(|_| "C:\\Program Files".to_string());
+                let ps7_path = PathBuf::from(&program_files).join("PowerShell\\7").join(name);
+                if ps7_path.exists() {
+                    Some(ps7_path)
+                } else {
+                    // Older PowerShell Core (v6)
+                    let ps6_path = PathBuf::from(&program_files).join("PowerShell\\6").join(name);
+                    if ps6_path.exists() {
+                        Some(ps6_path)
+                    } else {
+                        None
+                    }
+                }
+            }
+        })
 }
 
 /// Wraps a command so PowerShell starts in the requested directory and preserves its exit code.

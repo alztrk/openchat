@@ -14,6 +14,14 @@ use tauri::{
 
 const WINDOW_STATE_FILE_NAME: &str = "window-state.json";
 
+// Default window dimensions
+const DEFAULT_WINDOW_WIDTH: u64 = 1200;
+const DEFAULT_WINDOW_HEIGHT: u64 = 800;
+const DEFAULT_WINDOW_X: i32 = 100;
+const DEFAULT_WINDOW_Y: i32 = 100;
+const MIN_WINDOW_WIDTH: u64 = 400;
+const MIN_WINDOW_HEIGHT: u64 = 300;
+
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
 /// Persisted window geometry and state.
 pub struct WindowStateRecord {
@@ -32,10 +40,10 @@ pub struct WindowStateRecord {
 impl Default for WindowStateRecord {
     fn default() -> Self {
         Self {
-            width: 1200,
-            height: 800,
-            x: 100,
-            y: 100,
+            width: DEFAULT_WINDOW_WIDTH,
+            height: DEFAULT_WINDOW_HEIGHT,
+            x: DEFAULT_WINDOW_X,
+            y: DEFAULT_WINDOW_Y,
             maximized: false,
         }
     }
@@ -47,7 +55,7 @@ pub fn restore_window_state(window: &WebviewWindow) {
         if state.maximized {
             let _ = window.maximize();
         } else {
-            if state.width >= 400 && state.height >= 300 {
+            if state.width >= MIN_WINDOW_WIDTH && state.height >= MIN_WINDOW_HEIGHT {
                 let _ = window.set_size(Size::Physical(PhysicalSize {
                     width: state.width,
                     height: state.height,
@@ -78,7 +86,7 @@ pub fn save_window_state(window: &Window) {
 
     if !is_maximized {
         if let Ok(size) = window.outer_size() {
-            if size.width >= 400 && size.height >= 300 {
+            if size.width >= MIN_WINDOW_WIDTH && size.height >= MIN_WINDOW_HEIGHT {
                 state.width = size.width;
                 state.height = size.height;
             }

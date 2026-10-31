@@ -100,13 +100,9 @@ pub(crate) fn git_program() -> &'static str {
         use std::sync::OnceLock;
         static GIT_PATH: OnceLock<&'static str> = OnceLock::new();
         GIT_PATH.get_or_init(|| {
-            if std::path::Path::new(r"C:\Program Files\Git\cmd\git.exe").is_file() {
-                r"C:\Program Files\Git\cmd\git.exe"
-            } else if std::path::Path::new(r"C:\Program Files\Git\bin\git.exe").is_file() {
-                r"C:\Program Files\Git\bin\git.exe"
-            } else {
-                "git"
-            }
+            // Prefer plain "git" on PATH (supports Scoop, winget, custom installs)
+            // Windows resolves "git" via PATH automatically
+            "git"
         })
     }
     #[cfg(not(windows))]
