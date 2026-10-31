@@ -33,54 +33,56 @@ function registerTool(name, description, runner) {
 // Tool Benchmarks
 // ============================================================
 
-// 1. hashline — Resilient file edit benchmark
+// 1. hashline — 4-stage resilient edit pipeline benchmark
+// NOTE: hashline is NOT a standalone tool — it's the anchor format used
+// inside edit_file's apply_resilient_edit() pipeline. This benchmark
+// measures the multi-stage resolution cost (exact → normalized → hashline → drift).
 registerTool(
   'hashline',
-  'Multi-stage file edit (exact/normalized/hashline/drift)',
+  'Multi-stage edit resolution pipeline (exact/normalized/hashline/drift)',
   async () => {
-    const input = `import { Component, Effect, JSX } from "solid-js";
-import { createStore } from "solid-js/store";
+    // Simulate the 4-stage resolution pipeline from Rust's apply_resilient_edit()
+    const content = `fn main() {
+    let x = 10;
+    let y = 20;
+    println!("Hello, world!");
+    let result = x + y;
+    println!("Result: {}", result);
+}
 
-type State = {
-  counter: number;
-  message: string;
-};
-
-const [state, setState] = createStore<State>({
-  counter: 0,
-  message: "Hello, World!",
-});
-
-export default function App() {
-  return (
-    <div>
-      <h1>{state.message}</h1>
-      <p>Counter: {state.counter}</p>
-      <button onClick={() => setState("counter", c => c + 1)}>
-        Increment
-      </button>
-    </div>
-  );
+fn add(a: i32, b: i32) -> i32 {
+    a + b
 }
 `;
 
-    const oldString = `  <button onClick={() => setState("counter", c => c + 1)}>
-        Increment
-      </button>`;
+    const oldString = `    println!("Hello, world!");
+    let result = x + y;`;
 
-    const newString = `  <button onClick={() => setState("counter", c => c + 1)}>
-        Add One
-      </button>`;
+    const newString = `    println!("Starting calculation...");
+    let x_plus_y = x + y;
+    println!("Result: {}", x_plus_y);`;
 
-    // Simulate hashline resolution (actual Rust call would be via FFI)
     const start = performance.now();
 
-    // Parse hashline tags for old and new strings
-    const oldLines = oldString.split('\n');
+    // Stage 1: Exact substring match
+    const stage1_start = performance.now();
+    const hasExact = content.includes(oldString);
+    const stage1_time = performance.now() - stage1_start;
+
+    // Stage 2: Normalized whitespace match (CRLF↔LF, trailing spaces)
+    const stage2_start = performance.now();
+    const normalizedContent = content.replace(/\r\n/g, '\n').trimEnd();
+    const normalizedOld = oldString.replace(/\r\n/g, '\n').trimEnd();
+    const hasNormalized = normalizedContent.includes(normalizedOld);
+    const stage2_time = performance.now() - stage2_start;
+
+    // Stage 3: Hashline anchor resolution (computes line hashes)
+    const stage3_start = performance.now();
+    const lines = content.split('\n');
     let hashline = '';
-    for (const line of oldLines) {
+    for (const line of lines) {
       const trimmed = line.trim();
-      if (trimmed) {
+      if (trimmed.includes('println')) {
         let hash = 0x811c9dc5;
         for (let i = 0; i < trimmed.length; i++) {
           hash ^= trimmed.charCodeAt(i);
@@ -91,20 +93,31 @@ export default function App() {
         break;
       }
     }
+    const stage3_time = performance.now() - stage3_start;
 
-    // Simulate the 4-stage resolution
-    const stage = hashline ? 'hashline_anchor' : 'exact';
+    // Determine which stage would resolve it
+    let resolvingStage = 'exact';
+    let resolved = hasExact;
+    if (!resolved && hasNormalized) {
+      resolvingStage = 'normalized_whitespace';
+      resolved = true;
+    }
 
     const duration = performance.now() - start;
 
     return {
       durationMs: duration,
-      success: true,
+      success: resolved,
       tokens: {
-        input: estimateTokens(input),
-        output: estimateTokens(input.replace(oldString, newString)),
+        input: estimateTokens(content) + estimateTokens(oldString),
+        output: estimateTokens(content.replace(oldString, newString)),
       },
-      notes: `Resolved via ${stage} stage (hash: ${hashline})`,
+      notes: [
+        `Stage 1 (exact): ${stage1_time.toFixed(2)}ms ${hasExact ? '✓' : '✗'}`,
+        `Stage 2 (normalized): ${stage2_time.toFixed(2)}ms ${hasNormalized ? '✓' : '✗'}`,
+        `Stage 3 (hashline): ${stage3_time.toFixed(2)}ms hash=${hashline}`,
+        `Resolves via: ${resolvingStage}`,
+      ].join(' | '),
     };
   }
 );
@@ -187,10 +200,12 @@ registerTool(
   }
 );
 
-// 3. write_file — File write benchmark
+// 5. write_file — File write benchmark (creates/overwrites entire file)
+// NOTE: write_file replaces the ENTIRE file content, unlike hashline
+// which only replaces a small substring within a file.
 registerTool(
   'write_file',
-  'Create or overwrite a file',
+  'Create or overwrite entire file content',
   async () => {
     const content = [
       '// Auto-generated test file',
@@ -212,7 +227,7 @@ registerTool(
 
     const start = performance.now();
 
-    // Simulate file write (write to temp file)
+    // Create temp file and write entire content (write_file = full overwrite)
     const { writeFileSync } = await import('node:fs');
     const { tmpdir } = await import('node:os');
     const { join } = await import('node:path');
@@ -232,7 +247,7 @@ registerTool(
         input: estimateTokens(content),
         output: 0,
       },
-      notes: `Wrote ${content.length} bytes to temp file`,
+      notes: `Wrote ${content.length} bytes (full file overwrite)`,
     };
   }
 );
@@ -271,78 +286,26 @@ registerTool(
   }
 );
 
-// 5. edit_file — File edit benchmark (multi-stage)
-registerTool(
-  'edit_file',
-  'Multi-stage text replacement with conflict detection',
-  async () => {
-    const content = `fn main() {
-    let x = 10;
-    let y = 20;
-    println!("Hello, world!");
-    let result = x + y;
-    println!("Result: {}", result);
-}
-
-fn add(a: i32, b: i32) -> i32 {
-    a + b
-}
-`;
-
-    const oldString = `    println!("Hello, world!");
-    let result = x + y;`;
-
-    const newString = `    println!("Starting calculation...");
-    let x_plus_y = x + y;
-    println!("Result: {}", x_plus_y);`;
-
-    const start = performance.now();
-
-    // Simulate 4-stage resolution
-    // Stage 1: Exact match check
-    const hasExact = content.includes(oldString);
-
-    // Stage 2: Whitespace normalized
-    const normalizedContent = content.replace(/\r\n/g, '\n').trimEnd();
-    const normalizedOld = oldString.replace(/\r\n/g, '\n').trimEnd();
-    const hasNormalized = normalizedContent.includes(normalizedOld);
-
-    const duration = performance.now() - start;
-
-    let stage = 'not_found';
-    if (hasExact) stage = 'exact';
-    else if (hasNormalized) stage = 'normalized_whitespace';
-
-    return {
-      durationMs: duration,
-      success: hasExact || hasNormalized,
-      tokens: {
-        input: estimateTokens(content) + estimateTokens(oldString),
-        output: estimateTokens(content.replace(oldString, newString)),
-      },
-      notes: `Stage: ${stage} (exact=${hasExact}, normalized=${hasNormalized})`,
-    };
-  }
-);
-
-// 6. list_files — Directory listing benchmark
+// 2. list_files — Directory listing benchmark
 registerTool(
   'list_files',
-  'List directory contents with filters',
+  'List directory contents with metadata',
   async () => {
-    const { readdirSync } = await import('node:fs');
+    const { readdirSync, statSync } = await import('node:fs');
     const { join } = await import('node:path');
 
     const start = performance.now();
 
-    // List scripts/benchmark directory
-    const benchmarkDir = join(__dirname, 'tools');
-    let entries = [];
-    try {
-      entries = readdirSync(benchmarkDir, { withFileTypes: true });
-    } catch {
-      // Directory may not exist yet
-    }
+    // List the scripts/benchmark directory (has real files now)
+    const benchmarkDir = join(__dirname);
+    const entries = readdirSync(benchmarkDir, { withFileTypes: true })
+      .filter(dirent => dirent.name !== 'node_modules')
+      .map(dirent => ({
+        name: dirent.name,
+        isFile: dirent.isFile(),
+        isDirectory: dirent.isDirectory(),
+        size: dirent.isDirectory() ? null : statSync(join(benchmarkDir, dirent.name)).size,
+      }));
 
     const duration = performance.now() - start;
 
@@ -353,7 +316,7 @@ registerTool(
         input: 0,
         output: estimateTokens(JSON.stringify(entries)),
       },
-      notes: `Listed ${entries.length} entries`,
+      notes: `Listed ${entries.length} entries in scripts/benchmark/`,
     };
   }
 );
