@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useRef, useState } from 'react';
-import type { AppSurface } from '@/shell/NavigationRail';
+import type { AppSurface } from '@widgets/navigation-rail';
 import type { AppearancePreferences } from '@features/app-settings/data/appearancePreferences';
 import type { ThemePreference } from '@features/app-settings/components/GeneralSettingsSection';
 import { readInitialSurface, writeLastSurface } from '@features/app-settings/data/appPreferences';

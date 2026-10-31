@@ -1,5 +1,6 @@
 /** Public entry point for shared, accessible OpenChat UI primitives. */
 export { Badge, type BadgeProps, type BadgeSize, type BadgeVariant } from './Badge';
+export { BrandMark, type BrandMarkProps } from './BrandMark';
 export { Button, type ButtonProps, type ButtonShape, type ButtonSize, type ButtonVariant } from './Button';
 export { Card, type CardPadding, type CardProps } from './Card';
 export { Checkbox, type CheckboxProps } from './Checkbox';

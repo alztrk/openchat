@@ -6,7 +6,7 @@ import {
   keyboardShortcutRequiresModifier,
   useKeyboardShortcutsStore,
 } from '@features/app-settings/stores/keyboardShortcutsStore';
-import type { AppSurface } from '@/shell/NavigationRail';
+import type { AppSurface } from '@widgets/navigation-rail';
 
 export function isEditableShortcutTarget(target: EventTarget | null): boolean {
   return (

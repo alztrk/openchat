@@ -44,7 +44,7 @@ import type { SettingsSection } from '@features/app-settings/components/Settings
 import type { AssistantAgentSnapshot } from '@features/app-settings/data/assistantProfiles';
 import { snapshotAssistantProfile } from '@features/app-settings/data/assistantProfiles';
 import { useAssistantProfilesStore } from '@features/app-settings/stores/assistantProfilesStore';
-import type { AppSurface } from './NavigationRail';
+import type { AppSurface } from '../navigation-rail';
 
 type PaletteCategory = 'actions' | 'navigation' | 'conversations' | 'projects' | 'models' | 'agents' | 'settings';
 type TranslationKey = keyof typeof en;

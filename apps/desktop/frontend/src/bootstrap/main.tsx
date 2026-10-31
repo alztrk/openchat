@@ -74,7 +74,7 @@ void startApplication().catch(async (error: unknown) => {
   } catch (stylesError) {
     globalThis.reportError(new Error('The application styles could not be loaded.', { cause: stylesError }));
   }
-  const [{ StartupErrorPage }, [React, root]] = await Promise.all([import('@/shell/StartupErrorPage'), getReactRoot()]);
+  const [{ StartupErrorPage }, [React, root]] = await Promise.all([import('@widgets/startup-error'), getReactRoot()]);
   renderAndRevealWindow(() =>
     root.render(
       React.createElement(StartupErrorPage, {

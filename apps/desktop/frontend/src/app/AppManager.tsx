@@ -43,7 +43,7 @@ import { getMessages } from '@features/chat/data/chatStorage';
 import { parseAgentQuestionGroup } from '@features/chat/data/agentQuestions';
 import { clampWorkspacePanelRatio, readWorkspacePanelRatio, writeWorkspacePanelRatio } from '@features/chat/data/sidebarPreferences';
 
-import type { AppSurface } from '@/shell/NavigationRail';
+import type { AppSurface } from '@widgets/navigation-rail';
 
 // ---------------------------------------------------------------------------
 // Internal helpers (not exported)

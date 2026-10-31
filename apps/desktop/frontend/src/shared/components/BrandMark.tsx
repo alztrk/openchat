@@ -1,7 +1,7 @@
 import openchatLogo from '@assets/brand/logo.svg?no-inline';
 import openchatLogoDark from '@assets/brand/logo-dark.svg?no-inline';
 
-type BrandMarkProps = {
+export type BrandMarkProps = {
   size?: 'footer' | 'titlebar' | 'welcome';
 };
 

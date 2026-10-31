@@ -58,10 +58,8 @@ import { useKeyboardShortcutsStore } from '@features/app-settings/stores/keyboar
 import { localServiceClient } from '@shared/lib/platform/local-service';
 import { unifiedStorage } from '@shared/lib/platform/storage/unifiedStorage';
 import { getCurrentWindow, getVersion, invoke, isTauri, listen } from '@shared/lib/platform/tauri';
-import { BrandMark } from '@/shell/BrandMark';
-import { ConversationActionsHeader } from '@/shell/ConversationActionsHeader';
-import { type AppSurface, NavigationRail } from '@/shell/NavigationRail';
-import { TitleBar } from '@/shell/TitleBar';
+import { BrandMark } from '@shared/components';
+import { type AppSurface, ConversationActionsHeader, NavigationRail, TitleBar } from '@widgets/index';
 import { AppModals } from './AppModals';
 import { useAppDragDrop } from './useAppDragDrop';
 import { useAppKeyboardShortcuts } from './useAppKeyboardShortcuts';

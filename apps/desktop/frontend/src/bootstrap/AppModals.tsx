@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useChatStore } from '@features/chat/state/chatStore';
 import type { SettingsSection } from '@features/app-settings/components/SettingsPage';
 import type { AssistantAgentSnapshot } from '@features/app-settings/data/assistantProfiles';
-import type { AppSurface } from '@/shell/NavigationRail';
+import type { AppSurface } from '@widgets/navigation-rail';
 
 const TemporaryChatExitDialog = lazy(() =>
   import('@features/chat/components/TemporaryChatExitDialog').then((module) => ({
@@ -11,7 +11,7 @@ const TemporaryChatExitDialog = lazy(() =>
   })),
 );
 const CommandPalette = lazy(() =>
-  import('@/shell/CommandPalette').then((module) => ({ default: module.CommandPalette })),
+  import('@widgets/command-palette').then((module) => ({ default: module.CommandPalette })),
 );
 
 export interface AppModalsProps {

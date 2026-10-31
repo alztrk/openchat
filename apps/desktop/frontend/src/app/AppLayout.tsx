@@ -3,10 +3,13 @@ import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerE
 import { useCallback, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { lazy, Suspense } from 'react';
-import { NavigationRail, type AppSurface } from '@/shell/NavigationRail';
-import { TitleBar } from '@/shell/TitleBar';
-import { BrandMark } from '@/shell/BrandMark';
-import { ConversationActionsHeader } from '@/shell/ConversationActionsHeader';
+import { BrandMark } from '@shared/components';
+import {
+  type AppSurface,
+  ConversationActionsHeader,
+  NavigationRail,
+  TitleBar,
+} from '@widgets/index';
 import { useAppDragDrop } from '@/bootstrap/useAppDragDrop';
 import { useChatStore } from '@features/chat/state/chatStore';
 
