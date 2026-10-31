@@ -27,7 +27,7 @@ use crate::{
     oauth::OAuthClient,
     protocol::ServiceError,
     provider_schema::{MessageRole, ProviderChatRequest, ProviderMessage},
-    service::OperationGate,
+    operation_gate::OperationGate,
     storage::AppStorage,
     tools,
 };

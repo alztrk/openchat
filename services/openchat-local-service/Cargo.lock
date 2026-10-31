@@ -2628,6 +2628,55 @@ dependencies = [
 ]
 
 [[package]]
+name = "openchat-local-service"
+version = "0.1.0"
+dependencies = [
+ "age",
+ "base64 0.22.1",
+ "bytes",
+ "candle-core",
+ "candle-nn",
+ "candle-transformers",
+ "cap-primitives",
+ "cap-std",
+ "flate2",
+ "futures-util",
+ "htmd",
+ "http",
+ "http-body-util",
+ "hyper",
+ "hyper-openssl",
+ "hyper-util",
+ "ignore",
+ "keyring",
+ "openchat-domain",
+ "openssl",
+ "process-wrap",
+ "reqwest",
+ "ring",
+ "rmcp",
+ "rusqlite",
+ "rustls-native-certs",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "similar",
+ "sse-stream",
+ "tar",
+ "tiktoken",
+ "time",
+ "tokenizers 0.22.2",
+ "tokio",
+ "url",
+ "uuid",
+ "webbrowser",
+ "which",
+ "windows-sys 0.61.2",
+ "zeroize",
+ "zip",
+]
+
+[[package]]
 name = "openchat-transport"
 version = "0.1.0"
 dependencies = [

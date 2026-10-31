@@ -21,7 +21,7 @@ use crate::{
         CredentialStore, CredentialStoreError, OAuthCredentialReference, OAuthTokenPair,
     },
     protocol::ServiceError,
-    service::OperationGate,
+    operation_gate::OperationGate,
     storage::AppStorage,
 };
 

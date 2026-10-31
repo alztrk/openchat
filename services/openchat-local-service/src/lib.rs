@@ -8,21 +8,46 @@
 #[cfg(all(feature = "desktop-profile-test-support", not(debug_assertions)))]
 compile_error!("desktop profile test support is unavailable in optimized builds");
 
-mod domain;
-pub(crate) use domain::{
-    attachments, chat_operation, chatgpt, chatgpt_store, connector_packages, connectors,
-    context_compaction, conversation_archive, copilot_oauth, document_parser, file_changes,
-    git_inspection, git_worktrees, goals, history, hugging_face, image_library, instructions,
-    local_engines, oauth, openai_api, openai_compatible, pending_archive_export, permissions,
-    profile_archive, project_instructions, project_memory, project_skills, provider_credentials,
-    provider_schema, response_budget, security_scan, temporary_conversation, tools,
-    usage_statistics, user_question_broker, workspace_settings,
-};
+//! Domain module re-exports from openchat-domain crate.
+pub(crate) use openchat_domain::attachments;
+pub(crate) use openchat_domain::chat_operation;
+pub(crate) use openchat_domain::chatgpt;
+pub(crate) use openchat_domain::chatgpt_store;
+pub(crate) use openchat_domain::connector_packages;
+pub(crate) use openchat_domain::connectors;
+pub(crate) use openchat_domain::context_compaction;
+pub(crate) use openchat_domain::conversation_archive;
+pub(crate) use openchat_domain::copilot_oauth;
+pub(crate) use openchat_domain::document_parser;
+pub(crate) use openchat_domain::file_changes;
+pub(crate) use openchat_domain::git_inspection;
+pub(crate) use openchat_domain::git_worktrees;
+pub(crate) use openchat_domain::goals;
+pub(crate) use openchat_domain::history;
+pub(crate) use openchat_domain::hugging_face;
+pub(crate) use openchat_domain::image_library;
+pub(crate) use openchat_domain::instructions;
+pub(crate) use openchat_domain::local_engines;
+pub(crate) use openchat_domain::oauth;
+pub(crate) use openchat_domain::openai_api;
+pub(crate) use openchat_domain::openai_compatible;
+pub(crate) use openchat_domain::pending_archive_export;
+pub(crate) use openchat_domain::permissions;
+pub(crate) use openchat_domain::profile_archive;
+pub(crate) use openchat_domain::project_instructions;
+pub(crate) use openchat_domain::project_memory;
+pub(crate) use openchat_domain::project_skills;
+pub(crate) use openchat_domain::provider_credentials;
+pub(crate) use openchat_domain::provider_schema;
+pub(crate) use openchat_domain::response_budget;
+pub(crate) use openchat_domain::security_scan;
+pub(crate) use openchat_domain::temporary_conversation;
+pub(crate) use openchat_domain::tools;
+pub(crate) use openchat_domain::usage_statistics;
+pub(crate) use openchat_domain::user_question_broker;
+pub(crate) use openchat_domain::workspace_settings;
+pub(crate) use openchat_domain::protocol;
 
-#[path = "adapters/filesystem.rs"]
-mod filesystem;
-#[path = "transport/protocol.rs"]
-mod protocol;
 #[path = "transport/rpc.rs"]
 mod rpc;
 #[path = "bootstrap/service.rs"]
@@ -32,32 +57,3 @@ mod storage;
 #[cfg(windows)]
 #[path = "storage_broker.rs"]
 mod storage_broker;
-
-#[cfg(windows)]
-#[path = "adapters/credentials.rs"]
-/// Protected local-vault access for OAuth tokens and scoped MCP secrets, including legacy imports.
-pub mod credentials;
-
-/// Protected provider secrets storage.
-pub mod secrets;
-
-/// Shared attachment bounds used by the desktop host and local service.
-pub mod conversation_limits;
-
-/// Canonical provider identifier validation and enumeration.
-pub mod provider_ids;
-
-/// Isolated helpers for storage-broker integration tests.
-#[cfg(feature = "storage-broker-test-support")]
-pub mod storage_broker_test_support;
-
-/// Cross-platform process isolation and sandboxing.
-pub mod sandbox;
-
-pub use service::{RunError, run};
-pub use storage::migrate_chat_schema;
-#[cfg(windows)]
-pub use storage_broker::run_broker_stdio;
-
-/// Chat schema version supported by this service build.
-pub const CHAT_SCHEMA_VERSION: i64 = 22;

@@ -9,7 +9,7 @@ use super::{
     invalid_response_error, provider_timeout, request_cancelled, serialization_error,
 };
 use crate::{
-    chatgpt_store, oauth::parse_reference, protocol::ServiceError, service::OperationGate,
+    chatgpt_store, oauth::parse_reference, protocol::ServiceError, operation_gate::OperationGate,
 };
 use reqwest::Method;
 use serde_json::{Value, json};
