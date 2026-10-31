@@ -52,5 +52,5 @@ windows = { version = "=0.62.2", features = [
     "Win32_UI_Shell_PropertiesSystem",
     "UI_Notifications",
 ] }
-windows-core = "=0.62.2"
+windows-core = "=0.100.0"
 webview2-com = "=0.39.1"
