@@ -37,13 +37,13 @@ import { Button, Input } from '@shared/components';
 
 import { Dialog } from '@shared/components/Dialog';
 import type en from '@shared/lib/i18n/locales/en.json';
-import { providerNameForModel } from '@/modules/conversations/components/composerUtils';
-import { useChatStore } from '@/modules/conversations/stores/chatStore';
-import { modelRouteKey } from '@/modules/providers/data/modelPreferences';
-import type { SettingsSection } from '@/modules/settings/components/SettingsPage';
-import type { AssistantAgentSnapshot } from '@/modules/settings/data/assistantProfiles';
-import { snapshotAssistantProfile } from '@/modules/settings/data/assistantProfiles';
-import { useAssistantProfilesStore } from '@/modules/settings/stores/assistantProfilesStore';
+import { providerNameForModel } from '@features/chat/components/composerUtils';
+import { useChatStore } from '@features/chat/state/chatStore';
+import { modelRouteKey } from '@features/provider-settings/data/modelPreferences';
+import type { SettingsSection } from '@features/app-settings/components/SettingsPage';
+import type { AssistantAgentSnapshot } from '@features/app-settings/data/assistantProfiles';
+import { snapshotAssistantProfile } from '@features/app-settings/data/assistantProfiles';
+import { useAssistantProfilesStore } from '@features/app-settings/stores/assistantProfilesStore';
 import type { AppSurface } from './NavigationRail';
 
 type PaletteCategory = 'actions' | 'navigation' | 'conversations' | 'projects' | 'models' | 'agents' | 'settings';

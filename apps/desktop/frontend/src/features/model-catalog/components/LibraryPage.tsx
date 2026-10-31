@@ -1,0 +1,130 @@
+import { Blocks, Cpu, MessageSquareText, UsersRound } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+
+import { Button } from '@shared/components';
+import { AssistantProfilesSettingsSection } from '@features/app-settings/components/AssistantProfilesSettingsSection';
+import { McpCatalogTab } from './McpCatalogTab';
+import { ModelCatalogTab } from './ModelCatalogTab';
+import { PromptTemplatesTab } from './PromptTemplatesTab';
+
+type LibraryPageTab = 'models' | 'mcp' | 'agents' | 'prompts';
+
+interface LibraryPageProps {
+  initialTab?: 'models' | 'agents';
+  initialTabRequestId?: number;
+  onUsePrompt(prompt: string): void;
+}
+
+export function LibraryPage({ initialTab = 'models', initialTabRequestId = 0, onUsePrompt }: LibraryPageProps) {
+  const { t } = useTranslation();
+  const [page, setPage] = useState<LibraryPageTab>(initialTab);
+  const [visitedPages, setVisitedPages] = useState<ReadonlySet<LibraryPageTab>>(() => new Set([initialTab]));
+  const headingRef = useRef<HTMLHeadingElement>(null);
+
+  const selectPage = (nextPage: LibraryPageTab) => {
+    setPage(nextPage);
+    setVisitedPages((current) => (current.has(nextPage) ? current : new Set([...current, nextPage])));
+  };
+
+  useEffect(() => {
+    headingRef.current?.focus({ preventScroll: true });
+  }, []);
+
+  useEffect(() => {
+    void initialTabRequestId;
+    setPage(initialTab);
+    setVisitedPages((current) => (current.has(initialTab) ? current : new Set([...current, initialTab])));
+  }, [initialTab, initialTabRequestId]);
+
+  return (
+    <div className="library-workspace flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background">
+      <header className="library-page-header flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border bg-navigation px-5 py-3 sm:px-8">
+        <h1
+          aria-live="polite"
+          className="min-w-0 text-xl font-semibold leading-7 text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+          ref={headingRef}
+          tabIndex={-1}
+        >
+          {t('modelLibrary')}
+        </h1>
+        <nav
+          aria-label={t('modelLibrary')}
+          className="library-page-nav flex w-fit max-w-full gap-1 overflow-x-auto rounded-control border border-border bg-background p-1"
+        >
+          <Button
+            aria-current={page === 'models' ? 'page' : undefined}
+            className={page === 'models' ? 'library-page-nav-item is-active' : 'library-page-nav-item'}
+            onClick={() => selectPage('models')}
+            variant="ghost"
+          >
+            <Cpu aria-hidden="true" size={16} />
+            {t('libraryTabModels')}
+          </Button>
+          <Button
+            aria-current={page === 'mcp' ? 'page' : undefined}
+            className={page === 'mcp' ? 'library-page-nav-item is-active' : 'library-page-nav-item'}
+            onClick={() => selectPage('mcp')}
+            variant="ghost"
+          >
+            <Blocks aria-hidden="true" size={16} />
+            {t('libraryTabMcp')}
+          </Button>
+          <Button
+            aria-current={page === 'agents' ? 'page' : undefined}
+            className={page === 'agents' ? 'library-page-nav-item is-active' : 'library-page-nav-item'}
+            onClick={() => selectPage('agents')}
+            variant="ghost"
+          >
+            <UsersRound aria-hidden="true" size={16} />
+            {t('libraryTabAgents')}
+          </Button>
+          <Button
+            aria-current={page === 'prompts' ? 'page' : undefined}
+            className={page === 'prompts' ? 'library-page-nav-item is-active' : 'library-page-nav-item'}
+            onClick={() => selectPage('prompts')}
+            variant="ghost"
+          >
+            <MessageSquareText aria-hidden="true" size={16} />
+            {t('libraryTabPrompts')}
+          </Button>
+        </nav>
+      </header>
+
+      {visitedPages.has('models') ? (
+        <div
+          aria-hidden={page !== 'models'}
+          className={page === 'models' ? 'library-page-panel flex min-h-0 min-w-0 flex-1 flex-col' : 'hidden'}
+        >
+          <ModelCatalogTab />
+        </div>
+      ) : null}
+      {visitedPages.has('mcp') ? (
+        <div
+          aria-hidden={page !== 'mcp'}
+          className={page === 'mcp' ? 'library-page-panel min-h-0 min-w-0 flex-1 overflow-y-auto' : 'hidden'}
+        >
+          <McpCatalogTab />
+        </div>
+      ) : null}
+      {visitedPages.has('agents') ? (
+        <div
+          aria-hidden={page !== 'agents'}
+          className={page === 'agents' ? 'library-page-panel min-h-0 min-w-0 flex-1 overflow-y-auto' : 'hidden'}
+        >
+          <div className="mx-auto w-full max-w-5xl p-5 sm:p-8">
+            <AssistantProfilesSettingsSection showReadyAgents />
+          </div>
+        </div>
+      ) : null}
+      {visitedPages.has('prompts') ? (
+        <div
+          aria-hidden={page !== 'prompts'}
+          className={page === 'prompts' ? 'library-page-panel min-h-0 min-w-0 flex-1 overflow-y-auto' : 'hidden'}
+        >
+          <PromptTemplatesTab onUsePrompt={onUsePrompt} />
+        </div>
+      ) : null}
+    </div>
+  );
+}

@@ -1,12 +1,12 @@
 import { type Dispatch, lazy, type SetStateAction, Suspense } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useChatStore } from '@/modules/conversations/stores/chatStore';
-import type { SettingsSection } from '@/modules/settings/components/SettingsPage';
-import type { AssistantAgentSnapshot } from '@/modules/settings/data/assistantProfiles';
+import { useChatStore } from '@features/chat/state/chatStore';
+import type { SettingsSection } from '@features/app-settings/components/SettingsPage';
+import type { AssistantAgentSnapshot } from '@features/app-settings/data/assistantProfiles';
 import type { AppSurface } from '@/shell/NavigationRail';
 
 const TemporaryChatExitDialog = lazy(() =>
-  import('@/modules/conversations/components/TemporaryChatExitDialog').then((module) => ({
+  import('@features/chat/components/TemporaryChatExitDialog').then((module) => ({
     default: module.TemporaryChatExitDialog,
   })),
 );

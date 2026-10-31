@@ -17,44 +17,44 @@ import type {
   WorkspaceFileRequest,
   WorkspaceFileSelection,
   WorkspacePanelRequest,
-} from '@/modules/conversations/components/ChatFileChangesPanel';
-import { parseAgentQuestionGroup } from '@/modules/conversations/data/agentQuestions';
-import { getMessages } from '@/modules/conversations/data/chatStorage';
-import { setPendingComposerDraft } from '@/modules/conversations/data/pendingComposerDraft';
+} from '@features/chat/components/ChatFileChangesPanel';
+import { parseAgentQuestionGroup } from '@features/chat/data/agentQuestions';
+import { getMessages } from '@features/chat/data/chatStorage';
+import { setPendingComposerDraft } from '@features/chat/data/pendingComposerDraft';
 import {
   clampWorkspacePanelRatio,
   readWorkspacePanelRatio,
   writeWorkspacePanelRatio,
-} from '@/modules/conversations/data/sidebarPreferences';
-import { useChatStore } from '@/modules/conversations/stores/chatStore';
-import { useDesignPreferencesStore } from '@/modules/design/data/designPreferences';
+} from '@features/chat/data/sidebarPreferences';
+import { useChatStore } from '@features/chat/state/chatStore';
+import { useDesignPreferencesStore } from '@features/design-workspace/data/designPreferences';
 import {
   resetNotificationWindowFocus,
   setNotificationWindowFocus,
-} from '@/modules/notifications/data/notificationRuntime';
+} from '@features/notifications/data/notificationRuntime';
 import {
   OAUTH_PLAN_CHECK_INTERVAL_MS,
   refreshOAuthPlans,
   shouldRefreshOAuthPlansOnFocus,
-} from '@/modules/providers/data/oauthPlanMonitor';
-import { initializeActiveSecurityScans } from '@/modules/security-scans/data/securityScanRuntime';
-import type { ThemePreference } from '@/modules/settings/components/GeneralSettingsSection';
-import type { SettingsSection } from '@/modules/settings/components/SettingsPage';
+} from '@features/provider-settings/data/oauthPlanMonitor';
+import { initializeActiveSecurityScans } from '@features/security-scans/data/securityScanRuntime';
+import type { ThemePreference } from '@features/app-settings/components/GeneralSettingsSection';
+import type { SettingsSection } from '@features/app-settings/components/SettingsPage';
 import {
   type AppearancePreferences,
   getAppearanceCssValues,
   readAppearancePreferences,
-} from '@/modules/settings/data/appearancePreferences';
+} from '@features/app-settings/data/appearancePreferences';
 import {
   readCloseWindowBehavior,
   readInitialSurface,
   writeCloseWindowBehavior,
   writeLastSurface,
-} from '@/modules/settings/data/appPreferences';
-import { useAssistantExecutionPreferencesStore } from '@/modules/settings/data/assistantExecutionPreferences';
-import type { AssistantAgentSnapshot } from '@/modules/settings/data/assistantProfiles';
-import { useChatDisplayPreferencesStore } from '@/modules/settings/data/chatDisplayPreferences';
-import { useKeyboardShortcutsStore } from '@/modules/settings/stores/keyboardShortcutsStore';
+} from '@features/app-settings/data/appPreferences';
+import { useAssistantExecutionPreferencesStore } from '@features/app-settings/data/assistantExecutionPreferences';
+import type { AssistantAgentSnapshot } from '@features/app-settings/data/assistantProfiles';
+import { useChatDisplayPreferencesStore } from '@features/app-settings/data/chatDisplayPreferences';
+import { useKeyboardShortcutsStore } from '@features/app-settings/stores/keyboardShortcutsStore';
 import { localServiceClient } from '@shared/lib/platform/local-service';
 import { unifiedStorage } from '@shared/lib/platform/storage/unifiedStorage';
 import { getCurrentWindow, getVersion, invoke, isTauri, listen } from '@shared/lib/platform/tauri';
@@ -67,33 +67,33 @@ import { useAppDragDrop } from './useAppDragDrop';
 import { useAppKeyboardShortcuts } from './useAppKeyboardShortcuts';
 
 const LibraryPage = lazy(() =>
-  import('@/modules/model-library/components/LibraryPage').then((module) => ({ default: module.LibraryPage })),
+  import('@features/model-catalog/components/LibraryPage').then((module) => ({ default: module.LibraryPage })),
 );
 const ConversationPane = lazy(() =>
-  import('@/modules/conversations/components/ConversationPane').then((module) => ({
+  import('@features/chat/components/ConversationPane').then((module) => ({
     default: module.ConversationPane,
   })),
 );
 const ConversationSidebar = lazy(() =>
-  import('@/modules/conversations/components/ConversationSidebar').then((module) => ({
+  import('@features/chat/components/ConversationSidebar').then((module) => ({
     default: module.ConversationSidebar,
   })),
 );
 const ChatFileChangesPanel = lazy(() =>
-  import('@/modules/conversations/components/ChatFileChangesPanel').then((module) => ({
+  import('@features/chat/components/ChatFileChangesPanel').then((module) => ({
     default: module.ChatFileChangesPanel,
   })),
 );
 const DesignPage = lazy(() =>
-  import('@/modules/design/components/DesignPage').then((module) => ({ default: module.DesignPage })),
+  import('@features/design-workspace/components/DesignPage').then((module) => ({ default: module.DesignPage })),
 );
 const SecurityScanPage = lazy(() =>
-  import('@/modules/security-scans/components/SecurityScanPage').then((module) => ({
+  import('@features/security-scans/components/SecurityScanPage').then((module) => ({
     default: module.SecurityScanPage,
   })),
 );
 const SettingsPage = lazy(() =>
-  import('@/modules/settings/components/SettingsPage').then((module) => ({ default: module.SettingsPage })),
+  import('@features/app-settings/components/SettingsPage').then((module) => ({ default: module.SettingsPage })),
 );
 
 interface SurfaceHistory {

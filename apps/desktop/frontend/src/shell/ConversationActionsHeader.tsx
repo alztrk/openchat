@@ -2,9 +2,9 @@ import { Clock3, Files, MessageSquare, MessageSquarePlus, PanelRight } from 'luc
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@shared/components';
-import { ConversationTitleEditor } from '@/modules/conversations/components/ConversationTitleEditor';
-import type { ChatConversation } from '@/modules/conversations/data/chatStorage';
-import { useChatStore } from '@/modules/conversations/stores/chatStore';
+import { ConversationTitleEditor } from '@features/chat/components/ConversationTitleEditor';
+import type { ChatConversation } from '@features/chat/data/chatStorage';
+import { useChatStore } from '@features/chat/state/chatStore';
 import { ConversationExportMenu } from './ConversationExportMenu';
 
 export interface ConversationActionsHeaderProps {

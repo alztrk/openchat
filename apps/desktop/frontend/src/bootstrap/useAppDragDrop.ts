@@ -2,8 +2,8 @@ import { type DragEvent as ReactDragEvent, type RefObject, useEffect, useRef, us
 import {
   getSidebarDraggingConversationId,
   setSidebarDraggingConversationId,
-} from '@/modules/conversations/data/sidebarPreferences';
-import { useChatStore } from '@/modules/conversations/stores/chatStore';
+} from '@features/chat/data/sidebarPreferences';
+import { useChatStore } from '@features/chat/state/chatStore';
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);

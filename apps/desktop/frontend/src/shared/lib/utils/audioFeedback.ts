@@ -1,7 +1,7 @@
 import {
   readNotificationPreferences,
   shouldSuppressNotification,
-} from '@/modules/notifications/data/notificationPreferences';
+} from '@features/notifications/data/notificationPreferences';
 
 declare global {
   interface Window {

@@ -12,9 +12,9 @@ import {
   DropdownMenuTrigger,
   Tooltip,
 } from '@shared/components';
-import type { ChatConversation } from '@/modules/conversations/data/chatStorage';
-import type { ExportFormat } from '@/modules/conversations/data/conversationExport';
-import { conversationMarkdownLabels } from '@/modules/conversations/data/conversationMarkdownLabels';
+import type { ChatConversation } from '@features/chat/data/chatStorage';
+import type { ExportFormat } from '@features/chat/data/conversationExport';
+import { conversationMarkdownLabels } from '@features/chat/data/conversationMarkdownLabels';
 
 export interface ConversationExportMenuProps {
   conversation: ChatConversation;
@@ -29,7 +29,7 @@ export function ConversationExportMenu({ conversation, disabled = false }: Conve
     setExporting(true);
     try {
       const labels = conversationMarkdownLabels(conversation, t, i18n.language);
-      const { exportConversationToFile } = await import('@/modules/conversations/data/conversationExport');
+      const { exportConversationToFile } = await import('@features/chat/data/conversationExport');
       await exportConversationToFile(conversation, format, labels, t('exportConversation'));
     } finally {
       setExporting(false);

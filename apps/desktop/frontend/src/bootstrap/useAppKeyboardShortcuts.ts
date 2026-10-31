@@ -1,11 +1,11 @@
 import { useEffect } from 'react';
-import { useChatStore } from '@/modules/conversations/stores/chatStore';
+import { useChatStore } from '@features/chat/state/chatStore';
 import {
   keyboardShortcutActions,
   keyboardShortcutMatches,
   keyboardShortcutRequiresModifier,
   useKeyboardShortcutsStore,
-} from '@/modules/settings/stores/keyboardShortcutsStore';
+} from '@features/app-settings/stores/keyboardShortcutsStore';
 import type { AppSurface } from '@/shell/NavigationRail';
 
 export function isEditableShortcutTarget(target: EventTarget | null): boolean {
