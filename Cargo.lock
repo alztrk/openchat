@@ -3863,6 +3863,7 @@ dependencies = [
  "url",
  "uuid",
  "webbrowser",
+ "which",
  "windows-sys 0.61.2",
  "zeroize",
  "zip 9.0.5",
@@ -6872,6 +6873,15 @@ dependencies = [
  "thiserror 2.0.21",
  "windows",
  "windows-core",
+]
+
+[[package]]
+name = "which"
+version = "8.0.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bae2f2b2b816647a1cab1acc91f5bd20812d53cb344382635ec2181940c8034f"
+dependencies = [
+ "libc",
 ]
 
 [[package]]

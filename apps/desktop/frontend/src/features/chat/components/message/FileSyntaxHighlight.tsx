@@ -23,7 +23,7 @@ import { detectFileLanguage } from './detectFileLanguage';
 
 const subscribers = new Set<() => void>();
 let highlighterState: 'loading' | 'ready' | 'error' = 'loading';
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- highlighter types are complex
+// biome-ignore lint/suspicious/noExplicitAny: highlighter types are complex
 let loadedHighlighter: any = null;
 
 /**
@@ -51,27 +51,27 @@ export function preloadHighlighting(): void {
 
   // Import only the languages OpenChat actually uses
   Promise.all([
-    import('@tanstack/highlight/core').then((m: any) => m.createHighlighter),
-    import('@tanstack/highlight/languages/shell').then((m: any) => m.shell),
-    import('@tanstack/highlight/languages/c').then((m: any) => m.c),
-    import('@tanstack/highlight/languages/cpp').then((m: any) => m.cpp),
-    import('@tanstack/highlight/languages/css').then((m: any) => m.css),
-    import('@tanstack/highlight/languages/dockerfile').then((m: any) => m.dockerfile),
-    import('@tanstack/highlight/languages/go').then((m: any) => m.go),
-    import('@tanstack/highlight/languages/html').then((m: any) => m.html),
-    import('@tanstack/highlight/languages/java').then((m: any) => m.java),
-    import('@tanstack/highlight/languages/js').then((m: any) => m.js),
-    import('@tanstack/highlight/languages/json').then((m: any) => m.json),
-    import('@tanstack/highlight/languages/jsx').then((m: any) => m.jsx),
-    import('@tanstack/highlight/languages/markdown').then((m: any) => m.markdown),
-    import('@tanstack/highlight/languages/powershell').then((m: any) => m.powershell),
-    import('@tanstack/highlight/languages/python').then((m: any) => m.python),
-    import('@tanstack/highlight/languages/rust').then((m: any) => m.rust),
-    import('@tanstack/highlight/languages/sql').then((m: any) => m.sql),
-    import('@tanstack/highlight/languages/toml').then((m: any) => m.toml),
-    import('@tanstack/highlight/languages/tsx').then((m: any) => m.tsx),
-    import('@tanstack/highlight/languages/ts').then((m: any) => m.ts),
-    import('@tanstack/highlight/languages/yaml').then((m: any) => m.yaml),
+    import('@tanstack/highlight/core').then((m) => m.createHighlighter),
+    import('@tanstack/highlight/languages/shell').then((m) => m.shell),
+    import('@tanstack/highlight/languages/c').then((m) => m.c),
+    import('@tanstack/highlight/languages/cpp').then((m) => m.cpp),
+    import('@tanstack/highlight/languages/css').then((m) => m.css),
+    import('@tanstack/highlight/languages/dockerfile').then((m) => m.dockerfile),
+    import('@tanstack/highlight/languages/go').then((m) => m.go),
+    import('@tanstack/highlight/languages/html').then((m) => m.html),
+    import('@tanstack/highlight/languages/java').then((m) => m.java),
+    import('@tanstack/highlight/languages/js').then((m) => m.js),
+    import('@tanstack/highlight/languages/json').then((m) => m.json),
+    import('@tanstack/highlight/languages/jsx').then((m) => m.jsx),
+    import('@tanstack/highlight/languages/markdown').then((m) => m.markdown),
+    import('@tanstack/highlight/languages/powershell').then((m) => m.powershell),
+    import('@tanstack/highlight/languages/python').then((m) => m.python),
+    import('@tanstack/highlight/languages/rust').then((m) => m.rust),
+    import('@tanstack/highlight/languages/sql').then((m) => m.sql),
+    import('@tanstack/highlight/languages/toml').then((m) => m.toml),
+    import('@tanstack/highlight/languages/tsx').then((m) => m.tsx),
+    import('@tanstack/highlight/languages/ts').then((m) => m.ts),
+    import('@tanstack/highlight/languages/yaml').then((m) => m.yaml),
   ])
     .then(([createHighlighter, ...langs]) => {
       const hl = createHighlighter({ languages: langs });

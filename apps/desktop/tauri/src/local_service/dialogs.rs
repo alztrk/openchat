@@ -37,35 +37,35 @@ fn native_dialog_catalog() -> Result<&'static NativeDialogCatalog, &'static str>
             catalog.insert(
                 NativeDialogLocale::De,
                 serde_json::from_str(include_str!(
-                    "../../../frontend/src/localization/locales/de.json"
+                    "../../../frontend/src/shared/lib/i18n/locales/de.json"
                 ))
                 .map_err(|_| "native_dialog_catalog_invalid")?,
             );
             catalog.insert(
                 NativeDialogLocale::En,
                 serde_json::from_str(include_str!(
-                    "../../../frontend/src/localization/locales/en.json"
+                    "../../../frontend/src/shared/lib/i18n/locales/en.json"
                 ))
                 .map_err(|_| "native_dialog_catalog_invalid")?,
             );
             catalog.insert(
                 NativeDialogLocale::Es,
                 serde_json::from_str(include_str!(
-                    "../../../frontend/src/localization/locales/es.json"
+                    "../../../frontend/src/shared/lib/i18n/locales/es.json"
                 ))
                 .map_err(|_| "native_dialog_catalog_invalid")?,
             );
             catalog.insert(
                 NativeDialogLocale::Fr,
                 serde_json::from_str(include_str!(
-                    "../../../frontend/src/localization/locales/fr.json"
+                    "../../../frontend/src/shared/lib/i18n/locales/fr.json"
                 ))
                 .map_err(|_| "native_dialog_catalog_invalid")?,
             );
             catalog.insert(
                 NativeDialogLocale::Tr,
                 serde_json::from_str(include_str!(
-                    "../../../frontend/src/localization/locales/tr.json"
+                    "../../../frontend/src/shared/lib/i18n/locales/tr.json"
                 ))
                 .map_err(|_| "native_dialog_catalog_invalid")?,
             );

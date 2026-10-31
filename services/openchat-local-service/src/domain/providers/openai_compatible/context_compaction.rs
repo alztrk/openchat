@@ -92,7 +92,7 @@ pub(super) async fn summarize_history_with_storage(
         existing_summary,
         messages,
         cancellation,
-        prune_level,
+        prune_level: _,
     } = request;
     let context_window = route
         .request_context_limit()
@@ -509,7 +509,7 @@ impl Iterator for HistoryBatcher<'_> {
             if self.message_text.is_none() {
                 let tool_output_limit = self.prune_level.old_tool_output_limit();
                 self.message_text = self.messages.get(self.message_index).map(|message| {
-                    if let Some(provider_id) = self.provider_id.as_deref() {
+                    if self.provider_id.is_some() {
                         crate::history::summary_text_with_tool_output_limit(
                             message,
                             tool_output_limit,

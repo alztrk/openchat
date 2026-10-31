@@ -4,7 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const workspaceRoot = path.resolve(__dirname, '..');
+const workspaceRoot = path.resolve(__dirname, '..', '..');
 const frontendDirectory = path.join(workspaceRoot, 'apps', 'desktop', 'frontend');
 const tauriDirectory = path.join(workspaceRoot, 'apps', 'desktop', 'tauri');
 

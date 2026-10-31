@@ -203,7 +203,9 @@ export function useAppManager() {
   const goalBudgetPauseAttemptKey = useRef<string | null>(null);
   const notificationActivationHandlerRef = useRef<
     (activation: NotificationActivation) => Promise<void>
-  >(async () => {});
+  >(async () => {
+    /* noop */
+  });
 
   // ---- Store accessors ---------------------------------------------------
   const initializeChat = useChatStore((state) => state.initialize);

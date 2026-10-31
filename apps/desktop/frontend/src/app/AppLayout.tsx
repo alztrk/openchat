@@ -3,7 +3,7 @@ import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerE
 import { useCallback, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { lazy, Suspense } from 'react';
-import { NavigationRail } from '@/shell/NavigationRail';
+import { NavigationRail, type AppSurface } from '@/shell/NavigationRail';
 import { TitleBar } from '@/shell/TitleBar';
 import { BrandMark } from '@/shell/BrandMark';
 import { ConversationActionsHeader } from '@/shell/ConversationActionsHeader';
@@ -35,10 +35,10 @@ export function AppLayout({
   requestTemporaryChatExit,
   openAgentLibrary,
 }: {
-  activeSurface: string;
+  activeSurface: AppSurface;
   isDark: boolean;
   surfaceHeadingRef: React.RefObject<HTMLElement>;
-  onNavigate: (surface: string) => void;
+  onNavigate: (surface: AppSurface) => void;
   onToggleTheme: () => void;
   canGoBack: boolean;
   canGoForward: boolean;
@@ -76,8 +76,8 @@ export function AppLayout({
     isRightPanelOpen,
     rightPanelShellRef,
     workspaceDropRef,
-    onOpenConversationInPanel: () => {},
-    onOpenConversationInPrimary: () => {},
+    onOpenConversationInPanel: () => { /* noop */ },
+    onOpenConversationInPrimary: () => { /* noop */ },
   });
 
   const handleWorkspaceResizePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -114,29 +114,31 @@ export function AppLayout({
     setWorkspaceRatio((current) => Math.max(30, Math.min(70, current + delta)));
   };
 
-  const headingMap: Record<string, string> = { chats: 'chats', design: 'design', models: 'modelLibrary', security: 'securityScansTitle', settings: 'settings' };
-  const headingKey = (headingMap[activeSurface] ?? 'chats') as string;
+  const headingMap: Record<AppSurface, string> = { chats: 'chats', design: 'design', models: 'modelLibrary', security: 'securityScansTitle', settings: 'settings' };
+  const headingKey = headingMap[activeSurface] ?? 'chats';
 
   return (
     <div className="app-shell h-screen min-h-desktop-window overflow-hidden bg-background text-text">
       <TitleBar canGoBack={canGoBack} canGoForward={canGoForward} isSidebarOpen={isSidebarOpen} onGoBack={onGoBack} onGoForward={onGoForward} onOpenCommandPalette={() => onOpenCommandPalette()} onSelectConversation={onSelectConversation} onToggleSidebar={onToggleSidebar} />
-      <NavigationRail activeSurface={activeSurface as 'chats' | 'design' | 'models' | 'security' | 'settings'} isDark={isDark} onNavigate={onNavigate} onToggleTheme={onToggleTheme} />
+      <NavigationRail activeSurface={activeSurface} isDark={isDark} onNavigate={onNavigate} onToggleTheme={onToggleTheme} />
       <div className="app-shell-main relative flex min-h-0 min-w-0">
+        {/* biome-ignore lint/nursery/noUnsafeTypeAssertion: react-i18next requires narrow key type for t(); dynamic lookup yields string */}
         <main aria-label={t(headingKey as never)} className="app-main-surface relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden" data-motion-input="pointer" key={activeSurface} ref={surfaceHeadingRef} tabIndex={-1}>
           <div className="flex min-h-0 min-w-0 flex-1 flex-row overflow-hidden">
             <div className="conversation-sidebar-shell" data-open={isSidebarOpen ? 'true' : 'false'} inert={!isSidebarOpen}>
               <Suspense fallback={<div className="flex h-full min-h-0 w-full items-center justify-center px-4 py-8"><p className="text-center text-xs text-secondary-text">{t('conversationsLoading')}</p></div>}>
-                <ConversationSidebar onCloseMobile={() => setIsSidebarOpen(false)} onManageAgents={openAgentLibrary} onNewAgentChat={() => {}} onNewChat={startWorkspaceChat} onRequestTemporaryExit={requestTemporaryChatExit} onStartTemporaryChat={startWorkspaceTemporaryChat} />
+                <ConversationSidebar onCloseMobile={() => setIsSidebarOpen(false)} onManageAgents={openAgentLibrary} onNewAgentChat={() => { /* noop */ }} onNewChat={startWorkspaceChat} onRequestTemporaryExit={requestTemporaryChatExit} onStartTemporaryChat={startWorkspaceTemporaryChat} />
               </Suspense>
             </div>
             <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
               <section aria-label={t('composerDropTargetLabel')} className="chat-workspace-layout relative flex min-h-0 min-w-0 flex-1 overflow-hidden" onDragEnter={handleWorkspaceDragEnter} onDragLeave={handleWorkspaceDragLeave} onDragOver={handleWorkspaceDragOver} onDrop={handleWorkspaceDrop} ref={workspaceDropRef}>
                 <div className="chat-primary-pane relative flex min-h-0 min-w-0 flex-col overflow-hidden" style={isRightPanelOpen ? { flex: `${workspaceRatio} 1 0%` } : { flex: '1 1 0%' }}>
                   <Suspense fallback={<p className="flex min-h-0 flex-1 items-center justify-center px-6 py-8 text-sm text-secondary-text" role="status">{t('messageHistoryLoading')}</p>}>
-                    <ConversationPane header={() => <ConversationActionsHeader activeConversationId={activeConversationId} conversations={conversations} isRightPanelOpen={isRightPanelOpen} onToggleRightPanel={handleTogglePrimaryRightPanel} />} hideInternalRightPanel isLargeText={false} isRightPanelOpen={isRightPanelOpen} notificationFeedbackKey={null} onDismissNotificationFeedback={() => {}} onOpenRightPanel={() => {}} onOpenWorkspaceFile={() => {}} onOpenSettings={() => onNavigate('settings')} onQuestionFocusHandled={() => {}} onRequestTemporaryExit={requestTemporaryChatExit} onToggleRightPanel={handleTogglePrimaryRightPanel} questionFocusTarget={null} />
+                    <ConversationPane header={() => <ConversationActionsHeader activeConversationId={activeConversationId} conversations={conversations} isRightPanelOpen={isRightPanelOpen} onToggleRightPanel={handleTogglePrimaryRightPanel} />} hideInternalRightPanel isLargeText={false} isRightPanelOpen={isRightPanelOpen} notificationFeedbackKey={null} onDismissNotificationFeedback={() => { /* noop */ }} onOpenRightPanel={() => { /* noop */ }} onOpenWorkspaceFile={() => { /* noop */ }} onOpenSettings={() => onNavigate('settings')} onQuestionFocusHandled={() => { /* noop */ }} onRequestTemporaryExit={requestTemporaryChatExit} onToggleRightPanel={handleTogglePrimaryRightPanel} questionFocusTarget={null} />
                   </Suspense>
                 </div>
                 {isRightPanelOpen && (
+                  // biome-ignore lint/a11y/useSemanticElements: interactive resizable separator with pointer/keyboard handlers; <hr> does not support aria-value* or interaction
                   <div aria-label={t('resizeWorkspacePanel')} aria-orientation="vertical" aria-valuemax={70} aria-valuemin={30} aria-valuenow={workspaceRatio} className="chat-workspace-panel-separator group relative z-20 flex w-1.5 shrink-0 cursor-col-resize items-center justify-center bg-border/60 transition-colors hover:bg-accent/50 focus-visible:bg-accent focus-visible:outline-none" onKeyDown={handleWorkspaceResizeKeyDown} onPointerDown={handleWorkspaceResizePointerDown} role="separator" tabIndex={0}>
                     <span className="h-8 w-0.5 rounded-full bg-secondary-icon/50 transition-colors group-hover:bg-accent" />
                   </div>

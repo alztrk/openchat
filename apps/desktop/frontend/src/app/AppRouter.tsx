@@ -52,9 +52,10 @@ export function useAppRouter() {
 
 export function AppRouter({
   theme = 'system',
+  // biome-ignore lint/nursery/noUnsafeTypeAssertion: default value for optional prop; AppearancePreferences has no exported constructor
   appearance = { appScale: '', appDensity: '', appFont: '', conversationTextSize: 'normal', conversationWidth: 'medium' } as unknown as AppearancePreferences,
-  onOpenSettings = () => {},
-  onUsePrompt = () => {},
+  onOpenSettings = () => { /* noop */ },
+  onUsePrompt = () => { /* noop */ },
 }: { theme?: ThemePreference; appearance?: AppearancePreferences; onOpenSettings?: () => void; onUsePrompt?: (draft: string) => void }) {
   const { activeSurface, surfaceHeadingRef } = useAppRouter();
   return (
@@ -63,7 +64,7 @@ export function AppRouter({
         <div className="flex min-h-0 min-w-0 flex-1 flex-row overflow-hidden">
           <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
             <Suspense fallback={null}>
-              <ConversationPane isLargeText={appearance.conversationTextSize === 'large'} notificationFeedbackKey={null} onDismissNotificationFeedback={() => {}} onOpenSettings={onOpenSettings} onQuestionFocusHandled={() => {}} onRequestTemporaryExit={() => {}} questionFocusTarget={null} />
+              <ConversationPane isLargeText={appearance.conversationTextSize === 'large'} notificationFeedbackKey={null} onDismissNotificationFeedback={() => { /* noop */ }} onOpenSettings={onOpenSettings} onQuestionFocusHandled={() => { /* noop */ }} onRequestTemporaryExit={() => { /* noop */ }} questionFocusTarget={null} />
             </Suspense>
           </div>
         </div>
@@ -79,7 +80,7 @@ export function AppRouter({
       )}
       {activeSurface !== 'chats' && activeSurface !== 'models' && activeSurface !== 'design' && activeSurface !== 'security' && (
         <Suspense fallback={null}>
-          <SettingsPage appearance={appearance} onAppearanceChange={() => {}} onOpenConversation={() => {}} onThemeChange={() => {}} theme={theme} />
+          <SettingsPage appearance={appearance} onAppearanceChange={() => { /* noop */ }} onOpenConversation={() => { /* noop */ }} onThemeChange={() => { /* noop */ }} theme={theme} />
         </Suspense>
       )}
     </main>

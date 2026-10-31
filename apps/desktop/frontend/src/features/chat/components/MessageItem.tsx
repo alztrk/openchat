@@ -182,6 +182,7 @@ export function MessageItem({
     onCheckpointRestored,
     onOpenFileChanges,
     onOpenWorkspaceFile,
+    message.conversationId,
   ]);
 
   useEffect(
@@ -258,9 +259,7 @@ export function MessageItem({
             </p>
           ) : null
         ) : (
-          <>
-            {timelineContent}
-          </>
+          timelineContent
         )}
         {message.status === 'streaming' && assistantTimeline.some((segment) => segment.kind === 'text') && !isUser ? (
           <span

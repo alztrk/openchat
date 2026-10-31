@@ -15,12 +15,12 @@ use tauri::{
 const WINDOW_STATE_FILE_NAME: &str = "window-state.json";
 
 // Default window dimensions
-const DEFAULT_WINDOW_WIDTH: u64 = 1200;
-const DEFAULT_WINDOW_HEIGHT: u64 = 800;
+const DEFAULT_WINDOW_WIDTH: u32 = 1200;
+const DEFAULT_WINDOW_HEIGHT: u32 = 800;
 const DEFAULT_WINDOW_X: i32 = 100;
 const DEFAULT_WINDOW_Y: i32 = 100;
-const MIN_WINDOW_WIDTH: u64 = 400;
-const MIN_WINDOW_HEIGHT: u64 = 300;
+const MIN_WINDOW_WIDTH: u32 = 400;
+const MIN_WINDOW_HEIGHT: u32 = 300;
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
 /// Persisted window geometry and state.

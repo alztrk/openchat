@@ -395,6 +395,7 @@ export function CommandPalette({
     projects,
     profiles,
     t,
+    projectMap,
   ]);
 
   const filteredItems = useMemo(

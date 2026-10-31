@@ -11,7 +11,7 @@
     "check:imports": "node ../../../scripts/check-imports.mjs",
     "tauri:dev": "cd ../tauri && tauri dev",
     "tauri:build": "cd ../tauri && tauri build",
-    "openchat": "node ../../../scripts/openchat-cli.mjs"
+    "openchat": "node ../../../scripts/run.mjs"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.3.1",

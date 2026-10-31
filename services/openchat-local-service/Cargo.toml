@@ -1,7 +1,7 @@
 [package]
 name = "openchat-local-service"
-version.workspace = true
-edition.workspace = true
+version = "0.1.0"
+edition = "2024"
 publish = false
 
 [lib]
@@ -15,19 +15,6 @@ path = "src/main.rs"
 [features]
 storage-broker-test-support = []
 desktop-profile-test-support = []
-
-[workspace]
-resolver = "2"
-members = [
-  "crates/openchat-domain",
-  "crates/openchat-transport",
-  "crates/openchat-adapters",
-]
-
-[workspace.package]
-version = "0.1.0"
-edition = "2024"
-publish = false
 
 [dependencies]
 tiktoken = "4.1"

@@ -28,5 +28,3 @@ pub(crate) fn model_encoding(model_id: &str) -> &'static tiktoken::CoreBpe {
 pub(crate) fn count_tokens(model_id: &str, text: &str) -> i64 {
     model_encoding(model_id).count(text) as i64
 }
-
-

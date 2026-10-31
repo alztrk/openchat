@@ -125,7 +125,7 @@ export function MessageList({
       setSelectedResponseVersions((current) => ({ ...current, [group.id]: versionIndex }));
       onSelectResponseVersion?.(selectedMessage, versionIndex);
     },
-    [messageIdToGroupMap],
+    [messageIdToGroupMap, onSelectResponseVersion],
   );
 
   useEffect(() => {
@@ -192,7 +192,6 @@ export function MessageList({
     virtualList.stopFollowingLatest,
   ]);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: Message, loading, and conversation changes intentionally trigger scroll-follow updates.
   // NOTE: We use refs to avoid re-triggering on every streaming content chunk update.
   // Only the message count change (new messages) needs to trigger scroll-to-bottom.
   const latestMessageContentRef = useRef<string | null>(null);
@@ -200,6 +199,7 @@ export function MessageList({
   latestMessageContentRef.current = latestMessage?.content ?? null;
   latestMessageStatusRef.current = latestMessage?.status ?? null;
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Message, loading, and conversation changes intentionally trigger scroll-follow updates.
   useEffect(() => {
     if (isLoadingMessages || searchTargetMessageId || inChatTargetMessageId) return;
     if (skipBottomScroll.current) {
