@@ -90,8 +90,12 @@ pub(super) async fn prepare_input(
         instructions,
         active_compaction_matches,
     }) && let Some(context_window) = model.context_window
-        && let Some(compacted_through_index) =
-            context_compaction::compaction_prefix_end(messages, start_index, context_window)
+        && let Some(compacted_through_index) = context_compaction::compaction_prefix_end(
+            messages,
+            start_index,
+            context_window,
+            &model.id,
+        )
     {
         let compact_input = compaction_input(
             state_ref,
@@ -391,7 +395,8 @@ fn fit_compaction_request_body(
         reasoning_effort,
         supports_reasoning_summary_parameter,
     );
-    let mut estimated_request_tokens = context_compaction::request_context_token_estimate(&body);
+    let mut estimated_request_tokens =
+        context_compaction::request_context_token_estimate(model_id, &body);
     let request_budget =
         context_window.saturating_mul(MAX_COMPACTION_REQUEST_CONTEXT_PERCENT) / 100;
     if estimated_request_tokens <= request_budget {
@@ -445,7 +450,8 @@ fn fit_compaction_request_body(
             continue;
         };
         *output_value = Value::String(shortened_output);
-        estimated_request_tokens = context_compaction::request_context_token_estimate(&body);
+        estimated_request_tokens =
+            context_compaction::request_context_token_estimate(model_id, &body);
     }
 
     if estimated_request_tokens > request_budget {
@@ -879,7 +885,7 @@ mod tests {
         )
         .expect("fit compaction request within model context");
 
-        assert!(context_compaction::request_context_token_estimate(&request) <= 1536);
+        assert!(context_compaction::request_context_token_estimate("gpt-4", &request) <= 1536);
         assert_eq!(request["input"][0]["type"], "function_call");
         assert_eq!(request["input"][0]["call_id"], "call-large-result");
         assert_eq!(request["input"][2]["role"], "assistant");
@@ -934,7 +940,7 @@ mod tests {
                 .len()
                 > 3072
         );
-        assert!(context_compaction::request_context_token_estimate(&request) <= 3072);
+        assert!(context_compaction::request_context_token_estimate("gpt-4", &request) <= 3072);
         assert_eq!(request["input"][0]["content"][0]["type"], "input_image");
     }
 

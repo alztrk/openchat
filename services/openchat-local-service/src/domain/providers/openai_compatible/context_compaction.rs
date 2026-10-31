@@ -390,8 +390,11 @@ async fn summarize_transcript_with_storage(
                 cached_tokens: usage.cached_tokens,
                 cache_write_tokens: usage.cache_write_tokens,
                 cache_discount: usage.cache_discount,
-                estimated_prompt_tokens: context_compaction::request_context_token_estimate(&body)
-                    .saturating_add(1024),
+                estimated_prompt_tokens: context_compaction::request_context_token_estimate(
+                    &route.provider_model_id,
+                    &body,
+                )
+                .saturating_add(1024),
                 image_inputs: context_compaction::request_image_count(&body),
             })
             .is_err()

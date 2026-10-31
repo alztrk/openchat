@@ -413,12 +413,12 @@ pub(super) async fn dispatch(
                 .map(|(name, definition)| {
                     json!({
                         "name": name,
-                        "tokens": crate::context_compaction::request_context_token_estimate(&definition),
+                        "tokens": crate::context_compaction::request_context_token_estimate(model_id.as_deref().unwrap_or("gpt-4"), &definition),
                     })
                 })
                 .collect::<Vec<_>>();
             Ok(json!({
-                "instructionsTokens": crate::context_compaction::text_token_estimate(&instructions),
+                "instructionsTokens": crate::context_compaction::text_token_estimate(model_id.as_deref().unwrap_or("gpt-4"), &instructions),
                 "toolDefinitions": tool_definitions,
                 "projectContextUnavailable": project_context_unavailable,
             }))
@@ -700,6 +700,7 @@ pub(super) async fn dispatch(
                 &messages,
                 start_index,
                 context_window,
+                &model_id,
             ) else {
                 return Ok(json!({"compacted": false}));
             };

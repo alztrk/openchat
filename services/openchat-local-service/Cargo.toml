@@ -17,6 +17,7 @@ storage-broker-test-support = []
 desktop-profile-test-support = []
 
 [dependencies]
+tiktoken = "4.1"
 age = "=0.12.1"
 rusqlite = { version = "0.40.2", features = ["backup", "bundled-sqlcipher-vendored-openssl", "functions"] }
 base64 = "0.22"

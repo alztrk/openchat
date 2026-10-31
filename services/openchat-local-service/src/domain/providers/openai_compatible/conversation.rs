@@ -188,7 +188,11 @@ pub(crate) async fn send_temporary_message(
         route.uses_responses_api,
         route.max_output_tokens,
     );
-    context_compaction::validate_request_context(&body, route.request_context_limit())?;
+    context_compaction::validate_request_context(
+        &body,
+        route.request_context_limit(),
+        &route.model_id,
+    )?;
 
     let message_id = Uuid::new_v4().to_string();
     let created_at = SystemTime::now()
@@ -579,6 +583,7 @@ pub async fn send_message(
             &included_messages,
             history_start,
             context_window,
+            &route.model_id,
         )
     {
         let prior_summary = context_state.as_ref().and_then(|state| {
@@ -720,7 +725,7 @@ pub async fn send_message(
         );
         let archive_context_limit = route.request_context_limit().map(|limit| {
             limit.saturating_sub(
-                context_compaction::request_context_token_estimate(&request_body)
+                context_compaction::request_context_token_estimate(&route.model_id, &request_body)
                     .saturating_add(1024),
             )
         });
@@ -1176,13 +1181,18 @@ async fn stream_conversation(context: StreamConversationContext<'_>) -> Result<(
             context.conversation_id,
             session_id.as_deref(),
         )?;
-        if context_compaction::validate_request_context(&body, route.request_context_limit())
-            .is_err()
+        if context_compaction::validate_request_context(
+            &body,
+            route.request_context_limit(),
+            &route.model_id,
+        )
+        .is_err()
             && compact_in_loop_tool_history(
                 messages,
                 goal.as_ref(),
                 &body,
                 route.request_context_limit(),
+                &route.model_id,
             )
         {
             body = build_loop_request_body(
@@ -1195,9 +1205,13 @@ async fn stream_conversation(context: StreamConversationContext<'_>) -> Result<(
                 context.conversation_id,
                 session_id.as_deref(),
             )?;
-            while context_compaction::validate_request_context(&body, route.request_context_limit())
-                .is_err()
-                && drop_oldest_in_loop_round(messages, goal.as_ref())
+            while context_compaction::validate_request_context(
+                &body,
+                route.request_context_limit(),
+                &route.model_id,
+            )
+            .is_err()
+                && drop_oldest_in_loop_round(messages, goal.as_ref(), &route.model_id)
             {
                 body = build_loop_request_body(
                     route,
@@ -1211,7 +1225,11 @@ async fn stream_conversation(context: StreamConversationContext<'_>) -> Result<(
                 )?;
             }
         }
-        context_compaction::validate_request_context(&body, route.request_context_limit())?;
+        context_compaction::validate_request_context(
+            &body,
+            route.request_context_limit(),
+            &route.model_id,
+        )?;
         let mut usage_request = UsageRequestTracker::start(
             context.storage,
             UsageRequestDetails {
@@ -1335,6 +1353,7 @@ async fn stream_conversation(context: StreamConversationContext<'_>) -> Result<(
                     cache_write_tokens: diagnostic_usage.cache_write_tokens,
                     cache_discount: diagnostic_usage.cache_discount,
                     estimated_prompt_tokens: context_compaction::request_context_token_estimate(
+                        &route.model_id,
                         &body,
                     )
                     .saturating_add(1024),
@@ -1561,6 +1580,7 @@ fn compact_in_loop_tool_history(
     goal: Option<&GoalExecution>,
     body: &Value,
     context_limit: Option<i64>,
+    model_id: &str,
 ) -> bool {
     let Some(window) =
         context_limit.filter(|window| *window >= context_compaction::MIN_CONTEXT_WINDOW)
@@ -1573,7 +1593,7 @@ fn compact_in_loop_tool_history(
     let request_budget =
         window.saturating_mul(context_compaction::REQUEST_CONTEXT_BUDGET_PERCENT) / 100;
     let estimated_tokens =
-        context_compaction::request_context_token_estimate(body).saturating_add(1024);
+        context_compaction::request_context_token_estimate(model_id, body).saturating_add(1024);
     if estimated_tokens <= request_budget {
         return false;
     }
@@ -1599,16 +1619,16 @@ fn compact_in_loop_tool_history(
         {
             continue;
         }
-        let before = context_compaction::text_token_estimate(content);
+        let before = context_compaction::text_token_estimate(model_id, content);
         let shortened = shorten_in_loop_tool_output(content, IN_LOOP_TOOL_OUTPUT_EXCERPT_BYTES);
-        let after = context_compaction::text_token_estimate(&shortened);
+        let after = context_compaction::text_token_estimate(model_id, &shortened);
         message["content"] = Value::String(shortened);
         tokens_to_reclaim -= before.saturating_sub(after);
         changed = true;
     }
 
     while tokens_to_reclaim > 0 {
-        let Some(reclaimed) = remove_oldest_in_loop_round_tokens(messages, goal) else {
+        let Some(reclaimed) = remove_oldest_in_loop_round_tokens(messages, goal, model_id) else {
             break;
         };
         tokens_to_reclaim -= reclaimed;
@@ -1618,13 +1638,18 @@ fn compact_in_loop_tool_history(
     changed
 }
 
-fn drop_oldest_in_loop_round(messages: &mut Vec<Value>, goal: Option<&GoalExecution>) -> bool {
-    remove_oldest_in_loop_round_tokens(messages, goal).is_some()
+fn drop_oldest_in_loop_round(
+    messages: &mut Vec<Value>,
+    goal: Option<&GoalExecution>,
+    model_id: &str,
+) -> bool {
+    remove_oldest_in_loop_round_tokens(messages, goal, model_id).is_some()
 }
 
 fn remove_oldest_in_loop_round_tokens(
     messages: &mut Vec<Value>,
     goal: Option<&GoalExecution>,
+    model_id: &str,
 ) -> Option<i64> {
     let cutoff = in_loop_protected_cutoff(messages);
     let base_prefix = 2.min(cutoff);
@@ -1656,7 +1681,7 @@ fn remove_oldest_in_loop_round_tokens(
 
     let removed_tokens: i64 = messages[start..end]
         .iter()
-        .map(context_compaction::request_context_token_estimate)
+        .map(|m| context_compaction::request_context_token_estimate(model_id, m))
         .sum();
     messages.drain(start..end);
 
@@ -1674,7 +1699,8 @@ fn remove_oldest_in_loop_round_tokens(
         messages[base_prefix] = note_message;
         Some(removed_tokens.max(1))
     } else {
-        let note_tokens = context_compaction::request_context_token_estimate(&note_message);
+        let note_tokens =
+            context_compaction::request_context_token_estimate(model_id, &note_message);
         messages.insert(base_prefix, note_message);
         Some(removed_tokens.saturating_sub(note_tokens).max(1))
     }
@@ -1738,16 +1764,22 @@ mod in_loop_compaction_tests {
             json!({"role": "tool", "tool_call_id": "call_2", "content": latest_output}),
         ];
         let body = json!({"model": "test", "messages": messages});
-        assert!(context_compaction::validate_request_context(&body, Some(4096)).is_err());
+        assert!(
+            context_compaction::validate_request_context(&body, Some(4096), "test-model").is_err()
+        );
 
         assert!(compact_in_loop_tool_history(
             &mut messages,
             None,
             &body,
-            Some(4096)
+            Some(4096),
+            "test-model"
         ));
         let compacted_body = json!({"model": "test", "messages": messages});
-        assert!(context_compaction::validate_request_context(&compacted_body, Some(4096)).is_ok());
+        assert!(
+            context_compaction::validate_request_context(&compacted_body, Some(4096), "test-model")
+                .is_ok()
+        );
 
         let latest_tool = messages.last().expect("latest tool message");
         assert_eq!(latest_tool["tool_call_id"], "call_2");
@@ -1782,7 +1814,7 @@ mod in_loop_compaction_tests {
             json!({"role": "tool", "tool_call_id": "c3", "content": "out3"}),
         ];
 
-        assert!(drop_oldest_in_loop_round(&mut messages, None));
+        assert!(drop_oldest_in_loop_round(&mut messages, None, "test-model"));
         assert_eq!(messages[0]["role"], "system");
         assert_eq!(messages[1]["role"], "user");
         assert_eq!(messages[2]["role"], "user");
@@ -1794,6 +1826,10 @@ mod in_loop_compaction_tests {
         );
         assert_eq!(messages[3]["tool_calls"][0]["id"], "c3");
         assert_eq!(messages[4]["tool_call_id"], "c3");
-        assert!(!drop_oldest_in_loop_round(&mut messages, None));
+        assert!(!drop_oldest_in_loop_round(
+            &mut messages,
+            None,
+            "test-model"
+        ));
     }
 }

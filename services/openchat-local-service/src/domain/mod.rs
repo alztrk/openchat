@@ -68,6 +68,8 @@ pub(crate) mod response_budget;
 pub(crate) mod security_scan;
 #[path = "conversations/temporary_conversation.rs"]
 pub(crate) mod temporary_conversation;
+#[path = "conversations/tokenizer.rs"]
+pub(crate) mod tokenizer;
 #[path = "tools/mod.rs"]
 pub(crate) mod tools;
 #[path = "usage_statistics/mod.rs"]

@@ -240,6 +240,7 @@ impl ChatGptService {
                 && crate::context_compaction::validate_request_context(
                     &payload,
                     model.context_window,
+                    &model.id,
                 )
                 .is_err()
             {
@@ -248,11 +249,14 @@ impl ChatGptService {
                     goal.as_ref(),
                     initial_input_len,
                     model.context_window,
+                    &model.id,
                 );
             }
-            if let Err(error) =
-                crate::context_compaction::validate_request_context(&payload, model.context_window)
-            {
+            if let Err(error) = crate::context_compaction::validate_request_context(
+                &payload,
+                model.context_window,
+                &model.id,
+            ) {
                 let elapsed = started.elapsed();
                 self.record_chatgpt_event(
                     "request_failed",
@@ -1521,6 +1525,7 @@ fn compact_in_loop_responses_payload(
     goal: Option<&crate::goals::GoalExecution>,
     initial_input_len: usize,
     context_window: Option<i64>,
+    model_id: &str,
 ) -> bool {
     let Some(window) =
         context_window.filter(|window| *window >= crate::context_compaction::MIN_CONTEXT_WINDOW)
@@ -1530,7 +1535,8 @@ fn compact_in_loop_responses_payload(
     let request_budget =
         window.saturating_mul(crate::context_compaction::REQUEST_CONTEXT_BUDGET_PERCENT) / 100;
     let estimated_tokens =
-        crate::context_compaction::request_context_token_estimate(payload).saturating_add(1024);
+        crate::context_compaction::request_context_token_estimate(model_id, payload)
+            .saturating_add(1024);
     if estimated_tokens <= request_budget {
         return false;
     }
@@ -1557,17 +1563,19 @@ fn compact_in_loop_responses_payload(
             {
                 continue;
             }
-            let before = crate::context_compaction::text_token_estimate(output_text);
+            let before = crate::context_compaction::text_token_estimate(model_id, output_text);
             let shortened =
                 shorten_responses_tool_output(output_text, RESPONSES_IN_LOOP_EXCERPT_BYTES);
-            let after = crate::context_compaction::text_token_estimate(&shortened);
+            let after = crate::context_compaction::text_token_estimate(model_id, &shortened);
             item["output"] = Value::String(shortened);
             tokens_to_reclaim -= before.saturating_sub(after);
             changed = true;
         }
     }
 
-    while crate::context_compaction::validate_request_context(payload, context_window).is_err() {
+    while crate::context_compaction::validate_request_context(payload, context_window, model_id)
+        .is_err()
+    {
         let Some(input) = payload.get_mut("input").and_then(Value::as_array_mut) else {
             break;
         };
@@ -1752,14 +1760,21 @@ mod tool_policy_tests {
             ]
         });
 
-        assert!(crate::context_compaction::validate_request_context(&payload, Some(4096)).is_err());
+        assert!(
+            crate::context_compaction::validate_request_context(&payload, Some(4096), "gpt-4")
+                .is_err()
+        );
         assert!(compact_in_loop_responses_payload(
             &mut payload,
             None,
             1,
-            Some(4096)
+            Some(4096),
+            "gpt-4"
         ));
-        assert!(crate::context_compaction::validate_request_context(&payload, Some(4096)).is_ok());
+        assert!(
+            crate::context_compaction::validate_request_context(&payload, Some(4096), "gpt-4")
+                .is_ok()
+        );
         let input = payload["input"].as_array().expect("input array");
         assert!(
             input[2]["output"]

@@ -528,7 +528,7 @@ impl ChatGptService {
             instructions.to_owned(),
             messages,
         );
-        context_compaction::validate_request_context(&payload, model.context_window)?;
+        context_compaction::validate_request_context(&payload, model.context_window, &model.id)?;
         self.stream_temporary_response(TemporaryResponseContext {
             request_id,
             conversation_id,
