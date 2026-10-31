@@ -146,6 +146,14 @@ function readThemePreference(): ThemePreference {
 
 export function App() {
   const { t } = useTranslation();
+  // Preload Shiki for syntax highlighting (async, non-blocking)
+  useEffect(() => {
+    import('@features/chat/components/message/FileSyntaxHighlight').then(
+      ({ preloadHighlighting }) => preloadHighlighting(),
+      // Silently ignore — plain text is fine if loading fails
+    );
+  }, []);
+
   const [surfaceHistory, setSurfaceHistory] = useState<SurfaceHistory>({
     surfaces: [readInitialSurface()],
     index: 0,

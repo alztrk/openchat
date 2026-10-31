@@ -1,16 +1,26 @@
+import { useMemo } from 'react';
+
 import { useChatStore } from '@features/chat/state/chatStore';
+import type { ChatConversation } from '@features/chat/data/chatStorage';
 
 export function useChatSession() {
   const conversations = useChatStore((state) => state.conversations);
   const activeConversationId = useChatStore((state) => state.activeConversationId);
-  const activeConversation = useChatStore((state) =>
-    state.conversations.find((conversation) => conversation.id === state.activeConversationId),
-  );
   const messages = useChatStore((state) => state.messages);
   const isLoadingMessages = useChatStore((state) => state.isLoadingMessages);
   const errorCode = useChatStore((state) => state.errorCode);
   const serviceStatus = useChatStore((state) => state.serviceStatus);
   const initialize = useChatStore((state) => state.initialize);
+
+  const conversationById = useMemo(() => {
+    const map = new Map<string, ChatConversation>();
+    for (const conversation of conversations) {
+      map.set(conversation.id, conversation);
+    }
+    return map;
+  }, [conversations]);
+
+  const activeConversation = conversationById.get(activeConversationId ?? '') ?? null;
 
   return {
     activeConversation,

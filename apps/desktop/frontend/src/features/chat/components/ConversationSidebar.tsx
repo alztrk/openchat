@@ -86,7 +86,6 @@ const ProjectOptionsDialog = lazy(() =>
   })),
 );
 
-const SIDEBAR_PAGE_SIZE = 50;
 const SIDEBAR_COMPACT_WIDTH = 256;
 
 export interface ConversationSidebarProps {
@@ -134,7 +133,6 @@ export function ConversationSidebar({
   const [editingFolderId, setEditingFolderId] = useState<string | null>(null);
   const [editingFolderName, setEditingFolderName] = useState('');
   const [legacyHiddenConversationIds] = useState(readLegacyHiddenConversationIds);
-  const [visibleChatLimit, setVisibleChatLimit] = useState(SIDEBAR_PAGE_SIZE);
 
   const drawerRef = useRef<HTMLElement | null>(null);
   const scrollAreaRef = useRef<HTMLDivElement | null>(null);
@@ -272,18 +270,13 @@ export function ConversationSidebar({
   );
 
   const visiblePinned = pinnedConversations;
-  const visibleChats = useMemo(
-    () => unassignedConversations.slice(0, visibleChatLimit),
-    [unassignedConversations, visibleChatLimit],
-  );
-  const hasMoreChats = unassignedConversations.length > visibleChatLimit;
   const visibleArchived = archivedConversations;
   const filteredProjectConversations = visibleProjectConversations;
   const filteredProjects = projects;
 
   const recencyBuckets = useMemo(
-    () => (sortMode === 'updatedAt' ? groupConversationsByRecency(visibleChats) : []),
-    [sortMode, visibleChats],
+    () => (sortMode === 'updatedAt' ? groupConversationsByRecency(unassignedConversations) : []),
+    [sortMode, unassignedConversations],
   );
 
   const confirmPermanentDelete = async () => {
@@ -540,15 +533,6 @@ export function ConversationSidebar({
     navItems[nextIndex]?.focus();
   };
 
-  const handleScrollAreaScroll = () => {
-    const container = scrollAreaRef.current;
-    if (!container || !hasMoreChats) return;
-    const remaining = container.scrollHeight - container.scrollTop - container.clientHeight;
-    if (remaining < 180) {
-      setVisibleChatLimit((current) => Math.min(unassignedConversations.length, current + SIDEBAR_PAGE_SIZE));
-    }
-  };
-
   const renderRows = (
     rows: readonly ChatConversation[],
     options: {
@@ -559,14 +543,18 @@ export function ConversationSidebar({
     },
   ) =>
     rows.map((conversation) => (
-      <ConversationSidebarRow
-        active={activeConversationId === conversation.id}
-        allowMove={options.allowMove}
-        archived={options.archived}
-        conversation={conversation}
-        currentFolderId={options.currentFolderId ?? folderIdByConversationId.get(conversation.id) ?? null}
-        currentProjectId={conversation.projectId ?? options.currentProjectId}
-        customFolders={customFolders}
+      <div
+        style={{ contentVisibility: 'auto' }}
+        key={conversation.id}
+      >
+        <ConversationSidebarRow
+          active={activeConversationId === conversation.id}
+          allowMove={options.allowMove}
+          archived={options.archived}
+          conversation={conversation}
+          currentFolderId={options.currentFolderId ?? folderIdByConversationId.get(conversation.id) ?? null}
+          currentProjectId={conversation.projectId ?? options.currentProjectId}
+          customFolders={customFolders}
         disabled={isBusy}
         isAiWorking={isConversationAiWorking(conversation.id)}
         key={conversation.id}
@@ -591,6 +579,7 @@ export function ConversationSidebar({
         projects={projects}
         viewMode={viewMode}
       />
+      </div>
     ));
 
   const toggleSection = (section: SidebarSectionId) => {
@@ -674,7 +663,7 @@ export function ConversationSidebar({
   const showProjects = sectionFilter === 'all' || sectionFilter === 'projects';
   const showFolders =
     (sectionFilter === 'all' || sectionFilter === 'chats') && (customFolders.length > 0 || isCreatingFolder);
-  const showChats = (sectionFilter === 'all' || sectionFilter === 'chats') && sectionIsVisible(visibleChats, true);
+  const showChats = (sectionFilter === 'all' || sectionFilter === 'chats') && sectionIsVisible(unassignedConversations, true);
   const showArchived =
     (sectionFilter === 'all' || sectionFilter === 'chats') && sectionIsVisible(visibleArchived, false);
   return (
@@ -717,7 +706,6 @@ export function ConversationSidebar({
           aria-label={t('statisticsConversations')}
           className="openchat-scroll-area conversation-sidebar-scroll-area min-w-0 flex-1 px-2.5 pb-4 pt-1"
           onKeyDown={handleScrollAreaKeyDown}
-          onScroll={handleScrollAreaScroll}
           ref={scrollAreaRef}
         >
           <div className="grid gap-4">
@@ -1031,7 +1019,7 @@ export function ConversationSidebar({
                     title={t('chats')}
                   >
                     <li className="grid gap-3">
-                      {visibleChats.length === 0 ? (
+                      {unassignedConversations.length === 0 ? (
                         <div className="px-3 py-2 text-xs text-secondary-text">{t('noChatsTitle')}</div>
                       ) : recencyBuckets.length > 0 ? (
                         <ul className="grid gap-3.5">
@@ -1052,28 +1040,13 @@ export function ConversationSidebar({
                         </ul>
                       ) : (
                         <ul className="grid gap-0.5">
-                          {renderRows(visibleChats, {
+                          {renderRows(unassignedConversations, {
                             archived: false,
                             currentProjectId: null,
                             allowMove: true,
                           })}
                         </ul>
                       )}
-                      {hasMoreChats ? (
-                        <Button
-                          className="mx-2 min-h-9 justify-start rounded-button border-border bg-surface/60 px-3 py-1.5 text-xs font-medium text-secondary-text transition-colors hover:bg-hover hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
-                          onClick={() =>
-                            setVisibleChatLimit((current) =>
-                              Math.min(unassignedConversations.length, current + SIDEBAR_PAGE_SIZE),
-                            )
-                          }
-                          size="small"
-                          type="button"
-                          variant="secondary"
-                        >
-                          {t('loadMoreChats')}
-                        </Button>
-                      ) : null}
                     </li>
                   </ConversationSidebarSection>
                 ) : null}

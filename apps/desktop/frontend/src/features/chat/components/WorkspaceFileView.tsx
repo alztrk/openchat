@@ -1,7 +1,7 @@
 import { FileCode2 } from 'lucide-react';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { highlightFileLines } from './message/FileSyntaxHighlight';
+import { highlightFileLines, useHighlightingState } from './message/FileSyntaxHighlight';
 
 export interface FileWorkspaceTab {
   id: string;
@@ -15,6 +15,9 @@ export interface FileWorkspaceTab {
 
 export function WorkspaceFileView({ file }: { file: FileWorkspaceTab }) {
   const { t } = useTranslation();
+  // Subscribe to highlighting state changes so we re-render once Shiki loads
+  useHighlightingState();
+
   const lines = useMemo(
     () => file.content.split(/\r\n|\r|\n/).map((text, index) => ({ number: index + 1, text })),
     [file.content],

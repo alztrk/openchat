@@ -203,7 +203,13 @@ export function CommandPalette({
   const inputRef = useRef<HTMLInputElement>(null);
   const optionRefs = useRef(new Map<string, HTMLButtonElement>());
   const listboxId = useId();
-  const normalizedQuery = normalizeText(query.trim(), i18n.language);
+  // Debounce search queries to avoid re-scoring 600+ items on every keystroke
+  const [debouncedQuery, setDebouncedQuery] = useState(query);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedQuery(query), 100);
+    return () => window.clearTimeout(timer);
+  }, [query]);
+  const normalizedQuery = normalizeText(debouncedQuery, i18n.language);
 
   useEffect(() => {
     if (open && profilesLoadState === 'idle') initializeProfiles();

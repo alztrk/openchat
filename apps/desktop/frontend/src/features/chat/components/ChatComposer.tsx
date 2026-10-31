@@ -1,5 +1,6 @@
 import { ArrowUp, Brain, Paperclip, Square, X } from 'lucide-react';
 import { useRef, useState } from 'react';
+import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button, Select, Textarea } from '@shared/components';
 import type { ChatMessage } from '@features/chat/data/chatStorage';
@@ -145,20 +146,34 @@ export function ChatComposer({
   const modelContextLimits = useChatStore((state) => state.modelContextLimits);
   const { stopResponse } = useChatStreaming();
 
-  const selectableModels = models.filter((model) => !hiddenModelKeys.includes(modelRouteKey(model)));
-  const contextWindow = selectedModel === undefined ? null : effectiveContextWindow(selectedModel, modelContextLimits);
+  const selectableModels = useMemo(
+    () => models.filter((model) => !hiddenModelKeys.includes(modelRouteKey(model))),
+    [models, hiddenModelKeys],
+  );
+  const contextWindow = useMemo(
+    () => (selectedModel === undefined ? null : effectiveContextWindow(selectedModel, modelContextLimits)),
+    [selectedModel, modelContextLimits],
+  );
   const activeConversation = conversations.find((conversation) => conversation.id === activeConversationId);
   const contextProjectId = activeConversation?.projectId ?? pendingProjectId;
   const contextToolPermissionMode = composerMode === 'plan' ? 'plan' : selectedPermissionMode;
   const isTargetPlaceholder = targetConversationId === null;
-  const placeholderHint = isTargetPlaceholder
-    ? t('conversationUnavailable')
-    : !sendMessageBinding
-      ? t('composerPlaceholderNoShortcut')
-      : t('composerPlaceholderShortcut', { shortcut: sendShortcutLabel });
-  const sendTooltip = !sendMessageBinding
-    ? t('composerSendTooltipNoShortcut')
-    : t('composerSendTooltipShortcut', { shortcut: sendShortcutLabel });
+  const placeholderHint = useMemo(
+    () =>
+      isTargetPlaceholder
+        ? t('conversationUnavailable')
+        : !sendMessageBinding
+          ? t('composerPlaceholderNoShortcut')
+          : t('composerPlaceholderShortcut', { shortcut: sendShortcutLabel }),
+    [isTargetPlaceholder, sendMessageBinding, sendShortcutLabel, t],
+  );
+  const sendTooltip = useMemo(
+    () =>
+      !sendMessageBinding
+        ? t('composerSendTooltipNoShortcut')
+        : t('composerSendTooltipShortcut', { shortcut: sendShortcutLabel }),
+    [sendMessageBinding, sendShortcutLabel, t],
+  );
 
   const [isComposerDraggingOver, setIsComposerDraggingOver] = useState(false);
   const [isAttachmentLibraryOpen, setIsAttachmentLibraryOpen] = useState(false);
