@@ -1,6 +1,7 @@
 import { i18n } from '@shared/lib/i18n/i18n';
 import { parseAgentQuestionGroup } from '@features/chat/data/agentQuestions';
-import { type ChatConversation, type ChatMessage, getConversation } from '@features/chat/data/chatStorage';
+import type { ChatConversation, ChatMessage } from '@entities/conversation';
+import { getConversation } from '@features/chat/data/chatStorage';
 import {
   readNotificationPreferences,
   readWindowsNotificationStatus,

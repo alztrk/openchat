@@ -7,7 +7,7 @@ import { providerNameForModel, reasoningLevelLabel } from '@features/chat/compon
 import { useComposerPreferencesStore } from '@features/chat/data/composerPreferences';
 import { useChatStore } from '@features/chat/state/chatStore';
 import { ProviderIcon } from '@features/provider-settings/components/ProviderIcon';
-import type { ChatModel } from '@features/provider-settings/data/chatModels';
+import type { ChatModel } from '@entities/model';
 import { formatModelRouteKey, modelRouteKey } from '@features/provider-settings/data/modelPreferences';
 import { SettingsPreferenceRow } from './SettingsPreferenceRow';
 

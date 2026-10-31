@@ -11,7 +11,7 @@ import { useChatSession } from '@features/chat/hooks/useChatSession';
 import { useChatStore } from '@features/chat/state/chatStore';
 import { isSameRoute, upsertMessage } from '@features/chat/state/chatStoreUtils';
 import { modelRouteKey } from '@features/provider-settings/data/modelPreferences';
-import type { ChatModel } from '@features/provider-settings/data/chatModels';
+import type { ChatModel } from '@entities/model';
 import { isObject } from '@shared/lib/utils/json';
 import { ChatComposer } from './ChatComposer';
 import type { RightWorkspaceTab, WorkspaceFileRequest, WorkspaceFileSelection } from './ChatFileChangesPanel';

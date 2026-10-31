@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import type { PendingChatAttachment } from '@features/chat/data/chatAttachments';
 import { readChatGptFastMode, writeChatGptFastMode } from '@features/chat/data/chatGptFastMode';
 import type { ChatConversation, ChatMessage, ChatModelFavorite } from '@features/chat/data/chatStorage';
-import type { ChatModel } from '@features/provider-settings/data/chatModels';
+import type { ChatModel } from '@entities/model';
 import { renameConversation } from '@features/chat/data/chatStorage';
 import {
   readConversationComposerDraft,

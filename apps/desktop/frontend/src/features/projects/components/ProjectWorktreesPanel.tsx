@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Button, Dialog } from '@shared/components';
-import type { ChatProject } from '@features/chat/data/chatStorage';
+import type { ChatProject } from '@entities/project';
 import {
   loadProjectToolPermissionRules,
   loadToolPermissionMode,

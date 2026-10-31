@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Button, Dialog } from '@shared/components';
-import type { ChatProject } from '@features/chat/data/chatStorage';
+import type { ChatProject } from '@entities/project';
 import { ProjectDefaultModelPanel } from './ProjectDefaultModelPanel';
 import { ProjectInstructionsPanel } from './ProjectInstructionsPanel';
 import { ProjectMcpPanel } from './ProjectMcpPanel';

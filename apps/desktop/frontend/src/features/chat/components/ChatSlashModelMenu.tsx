@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 
 import { Button } from '@shared/components';
 import { ProviderIcon } from '@features/provider-settings/components/ProviderIcon';
-import type { ChatModel } from '@features/provider-settings/data/chatModels';
+import type { ChatModel } from '@entities/model';
 
 interface ChatSlashModelMenuProps {
   models: readonly ChatModel[];

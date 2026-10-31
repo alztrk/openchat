@@ -12,7 +12,7 @@ import {
   loadContextUsageConfiguration,
 } from '@features/chat/data/contextUsage';
 import type { ToolPermissionMode } from '@features/projects/data/projectPreferences';
-import type { ChatModel } from '@features/provider-settings/data/chatModels';
+import type { ChatModel } from '@entities/model';
 import { withStableKeys } from '@shared/lib/utils/reactKeys';
 
 interface ContextUsageIndicatorProps {

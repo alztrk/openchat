@@ -1,6 +1,6 @@
 import type { StoreApi } from 'zustand/vanilla';
 import { readProjectDefaultModelPreference } from '@features/projects/data/projectPreferences';
-import type { ChatModelProvider } from '@features/provider-settings/data/chatModels';
+import type { ChatModelProvider } from '@entities/model';
 import { loadApiKeyModels, loadChatGptModels, loadLocalModels } from '@features/provider-settings/data/modelCatalogLoader';
 import {
   type DefaultModelPreference,

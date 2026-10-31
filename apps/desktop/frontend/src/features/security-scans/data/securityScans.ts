@@ -1,4 +1,4 @@
-import type { ChatProject } from '@features/chat/data/chatStorage';
+import type { ChatProject } from '@entities/project';
 import type { ChatRoute } from '@features/provider-settings/data/routes';
 import { localServiceClient } from '@shared/lib/platform/local-service';
 import { isObject } from '@shared/lib/utils/json';

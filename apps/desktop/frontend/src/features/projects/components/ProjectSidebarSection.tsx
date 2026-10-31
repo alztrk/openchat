@@ -5,7 +5,8 @@ import { useTranslation } from 'react-i18next';
 import { Button } from '@shared/components';
 import { ConversationSidebarRow } from '@features/chat/components/ConversationSidebarRow';
 import { ConversationSidebarSection } from '@features/chat/components/ConversationSidebarSection';
-import type { ChatConversation, ChatProject, ExportFormat } from '@features/chat/data/chatStorage';
+import type { ChatConversation, ExportFormat } from '@entities/conversation';
+import type { ChatProject } from '@entities/project';
 import type { CustomSidebarFolder, SidebarViewMode } from '@features/chat/data/sidebarPreferences';
 
 interface ProjectSidebarSectionProps {

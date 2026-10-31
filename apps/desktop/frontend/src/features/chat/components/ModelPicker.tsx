@@ -7,7 +7,7 @@ import { Button, Input, Tooltip } from '@shared/components';
 import type { ChatModelFavorite } from '@features/chat/data/chatStorage';
 import { favoriteSourceConnection } from '@features/chat/state/chatStoreUtils';
 import { ProviderIcon } from '@features/provider-settings/components/ProviderIcon';
-import type { ChatModel, ChatModelProvider } from '@features/provider-settings/data/chatModels';
+import type { ChatModel, ChatModelProvider } from '@entities/model';
 import { modelRouteKey } from '@features/provider-settings/data/modelPreferences';
 import {
   type CachedModelPricing,

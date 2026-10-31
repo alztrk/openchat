@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Button } from '@shared/components';
-import type { ChatProject } from '@features/chat/data/chatStorage';
+import type { ChatProject } from '@entities/project';
 import { useChatStore } from '@features/chat/state/chatStore';
 import { writeProjectDefaultModelPreference } from '@features/projects/data/projectPreferences';
 import { defaultPreferenceForModel } from '@features/provider-settings/data/modelPreferences';

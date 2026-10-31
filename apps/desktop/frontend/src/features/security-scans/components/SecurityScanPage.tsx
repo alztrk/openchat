@@ -22,11 +22,11 @@ const INITIAL_CHECK_DELAY_MS = 2_500;
 
 import { Button, Checkbox, Dialog, Select } from '@shared/components';
 import { MessageList } from '@features/chat/components/MessageList';
-import type { ChatProject } from '@features/chat/data/chatStorage';
+import type { ChatProject } from '@entities/project';
 import { useChatStore } from '@features/chat/state/chatStore';
 import { formatFailureCodeMessage } from '@features/chat/state/chatStoreErrorDetails';
 import { ProviderIcon } from '@features/provider-settings/components/ProviderIcon';
-import type { ChatModel } from '@features/provider-settings/data/chatModels';
+import type { ChatModel } from '@entities/model';
 import {
   deleteSecurityScanRuntime,
   formatSecurityScanError,

@@ -3,9 +3,9 @@ import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Button } from '@shared/components';
+import type { ChatProject } from '@entities/project';
 import {
   addProjectWorkspaceRoot,
-  type ChatProject,
   removeProjectWorkspaceRoot,
 } from '@features/chat/data/chatStorage';
 import { useChatStore } from '@features/chat/state/chatStore';

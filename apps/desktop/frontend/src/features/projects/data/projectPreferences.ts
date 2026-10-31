@@ -1,8 +1,9 @@
 import { type DefaultModelPreference, parseDefaultModelPreference } from '@features/provider-settings/data/modelPreferences';
 import { unifiedStorage } from '@shared/lib/platform/storage/unifiedStorage';
 
-export type ProjectToolPermissionRule = 'ask' | 'allow' | 'deny';
-export type ToolPermissionMode = 'require_approval' | 'approve_safe_operations' | 'full_access';
+import type { ProjectToolPermissionRule, ToolPermissionMode } from '@entities/project';
+export type { ProjectToolPermissionRule, ToolPermissionMode };
+
 
 const projectDefaultModelPrefix = 'models.project_default.';
 const projectSkillPrefix = 'project.skills.';

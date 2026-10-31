@@ -15,9 +15,9 @@ import {
   setConversationRoute,
   setModelFavorite,
 } from '@features/chat/data/chatStorage';
-import type { ChatModel, ChatModelProvider } from '@features/provider-settings/data/chatModels';
+import type { ChatModel, ChatModelProvider } from '@entities/model';
 
-export type { ChatModel } from '@features/provider-settings/data/chatModels';
+export type { ChatModel } from '@entities/model';
 
 import type { PendingChatAttachment } from '@features/chat/data/chatAttachments';
 import type { ChatGoal } from '@features/chat/data/chatGoals';

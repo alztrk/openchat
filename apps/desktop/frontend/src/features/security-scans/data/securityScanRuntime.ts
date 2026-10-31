@@ -2,7 +2,8 @@ import type { TFunction } from 'i18next';
 import { useSyncExternalStore } from 'react';
 
 import { type ChatGoal, parseChatGoal } from '@features/chat/data/chatGoals';
-import { type ChatMessage, getMessages, saveMessage } from '@features/chat/data/chatStorage';
+import type { ChatMessage } from '@entities/conversation';
+import { getMessages, saveMessage } from '@features/chat/data/chatStorage';
 import {
   formatUnknownServiceError,
   resolveServiceFailureCode,

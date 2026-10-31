@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { ChatModel } from '@features/provider-settings/data/chatModels';
+import type { ChatModel } from '@entities/model';
 import type { ChatMessage } from '@features/chat/data/chatStorage';
 import { useComposerPreferencesStore } from '@features/chat/data/composerPreferences';
 import { loadRouteParameters } from '@features/provider-settings/data/modelRouteParameters';

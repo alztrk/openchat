@@ -1,4 +1,4 @@
-import type { ChatModel } from '@features/provider-settings/data/chatModels';
+import type { ChatModel } from '@entities/model';
 import { formatModelRouteKey, modelRouteKey } from '@features/provider-settings/data/modelPreferences';
 import { loadRouteParameters } from '@features/provider-settings/data/modelRouteParameters';
 import {

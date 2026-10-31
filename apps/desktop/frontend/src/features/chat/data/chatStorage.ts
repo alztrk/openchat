@@ -5,7 +5,6 @@ import { invoke } from '@shared/lib/platform/tauri';
 
 import {
   type AttachmentWritePayload,
-  type ChatAttachmentMetadata,
   decodeBase64,
   decodeStoredMessageContent,
   encodeBase64,
@@ -13,61 +12,23 @@ import {
   type PendingChatAttachment,
 } from './chatAttachments';
 
-export type ChatRole = 'user' | 'assistant';
-export type ChatMessageStatus = 'streaming' | 'completed' | 'failed' | 'stopped';
+import type {
+  ChatRole,
+  ChatMessageStatus,
+  ChatConversation,
+  ChatProject,
+  ChatMessage,
+  ChatModelFavorite,
+} from '@entities/conversation';
 
-export interface ChatConversation {
-  id: string;
-  title: string;
-  titleSource: string;
-  providerId: string | null;
-  modelId: string | null;
-  connectionId: string | null;
-  workspaceId: string | null;
-  apiKeyConnectionId: string | null;
-  projectId: string | null;
-  agent: AssistantAgentSnapshot | null;
-  isPinned: boolean;
-  isArchived: boolean;
-  createdAt: number;
-  updatedAt: number;
-}
-
-export interface ChatProject {
-  id: string;
-  name: string;
-  folderPath: string;
-  workspaceRoots: string[];
-  createdAt: number;
-  updatedAt: number;
-}
-
-export interface ChatMessage {
-  id: string;
-  conversationId: string;
-  role: ChatRole;
-  content: string;
-  attachments: ChatAttachmentMetadata[];
-  createdAt: number | null;
-  outputTokens: number | null;
-  tokensPerSecond: number | null;
-  elapsedMicroseconds: number | null;
-  providerId: string | null;
-  modelId: string | null;
-  citationSources: string;
-  personalMemoryFactIds: string;
-  reasoningSummaries: string;
-  toolActivities: string;
-  status: ChatMessageStatus;
-  failureCode: string | null;
-}
-
-export interface ChatModelFavorite {
-  providerId: string;
-  modelId: string;
-  displayName: string;
-  sourceConnectionId: string | null;
-}
+export type {
+  ChatRole,
+  ChatMessageStatus,
+  ChatConversation,
+  ChatProject,
+  ChatMessage,
+  ChatModelFavorite,
+};
 
 export interface ConversationAttachmentSummary {
   conversationId: string;

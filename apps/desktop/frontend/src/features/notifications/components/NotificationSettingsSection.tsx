@@ -4,7 +4,8 @@ import { useTranslation } from 'react-i18next';
 
 import { Button, Input, Slider, Switch } from '@shared/components';
 import type en from '@shared/lib/i18n/locales/en.json';
-import { type ChatProject, listProjects } from '@features/chat/data/chatStorage';
+import type { ChatProject } from '@entities/project';
+import { listProjects } from '@features/chat/data/chatStorage';
 import {
   type NotificationPreferences,
   openWindowsNotificationSettings,

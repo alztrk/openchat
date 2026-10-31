@@ -1,6 +1,6 @@
 import { parseToolActivities } from '@features/chat/components/message/messageData';
 import { readProjectSkillIds, type ToolPermissionMode } from '@features/projects/data/projectPreferences';
-import type { ChatModel } from '@features/provider-settings/data/chatModels';
+import type { ChatModel } from '@entities/model';
 import { modelRouteKey, readModelPreferences } from '@features/provider-settings/data/modelPreferences';
 import { readAssistantExecutionPreferences } from '@features/app-settings/data/assistantExecutionPreferences';
 import { personalMemoryContextForConversation } from '@features/app-settings/data/personalMemory';

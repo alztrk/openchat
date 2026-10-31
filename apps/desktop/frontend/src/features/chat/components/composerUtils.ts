@@ -1,5 +1,5 @@
 import type { ChatSlashCommand } from '@features/chat/components/ChatSlashCommandMenu';
-import type { ChatModel } from '@features/provider-settings/data/chatModels';
+import type { ChatModel } from '@entities/model';
 import { modelRouteKey } from '@features/provider-settings/data/modelPreferences';
 
 export type ChatCommandFeedbackKey =

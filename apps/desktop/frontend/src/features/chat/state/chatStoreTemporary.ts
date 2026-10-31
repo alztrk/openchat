@@ -9,7 +9,7 @@ import {
   listConversations,
   saveMessage,
 } from '@features/chat/data/chatStorage';
-import type { ChatModel } from '@features/provider-settings/data/chatModels';
+import type { ChatModel } from '@entities/model';
 import { loadRouteParameters } from '@features/provider-settings/data/modelRouteParameters';
 import { type LocalServiceClient, LocalServiceError } from '@shared/lib/platform/local-service';
 import { applyStreamEvent, numberOrNull, titleFromMessage, upsertMessage } from './chatStoreUtils';

@@ -40,7 +40,7 @@ import {
   settleDesignCanvasRequest,
   updateFrameTokens,
 } from '@features/design-workspace/data/designCanvas';
-import type { ChatModel } from '@features/provider-settings/data/chatModels';
+import type { ChatModel } from '@entities/model';
 import { loadRouteParameters } from '@features/provider-settings/data/modelRouteParameters';
 import { type JsonObject, localServiceClient, type ServiceOperation } from '@shared/lib/platform/local-service';
 

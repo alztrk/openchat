@@ -16,7 +16,7 @@ import type { ChatMessage } from '@features/chat/data/chatStorage';
 import { useConversationSidebarActions } from '@features/chat/hooks/useConversationSidebarActions';
 import { useChatStore } from '@features/chat/state/chatStore';
 import type { ToolPermissionMode } from '@features/projects/data/projectPreferences';
-import type { ChatModel } from '@features/provider-settings/data/chatModels';
+import type { ChatModel } from '@entities/model';
 import { ContextUsageIndicator } from './ContextUsageIndicator';
 
 const CreateProjectDialog = lazy(() =>

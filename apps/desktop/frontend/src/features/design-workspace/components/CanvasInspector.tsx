@@ -22,7 +22,7 @@ import {
   designCanvasSpacingUnits,
   designCanvasTypeScales,
 } from '@features/design-workspace/data/designCanvas';
-import type { ChatModel } from '@features/provider-settings/data/chatModels';
+import type { ChatModel } from '@entities/model';
 
 export type CanvasColorTokenKey = 'background' | 'surface' | 'text' | 'primary' | 'accent' | 'border';
 export type CanvasTokenTranslationKey =

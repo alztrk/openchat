@@ -1,5 +1,5 @@
 import type { ChatConversation, ChatMessage } from '@features/chat/data/chatStorage';
-import type { ChatModel } from '@features/provider-settings/data/chatModels';
+import type { ChatModel } from '@entities/model';
 import type { JsonObject } from '@shared/lib/platform/local-service';
 import { isObject } from '@shared/lib/utils/json';
 

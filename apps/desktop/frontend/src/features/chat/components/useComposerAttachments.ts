@@ -11,7 +11,7 @@ import {
 } from '@features/chat/data/chatAttachments';
 import { type ConversationAttachmentSummary, readMessageAttachment } from '@features/chat/data/chatStorage';
 import { useChatStore } from '@features/chat/state/chatStore';
-import type { ChatModel } from '@features/provider-settings/data/chatModels';
+import type { ChatModel } from '@entities/model';
 import { isObject } from './composerUtils';
 
 export interface UseComposerAttachmentsOptions {

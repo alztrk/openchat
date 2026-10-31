@@ -6,7 +6,7 @@ import { useTranslation } from 'react-i18next';
 const URL_REVOCATION_DELAY_MS = 1_000;
 
 import { Button, Switch, Textarea } from '@shared/components';
-import type { ChatProject } from '@features/chat/data/chatStorage';
+import type { ChatProject } from '@entities/project';
 import { LocalServiceError, localServiceClient } from '@shared/lib/platform/local-service';
 
 const maximumItemBytes = 4 * 1024;

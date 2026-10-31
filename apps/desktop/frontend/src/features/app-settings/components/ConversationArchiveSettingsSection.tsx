@@ -2,7 +2,7 @@ import { Archive, ArchiveRestore, ShieldCheck } from 'lucide-react';
 import { type FormEvent, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button, Card, Checkbox, Dialog, Input, RadioGroup } from '@shared/components';
-import type { ChatConversation } from '@features/chat/data/chatStorage';
+import type { ChatConversation } from '@entities/conversation';
 import { useChatStore } from '@features/chat/state/chatStore';
 import {
   buildArchiveFileName,
