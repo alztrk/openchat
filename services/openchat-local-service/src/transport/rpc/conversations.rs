@@ -530,7 +530,7 @@ pub(super) async fn dispatch(
                     "toolUsage": [{"name": "tool_activities", "tokens": tool_usage_tokens}],
                     "memoryTokens": summary_tokens,
                     "draftTokens": draft_tokens,
-                    "providerInputTokens": null as Option<i64>,
+                    "providerInputTokens": Option::<i64>::None,
                     "usageMode": "estimated",
                 }))
             })();

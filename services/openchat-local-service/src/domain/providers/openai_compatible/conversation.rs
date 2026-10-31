@@ -590,10 +590,8 @@ pub async fn send_message(
             &included_messages,
             &provider_request.instructions,
         )
-        && let prune_level = context_compaction::PruneLevel::for_estimate(
-            estimated_tokens,
-            context_window,
-        )
+        && let prune_level =
+            context_compaction::PruneLevel::for_estimate(estimated_tokens, context_window)
     {
         let prior_summary = context_state.as_ref().and_then(|state| {
             (state.compaction_kind.as_deref() == Some("summary"))

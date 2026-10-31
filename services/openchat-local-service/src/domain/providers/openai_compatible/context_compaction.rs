@@ -471,7 +471,11 @@ struct HistoryBatcher<'a> {
 }
 
 impl<'a> HistoryBatcher<'a> {
-    fn new(messages: &'a [StoredMessage], max_bytes: usize, prune_level: context_compaction::PruneLevel) -> Self {
+    fn new(
+        messages: &'a [StoredMessage],
+        max_bytes: usize,
+        prune_level: context_compaction::PruneLevel,
+    ) -> Self {
         Self {
             messages,
             message_index: 0,
@@ -483,7 +487,12 @@ impl<'a> HistoryBatcher<'a> {
         }
     }
 
-    fn for_provider(messages: &'a [StoredMessage], max_bytes: usize, provider_id: &str, prune_level: context_compaction::PruneLevel) -> Self {
+    fn for_provider(
+        messages: &'a [StoredMessage],
+        max_bytes: usize,
+        provider_id: &str,
+        prune_level: context_compaction::PruneLevel,
+    ) -> Self {
         let mut batcher = Self::new(messages, max_bytes, prune_level);
         batcher.provider_id = Some(provider_id.to_owned());
         batcher
@@ -500,9 +509,15 @@ impl Iterator for HistoryBatcher<'_> {
                 let tool_output_limit = self.prune_level.old_tool_output_limit();
                 self.message_text = self.messages.get(self.message_index).map(|message| {
                     if let Some(provider_id) = self.provider_id.as_deref() {
-                        crate::history::summary_text_with_tool_output_limit(message, tool_output_limit)
+                        crate::history::summary_text_with_tool_output_limit(
+                            message,
+                            tool_output_limit,
+                        )
                     } else {
-                        crate::history::summary_text_with_tool_output_limit(message, tool_output_limit)
+                        crate::history::summary_text_with_tool_output_limit(
+                            message,
+                            tool_output_limit,
+                        )
                     }
                 });
             }
@@ -606,7 +621,8 @@ mod tests {
     fn history_batches_preserve_large_unicode_message_content() {
         let content = "ö界🙂".repeat(200);
         let messages = [message("message", &content)];
-        let batches = HistoryBatcher::new(&messages, 64, context_compaction::PruneLevel::None).collect::<Vec<_>>();
+        let batches = HistoryBatcher::new(&messages, 64, context_compaction::PruneLevel::None)
+            .collect::<Vec<_>>();
 
         assert!(batches.len() > 1);
         assert!(
@@ -645,7 +661,8 @@ mod tests {
             }],
             attachments: Vec::new(),
         };
-        let batches = HistoryBatcher::new(&[assistant], 64, context_compaction::PruneLevel::None).collect::<Vec<_>>();
+        let batches = HistoryBatcher::new(&[assistant], 64, context_compaction::PruneLevel::None)
+            .collect::<Vec<_>>();
         let transcript = batches.concat();
         let restored = transcript
             .lines()
@@ -775,7 +792,12 @@ mod tests {
             "history",
             &"Important archived detail. ".repeat(80),
         )];
-        let expected_batches = HistoryBatcher::new(&messages, history_batch_limit, context_compaction::PruneLevel::None).count();
+        let expected_batches = HistoryBatcher::new(
+            &messages,
+            history_batch_limit,
+            context_compaction::PruneLevel::None,
+        )
+        .count();
         assert!(expected_batches > 1);
 
         let listener = TcpListener::bind("127.0.0.1:0")

@@ -47,7 +47,13 @@ pub(crate) fn local_extractive_summary(
     byte_limit: usize,
     cancellation: &tokio::sync::watch::Receiver<bool>,
 ) -> Result<String, crate::protocol::ServiceError> {
-    local_extractive_summary_with_prune(existing_summary, messages, byte_limit, PruneLevel::None, cancellation)
+    local_extractive_summary_with_prune(
+        existing_summary,
+        messages,
+        byte_limit,
+        PruneLevel::None,
+        cancellation,
+    )
 }
 
 /// Extractive summary with prune-level-aware byte limits for old tool outputs.
@@ -106,7 +112,10 @@ pub(crate) fn local_extractive_summary_with_prune(
         if entry_limit <= prefix.len() {
             break;
         }
-        let history = crate::history::summary_text_with_tool_output_limit(message, prune_level.old_tool_output_limit());
+        let history = crate::history::summary_text_with_tool_output_limit(
+            message,
+            prune_level.old_tool_output_limit(),
+        );
         let content = tail_excerpt(&history, entry_limit - prefix.len());
         if content.is_empty() {
             continue;
