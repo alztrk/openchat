@@ -5,7 +5,7 @@ import {
   findInChatMatches,
   isCodeBlockMessage,
   isErrorMessage,
-} from '../src/modules/conversations/data/inChatSearch.ts';
+} from '../src/features/chat/data/inChatSearch.ts';
 
 function createMessage(overrides = {}) {
   return {

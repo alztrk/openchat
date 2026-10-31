@@ -62,8 +62,12 @@ jobs:
         run: npm run check:imports
         working-directory: apps/desktop/frontend
 
-      - name: Test frontend rendering limits
-        run: node --experimental-strip-types --test tests/virtualMessageLayout.test.mjs
+      - name: Check localized translations
+        run: npm run check:locales
+        working-directory: apps/desktop/frontend
+
+      - name: Run frontend unit tests
+        run: npm test
         working-directory: apps/desktop/frontend
 
       - name: Check frontend types and build assets

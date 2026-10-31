@@ -5,8 +5,8 @@ import test from 'node:test';
 import {
   isWithinRichMarkdownBudget,
   MAX_RICH_MARKDOWN_CHARACTERS,
-} from '../src/modules/conversations/data/messageMarkdownBudget.ts';
-import { estimateWrappedLineCount } from '../src/modules/conversations/data/virtualMessageLayout.ts';
+} from '../src/features/chat/data/messageMarkdownBudget.ts';
+import { estimateWrappedLineCount } from '../src/features/chat/data/virtualMessageLayout.ts';
 
 function splitBasedLineCount(content, charsPerLine) {
   return content.split('\n').reduce((count, line) => count + Math.max(1, Math.ceil(line.length / charsPerLine)), 0);

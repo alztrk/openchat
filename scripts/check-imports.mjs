@@ -111,7 +111,13 @@ function checkImport(sourcePath, importPath) {
   }
   if (sourceLayerKey === 'features') {
     if (targetLayerKey === 'features') {
-      return { severity: 'warning', source: relSource, importPath: importDisplay, message: 'cross-feature import (discouraged)' };
+      const sourceParts = relSource.split(sep);
+      const sourceFeature = sourceParts[0] === 'features' ? sourceParts[1] : null;
+      const targetFeature = importPath.startsWith('@features/') ? importPath.split('/')[1] : null;
+      if (sourceFeature && targetFeature && sourceFeature !== targetFeature) {
+        return { severity: 'warning', source: relSource, importPath: importDisplay, message: `cross-feature import (${sourceFeature} → ${targetFeature})` };
+      }
+      return null;
     }
     if (!LAYERS.features.allowed.includes(targetLayerKey) && !isAppUmbrella(targetLayerKey)) {
       return { severity: 'error', source: relSource, importPath: importDisplay, message: `layer violation (@features → @${targetLayerKey})` };

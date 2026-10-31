@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import test from 'node:test';
 
-import { runInterruptibleCommand, runTemporaryProfileSession } from '../../../../scripts/temporaryProfileSession.mjs';
+import { runInterruptibleCommand, runTemporaryProfileSession } from '../../../../scripts/shared/session.mjs';
 
 test('waits for an interrupted child process before cleaning the temporary profile', async () => {
   const signalSource = new EventEmitter();

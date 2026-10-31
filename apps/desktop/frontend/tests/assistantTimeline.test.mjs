@@ -12,17 +12,17 @@ function compileTsModule(source) {
 }
 
 const messageDataSource = fs
-  .readFileSync(path.resolve('src/modules/conversations/components/message/messageData.ts'), 'utf8')
+  .readFileSync(path.resolve('src/features/chat/components/message/messageData.ts'), 'utf8')
   .replace(
-    "import { type ChatFileChange, parseChatFileChange } from '@/modules/conversations/data/chatFileChanges';",
+    "import { type ChatFileChange, parseChatFileChange } from '@features/chat/data/chatFileChanges';",
     'const parseChatFileChange = () => null;',
   );
 
 const chatStoreUtilsSource = fs
-  .readFileSync(path.resolve('src/modules/conversations/stores/chatStoreUtils.ts'), 'utf8')
-  .replace("import { isObject } from '@/shared/utils/json';", '')
+  .readFileSync(path.resolve('src/features/chat/state/chatStoreUtils.ts'), 'utf8')
+  .replace("import { isObject } from '@shared/lib/utils/json';", '')
   .replace(
-    "export { isObject, numberOrNull } from '@/shared/utils/json';",
+    "export { isObject, numberOrNull } from '@shared/lib/utils/json';",
     `export function numberOrNull(value) {
       return typeof value === 'number' && Number.isFinite(value) ? value : null;
     }
@@ -205,7 +205,7 @@ test('snaps mid-character UTF-8 byte offsets safely withoutreplacement corruptio
 
 test('MessageItem renders reasoning summaries across all providers without a ChatGPT-only gate', () => {
   const messageItemSource = fs.readFileSync(
-    path.resolve('src/modules/conversations/components/MessageItem.tsx'),
+    path.resolve('src/features/chat/components/MessageItem.tsx'),
     'utf8',
   );
   assert.equal(messageItemSource.includes("providerId === 'chatgpt'"), false);

@@ -199,7 +199,7 @@ test('all 5 locales define all copy and export keys', () => {
   ];
 
   for (const locale of locales) {
-    const filePath = path.resolve('src/localization/locales', `${locale}.json`);
+    const filePath = path.resolve('src/shared/lib/i18n/locales', `${locale}.json`);
     const content = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
 
     for (const key of requiredKeys) {
@@ -212,8 +212,8 @@ test('all 5 locales define all copy and export keys', () => {
 });
 
 test('conversation export labels format dates and messages according to active locale', () => {
-  const trLocale = JSON.parse(fs.readFileSync(path.resolve('src/localization/locales/tr.json'), 'utf-8'));
-  const enLocale = JSON.parse(fs.readFileSync(path.resolve('src/localization/locales/en.json'), 'utf-8'));
+  const trLocale = JSON.parse(fs.readFileSync(path.resolve('src/shared/lib/i18n/locales/tr.json'), 'utf-8'));
+  const enLocale = JSON.parse(fs.readFileSync(path.resolve('src/shared/lib/i18n/locales/en.json'), 'utf-8'));
 
   assert.equal(trLocale.conversationExportCreated, 'Oluşturulma');
   assert.equal(trLocale.conversationExportMessagesCount, 'Mesaj Sayısı');

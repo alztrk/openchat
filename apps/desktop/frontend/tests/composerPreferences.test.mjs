@@ -202,7 +202,7 @@ test('all 5 locales define all required composer send key binding strings', () =
   ];
 
   for (const locale of locales) {
-    const fileUrl = new URL(`../src/localization/locales/${locale}.json`, import.meta.url);
+    const fileUrl = new URL(`../src/shared/lib/i18n/locales/${locale}.json`, import.meta.url);
     const content = JSON.parse(readFileSync(fileUrl, 'utf8'));
 
     for (const key of requiredKeys) {

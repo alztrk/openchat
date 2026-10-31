@@ -4,7 +4,7 @@ import path from 'node:path';
 import test from 'node:test';
 import ts from 'typescript';
 
-const sourcePath = path.resolve('src/modules/providers/data/connectionPlanState.ts');
+const sourcePath = path.resolve('src/features/provider-settings/data/connectionPlanState.ts');
 const source = fs.readFileSync(sourcePath, 'utf8');
 const compiled = ts.transpileModule(source, {
   compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },

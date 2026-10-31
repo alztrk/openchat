@@ -10,7 +10,7 @@ test('compatible providers come from the native catalog and have UI documentatio
   const catalogContent = fs.readFileSync(catalogPath, 'utf8');
   assert.match(catalogContent, /id: "kilo"/);
 
-  const sectionPath = path.resolve('src/modules/providers/components/ApiKeyProvidersSection.tsx');
+  const sectionPath = path.resolve('src/features/provider-settings/components/ApiKeyProvidersSection.tsx');
   const sectionContent = fs.readFileSync(sectionPath, 'utf8');
   assert.match(sectionContent, /snapshot\.compatibleProviders\.map/);
   assert.match(sectionContent, /kilo:\s*'providerNameKilo'/);
@@ -20,7 +20,7 @@ test('compatible providers come from the native catalog and have UI documentatio
 test('all 5 locales define kilo provider names and descriptions', () => {
   const locales = ['de', 'en', 'es', 'fr', 'tr'];
   for (const locale of locales) {
-    const localePath = path.resolve(`src/localization/locales/${locale}.json`);
+    const localePath = path.resolve(`src/shared/lib/i18n/locales/${locale}.json`);
     const content = JSON.parse(fs.readFileSync(localePath, 'utf8'));
     assert.equal(content.providerNameKilo, 'Kilo AI', `Missing providerNameKilo in ${locale}`);
     assert.ok(
@@ -31,7 +31,7 @@ test('all 5 locales define kilo provider names and descriptions', () => {
 });
 
 test('modelCatalogLoader includes kilo in providers and loads kilo free catalog when not configured', () => {
-  const loaderPath = path.resolve('src/modules/providers/data/modelCatalogLoader.ts');
+  const loaderPath = path.resolve('src/features/provider-settings/data/modelCatalogLoader.ts');
   const loaderContent = fs.readFileSync(loaderPath, 'utf8');
   assert.match(loaderContent, /providerId:\s*'kilo',\s*name:\s*null,\s*available:\s*true/);
   assert.match(loaderContent, /loadKiloFreeCatalog/);
@@ -41,19 +41,19 @@ test('kilo icon exists and is registered in ProviderIcon', () => {
   const iconPath = path.resolve('../assets/icons/providers/kilo.svg');
   assert.ok(fs.existsSync(iconPath), 'kilo.svg must exist');
 
-  const iconCompPath = path.resolve('src/modules/providers/components/ProviderIcon.tsx');
+  const iconCompPath = path.resolve('src/features/provider-settings/components/ProviderIcon.tsx');
   const iconCompContent = fs.readFileSync(iconCompPath, 'utf8');
   assert.match(iconCompContent, /kilo:\s*kiloIconUrl/);
 });
 
 test('ModelPicker and chatStoreModels configure kilo ordering, translations, and groupings', () => {
-  const pickerPath = path.resolve('src/modules/conversations/components/ModelPicker.tsx');
+  const pickerPath = path.resolve('src/features/chat/components/ModelPicker.tsx');
   const pickerContent = fs.readFileSync(pickerPath, 'utf8');
   assert.match(pickerContent, /'kilo'/);
   assert.match(pickerContent, /kilo:\s*'providerNameKilo'/);
   assert.match(pickerContent, /providerId === 'openrouter' \|\| providerId === 'kilo'/);
 
-  const storePath = path.resolve('src/modules/conversations/stores/chatStoreModels.ts');
+  const storePath = path.resolve('src/features/chat/state/chatStoreModels.ts');
   const storeContent = fs.readFileSync(storePath, 'utf8');
   assert.match(storeContent, /\['kilo',\s*\{\s*providerId:\s*'kilo'/);
 });

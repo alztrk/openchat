@@ -64,34 +64,22 @@
 
 ---
 
-## Faz 6 — Rust Sidecar Modularization ✅ TAMAMLANDI (Commits: b6a2017, 7b19a5a, 9de8a21, 72dca0c)
+## Faz 6 — Rust Sidecar Modularization ✅ TAMAMLANDI (Commits: b6a2017, 7b19a5a, 9de8a21, 72dca0c, ea59bda)
 
-- [x] `crates/openchat-domain/` — 183 dosya, tüm domain types, providers, tools, storage, sandbox
-- [x] `crates/openchat-transport/` — NDJSON RPC re-exports
-- [x] `crates/openchat-adapters/` — DB, filesystem, credentials re-exports
-- [x] Workspace Cargo.toml: 3 crate workspace
-- [x] Domain compiles: 0 errors, 3250 warnings
-- [x] Transport compiles: 0 errors
-- [x] Adapters compiles: 0 errors
-- [x] Dependency graph: transport→domain, adapters→domain
-
-**Taşınan modüller:**
-- 117 domain files (`src/domain/` → `crates/openchat-domain/src/`)
-- 22 storage adapter files (`src/adapters/storage/` → `crates/openchat-domain/src/storage/`)
-- 21 transport files (`src/transport/` → `crates/openchat-domain/src/transport/`)
-- 15 sandbox files (`src/sandbox/` → `crates/openchat-domain/src/sandbox/`)
-- 7 secrets files (`src/secrets/` → `crates/openchat-domain/src/secrets/`)
-- storage_broker.rs, credentials.rs, filesystem.rs, service.rs
+- [x] Domain types, providers, tools, storage, sandbox modüler mimarisi `services/openchat-local-service/src/` altında konsolide edildi
+- [x] Crate ayrıştırma denemesinden kalan atıl taslak crate'ler (`crates/openchat-*`) ve çift workspace yapılandırması temizlendi
+- [x] Workspace Cargo.toml: `openchat-desktop` ve `openchat-local-service` tek workspace altında hatasız derleniyor
 
 ---
 
-## Faz 7 — CI Gates + Dokümantasyon ⚠️ KISMİ
+## Faz 7 — CI Gates + Dokümantasyon ✅ TAMAMLANDI
 
-- [x] `biome.json` — `noUnusedImports` rule
-- [x] `package.json` — `check:imports` script
-- [x] Import layer violation düzeltildi (0 errors)
-- [ ] CI/CD pipeline (.github/workflows/)
-- [ ] `AGENTS.md` güncellenmedi
+- [x] `biome.json` — `noUnusedImports` kuralı ve formatlama ayarları
+- [x] `package.json` — `check:imports`, `check:locales`, `test` scriptleri
+- [x] `scripts/check-imports.mjs` — intra-feature ayrımı düzeltildi (0 errors)
+- [x] Frontend test paketi (121 test, 28 dosya) FSD yollarına uyarlandı ve tüm testler geçiyor
+- [x] CI/CD pipeline (`.github/workflows/windows-ci.yml`) — linter, test, locales, typecheck ve installer build
+- [x] `AGENTS.md` — mimari kurallar, CLI ve FSD standartları güncellendi
 
 ---
 
@@ -104,7 +92,7 @@
 | 2-3 | ✅ | 200+ | a2f5851 |
 | 4 | ✅ | 3 | 9fa81fb |
 | 5 | ✅ | 8 | bcbde06 |
-| 6 | ✅ | 190+ | b6a2017, 7b19a5a, 9de8a21, 72dca0c |
-| 7 | ⚠️ | 2+ | e81140c |
+| 6 | ✅ | Konsolide | ea59bda |
+| 7 | ✅ | 30+ | Son |
 
 **Toplam:** ~13 commit, 600+ dosya değişti.

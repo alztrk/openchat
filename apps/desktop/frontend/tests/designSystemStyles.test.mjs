@@ -11,16 +11,16 @@ const frontendRoot = path.resolve(__dirname, '..');
 test('index.css imports modularized tokens, typography, and animations stylesheets', () => {
   const indexCss = fs.readFileSync(path.join(frontendRoot, 'src', 'index.css'), 'utf-8');
 
-  assert.match(indexCss, /@import "\.\/design-system\/styles\/tokens\.css";/);
-  assert.match(indexCss, /@import "\.\/design-system\/styles\/typography\.css";/);
-  assert.match(indexCss, /@import "\.\/design-system\/styles\/animations\.css";/);
+  assert.match(indexCss, /@import "\.\/shared\/components\/styles\/tokens\.css";/);
+  assert.match(indexCss, /@import "\.\/shared\/components\/styles\/typography\.css";/);
+  assert.match(indexCss, /@import "\.\/shared\/components\/styles\/animations\.css";/);
 
   assert.match(indexCss, /@source "\.\/";/);
   assert.match(indexCss, /@custom-variant dark/);
 });
 
 test('tokens.css defines color, surface, and elevation variables', () => {
-  const tokensCss = fs.readFileSync(path.join(frontendRoot, 'src', 'design-system', 'styles', 'tokens.css'), 'utf-8');
+  const tokensCss = fs.readFileSync(path.join(frontendRoot, 'src', 'shared', 'components', 'styles', 'tokens.css'), 'utf-8');
 
   assert.match(tokensCss, /--background:/);
   assert.match(tokensCss, /--navigation:/);
@@ -33,7 +33,7 @@ test('tokens.css defines color, surface, and elevation variables', () => {
 
 test('typography.css defines base element rules, markdown prose, and code formatting', () => {
   const typographyCss = fs.readFileSync(
-    path.join(frontendRoot, 'src', 'design-system', 'styles', 'typography.css'),
+    path.join(frontendRoot, 'src', 'shared', 'components', 'styles', 'typography.css'),
     'utf-8',
   );
 
@@ -44,7 +44,7 @@ test('typography.css defines base element rules, markdown prose, and code format
 
 test('animations.css defines keyframes, micro-interactions, and reduced-motion fallback', () => {
   const animationsCss = fs.readFileSync(
-    path.join(frontendRoot, 'src', 'design-system', 'styles', 'animations.css'),
+    path.join(frontendRoot, 'src', 'shared', 'components', 'styles', 'animations.css'),
     'utf-8',
   );
 
@@ -55,7 +55,7 @@ test('animations.css defines keyframes, micro-interactions, and reduced-motion f
 });
 
 test('design-system index.ts exports Badge, Kbd, and Skeleton primitives', () => {
-  const indexTs = fs.readFileSync(path.join(frontendRoot, 'src', 'design-system', 'index.ts'), 'utf-8');
+  const indexTs = fs.readFileSync(path.join(frontendRoot, 'src', 'shared', 'components', 'index.ts'), 'utf-8');
 
   assert.match(indexTs, /export\s*\{\s*Badge/);
   assert.match(indexTs, /export\s*\{\s*Kbd/);

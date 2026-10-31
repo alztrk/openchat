@@ -183,7 +183,7 @@ test('clampSplitViewRatio bounds split ratio between 0.3 and 0.7 and resolveWork
 
 test('animations.css and index.css define AI working ring spinner, left-to-right title shimmer, and virtual row classes', () => {
   const animationsCss = fs.readFileSync(
-    path.join(frontendRoot, 'src', 'design-system', 'styles', 'animations.css'),
+    path.join(frontendRoot, 'src', 'shared', 'components', 'styles', 'animations.css'),
     'utf-8',
   );
   const indexCss = fs.readFileSync(path.join(frontendRoot, 'src', 'index.css'), 'utf-8');
@@ -249,7 +249,7 @@ test('all 5 locales define sidebar roadmap and AI working indicator keys', () =>
   ];
 
   for (const locale of locales) {
-    const filePath = path.join(frontendRoot, 'src', 'localization', 'locales', `${locale}.json`);
+    const filePath = path.join(frontendRoot, 'src', 'shared', 'lib', 'i18n', 'locales', `${locale}.json`);
     const content = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
     for (const key of requiredKeys) {
       assert.ok(

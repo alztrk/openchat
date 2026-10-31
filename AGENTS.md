@@ -108,7 +108,20 @@ npm run openchat -- maintain-target --apply
   * Never grant unrestricted filesystem (`fs:*`) or shell (`shell:*`) capabilities to the frontend window.
   * Native security confirmation dialogs must use host-owned strings (`NativeDialogCatalog`) to prevent renderer spoofing.
 * **Frontend (`apps/desktop/frontend`):**
-  * React 19, Tailwind CSS, Vite.
+  * React 19, Tailwind CSS v4, Vite.
+  * **Feature-Sliced Design (FSD) Layering:**
+    * `@app`: Root wiring, entry points, layout (`AppManager`, `AppLayout`, `AppRouter`).
+    * `@widgets`: Composite self-contained blocks combining features.
+    * `@features`: Domain capabilities (`chat`, `app-settings`, `provider-settings`, `projects`, `model-catalog`, `design-workspace`, `security-scans`).
+    * `@entities`: Shared business entities and domain models (`conversation`, `model`, `project`).
+    * `@shared`: Reusable design-system components, utilities, and platform adapters.
+    * Strictly enforce unidirectional dependency: lower layers must NEVER import from upper layers (`@shared` ← `@entities` ← `@features` ← `@widgets` ← `@app`).
+    * Verify layer compliance with `npm run check:imports`.
+  * **Automated Verification:**
+    * Run frontend unit tests: `npm test`
+    * Verify locale consistency: `npm run check:locales`
+    * Verify TypeScript: `npx tsc --noEmit`
+    * Verify linter: `npx biome check`
   * Never use `dangerouslySetInnerHTML`.
   * Markdown rendering must use token-based React nodes (`MessageMarkdown.tsx`) with strict URL validation (`isSafeHttpUrl`).
   * Never store credentials or unencrypted chat history in WebView `localStorage`.

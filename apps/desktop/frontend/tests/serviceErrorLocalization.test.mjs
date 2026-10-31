@@ -5,9 +5,9 @@ import test from 'node:test';
 import ts from 'typescript';
 
 const errorDetailsSource = fs
-  .readFileSync(path.resolve('src/modules/conversations/stores/chatStoreErrorDetails.ts'), 'utf8')
+  .readFileSync(path.resolve('src/features/chat/state/chatStoreErrorDetails.ts'), 'utf8')
   .replace(
-    "import { LocalServiceError } from '@/platform/local-service';",
+    "import { LocalServiceError } from '@shared/lib/platform/local-service';",
     `export class LocalServiceError extends Error {
       constructor(code, message, retryable = false, details = null) {
         super(message);
@@ -31,7 +31,7 @@ const {
   resolveServiceFailureCode,
 } = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`);
 
-const trLocale = JSON.parse(fs.readFileSync(path.resolve('src/localization/locales/tr.json'), 'utf8'));
+const trLocale = JSON.parse(fs.readFileSync(path.resolve('src/shared/lib/i18n/locales/tr.json'), 'utf8'));
 const translateTr = (key, options) => trLocale[key] ?? options?.defaultValue ?? key;
 
 test('maps unlisted provider tool errors to a dedicated failure code and Turkish copy', () => {
@@ -115,7 +115,7 @@ test('all supported locales include security scan and unavailable tool error tra
   ];
 
   for (const localeName of ['de', 'en', 'es', 'fr', 'tr']) {
-    const locale = JSON.parse(fs.readFileSync(path.resolve(`src/localization/locales/${localeName}.json`), 'utf8'));
+    const locale = JSON.parse(fs.readFileSync(path.resolve(`src/shared/lib/i18n/locales/${localeName}.json`), 'utf8'));
     for (const key of requiredKeys) {
       assert.equal(typeof locale[key], 'string', `${localeName}.json must define ${key}`);
       assert.ok(locale[key].trim().length > 0, `${localeName}.json ${key} must not be empty`);

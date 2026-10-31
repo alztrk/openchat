@@ -1,8 +1,8 @@
 @import "tailwindcss" source(none);
-@import "./design-system/styles/tokens.css";
-@import "./design-system/styles/typography.css";
-@import "./design-system/styles/animations.css";
-@import "./design-system/styles/components.css";
+@import "./shared/components/styles/tokens.css";
+@import "./shared/components/styles/typography.css";
+@import "./shared/components/styles/animations.css";
+@import "./shared/components/styles/components.css";
 @source "./";
 @custom-variant dark (&:where(.dark, .dark *));
 

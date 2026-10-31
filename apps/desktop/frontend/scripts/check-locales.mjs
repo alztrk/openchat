@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const localeNames = ['de', 'en', 'es', 'fr', 'tr'];
-const localeDirectory = new URL('../src/localization/locales/', import.meta.url);
+const localeDirectory = new URL('../src/shared/lib/i18n/locales/', import.meta.url);
 const locales = new Map(
   localeNames.map((locale) => {
     const file = fileURLToPath(new URL(`${locale}.json`, localeDirectory));

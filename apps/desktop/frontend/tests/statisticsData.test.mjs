@@ -4,7 +4,7 @@ import path from 'node:path';
 import test from 'node:test';
 import ts from 'typescript';
 
-const sourcePath = path.resolve('src/modules/settings/components/statisticsData.ts');
+const sourcePath = path.resolve('src/features/app-settings/components/statisticsData.ts');
 const source = fs.readFileSync(sourcePath, 'utf8');
 const compiled = ts.transpileModule(source, {
   compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },

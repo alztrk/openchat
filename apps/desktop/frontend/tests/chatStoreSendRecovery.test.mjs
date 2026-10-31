@@ -4,7 +4,7 @@ import path from 'node:path';
 import test from 'node:test';
 import ts from 'typescript';
 
-const source = fs.readFileSync(path.resolve('src/modules/conversations/stores/chatStorePostResponse.ts'), 'utf8');
+const source = fs.readFileSync(path.resolve('src/features/chat/state/chatStorePostResponse.ts'), 'utf8');
 const compiled = ts.transpileModule(source, {
   compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
 }).outputText;

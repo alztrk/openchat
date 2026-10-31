@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-import { reserveTemporaryTestProfileRoot } from '../../../../scripts/temporaryTestProfile.mjs';
+import { reserveTemporaryTestProfileRoot } from '../../../../scripts/shared/profile.mjs';
 
 test('reserves a new profile directory before returning its path', () => {
   const temporaryDirectory = mkdtempSync(path.join(tmpdir(), 'openchat-profile-reserve-'));

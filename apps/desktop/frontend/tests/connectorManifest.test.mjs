@@ -4,7 +4,7 @@ import path from 'node:path';
 import test from 'node:test';
 import ts from 'typescript';
 
-const sourcePath = path.resolve('src/modules/settings/data/connectorManifest.ts');
+const sourcePath = path.resolve('src/features/app-settings/data/connectorManifest.ts');
 const source = fs.readFileSync(sourcePath, 'utf8');
 const compiled = ts.transpileModule(source, {
   compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
@@ -12,7 +12,7 @@ const compiled = ts.transpileModule(source, {
 const { compareConnectorToolNames, parseConnectorManifest } = await import(
   `data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`
 );
-const projectMcpSourcePath = path.resolve('src/modules/projects/data/projectMcp.ts');
+const projectMcpSourcePath = path.resolve('src/features/projects/data/projectMcp.ts');
 const projectMcpSource = fs.readFileSync(projectMcpSourcePath, 'utf8');
 const compiledProjectMcp = ts.transpileModule(projectMcpSource, {
   compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
@@ -20,7 +20,7 @@ const compiledProjectMcp = ts.transpileModule(projectMcpSource, {
 const { parseProjectMcpServer } = await import(
   `data:text/javascript;base64,${Buffer.from(compiledProjectMcp).toString('base64')}`
 );
-const connectorCatalogSourcePath = path.resolve('src/modules/settings/data/connectorCatalog.ts');
+const connectorCatalogSourcePath = path.resolve('src/features/app-settings/data/connectorCatalog.ts');
 const connectorCatalogSource = fs.readFileSync(connectorCatalogSourcePath, 'utf8').replace(/^import .*;\r?\n/gm, '');
 const compiledConnectorCatalog = ts.transpileModule(connectorCatalogSource, {
   compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },

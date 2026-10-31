@@ -9,7 +9,7 @@ test('all 5 locales define drag-and-drop context ingestion keys', () => {
   const requiredKeys = ['dropFilesOverlayTitle', 'dropFilesOverlayDescription', 'composerDropTargetLabel'];
 
   for (const locale of locales) {
-    const filePath = resolve(`src/localization/locales/${locale}.json`);
+    const filePath = resolve(`src/shared/lib/i18n/locales/${locale}.json`);
     const content = JSON.parse(readFileSync(filePath, 'utf-8'));
 
     for (const key of requiredKeys) {

@@ -13,11 +13,11 @@ globalThis.__openChatDesignCanvasTestStorage = {
   },
 };
 
-const sourcePath = path.resolve('src/modules/design/data/designCanvas.ts');
+const sourcePath = path.resolve('src/features/design-workspace/data/designCanvas.ts');
 const source = fs
   .readFileSync(sourcePath, 'utf8')
   .replace(
-    "import { unifiedStorage } from '@/platform/storage/unifiedStorage';",
+    "import { unifiedStorage } from '@shared/lib/platform/storage/unifiedStorage';",
     'const unifiedStorage = globalThis.__openChatDesignCanvasTestStorage;',
   );
 const compiled = ts.transpileModule(source, {

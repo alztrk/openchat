@@ -179,7 +179,7 @@ test('all 5 locales define all required ghost-text and live-steer keys', () => {
   ];
 
   for (const locale of locales) {
-    const filePath = path.resolve('src/localization/locales', `${locale}.json`);
+    const filePath = path.resolve('src/shared/lib/i18n/locales', `${locale}.json`);
     const content = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
 
     for (const key of requiredKeys) {
