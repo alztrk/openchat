@@ -92,6 +92,7 @@ pub(super) async fn summarize_history_with_storage(
         existing_summary,
         messages,
         cancellation,
+        prune_level,
     } = request;
     let context_window = route
         .request_context_limit()

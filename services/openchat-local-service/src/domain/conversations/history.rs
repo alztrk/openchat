@@ -377,7 +377,7 @@ pub(crate) fn summary_text_for_provider(message: &StoredMessage, provider_id: &s
     summary_text_with_tool_output_limit(message, output_limit)
 }
 
-fn summary_text_with_tool_output_limit(
+pub(crate) fn summary_text_with_tool_output_limit(
     message: &StoredMessage,
     tool_output_limit: Option<usize>,
 ) -> String {

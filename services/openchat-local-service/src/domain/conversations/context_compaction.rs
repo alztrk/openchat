@@ -525,7 +525,11 @@ pub(crate) fn text_token_estimate(model_id: &str, text: &str) -> i64 {
     tokenizer::count_tokens(model_id, text)
 }
 
-fn estimated_history_tokens(model_id: &str, messages: &[StoredMessage], instructions: &str) -> i64 {
+pub(crate) fn estimated_history_tokens(
+    model_id: &str,
+    messages: &[StoredMessage],
+    instructions: &str,
+) -> i64 {
     messages
         .iter()
         .map(|m| message_token_estimate(model_id, m))
