@@ -1,6 +1,7 @@
 import type { StoreApi } from 'zustand';
 import { i18n } from '@shared/lib/i18n/i18n';
 import { encodeBase64, type PendingChatAttachment } from '@features/chat/data/chatAttachments';
+import { getAudioContext, playAssistantResponseAudio } from '@features/notifications/audioFeedback';
 import {
   type ChatMessage,
   createConversation,
@@ -11,11 +12,13 @@ import {
 import type { ChatModel } from '@features/provider-settings/data/chatModels';
 import { loadRouteParameters } from '@features/provider-settings/data/modelRouteParameters';
 import { type LocalServiceClient, LocalServiceError } from '@shared/lib/platform/local-service';
-import { getAudioContext, playAssistantResponseAudio } from '@shared/lib/utils/audioFeedback';
+import { applyStreamEvent, numberOrNull, titleFromMessage, upsertMessage } from './chatStoreUtils';
 import type { ChatState } from './chatStore';
 import { getOpenCodeRetryAtUnixMs } from './chatStoreErrorDetails';
-import { applyStreamEvent, numberOrNull, titleFromMessage, upsertMessage } from './chatStoreUtils';
 import { createStreamMessagePublisher } from './streamMessagePublisher';
+
+// Error message truncation limit
+const MAX_ERROR_TRUNCATION_LENGTH = 1000;
 
 export interface TemporaryChatSession {
   id: string;
@@ -384,7 +387,7 @@ function readTemporaryChatErrorDetails(error: unknown): string | null {
         : typeof error === 'string'
           ? error
           : null;
-  return value?.trim().slice(0, 1000) || null;
+  return value?.trim().slice(0, MAX_ERROR_TRUNCATION_LENGTH) || null;
 }
 
 export function createSaveTemporaryChatAction(

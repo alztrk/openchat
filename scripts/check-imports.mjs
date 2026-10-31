@@ -12,8 +12,10 @@
  */
 import { readFileSync, readdirSync } from 'node:fs';
 import { relative, resolve, sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const SRC_ROOT = resolve(process.cwd(), 'apps/desktop/frontend/src');
+const __dirname = fileURLToPath(new URL('.', import.meta.url));
+const SRC_ROOT = resolve(__dirname, '../apps/desktop/frontend/src');
 
 const LAYERS = /** @type {const} */ ({
   shared:  { level: 0, allowed: ['shared'] },

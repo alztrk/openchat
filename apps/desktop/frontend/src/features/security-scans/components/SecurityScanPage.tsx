@@ -17,6 +17,8 @@ import { useTranslation } from 'react-i18next';
 const MS_PER_SECOND = 1_000;
 const SECONDS_PER_MINUTE = 60;
 const SECONDS_PER_HOUR = 3_600;
+const REFRESH_INTERVAL_MS = 5_000;
+const INITIAL_CHECK_DELAY_MS = 2_500;
 
 import { Button, Checkbox, Dialog, Select } from '@shared/components';
 import { MessageList } from '@features/chat/components/MessageList';

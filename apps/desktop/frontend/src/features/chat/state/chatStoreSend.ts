@@ -1,4 +1,8 @@
 import type { StoreApi } from 'zustand';
+
+// Error message truncation limit
+const MAX_ERROR_TRUNCATION_LENGTH = 1000;
+
 import { isTerminalChatGoalStatus, parseChatGoal } from '@features/chat/data/chatGoals';
 import {
   type ChatConversation,
@@ -28,7 +32,7 @@ import {
 } from '@features/app-settings/data/personalMemory';
 import { readSharedInstructions } from '@features/app-settings/data/sharedInstructions';
 import { type LocalServiceClient, LocalServiceError } from '@shared/lib/platform/local-service';
-import { getAudioContext, playAssistantResponseAudio } from '@shared/lib/utils/audioFeedback';
+import { getAudioContext, playAssistantResponseAudio } from '@features/notifications/audioFeedback';
 import type { ChatState } from './chatStore';
 import { getOpenCodeRetryAtUnixMs } from './chatStoreErrorDetails';
 import { refreshConversationListAfterResponse } from './chatStorePostResponse';
@@ -545,7 +549,7 @@ export function createSendMessageAction(
                         ? 'providerConnectionUnavailable'
                         : 'chatRequestFailed';
       const errorMessage =
-        error instanceof LocalServiceError ? (error.details ?? error.message).trim().slice(0, 1000) || null : null;
+        error instanceof LocalServiceError ? (error.details ?? error.message).trim().slice(0, MAX_ERROR_TRUNCATION_LENGTH) || null : null;
       setRequestError(code, errorMessage, getOpenCodeRetryAtUnixMs(error, selectedModel.providerId));
       await persistenceQueue;
       const streamedMessage = assistantMessage.current;

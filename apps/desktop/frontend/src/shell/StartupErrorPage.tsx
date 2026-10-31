@@ -41,12 +41,15 @@ function getStartupCopy(): StartupErrorCopy {
   return english;
 }
 
+// Error message truncation limit (shared with chatStore)
+const MAX_ERROR_TRUNCATION_LENGTH = 1000;
+
 function readStartupErrorDetails(error: unknown): string | null {
   if (error instanceof Error) {
     const details = 'details' in error && typeof error.details === 'string' ? error.details : error.message;
-    return details.trim().slice(0, 1000) || null;
+    return details.trim().slice(0, MAX_ERROR_TRUNCATION_LENGTH) || null;
   }
-  return typeof error === 'string' ? error.trim().slice(0, 1000) || null : null;
+  return typeof error === 'string' ? error.trim().slice(0, MAX_ERROR_TRUNCATION_LENGTH) || null : null;
 }
 
 function findLocale(value: string | null): StartupLocale | null {

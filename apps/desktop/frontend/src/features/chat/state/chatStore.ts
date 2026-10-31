@@ -1,5 +1,8 @@
 import { create } from 'zustand';
 
+// Error message truncation limit
+const MAX_ERROR_TRUNCATION_LENGTH = 1000;
+
 import {
   type ChatConversation,
   type ChatMessage,
@@ -329,11 +332,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
         errorCode: 'messageHistoryLoadFailed',
         errorMessage:
           error instanceof LocalServiceError
-            ? (error.details ?? error.message).trim().slice(0, 1000) || null
+            ? (error.details ?? error.message).trim().slice(0, MAX_ERROR_TRUNCATION_LENGTH) || null
             : error instanceof Error
-              ? error.message.trim().slice(0, 1000) || null
+              ? error.message.trim().slice(0, MAX_ERROR_TRUNCATION_LENGTH) || null
               : typeof error === 'string'
-                ? error.trim().slice(0, 1000) || null
+                ? error.trim().slice(0, MAX_ERROR_TRUNCATION_LENGTH) || null
                 : null,
       });
     }

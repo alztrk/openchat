@@ -63,5 +63,17 @@
       }
     }
   },
-  "plugins": ["./plugins/no-native-select.grit"]
+  "plugins": ["./plugins/no-native-select.grit"],
+  "overrides": [
+    {
+      "include": ["src/**/*.ts", "src/**/*.tsx"],
+      "linter": {
+        "rules": {
+          "correctness": {
+            "noUnusedImports": "error"
+          }
+        }
+      }
+    }
+  ]
 }

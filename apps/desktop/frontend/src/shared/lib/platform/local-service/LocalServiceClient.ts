@@ -55,8 +55,12 @@ export function localServiceErrorDetails(error: unknown): string | null {
     .filter((value): value is string => typeof value === 'string' && value.length > 0)
     .filter((value, index, values) => values.indexOf(value) === index);
   if (diagnostic.length === 0) return null;
-  return diagnostic.join('\n').slice(0, 2048);
+  return diagnostic.join('\n').slice(0, MAX_DIAGNOSTIC_TRUNCATION_LENGTH);
 }
+
+// Error message truncation limits
+const MAX_DIAGNOSTIC_TRUNCATION_LENGTH = 2_048;
+const MAX_ERROR_TRUNCATION_LENGTH = 1_000;
 
 /** Resolver and optional event callback retained until one RPC request completes. */
 interface PendingOperation {
@@ -608,7 +612,7 @@ export class LocalServiceClient {
       const message =
         typeof response.error.message === 'string' ? response.error.message : 'The local service request failed.';
       const details =
-        typeof response.error.details === 'string' ? response.error.details.trim().slice(0, 1000) || null : null;
+        typeof response.error.details === 'string' ? response.error.details.trim().slice(0, MAX_ERROR_TRUNCATION_LENGTH) || null : null;
       pending.reject(new LocalServiceError(code, message, response.error.retryable === true, details));
       return;
     }
@@ -656,7 +660,7 @@ function isJsonObject(value: unknown): value is JsonObject {
 
 function readErrorDetails(error: unknown): string | null {
   const detail = error instanceof Error ? error.message : typeof error === 'string' ? error : null;
-  return detail?.trim().slice(0, 1000) || null;
+  return detail?.trim().slice(0, MAX_ERROR_TRUNCATION_LENGTH) || null;
 }
 
 function nativeWriteError(error: unknown): LocalServiceError {
@@ -674,7 +678,7 @@ function isNativeServiceEvent(value: unknown): value is NativeServiceEvent {
     return false;
   }
   if (value.type === 'output') return typeof value.line === 'string';
-  if (value.type === 'failure') return typeof value.details === 'string' && value.details.length <= 2048;
+  if (value.type === 'failure') return typeof value.details === 'string' && value.details.length <= MAX_DIAGNOSTIC_TRUNCATION_LENGTH;
   return value.type === 'stopped';
 }
 

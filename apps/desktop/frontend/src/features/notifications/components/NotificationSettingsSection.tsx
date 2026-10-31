@@ -14,7 +14,7 @@ import {
   type WindowsNotificationStatus,
   writeNotificationPreference,
 } from '@features/notifications/data/notificationPreferences';
-import { playTestChime } from '@shared/lib/utils/audioFeedback';
+import { playTestChime } from '@features/notifications/audioFeedback';
 
 type LoadState = 'loading' | 'loaded' | 'failed';
 type TranslationKey = keyof typeof en;

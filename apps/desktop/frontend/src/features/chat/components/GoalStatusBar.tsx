@@ -20,7 +20,6 @@ import { useChatStore } from '@features/chat/state/chatStore';
 const MS_PER_SECOND = 1_000;
 const SECONDS_PER_MINUTE = 60;
 const SECONDS_PER_HOUR = 3_600;
-const MINUTES_PER_HOUR = 60;
 
 type TranslationKey = keyof typeof import('@shared/lib/i18n/locales/en.json');
 
