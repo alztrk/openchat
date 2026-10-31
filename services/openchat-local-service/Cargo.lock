@@ -2649,7 +2649,6 @@ dependencies = [
  "hyper-util",
  "ignore",
  "keyring",
- "openchat-domain",
  "openssl",
  "process-wrap",
  "reqwest",

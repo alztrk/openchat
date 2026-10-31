@@ -58,6 +58,10 @@ jobs:
         run: npx biome check
         working-directory: apps/desktop/frontend
 
+      - name: Check FSD layer import compliance
+        run: npm run check:imports
+        working-directory: apps/desktop/frontend
+
       - name: Test frontend rendering limits
         run: node --experimental-strip-types --test tests/virtualMessageLayout.test.mjs
         working-directory: apps/desktop/frontend
