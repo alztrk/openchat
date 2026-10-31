@@ -365,18 +365,6 @@ pub(crate) fn tool_activity_summary_segments(message: &StoredMessage) -> Vec<(St
         .collect()
 }
 
-/// Produces a readable history summary without provider-specific truncation.
-pub(crate) fn summary_text(message: &StoredMessage) -> String {
-    summary_text_with_tool_output_limit(message, None)
-}
-
-/// Produces a readable summary using the historical output limit for a provider.
-pub(crate) fn summary_text_for_provider(message: &StoredMessage, provider_id: &str) -> String {
-    let output_limit = matches!(provider_id, "cerebras" | "mistral" | "openrouter")
-        .then_some(OPENAI_COMPATIBLE_HISTORICAL_TOOL_OUTPUT_MAX_BYTES);
-    summary_text_with_tool_output_limit(message, output_limit)
-}
-
 pub(crate) fn summary_text_with_tool_output_limit(
     message: &StoredMessage,
     tool_output_limit: Option<usize>,

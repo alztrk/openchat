@@ -20,13 +20,6 @@ use super::{
     required_string, tool_permissions,
 };
 
-/// Attachment metadata sent from the frontend for token estimation.
-struct ConversationUsageAttachment {
-    name: String,
-    kind: String,
-    size_bytes: i64,
-}
-
 /// Dispatches conversation memory, history, context-estimate, and archive requests.
 pub(super) async fn dispatch(
     method: &str,
