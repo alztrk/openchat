@@ -53,13 +53,22 @@ export function printResults(results) {
  * @param {Array} results
  */
 export function printJsonResults(results) {
-  const json = results.map(r => ({
-    name: r.name,
-    durationMs: Math.round(r.durationMs * 100) / 100,
-    success: r.success,
-    tokens: r.tokens,
-    notes: r.notes,
-  }));
+  const json = results.map(r => {
+    const obj = {
+      name: r.name,
+      durationMs: Math.round(r.durationMs * 100) / 100,
+      success: r.success,
+      tokens: r.tokens,
+      notes: r.notes,
+    };
+    if (r.tokensBreakdown) {
+      obj.tokensBreakdown = r.tokensBreakdown;
+    }
+    if (r.error) {
+      obj.error = r.error;
+    }
+    return obj;
+  });
   console.log(JSON.stringify(json, null, 2));
 }
 

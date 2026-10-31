@@ -4,45 +4,65 @@
  *
  * Usage:
  *   node scripts/benchmark/run.mjs              # Run all benchmarks
- *   node scripts/benchmark/run.mjs search       # Run single benchmark
+ *   node scripts/benchmark/run.mjs edit_file    # Run single benchmark
  *   node scripts/benchmark/run.mjs --json       # JSON output
  */
 
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { estimateTokens } from './shared/utils.mjs';
-import { printResults, printJsonResults, printSingleResult } from './shared/output.mjs';
+import { printResults, printJsonResults } from './shared/output.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const workspaceRoot = path.resolve(__dirname, '..', '..');
 
-// Tool benchmark registry
+// ============================================================
+// Tool Benchmark Registry
+// ============================================================
+
 const tools = new Map();
 
-/**
- * Register a tool benchmark.
- * @param {string} name - Benchmark name
- * @param {string} description - Description
- * @param {Function} runner - Async function that returns { durationMs, success, tokens?, notes?, error? }
- */
 function registerTool(name, description, runner) {
   tools.set(name, { name, description, runner });
+}
+
+// ============================================================
+// Helper: Simulate read_file's JSON output structure
+// ============================================================
+
+function computeHashlineTag(line) {
+  let hash = 0x811c9dc5;
+  const trimmed = line.trim();
+  for (let i = 0; i < trimmed.length; i++) {
+    hash ^= trimmed.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  const folded = ((hash >> 16) ^ (hash & 0xffff)) >>> 0;
+  return folded.toString(16).padStart(4, '0');
+}
+
+function simulateReadFileJson(content, pathStr = 'file.rs') {
+  const lines = content.split('\n');
+  return {
+    path: pathStr,
+    lines: lines.map((text, i) => ({ line: i + 1, text })),
+    hashlines: lines.map((text, i) => {
+      const tag = computeHashlineTag(text);
+      return `${i + 1}:${tag}| ${text}`;
+    }),
+    nextLine: null,
+    truncated: false,
+  };
 }
 
 // ============================================================
 // Tool Benchmarks
 // ============================================================
 
-// 1. edit_file — File edit benchmark (uses hashline.rs internally)
-// NOTE: `hashline` is NOT a standalone tool. It's the helper module
-// (compute_hashline_tag, apply_resilient_edit) used by edit_file.
-// This benchmark measures the full edit_file pipeline including
-// exact → normalized → hashline → indentation_drift resolution.
+// 1. edit_file — Uses hashline.rs apply_resilient_edit() internally
 registerTool(
   'edit_file',
   'Replace text in file (exact/normalized/hashline/drift pipeline)',
   async () => {
-    // Simulate the 4-stage resolution pipeline from Rust's apply_resilient_edit()
     const content = `fn main() {
     let x = 10;
     let y = 20;
@@ -59,26 +79,20 @@ fn add(a: i32, b: i32) -> i32 {
     const oldString = `    println!("Hello, world!");
     let result = x + y;`;
 
-    const newString = `    println!("Starting calculation...");
-    let x_plus_y = x + y;
-    println!("Result: {}", x_plus_y);`;
-
     const start = performance.now();
 
-    // Stage 1: Exact substring match
-    const stage1_start = performance.now();
+    // Stage 1: Exact match
+    const stage1Start = performance.now();
     const hasExact = content.includes(oldString);
-    const stage1_time = performance.now() - stage1_start;
 
-    // Stage 2: Normalized whitespace match (CRLF↔LF, trailing spaces)
-    const stage2_start = performance.now();
+    // Stage 2: Normalized whitespace
+    const stage2Start = performance.now();
     const normalizedContent = content.replace(/\r\n/g, '\n').trimEnd();
     const normalizedOld = oldString.replace(/\r\n/g, '\n').trimEnd();
     const hasNormalized = normalizedContent.includes(normalizedOld);
-    const stage2_time = performance.now() - stage2_start;
 
-    // Stage 3: Hashline anchor resolution (computes line hashes)
-    const stage3_start = performance.now();
+    // Stage 3: Hashline anchor
+    const stage3Start = performance.now();
     const lines = content.split('\n');
     let hashline = '';
     for (const line of lines) {
@@ -94,9 +108,7 @@ fn add(a: i32, b: i32) -> i32 {
         break;
       }
     }
-    const stage3_time = performance.now() - stage3_start;
 
-    // Determine which stage would resolve it
     let resolvingStage = 'exact';
     let resolved = hasExact;
     if (!resolved && hasNormalized) {
@@ -111,24 +123,18 @@ fn add(a: i32, b: i32) -> i32 {
       success: resolved,
       tokens: {
         input: estimateTokens(content) + estimateTokens(oldString),
-        output: estimateTokens(content.replace(oldString, newString)),
+        output: estimateTokens(content.replace(oldString, '')),
       },
-      notes: [
-        `Stage 1 (exact): ${stage1_time.toFixed(2)}ms ${hasExact ? '✓' : '✗'}`,
-        `Stage 2 (normalized): ${stage2_time.toFixed(2)}ms ${hasNormalized ? '✓' : '✗'}`,
-        `Stage 3 (hashline): ${stage3_time.toFixed(2)}ms hash=${hashline}`,
-        `Resolves via: ${resolvingStage}`,
-      ].join(' | '),
+      notes: `Stages: exact=${hasExact}ms ${((performance.now() - start)).toFixed(2)} | normalized=${hasNormalized} | hashline=${hashline}`,
     };
   }
 );
 
-// 2. search — File search benchmark
+// 2. search_files — File content search
 registerTool(
-  'search',
+  'search_files',
   'File content search with pattern matching',
   async () => {
-    // Simulate searching a file for a pattern
     const fileContent = "// Main application entry point\n" +
       "import { createApp } from './app';\n" +
       "import { config } from './config';\n" +
@@ -151,34 +157,11 @@ registerTool(
       "\n" +
       "// Start listening\n" +
       "app.listen();\n" +
-      "logger.info('Server started on port ' + config.port);\n" +
-      "\n" +
-      "// Health check endpoint\n" +
-      "app.get('/health', (ctx) => {\n" +
-      "  ctx.body = {\n" +
-      "    status: 'ok',\n" +
-      "    uptime: process.uptime(),\n" +
-      "    memory: process.memoryUsage(),\n" +
-      "  };\n" +
-      "});\n" +
-      "\n" +
-      "// Graceful shutdown\n" +
-      "process.on('SIGTERM', () => {\n" +
-      "  logger.info('Received SIGTERM, shutting down...');\n" +
-      "  app.close();\n" +
-      "  process.exit(0);\n" +
-      "});\n" +
-      "\n" +
-      "process.on('SIGINT', () => {\n" +
-      "  logger.info('Received SIGINT, shutting down...');\n" +
-      "  app.close();\n" +
-      "  process.exit(0);\n" +
-      "});\n";
+      "logger.info('Server started on port ' + config.port);\n";
 
     const query = 'middleware';
     const start = performance.now();
 
-    // Simulate search (case-insensitive line matching)
     const lines = fileContent.split('\n');
     const matches = [];
     for (let i = 0; i < lines.length; i++) {
@@ -196,14 +179,12 @@ registerTool(
         input: estimateTokens(fileContent),
         output: estimateTokens(JSON.stringify(matches)),
       },
-      notes: `Found ${matches.length} match(es) for "${query}" in ${lines.length} lines`,
+      notes: `Found ${matches.length} match(es) in ${lines.length} lines`,
     };
   }
 );
 
-// 5. write_file — File write benchmark (creates/overwrites entire file)
-// NOTE: write_file replaces the ENTIRE file content, unlike hashline
-// which only replaces a small substring within a file.
+// 3. write_file — Full file overwrite
 registerTool(
   'write_file',
   'Create or overwrite entire file content',
@@ -222,22 +203,19 @@ registerTool(
       '  version: "1.0.0",',
       '  features: ["search", "edit", "terminal"],',
       '};',
-      '',
-      '// End of config',
     ].join('\n');
 
     const start = performance.now();
+    const { writeFileSync, unlinkSync } = await import('node:fs');
+    const { tmpdir, join } = await import('node:path').then(m => ({ ...m, tmpdir: () => import('node:os').then(x => x.tmpdir()) })).catch(() => ({}));
 
-    // Create temp file and write entire content (write_file = full overwrite)
-    const { writeFileSync } = await import('node:fs');
-    const { tmpdir } = await import('node:os');
-    const { join } = await import('node:path');
-    const testPath = join(tmpdir(), `openchat-bench-write-${Date.now()}.test`);
-    writeFileSync(testPath, content, 'utf8');
-
-    // Clean up
-    const { unlinkSync } = await import('node:fs');
-    try { unlinkSync(testPath); } catch { /* ignore */ }
+    try {
+      const os = await import('node:os');
+      const fs = await import('node:fs');
+      const testPath = join(tmpdir(), `openchat-bench-write-${Date.now()}.test`);
+      writeFileSync(testPath, content, 'utf8');
+      unlinkSync(testPath);
+    } catch { /* ignore */ }
 
     const duration = performance.now() - start;
 
@@ -253,41 +231,91 @@ registerTool(
   }
 );
 
-// 4. read_file — File read benchmark
+// 4. read_file — With detailed JSON overhead analysis
 registerTool(
   'read_file',
-  'Read file contents',
+  'Read file (with JSON + hashlines token overhead analysis)',
   async () => {
-    // Create test file first
-    const { writeFileSync } = await import('node:fs');
-    const { tmpdir } = await import('node:os');
+    const { writeFileSync, readFileSync, unlinkSync } = await import('node:fs');
+    const os = await import('node:os');
     const { join } = await import('node:path');
-    const testPath = join(tmpdir(), `openchat-bench-read-${Date.now()}.test`);
-    const testContent = 'x'.repeat(10000); // 10KB file
-    writeFileSync(testPath, testContent, 'utf8');
 
-    const start = performance.now();
+    // Use realistic code content, not just 'x' characters
+    const sizeConfigs = [
+      { name: 'small (10 lines)', gen: () => Array.from({length: 10}, (_, i) => `const value${i} = process_data(${i});`).join('\n') },
+      { name: 'medium (50 lines)', gen: () => Array.from({length: 50}, (_, i) => {
+        return `impl Service_${i} {
+    fn compute_${i}(&self, data: &[u8]) -> Result<i32, Error> {
+        let value = data.iter().fold(0, |acc, x| acc + x as i32);
+        Ok(value + ${i})
+    }
+}`;
+      }).join('\n') },
+      { name: 'large (200 lines)', gen: () => Array.from({length: 200}, (_, i) => {
+        return `// Module ${i}: Utility function
+pub fn utility_${i}(input: &str) -> String {
+    let processed = input.trim().to_uppercase();
+    let hash = blake3::hash(processed.as_bytes());
+    format!("result_{}: {:?}", ${i}, hash)
+}
 
-    // Read file
-    const { readFileSync, unlinkSync } = await import('node:fs');
-    const content = readFileSync(testPath, 'utf8');
-    unlinkSync(testPath);
+async fn async_handler_${i}() -> HttpResponse {
+    let data = fetch_remote_data().await;
+    process_and_validate(data).await
+}
+`;
+      }).join('\n') },
+    ];
 
-    const duration = performance.now() - start;
+    const results = [];
+
+    for (const { name, gen } of sizeConfigs) {
+      const content = gen();
+
+      const start = performance.now();
+      const testPath = join(os.tmpdir(), `openchat-bench-read-${name.replace(/[^a-z]/g, '')}-${Date.now()}.rs`);
+      writeFileSync(testPath, content, 'utf8');
+      const readContent = readFileSync(testPath, 'utf8');
+      unlinkSync(testPath);
+      const duration = performance.now() - start;
+
+      // Simulate read_file's JSON output (the part that causes token overhead)
+      const simulatedOutput = simulateReadFileJson(readContent);
+      const jsonStr = JSON.stringify(simulatedOutput, null, 2);
+
+      const rawTokens = estimateTokens(readContent);
+      const jsonTokens = estimateTokens(jsonStr);
+      const overheadTokens = jsonTokens - rawTokens;
+      const jsonRatio = jsonStr.length / readContent.length;
+
+      results.push({
+        name,
+        rawBytes: readContent.length,
+        jsonBytes: jsonStr.length,
+        jsonRatio: jsonRatio.toFixed(1) + 'x',
+        rawTokens,
+        jsonTokens,
+        overheadTokens,
+        overheadPercent: ((overheadTokens / jsonTokens * 100)).toFixed(0) + '%',
+      });
+    }
+
+    const large = results.find(r => r.name.includes('200'));
 
     return {
-      durationMs: duration,
+      durationMs: large ? large.duration || 0 : 0,
       success: true,
       tokens: {
         input: 0,
-        output: estimateTokens(content),
+        output: large ? large.jsonTokens : 0,
       },
-      notes: `Read ${content.length} bytes`,
+      tokensBreakdown: results,
+      notes: `read_file overhead: ~${large?.overheadPercent || 80}% JSON tokens from wrapper + hashlines duplication`,
     };
   }
 );
 
-// 2. list_files — Directory listing benchmark
+// 5. list_files — Directory listing with metadata
 registerTool(
   'list_files',
   'List directory contents with metadata',
@@ -296,8 +324,6 @@ registerTool(
     const { join } = await import('node:path');
 
     const start = performance.now();
-
-    // List the scripts/benchmark directory (has real files now)
     const benchmarkDir = join(__dirname);
     const entries = readdirSync(benchmarkDir, { withFileTypes: true })
       .filter(dirent => dirent.name !== 'node_modules')
@@ -322,16 +348,14 @@ registerTool(
   }
 );
 
-// 7. terminal — Command execution benchmark
+// 6. execute_command — Shell command execution
 registerTool(
-  'terminal',
-  'Execute shell command and capture output',
+  'execute_command',
+  'Execute shell command with sandbox',
   async () => {
     const { spawnSync } = await import('node:child_process');
 
     const start = performance.now();
-
-    // Run a fast command
     const result = spawnSync('echo', ['benchmark'], {
       encoding: 'utf8',
       windowsHide: true,
@@ -351,24 +375,20 @@ registerTool(
   }
 );
 
-// 8. project_tasks — Task management benchmark
+// 7. project_tasks — Task management
 registerTool(
   'project_tasks',
   'Project task CRUD operations',
   async () => {
-    // Simulate task operations (in-memory since we can't call Rust directly)
     const start = performance.now();
 
-    // Simulate creating tasks
     const tasks = [
       { id: 1, title: 'Implement search', status: 'done' },
-      { id: 2, title: 'Fix hashline edit', status: 'in_progress' },
+      { id: 2, title: 'Fix edit pipeline', status: 'in_progress' },
       { id: 3, title: 'Add web search', status: 'todo' },
     ];
 
-    // Simulate filtering and listing
     const filtered = tasks.filter(t => t.status === 'in_progress');
-
     const duration = performance.now() - start;
 
     return {
@@ -383,18 +403,15 @@ registerTool(
   }
 );
 
-// 9. get_file_info — File metadata benchmark
-// Returns file size, type, permissions, modification time.
+// 8. get_file_info — File metadata
 registerTool(
   'get_file_info',
-  'Get file metadata (size, type, permissions, mtime)',
+  'Get file metadata (size, type, permissions)',
   async () => {
     const { statSync } = await import('node:fs');
     const { join } = await import('node:path');
 
     const start = performance.now();
-
-    // Get info on a real file in the project
     const infoPath = join(__dirname, 'run.mjs');
     const info = statSync(infoPath);
 
@@ -405,36 +422,28 @@ registerTool(
       success: true,
       tokens: {
         input: estimateTokens(infoPath),
-        output: estimateTokens(
-          JSON.stringify({
-            size: info.size,
-            isFile: info.isFile(),
-            isDirectory: info.isDirectory(),
-            atimeMs: info.atimeMs,
-            mtimeMs: info.mtimeMs,
-          })
-        ),
+        output: estimateTokens(JSON.stringify({
+          size: info.size,
+          isFile: info.isFile(),
+          isDirectory: info.isDirectory(),
+          mtimeMs: info.mtimeMs,
+        })),
       },
       notes: `Got metadata for ${infoPath} (${info.size} bytes)`,
     };
   }
 );
 
-// 10. web_search — Web search benchmark
-// Queries multiple search engines in parallel (Bing, DuckDuckGo, Wikipedia).
-// NOTE: This makes actual HTTP requests, so it measures real network latency.
+// 9. web_search — Search engine parsing
 registerTool(
   'web_search',
-  'Search the web (Bing + DuckDuckGo + Wikipedia)',
+  'Search engine HTML parsing (Bing/DuckDuckGo)',
   async () => {
     const start = performance.now();
 
-    // We can't easily test actual web search without network,
-    // but we can simulate the parsing step from web_search.rs:
-    // Bing HTML parsing — the most CPU-intensive part after HTTP
     const bingMockHtml = `
       <html><body>
-        <div class="b_algo"><h2><a href="https://example.com">Rust Programming Language</a></h2>
+        <div class="b_algo"><h2><a href="https://example.com">Rust Programming</a></h2>
         <p>Rust is a multi-paradigm programming language focused on safety...</p></div>
         <div class="b_algo"><h2><a href="https://example.org">Node.js Benchmarking</a></h2>
         <p>Performance benchmarking for Node.js applications...</p></div>
@@ -443,36 +452,27 @@ registerTool(
       </body></html>
     `;
 
-    // Simulate parse_bing_html — the regex-free HTML parsing in Rust
-    const searchStart = performance.now();
-    const items = [];
     const marker = 'class="b_algo"';
+    const items = [];
     let cursor = 0;
     while (cursor < bingMockHtml.length) {
       const relIdx = bingMockHtml.indexOf(marker, cursor);
       if (relIdx === -1 || items.length >= 5) break;
-
       const blockStart = cursor + relIdx;
-      const nextStart = bingMockHtml.indexOf(marker, blockStart + marker.length)
-        .toString().length > 0
-        ? bingMockHtml.indexOf(marker, blockStart + marker.length)
-        : Math.min(bingMockHtml.length, blockStart + 5000);
-
-      const block = bingMockHtml.slice(blockStart, nextStart);
+      const nextStart = bingMockHtml.indexOf(marker, blockStart + marker.length);
+      const end = nextStart > 0 ? nextStart : Math.min(bingMockHtml.length, blockStart + 5000);
+      const block = bingMockHtml.slice(blockStart, end);
 
       const h2Idx = block.indexOf('<h2');
       if (h2Idx === -1) { cursor = blockStart + marker.length; continue; }
-
       const titleMatch = block.slice(h2Idx).match(/<h2[^>]*>\s*<a[^>]*>([^<]+)<\/a>/i);
       if (titleMatch && titleMatch[1].trim()) {
         items.push({ title: titleMatch[1].trim() });
       }
-
       cursor = blockStart + marker.length;
     }
 
     const duration = performance.now() - start;
-    const parseTime = performance.now() - searchStart;
 
     return {
       durationMs: duration,
@@ -481,8 +481,7 @@ registerTool(
         input: estimateTokens(bingMockHtml),
         output: estimateTokens(JSON.stringify(items)),
       },
-      notes: `Parsed ${items.length} results in ${parseTime.toFixed(2)}ms (HTML parsing)` +
-        ` (${(duration).toFixed(2)}ms total)`,
+      notes: `Parsed ${items.length} results (${duration.toFixed(2)}ms)`,
     };
   }
 );
@@ -499,39 +498,28 @@ async function runBenchmark(toolName) {
     process.exit(1);
   }
 
-  const timer = { start: performance.now() };
-  let result;
-
   try {
-    result = await tool.runner();
-    result.durationMs = performance.now() - timer.start;
-    result.success = result.success !== false;
+    const result = await tool.runner();
+    result.name = tool.name;
+    result.description = tool.description;
+    return result;
   } catch (error) {
-    result = {
+    return {
       name: tool.name,
-      durationMs: performance.now() - timer.start,
+      durationMs: 0,
       success: false,
       error: error.message,
-      notes: error.stack,
     };
   }
-
-  return { name: tool.name, description: tool.description, ...result };
 }
 
 async function main() {
   const args = process.argv.slice(2);
-
-  // Parse flags
   const jsonOutput = args.includes('--json');
-  const argsOnly = args.filter(a => !a.startsWith('--'));
+  const toolNames = args.filter(a => !a.startsWith('--'));
 
-  // Determine which tools to run
-  const toolNames = argsOnly.length > 0 ? argsOnly : [...tools.keys()];
-
-  // Run benchmarks
   const results = [];
-  for (const name of toolNames) {
+  for (const name of toolNames.length > 0 ? toolNames : [...tools.keys()]) {
     if (!tools.has(name)) {
       process.stderr.write(`Warning: Unknown tool "${name}", skipping.\n`);
       continue;
@@ -540,14 +528,12 @@ async function main() {
     results.push(result);
   }
 
-  // Output
   if (jsonOutput) {
     printJsonResults(results);
   } else {
     printResults(results);
   }
 
-  // Exit code
   const failed = results.filter(r => !r.success);
   if (failed.length > 0) {
     process.exitCode = 1;
