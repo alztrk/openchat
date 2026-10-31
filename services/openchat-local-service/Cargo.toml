@@ -30,8 +30,6 @@ edition = "2024"
 publish = false
 
 [dependencies]
-openchat-domain = { path = "crates/openchat-domain" }
-
 tiktoken = "4.1"
 age = "=0.12.1"
 rusqlite = { version = "0.40.2", features = ["backup", "bundled-sqlcipher-vendored-openssl", "functions"] }
