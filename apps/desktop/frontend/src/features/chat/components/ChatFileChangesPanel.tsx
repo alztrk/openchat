@@ -119,7 +119,14 @@ export function ChatFileChangesPanel({
   const [diffRevision, setDiffRevision] = useState(0);
   const selectedChangeIdRef = useRef<string | null>(null);
   const changesRequestRef = useRef(0);
-  const activeTab = openTabs.find((tab) => tab.id === activeTabId) ?? null;
+  const activeTabIdRef = useRef(activeTabId);
+  activeTabIdRef.current = activeTabId;
+  const activeTab = useMemo(() => {
+    for (const tab of openTabs) {
+      if (tab.id === activeTabId) return tab;
+    }
+    return null;
+  }, [openTabs, activeTabId]);
   const activeTabConversationId = activeTab && 'conversationId' in activeTab ? activeTab.conversationId : null;
   const panelConversationId = activeTab?.kind === 'conversation' ? null : (activeTabConversationId ?? conversationId);
 
@@ -394,7 +401,7 @@ export function ChatFileChangesPanel({
     }
   };
 
-  const activeChanges = changes.filter((change) => change.status === 'active');
+  const activeChanges = useMemo(() => changes.filter((change) => change.status === 'active'), [changes]);
   const closeWorkspaceTab = (tabId: string) => {
     const index = openTabs.findIndex((tab) => tab.id === tabId);
     const remaining = openTabs.filter((tab) => tab.id !== tabId);
@@ -403,9 +410,17 @@ export function ChatFileChangesPanel({
       setActiveTabId(remaining[Math.max(0, index - 1)]?.id ?? remaining[0]?.id ?? '');
     }
   };
-  const pendingApprovalChanges = activeChanges.filter((change) => !change.approved);
+  const pendingApprovalChanges = useMemo(
+    () => activeChanges.filter((change) => !change.approved),
+    [activeChanges],
+  );
   const selectedChange = useMemo(
-    () => changes.find((change) => change.id === selectedChangeId) ?? null,
+    () => {
+      for (const change of changes) {
+        if (change.id === selectedChangeId) return change;
+      }
+      return null;
+    },
     [changes, selectedChangeId],
   );
   const conversationsById = useMemo(() => new Map(conversations.map((item) => [item.id, item])), [conversations]);

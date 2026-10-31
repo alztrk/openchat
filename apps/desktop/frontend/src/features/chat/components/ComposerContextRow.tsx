@@ -65,11 +65,21 @@ export function ComposerContextRow({
   const activeAgent = useChatStore((state) => {
     if (isTemporaryChat) return null;
     if (activeConversationId !== null) {
-      return state.conversations.find((conversation) => conversation.id === activeConversationId)?.agent ?? null;
+      for (const conversation of state.conversations) {
+        if (conversation.id === activeConversationId) return conversation.agent ?? null;
+      }
+      return null;
     }
     return state.pendingAgentSnapshot;
   });
-  const selectedProject = projects.find((project) => project.id === contextProjectId);
+  const projectById = useMemo(() => {
+    const map = new Map<string, { id: string; name: string; workspaceRoots: string[] }>();
+    for (const p of projects) {
+      map.set(p.id, { id: p.id, name: p.name, workspaceRoots: p.workspaceRoots });
+    }
+    return map;
+  }, [projects]);
+  const selectedProject = contextProjectId ? (projectById.get(contextProjectId) ?? null) : null;
   const filteredProjects = useMemo(() => {
     const query = projectSearch.trim().toLocaleLowerCase(i18n.resolvedLanguage ?? i18n.language);
     if (!query) return projects;

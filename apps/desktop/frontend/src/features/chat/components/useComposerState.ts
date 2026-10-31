@@ -1,8 +1,9 @@
-import { type FormEvent, type KeyboardEvent, type RefObject, useEffect, useRef, useState } from 'react';
+import { type FormEvent, type KeyboardEvent, type RefObject, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { PendingChatAttachment } from '@features/chat/data/chatAttachments';
 import { readChatGptFastMode, writeChatGptFastMode } from '@features/chat/data/chatGptFastMode';
-import type { ChatMessage, ChatModelFavorite } from '@features/chat/data/chatStorage';
+import type { ChatConversation, ChatMessage, ChatModelFavorite } from '@features/chat/data/chatStorage';
+import type { ChatModel } from '@features/provider-settings/data/chatModels';
 import { renameConversation } from '@features/chat/data/chatStorage';
 import {
   readConversationComposerDraft,
@@ -13,7 +14,6 @@ import { useChatStreaming } from '@features/chat/hooks/useChatStreaming';
 import { useChatStore } from '@features/chat/state/chatStore';
 import { favoriteSourceConnection, isSameRoute } from '@features/chat/state/chatStoreUtils';
 import type { ToolPermissionMode } from '@features/projects/data/projectPreferences';
-import type { ChatModel } from '@features/provider-settings/data/chatModels';
 import { modelRouteKey } from '@features/provider-settings/data/modelPreferences';
 import { keyboardShortcutMatches, useKeyboardShortcutsStore } from '@features/app-settings/stores/keyboardShortcutsStore';
 import { localServiceClient } from '@shared/lib/platform/local-service';
@@ -84,7 +84,17 @@ export function useComposerState({
   const storeSelectedModelKey = useChatStore((state) => state.selectedModelKey);
   const storeActiveConversationId = useChatStore((state) => state.activeConversationId);
   const activeConversationId = targetConversationId === undefined ? storeActiveConversationId : targetConversationId;
-  const activeConversation = conversations.find((conversation) => conversation.id === activeConversationId);
+
+  // Build conversation ID → Map for O(1) lookup
+  const conversationById = useMemo(() => {
+    const map = new Map<string, ChatConversation>();
+    for (const c of conversations) {
+      map.set(c.id, c);
+    }
+    return map;
+  }, [conversations]);
+
+  const activeConversation = activeConversationId ? (conversationById.get(activeConversationId) ?? null) : null;
   const selectedModelKey =
     targetConversationId === undefined
       ? storeSelectedModelKey
@@ -117,11 +127,21 @@ export function useComposerState({
       : targetConversationId !== null && sendingConversationId === targetConversationId);
   const modelContextLimits = useChatStore((state) => state.modelContextLimits);
 
-  const selectableModels = models.filter((model) => !hiddenModelKeys.includes(modelRouteKey(model)));
+  const selectableModels = useMemo(
+    () => models.filter((model) => !hiddenModelKeys.includes(modelRouteKey(model))),
+    [models, hiddenModelKeys],
+  );
   const pickerModels = activeConversationId
     ? models.filter((model) => !hiddenModelKeys.includes(modelRouteKey(model)) || model.key === selectedModelKey)
     : selectableModels;
-  const selectedModel = models.find((model) => model.key === selectedModelKey);
+  const modelByKey = useMemo(() => {
+    const map = new Map<string, ChatModel>();
+    for (const model of models) {
+      map.set(model.key, model);
+    }
+    return map;
+  }, [models]);
+  const selectedModel = selectedModelKey ? (modelByKey.get(selectedModelKey) ?? undefined) : undefined;
   const pendingQuestionBlocksSend =
     activeConversationId !== null &&
     pendingQuestionSendBlock?.conversationId === activeConversationId &&

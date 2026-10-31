@@ -288,15 +288,12 @@ export function ConversationPane({
     const hiddenSet = new Set(hiddenModelKeys);
     return models.filter((model) => !hiddenSet.has(modelRouteKey(model)));
   }, [models, hiddenModelKeys]);
-  const selectedModel = useMemo(
-    () =>
-      isConversationOverride
-        ? activeConversation
-          ? (models.find((model) => isSameRoute(model, activeConversation)) ?? null)
-          : null
-        : (modelByKey.get(selectedModelKey ?? '') ?? null),
-    [activeConversation, isConversationOverride, modelByKey, models, selectedModelKey],
-  );
+  const selectedModel = useMemo(() => {
+    if (isConversationOverride && activeConversation) {
+      return models.find((model) => isSameRoute(model, activeConversation)) ?? null;
+    }
+    return modelByKey.get(selectedModelKey ?? '') ?? null;
+  }, [isConversationOverride, activeConversation, models, modelByKey, selectedModelKey]);
   const assistantModelFallback =
     selectedModel?.displayName ?? activeConversation?.modelId ?? temporaryChat?.route?.displayName ?? null;
   const assistantProviderFallback =
@@ -305,7 +302,7 @@ export function ConversationPane({
     ? selectedModel.catalogStale
     : visibleModels.length > 0 && visibleModels.every((model) => model.catalogStale);
   const isLoadingModels = serviceStatus === 'idle' || serviceStatus === 'loading' || modelStatus === 'loading';
-  const temporaryProviderModel = models.find((model) => model.key === selectedModelKey) ?? temporaryChat?.route ?? null;
+  const temporaryProviderModel = modelByKey.get(selectedModelKey ?? '') ?? temporaryChat?.route ?? null;
   const temporaryProviderName =
     temporaryProviderModel?.customProvider?.name ??
     temporaryProviderModel?.sourceLabel ??

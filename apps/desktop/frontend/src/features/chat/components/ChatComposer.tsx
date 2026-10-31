@@ -154,7 +154,10 @@ export function ChatComposer({
     () => (selectedModel === undefined ? null : effectiveContextWindow(selectedModel, modelContextLimits)),
     [selectedModel, modelContextLimits],
   );
-  const activeConversation = conversations.find((conversation) => conversation.id === activeConversationId);
+  const activeConversation = useMemo(
+    () => conversations.find((conversation) => conversation.id === activeConversationId),
+    [conversations, activeConversationId],
+  );
   const contextProjectId = activeConversation?.projectId ?? pendingProjectId;
   const contextToolPermissionMode = composerMode === 'plan' ? 'plan' : selectedPermissionMode;
   const isTargetPlaceholder = targetConversationId === null;

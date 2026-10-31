@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import type { ChatModel } from '@features/provider-settings/data/chatModels';
 import type { ChatMessage } from '@features/chat/data/chatStorage';
 import { useComposerPreferencesStore } from '@features/chat/data/composerPreferences';
-import type { ChatModel } from '@features/provider-settings/data/chatModels';
 import { loadRouteParameters } from '@features/provider-settings/data/modelRouteParameters';
 import { localServiceClient, type ServiceOperation } from '@shared/lib/platform/local-service';
 import type { ChatSlashCommand } from './ChatSlashCommandMenu';
@@ -49,8 +49,16 @@ export function useComposerGhostText({
   const lastGhostTextRequestKeyRef = useRef<string | null>(null);
 
   const ghostTextContext = useMemo(() => getGhostTextContext(messages), [messages]);
+  // Build model key → Map for O(1) lookup
+  const ghostTextModelKeyMap = useMemo(() => {
+    const map = new Map<string, ChatModel>();
+    for (const model of models) {
+      map.set(model.key, model);
+    }
+    return map;
+  }, [models]);
   const ghostTextModel =
-    ghostTextModelKey === 'auto' ? selectedModel : models.find((model) => model.key === ghostTextModelKey);
+    ghostTextModelKey === 'auto' ? selectedModel : ghostTextModelKeyMap.get(ghostTextModelKey ?? '');
   const ghostTextConversationId = isTemporaryChat ? (temporaryChatId ?? null) : activeConversationId;
   const ghostTextRequestKey =
     ghostTextContext && ghostTextModel && ghostTextConversationId
