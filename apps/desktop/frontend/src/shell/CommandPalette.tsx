@@ -210,6 +210,14 @@ export function CommandPalette({
     return () => window.clearTimeout(timer);
   }, [query]);
   const normalizedQuery = normalizeText(debouncedQuery, i18n.language);
+  // Build project name lookup map for O(1) lookup inside items useMemo
+  const projectMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const project of projects) {
+      map.set(project.id, project.name);
+    }
+    return map;
+  }, [projects]);
 
   useEffect(() => {
     if (open && profilesLoadState === 'idle') initializeProfiles();
@@ -283,8 +291,9 @@ export function CommandPalette({
       .filter((conversation) => !conversation.isArchived)
       .sort((left, right) => right.updatedAt - left.updatedAt);
     const visibleConversations = normalizedQuery.length > 0 ? sortedConversations : sortedConversations.slice(0, 8);
+
     const conversationItems = visibleConversations.map<PaletteItem>((conversation) => {
-      const projectName = projects.find((project) => project.id === conversation.projectId)?.name;
+      const projectName = projectMap.get(conversation.projectId ?? '');
       return {
         id: `conversation-${conversation.id}`,
         category: 'conversations',

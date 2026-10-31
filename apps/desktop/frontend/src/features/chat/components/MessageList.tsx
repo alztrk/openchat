@@ -182,6 +182,13 @@ export function MessageList({
   ]);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: Message, loading, and conversation changes intentionally trigger scroll-follow updates.
+  // NOTE: We use refs to avoid re-triggering on every streaming content chunk update.
+  // Only the message count change (new messages) needs to trigger scroll-to-bottom.
+  const latestMessageContentRef = useRef<string | null>(null);
+  const latestMessageStatusRef = useRef<string | null>(null);
+  latestMessageContentRef.current = latestMessage?.content ?? null;
+  latestMessageStatusRef.current = latestMessage?.status ?? null;
+
   useEffect(() => {
     if (isLoadingMessages || searchTargetMessageId || inChatTargetMessageId) return;
     if (skipBottomScroll.current) {
@@ -207,10 +214,8 @@ export function MessageList({
     inChatTargetMessageId,
     isLoadingMessages,
     messages.length,
-    messages.at(-1)?.content,
-    messages.at(-1)?.reasoningSummaries,
-    messages.at(-1)?.status,
-    messages.at(-1)?.toolActivities,
+    latestMessageContentRef,
+    latestMessageStatusRef,
     searchTargetMessageId,
     shouldShowAssistantLoading,
     virtualList.isFollowingLatest,

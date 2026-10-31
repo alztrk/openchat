@@ -872,19 +872,18 @@ export function App() {
     [],
   );
 
-  const handleOpenConversationInPanel = useCallback(
-    (conversationId: string) => {
-      if (!conversations.some((conversation) => conversation.id === conversationId)) return;
-      setWorkspaceFileRequest(null);
-      setWorkspacePanelRequest({
-        requestId: ++workspacePanelRequestId.current,
-        kind: 'conversation',
-        conversationId,
-      });
-      setIsRightPanelOpen(true);
-    },
-    [conversations],
-  );
+  // Use store lookup at call time to avoid re-creating function on every conversation change
+  const handleOpenConversationInPanel = useCallback((conversationId: string) => {
+    const current = useChatStore.getState();
+    if (!current.conversations.some((conversation) => conversation.id === conversationId)) return;
+    setWorkspaceFileRequest(null);
+    setWorkspacePanelRequest({
+      requestId: ++workspacePanelRequestId.current,
+      kind: 'conversation',
+      conversationId,
+    });
+    setIsRightPanelOpen(true);
+  }, []);
 
   const handleOpenWorkspaceFileForConversation = useCallback(
     (conversationId: string | null, file: WorkspaceFileSelection) => {

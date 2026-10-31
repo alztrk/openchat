@@ -1,5 +1,6 @@
 import { Brain, Check, ChevronLeft, ChevronRight, CircleAlert, Copy, GitBranch, Link, RefreshCw } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button, Dialog } from '@shared/components';
 import type { ChatFileChange } from '@features/chat/data/chatFileChanges';
@@ -71,32 +72,117 @@ export function MessageItem({
   const [memorySourcesError, setMemorySourcesError] = useState(false);
   const resetTimer = useRef<number | undefined>(undefined);
   const isUser = message.role === 'user';
-  const inBandReasoning = isUser
-    ? { visibleContent: message.content, reasoningContent: '' }
-    : separateInBandReasoning(message.content);
-  const personalMemoryFactIds = parsePersonalMemoryFactIds(message.personalMemoryFactIds) ?? [];
-  const citationSources = isUser ? [] : parseCitationSources(message.citationSources);
-  const parsedReasoningSummaries = isUser ? [] : parseReasoningSummaries(message.reasoningSummaries);
-  const reasoningSummaries = [...parsedReasoningSummaries];
-  if (inBandReasoning.reasoningContent.trim().length > 0) {
-    reasoningSummaries.push({
-      id: `inband_reasoning_${message.id}`,
-      content: inBandReasoning.reasoningContent,
-      elapsedMicroseconds: null,
-      isComplete: message.status !== 'streaming',
-    });
-  }
-  const toolActivities = isUser ? [] : parseToolActivities(message.toolActivities);
-  const assistantTimeline = isUser
-    ? []
-    : buildAssistantTimeline(message.content, inBandReasoning, reasoningSummaries, toolActivities);
-  const canRetry = !isUser && onRetryMessage !== undefined && message.status !== 'streaming';
-  const hasResponseVersions =
-    !isUser &&
-    onSelectResponseVersion !== undefined &&
-    responseVersionIndex !== undefined &&
-    responseVersionCount !== undefined &&
-    responseVersionCount > 1;
+
+  // Memoize all derived data to avoid re-computation on every render
+  const inBandReasoning = useMemo(
+    () =>
+      isUser
+        ? { visibleContent: message.content, reasoningContent: '' }
+        : separateInBandReasoning(message.content),
+    [isUser, message.content],
+  );
+
+  const personalMemoryFactIds = useMemo(
+    () => parsePersonalMemoryFactIds(message.personalMemoryFactIds) ?? [],
+    [message.personalMemoryFactIds],
+  );
+
+  const citationSources = useMemo(
+    () => (isUser ? [] : parseCitationSources(message.citationSources)),
+    [isUser, message.citationSources],
+  );
+
+  const reasoningSummaries = useMemo(() => {
+    const summaries = isUser ? [] : parseReasoningSummaries(message.reasoningSummaries);
+    if (inBandReasoning.reasoningContent.trim().length > 0) {
+      summaries.push({
+        id: `inband_reasoning_${message.id}`,
+        content: inBandReasoning.reasoningContent,
+        elapsedMicroseconds: null,
+        isComplete: message.status !== 'streaming',
+      });
+    }
+    return summaries;
+  }, [isUser, message.reasoningSummaries, message.status, message.id, inBandReasoning.reasoningContent]);
+
+  const toolActivities = useMemo(
+    () => (isUser ? [] : parseToolActivities(message.toolActivities)),
+    [isUser, message.toolActivities],
+  );
+
+  const assistantTimeline = useMemo(
+    () =>
+      isUser
+        ? []
+        : buildAssistantTimeline(message.content, inBandReasoning, reasoningSummaries, toolActivities),
+    [isUser, message.content, inBandReasoning, reasoningSummaries, toolActivities],
+  );
+
+  const canRetry = useMemo(
+    () => !isUser && onRetryMessage !== undefined && message.status !== 'streaming',
+    [isUser, onRetryMessage, message.status],
+  );
+
+  const hasResponseVersions = useMemo(
+    () =>
+      !isUser &&
+      onSelectResponseVersion !== undefined &&
+      responseVersionIndex !== undefined &&
+      responseVersionCount !== undefined &&
+      responseVersionCount > 1,
+    [isUser, onSelectResponseVersion, responseVersionIndex, responseVersionCount],
+  );
+
+  // Memoize rendered timeline to prevent re-creating JSX on every render
+  const timelineContent = useMemo(() => {
+    if (isUser) return null;
+    if (message.status === 'streaming' && assistantTimeline.length === 0) return <ResponseSkeleton />;
+    return (
+      <>
+        {assistantTimeline.map((segment) => {
+          if (segment.kind === 'reasoning') {
+            return (
+              <div className="mt-2 grid gap-2" key={segment.key}>
+                {segment.summaries.map((summary) => (
+                  <ReasoningSummary key={summary.id} summary={summary} />
+                ))}
+              </div>
+            );
+          }
+          if (segment.kind === 'tools') {
+            return (
+              <div className="mt-2 grid gap-2" key={segment.key}>
+                {segment.activities.map((activity) => (
+                  <ToolActivityAccordion
+                    activity={activity}
+                    conversationId={message.conversationId}
+                    isResponseInProgress={message.status === 'streaming'}
+                    key={activity.callId}
+                    onCheckpointRestored={onCheckpointRestored}
+                    onOpenFileChanges={onOpenFileChanges}
+                    onOpenFile={(path, content) => onOpenWorkspaceFile?.({ path, content })}
+                  />
+                ))}
+              </div>
+            );
+          }
+          return (
+            <div className="mt-2" key={segment.key}>
+              <MessageMarkdown citationSources={citationSources} content={segment.content} />
+            </div>
+          );
+        })}
+      </>
+    );
+  }, [
+    isUser,
+    message.status,
+    assistantTimeline,
+    citationSources,
+    onCheckpointRestored,
+    onOpenFileChanges,
+    onOpenWorkspaceFile,
+  ]);
 
   useEffect(
     () => () => {
@@ -173,40 +259,7 @@ export function MessageItem({
           ) : null
         ) : (
           <>
-            {assistantTimeline.map((segment) => {
-              if (segment.kind === 'reasoning') {
-                return (
-                  <div className="mt-2 grid gap-2" key={segment.key}>
-                    {segment.summaries.map((summary) => (
-                      <ReasoningSummary key={summary.id} summary={summary} />
-                    ))}
-                  </div>
-                );
-              }
-              if (segment.kind === 'tools') {
-                return (
-                  <div className="mt-2 grid gap-2" key={segment.key}>
-                    {segment.activities.map((activity) => (
-                      <ToolActivityAccordion
-                        activity={activity}
-                        conversationId={message.conversationId}
-                        isResponseInProgress={message.status === 'streaming'}
-                        key={activity.callId}
-                        onCheckpointRestored={onCheckpointRestored}
-                        onOpenFileChanges={onOpenFileChanges}
-                        onOpenFile={(path, content) => onOpenWorkspaceFile?.({ path, content })}
-                      />
-                    ))}
-                  </div>
-                );
-              }
-              return (
-                <div className="mt-2" key={segment.key}>
-                  <MessageMarkdown citationSources={citationSources} content={segment.content} />
-                </div>
-              );
-            })}
-            {message.status === 'streaming' && assistantTimeline.length === 0 ? <ResponseSkeleton /> : null}
+            {timelineContent}
           </>
         )}
         {message.status === 'streaming' && assistantTimeline.some((segment) => segment.kind === 'text') && !isUser ? (

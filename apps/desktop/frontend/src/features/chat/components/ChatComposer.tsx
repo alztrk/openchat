@@ -1,5 +1,5 @@
 import { ArrowUp, Brain, Paperclip, Square, X } from 'lucide-react';
-import { useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button, Select, Textarea } from '@shared/components';
@@ -179,60 +179,63 @@ export function ChatComposer({
   const [isAttachmentLibraryOpen, setIsAttachmentLibraryOpen] = useState(false);
   const composerDragDepthRef = useRef(0);
 
-  const isComposerConversationDrag = (event: React.DragEvent) => {
-    if (getSidebarDraggingConversationId() !== null) return true;
+  // Memoize drag handlers to prevent unnecessary re-renders
+  const handleComposerDragEnter = useCallback(
+    (event: React.DragEvent) => {
+      if (getSidebarDraggingConversationId() !== null) return;
+      const types = Array.from(event.dataTransfer?.types ?? []);
+      const isConv = types.includes('application/x-openchat-conversation') || types.includes('text/plain');
+      const isFiles = types.includes('Files');
+      if (!isFiles && !isConv) return;
+      event.preventDefault();
+      if (isFiles) {
+        composerDragDepthRef.current += 1;
+        setIsComposerDraggingOver(true);
+      }
+    },
+    [],
+  );
+
+  const handleComposerDragOver = useCallback((event: React.DragEvent) => {
+    if (getSidebarDraggingConversationId() !== null) return;
     const types = Array.from(event.dataTransfer?.types ?? []);
-    return types.includes('application/x-openchat-conversation') || types.includes('text/plain');
-  };
-
-  const handleComposerDragEnter = (event: React.DragEvent) => {
-    const isFiles = Array.from(event.dataTransfer?.types ?? []).includes('Files');
-    const isConv = isComposerConversationDrag(event);
-    if (!isFiles && !isConv) return;
-    event.preventDefault();
-    if (isFiles) {
-      composerDragDepthRef.current += 1;
-      setIsComposerDraggingOver(true);
-    }
-  };
-
-  const handleComposerDragOver = (event: React.DragEvent) => {
-    const isFiles = Array.from(event.dataTransfer?.types ?? []).includes('Files');
-    const isConv = isComposerConversationDrag(event);
-    if (!isFiles && !isConv) return;
+    const isConv = types.includes('application/x-openchat-conversation') || types.includes('text/plain');
+    if (!types.includes('Files') && !isConv) return;
     event.preventDefault();
     event.dataTransfer.dropEffect = 'copy';
-  };
+  }, []);
 
-  const handleComposerDragLeave = (event: React.DragEvent) => {
-    const isFiles = Array.from(event.dataTransfer?.types ?? []).includes('Files');
-    if (!isFiles) return;
-    event.preventDefault();
+  const handleComposerDragLeave = useCallback(() => {
     composerDragDepthRef.current -= 1;
     if (composerDragDepthRef.current <= 0) {
       composerDragDepthRef.current = 0;
       setIsComposerDraggingOver(false);
     }
-  };
+  }, []);
 
-  const handleComposerDrop = (event: React.DragEvent) => {
-    const isFiles = Array.from(event.dataTransfer?.types ?? []).includes('Files');
-    if (isFiles) {
-      event.preventDefault();
-      event.stopPropagation();
-      composerDragDepthRef.current = 0;
-      setIsComposerDraggingOver(false);
-      const files = Array.from(event.dataTransfer.files ?? []);
-      if (files.length > 0) {
-        void addAttachments(files);
+  const handleComposerDrop = useCallback(
+    (event: React.DragEvent) => {
+      if (getSidebarDraggingConversationId() !== null) return;
+      const types = Array.from(event.dataTransfer?.types ?? []);
+      const isConv = types.includes('application/x-openchat-conversation') || types.includes('text/plain');
+      if (types.includes('Files')) {
+        event.preventDefault();
+        event.stopPropagation();
+        composerDragDepthRef.current = 0;
+        setIsComposerDraggingOver(false);
+        const files = Array.from(event.dataTransfer.files ?? []);
+        if (files.length > 0) {
+          void addAttachments(files);
+        }
+        return;
       }
-      return;
-    }
-    if (isComposerConversationDrag(event)) {
-      event.preventDefault();
-      // Allow bubble to workspace
-    }
-  };
+      if (isConv) {
+        event.preventDefault();
+        // Allow bubble to workspace
+      }
+    },
+    [addAttachments],
+  );
 
   return (
     <div className="shrink-0 px-4 pb-5 pt-3 sm:px-8">

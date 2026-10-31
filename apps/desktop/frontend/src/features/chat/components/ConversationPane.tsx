@@ -419,6 +419,10 @@ export function ConversationPane({
     setActiveMatchIndex(0);
   }, []);
 
+  // Track message count in a ref to avoid re-subscribing on every new message
+  const messagesLengthRef = useRef(messages.length);
+  messagesLengthRef.current = messages.length;
+
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'f') {
@@ -430,7 +434,7 @@ export function ConversationPane({
           active?.tagName === 'BODY' ||
           active === null;
         if (!isPaneFocused) return;
-        if (messages.length === 0) return;
+        if (messagesLengthRef.current === 0) return;
 
         event.preventDefault();
         handleOpenSearch();
@@ -439,7 +443,7 @@ export function ConversationPane({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleOpenSearch, messages.length]);
+  }, [handleOpenSearch]);
 
   const isConversationDrag = (event: React.DragEvent) => {
     if (getSidebarDraggingConversationId() !== null) return true;
