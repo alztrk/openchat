@@ -28,19 +28,17 @@ migrate_working_dir/
 /build/
 /target/
 /services/openchat-local-service/target/
-/apps/desktop/frontend/node_modules/
-/apps/desktop/frontend/dist/
-/apps/desktop/frontend/*.tsbuildinfo
 /apps/desktop/tauri/target/
 /apps/desktop/tauri/gen/schemas/
 /apps/desktop/tauri/binaries/
-/scripts/
-!/scripts/
-/scripts/*
-!/scripts/README.md
-!/scripts/*.mjs
-!/scripts/*/
-!/scripts/opencode_probe.py
+/apps/desktop/frontend/dist/
+/apps/desktop/frontend/*.tsbuildinfo
+/apps/desktop/frontend/node_modules/
+
+# Node modules (workspace root)
+/node_modules/
+
+# Reports
 /reports/
 /.opencode_probe/
 /coverage/

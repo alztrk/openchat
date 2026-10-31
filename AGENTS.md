@@ -20,6 +20,27 @@ As an AI engineering agent working in this repository, you **MUST** strictly adh
 
 ---
 
+## 1.5 CLI System
+
+All tasks use the modulerized CLI in `scripts/run.mjs`, invoked via npm scripts:
+
+```bash
+npm run openchat -- dev            # Start dev server with sidecar
+npm run openchat -- build          # Build release
+npm run openchat -- check          # Full check (lint + test + cargo)
+npm run openchat -- check-types    # Type check only (no tests)
+npm run openchat -- clean          # Clean build artifacts
+npm run openchat -- maintain-target # Manage Cargo target directory
+```
+
+The CLI is modularized into:
+- `scripts/run.mjs` — entry point with task registry
+- `scripts/help.mjs` — help text definitions
+- `scripts/tasks/` — individual task implementations (dev.mjs, build.mjs, check.mjs, clean.mjs, maintain.mjs)
+- `scripts/shared/` — shared utilities (runner, rust, profile, session, fs-safety, target-utils, env, task)
+
+---
+
 ## 2. Strictly Scoped Git Staging and Commits
 
 * **Stage ONLY Your Own Changes:**

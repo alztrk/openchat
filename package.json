@@ -1,0 +1,14 @@
+{
+  "name": "openchat",
+  "private": true,
+  "workspaces": ["apps/desktop/frontend"],
+  "scripts": {
+    "dev": "node scripts/run.mjs dev",
+    "build": "node scripts/run.mjs build",
+    "check": "node scripts/run.mjs check",
+    "check-types": "node scripts/run.mjs check-types",
+    "clean": "node scripts/run.mjs clean",
+    "maintain-target": "node scripts/run.mjs maintain-target",
+    "openchat": "node scripts/run.mjs"
+  }
+}
