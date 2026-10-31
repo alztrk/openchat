@@ -1,7 +1,10 @@
 import { useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import './computerUseOverlay.css';
 
 export function ComputerUseOverlay() {
+  const { t } = useTranslation();
+
   useEffect(() => {
     const [red = '142', green = '86', blue = '59'] =
       new URLSearchParams(location.search).get('accent')?.split(',') ?? [];
@@ -17,7 +20,7 @@ export function ComputerUseOverlay() {
   return (
     <main aria-live="polite" className="computer-use-overlay">
       {showBanner && (
-        <div className="computer-use-overlay__banner">OpenChat is using your computer. Press Esc 2 times to stop</div>
+        <div className="computer-use-overlay__banner">{t('computerUseBanner')}</div>
       )}
       {(['top-left', 'top-right', 'bottom-left', 'bottom-right'] as const).map((corner) => (
         <span

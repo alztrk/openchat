@@ -360,8 +360,11 @@ function snapUtf8Boundary(bytes: Uint8Array, offset: number): number {
   return cursor;
 }
 
+// Maximum safe timestamp (year 2286, then 64-bit float loses integer precision)
+const MAX_SAFE_DATETIME_MS = 8_640_000_000_000_000;
+
 function isSafeTimestamp(value: unknown): value is number {
-  return isFiniteNumber(value) && value >= 0 && value <= 8640000000000000;
+  return isFiniteNumber(value) && value >= 0 && value <= MAX_SAFE_DATETIME_MS;
 }
 
 function isToolActivityStatus(value: unknown): value is ToolActivityStatus {

@@ -1464,6 +1464,7 @@
   "dropFilesOverlayTitle": "Dateien hier ablegen, um sie als Kontext hinzuzufügen",
   "dropFilesOverlayDescription": "Bilder sowie Code- oder Textdateien direkt an die Nachricht anhängen",
   "composerDropTargetLabel": "Dateien zum Anhängen ablegen",
+  "computerUseBanner": "OpenChat nutzt Ihren Computer. Drücken Sie 2× Esc zum Beenden.",
   "messageHint": "Nachricht schreiben …",
   "send": "Senden",
   "welcomeTitle": "Unterhaltung starten",

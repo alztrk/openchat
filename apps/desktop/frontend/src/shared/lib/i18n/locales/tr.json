@@ -1464,6 +1464,7 @@
   "dropFilesOverlayTitle": "Bağlam olarak eklemek için dosyaları buraya bırakın",
   "dropFilesOverlayDescription": "Görselleri ve kod veya metin dosyalarını doğrudan iletinize ekleyin",
   "composerDropTargetLabel": "Eklemek için dosyaları bırakın",
+  "computerUseBanner": "OpenChat bilgisayarınızı kullanıyor. Durdurmak için 2 kez Esc'ye basın.",
   "messageHint": "Mesajını yaz...",
   "send": "Gönder",
   "welcomeTitle": "Sohbet başlat",

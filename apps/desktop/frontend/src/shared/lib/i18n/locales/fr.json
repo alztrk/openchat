@@ -1464,6 +1464,7 @@
   "dropFilesOverlayTitle": "Déposez des fichiers ici pour les ajouter comme contexte",
   "dropFilesOverlayDescription": "Joignez des images et des fichiers de code ou texte directement à votre message",
   "composerDropTargetLabel": "Déposez les fichiers à joindre",
+  "computerUseBanner": "OpenChat utilise votre ordinateur. Appuyez 2 fois sur Esc pour arrêter.",
   "messageHint": "Écrire un message...",
   "send": "Envoyer",
   "welcomeTitle": "Démarrer une conversation",

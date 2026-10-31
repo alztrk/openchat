@@ -1464,6 +1464,7 @@
   "dropFilesOverlayTitle": "Drop files here to add as context",
   "dropFilesOverlayDescription": "Attach images and code or text files directly to your prompt",
   "composerDropTargetLabel": "Drop files to attach",
+  "computerUseBanner": "OpenChat is using your computer. Press Esc 2 times to stop",
   "messageHint": "Write a message...",
   "send": "Send",
   "welcomeTitle": "Start a conversation",

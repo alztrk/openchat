@@ -315,13 +315,17 @@ export function GitResult({
     );
   }
   if (!Array.isArray(output.entries)) return <ToolResultNotice message={t('toolOperationUnavailable')} />;
+
+  // Max safe Unix timestamp in seconds (~year 2286)
+  const MAX_UNIX_SECONDS = 8_640_000_000_000;
+
   const entries = output.entries.flatMap((value): Array<{ id: string; timestamp: number; subject: string }> => {
     const entry = asRecord(value);
     if (
       !entry ||
       typeof entry.id !== 'string' ||
       !isNonNegativeInteger(entry.timestampUnixSeconds) ||
-      entry.timestampUnixSeconds > 8640000000000 ||
+      entry.timestampUnixSeconds > MAX_UNIX_SECONDS ||
       typeof entry.subject !== 'string'
     )
       return [];

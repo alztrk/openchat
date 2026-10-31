@@ -4,6 +4,10 @@ import { useTranslation } from 'react-i18next';
 import { Button } from '@shared/components';
 import type { ChatToolPermissionRequest } from '@features/chat/state/chatStore';
 
+// Default limits for tool permissions
+const DEFAULT_WEB_SEARCH_LIMIT = 5;
+const DEFAULT_READ_URL_MAX_CHARS = 6000;
+
 interface ToolPermissionCardProps {
   request: ChatToolPermissionRequest;
   isResponding: boolean;
@@ -233,13 +237,13 @@ function getRequestDetails(request: ChatToolPermissionRequest, t: Translate): { 
       case 'web_search':
         return [
           detail('toolSearchQuery', argument('query')),
-          detail('toolPermissionLimit', request.arguments.limit ?? 5),
+          detail('toolPermissionLimit', request.arguments.limit ?? DEFAULT_WEB_SEARCH_LIMIT),
         ];
       case 'read_url_content':
       case 'read_url':
         return [
           detail('toolUrl', argument('url')),
-          detail('toolPermissionLimit', request.arguments.max_chars ?? request.arguments.maxChars ?? 6000),
+          detail('toolPermissionLimit', request.arguments.max_chars ?? request.arguments.maxChars ?? DEFAULT_READ_URL_MAX_CHARS),
         ];
       default:
         return [];

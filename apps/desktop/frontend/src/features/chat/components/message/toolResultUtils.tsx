@@ -49,8 +49,11 @@ export function preview(value: string): string {
   return lines.length > 3 || normalized.length > 260 ? `${shown}…` : shown || ' ';
 }
 
+// Maximum safe timestamp (year 2286, then 64-bit float loses integer precision)
+const MAX_SAFE_DATETIME_MS = 8_640_000_000_000_000;
+
 export function safeTimestamp(value: unknown): number | null {
-  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 && value <= 8640000000000000
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 && value <= MAX_SAFE_DATETIME_MS
     ? value
     : null;
 }
