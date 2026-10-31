@@ -45,6 +45,10 @@ function runCommand(command, args, { cwd = workspaceRoot, captureOutput = false 
   return result;
 }
 
+function runNpmAsync(args, cwd = frontendDirectory) {
+  return Promise.resolve(runNpm(args, cwd));
+}
+
 function runNpm(args, cwd = frontendDirectory) {
   const npmCliPath = process.env.npm_execpath;
   if (!npmCliPath) {
@@ -374,16 +378,51 @@ function build(args) {
   runNpm(['run', 'tauri:build'], frontendDirectory);
 }
 
-function check(args) {
+async function check(args) {
   ensureNoArguments('check', args);
-  runNpm(['exec', '--', 'biome', 'check'], frontendDirectory);
-  runNpm(['run', 'build'], frontendDirectory);
+  const results = await Promise.allSettled([
+    runNpmAsync(['exec', '--', 'biome', 'check'], frontendDirectory),
+    runNpmAsync(['exec', '--', 'tsc', '--noEmit'], frontendDirectory),
+    runCommand('cargo', ['fmt', '--all', '--', '--check'], { cwd: workspaceRoot }),
+    runCommand('cargo', ['check', '--workspace'], { cwd: workspaceRoot }),
+    runCommand('cargo', ['test', '--workspace', '--features', 'openchat-local-service/desktop-profile-test-support', '--', '--test-threads=0'], {
+      cwd: workspaceRoot,
+    }),
+  ]);
 
-  runCommand('cargo', ['fmt', '--all', '--', '--check'], { cwd: workspaceRoot });
-  runCommand('cargo', ['check', '--workspace'], { cwd: workspaceRoot });
-  runCommand('cargo', ['test', '--workspace', '--features', 'openchat-local-service/desktop-profile-test-support', '--', '--test-threads=1'], {
-    cwd: workspaceRoot,
-  });
+  let failed = false;
+  for (let i = 0; i < results.length; i += 1) {
+    if (results[i].status === 'rejected') {
+      failed = true;
+      const tasks = ['Biome lint', 'TypeScript type-check', 'Rust formatting', 'Rust compilation check', 'Rust tests'];
+      process.stderr.write(tasks[i] + ' failed.\n');
+    }
+  }
+  if (failed) {
+    throw new Error('check: one or more tasks failed.');
+  }
+}
+
+async function checkTypes(args) {
+  ensureNoArguments('check-types', args);
+  const results = await Promise.allSettled([
+    runNpmAsync(['exec', '--', 'biome', 'check'], frontendDirectory),
+    runNpmAsync(['exec', '--', 'tsc', '--noEmit'], frontendDirectory),
+    runCommand('cargo', ['fmt', '--all', '--', '--check'], { cwd: workspaceRoot }),
+    runCommand('cargo', ['check', '--workspace'], { cwd: workspaceRoot }),
+  ]);
+
+  let failed = false;
+  for (let i = 0; i < results.length; i += 1) {
+    if (results[i].status === 'rejected') {
+      failed = true;
+      const tasks = ['Biome lint', 'TypeScript type-check', 'Rust formatting', 'Rust compilation check'];
+      process.stderr.write(tasks[i] + ' failed.\n');
+    }
+  }
+  if (failed) {
+    throw new Error('check-types: one or more tasks failed.');
+  }
 }
 
 function clean(args) {
@@ -768,7 +807,7 @@ function maintainTarget(args) {
 
 function printHelp() {
   process.stdout.write(
-    'Usage: npm run openchat -- <dev|dev-test-profile|startup-benchmark|build|check|clean|maintain-target> [options]\n' +
+    'Usage: npm run openchat -- <dev|dev-test-profile|startup-benchmark|build|check|check-types|clean|maintain-target> [options]\n' +
       'Run from apps/desktop/frontend. Use --help after a task for its options.\n',
   );
 }
@@ -831,6 +870,7 @@ async function main() {
     'startup-benchmark': startupBenchmark,
     build,
     check,
+    'check-types': checkTypes,
     clean,
     'maintain-target': maintainTarget,
   };
