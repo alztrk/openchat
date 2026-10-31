@@ -2,6 +2,9 @@ import { Check, Copy } from 'lucide-react';
 import { Fragment, memo, type ReactNode, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+// Copy notification delay
+const COPY_NOTIFICATION_DELAY_MS = 2_000;
+
 import { Button } from '@shared/components';
 import { isWithinRichMarkdownBudget } from '@features/chat/data/messageMarkdownBudget';
 import { useChatDisplayPreferencesStore } from '@features/app-settings/data/chatDisplayPreferences';
@@ -42,7 +45,7 @@ function CodeBlock({ code, language }: CodeBlockProps) {
     try {
       await navigator.clipboard.writeText(code);
       setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      setTimeout(() => setCopied(false), COPY_NOTIFICATION_DELAY_MS);
     } catch {
       // clipboard access might be blocked in some browser/webview contexts
     }

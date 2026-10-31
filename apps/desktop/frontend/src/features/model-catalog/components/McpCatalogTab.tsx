@@ -1,6 +1,9 @@
 import { LoaderCircle, Search, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+
+// Notice auto-hiding delay
+const NOTICE_AUTO_HIDE_MS = 4_000;
 import { Button, Input } from '@shared/components';
 import {
   formatMcpToolLabel,
@@ -51,7 +54,7 @@ export function McpCatalogTab() {
 
   useEffect(() => {
     if (!noticeKey) return;
-    const timeout = window.setTimeout(() => setNoticeKey(null), 4000);
+    const timeout = window.setTimeout(() => setNoticeKey(null), NOTICE_AUTO_HIDE_MS);
     return () => window.clearTimeout(timeout);
   }, [noticeKey]);
 

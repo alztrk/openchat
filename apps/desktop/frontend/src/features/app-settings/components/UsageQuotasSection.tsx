@@ -901,13 +901,18 @@ function creditMetadata(credit: ResetCredit, t: WorkspaceUsageProps['t']): strin
 }
 
 function bucketLabel(bucket: UsageBucket, t: WorkspaceUsageProps['t']): string {
+  const FIVE_HOURS_SECONDS = 5 * 60 * 60;     // 18000
+  const ONE_WEEK_SECONDS = 7 * 24 * 60 * 60;  // 604800
+  const MIN_MONTH_SECONDS = 28 * 24 * 60 * 60;   // 2419200
+  const MAX_MONTH_SECONDS = 31 * 24 * 60 * 60;   // 2678400
+
   switch (bucket.windowSeconds) {
-    case 18000:
+    case FIVE_HOURS_SECONDS:
       return t('usageFiveHour');
-    case 604800:
+    case ONE_WEEK_SECONDS:
       return t('usageWeekly');
     default:
-      if (bucket.windowSeconds !== null && bucket.windowSeconds >= 2419200 && bucket.windowSeconds <= 2678400) {
+      if (bucket.windowSeconds !== null && bucket.windowSeconds >= MIN_MONTH_SECONDS && bucket.windowSeconds <= MAX_MONTH_SECONDS) {
         return t('usageMonthly');
       }
       return bucket.limitId;

@@ -2,6 +2,9 @@ import { Download, Trash2 } from 'lucide-react';
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+// URL revocation delay
+const URL_REVOCATION_DELAY_MS = 1_000;
+
 import { Button, Switch, Textarea } from '@shared/components';
 import type { ChatProject } from '@features/chat/data/chatStorage';
 import { LocalServiceError, localServiceClient } from '@shared/lib/platform/local-service';
@@ -161,7 +164,7 @@ export function ProjectMemoryPanel({ project, onClose }: ProjectMemoryPanelProps
       pendingAnchor.click();
       pendingAnchor.remove();
       pendingAnchor = null;
-      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), URL_REVOCATION_DELAY_MS);
       pendingObjectUrl = null;
     } catch {
       pendingAnchor?.remove();

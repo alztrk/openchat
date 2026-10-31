@@ -13,6 +13,11 @@ import {
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+// Time constants
+const MS_PER_SECOND = 1_000;
+const SECONDS_PER_MINUTE = 60;
+const SECONDS_PER_HOUR = 3_600;
+
 import { Button, Checkbox, Dialog, Select } from '@shared/components';
 import { MessageList } from '@features/chat/components/MessageList';
 import type { ChatProject } from '@features/chat/data/chatStorage';
@@ -72,8 +77,8 @@ export function SecurityScanPage() {
 
   useEffect(() => {
     void refreshScans();
-    const listTimer = window.setInterval(() => void refreshScans(), 5000);
-    const elapsedTimer = window.setInterval(() => setRefreshTime(Date.now()), 1000);
+    const listTimer = window.setInterval(() => void refreshScans(), REFRESH_INTERVAL_MS);
+    const elapsedTimer = window.setInterval(() => setRefreshTime(Date.now()), MS_PER_SECOND);
     return () => {
       window.clearInterval(listTimer);
       window.clearInterval(elapsedTimer);
@@ -93,7 +98,7 @@ export function SecurityScanPage() {
     const timer = window.setInterval(() => {
       const latest = selectedScanRef.current;
       if (latest && latest.id === activeScanId) void refreshSecurityScan(latest);
-    }, 2500);
+    }, INITIAL_CHECK_DELAY_MS);
     return () => window.clearInterval(timer);
   }, [activeScanId, runtime.isActive]);
 
@@ -761,9 +766,9 @@ function projectRoots(project: ChatProject | null): string[] {
 
 function formatElapsed(scan: SecurityScan, now: number): string {
   const end = scan.finishedAtUnixMs ?? now;
-  const seconds = Math.max(0, Math.floor((end - scan.createdAtUnixMs) / 1000));
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
+  const seconds = Math.max(0, Math.floor((end - scan.createdAtUnixMs) / MS_PER_SECOND));
+  const hours = Math.floor(seconds / SECONDS_PER_HOUR);
+  const minutes = Math.floor((seconds % SECONDS_PER_HOUR) / SECONDS_PER_MINUTE);
   const remainder = seconds % 60;
   return hours > 0
     ? `${hours}:${String(minutes).padStart(2, '0')}:${String(remainder).padStart(2, '0')}`

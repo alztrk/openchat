@@ -1,5 +1,8 @@
 import { Download, FileText, LoaderCircle } from 'lucide-react';
 import { useEffect, useId, useRef, useState } from 'react';
+
+// URL revocation delay for downloads
+const URL_REVOCATION_DELAY_MS = 1_000;
 import { useTranslation } from 'react-i18next';
 import { Button, Dialog, Slider } from '@shared/components';
 import type { ChatAttachmentMetadata } from '@features/chat/data/chatAttachments';
@@ -113,7 +116,7 @@ function MessageAttachment({ attachment, conversationId, isScrollable, messageId
         URL.revokeObjectURL(url);
         if (downloadUrl.current === url) downloadUrl.current = null;
         downloadTimer.current = undefined;
-      }, 1000);
+      }, URL_REVOCATION_DELAY_MS);
     } catch {
       if (isMountedRef.current) setStatus('error');
     }

@@ -98,13 +98,18 @@ export function InChatSearchBar({
       className="openchat-dropdown-surface openchat-in-chat-search absolute top-3 right-5 z-20 flex w-full max-w-in-chat-search flex-col gap-2 p-2 sm:w-auto sm:min-w-in-chat-search"
     >
       <style>{`
+        :root {
+          --oc-search-highlight-bg: rgba(250, 204, 21, 0.45);
+          --oc-search-active-bg: #facc15;
+          --oc-search-active-text: #000000;
+        }
         ::highlight(openchat-search-match) {
-          background-color: rgba(250, 204, 21, 0.45);
+          background-color: var(--oc-search-highlight-bg);
           color: inherit;
         }
         ::highlight(openchat-search-active) {
-          background-color: #facc15;
-          color: #000000;
+          background-color: var(--oc-search-active-bg);
+          color: var(--oc-search-active-text);
         }
       `}</style>
       <div className="flex items-center gap-1.5">

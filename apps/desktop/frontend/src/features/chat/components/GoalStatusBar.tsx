@@ -16,6 +16,12 @@ import { Button } from '@shared/components';
 import type { ChatGoal, ChatGoalStatus } from '@features/chat/data/chatGoals';
 import { useChatStore } from '@features/chat/state/chatStore';
 
+// Time constants
+const MS_PER_SECOND = 1_000;
+const SECONDS_PER_MINUTE = 60;
+const SECONDS_PER_HOUR = 3_600;
+const MINUTES_PER_HOUR = 60;
+
 type TranslationKey = keyof typeof import('@shared/lib/i18n/locales/en.json');
 
 const statusLabels = {
@@ -66,7 +72,7 @@ export function GoalStatusBar({ goal }: GoalStatusBarProps) {
     if (!isRunning) return;
     const timer = window.setInterval(() => {
       setElapsedMs(Math.max(0, Date.now() - goal.startedAtUnixMs));
-    }, 1000);
+    }, MS_PER_SECOND);
     return () => window.clearInterval(timer);
   }, [goal.startedAtUnixMs, isRunning]);
 
@@ -158,10 +164,10 @@ export function GoalStatusBar({ goal }: GoalStatusBarProps) {
 }
 
 function formatElapsed(elapsedMs: number): string {
-  const totalSeconds = Math.floor(elapsedMs / 1000);
-  const hours = Math.floor(totalSeconds / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = totalSeconds % 60;
+  const totalSeconds = Math.floor(elapsedMs / MS_PER_SECOND);
+  const hours = Math.floor(totalSeconds / SECONDS_PER_HOUR);
+  const minutes = Math.floor((totalSeconds % SECONDS_PER_HOUR) / SECONDS_PER_MINUTE);
+  const seconds = totalSeconds % SECONDS_PER_MINUTE;
   if (hours > 0) return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
   return `${Math.floor(totalSeconds / 60)}:${pad(seconds)}`;
 }

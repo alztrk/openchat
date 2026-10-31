@@ -1,6 +1,9 @@
 import { Check, ChevronDown, Code, Copy, FileText, Type } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+
+// Copy notification delay
+const COPY_NOTIFICATION_DELAY_MS = 2_000;
 import { Button, DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@shared/components';
 import {
   cleanMarkdown,
@@ -51,7 +54,7 @@ export function MessageCopyMenu({ content }: MessageCopyMenuProps) {
     }
 
     if (resetTimer.current !== undefined) window.clearTimeout(resetTimer.current);
-    resetTimer.current = window.setTimeout(() => setCopyResult('idle'), 2000);
+    resetTimer.current = window.setTimeout(() => setCopyResult('idle'), COPY_NOTIFICATION_DELAY_MS);
   };
 
   return (
