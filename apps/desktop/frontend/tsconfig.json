@@ -15,7 +15,12 @@
     "moduleResolution": "Bundler",
     "paths": {
       "@/*": ["./src/*"],
-      "@assets/*": ["../assets/*"]
+      "@assets/*": ["../assets/*"],
+      "@app/*": ["./src/app/*"],
+      "@features/*": ["./src/features/*"],
+      "@entities/*": ["./src/entities/*"],
+      "@widgets/*": ["./src/widgets/*"],
+      "@shared/*": ["./src/shared/*"]
     },
     "resolveJsonModule": true,
     "isolatedModules": true,

@@ -14,6 +14,11 @@ export default defineConfig({
     alias: {
       '@': resolve(frontendRoot, 'src'),
       '@assets': resolve(projectRoot, 'assets'),
+      '@app': resolve(frontendRoot, 'src/app'),
+      '@features': resolve(frontendRoot, 'src/features'),
+      '@entities': resolve(frontendRoot, 'src/entities'),
+      '@widgets': resolve(frontendRoot, 'src/widgets'),
+      '@shared': resolve(frontendRoot, 'src/shared'),
     },
   },
   clearScreen: false,
