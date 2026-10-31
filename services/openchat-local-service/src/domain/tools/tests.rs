@@ -665,8 +665,8 @@ fn reading_returns_requested_lines_and_continuation() {
     directory.write("notes.txt", "one\ntwo\nthree\n");
 
     let result = read_file(directory.root(), "notes.txt", 2, 1).expect("read line range");
-    assert_eq!(result["lines"], json!([{"line": 2, "text": "two"}]));
-    assert_eq!(result["nextLine"], json!(3));
+    assert_eq!(result["d"], json!([[2, "two"]]));
+    assert_eq!(result["n"], json!(3));
     assert_eq!(
         get_file_info(directory.root(), "notes.txt").expect("file info")["size"],
         14
@@ -683,8 +683,8 @@ fn reading_late_lines_skips_unrequested_bytes_without_decoding_them() {
         .expect("read a valid line after invalid bytes");
 
     assert_eq!(
-        result["lines"],
-        json!([{"line": 2, "text": "requested line"}])
+        result["d"],
+        json!([[2, "requested line"]])
     );
     assert!(read_file(directory.root(), "notes.txt", 1, 1).is_err());
 }
@@ -1236,7 +1236,7 @@ fn write_file_and_edit_file_flow_and_guards() {
 
     // Verify content
     let read_res = super::read_file(root, "nested/hello.txt", 1, 10).unwrap();
-    assert_eq!(read_res["lines"][0]["text"], "Hello OpenChat World!");
+    assert_eq!(read_res["d"][0][1], "Hello OpenChat World!");
 
     // 2. Edit file (single replacement)
     let edit_res = super::edit_file(root, "nested/hello.txt", "World", "Alican");
@@ -1249,7 +1249,7 @@ fn write_file_and_edit_file_flow_and_guards() {
 
     // Verify edited content
     let read_edited = super::read_file(root, "nested/hello.txt", 1, 10).unwrap();
-    assert_eq!(read_edited["lines"][0]["text"], "Hello OpenChat Alican!");
+    assert_eq!(read_edited["d"][0][1], "Hello OpenChat Alican!");
 
     // 3. Ambiguity guard: when oldString matches multiple times
     super::write_file(root, "ambiguous.txt", "test foo bar foo baz").unwrap();
@@ -1390,8 +1390,8 @@ fn read_file_bounds_large_single_lines_to_the_output_limit() {
     let result = read_file(directory.root(), "large-line.txt", 1, 10)
         .expect("read should return a bounded truncated response");
 
-    assert_eq!(result["truncated"], true);
-    assert!(result["lines"].as_array().is_some_and(Vec::is_empty));
+    assert_eq!(result["c"], true);
+    assert!(result["d"].as_array().is_some_and(Vec::is_empty));
 }
 
 #[test]
@@ -1405,9 +1405,9 @@ fn read_file_applies_output_limit_after_skipping_requested_lines() {
     let result = read_file(directory.root(), "late-line.txt", 20_001, 1)
         .expect("read the requested line after a bounded skip");
 
-    assert_eq!(result["truncated"], false);
-    assert_eq!(result["lines"][0]["line"], 20_001);
-    assert_eq!(result["lines"][0]["text"], "requested line");
+    assert_eq!(result["c"], false);
+    assert_eq!(result["d"][0][0], 20_001);
+    assert_eq!(result["d"][0][1], "requested line");
 }
 
 #[test]
@@ -1416,12 +1416,12 @@ fn read_file_returns_a_requested_range_and_can_return_a_small_file_in_full() {
     directory.write("sample.txt", "first\nsecond\nthird\n");
 
     let range = read_file(directory.root(), "sample.txt", 2, 1).expect("read one line");
-    assert_eq!(range["lines"], json!([{"line": 2, "text": "second"}]));
-    assert_eq!(range["truncated"], true);
+    assert_eq!(range["d"], json!([[2, "second"]]));
+    assert_eq!(range["c"], true);
 
     let complete = read_file(directory.root(), "sample.txt", 1, 500).expect("read small file");
-    assert_eq!(complete["lines"].as_array().map(Vec::len), Some(3));
-    assert_eq!(complete["truncated"], false);
+    assert_eq!(complete["d"].as_array().map(Vec::len), Some(3));
+    assert_eq!(complete["c"], false);
 }
 
 #[test]

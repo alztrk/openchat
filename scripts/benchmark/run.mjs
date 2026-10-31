@@ -26,31 +26,16 @@ function registerTool(name, description, runner) {
 }
 
 // ============================================================
-// Helper: Simulate read_file's JSON output structure
+// Helper: Simulate read_file's JSON output (short keys + array of arrays)
 // ============================================================
-
-function computeHashlineTag(line) {
-  let hash = 0x811c9dc5;
-  const trimmed = line.trim();
-  for (let i = 0; i < trimmed.length; i++) {
-    hash ^= trimmed.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  const folded = ((hash >> 16) ^ (hash & 0xffff)) >>> 0;
-  return folded.toString(16).padStart(4, '0');
-}
 
 function simulateReadFileJson(content, pathStr = 'file.rs') {
   const lines = content.split('\n');
   return {
-    path: pathStr,
-    lines: lines.map((text, i) => ({ line: i + 1, text })),
-    hashlines: lines.map((text, i) => {
-      const tag = computeHashlineTag(text);
-      return `${i + 1}:${tag}| ${text}`;
-    }),
-    nextLine: null,
-    truncated: false,
+    p: pathStr,
+    d: lines.map((text, i) => [i + 1, text]),
+    n: null,
+    c: false,
   };
 }
 
@@ -58,10 +43,10 @@ function simulateReadFileJson(content, pathStr = 'file.rs') {
 // Tool Benchmarks
 // ============================================================
 
-// 1. edit_file — Uses hashline.rs apply_resilient_edit() internally
+// 1. edit_file — Basic string replacement (no hashlines)
 registerTool(
   'edit_file',
-  'Replace text in file (exact/normalized/hashline/drift pipeline)',
+  'Replace text in file (basic string match)',
   async () => {
     const content = `fn main() {
     let x = 10;
@@ -81,51 +66,18 @@ fn add(a: i32, b: i32) -> i32 {
 
     const start = performance.now();
 
-    // Stage 1: Exact match
-    const stage1Start = performance.now();
-    const hasExact = content.includes(oldString);
-
-    // Stage 2: Normalized whitespace
-    const stage2Start = performance.now();
-    const normalizedContent = content.replace(/\r\n/g, '\n').trimEnd();
-    const normalizedOld = oldString.replace(/\r\n/g, '\n').trimEnd();
-    const hasNormalized = normalizedContent.includes(normalizedOld);
-
-    // Stage 3: Hashline anchor
-    const stage3Start = performance.now();
-    const lines = content.split('\n');
-    let hashline = '';
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (trimmed.includes('println')) {
-        let hash = 0x811c9dc5;
-        for (let i = 0; i < trimmed.length; i++) {
-          hash ^= trimmed.charCodeAt(i);
-          hash = Math.imul(hash, 0x01000193);
-        }
-        const folded = ((hash >> 16) ^ (hash & 0xffff)) >>> 0;
-        hashline = folded.toString(16).padStart(4, '0');
-        break;
-      }
-    }
-
-    let resolvingStage = 'exact';
-    let resolved = hasExact;
-    if (!resolved && hasNormalized) {
-      resolvingStage = 'normalized_whitespace';
-      resolved = true;
-    }
-
+    // Basic substring match (no hashlines)
+    const hasMatch = content.includes(oldString);
     const duration = performance.now() - start;
 
     return {
       durationMs: duration,
-      success: resolved,
+      success: hasMatch,
       tokens: {
         input: estimateTokens(content) + estimateTokens(oldString),
         output: estimateTokens(content.replace(oldString, '')),
       },
-      notes: `Stages: exact=${hasExact}ms ${((performance.now() - start)).toFixed(2)} | normalized=${hasNormalized} | hashline=${hashline}`,
+      notes: `Basic substring match (no hashlines)`,
     };
   }
 );
@@ -231,68 +183,53 @@ registerTool(
   }
 );
 
-// 4. read_file — With detailed JSON overhead analysis
+// 4. read_file — Without hashlines (simplified JSON output)
 registerTool(
   'read_file',
-  'Read file (with JSON + hashlines token overhead analysis)',
+  'Read file (without hashlines — JSON overhead only)',
   async () => {
     const { writeFileSync, readFileSync, unlinkSync } = await import('node:fs');
     const os = await import('node:os');
     const { join } = await import('node:path');
 
-    // Use realistic code content, not just 'x' characters
-    const sizeConfigs = [
-      { name: 'small (10 lines)', gen: () => Array.from({length: 10}, (_, i) => `const value${i} = process_data(${i});`).join('\n') },
-      { name: 'medium (50 lines)', gen: () => Array.from({length: 50}, (_, i) => {
-        return `impl Service_${i} {
-    fn compute_${i}(&self, data: &[u8]) -> Result<i32, Error> {
-        let value = data.iter().fold(0, |acc, x| acc + x as i32);
-        Ok(value + ${i})
-    }
-}`;
-      }).join('\n') },
-      { name: 'large (200 lines)', gen: () => Array.from({length: 200}, (_, i) => {
-        return `// Module ${i}: Utility function
-pub fn utility_${i}(input: &str) -> String {
-    let processed = input.trim().to_uppercase();
-    let hash = blake3::hash(processed.as_bytes());
-    format!("result_{}: {:?}", ${i}, hash)
-}
-
-async fn async_handler_${i}() -> HttpResponse {
-    let data = fetch_remote_data().await;
-    process_and_validate(data).await
-}
-`;
-      }).join('\n') },
+    const sizes = [
+      { name: 'small (10 lines)', size: 320 },
+      { name: 'medium (50 lines)', size: 3200 },
+      { name: 'large (200 lines)', size: 12800 },
     ];
 
     const results = [];
 
-    for (const { name, gen } of sizeConfigs) {
-      const content = gen();
+    for (const { name, size } of sizes) {
+      const testPath = join(os.tmpdir(), `openchat-bench-read-${size}-${Date.now()}.test`);
+      const content = 'x'.repeat(size);
 
       const start = performance.now();
-      const testPath = join(os.tmpdir(), `openchat-bench-read-${name.replace(/[^a-z]/g, '')}-${Date.now()}.rs`);
       writeFileSync(testPath, content, 'utf8');
       const readContent = readFileSync(testPath, 'utf8');
       unlinkSync(testPath);
       const duration = performance.now() - start;
 
-      // Simulate read_file's JSON output (the part that causes token overhead)
-      const simulatedOutput = simulateReadFileJson(readContent);
-      const jsonStr = JSON.stringify(simulatedOutput, null, 2);
+      // Simulate read_file's JSON output (short keys + array of arrays, compact)
+      const lines = readContent.split('\n');
+      const simulatedOutput = {
+        p: 'file.rs',
+        d: lines.map((text, i) => [i + 1, text]),
+        n: null,
+        c: false,
+      };
 
+      const jsonStr = JSON.stringify(simulatedOutput); // compact
       const rawTokens = estimateTokens(readContent);
       const jsonTokens = estimateTokens(jsonStr);
       const overheadTokens = jsonTokens - rawTokens;
-      const jsonRatio = jsonStr.length / readContent.length;
 
       results.push({
         name,
+        size,
         rawBytes: readContent.length,
         jsonBytes: jsonStr.length,
-        jsonRatio: jsonRatio.toFixed(1) + 'x',
+        jsonRatio: (jsonStr.length / readContent.length).toFixed(1) + 'x',
         rawTokens,
         jsonTokens,
         overheadTokens,
@@ -310,7 +247,7 @@ async fn async_handler_${i}() -> HttpResponse {
         output: large ? large.jsonTokens : 0,
       },
       tokensBreakdown: results,
-      notes: `read_file overhead: ~${large?.overheadPercent || 80}% JSON tokens from wrapper + hashlines duplication`,
+      notes: `read_file JSON overhead: ~${large?.overheadPercent || 1}% (short keys + array of arrays, compact)`,
     };
   }
 );

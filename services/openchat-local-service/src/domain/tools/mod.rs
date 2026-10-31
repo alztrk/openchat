@@ -662,15 +662,15 @@ pub fn read_file(
         }
         output_bytes += read;
         let clean_text = line.trim_end_matches(['\r', '\n']);
-        output.push(json!({"line": number, "text": clean_text}));
+        output.push(json!([number, clean_text]));
     }
     truncated |= reader.get_ref().limit() == 0;
     let next_line = truncated.then_some(number);
     Ok(json!({
-        "path": relative_path.to_string_lossy().replace('\\', "/"),
-        "lines": output,
-        "nextLine": next_line,
-        "truncated": truncated,
+        "p": relative_path.to_string_lossy().replace('\\', "/"),
+        "d": output,
+        "n": next_line,
+        "c": truncated,
     }))
 }
 
@@ -872,7 +872,6 @@ pub(crate) fn edit_opened_file(
     }
 
     let output = content.replace(old_string, new_string);
-        .map_err(|diagnostic| invalid(&diagnostic))?;
 
     file.seek(SeekFrom::Start(0))
         .map_err(|error| filesystem_error(&error, "seeking within the file"))?;
@@ -886,7 +885,6 @@ pub(crate) fn edit_opened_file(
     Ok(json!({
         "path": relative_path.to_string_lossy().replace('\\', "/"),
         "replacements": 1,
-        "matchStage": match_stage,
         "success": true,
     }))
 }

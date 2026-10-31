@@ -1,13 +1,8 @@
 /**
- * Deep-dive analysis of read_file token consumption.
- *
- * read_file returns heavy JSON with:
- * - "lines": array of {line, text} for each line
- * - "hashlines": array of "N:abcd| text" strings  <-- DUPLICATE content!
- * - "path", "nextLine", "truncated"
- *
- * The hashlines array is a REPEAT of the same content (with hash prefix),
- * so content appears TWICE in the JSON output.
+ * read_file token usage analysis — current format & alternatives
+ * 
+ * Goal: Understand where tokens come from and how to reduce them
+ * without making changes to the actual code.
  */
 
 function estimateTokens(text) {
@@ -15,199 +10,425 @@ function estimateTokens(text) {
   return Math.max(1, Math.ceil(text.length / 4) + 1);
 }
 
-// Simulate Rust's compute_hashline_tag
-function computeHashlineTag(line) {
-  let hash = 0x811c9dc5;
-  const trimmed = line.trim();
-  for (let i = 0; i < trimmed.length; i++) {
-    hash ^= trimmed.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  const folded = ((hash >> 16) ^ (hash & 0xffff)) >>> 0;
-  return folded.toString(16).padStart(4, '0');
-}
+// Simulate current read_file output format
+function simulateCurrentReadFile(content, pathStr = 'file.rs', startLine = 1, lineCount = 500) {
+  const lines = content.split('\n');
+  const outputLines = [];
+  let outputBytes = 0;
+  let truncated = false;
+  let nextLine = null;
 
-// Build read_file response for N lines
-function buildReadFileResponse(lines, path) {
+  for (let i = 0; i < lines.length && outputLines.length < lineCount; i++) {
+    if (i < startLine - 1) continue;
+    const text = lines[i];
+    const size = Buffer.byteLength(text, 'utf-8') + 1;
+    if (outputBytes + size > 64 * 1024) {
+      truncated = true;
+      nextLine = i + 1;
+      break;
+    }
+    outputLines.push({ line: i + 1, text });
+    outputBytes += size;
+  }
+
+  const result = {
+    path: pathStr,
+    lines: outputLines,
+    nextLine: nextLine,
+    truncated: truncated,
+  };
+
+  const jsonStr = JSON.stringify(result, null, 2); // prettified
   return {
-    path: path,
-    lines: lines.map((text, i) => ({ line: i + 1, text })),
-    hashlines: lines.map((text, i) => {
-      const tag = computeHashlineTag(text);
-      return `${i + 1}:${tag}| ${text}`;
-    }),
-    nextLine: null,
-    truncated: false,
+    output: jsonStr,
+    bytes: jsonStr.length,
+    tokens: estimateTokens(jsonStr),
   };
 }
 
-// =========================
-// ANALYSIS: 100-line Rust file
-// =========================
-const rust100 = Array.from({ length: 100 }, (_, i) =>
-  `impl Service {
-    fn compute_${i}(&self) -> i32 {
-        let value = ${i};
-        value + ${i * 2}
+// Simulate current read_file output format (compact JSON)
+function simulateCompactReadFile(content, pathStr = 'file.rs', startLine = 1, lineCount = 500) {
+  const lines = content.split('\n');
+  const outputLines = [];
+  let outputBytes = 0;
+  let truncated = false;
+  let nextLine = null;
+
+  for (let i = 0; i < lines.length && outputLines.length < lineCount; i++) {
+    if (i < startLine - 1) continue;
+    const text = lines[i];
+    const size = Buffer.byteLength(text, 'utf-8') + 1;
+    if (outputBytes + size > 64 * 1024) {
+      truncated = true;
+      nextLine = i + 1;
+      break;
     }
-}`
-).join('\n');
+    outputLines.push({ line: i + 1, text });
+    outputBytes += size;
+  }
 
-const rust100Lines = rust100.split('\n');
-const rust100Response = buildReadFileResponse(rust100Lines, 'src/service.rs');
-const rust100Json = JSON.stringify(rust100Response, null, 2);
+  const result = {
+    path: pathStr,
+    lines: outputLines,
+    nextLine: nextLine,
+    truncated: truncated,
+  };
 
-console.log('=== read_file Token Analysis: 100-line Rust file ===\n');
-console.log('File content:', rust100.length.toLocaleString(), 'bytes');
-console.log('JSON output:', rust100Json.length.toLocaleString(), 'bytes');
-console.log('Overhead ratio:', (rust100Json.length / rust100.length).toFixed(2), 'x larger\n');
-
-console.log('=== Token Breakdown ===');
-const rustInputTokens = estimateTokens(rust100);
-const rustOutputTokens = estimateTokens(rust100Json);
-const rustOverhead = rustOutputTokens - rustInputTokens;
-console.log('Input file tokens:', rustInputTokens);
-console.log('JSON output tokens:', rustOutputTokens);
-console.log('JSON overhead tokens:', rustOverhead);
-console.log('Overhead percentage:', ((rustOverhead / rustOutputTokens) * 100).toFixed(0), '%\n');
-
-// Hashlines analysis
-const rustHashlinesOnly = rust100Lines.map((text) => {
-  const tag = computeHashlineTag(text);
-  return `${text}`;
-}).join('\n');
-const rustHashlinesTokens = estimateTokens(rustHashlinesOnly);
-console.log('=== Hashlines Impact ===');
-console.log('Hashlines tokens:', rustHashlinesTokens);
-console.log('Hashlines % of output:', ((rustHashlinesTokens / rustOutputTokens) * 100).toFixed(0), '%\n');
-
-// =========================
-// ANALYSIS: 500-line MAX scenario
-// =========================
-const rust500 = Array.from({ length: 500 }, (_, i) =>
-  `fn method_${i}(&self) -> Result<(), String> {
-    let data = String::from("line_${i}_content");
-    Ok(())
-}`
-).join('\n');
-
-const rust500Lines = rust500.split('\n');
-const rust500Response = buildReadFileResponse(rust500Lines, 'src/large_file.rs');
-const rust500Json = JSON.stringify(rust500Response, null, 2);
-
-console.log('=== MAX SCENARIO: 500 lines (MAX_READ_LINES) ===\n');
-console.log('500-line file:', rust500.length.toLocaleString(), 'bytes');
-console.log('JSON output:', rust500Json.length.toLocaleString(), 'bytes');
-console.log('Overhead ratio:', (rust500Json.length / rust500.length).toFixed(2), 'x larger');
-console.log('Input tokens:', estimateTokens(rust500));
-console.log('Output tokens:', estimateTokens(rust500Json));
-console.log('Overhead tokens:', estimateTokens(rust500Json) - estimateTokens(rust500));
-console.log('Overhead %:', (((estimateTokens(rust500Json) - estimateTokens(rust500)) / estimateTokens(rust500Json)) * 100).toFixed(0), '%\n');
-
-// =========================
-// ANALYSIS: 50-line TypeScript (real-world)
-// =========================
-const tsLines = [
-  'import { createApp } from "./app";',
-  'import { config } from "./config";',
-  'import { logger } from "./logger";',
-  '',
-  'interface AppConfig {',
-  '  port: number;',
-  '  host: string;',
-  '  debug?: boolean;',
-  '  middleware: Middleware[];',
-  '}',
-  '',
-  'const defaultConfig: AppConfig = {',
-  '  port: 3000,',
-  '  host: "0.0.0.0",',
-  '  middleware: [],',
-  '};',
-  '',
-  'export class App {',
-  '  private config: AppConfig;',
-  '  private handlers: Map<string, Handler>;',
-  '',
-  '  constructor(config: Partial<AppConfig> = {}) {',
-  '    this.config = { ...defaultConfig, ...config };',
-  '    this.handlers = new Map();',
-  '  }',
-  '',
-  '  async start() {',
-  '    const server = createApp(this.config);',
-  '    for (const mw of this.config.middleware) {',
-  '      server.use(mw.handler);',
-  '    }',
-  '    await server.listen();',
-  '    logger.info("Server running");',
-  '  }',
-  '',
-  '  addHandler(path: string, handler: Handler) {',
-  '    this.handlers.set(path, handler);',
-  '  }',
-  '}',
-  '',
-  '// Export types',
-  'export type { AppConfig, Handler, Middleware };',
-  'export { defaultConfig };',
-];
-const tsJoined = tsLines.join('\n');
-
-const tsResponse = buildReadFileResponse(tsLines, 'src/app.ts');
-const tsJson = JSON.stringify(tsResponse, null, 2);
-
-console.log('=== REAL-WORLD: 50-line TypeScript file ===\n');
-console.log('TypeScript file:', tsJoined.length, 'bytes');
-console.log('JSON output:', tsJson.length, 'bytes');
-console.log('Overhead ratio:', (tsJson.length / tsJoined.length).toFixed(2), 'x larger');
-console.log('File tokens:', estimateTokens(tsJoined));
-console.log('Output tokens:', estimateTokens(tsJson));
-console.log('Overhead tokens:', estimateTokens(tsJson) - estimateTokens(tsJoined));
-console.log('Overhead %:', (((estimateTokens(tsJson) - estimateTokens(tsJoined)) / estimateTokens(tsJson)) * 100).toFixed(0), '%\n');
-
-// =========================
-// ROOT CAUSE ANALYSIS
-// =========================
-console.log('=== THE ROOT CAUSE: Content appears TWICE ===\n');
-console.log('read_file returns BOTH:');
-console.log('  1. "lines": [{line: N, text: "..."}] - raw text + line numbers');
-console.log('  2. "hashlines": ["N:abcd| ..."]      - same text with hash prefix');
-console.log('');
-console.log('So content is duplicated in the JSON:');
-const tsTextOnly = tsLines.join('\n');
-const tsHashlinesOnly = tsLines.map(t => {
-  const tag = computeHashlineTag(t);
-  return `${t}`;
-}).join('\n');
-console.log('  "text" total:', tsTextOnly.length, 'bytes');
-console.log('  "hashlines" total:', tsHashlinesOnly.length, 'bytes');
-console.log('  Duplicate: YES — exact same content with hashline prefix\n');
-
-// =========================
-// COMPARATIVE TABLE
-// =========================
-console.log('=== COMPARATIVE: read_file output sizes ===\n');
-const cases = [
-  { name: '20-line small file', size: 1200 },
-  { name: '50-line TS file', size: 1500 },
-  { name: '100-line Rust file', size: 3000 },
-  { name: '500-line MAX file', size: 15000 },
-];
-
-for (const c of cases) {
-  const estimatedJson = c.size * 2.7; // ~2.7x overhead
-  console.log(`${c.name.padEnd(30)}  file: ${c.size.toLocaleString().padStart(8)} bytes  =>  JSON: ${Math.round(estimatedJson).toLocaleString().padStart(8)} bytes  (${(estimatedJson / c.size).toFixed(1)}x)`);
+  const jsonStr = JSON.stringify(result); // compact
+  return {
+    output: jsonStr,
+    bytes: jsonStr.length,
+    tokens: estimateTokens(jsonStr),
+  };
 }
 
-console.log('\n=== IMPACT ON CONVERSATION ===\n');
-console.log('If a model reads 10 files (avg 200 lines each):');
-const avgLines = 200;
-const avgFile = avgLines * 30; // ~30 bytes/line average
-const avgJson = avgFile * 2.7;
-console.log(`  Total file content: ${avgFile.toLocaleString()} bytes/file x 10 = ${(avgFile * 10).toLocaleString()} bytes`);
-console.log(`  Total JSON output:  ${avgJson.toLocaleString()} bytes/file x 10 = ${Math.round(avgJson * 10).toLocaleString()} bytes`);
-console.log(`  Overhead tokens:    ~${(estimateTokens(avgJson) * 10).toLocaleString()} tokens`);
-console.log('');
-console.log('This is why read_file consumes the most tokens — the JSON wrapper + hashlines');
-console.log('DUPLICATE the content and add ~170% overhead.');
+// Alternative 1: Array of arrays [lineNumber, text] instead of {line, text}
+function simulateArrayFormat(content, pathStr = 'file.rs', startLine = 1, lineCount = 500) {
+  const lines = content.split('\n');
+  const outputLines = [];
+  let outputBytes = 0;
+  let truncated = false;
+  let nextLine = null;
+
+  for (let i = 0; i < lines.length && outputLines.length < lineCount; i++) {
+    if (i < startLine - 1) continue;
+    const text = lines[i];
+    const size = Buffer.byteLength(text, 'utf-8') + 1;
+    if (outputBytes + size > 64 * 1024) {
+      truncated = true;
+      nextLine = i + 1;
+      break;
+    }
+    outputLines.push([i + 1, text]); // Array instead of object
+    outputBytes += size;
+  }
+
+  const result = {
+    path: pathStr,
+    lines: outputLines,
+    nextLine: nextLine,
+    truncated: truncated,
+  };
+
+  const jsonStr = JSON.stringify(result, null, 2);
+  return {
+    output: jsonStr,
+    bytes: jsonStr.length,
+    tokens: estimateTokens(jsonStr),
+  };
+}
+
+// Alternative 2: Plain text format (like OpenCode)
+function simulateTextFormat(content, pathStr = 'file.rs', startLine = 1, lineCount = 500) {
+  const lines = content.split('\n');
+  let count = 0;
+  let outputBytes = 0;
+  let truncated = false;
+  let nextLine = null;
+  const rawLines = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    if (count < startLine - 1) { count++; continue; }
+    if (rawLines.length >= lineCount) { truncated = true; break; }
+    if (outputBytes + Buffer.byteLength(lines[i], 'utf-8') > 64 * 1024) {
+      truncated = true;
+      nextLine = count + 1;
+      break;
+    }
+    rawLines.push(`${count + 1}: ${lines[i]}`);
+    outputBytes += Buffer.byteLength(lines[i], 'utf-8') + 3; // "N: "
+    count++;
+  }
+
+  let output = `\n ${pathStr} \n file \n \n`;
+  output += rawLines.join('\n');
+  if (truncated) {
+    output += `\n\n(Showing lines ${startLine}-${count} of ${count}. Use offset=${count + 1} to continue.)`;
+  } else {
+    output += `\n\n(End of file - total ${count} lines)`;
+  }
+  output += '\n ';
+
+  return {
+    output,
+    bytes: Buffer.byteLength(output, 'utf-8'),
+    tokens: estimateTokens(output),
+  };
+}
+
+// Alternative 3: Single-line JSON per line (no newline separators)
+function simulateSingleLineJSON(content, pathStr = 'file.rs', startLine = 1, lineCount = 500) {
+  const lines = content.split('\n');
+  const outputLines = [];
+  let outputBytes = 0;
+  let truncated = false;
+  let nextLine = null;
+
+  for (let i = 0; i < lines.length && outputLines.length < lineCount; i++) {
+    if (i < startLine - 1) continue;
+    const text = lines[i];
+    const size = Buffer.byteLength(text, 'utf-8') + 1;
+    if (outputBytes + size > 64 * 1024) {
+      truncated = true;
+      nextLine = i + 1;
+      break;
+    }
+    outputLines.push({ l: i + 1, t: text }); // Shorter keys
+    outputBytes += size;
+  }
+
+  const result = {
+    p: pathStr,
+    d: outputLines,
+    n: nextLine,
+    c: truncated,
+  };
+
+  const jsonStr = JSON.stringify(result, null, 2);
+  return {
+    output: jsonStr,
+    bytes: jsonStr.length,
+    tokens: estimateTokens(jsonStr),
+  };
+}
+
+// Alternative 4: Base64 encoded content with line numbers
+function simulateBase64Format(content, pathStr = 'file.rs', startLine = 1, lineCount = 500) {
+  const lines = content.split('\n');
+  const outputLines = [];
+  let outputBytes = 0;
+  let truncated = false;
+  let nextLine = null;
+
+  for (let i = 0; i < lines.length && outputLines.length < lineCount; i++) {
+    if (i < startLine - 1) continue;
+    const text = lines[i];
+    const size = Buffer.byteLength(text, 'utf-8') + 1;
+    if (outputBytes + size > 64 * 1024) {
+      truncated = true;
+      nextLine = i + 1;
+      break;
+    }
+    outputLines.push({ l: i + 1, b: Buffer.from(text).toString('base64') });
+    outputBytes += size;
+  }
+
+  const result = {
+    p: pathStr,
+    d: outputLines,
+    n: nextLine,
+    c: truncated,
+  };
+
+  const jsonStr = JSON.stringify(result);
+  return {
+    output: jsonStr,
+    bytes: jsonStr.length,
+    tokens: estimateTokens(jsonStr),
+  };
+}
+
+// ===================== ANALYSIS =====================
+
+const testCases = [
+  {
+    name: 'Small file (35 lines, ~1KB)',
+    content: [
+      'import { createApp } from "./app";',
+      'import { config } from "./config";',
+      'import { logger } from "./logger";',
+      '',
+      'interface AppConfig {',
+      '  port: number;',
+      '  host: string;',
+      '  debug?: boolean;',
+      '  middleware: Middleware[];',
+      '}',
+      '',
+      'const defaultConfig: AppConfig = {',
+      '  port: 3000,',
+      '  host: "0.0.0.0",',
+      '  middleware: [],',
+      '};',
+      '',
+      'export class App {',
+      '  private config: AppConfig;',
+      '  private handlers: Map<string, Handler>;',
+      '',
+      '  constructor(config: Partial<AppConfig> = {}) {',
+      '    this.config = { ...defaultConfig, ...config };',
+      '    this.handlers = new Map();',
+      '  }',
+      '',
+      '  async start() {',
+      '    const server = createApp(this.config);',
+      '    for (const mw of this.config.middleware) {',
+      '      server.use(mw.handler);',
+      '    }',
+      '    await server.listen();',
+      '    logger.info("Server running");',
+      '  }',
+      '',
+      '  addHandler(path: string, handler: Handler) {',
+      '    this.handlers.set(path, handler);',
+      '  }',
+      '}',
+      '',
+      'export type { AppConfig, Handler, Middleware };',
+    ].join('\n'),
+  },
+  {
+    name: 'Medium file (100 lines, ~14KB)',
+    content: Array.from({ length: 100 }, (_, i) => {
+      return `impl Service_${i} {
+    fn compute_${i}(&self, data: &[u8]) -> Result<i32, Error> {
+        let value = data.iter().fold(0, |acc, x| acc + x as i32);
+        Ok(value + ${i})
+    }
+
+    fn process_${i}(&self, input: String) -> String {
+        let processed = input.trim().to_uppercase();
+        format!("result_{}: {:?}", ${i}, processed)
+    }
+}`;
+    }).join('\n'),
+  },
+  {
+    name: 'Large file (200 lines, ~24KB)',
+    content: Array.from({ length: 200 }, (_, i) => {
+      const mod = i % 3;
+      if (mod === 0) {
+        return `// Handler function ${i}
+pub fn handler_${i}(ctx: &Context) -> HttpResponse {
+    let data = ctx.params.get("id").unwrap_or("0");
+    let result = compute(data);
+    HttpResponse::Ok().body(result)
+}
+
+async fn compute(id: &str) -> String {
+    let value: i32 = id.parse().unwrap_or(0);
+    format!("computed: {}", value * 2)
+}`;
+      } else if (mod === 1) {
+        return `import { Service_${i}, Options_${i} } from './types';
+import { logger } from './utils';
+
+export class Processor_${i} {
+  private service: Service_${i};
+  private opts: Options_${i};
+
+  constructor(opts: Partial<Options_${i}> = {}) {
+    this.service = new Service_${i}();
+    this.opts = { ...defaultOpts_${i}, ...opts };
+  }
+
+  async process(input: string): Promise<string> {
+    logger.info("Processing item ${i}");
+    return this.service.transform(input);
+  }
+}`;
+      } else {
+        return `pub struct Config_${i} {
+    pub name: String,
+    pub enabled: bool,
+    pub max_retries: u32,
+    pub timeout_ms: u64,
+}
+
+impl Config_${i} {
+    pub fn default() -> Self {
+        Config_${i} {
+            name: "module_${i}".to_string(),
+            enabled: true,
+            max_retries: 3,
+            timeout_ms: 5000,
+        }
+    }
+}`;
+      }
+    }).join('\n'),
+  },
+];
+
+console.log('=== read_file Token Usage Analysis ===\n');
+console.log('Format comparison: Current → Compact JSON → Array of arrays → Text format\n');
+console.log('='.repeat(120));
+
+for (const testCase of testCases) {
+  console.log(`\n--- ${testCase.name} (${testCase.content.length.toLocaleString()} bytes, ${testCase.content.split('\n').length} lines) ---\n`);
+
+  // Current format (prettified JSON with {line, text})
+  const current = simulateCurrentReadFile(testCase.content);
+  console.log(`Current (prettified {line,text}):`);
+  console.log(`  ${current.bytes.toLocaleString()} bytes  →  ${current.tokens.toLocaleString()} tokens`);
+
+  // Compact JSON (same structure, no spaces/newlines)
+  const compact = simulateCompactReadFile(testCase.content);
+  console.log(`Compact JSON (no whitespace):`);
+  console.log(`  ${compact.bytes.toLocaleString()} bytes  →  ${compact.tokens.toLocaleString()} tokens  (${((current.tokens - compact.tokens) / current.tokens * 100).toFixed(0)}% reduction)`);
+
+  // Array of arrays [line, text]
+  const array = simulateArrayFormat(testCase.content);
+  console.log(`Array format [[N,"text"]]:`);
+  console.log(`  ${array.bytes.toLocaleString()} bytes  →  ${array.tokens.toLocaleString()} tokens  (${((current.tokens - array.tokens) / current.tokens * 100).toFixed(0)}% reduction)`);
+
+  // Text format (OpenCode style)
+  const text = simulateTextFormat(testCase.content);
+  console.log(`Text format ("N: content"):`);
+  console.log(`  ${text.bytes.toLocaleString()} bytes  →  ${text.tokens.toLocaleString()} tokens  (${((current.tokens - text.tokens) / current.tokens * 100).toFixed(0)}% reduction)`);
+
+  console.log('\n');
+}
+
+console.log('='.repeat(120));
+console.log('\n=== TOKEN BREAKDOWN ANALYSIS ===\n');
+
+// Detailed analysis for a single 50-line file
+const medium = testCases[0].content.split('\n').slice(0, 50).join('\n');
+
+console.log('50-line file token breakdown:\n');
+
+const current = simulateCurrentReadFile(medium);
+console.log(`Current format output (${current.bytes.toLocaleString()} bytes, ${current.tokens.toLocaleString()} tokens):`);
+console.log(`  JSON wrapper: {"path":"...","lines":[...],"nextLine":...,"truncated":...} ≈ ${(estimateTokens(JSON.stringify({path:"",lines:[],nextLine:null,truncated:false}))).toLocaleString()} tokens`);
+console.log(`  Line objects: {"line": N, "text": "content"} ≈ ${estimateTokens(medium.split('\n').map((_, i) => `{"line":${i+1},"text":"..."}`).join('\n,')).toLocaleString()} tokens (${current.tokens - estimateTokens(JSON.stringify({path:"",lines:[],nextLine:null,truncated:false}))} total)`);
+
+console.log('\n');
+
+console.log('=== RECOMMENDATIONS (by impact) ===\n');
+
+console.log(`1. COMPACT JSON (IMMEDIATE — no behavior change)
+   - Remove newlines/spaces from JSON output
+   - Current: ${current.tokens.toLocaleString()} tokens → Compact: ${estimateTokens(JSON.stringify(JSON.parse(current.output))).toLocaleString()} tokens
+   - Reduction: ~${((current.tokens - estimateTokens(JSON.stringify(JSON.parse(current.output)))) / current.tokens * 100).toFixed(0)}%
+   - Effort: TRIVIAL (just remove "null, 2" from JSON.stringify())
+
+2. ARRAY OF ARRAYS [line, text] (MODERATE)
+   - Replace {line, text} with [line, text]
+   - Saves: ${current.tokens.toLocaleString()} → ~${estimateTokens(JSON.stringify(JSON.parse(current.output).lines.map(l => [l.line, l.text])).toLocaleString())} tokens
+   - Reduction: ~30-40%
+   - Effort: MODERATE (change JSON structure, update frontend parser)
+
+3. TEXT FORMAT (HIGH — changes API contract)
+   - OpenCode style: "N: content" per line
+   - Saves: ${current.tokens.toLocaleString()} → ~${estimateTokens('\n file \n file \n \n' + medium.split('\n').map((l, i) => `${i+1}: ${l}`).join('\n') + '\n\n(End of file - total 50 lines)\n ').toLocaleString()} tokens
+   - Reduction: ~${((current.tokens - estimateTokens('\n file \n file \n \n' + medium.split('\n').map((l, i) => `${i+1}: ${l}`).join('\n') + '\n\n(End of file - total 50 lines)\n ')) / current.tokens * 100).toFixed(0)}%
+   - Effort: HIGH (breaks JSON API, requires frontend changes)
+
+4. BASE64 ENCODING (LOW — actually INCREASES tokens)
+   - Base64 adds ~33% overhead to binary content
+   - NOT recommended for text files
+
+5. REMOVE OPTIONAL FIELDS (MINIMAL)
+   - Remove "nextLine", "truncated" when not needed
+   - Saves: ~${estimateTokens('"nextLine":null,"truncated":false')} tokens per file (negligible)
+   - NOT worth the complexity
+
+=== CONCLUSION ===
+
+Best ROI: Compact JSON (IMMEDIATE) + Array of arrays (MODERATE)
+Total potential: ~${((current.tokens - estimateTokens(JSON.stringify(JSON.parse(current.output)).lines.map(l => [l.line, l.text]))) / current.tokens * 100).toFixed(0)}% reduction with minimal changes
+
+Largest impact would come from NOT using JSON at all:
+- Plain text format saves ~${((current.tokens - estimateTokens('\n file \n file \n \n' + medium.split('\n').map((l, i) => `${i+1}: ${l}`).join('\n') + '\n\n(End of file - total 50 lines)\n ')) / current.tokens * 100).toFixed(0)}% tokens
+- But changes the entire API contract (breaking change)
