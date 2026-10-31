@@ -4,13 +4,14 @@ import { useTranslation } from 'react-i18next';
 
 import { Button, Dialog, Toast } from '@shared/components';
 import { type ChatFileChange, listConversationFileChanges } from '@features/chat/data/chatFileChanges';
-import { type ChatMessage, getMessages } from '@features/chat/data/chatStorage';
+import { type ChatConversation, type ChatMessage, getMessages } from '@features/chat/data/chatStorage';
 import { findInChatMatches, type InChatFilterType } from '@features/chat/data/inChatSearch';
 import { getSidebarDraggingConversationId } from '@features/chat/data/sidebarPreferences';
 import { useChatSession } from '@features/chat/hooks/useChatSession';
 import { useChatStore } from '@features/chat/state/chatStore';
 import { isSameRoute, upsertMessage } from '@features/chat/state/chatStoreUtils';
 import { modelRouteKey } from '@features/provider-settings/data/modelPreferences';
+import type { ChatModel } from '@features/provider-settings/data/chatModels';
 import { isObject } from '@shared/lib/utils/json';
 import { ChatComposer } from './ChatComposer';
 import type { RightWorkspaceTab, WorkspaceFileRequest, WorkspaceFileSelection } from './ChatFileChangesPanel';
@@ -163,12 +164,22 @@ export function ConversationPane({
   }, [isConversationOverride, isStoreActive, resolvedTargetId, secondaryLoadRevision]);
 
   const activeConversationId = isConversationOverride ? resolvedTargetId : storeActiveConversationId;
+
+  // Build conversation ID → map for O(1) lookup
+  const conversationById = useMemo(() => {
+    const map = new Map<string, ChatConversation>();
+    for (const c of conversations) {
+      map.set(c.id, c);
+    }
+    return map;
+  }, [conversations]);
+
   const activeConversation = useMemo(() => {
     if (isConversationOverride) {
-      return resolvedTargetId ? (conversations.find((c) => c.id === resolvedTargetId) ?? null) : null;
+      return resolvedTargetId ? (conversationById.get(resolvedTargetId) ?? null) : null;
     }
     return storeActiveConversation;
-  }, [conversations, isConversationOverride, resolvedTargetId, storeActiveConversation]);
+  }, [conversationById, isConversationOverride, resolvedTargetId, storeActiveConversation]);
 
   const messages = isConversationOverride && !isStoreActive ? secondaryMessages : storeMessages;
   const isLoadingMessages = isConversationOverride && !isStoreActive ? secondaryLoading : storeIsLoadingMessages;
@@ -264,6 +275,15 @@ export function ConversationPane({
     observer.observe(pane);
     return () => observer.disconnect();
   }, []);
+  // Build model key → model map for O(1) lookup
+  const modelByKey = useMemo(() => {
+    const map = new Map<string, ChatModel>();
+    for (const model of models) {
+      map.set(model.key, model);
+    }
+    return map;
+  }, [models]);
+
   const visibleModels = useMemo(() => {
     const hiddenSet = new Set(hiddenModelKeys);
     return models.filter((model) => !hiddenSet.has(modelRouteKey(model)));
@@ -274,8 +294,8 @@ export function ConversationPane({
         ? activeConversation
           ? (models.find((model) => isSameRoute(model, activeConversation)) ?? null)
           : null
-        : (visibleModels.find((model) => model.key === selectedModelKey) ?? null),
-    [activeConversation, isConversationOverride, models, selectedModelKey, visibleModels],
+        : (modelByKey.get(selectedModelKey ?? '') ?? null),
+    [activeConversation, isConversationOverride, modelByKey, models, selectedModelKey],
   );
   const assistantModelFallback =
     selectedModel?.displayName ?? activeConversation?.modelId ?? temporaryChat?.route?.displayName ?? null;

@@ -1,5 +1,5 @@
 import { LoaderCircle } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { ChatFileChange } from '@features/chat/data/chatFileChanges';
 import type { ChatMessage } from '@features/chat/data/chatStorage';
@@ -70,6 +70,17 @@ export function MessageList({
   const skippedCompletedResponseScroll = useRef(false);
   const responseGroups = useMemo(() => groupResponses(messages), [messages]);
   const [selectedResponseVersions, setSelectedResponseVersions] = useState<Record<string, number>>({});
+
+  // Build message ID → group map for O(1) lookup instead of O(n*m) .find()
+  const messageIdToGroupMap = useMemo(() => {
+    const map = new Map<string, ResponseGroup>();
+    for (const group of responseGroups) {
+      for (const message of group.messages) {
+        map.set(message.id, group);
+      }
+    }
+    return map;
+  }, [responseGroups]);
   const displayRows = useMemo(
     () =>
       responseGroups.map((group) => {
@@ -89,11 +100,13 @@ export function MessageList({
   const hasStreamingAssistant =
     visibleMessages.at(-1)?.role === 'assistant' && visibleMessages.at(-1)?.status === 'streaming';
   const latestMessage = visibleMessages.at(-1);
-  const isWaitingForUserAnswer =
-    latestMessage?.role === 'assistant' &&
-    parseToolActivities(latestMessage.toolActivities).some(
-      (activity) => activity.name === 'ask_user' && activity.status === 'waitingForUser',
-    );
+  const latestToolActivities = useMemo(
+    () => (latestMessage?.role === 'assistant' ? parseToolActivities(latestMessage.toolActivities) : []),
+    [latestMessage?.toolActivities, latestMessage?.role],
+  );
+  const isWaitingForUserAnswer = latestToolActivities.some(
+    (activity) => activity.name === 'ask_user' && activity.status === 'waitingForUser',
+  );
   const shouldShowAssistantLoading = showAssistantLoading && !hasStreamingAssistant && !isWaitingForUserAnswer;
   const virtualList = useVirtualMessageList(visibleMessages, activeConversationId);
   const autoFollowResponses = useChatDisplayPreferencesStore((state) => state.preferences.autoFollowResponses);
@@ -103,46 +116,44 @@ export function MessageList({
 
   useInChatSearchHighlight(virtualList.containerRef, effectiveHighlightQuery, effectiveTargetId, virtualList.rows);
 
-  const selectResponseVersion = (message: ChatMessage, versionIndex: number) => {
-    const group = responseGroups.find((candidate) => candidate.messages.some((item) => item.id === message.id));
-    if (!group || versionIndex < 0 || versionIndex >= group.messages.length) return;
-    const selectedMessage = group.messages[versionIndex];
-    if (!selectedMessage) return;
-    setSelectedResponseVersions((current) => ({ ...current, [group.id]: versionIndex }));
-    onSelectResponseVersion?.(selectedMessage, versionIndex);
-  };
+  const selectResponseVersion = useCallback(
+    (message: ChatMessage, versionIndex: number) => {
+      const group = messageIdToGroupMap.get(message.id);
+      if (!group || versionIndex < 0 || versionIndex >= group.messages.length) return;
+      const selectedMessage = group.messages[versionIndex];
+      if (!selectedMessage) return;
+      setSelectedResponseVersions((current) => ({ ...current, [group.id]: versionIndex }));
+      onSelectResponseVersion?.(selectedMessage, versionIndex);
+    },
+    [messageIdToGroupMap],
+  );
 
   useEffect(() => {
     if (isLoadingMessages || !searchTargetMessageId) return;
-    const group = responseGroups.find((candidate) =>
-      candidate.messages.some((message) => message.id === searchTargetMessageId),
-    );
+    const group = messageIdToGroupMap.get(searchTargetMessageId);
     if (!group) return;
     const selectedIndex = group.messages.findIndex((message) => message.id === searchTargetMessageId);
     if (selectedIndex < 0) return;
     setSelectedResponseVersions((current) =>
       current[group.id] === selectedIndex ? current : { ...current, [group.id]: selectedIndex },
     );
-  }, [isLoadingMessages, responseGroups, searchTargetMessageId]);
+  }, [isLoadingMessages, messageIdToGroupMap, searchTargetMessageId]);
 
   useEffect(() => {
     if (isLoadingMessages || !inChatTargetMessageId) return;
-    const group = responseGroups.find((candidate) =>
-      candidate.messages.some((message) => message.id === inChatTargetMessageId),
-    );
+    const group = messageIdToGroupMap.get(inChatTargetMessageId);
     if (!group) return;
     const selectedIndex = group.messages.findIndex((message) => message.id === inChatTargetMessageId);
     if (selectedIndex < 0) return;
     setSelectedResponseVersions((current) =>
       current[group.id] === selectedIndex ? current : { ...current, [group.id]: selectedIndex },
     );
-  }, [inChatTargetMessageId, isLoadingMessages, responseGroups]);
+  }, [inChatTargetMessageId, isLoadingMessages, messageIdToGroupMap]);
 
   useEffect(() => {
     if (isLoadingMessages || !searchTargetMessageId) return;
     if (!virtualList.rows.some(({ message }) => message.id === searchTargetMessageId)) {
-      if (responseGroups.some((group) => group.messages.some((message) => message.id === searchTargetMessageId)))
-        return;
+      if (messageIdToGroupMap.has(searchTargetMessageId)) return;
       if (!virtualList.scrollToMessage(searchTargetMessageId)) clearSearchTarget(false);
       return;
     }
@@ -155,7 +166,7 @@ export function MessageList({
   }, [
     clearSearchTarget,
     isLoadingMessages,
-    responseGroups,
+    messageIdToGroupMap,
     searchTargetMessageId,
     virtualList.rows,
     virtualList.scrollToMessage,

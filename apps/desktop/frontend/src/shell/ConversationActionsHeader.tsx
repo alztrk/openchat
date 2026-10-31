@@ -31,12 +31,22 @@ export function ConversationActionsHeader({
   const compactingConversationId = useChatStore((state) => state.compactingConversationId);
 
   const conversations = propConversations ?? storeConversations;
+
+  // Build conversation ID → map for O(1) lookup instead of O(n) .find()
+  const conversationById = useMemo(() => {
+    const map = new Map<string, ChatConversation>();
+    for (const conversation of conversations) {
+      map.set(conversation.id, conversation);
+    }
+    return map;
+  }, [conversations]);
+
   const activeConversation = useMemo(
     () =>
       activeConversationId && activeConversationId !== '__empty__'
-        ? (conversations.find((conversation) => conversation.id === activeConversationId) ?? null)
+        ? conversationById.get(activeConversationId) ?? null
         : null,
-    [conversations, activeConversationId],
+    [conversationById, activeConversationId],
   );
 
   const isActiveConversationAiWorking = Boolean(
