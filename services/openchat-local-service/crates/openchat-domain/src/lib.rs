@@ -1,36 +1,103 @@
-//! OpenChat domain layer — pure business logic with no I/O dependencies.
+//! Domain modules for conversations, providers, projects, tools, and settings.
 //!
-//! Contains all domain types, value objects, and business rules.
-//! Zero framework dependencies — only serde, uuid, thiserror.
+//! Transport handlers call these modules to keep RPC parsing separate from
+//! provider, storage, filesystem, and process operations.
 
-pub mod conversation;
-pub mod provider;
-pub mod model;
-pub mod project;
-pub mod tool;
-pub mod settings;
+/// Chat schema version supported by this build.
+pub const CHAT_SCHEMA_VERSION: i64 = 22;
 
-/// Domain error types
-pub mod error {
-    use thiserror::Error;
-
-    /// Errors that can occur in domain operations.
-    #[derive(Error, Debug, Clone, PartialEq, Eq)]
-    pub enum DomainError {
-        /// Invalid input was provided.
-        #[error("invalid input: {0}")]
-        InvalidInput(String),
-        /// The requested entity was not found.
-        #[error("not found: {0}")]
-        NotFound(String),
-        /// A conflict occurred (e.g., duplicate entry).
-        #[error("conflict: {0}")]
-        Conflict(String),
-        /// Validation failed.
-        #[error("validation failed: {0}")]
-        ValidationError(String),
-    }
-
-    /// Result type for domain operations.
-    pub type DomainResult<T> = Result<T, DomainError>;
-}
+#[path = "conversation_limits.rs"]
+pub(crate) mod conversation_limits;
+#[path = "conversations/attachments.rs"]
+pub(crate) mod attachments;
+#[path = "conversations/chat_operation.rs"]
+pub(crate) mod chat_operation;
+#[path = "providers/chatgpt/mod.rs"]
+pub(crate) mod chatgpt;
+#[path = "conversations/chatgpt_store/mod.rs"]
+pub(crate) mod chatgpt_store;
+pub(crate) mod connector_packages;
+pub(crate) mod connectors;
+#[path = "conversations/context_compaction.rs"]
+pub(crate) mod context_compaction;
+#[path = "conversations/conversation_archive.rs"]
+pub(crate) mod conversation_archive;
+#[path = "providers/copilot_oauth.rs"]
+pub(crate) mod copilot_oauth;
+#[path = "conversations/document_parser.rs"]
+pub(crate) mod document_parser;
+#[path = "conversations/file_changes.rs"]
+pub(crate) mod file_changes;
+#[path = "projects/git_inspection.rs"]
+pub(crate) mod git_inspection;
+#[path = "projects/git_worktrees.rs"]
+pub(crate) mod git_worktrees;
+#[path = "conversations/goals.rs"]
+pub(crate) mod goals;
+#[path = "conversations/history.rs"]
+pub(crate) mod history;
+pub(crate) mod http_headers;
+#[path = "providers/hugging_face.rs"]
+pub(crate) mod hugging_face;
+pub(crate) mod image_library;
+#[path = "settings/instructions.rs"]
+pub(crate) mod instructions;
+#[path = "local_engines/mod.rs"]
+pub(crate) mod local_engines;
+#[path = "providers/oauth/mod.rs"]
+pub(crate) mod oauth;
+#[path = "providers/openai_api.rs"]
+pub(crate) mod openai_api;
+#[path = "providers/openai_compatible/mod.rs"]
+pub(crate) mod openai_compatible;
+pub(crate) mod pending_archive_export;
+#[path = "tools/permissions.rs"]
+pub(crate) mod permissions;
+#[path = "profiles/profile_archive.rs"]
+pub(crate) mod profile_archive;
+#[path = "projects/project_instructions.rs"]
+pub(crate) mod project_instructions;
+#[path = "projects/project_memory.rs"]
+pub(crate) mod project_memory;
+#[path = "projects/project_rules.rs"]
+pub(crate) mod project_rules;
+#[path = "projects/project_skills.rs"]
+pub(crate) mod project_skills;
+pub(crate) mod provider_ids;
+#[path = "providers/credentials.rs"]
+pub(crate) mod provider_credentials;
+#[path = "providers/provider_schema/mod.rs"]
+pub(crate) mod provider_schema;
+#[path = "providers/response_budget.rs"]
+pub(crate) mod response_budget;
+#[path = "secrets/mod.rs"]
+pub(crate) mod secrets;
+#[path = "conversations/security_scan.rs"]
+pub(crate) mod security_scan;
+pub(crate) mod sandbox;
+#[path = "storage_broker.rs"]
+pub(crate) mod storage_broker;
+pub(crate) mod storage;
+#[path = "storage_broker_test_support.rs"]
+pub(crate) mod storage_broker_test_support;
+pub(crate) mod service;
+#[path = "credentials.rs"]
+pub(crate) mod credentials;
+#[path = "filesystem.rs"]
+pub(crate) mod filesystem;
+#[path = "conversations/temporary_conversation.rs"]
+pub(crate) mod temporary_conversation;
+#[path = "conversations/tokenizer.rs"]
+pub(crate) mod tokenizer;
+#[path = "transport/protocol.rs"]
+pub(crate) mod protocol;
+#[path = "transport/rpc.rs"]
+pub(crate) mod rpc;
+#[path = "tools/mod.rs"]
+pub(crate) mod tools;
+#[path = "usage_statistics/mod.rs"]
+pub(crate) mod usage_statistics;
+#[path = "conversations/user_question_broker.rs"]
+pub(crate) mod user_question_broker;
+#[path = "settings/workspace.rs"]
+pub(crate) mod workspace_settings;
