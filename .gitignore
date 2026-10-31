@@ -38,6 +38,9 @@ migrate_working_dir/
 # Node modules (workspace root)
 /node_modules/
 
+# OpenCode benchmark (separate gitignore)
+scripts/opencode-benchmark/
+
 # Reports
 /reports/
 /.opencode_probe/

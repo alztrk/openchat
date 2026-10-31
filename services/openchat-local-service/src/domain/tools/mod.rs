@@ -20,8 +20,7 @@ use crate::{protocol::ServiceError, provider_schema::ToolDefinition};
 
 mod search;
 pub use search::search_files;
-pub mod hashline;
-pub use hashline::{apply_resilient_edit, compute_hashline_tag};
+
 #[cfg(windows)]
 pub(crate) mod computer_use;
 #[cfg(windows)]
@@ -645,7 +644,6 @@ pub fn read_file(
     }
 
     let mut reader = reader.take((MAX_OUTPUT_BYTES + 1) as u64);
-    let mut hashlines = Vec::with_capacity(line_count.min(128));
     loop {
         line.clear();
         let read = reader
@@ -664,8 +662,6 @@ pub fn read_file(
         }
         output_bytes += read;
         let clean_text = line.trim_end_matches(['\r', '\n']);
-        let tag = compute_hashline_tag(clean_text);
-        hashlines.push(format!("{number}:{tag}| {clean_text}"));
         output.push(json!({"line": number, "text": clean_text}));
     }
     truncated |= reader.get_ref().limit() == 0;
@@ -673,7 +669,6 @@ pub fn read_file(
     Ok(json!({
         "path": relative_path.to_string_lossy().replace('\\', "/"),
         "lines": output,
-        "hashlines": hashlines,
         "nextLine": next_line,
         "truncated": truncated,
     }))
@@ -870,7 +865,13 @@ pub(crate) fn edit_opened_file(
         return Err(invalid("The file exceeds the 10MB edit limit."));
     }
 
-    let (output, match_stage) = apply_resilient_edit(&content, old_string, new_string)
+    if !content.contains(old_string) {
+        return Err(invalid(
+            "The target text to replace was not found in the file.",
+        ));
+    }
+
+    let output = content.replace(old_string, new_string);
         .map_err(|diagnostic| invalid(&diagnostic))?;
 
     file.seek(SeekFrom::Start(0))
@@ -1486,7 +1487,7 @@ pub fn definitions() -> Vec<ToolDefinition> {
         ),
         (
             "read_file",
-            "Read a requested range of at most 500 lines and 64 KiB of source text from a file no larger than 64 MiB. The response also includes line numbers, hashline anchors, and any matching path-scoped .openchat/rules/**/*.mdc instructions, so serialized JSON is larger than the source-text cap. A small file may fit in one response; use search tools and narrow line ranges to avoid reading unrelated code. Every path must be a full absolute filesystem path. For project files, use the exact absolute path from the active project context and append the requested file. Full access accepts absolute paths outside the project. Relative paths and path aliases are rejected. Without an active project path, do not guess a project folder.",
+            "Read a requested range of at most 500 lines and 64 KiB of source text from a file no larger than 64 MiB. The response also includes line numbers and any matching path-scoped .openchat/rules/**/*.mdc instructions, so serialized JSON is larger than the source-text cap. A small file may fit in one response; use search tools and narrow line ranges to avoid reading unrelated code. Every path must be a full absolute filesystem path. For project files, use the exact absolute path from the active project context and append the requested file. Full access accepts absolute paths outside the project. Relative paths and path aliases are rejected. Without an active project path, do not guess a project folder.",
             json!({
                 "type": "object",
                 "properties": {
