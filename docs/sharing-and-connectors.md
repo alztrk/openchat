@@ -1,101 +1,75 @@
-# Sharing and connectors
+# Sharing and Connectors
 
-OpenChat keeps conversation data on the user's device. Sharing uses files the
-user creates and transfers; the app does not create hosted conversation links,
-sync archives to an OpenChat service, or provide live multi-user collaboration.
+OpenChat keeps conversation data on the user's device. Sharing uses files the user creates and transfers; the app does not create hosted conversation links, sync archives to an OpenChat service, or provide live multi-user collaboration.
 
-## Conversation and profile archives
+## Conversation archives
 
-The conversation archive lets a user select conversations, review the export
-summary, and create an encrypted `.openchatbackup` file. Its versioned archive
-contains the selected conversations and their saved attachments. OpenChat uses
-the age scrypt passphrase format; the passphrase is supplied for each operation,
-must contain at least 12 characters, and is not saved. The archive is validated
-before restore, including its paths, entry types, declared sizes, attachment
-hashes, and format version. Restore can skip existing conversations or import
-them as copies.
+| Format | Contents | Encryption |
+|--------|----------|------------|
+| `.openchatbackup` | Selected conversations + attachments | age v1 scrypt (passphrase) |
+| `.openchatprofilebackup` | Full database + attachments | age v1 scrypt (passphrase) |
+| Markdown / HTML / JSON | Readable text exports | None |
 
-The separate `.openchatprofilebackup` format is a full-profile backup containing
-the local database and attachments. It is also encrypted with an age scrypt
-passphrase of at least 12 characters. It excludes provider credentials and
-global preferences stored outside the database. Restore is staged and checked
-before activation; OpenChat retains recovery data so an interrupted or
-unconfirmed restore can be rolled back on startup.
+### Selected-conversation archive
 
-Markdown, HTML, and JSON conversation exports are readable exports. They are
-not encrypted, and users should review their destination and contents before
-sharing them.
+- Version 1 format; selective export of conversations and their attachments
+- Passphrase: minimum 12 characters, never stored
+- Validation before restore: paths, entry types, declared sizes, attachment hashes, format version
+- Restore options: skip existing conversations, or import as copies
 
-## Signed connector metadata sources
+### Full-profile archive
 
-The connector catalog is local to the app. A user may pin up to ten HTTPS
-sources, each with an Ed25519 public key. Refresh is manual. OpenChat accepts a
-bounded JSON response whose `payload` field is a JSON string and whose
-`signature` field is unpadded base64url. The signature is checked over the
-exact UTF-8 bytes of `payload`. The version 1 payload contains a positive,
-monotonic revision and up to 50 connector entries; the full response is capped
-at 64 KiB. URLs cannot contain credentials, a query, or a fragment. Fetching
-uses the local service's public-address checks and does not permit an HTTPS to
-HTTP redirect downgrade.
+- Contains local database (SQLCipher) and attachments
+- Excludes: provider credentials, global preferences outside the database, external model/runtime binaries
+- Staged restore: validated before activation, rollback preserved on failure
+- Windows: stages and swaps files inside the broker's private profile
 
-The source key fingerprint is displayed after refresh. A valid signature shows
-that the catalog was signed by the pinned key; it does not prove who controls
-that key or whether the publisher is legitimate. Users must compare the
-fingerprint through a separate trusted channel before trusting a source.
-OpenChat retains the last accepted revision and payload hash, rejects rollback,
-and rejects different content at the same revision.
+### Markdown export
 
-Importing an entry saves a local template. Adding a template to a project creates
-a disabled MCP server and sets its tools to `Ask` by default. Connecting it
-requires the user to enable and configure it in that project. Project-scoped
-credentials remain in the platform credential store. Removing an app-wide
-template does not remove a copy already added to a project; remove that project
-server separately.
+- Readable exports, not encrypted
+- Users should review destination and contents before sharing
 
-Signed catalogs may also describe a version-pinned Windows stdio executable.
-The app downloads it only after the user confirms installation. The local
-service fetches the signed catalog again, verifies the pinned Ed25519 key,
-requires HTTPS without redirects, bounds the file to 128 MiB, and checks its
-declared size, SHA-256, PE executable format, and Authenticode signer certificate
-SHA-256 before saving it under the project's local app-data package directory.
-The install request must still match the package URL, size, digest, and signer
-fingerprint that the user confirmed when the service refetches the signed
-catalog. A project reference records the version, digest, signer certificate
-fingerprint, size, and catalog key fingerprint rather than an absolute machine
-path. Before launch, the service checks the file digest, PE structure, Windows
-Authenticode trust, and signer fingerprint again. It keeps that verified file
-handle open until process creation completes, so the executable path cannot be
-replaced during launch. An incompatible writer already holding the file also
-prevents verification. The package directory then receives read-only access in
-the Windows AppContainer. The MCP server remains disabled after installation,
-and its tools require approval by default. An update needs another user
-confirmation, installs a separate version, resets that connector's tool rules
-to `Ask`, then removes the previous package. Removal failures stay visible and
-can be retried; cleanup never recursively deletes an unexpected directory.
+## Connector catalogs
 
-A catalog entry may include an optional version 1 manifest that declares tool
-names, permissions, provider requirements, and configuration needs. The app
-rejects unsupported versions, unknown fields, duplicate declarations, and
-manifests larger than 16 KiB; individual declaration lists and text fields are
-also bounded, and control characters including bidirectional formatting
-controls are rejected. The installation confirmation displays these values as catalog
-declarations. It does not compare the declaration with the tools actually
-returned by the server. Runtime tool discovery and project tool permissions
-remain authoritative.
+OpenChat supports installing and managing MCP server connector packages from user-pinned catalogs.
 
-A valid signature proves that the catalog was signed by the pinned key. The
-signed entry also pins the executable's Authenticode signer certificate, and
-the confirmation shows that fingerprint separately from the catalog key
-fingerprint, along with package URL, size, digest, requested access, and data
-disclosure. Users should verify the catalog key through a separate trusted
-channel before installing. These checks do not establish the publisher's
-real-world identity. No centrally hosted or first-party public catalog is
-provided by OpenChat. A first-party catalog and release/update signing remain
-separate release work. The Authenticode check uses cached trust data and does
-not check certificate revocation. Previously installed packages without a
-signer fingerprint remain removable but require reinstallation from an updated
-signed catalog before they can launch. An update installs and saves the signed
-replacement before removing the previous version; cleanup failures remain
-visible and can be retried. Non-Windows service builds reject Windows
-executable packages because they cannot perform this operating-system trust
-check.
+### Catalog format
+
+| Field | Limit |
+|-------|-------|
+| Max sources per user | 10 |
+| Verification | Ed25519 public key per source |
+| Refresh | Manual |
+| Max response size | 64 KiB |
+| Max entries per refresh | 50 |
+
+The response `payload` field contains a JSON string; the `signature` field is unpadded base64url. Signature is verified over the exact UTF-8 bytes of the payload.
+
+### Version 1 manifest
+
+Optional manifest declared by package publishers:
+
+- Declared tools, permissions, providers, and configuration requirements
+- Displayed **before** installation — users see what the package requests
+- Runtime-discovered tools remain authoritative; manifest claims do not affect routing or permissions
+- Connection check compares declared tool names with runtime-discovered names; differences are shown to the user
+
+### Package installation
+
+| Check | Details |
+|-------|---------|
+| Authenticode | Required on Windows; cached trust data, no revocation check |
+| Signer fingerprint | Pinned from catalog; verified before download and launch |
+| Digest | SHA-256 verified before and after download |
+| Size | 128 MiB limit on PE structure |
+| Trust | Binds to a signed catalog Authenticode signer; does not verify real-world identity |
+
+Packages are added **disabled** by default. Their tools default to `Ask` permission mode.
+
+### Lifecycle
+
+- **Installation:** URL, size, digest, and signer fingerprint shown for confirmation
+- **Launch:** Digest, PE structure, Authenticode trust, and signer fingerprint checked again
+- **Updates:** Require explicit confirmation; reset rules to `Ask`
+- **Removal:** Removes project reference and scoped credentials; visible retry on failure
+- **Legacy packages:** Unsigned packages no longer launch but remain removable

@@ -1,7 +1,9 @@
-# OpenChat documentation
+# Documentation
 
-- [Architecture](architecture.md): runtime boundaries, integration plan, performance evidence, and migration invariants.
-- [Design system](design.md): product and visual direction, component rules, tokens, typography, and interaction standards.
-- [Roadmap](roadmap.md): current implementation, release gate, completed milestones, and prioritized work.
-- [Security review](security-review.md): audit scope, findings, and hardening status.
-- [Sharing and connectors](sharing-and-connectors.md): local archive formats, signed metadata sources, and connector trust boundaries.
+| Document | Description |
+|----------|-------------|
+| [Architecture](./architecture.md) | System architecture, data flow, security model, and build system |
+| [Design system](./design.md) | Brand, tokens, components, interaction rules, and accessibility |
+| [Roadmap](./roadmap.md) | Current state, completed milestones, and prioritized work |
+| [Security review](./security-review.md) | Audit scope, findings, hardening actions, and trust boundaries |
+| [Sharing & connectors](./sharing-and-connectors.md) | Archive formats, signed catalogs, and package installation |
