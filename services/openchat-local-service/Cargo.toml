@@ -63,7 +63,7 @@ process-wrap = { version = "=10.0.1", default-features = false, features = ["kil
 
 [target.'cfg(windows)'.dependencies]
 keyring = { version = "=3.6.3", default-features = false, features = ["windows-native"] }
-rmcp = { version = "=3.0.1", default-features = false, features = ["client", "transport-async-rw", "transport-streamable-http-client-reqwest"] }
+rmcp = { version = "=3.7.0", default-features = false, features = ["client", "transport-async-rw", "transport-streamable-http-client-reqwest"] }
 windows-sys = { version = "=0.61.2", features = [
     "Win32_Foundation",
     "Win32_Security",
