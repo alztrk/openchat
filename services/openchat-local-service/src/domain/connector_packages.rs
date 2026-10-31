@@ -960,6 +960,7 @@ fn authenticode_signer_sha256(path: &Path) -> Result<String, PackageError> {
     if certificate_context.pbCertEncoded.is_null() || certificate_context.cbCertEncoded == 0 {
         return Err(PackageError::InvalidPackage);
     }
+    // SAFETY: pbCertEncoded is valid for cbCertEncoded bytes — verified by the null/zero check above.
     let encoded_certificate = unsafe {
         slice::from_raw_parts(
             certificate_context.pbCertEncoded,
