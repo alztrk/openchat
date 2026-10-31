@@ -16,6 +16,13 @@ use crate::{
 const OPENAI_COMPATIBLE_HISTORICAL_TOOL_OUTPUT_MAX_BYTES: usize = 4096;
 const OPENAI_COMPATIBLE_HISTORICAL_TOOL_EXCERPT_BYTES: usize = 1024;
 
+/// Maximum bytes for the most recent tool output round in compaction input.
+const HISTORICAL_TOOL_OUTPUT_MAX_BYTES: usize = 4096;
+/// Maximum bytes for tool output 1-2 rounds old in compaction input.
+const HISTORICAL_TOOL_OUTPUT_MEDIUM_BYTES: usize = 1024;
+/// Maximum bytes for tool output 3+ rounds old in compaction input.
+const HISTORICAL_TOOL_OUTPUT_OLDEST_BYTES: usize = 512;
+
 #[cfg(test)]
 pub(crate) fn provider_messages(
     message: &StoredMessage,
@@ -106,6 +113,20 @@ fn provider_messages_with_tool_output_limit(
 ///
 /// Returns an error when a referenced attachment is unavailable.
 pub(crate) fn responses_input_items(message: &StoredMessage) -> Result<Vec<Value>, ServiceError> {
+    responses_input_items_with_limit(message, None)
+}
+
+/// Builds Responses API input items with a global byte limit for old tool outputs.
+///
+/// The age-based policy applies different limits per round:
+/// - Most recent round: full limit (4 KiB)
+/// - 1-2 rounds old: medium limit (1 KiB)
+/// - 3+ rounds old: oldest limit (512 B)
+/// The provided global `tool_output_limit` acts as an additional cap on top of these age-based limits.
+pub(crate) fn responses_input_items_with_limit(
+    message: &StoredMessage,
+    tool_output_limit: Option<usize>,
+) -> Result<Vec<Value>, ServiceError> {
     if message.role == "user" {
         let mut content = Vec::with_capacity(1 + message.attachments.len());
         if !message.content.is_empty() {
@@ -138,7 +159,39 @@ pub(crate) fn responses_input_items(message: &StoredMessage) -> Result<Vec<Value
     }
 
     let mut emitted_text_bytes = 0;
-    for tool_round in tool_rounds {
+    for (round_index, tool_round) in tool_rounds.iter().enumerate() {
+        // Apply age-based output limits:
+        // - Most recent round (index == 0): full limit
+        // - 1-2 rounds old: medium limit (1 KiB)
+        // - 3+ rounds old: oldest limit (512 B)
+        let round_limit = tool_output_limit
+            .and_then(|limit| {
+                let distance_from_end = tool_rounds
+                    .len()
+                    .saturating_sub(1)
+                    .saturating_sub(round_index);
+                if distance_from_end == 0 {
+                    Some(limit)
+                } else if distance_from_end <= 2 {
+                    Some(HISTORICAL_TOOL_OUTPUT_MEDIUM_BYTES.min(limit))
+                } else {
+                    Some(HISTORICAL_TOOL_OUTPUT_OLDEST_BYTES.min(limit))
+                }
+            })
+            .or_else(|| {
+                // No global limit but still apply age-based defaults
+                let distance_from_end = tool_rounds
+                    .len()
+                    .saturating_sub(1)
+                    .saturating_sub(round_index);
+                if distance_from_end == 0 {
+                    Some(HISTORICAL_TOOL_OUTPUT_MAX_BYTES)
+                } else if distance_from_end <= 2 {
+                    Some(HISTORICAL_TOOL_OUTPUT_MEDIUM_BYTES)
+                } else {
+                    Some(HISTORICAL_TOOL_OUTPUT_OLDEST_BYTES)
+                }
+            });
         append_responses_assistant_text(
             &mut items,
             message,
@@ -147,7 +200,7 @@ pub(crate) fn responses_input_items(message: &StoredMessage) -> Result<Vec<Value
                 .first()
                 .and_then(|activity| activity.assistant_text_before_byte_offset),
         );
-        for activity in &tool_round {
+        for activity in tool_round.iter() {
             items.push(json!({
                 "type": "function_call",
                 "call_id": activity.call_id,
@@ -155,12 +208,12 @@ pub(crate) fn responses_input_items(message: &StoredMessage) -> Result<Vec<Value
                 "arguments": activity.arguments.to_string(),
             }));
         }
-        for activity in &tool_round {
+        for activity in tool_round.iter() {
             if let Some(output) = activity.output.as_ref() {
                 items.push(json!({
                     "type": "function_call_output",
                     "call_id": activity.call_id,
-                    "output": output.to_string(),
+                    "output": provider_tool_output(output, round_limit),
                 }));
             }
         }

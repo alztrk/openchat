@@ -96,10 +96,15 @@ pub(super) async fn prepare_input(
             context_window,
             &model.id,
         )
+        && let estimated_tokens =
+            context_compaction::estimated_history_tokens(&model.id, messages, instructions)
+        && let prune_level =
+            context_compaction::PruneLevel::for_estimate(estimated_tokens, context_window)
     {
         let compact_input = compaction_input(
             state_ref,
             active_compaction_matches,
+            prune_level,
             &messages[start_index..=compacted_through_index],
         )?;
 
@@ -257,6 +262,7 @@ fn summary_input_item(summary: &str) -> Value {
 fn compaction_input(
     state: Option<&ConversationContextState>,
     active_compaction_matches: bool,
+    prune_level: context_compaction::PruneLevel,
     messages: &[StoredMessage],
 ) -> Result<Vec<Value>, ServiceError> {
     let mut input = Vec::with_capacity(messages.len().saturating_add(2));
@@ -278,10 +284,11 @@ fn compaction_input(
             _ => {}
         }
     }
+    let tool_output_limit = prune_level.old_tool_output_limit();
     input.extend(
         messages
             .iter()
-            .map(crate::history::responses_input_items)
+            .map(|m| crate::history::responses_input_items_with_limit(m, tool_output_limit))
             .collect::<Result<Vec<_>, _>>()?
             .into_iter()
             .flatten(),

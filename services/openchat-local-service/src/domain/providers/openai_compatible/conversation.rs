@@ -585,6 +585,15 @@ pub async fn send_message(
             context_window,
             &route.model_id,
         )
+        && let estimated_tokens = context_compaction::estimated_history_tokens(
+            &route.model_id,
+            &included_messages,
+            &provider_request.instructions,
+        )
+        && let prune_level = context_compaction::PruneLevel::for_estimate(
+            estimated_tokens,
+            context_window,
+        )
     {
         let prior_summary = context_state.as_ref().and_then(|state| {
             (state.compaction_kind.as_deref() == Some("summary"))
@@ -605,6 +614,7 @@ pub async fn send_message(
                 existing_summary: prior_summary,
                 messages: &included_messages[history_start..=compacted_through_index],
                 cancellation,
+                prune_level,
             },
         )
         .await?;

@@ -126,6 +126,90 @@ async function recordContextUsageFailure(operation: 'contextConfiguration' | 'me
   }
 }
 
+/**
+ * Fetch a full context usage snapshot from the backend (tiktoken-based).
+ * The backend calculates all token counts: messages, tool activities,
+ * attachments, draft, and compaction summary.
+ */
+export async function loadFullContextUsage(
+  model: ChatModel,
+  conversationId: string | null,
+  draft: string,
+  pendingAttachments: readonly PendingChatAttachment[],
+  configuration: ContextUsageConfiguration | null,
+  memory: ContextUsageMemory | null,
+): Promise<ContextUsageSnapshot> {
+  try {
+    const result = await localServiceClient.call('chat.context.usage.full_estimate', {
+      modelId: model.modelId,
+      conversationId,
+      draft: draft || null,
+      attachments: pendingAttachments.map((a) => ({
+        name: a.name,
+        kind: a.kind,
+        sizeBytes: a.sizeBytes,
+      })),
+    });
+    return parseFullContextUsageSnapshot(result, configuration, memory);
+  } catch (cause) {
+    await recordContextUsageFailure('contextConfiguration', cause);
+    throw cause;
+  }
+}
+
+function parseFullContextUsageSnapshot(
+  raw: Record<string, unknown>,
+  configuration: ContextUsageConfiguration | null,
+  _memory: ContextUsageMemory | null,
+): ContextUsageSnapshot {
+  const userMessageTokens = isFiniteNonNegativeInteger(raw.userMessageTokens) ? raw.userMessageTokens : 0;
+  const assistantMessageTokens = isFiniteNonNegativeInteger(raw.assistantMessageTokens)
+    ? raw.assistantMessageTokens
+    : 0;
+  const draftTokens = isFiniteNonNegativeInteger(raw.draftTokens) ? raw.draftTokens : 0;
+  const memoryTokens = isFiniteNonNegativeInteger(raw.memoryTokens) ? raw.memoryTokens : 0;
+  const totalTokens = isFiniteNonNegativeInteger(raw.totalTokens) ? raw.totalTokens : 0;
+
+  // Attachments from backend
+  const backendAttachments: ContextUsageAttachment[] = [];
+  if (Array.isArray(raw.attachments)) {
+    for (const item of raw.attachments) {
+      if (isObject(item) && typeof item.name === 'string' && isFiniteNonNegativeInteger(item.tokens)) {
+        backendAttachments.push({ name: item.name, tokens: item.tokens, isDraft: false });
+      }
+    }
+  }
+
+  // Tool usage from backend
+  const toolUsage: { name: string; tokens: number }[] = [];
+  if (Array.isArray(raw.toolUsage)) {
+    for (const item of raw.toolUsage) {
+      if (isObject(item) && typeof item.name === 'string' && isFiniteNonNegativeInteger(item.tokens)) {
+        toolUsage.push({ name: item.name, tokens: item.tokens });
+      }
+    }
+  }
+
+  // Instructions and tool definitions come from configuration (backend-sourced)
+  const instructionsTokens = configuration?.instructionsTokens ?? 0;
+  const toolDefinitionTokens = configuration?.toolDefinitions.reduce((sum, item) => sum + item.tokens, 0) ?? 0;
+
+  const providerInputTokens = isFiniteNonNegativeInteger(raw.providerInputTokens) ? raw.providerInputTokens : null;
+
+  return {
+    totalTokens,
+    instructionsTokens,
+    toolDefinitionTokens,
+    userMessageTokens,
+    assistantMessageTokens,
+    attachments: [...backendAttachments],
+    toolUsage,
+    memoryTokens,
+    draftTokens,
+    providerInputTokens,
+  };
+}
+
 export function estimateContextUsage(
   messages: readonly ChatMessage[],
   draft: string,

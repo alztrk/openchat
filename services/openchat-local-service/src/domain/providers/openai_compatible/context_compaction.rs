@@ -38,6 +38,8 @@ pub(super) struct HistorySummaryRequest<'a> {
     pub(super) existing_summary: Option<&'a str>,
     pub(super) messages: &'a [StoredMessage],
     pub(super) cancellation: &'a mut watch::Receiver<bool>,
+    /// Prune level to apply when building compaction input or summaries.
+    pub(super) prune_level: context_compaction::PruneLevel,
 }
 
 struct TranscriptSummaryRequest<'a> {
@@ -72,6 +74,7 @@ pub(super) async fn summarize_history(
         existing_summary,
         messages,
         cancellation,
+        prune_level: context_compaction::PruneLevel::None,
     })
     .await
 }
@@ -101,10 +104,11 @@ pub(super) async fn summarize_history_with_storage(
         .saturating_mul(4)
         .min(usize::try_from(context_window / 4).unwrap_or(0));
     if route.is_opencode && route.is_free {
-        return context_compaction::local_extractive_summary(
+        return context_compaction::local_extractive_summary_with_prune(
             existing_summary,
             messages,
             summary_byte_limit,
+            request.prune_level,
             cancellation,
         );
     }
@@ -140,6 +144,7 @@ pub(super) async fn summarize_history_with_storage(
             &previous_summary,
             history_batch_limit,
             route.provider_id.as_deref().unwrap_or_default(),
+            request.prune_level,
         ) {
             let transcript = transcript_messages(summary.as_deref(), &batch);
             summary = Some(
@@ -163,6 +168,7 @@ pub(super) async fn summarize_history_with_storage(
         messages,
         history_batch_limit,
         route.provider_id.as_deref().unwrap_or_default(),
+        request.prune_level,
     ) {
         let transcript = transcript_messages(summary.as_deref(), &history_batch);
         summary = Some(
@@ -461,10 +467,11 @@ struct HistoryBatcher<'a> {
     message_text: Option<String>,
     max_bytes: usize,
     provider_id: Option<String>,
+    prune_level: context_compaction::PruneLevel,
 }
 
 impl<'a> HistoryBatcher<'a> {
-    fn new(messages: &'a [StoredMessage], max_bytes: usize) -> Self {
+    fn new(messages: &'a [StoredMessage], max_bytes: usize, prune_level: context_compaction::PruneLevel) -> Self {
         Self {
             messages,
             message_index: 0,
@@ -472,11 +479,12 @@ impl<'a> HistoryBatcher<'a> {
             message_text: None,
             max_bytes,
             provider_id: None,
+            prune_level,
         }
     }
 
-    fn for_provider(messages: &'a [StoredMessage], max_bytes: usize, provider_id: &str) -> Self {
-        let mut batcher = Self::new(messages, max_bytes);
+    fn for_provider(messages: &'a [StoredMessage], max_bytes: usize, provider_id: &str, prune_level: context_compaction::PruneLevel) -> Self {
+        let mut batcher = Self::new(messages, max_bytes, prune_level);
         batcher.provider_id = Some(provider_id.to_owned());
         batcher
     }
@@ -489,13 +497,12 @@ impl Iterator for HistoryBatcher<'_> {
         let mut batch = String::new();
         while self.message_index < self.messages.len() {
             if self.message_text.is_none() {
-                let provider_id = self.provider_id.clone();
+                let tool_output_limit = self.prune_level.old_tool_output_limit();
                 self.message_text = self.messages.get(self.message_index).map(|message| {
-                    match provider_id.as_deref() {
-                        Some(provider_id) => {
-                            crate::history::summary_text_for_provider(message, provider_id)
-                        }
-                        None => crate::history::summary_text(message),
+                    if let Some(provider_id) = self.provider_id.as_deref() {
+                        crate::history::summary_text_with_tool_output_limit(message, tool_output_limit)
+                    } else {
+                        crate::history::summary_text_with_tool_output_limit(message, tool_output_limit)
                     }
                 });
             }
@@ -599,7 +606,7 @@ mod tests {
     fn history_batches_preserve_large_unicode_message_content() {
         let content = "ö界🙂".repeat(200);
         let messages = [message("message", &content)];
-        let batches = HistoryBatcher::new(&messages, 64).collect::<Vec<_>>();
+        let batches = HistoryBatcher::new(&messages, 64, context_compaction::PruneLevel::None).collect::<Vec<_>>();
 
         assert!(batches.len() > 1);
         assert!(
@@ -638,7 +645,7 @@ mod tests {
             }],
             attachments: Vec::new(),
         };
-        let batches = HistoryBatcher::new(&[assistant], 64).collect::<Vec<_>>();
+        let batches = HistoryBatcher::new(&[assistant], 64, context_compaction::PruneLevel::None).collect::<Vec<_>>();
         let transcript = batches.concat();
         let restored = transcript
             .lines()
@@ -768,7 +775,7 @@ mod tests {
             "history",
             &"Important archived detail. ".repeat(80),
         )];
-        let expected_batches = HistoryBatcher::new(&messages, history_batch_limit).count();
+        let expected_batches = HistoryBatcher::new(&messages, history_batch_limit, context_compaction::PruneLevel::None).count();
         assert!(expected_batches > 1);
 
         let listener = TcpListener::bind("127.0.0.1:0")
