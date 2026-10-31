@@ -1,7 +1,7 @@
 import { Eye, EyeOff, KeyRound, LoaderCircle, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button, Dialog, Input } from '@/design-system';
+import { Button, Dialog, Input } from '@shared/components';
 import type { McpServerRecord } from '@/modules/model-library/data/mcpCatalog';
 import {
   type GlobalMcpSecretStatus,

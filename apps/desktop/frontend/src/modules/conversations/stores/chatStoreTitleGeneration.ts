@@ -5,7 +5,7 @@ import {
   readTitleGenerationPreference,
   type TitleGenerationPreference,
 } from '@/modules/providers/data/titleGenerationPreferences';
-import type { JsonObject } from '@/platform/local-service';
+import type { JsonObject } from '@shared/lib/platform/local-service';
 
 export async function loadTitleGenerationRequest(models: readonly ChatModel[]): Promise<JsonObject> {
   let preference: TitleGenerationPreference;

@@ -5,7 +5,7 @@ import {
   LocalServiceError,
   localServiceClient,
   localServiceErrorDetails,
-} from '@/platform/local-service';
+} from '@shared/lib/platform/local-service';
 
 export type ModelDownloadStatus =
   | 'idle'

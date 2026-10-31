@@ -2,7 +2,7 @@ import { Bot, Clock, File, LoaderCircle, MessageSquare, Pin, Search, Trash2, Use
 import { type KeyboardEvent, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button, Input } from '@/design-system';
+import { Button, Input } from '@shared/components';
 
 import {
   type ChatConversation,

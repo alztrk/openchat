@@ -1,4 +1,4 @@
-import { unifiedStorage } from '@/platform/storage/unifiedStorage';
+import { unifiedStorage } from '@shared/lib/platform/storage/unifiedStorage';
 import type { ReadyAssistantAgentTemplateId } from './readyAssistantAgents';
 
 const storageKey = 'assistant.profiles.v1';

@@ -2,7 +2,7 @@ import { Info } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button } from '@/design-system';
+import { Button } from '@shared/components';
 import { CitationSourceDialog } from './CitationSourceDialog';
 import type { CitationSource } from './messageData';
 

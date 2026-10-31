@@ -1,5 +1,5 @@
-import type { JsonObject, LocalServiceClient } from '@/platform/local-service';
-import { isObject, numberOrNull } from '@/shared/utils/json';
+import type { JsonObject, LocalServiceClient } from '@shared/lib/platform/local-service';
+import { isObject, numberOrNull } from '@shared/lib/utils/json';
 import { requiresChatGptWorkspaceSelection } from './chatGptWorkspaceSelection';
 import type { ChatModel, ChatModelProvider } from './chatModels';
 import { parseProviderCatalog } from './modelCatalogParser';

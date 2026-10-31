@@ -2,7 +2,7 @@ import { Check, Pencil, X } from 'lucide-react';
 import { type FormEvent, type KeyboardEvent, useCallback, useEffect, useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button, Input } from '@/design-system';
+import { Button, Input } from '@shared/components';
 
 interface ConversationTitleEditorProps {
   title: string;

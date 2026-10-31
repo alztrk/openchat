@@ -1,6 +1,6 @@
 import { flushSync } from 'react-dom';
 import type { Root } from 'react-dom/client';
-import { getCurrentWindow, isTauri } from '@/platform/tauri';
+import { getCurrentWindow, isTauri } from '@shared/lib/platform/tauri';
 
 function requireRootElement(): HTMLElement {
   const rootElement = document.getElementById('root');
@@ -47,8 +47,8 @@ async function startApplication(options: { startWithEmptyStorage?: boolean } = {
 
   const appStylesPromise = loadAppStyles();
   const appImportPromise = import('./App');
-  const storageModulePromise = import('@/platform/storage/unifiedStorage');
-  const i18nModulePromise = import('../localization/i18n');
+  const storageModulePromise = import('@shared/lib/platform/storage/unifiedStorage');
+  const i18nModulePromise = import('@shared/lib/i18n/i18n');
   const reactRootPromise = getReactRoot();
   const { unifiedStorage } = await storageModulePromise;
   await unifiedStorage.initialize(options);

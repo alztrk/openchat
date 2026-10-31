@@ -1,5 +1,5 @@
-import { unifiedStorage } from '@/platform/storage/unifiedStorage';
-import { invoke } from '@/platform/tauri';
+import { unifiedStorage } from '@shared/lib/platform/storage/unifiedStorage';
+import { invoke } from '@shared/lib/platform/tauri';
 
 export interface NotificationPreferences {
   responses: boolean;

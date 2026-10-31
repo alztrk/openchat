@@ -3,7 +3,7 @@ import type { ChatMessage } from '@/modules/conversations/data/chatStorage';
 import { useComposerPreferencesStore } from '@/modules/conversations/data/composerPreferences';
 import type { ChatModel } from '@/modules/providers/data/chatModels';
 import { loadRouteParameters } from '@/modules/providers/data/modelRouteParameters';
-import { localServiceClient, type ServiceOperation } from '@/platform/local-service';
+import { localServiceClient, type ServiceOperation } from '@shared/lib/platform/local-service';
 import type { ChatSlashCommand } from './ChatSlashCommandMenu';
 import type { ChatCommandFeedbackKey } from './composerUtils';
 import { getGhostTextContext, parseGhostTextSuggestion } from './ghostTextSuggestions';

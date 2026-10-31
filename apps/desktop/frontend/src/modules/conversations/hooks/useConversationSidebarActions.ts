@@ -14,9 +14,9 @@ import {
 import type { ExportFormat } from '@/modules/conversations/data/conversationExport';
 import { conversationMarkdownLabels } from '@/modules/conversations/data/conversationMarkdownLabels';
 import { useChatStore } from '@/modules/conversations/stores/chatStore';
-import { localServiceClient } from '@/platform/local-service';
+import { localServiceClient } from '@shared/lib/platform/local-service';
 
-type TranslationKey = keyof typeof import('@/localization/locales/en.json');
+type TranslationKey = keyof typeof import('@shared/lib/i18n/locales/en.json');
 
 export function useConversationSidebarActions() {
   const { t, i18n } = useTranslation();

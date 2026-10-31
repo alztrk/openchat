@@ -13,7 +13,7 @@ import {
 } from '@/modules/conversations/data/contextUsage';
 import type { ToolPermissionMode } from '@/modules/projects/data/projectPreferences';
 import type { ChatModel } from '@/modules/providers/data/chatModels';
-import { withStableKeys } from '@/shared/utils/reactKeys';
+import { withStableKeys } from '@shared/lib/utils/reactKeys';
 
 interface ContextUsageIndicatorProps {
   messages: readonly ChatMessage[];

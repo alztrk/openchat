@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button, Dialog, Textarea } from '@/design-system';
+import { Button, Dialog, Textarea } from '@shared/components';
 import type { ChatMessage } from '@/modules/conversations/data/chatStorage';
 
 interface EditMessageBranchDialogProps {

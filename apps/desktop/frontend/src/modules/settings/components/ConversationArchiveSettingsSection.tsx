@@ -1,7 +1,7 @@
 import { Archive, ArchiveRestore, ShieldCheck } from 'lucide-react';
 import { type FormEvent, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button, Card, Checkbox, Dialog, Input, RadioGroup } from '@/design-system';
+import { Button, Card, Checkbox, Dialog, Input, RadioGroup } from '@shared/components';
 import type { ChatConversation } from '@/modules/conversations/data/chatStorage';
 import { useChatStore } from '@/modules/conversations/stores/chatStore';
 import {
@@ -12,8 +12,8 @@ import {
   restoreConversationArchive,
   savePendingArchiveExport,
 } from '@/modules/settings/data/localDataOperations';
-import { LocalServiceError } from '@/platform/local-service';
-import { open } from '@/platform/tauri';
+import { LocalServiceError } from '@shared/lib/platform/local-service';
+import { open } from '@shared/lib/platform/tauri';
 import { ArchivePassphraseDialog } from './ArchivePassphraseDialog';
 
 type ErrorKey =

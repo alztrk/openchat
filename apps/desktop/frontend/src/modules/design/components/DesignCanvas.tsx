@@ -10,7 +10,7 @@ import {
 } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button, Dialog, Select, Textarea } from '@/design-system';
+import { Button, Dialog, Select, Textarea } from '@shared/components';
 import { useChatStore } from '@/modules/conversations/stores/chatStore';
 import { type CanvasColorTokenKey, CanvasInspector } from '@/modules/design/components/CanvasInspector';
 import { CanvasZoomControls } from '@/modules/design/components/CanvasZoomControls';
@@ -42,7 +42,7 @@ import {
 } from '@/modules/design/data/designCanvas';
 import type { ChatModel } from '@/modules/providers/data/chatModels';
 import { loadRouteParameters } from '@/modules/providers/data/modelRouteParameters';
-import { type JsonObject, localServiceClient, type ServiceOperation } from '@/platform/local-service';
+import { type JsonObject, localServiceClient, type ServiceOperation } from '@shared/lib/platform/local-service';
 
 import './DesignCanvas.css';
 

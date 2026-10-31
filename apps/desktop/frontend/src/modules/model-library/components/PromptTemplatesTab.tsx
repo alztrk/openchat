@@ -2,7 +2,7 @@ import { Pencil, Plus, Send, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button, Card, Dialog, Input, Textarea } from '@/design-system';
+import { Button, Card, Dialog, Input, Textarea } from '@shared/components';
 import {
   expandPromptTemplate,
   isPromptTemplateNameAvailable,

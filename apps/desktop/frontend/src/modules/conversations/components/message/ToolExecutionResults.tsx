@@ -2,7 +2,7 @@ import { Check, Copy, ExternalLink, Globe, Search, Terminal } from 'lucide-react
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button } from '@/design-system';
+import { Button } from '@shared/components';
 import { isSafeHttpUrl, type ToolActivity } from './messageData';
 import {
   CopyTextButton,

@@ -1,7 +1,7 @@
 import { FolderOpen, Globe, LoaderCircle, LockKeyhole, ServerCog, Terminal } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
-import { Button } from '@/design-system';
+import { Button } from '@shared/components';
 import type { ChatToolPermissionRequest } from '@/modules/conversations/stores/chatStore';
 
 interface ToolPermissionCardProps {
@@ -108,7 +108,7 @@ export function ToolPermissionCard({ request, isResponding, errorKey, onRespond 
   );
 }
 
-type TranslationKey = keyof typeof import('@/localization/locales/en.json');
+type TranslationKey = keyof typeof import('@shared/lib/i18n/locales/en.json');
 type Translate = (key: TranslationKey, options?: Record<string, string | number>) => string;
 
 function getToolName(name: string, t: Translate): string {

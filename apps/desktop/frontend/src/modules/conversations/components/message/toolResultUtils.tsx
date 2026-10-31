@@ -1,7 +1,7 @@
 import type { TFunction } from 'i18next';
 import type { ReactNode } from 'react';
 
-import { parseInertHtmlFragment } from '@/shared/utils/inertHtml';
+import { parseInertHtmlFragment } from '@shared/lib/utils/inertHtml';
 import { isSafeHttpUrl, type ToolActivity } from './messageData';
 
 export type ToolRecord = Record<string, unknown>;

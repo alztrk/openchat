@@ -25,7 +25,7 @@ import {
 } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button, Dialog, Input } from '@/design-system';
+import { Button, Dialog, Input } from '@shared/components';
 import type { ChatConversation, ChatProject } from '@/modules/conversations/data/chatStorage';
 import {
   type CustomSidebarFolder,
@@ -60,7 +60,7 @@ import {
 import { ProjectSidebarSection } from '@/modules/projects/components/ProjectSidebarSection';
 import { type AssistantAgentSnapshot, snapshotAssistantProfile } from '@/modules/settings/data/assistantProfiles';
 import { useAssistantProfilesStore } from '@/modules/settings/stores/assistantProfilesStore';
-import { discardProjectFolderSelection, selectProjectFolder } from '@/platform/tauri';
+import { discardProjectFolderSelection, selectProjectFolder } from '@shared/lib/platform/tauri';
 import { ConversationSidebarEditDialog } from './ConversationSidebarEditDialog';
 import { ConversationSidebarRow } from './ConversationSidebarRow';
 import { ConversationSidebarSection } from './ConversationSidebarSection';

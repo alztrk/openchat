@@ -1,5 +1,5 @@
 import type { TFunction } from 'i18next';
-import type { JsonObject } from '@/platform/local-service';
+import type { JsonObject } from '@shared/lib/platform/local-service';
 
 export interface StatisticsSummary {
   inputTokens: number;

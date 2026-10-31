@@ -1,4 +1,4 @@
-import { unifiedStorage } from '@/platform/storage/unifiedStorage';
+import { unifiedStorage } from '@shared/lib/platform/storage/unifiedStorage';
 
 const sharedInstructionsStorageKey = 'chat.shared_instructions';
 export const maximumSharedInstructionsCharacters = 20_000;

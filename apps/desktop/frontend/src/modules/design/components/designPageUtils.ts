@@ -11,7 +11,7 @@ import {
   type ImageQuality,
   readDesignImage,
 } from '@/modules/design/data/imageGeneration';
-import { LocalServiceError } from '@/platform/local-service/LocalServiceClient';
+import { LocalServiceError } from '@shared/lib/platform/local-service/LocalServiceClient';
 
 export type GalleryImage =
   | { source: 'design'; key: string; createdAt: number; image: DesignImageRecord }

@@ -1,4 +1,4 @@
-import { unifiedStorage } from '@/platform/storage/unifiedStorage';
+import { unifiedStorage } from '@shared/lib/platform/storage/unifiedStorage';
 import type { ChatModel } from './chatModels';
 import {
   type DefaultModelPreference,

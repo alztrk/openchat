@@ -20,7 +20,7 @@ import {
   readAssistantProfiles,
   snapshotAssistantProfile,
 } from '@/modules/settings/data/assistantProfiles';
-import { LocalServiceError, localServiceClient } from '@/platform/local-service';
+import { LocalServiceError, localServiceClient } from '@shared/lib/platform/local-service';
 import type { ChatState } from './chatStore';
 import { isSameRoute, upsertMessage } from './chatStoreUtils';
 

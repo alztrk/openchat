@@ -1,7 +1,7 @@
 import { Brain, Check, ChevronLeft, ChevronRight, CircleAlert, Copy, GitBranch, Link, RefreshCw } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button, Dialog } from '@/design-system';
+import { Button, Dialog } from '@shared/components';
 import type { ChatFileChange } from '@/modules/conversations/data/chatFileChanges';
 import type { ChatMessage } from '@/modules/conversations/data/chatStorage';
 import { cleanMarkdown, markdownToPlainText } from '@/modules/conversations/data/messageCopyUtils';
@@ -460,7 +460,7 @@ function FailureCard({
   );
 }
 
-type TranslationKey = keyof typeof import('@/localization/locales/en.json');
+type TranslationKey = keyof typeof import('@shared/lib/i18n/locales/en.json');
 
 const failureKeys: Partial<Record<string, TranslationKey>> = {
   opencode_free_tier_restricted: 'openCodeFreeTierRestricted',

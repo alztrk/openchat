@@ -1,5 +1,5 @@
-import { LocalServiceError, localServiceClient } from '@/platform/local-service';
-import { containsAsciiControlCharacters } from '@/shared/utils/textValidation';
+import { LocalServiceError, localServiceClient } from '@shared/lib/platform/local-service';
+import { containsAsciiControlCharacters } from '@shared/lib/utils/textValidation';
 
 const attachmentContentPrefix = '\u001eopenchat-attachments-v1:';
 

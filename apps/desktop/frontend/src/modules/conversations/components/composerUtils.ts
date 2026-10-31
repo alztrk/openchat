@@ -30,7 +30,7 @@ export type ChatCommandFeedbackKey =
   | 'slashCommandSummarizeNoMessages'
   | 'slashCommandSummarizeUnavailable';
 
-export type TranslationKey = keyof typeof import('@/localization/locales/en.json');
+export type TranslationKey = keyof typeof import('@shared/lib/i18n/locales/en.json');
 
 export const providerTranslationKeys: Partial<Record<string, TranslationKey>> = {
   opencode: 'openCodeProvider',

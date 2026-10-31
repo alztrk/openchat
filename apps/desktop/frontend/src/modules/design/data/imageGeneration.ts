@@ -1,7 +1,7 @@
 import type { ChatGptAccountQuotaStatus } from '@/modules/providers/data/oauthRateLimits';
 import { loadProviderCredentialStatus } from '@/modules/providers/data/providerCredentials';
-import { localServiceClient } from '@/platform/local-service';
-import type { ServiceOperation } from '@/platform/local-service/LocalServiceClient';
+import { localServiceClient } from '@shared/lib/platform/local-service';
+import type { ServiceOperation } from '@shared/lib/platform/local-service/LocalServiceClient';
 
 export type ImageQuality = 'auto' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 export type ImageBackground = 'auto' | 'opaque' | 'transparent';

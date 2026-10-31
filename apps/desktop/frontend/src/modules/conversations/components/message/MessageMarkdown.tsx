@@ -2,10 +2,10 @@ import { Check, Copy } from 'lucide-react';
 import { Fragment, memo, type ReactNode, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button } from '@/design-system';
+import { Button } from '@shared/components';
 import { isWithinRichMarkdownBudget } from '@/modules/conversations/data/messageMarkdownBudget';
 import { useChatDisplayPreferencesStore } from '@/modules/settings/data/chatDisplayPreferences';
-import { withStableKeys } from '@/shared/utils/reactKeys';
+import { withStableKeys } from '@shared/lib/utils/reactKeys';
 import { CitationSourceDialog } from './CitationSourceDialog';
 import { CitationSources } from './CitationSources';
 import { type CitationSource, isSafeHttpUrl } from './messageData';

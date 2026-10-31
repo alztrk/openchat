@@ -1,7 +1,7 @@
 import type { AriaAttributes, ReactNode } from 'react';
 import { useId } from 'react';
 
-import { cn } from '@/shared/utils/cn';
+import { cn } from '@shared/lib/utils/cn';
 
 export type FieldLayout = 'stacked' | 'inline';
 

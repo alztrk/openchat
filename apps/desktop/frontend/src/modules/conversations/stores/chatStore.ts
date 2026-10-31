@@ -34,7 +34,7 @@ import {
   writeModelReasoningEffort,
 } from '@/modules/providers/data/modelPreferences';
 import type { AssistantAgentSnapshot } from '@/modules/settings/data/assistantProfiles';
-import { LocalServiceError, localServiceClient, type ServiceOperation } from '@/platform/local-service';
+import { LocalServiceError, localServiceClient, type ServiceOperation } from '@shared/lib/platform/local-service';
 import { createBranchesActions } from './chatStoreBranches';
 import { createConversationsActions } from './chatStoreConversations';
 import { createGoalsActions } from './chatStoreGoals';

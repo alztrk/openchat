@@ -3,7 +3,7 @@ import { CircleAlert, LoaderCircle, RefreshCw } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button, Card } from '@/design-system';
+import { Button, Card } from '@shared/components';
 import { ProviderIcon } from '@/modules/providers/components/ProviderIcon';
 import {
   type CopilotOAuthConnection,
@@ -13,7 +13,7 @@ import {
   loadCopilotUsage,
 } from '@/modules/providers/data/copilotOAuth';
 import { subscribeToOAuthPlanUpdates } from '@/modules/providers/data/oauthPlanMonitor';
-import { LocalServiceError } from '@/platform/local-service';
+import { LocalServiceError } from '@shared/lib/platform/local-service';
 
 interface CopilotUsageCardProps {
   onNavigateToConnections(): void;

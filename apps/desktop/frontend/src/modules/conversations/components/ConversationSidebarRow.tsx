@@ -33,11 +33,11 @@ import {
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 
-import { Button, Input } from '@/design-system';
+import { Button, Input } from '@shared/components';
 import type { ChatConversation, ChatProject, ExportFormat } from '@/modules/conversations/data/chatStorage';
 import type { CustomSidebarFolder, SidebarViewMode } from '@/modules/conversations/data/sidebarPreferences';
 import { setSidebarDraggingConversationId } from '@/modules/conversations/data/sidebarPreferences';
-import { useTransitionPresence } from '@/shared/hooks/useTransitionPresence';
+import { useTransitionPresence } from '@shared/lib/hooks/useTransitionPresence';
 
 type MenuAnchor = { kind: 'trigger' } | { kind: 'point'; x: number; y: number };
 

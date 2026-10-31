@@ -2,7 +2,7 @@ import { Folder, FolderOpen, LoaderCircle, MessageSquarePlus, MoreHorizontal, Re
 import { type DragEvent, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button } from '@/design-system';
+import { Button } from '@shared/components';
 import { ConversationSidebarRow } from '@/modules/conversations/components/ConversationSidebarRow';
 import { ConversationSidebarSection } from '@/modules/conversations/components/ConversationSidebarSection';
 import type { ChatConversation, ChatProject, ExportFormat } from '@/modules/conversations/data/chatStorage';

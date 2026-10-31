@@ -1,4 +1,4 @@
-import { localServiceClient, type ServiceEvent } from '@/platform/local-service';
+import { localServiceClient, type ServiceEvent } from '@shared/lib/platform/local-service';
 
 const maximumDisplayedTextLength = 64 * 1024;
 const maximumIdentifierLength = 128;

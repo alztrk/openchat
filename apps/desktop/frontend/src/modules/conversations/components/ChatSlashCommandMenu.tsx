@@ -2,11 +2,11 @@ import { Archive, Bot, Brain, Flag, ListTodo, type LucideIcon, Pencil, SquarePen
 import { useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button } from '@/design-system';
+import { Button } from '@shared/components';
 
 export type ChatSlashCommand = 'new' | 'summarize' | 'rename' | 'model' | 'compact' | 'reasoning' | 'plan' | 'goal';
 
-type TranslationKey = keyof typeof import('@/localization/locales/en.json');
+type TranslationKey = keyof typeof import('@shared/lib/i18n/locales/en.json');
 
 interface SlashCommandDefinition {
   id: ChatSlashCommand;

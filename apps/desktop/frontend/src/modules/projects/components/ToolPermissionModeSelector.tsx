@@ -2,12 +2,12 @@ import { Check, ChevronDown, Hand, ShieldAlert, ShieldCheck } from 'lucide-react
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button } from '@/design-system';
+import { Button } from '@shared/components';
 import { loadToolPermissionMode, saveToolPermissionMode } from '@/modules/projects/data/projectPermissionSettings';
 import type { ToolPermissionMode } from '@/modules/projects/data/projectPreferences';
-import { useTransitionPresence } from '@/shared/hooks/useTransitionPresence';
+import { useTransitionPresence } from '@shared/lib/hooks/useTransitionPresence';
 
-type TranslationKey = keyof typeof import('@/localization/locales/en.json');
+type TranslationKey = keyof typeof import('@shared/lib/i18n/locales/en.json');
 
 const options = [
   {

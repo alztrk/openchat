@@ -2,7 +2,7 @@ import { FolderOpen } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button, Select, Switch } from '@/design-system';
+import { Button, Select, Switch } from '@shared/components';
 import { SettingsPreferenceRow } from '@/modules/settings/components/SettingsPreferenceRow';
 import { SettingsSaveFeedback, type SettingsSaveState } from '@/modules/settings/components/SettingsState';
 import {
@@ -15,9 +15,9 @@ import {
   writeLaunchOnStartup,
   writeStartupSurfacePreference,
 } from '@/modules/settings/data/appPreferences';
-import { localServiceClient } from '@/platform/local-service';
-import { unifiedStorage } from '@/platform/storage/unifiedStorage';
-import { isTauri, open } from '@/platform/tauri';
+import { localServiceClient } from '@shared/lib/platform/local-service';
+import { unifiedStorage } from '@shared/lib/platform/storage/unifiedStorage';
+import { isTauri, open } from '@shared/lib/platform/tauri';
 
 const defaultWorkspaceSettingKey = 'openchat.defaultWorkspacePath';
 

@@ -2,9 +2,9 @@
 import { LoaderCircle } from 'lucide-react';
 import { type FormEvent, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button, Dialog, Input, Select, Switch } from '@/design-system';
+import { Button, Dialog, Input, Select, Switch } from '@shared/components';
 import type { CustomProviderSummary } from '@/modules/providers/data/providerCredentials';
-import { containsAsciiControlCharacters } from '@/shared/utils/textValidation';
+import { containsAsciiControlCharacters } from '@shared/lib/utils/textValidation';
 
 /** Values submitted by the custom-provider editor for native validation and storage. */
 export interface CustomProviderDraft {

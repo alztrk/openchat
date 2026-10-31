@@ -2,7 +2,7 @@ import { Bot, Pencil, Plus, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button, Card, Checkbox, Dialog, Input, Select, Switch, Textarea } from '@/design-system';
+import { Button, Card, Checkbox, Dialog, Input, Select, Switch, Textarea } from '@shared/components';
 import { useChatStore } from '@/modules/conversations/stores/chatStore';
 import { type ProjectMcpServer, parseProjectMcpCatalog } from '@/modules/projects/data/projectMcp';
 import type {
@@ -12,7 +12,7 @@ import type {
 } from '@/modules/settings/data/assistantProfiles';
 import { readyAssistantAgentTemplates } from '@/modules/settings/data/readyAssistantAgents';
 import { useAssistantProfilesStore } from '@/modules/settings/stores/assistantProfilesStore';
-import { LocalServiceError, localServiceClient } from '@/platform/local-service';
+import { LocalServiceError, localServiceClient } from '@shared/lib/platform/local-service';
 
 type ProjectCatalogState = 'idle' | 'loading' | 'ready' | 'error';
 type McpToolsState = 'idle' | 'loading' | 'ready' | 'error';

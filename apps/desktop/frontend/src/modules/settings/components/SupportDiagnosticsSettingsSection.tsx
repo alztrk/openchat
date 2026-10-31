@@ -1,11 +1,11 @@
 import { Download, FileDown, RefreshCw } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button, Dialog } from '@/design-system';
+import { Button, Dialog } from '@shared/components';
 import { useChatStore } from '@/modules/conversations/stores/chatStore';
 import { historyStorageStatusForInitialization } from '@/modules/settings/data/historyStorageStatus';
-import { LocalServiceError, localServiceClient } from '@/platform/local-service';
-import { getVersion, invoke } from '@/platform/tauri';
+import { LocalServiceError, localServiceClient } from '@shared/lib/platform/local-service';
+import { getVersion, invoke } from '@shared/lib/platform/tauri';
 
 interface SupportDiagnostics {
   formatVersion: 1;

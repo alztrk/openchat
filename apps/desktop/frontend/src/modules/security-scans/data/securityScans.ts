@@ -1,7 +1,7 @@
 import type { ChatProject } from '@/modules/conversations/data/chatStorage';
 import type { ChatRoute } from '@/modules/providers/data/routes';
-import { localServiceClient } from '@/platform/local-service';
-import { isObject } from '@/shared/utils/json';
+import { localServiceClient } from '@shared/lib/platform/local-service';
+import { isObject } from '@shared/lib/utils/json';
 
 export type SecurityScanStatus =
   | 'queued'

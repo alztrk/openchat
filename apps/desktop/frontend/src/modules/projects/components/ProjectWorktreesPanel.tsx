@@ -2,14 +2,14 @@ import { FolderOpen, GitCompare, RefreshCw, Terminal, Trash2 } from 'lucide-reac
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button, Dialog } from '@/design-system';
+import { Button, Dialog } from '@shared/components';
 import type { ChatProject } from '@/modules/conversations/data/chatStorage';
 import {
   loadProjectToolPermissionRules,
   loadToolPermissionMode,
 } from '@/modules/projects/data/projectPermissionSettings';
 import type { ProjectToolPermissionRule, ToolPermissionMode } from '@/modules/projects/data/projectPreferences';
-import { LocalServiceError, localServiceClient, type ServiceOperation } from '@/platform/local-service';
+import { LocalServiceError, localServiceClient, type ServiceOperation } from '@shared/lib/platform/local-service';
 
 interface ProjectWorktreesPanelProps {
   project: ChatProject;

@@ -19,7 +19,7 @@ import type { ReactNode } from 'react';
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button, Input } from '@/design-system';
+import { Button, Input } from '@shared/components';
 import type { ThemePreference } from './GeneralSettingsSection';
 
 const loadAppWindowSettings = () =>
@@ -99,7 +99,7 @@ export interface SettingsSectionRequest {
   section: SettingsSection;
   requestId: number;
 }
-type TranslationKey = keyof typeof import('@/localization/locales/en.json');
+type TranslationKey = keyof typeof import('@shared/lib/i18n/locales/en.json');
 
 const sectionTitleKeys: Record<SettingsSection, TranslationKey> = {
   connections: 'connections',

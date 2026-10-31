@@ -2,7 +2,7 @@ import { File, LoaderCircle } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button, Card, Dialog, Input } from '@/design-system';
+import { Button, Card, Dialog, Input } from '@shared/components';
 import {
   type ConversationAttachmentSummary,
   listConversationAttachments,

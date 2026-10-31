@@ -2,7 +2,7 @@ import type { TFunction } from 'i18next';
 import { ChartNoAxesCombined, CircleAlert, LoaderCircle, RefreshCw, RotateCcw } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button, Card, Dialog, Input, Select } from '@/design-system';
+import { Button, Card, Dialog, Input, Select } from '@shared/components';
 import { ProviderIcon } from '@/modules/providers/components/ProviderIcon';
 import { subscribeToOAuthPlanUpdates } from '@/modules/providers/data/oauthPlanMonitor';
 import {
@@ -11,7 +11,7 @@ import {
   type UsageAlertPreferences,
   writeUsageAlertPreferences,
 } from '@/modules/settings/data/usageAlertPreferences';
-import { LocalServiceError, localServiceClient } from '@/platform/local-service';
+import { LocalServiceError, localServiceClient } from '@shared/lib/platform/local-service';
 import { CopilotUsageCard } from './CopilotUsageCard';
 import { SettingsPreferenceRow } from './SettingsPreferenceRow';
 import { parseStatistics, type StatisticsSnapshot, statisticsQuery } from './statisticsData';

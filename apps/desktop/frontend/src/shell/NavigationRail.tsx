@@ -2,8 +2,8 @@ import { Library, MessageCircle, Moon, Settings, ShieldCheck, Sun, WandSparkles 
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button } from '@/design-system';
-import { Tooltip } from '@/design-system/Tooltip';
+import { Button } from '@shared/components';
+import { Tooltip } from '@shared/components/Tooltip';
 
 export type AppSurface = 'chats' | 'design' | 'models' | 'security' | 'settings';
 

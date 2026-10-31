@@ -1,14 +1,14 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { SegmentedControl, Select } from '@/design-system';
+import { SegmentedControl, Select } from '@shared/components';
 import {
   changeLocalePreference,
   getLocalePreference,
   type LocalePreference,
   type SupportedLocale,
   supportedLocales,
-} from '@/localization/i18n';
+} from '@shared/lib/i18n/i18n';
 import { SettingsPreferenceRow } from '@/modules/settings/components/SettingsPreferenceRow';
 import { SettingsSaveFeedback, type SettingsSaveState } from '@/modules/settings/components/SettingsState';
 import {
@@ -22,7 +22,7 @@ import {
   writeConversationTextSizePreference,
   writeConversationWidthPreference,
 } from '@/modules/settings/data/appearancePreferences';
-import { unifiedStorage } from '@/platform/storage/unifiedStorage';
+import { unifiedStorage } from '@shared/lib/platform/storage/unifiedStorage';
 
 export type ThemePreference = 'system' | 'light' | 'dark';
 

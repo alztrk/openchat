@@ -1,7 +1,7 @@
 import { Check, File, FileText, Folder, FolderOpen, Search } from 'lucide-react';
 import { lazy, Suspense } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button } from '@/design-system';
+import { Button } from '@shared/components';
 import type { ToolActivity } from './messageData';
 import { ReadCodeLines } from './ReadCodeLines';
 import { PathHeading, PreviewBlock, ResultFootnote, ToolResultNotice } from './ToolSharedComponents';

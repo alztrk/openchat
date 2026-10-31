@@ -1,6 +1,6 @@
 /** @file Maps provider credential operations to Tauri and exposes only redacted status to React. */
-import { getNativeDialogLocale } from '@/platform/local-service/LocalServiceClient';
-import { invoke } from '@/platform/tauri';
+import { getNativeDialogLocale } from '@shared/lib/platform/local-service/LocalServiceClient';
+import { invoke } from '@shared/lib/platform/tauri';
 
 /** Provider IDs returned by the native host's canonical compatible-provider catalog. */
 export type CompatibleProviderId = string;

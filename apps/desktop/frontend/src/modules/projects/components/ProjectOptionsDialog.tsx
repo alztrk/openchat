@@ -2,7 +2,7 @@ import { Brain, ChevronLeft, FolderTree, GitBranch, Hand, NotebookPen, Server, S
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button, Dialog } from '@/design-system';
+import { Button, Dialog } from '@shared/components';
 import type { ChatProject } from '@/modules/conversations/data/chatStorage';
 import { ProjectDefaultModelPanel } from './ProjectDefaultModelPanel';
 import { ProjectInstructionsPanel } from './ProjectInstructionsPanel';

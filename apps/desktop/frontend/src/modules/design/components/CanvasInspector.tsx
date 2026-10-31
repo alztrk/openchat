@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
-import { Button, ColorPicker, Select, Textarea } from '@/design-system';
+import { Button, ColorPicker, Select, Textarea } from '@shared/components';
 import {
   type DesignCanvasBreakpoint,
   type DesignCanvasExportFormat,

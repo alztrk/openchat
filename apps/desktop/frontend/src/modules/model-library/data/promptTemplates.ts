@@ -1,4 +1,4 @@
-import { unifiedStorage } from '@/platform/storage/unifiedStorage';
+import { unifiedStorage } from '@shared/lib/platform/storage/unifiedStorage';
 
 const storageKey = 'library.prompt-templates.v1';
 const maximumTemplates = 50;

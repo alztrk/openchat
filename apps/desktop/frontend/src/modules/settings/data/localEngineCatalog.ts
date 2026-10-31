@@ -1,4 +1,4 @@
-import { type JsonObject, LocalServiceError, type ServiceEvent } from '@/platform/local-service';
+import { type JsonObject, LocalServiceError, type ServiceEvent } from '@shared/lib/platform/local-service';
 
 export interface EngineVariant {
   variantId: string;
@@ -95,7 +95,7 @@ export interface DiscoveryResult {
   truncated: boolean;
 }
 
-type TranslationKey = keyof typeof import('@/localization/locales/en.json');
+type TranslationKey = keyof typeof import('@shared/lib/i18n/locales/en.json');
 
 export interface Notice {
   key: TranslationKey;

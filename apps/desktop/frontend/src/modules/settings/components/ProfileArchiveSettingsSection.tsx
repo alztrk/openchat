@@ -1,7 +1,7 @@
 import { CircleCheckBig, History, LoaderCircle, LockKeyhole, Shield, TriangleAlert } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button, Card, Dialog } from '@/design-system';
+import { Button, Card, Dialog } from '@shared/components';
 import {
   buildArchiveFileName,
   exportProfileArchive,
@@ -9,8 +9,8 @@ import {
   prepareProfileRestore,
   savePendingArchiveExport,
 } from '@/modules/settings/data/localDataOperations';
-import { LocalServiceError } from '@/platform/local-service';
-import { getCurrentWindow, open } from '@/platform/tauri';
+import { LocalServiceError } from '@shared/lib/platform/local-service';
+import { getCurrentWindow, open } from '@shared/lib/platform/tauri';
 import { ArchivePassphraseDialog } from './ArchivePassphraseDialog';
 
 type ErrorKey =

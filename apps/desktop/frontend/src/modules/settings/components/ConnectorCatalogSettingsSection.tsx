@@ -3,7 +3,7 @@ import { AlertCircle, Download, Info, LoaderCircle, Pencil, Plus, Trash2 } from 
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button, Card, Dialog, Input } from '@/design-system';
+import { Button, Card, Dialog, Input } from '@shared/components';
 import { useChatStore } from '@/modules/conversations/stores/chatStore';
 import { type ProjectMcpServer, parseProjectMcpCatalog } from '@/modules/projects/data/projectMcp';
 import {
@@ -18,7 +18,7 @@ import {
   writeConnectorCatalog,
 } from '@/modules/settings/data/connectorCatalog';
 import type { ConnectorManifest } from '@/modules/settings/data/connectorManifest';
-import { localServiceClient } from '@/platform/local-service';
+import { localServiceClient } from '@shared/lib/platform/local-service';
 import { ConnectorCatalogSourcesPanel } from './ConnectorCatalogSourcesPanel';
 import { ConnectorTemplateDialog } from './ConnectorTemplateDialog';
 

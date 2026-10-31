@@ -1,6 +1,6 @@
 import type { InputHTMLAttributes } from 'react';
 
-import { cn } from '@/shared/utils/cn';
+import { cn } from '@shared/lib/utils/cn';
 
 /** Native checkbox with the shared focus, border and accent treatment. */
 export type CheckboxProps = Omit<InputHTMLAttributes<HTMLInputElement>, 'type'>;

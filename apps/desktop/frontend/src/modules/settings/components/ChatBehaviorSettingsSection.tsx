@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Card, Select, Switch } from '@/design-system';
+import { Card, Select, Switch } from '@shared/components';
 import { useChatDisplayPreferencesStore } from '@/modules/settings/data/chatDisplayPreferences';
 import { SettingsPreferenceRow } from './SettingsPreferenceRow';
 import { SettingsLoadError, SettingsSaveFeedback } from './SettingsState';

@@ -27,8 +27,8 @@ import {
   setPersonalMemoryExcludedForConversation,
 } from '@/modules/settings/data/personalMemory';
 import { readSharedInstructions } from '@/modules/settings/data/sharedInstructions';
-import { type LocalServiceClient, LocalServiceError } from '@/platform/local-service';
-import { getAudioContext, playAssistantResponseAudio } from '@/shared/utils/audioFeedback';
+import { type LocalServiceClient, LocalServiceError } from '@shared/lib/platform/local-service';
+import { getAudioContext, playAssistantResponseAudio } from '@shared/lib/utils/audioFeedback';
 import type { ChatState } from './chatStore';
 import { getOpenCodeRetryAtUnixMs } from './chatStoreErrorDetails';
 import { refreshConversationListAfterResponse } from './chatStorePostResponse';

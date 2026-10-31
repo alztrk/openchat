@@ -1,7 +1,7 @@
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import type { ReactNode, RefObject } from 'react';
 
-import { cn } from '@/shared/utils/cn';
+import { cn } from '@shared/lib/utils/cn';
 
 /** Controlled modal dialog with a required accessible title. */
 export interface DialogProps {

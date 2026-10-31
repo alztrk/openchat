@@ -2,7 +2,7 @@ import { Eye, EyeOff, LoaderCircle, RefreshCw, Star, StarOff } from 'lucide-reac
 import { type ReactNode, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button, Card, Dialog, Input, Select, Switch } from '@/design-system';
+import { Button, Card, Dialog, Input, Select, Switch } from '@shared/components';
 import { providerNameForModel, reasoningLevelLabel } from '@/modules/conversations/components/composerUtils';
 import { useComposerPreferencesStore } from '@/modules/conversations/data/composerPreferences';
 import { useChatStore } from '@/modules/conversations/stores/chatStore';
@@ -21,7 +21,7 @@ type FeedbackKey =
   | 'modelPreferencesSaveFailed'
   | 'chatHistoryUnavailable';
 
-type TranslationKey = keyof typeof import('@/localization/locales/en.json');
+type TranslationKey = keyof typeof import('@shared/lib/i18n/locales/en.json');
 
 const providerTranslationKeys: Record<string, TranslationKey> = {
   opencode: 'openCodeProvider',

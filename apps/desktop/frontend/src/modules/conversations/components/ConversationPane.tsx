@@ -2,7 +2,7 @@ import { ChevronDown, ChevronUp, Clock3, FileDiff, FileUp, MessageSquare, X } fr
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button, Dialog, Toast } from '@/design-system';
+import { Button, Dialog, Toast } from '@shared/components';
 import { type ChatFileChange, listConversationFileChanges } from '@/modules/conversations/data/chatFileChanges';
 import { type ChatMessage, getMessages } from '@/modules/conversations/data/chatStorage';
 import { findInChatMatches, type InChatFilterType } from '@/modules/conversations/data/inChatSearch';
@@ -11,7 +11,7 @@ import { useChatSession } from '@/modules/conversations/hooks/useChatSession';
 import { useChatStore } from '@/modules/conversations/stores/chatStore';
 import { isSameRoute, upsertMessage } from '@/modules/conversations/stores/chatStoreUtils';
 import { modelRouteKey } from '@/modules/providers/data/modelPreferences';
-import { isObject } from '@/shared/utils/json';
+import { isObject } from '@shared/lib/utils/json';
 import { ChatComposer } from './ChatComposer';
 import type { RightWorkspaceTab, WorkspaceFileRequest, WorkspaceFileSelection } from './ChatFileChangesPanel';
 import { ConversationEmptyState } from './ConversationEmptyState';

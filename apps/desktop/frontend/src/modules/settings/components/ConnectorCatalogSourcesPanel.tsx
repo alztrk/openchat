@@ -2,7 +2,7 @@ import { Check, Download, LoaderCircle, Plus, RefreshCw, Trash2 } from 'lucide-r
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button, Card, Dialog, Input } from '@/design-system';
+import { Button, Card, Dialog, Input } from '@shared/components';
 import {
   type ConnectorCatalogEntry,
   type ConnectorCatalogSource,

@@ -1,6 +1,6 @@
 import type { HTMLAttributes } from 'react';
 
-import { cn } from '@/shared/utils/cn';
+import { cn } from '@shared/lib/utils/cn';
 
 /** Semantic color variants for badges. */
 export type BadgeVariant = 'neutral' | 'accent' | 'success' | 'warning' | 'destructive';

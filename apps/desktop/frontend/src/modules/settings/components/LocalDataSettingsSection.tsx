@@ -2,7 +2,7 @@ import { LoaderCircle, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button, Dialog } from '@/design-system';
+import { Button, Dialog } from '@shared/components';
 import { useChatStore } from '@/modules/conversations/stores/chatStore';
 import { historyStorageStatusForInitialization } from '@/modules/settings/data/historyStorageStatus';
 import { AttachmentIndexSettingsSection } from './AttachmentIndexSettingsSection';

@@ -5,7 +5,7 @@ import {
   type LocalServiceClient,
   LocalServiceError,
   type ServiceEvent,
-} from '@/platform/local-service';
+} from '@shared/lib/platform/local-service';
 import type { ChatState, ChatToolPermissionRequest } from './chatStore';
 
 type SetState = StoreApi<ChatState>['setState'];

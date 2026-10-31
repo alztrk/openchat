@@ -1,7 +1,7 @@
 import { LoaderCircle, Undo2 } from 'lucide-react';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button } from '@/design-system';
+import { Button } from '@shared/components';
 import type { ChatFileChangeDiff } from '@/modules/conversations/data/chatFileChanges';
 
 export interface ParsedDiffHunk {

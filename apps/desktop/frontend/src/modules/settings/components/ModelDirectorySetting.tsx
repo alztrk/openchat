@@ -1,10 +1,10 @@
 import { FolderOpen, Save } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button, Card, Input } from '@/design-system';
+import { Button, Card, Input } from '@shared/components';
 import { useModelDirectoryStore } from '@/modules/settings/stores/modelDirectoryStore';
-import { localServiceClient } from '@/platform/local-service';
-import { open } from '@/platform/tauri';
+import { localServiceClient } from '@shared/lib/platform/local-service';
+import { open } from '@shared/lib/platform/tauri';
 
 type LoadState = 'loading' | 'ready' | 'error';
 

@@ -1,5 +1,5 @@
 import type { TFunction } from 'i18next';
-import type english from '@/localization/locales/en.json';
+import type english from '@shared/lib/i18n/locales/en.json';
 
 export type McpDescriptionKey = Extract<keyof typeof english, `mcpDescription${string}`>;
 export type McpCategoryKey = Extract<keyof typeof english, `mcpCategory${string}`>;

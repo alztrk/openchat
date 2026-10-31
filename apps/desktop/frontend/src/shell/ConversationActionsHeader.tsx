@@ -1,7 +1,7 @@
 import { Clock3, Files, MessageSquare, MessageSquarePlus, PanelRight } from 'lucide-react';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button } from '@/design-system';
+import { Button } from '@shared/components';
 import { ConversationTitleEditor } from '@/modules/conversations/components/ConversationTitleEditor';
 import type { ChatConversation } from '@/modules/conversations/data/chatStorage';
 import { useChatStore } from '@/modules/conversations/stores/chatStore';

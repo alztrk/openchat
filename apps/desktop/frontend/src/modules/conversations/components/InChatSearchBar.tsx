@@ -2,9 +2,9 @@ import { ChevronDown, ChevronUp, Search, X } from 'lucide-react';
 import { type KeyboardEvent, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button, Input, Tooltip } from '@/design-system';
+import { Button, Input, Tooltip } from '@shared/components';
 import type { InChatFilterType, InChatMessageMatch } from '@/modules/conversations/data/inChatSearch';
-import { cn } from '@/shared/utils/cn';
+import { cn } from '@shared/lib/utils/cn';
 
 export interface InChatSearchBarProps {
   query: string;

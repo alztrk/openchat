@@ -24,7 +24,7 @@ import {
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
-} from '@/design-system';
+} from '@shared/components';
 import type { SidebarSortMode, SidebarViewMode } from '@/modules/conversations/data/sidebarPreferences';
 import type { AssistantProfile } from '@/modules/settings/data/assistantProfiles';
 

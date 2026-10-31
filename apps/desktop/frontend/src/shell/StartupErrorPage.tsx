@@ -1,9 +1,9 @@
 import { AlertTriangle, Copy, LoaderCircle, Minus, Square, X } from 'lucide-react';
 import { type MouseEvent, useEffect, useLayoutEffect, useState } from 'react';
-import { Button, Tooltip } from '@/design-system';
-import english from '@/localization/locales/en.json';
-import { unifiedStorage } from '@/platform/storage/unifiedStorage';
-import { getCurrentWindow, isTauri } from '@/platform/tauri';
+import { Button, Tooltip } from '@shared/components';
+import english from '@shared/lib/i18n/locales/en.json';
+import { unifiedStorage } from '@shared/lib/platform/storage/unifiedStorage';
+import { getCurrentWindow, isTauri } from '@shared/lib/platform/tauri';
 import { BrandMark } from './BrandMark';
 
 const supportedLocales = ['de', 'en', 'es', 'fr', 'tr'] as const;
@@ -29,11 +29,11 @@ type StartupErrorCopy = Pick<
 >;
 
 const startupLocaleLoaders: Record<StartupLocale, () => Promise<StartupErrorCopy>> = {
-  de: async () => (await import('@/localization/locales/de.json')).default,
+  de: async () => (await import('@shared/lib/i18n/locales/de.json')).default,
   en: async () => english,
-  es: async () => (await import('@/localization/locales/es.json')).default,
-  fr: async () => (await import('@/localization/locales/fr.json')).default,
-  tr: async () => (await import('@/localization/locales/tr.json')).default,
+  es: async () => (await import('@shared/lib/i18n/locales/es.json')).default,
+  fr: async () => (await import('@shared/lib/i18n/locales/fr.json')).default,
+  tr: async () => (await import('@shared/lib/i18n/locales/tr.json')).default,
 };
 
 function getStartupCopy(): StartupErrorCopy {

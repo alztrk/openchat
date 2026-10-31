@@ -11,7 +11,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
   Tooltip,
-} from '@/design-system';
+} from '@shared/components';
 import type { ChatConversation } from '@/modules/conversations/data/chatStorage';
 import type { ExportFormat } from '@/modules/conversations/data/conversationExport';
 import { conversationMarkdownLabels } from '@/modules/conversations/data/conversationMarkdownLabels';

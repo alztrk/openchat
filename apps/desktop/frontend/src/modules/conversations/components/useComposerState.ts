@@ -16,7 +16,7 @@ import type { ToolPermissionMode } from '@/modules/projects/data/projectPreferen
 import type { ChatModel } from '@/modules/providers/data/chatModels';
 import { modelRouteKey } from '@/modules/providers/data/modelPreferences';
 import { keyboardShortcutMatches, useKeyboardShortcutsStore } from '@/modules/settings/stores/keyboardShortcutsStore';
-import { localServiceClient } from '@/platform/local-service';
+import { localServiceClient } from '@shared/lib/platform/local-service';
 import { type ChatSlashCommand, matchingSlashCommands } from './ChatSlashCommandMenu';
 import {
   type ChatCommandFeedbackKey,

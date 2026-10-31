@@ -1,5 +1,5 @@
-import { LocalServiceError, localServiceClient } from '@/platform/local-service';
-import { unifiedStorage } from '@/platform/storage/unifiedStorage';
+import { LocalServiceError, localServiceClient } from '@shared/lib/platform/local-service';
+import { unifiedStorage } from '@shared/lib/platform/storage/unifiedStorage';
 import { type ConnectorManifest, parseConnectorManifest } from './connectorManifest';
 
 const storageKey = 'connectors.local_catalog';

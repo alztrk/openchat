@@ -1,5 +1,5 @@
 import { isTerminalChatGoalStatus, parseChatGoal } from '@/modules/conversations/data/chatGoals';
-import { localServiceClient } from '@/platform/local-service';
+import { localServiceClient } from '@shared/lib/platform/local-service';
 import type { ChatState } from './chatStore';
 
 type StoreGet = () => ChatState;

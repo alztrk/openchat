@@ -2,7 +2,7 @@ import { Bot, Check, CircleAlert, CircleX, LoaderCircle, RefreshCw, Square, Tria
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button } from '@/design-system';
+import { Button } from '@shared/components';
 import {
   applySubagentProgressUpdate,
   cancelSubagentRun,
@@ -11,7 +11,7 @@ import {
   type SubagentRun,
   type SubagentStatus,
 } from '@/modules/conversations/data/subagents';
-import { localServiceClient } from '@/platform/local-service';
+import { localServiceClient } from '@shared/lib/platform/local-service';
 
 interface SubagentsPanelProps {
   conversationId: string | null;

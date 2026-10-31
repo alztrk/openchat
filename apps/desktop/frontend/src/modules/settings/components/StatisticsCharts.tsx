@@ -1,7 +1,7 @@
 import type { TFunction } from 'i18next';
 import type { LucideIcon } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
-import { Card } from '@/design-system';
+import { Card } from '@shared/components';
 import type { StatisticsBreakdown, StatisticsTrend } from './statisticsData';
 import { formatCost, formatNumber, formatTrendDate, reportedCacheReadShare } from './statisticsData';
 

@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button, Checkbox } from '@/design-system';
+import { Button, Checkbox } from '@shared/components';
 import type { ChatProject } from '@/modules/conversations/data/chatStorage';
 import { readProjectSkillIds, writeProjectSkillIds } from '@/modules/projects/data/projectPreferences';
-import { localServiceClient } from '@/platform/local-service';
+import { localServiceClient } from '@shared/lib/platform/local-service';
 
 interface ProjectSkill {
   id: string;

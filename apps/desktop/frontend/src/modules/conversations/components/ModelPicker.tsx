@@ -3,7 +3,7 @@ import { Bot, ChevronDown, LoaderCircle, LogIn, LogOut, RefreshCw, Search, Star,
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button, Input, Tooltip } from '@/design-system';
+import { Button, Input, Tooltip } from '@shared/components';
 import type { ChatModelFavorite } from '@/modules/conversations/data/chatStorage';
 import { favoriteSourceConnection } from '@/modules/conversations/stores/chatStoreUtils';
 import { ProviderIcon } from '@/modules/providers/components/ProviderIcon';
@@ -25,8 +25,8 @@ import {
   refreshOAuthRateLimits,
   useOAuthRateLimits,
 } from '@/modules/providers/data/oauthRateLimits';
-import { localServiceClient } from '@/platform/local-service';
-import { useTransitionPresence } from '@/shared/hooks/useTransitionPresence';
+import { localServiceClient } from '@shared/lib/platform/local-service';
+import { useTransitionPresence } from '@shared/lib/hooks/useTransitionPresence';
 import { FastModeControl } from './FastModeControl';
 
 export interface ModelPickerProps {
@@ -850,7 +850,7 @@ function compareLlamaServerSections(left: string, right: string): number {
   return portComparison === 0 ? left.localeCompare(right) : portComparison;
 }
 
-type TranslationKey = keyof typeof import('@/localization/locales/en.json');
+type TranslationKey = keyof typeof import('@shared/lib/i18n/locales/en.json');
 
 type PricingLoadState = {
   status: 'loading' | 'ready' | 'error';

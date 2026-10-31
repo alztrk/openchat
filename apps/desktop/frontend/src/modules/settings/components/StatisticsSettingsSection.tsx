@@ -13,8 +13,8 @@ import {
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button, Card, DatePicker, SegmentedControl, Select } from '@/design-system';
-import { LocalServiceError, localServiceClient } from '@/platform/local-service';
+import { Button, Card, DatePicker, SegmentedControl, Select } from '@shared/components';
+import { LocalServiceError, localServiceClient } from '@shared/lib/platform/local-service';
 import { BreakdownCard, MetricCard, TrendChart } from './StatisticsCharts';
 import type { LoadState, StatisticsQuotaSnapshot, StatisticsRequest, StatisticsSnapshot } from './statisticsData';
 import {

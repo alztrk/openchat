@@ -6,7 +6,7 @@ import {
   readSavedProjectToolPermissionRules,
   readSavedToolPermissionMode,
 } from '@/modules/projects/data/projectPreferences';
-import { localServiceClient } from '@/platform/local-service';
+import { localServiceClient } from '@shared/lib/platform/local-service';
 
 let cachedToolPermissionMode: ToolPermissionMode | undefined;
 let toolPermissionModeLoad: Promise<ToolPermissionMode> | undefined;

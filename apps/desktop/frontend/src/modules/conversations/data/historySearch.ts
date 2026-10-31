@@ -1,6 +1,6 @@
-import { i18n } from '@/localization/i18n';
-import { type JsonObject, LocalServiceError, localServiceClient } from '@/platform/local-service';
-import { unifiedStorage } from '@/platform/storage/unifiedStorage';
+import { i18n } from '@shared/lib/i18n/i18n';
+import { type JsonObject, LocalServiceError, localServiceClient } from '@shared/lib/platform/local-service';
+import { unifiedStorage } from '@shared/lib/platform/storage/unifiedStorage';
 import { listProjects } from './chatStorage';
 
 const savedSearchesKey = 'openchat.savedHistorySearches';

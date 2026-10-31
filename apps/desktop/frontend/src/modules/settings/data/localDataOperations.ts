@@ -1,5 +1,5 @@
-import { getChatSchemaVersion, LocalServiceError, localServiceClient } from '@/platform/local-service';
-import { savePendingArchiveExport as saveArchiveExport } from '@/platform/tauri';
+import { getChatSchemaVersion, LocalServiceError, localServiceClient } from '@shared/lib/platform/local-service';
+import { savePendingArchiveExport as saveArchiveExport } from '@shared/lib/platform/tauri';
 
 const conversationArchiveTimeoutMs = 30 * 60 * 1000;
 const profileArchiveTimeoutMs = 3 * 60 * 60 * 1000;

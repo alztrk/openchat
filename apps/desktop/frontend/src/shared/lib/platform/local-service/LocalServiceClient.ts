@@ -18,7 +18,7 @@ export type NativeDialogLocale = 'de' | 'en' | 'es' | 'fr' | 'tr';
 
 /** Selects a host-embedded locale without sending renderer-authored dialog text. */
 export async function getNativeDialogLocale(): Promise<NativeDialogLocale> {
-  const { i18n, i18nReady } = await import('@/localization/i18n');
+  const { i18n, i18nReady } = await import('@shared/lib/i18n/i18n');
   await i18nReady;
   const language = i18n.resolvedLanguage?.toLowerCase().split('-')[0];
   if (language === 'de' || language === 'en' || language === 'es' || language === 'fr' || language === 'tr') {

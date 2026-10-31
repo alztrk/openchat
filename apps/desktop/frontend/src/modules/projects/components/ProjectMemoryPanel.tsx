@@ -2,9 +2,9 @@ import { Download, Trash2 } from 'lucide-react';
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button, Switch, Textarea } from '@/design-system';
+import { Button, Switch, Textarea } from '@shared/components';
 import type { ChatProject } from '@/modules/conversations/data/chatStorage';
-import { LocalServiceError, localServiceClient } from '@/platform/local-service';
+import { LocalServiceError, localServiceClient } from '@shared/lib/platform/local-service';
 
 const maximumItemBytes = 4 * 1024;
 const maximumTotalBytes = 8 * 1024;

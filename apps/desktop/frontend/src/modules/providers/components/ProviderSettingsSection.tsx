@@ -16,7 +16,7 @@ import type { ReactNode } from 'react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button, Card, Dialog, Select } from '@/design-system';
+import { Button, Card, Dialog, Select } from '@shared/components';
 import type { ChatModel } from '@/modules/providers/data/chatModels';
 import {
   type ChatGptConnectionPlanState,
@@ -49,8 +49,8 @@ import {
   localServiceClient,
   localServiceErrorDetails,
   type ServiceOperation,
-} from '@/platform/local-service';
-import { invoke } from '@/platform/tauri';
+} from '@shared/lib/platform/local-service';
+import { invoke } from '@shared/lib/platform/tauri';
 import { ApiKeyProvidersSection } from './ApiKeyProvidersSection';
 import { CopilotOAuthCard } from './CopilotOAuthCard';
 import { ProviderIcon } from './ProviderIcon';

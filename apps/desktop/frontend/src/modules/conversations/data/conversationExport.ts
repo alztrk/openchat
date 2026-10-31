@@ -1,4 +1,4 @@
-import { replaceAsciiControlCharacters } from '@/shared/utils/textValidation';
+import { replaceAsciiControlCharacters } from '@shared/lib/utils/textValidation';
 import { type ChatConversation, type ChatMessage, getMessages, saveConversationExport } from './chatStorage';
 import { cleanMarkdown } from './messageCopyUtils';
 

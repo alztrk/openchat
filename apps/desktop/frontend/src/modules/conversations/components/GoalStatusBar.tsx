@@ -12,11 +12,11 @@ import {
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button } from '@/design-system';
+import { Button } from '@shared/components';
 import type { ChatGoal, ChatGoalStatus } from '@/modules/conversations/data/chatGoals';
 import { useChatStore } from '@/modules/conversations/stores/chatStore';
 
-type TranslationKey = keyof typeof import('@/localization/locales/en.json');
+type TranslationKey = keyof typeof import('@shared/lib/i18n/locales/en.json');
 
 const statusLabels = {
   running: 'goalWorking',

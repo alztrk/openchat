@@ -1,7 +1,7 @@
 import { type FormEvent, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button, Dialog, Input, Select, Textarea } from '@/design-system';
+import { Button, Dialog, Input, Select, Textarea } from '@shared/components';
 import {
   type ConnectorCatalogEntry,
   type ConnectorTransport,

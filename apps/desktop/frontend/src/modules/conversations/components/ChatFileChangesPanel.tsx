@@ -15,7 +15,7 @@ import {
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button, DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/design-system';
+import { Button, DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@shared/components';
 import {
   approveAllConversationFileChanges,
   approveConversationFileChange,
@@ -28,7 +28,7 @@ import {
   revertConversationFileChangeHunk,
 } from '@/modules/conversations/data/chatFileChanges';
 import { readOpenConversationTabs, writeOpenConversationTabs } from '@/modules/conversations/data/sidebarPreferences';
-import { LocalServiceError } from '@/platform/local-service';
+import { LocalServiceError } from '@shared/lib/platform/local-service';
 import { FileChangeRow } from './ChatFileChangeRow';
 import { DiffContent } from './ChatFileChangesDiffViewer';
 import { EmbeddedBrowserPanel } from './EmbeddedBrowserPanel';

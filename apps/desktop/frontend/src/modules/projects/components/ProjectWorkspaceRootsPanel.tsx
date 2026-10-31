@@ -2,14 +2,14 @@ import { Folder, FolderPlus, LoaderCircle, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button } from '@/design-system';
+import { Button } from '@shared/components';
 import {
   addProjectWorkspaceRoot,
   type ChatProject,
   removeProjectWorkspaceRoot,
 } from '@/modules/conversations/data/chatStorage';
 import { useChatStore } from '@/modules/conversations/stores/chatStore';
-import { discardProjectFolderSelection, selectProjectFolder } from '@/platform/tauri';
+import { discardProjectFolderSelection, selectProjectFolder } from '@shared/lib/platform/tauri';
 
 interface ProjectWorkspaceRootsPanelProps {
   project: ChatProject;

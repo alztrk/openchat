@@ -13,7 +13,7 @@ import {
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button, Checkbox, Dialog, Select } from '@/design-system';
+import { Button, Checkbox, Dialog, Select } from '@shared/components';
 import { MessageList } from '@/modules/conversations/components/MessageList';
 import type { ChatProject } from '@/modules/conversations/data/chatStorage';
 import { useChatStore } from '@/modules/conversations/stores/chatStore';

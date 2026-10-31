@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { unifiedStorage } from '@/platform/storage/unifiedStorage';
+import { unifiedStorage } from '@shared/lib/platform/storage/unifiedStorage';
 
 const storageKey = 'assistant.execution_preferences';
 const goalRuntimeOptions = [0, 30, 60, 120, 240] as const;

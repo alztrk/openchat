@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button, Card, Select, Switch } from '@/design-system';
+import { Button, Card, Select, Switch } from '@shared/components';
 import { providerNameForModel } from '@/modules/conversations/components/composerUtils';
 import { useChatStore } from '@/modules/conversations/stores/chatStore';
 import { modelRouteKey } from '@/modules/providers/data/modelPreferences';

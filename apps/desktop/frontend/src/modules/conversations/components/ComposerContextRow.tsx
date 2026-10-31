@@ -10,7 +10,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
   Input,
-} from '@/design-system';
+} from '@shared/components';
 import type { PendingChatAttachment } from '@/modules/conversations/data/chatAttachments';
 import type { ChatMessage } from '@/modules/conversations/data/chatStorage';
 import { useConversationSidebarActions } from '@/modules/conversations/hooks/useConversationSidebarActions';

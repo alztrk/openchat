@@ -1,9 +1,9 @@
 import type { ChatConversation, ChatMessage } from '@/modules/conversations/data/chatStorage';
 import type { ChatModel } from '@/modules/providers/data/chatModels';
-import type { JsonObject } from '@/platform/local-service';
-import { isObject } from '@/shared/utils/json';
+import type { JsonObject } from '@shared/lib/platform/local-service';
+import { isObject } from '@shared/lib/utils/json';
 
-export { isObject, numberOrNull } from '@/shared/utils/json';
+export { isObject, numberOrNull } from '@shared/lib/utils/json';
 
 export function applyStreamEvent(
   event: { name: string; data: JsonObject },

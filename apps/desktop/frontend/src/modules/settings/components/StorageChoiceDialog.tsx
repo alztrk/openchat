@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { Button } from '@/design-system';
+import { Button } from '@shared/components';
 
 export function StorageChoiceDialog({
   active,

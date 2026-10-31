@@ -1,5 +1,5 @@
 import type { StoreApi } from 'zustand';
-import { i18n } from '@/localization/i18n';
+import { i18n } from '@shared/lib/i18n/i18n';
 import { encodeBase64, type PendingChatAttachment } from '@/modules/conversations/data/chatAttachments';
 import {
   type ChatMessage,
@@ -10,8 +10,8 @@ import {
 } from '@/modules/conversations/data/chatStorage';
 import type { ChatModel } from '@/modules/providers/data/chatModels';
 import { loadRouteParameters } from '@/modules/providers/data/modelRouteParameters';
-import { type LocalServiceClient, LocalServiceError } from '@/platform/local-service';
-import { getAudioContext, playAssistantResponseAudio } from '@/shared/utils/audioFeedback';
+import { type LocalServiceClient, LocalServiceError } from '@shared/lib/platform/local-service';
+import { getAudioContext, playAssistantResponseAudio } from '@shared/lib/utils/audioFeedback';
 import type { ChatState } from './chatStore';
 import { getOpenCodeRetryAtUnixMs } from './chatStoreErrorDetails';
 import { applyStreamEvent, numberOrNull, titleFromMessage, upsertMessage } from './chatStoreUtils';

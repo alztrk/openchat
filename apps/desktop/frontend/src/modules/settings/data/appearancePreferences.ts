@@ -1,4 +1,4 @@
-import { unifiedStorage } from '@/platform/storage/unifiedStorage';
+import { unifiedStorage } from '@shared/lib/platform/storage/unifiedStorage';
 
 export type ConversationWidthPreference = 'narrow' | 'normal' | 'wide';
 export type ConversationTextSizePreference = 'small' | 'normal' | 'large';

@@ -1,7 +1,7 @@
 import { ArrowUp, Brain, Paperclip, Square, X } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button, Select, Textarea } from '@/design-system';
+import { Button, Select, Textarea } from '@shared/components';
 import type { ChatMessage } from '@/modules/conversations/data/chatStorage';
 import { getSidebarDraggingConversationId } from '@/modules/conversations/data/sidebarPreferences';
 import { useChatStreaming } from '@/modules/conversations/hooks/useChatStreaming';

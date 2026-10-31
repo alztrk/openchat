@@ -27,17 +27,17 @@ import {
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button } from '@/design-system';
+import { Button } from '@shared/components';
 import {
   getConversationFileCheckpointRecoveryStatus,
   revertConversationFileCheckpointOperation,
 } from '@/modules/conversations/data/chatFileChanges';
-import { LocalServiceError } from '@/platform/local-service';
+import { LocalServiceError } from '@shared/lib/platform/local-service';
 import { formatJsonValue, type ToolActivity, type ToolActivityStatus } from './messageData';
 import { formatToolPath, getRequestedToolPath, ToolActivityResults } from './ToolActivityResults';
 import { isTerminalTool } from './toolResultUtils';
 
-type TranslationKey = keyof typeof import('@/localization/locales/en.json');
+type TranslationKey = keyof typeof import('@shared/lib/i18n/locales/en.json');
 
 const toolNameKeys: Partial<Record<string, TranslationKey>> = {
   list_files: 'toolListFiles',

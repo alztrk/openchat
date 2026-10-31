@@ -2,7 +2,7 @@ import type { TFunction } from 'i18next';
 import { ExternalLink } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
-import { Button, Dialog } from '@/design-system';
+import { Button, Dialog } from '@shared/components';
 
 import { type CitationSource, isSafeHttpUrl } from './messageData';
 

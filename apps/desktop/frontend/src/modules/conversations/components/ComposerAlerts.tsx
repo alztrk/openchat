@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { Button } from '@/design-system';
+import { Button } from '@shared/components';
 import type { ChatAttachmentErrorCode } from '@/modules/conversations/data/chatAttachments';
 import type { ChatErrorCode } from '@/modules/conversations/stores/chatStore';
 import type { ChatCommandFeedbackKey } from './composerUtils';

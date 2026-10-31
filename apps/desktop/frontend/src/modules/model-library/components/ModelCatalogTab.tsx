@@ -20,7 +20,7 @@ import {
 import { type FormEvent, type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button, Card, Input, RadioGroup, Select } from '@/design-system';
+import { Button, Card, Input, RadioGroup, Select } from '@shared/components';
 import type {
   HubDetails,
   HubFile,
@@ -50,7 +50,7 @@ import {
 import { useModelDownloadStore } from '@/modules/model-library/stores/modelDownloadStore';
 import { LocalEngineIcon } from '@/modules/providers/components/EngineIcon';
 import { useModelDirectoryStore } from '@/modules/settings/stores/modelDirectoryStore';
-import { localServiceClient, localServiceErrorDetails } from '@/platform/local-service';
+import { localServiceClient, localServiceErrorDetails } from '@shared/lib/platform/local-service';
 import { ModelReadmeMarkdown } from './ModelReadmeMarkdown';
 
 export function ModelCatalogTab() {

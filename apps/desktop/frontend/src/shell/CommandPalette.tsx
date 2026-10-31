@@ -33,10 +33,10 @@ import {
 } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button, Input } from '@/design-system';
+import { Button, Input } from '@shared/components';
 
-import { Dialog } from '@/design-system/Dialog';
-import type en from '@/localization/locales/en.json';
+import { Dialog } from '@shared/components/Dialog';
+import type en from '@shared/lib/i18n/locales/en.json';
 import { providerNameForModel } from '@/modules/conversations/components/composerUtils';
 import { useChatStore } from '@/modules/conversations/stores/chatStore';
 import { modelRouteKey } from '@/modules/providers/data/modelPreferences';

@@ -5,7 +5,7 @@ import type {
   ImageOutputFormat,
   ImageQuality,
 } from '@/modules/design/data/imageGeneration';
-import { unifiedStorage } from '@/platform/storage/unifiedStorage';
+import { unifiedStorage } from '@shared/lib/platform/storage/unifiedStorage';
 
 export const DESIGN_PANEL_DEFAULT_WIDTH = 320;
 export const DESIGN_PANEL_MIN_WIDTH = 220;

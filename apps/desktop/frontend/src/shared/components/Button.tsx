@@ -1,7 +1,7 @@
 import { LoaderCircle } from 'lucide-react';
 import { type ButtonHTMLAttributes, forwardRef, type ReactNode } from 'react';
 
-import { cn } from '@/shared/utils/cn';
+import { cn } from '@shared/lib/utils/cn';
 
 /** Semantic visual treatment available to shared buttons. */
 export type ButtonVariant = 'primary' | 'secondary' | 'elevated' | 'ghost' | 'destructive';

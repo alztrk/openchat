@@ -1,7 +1,7 @@
 import { Blocks, Download, Info, KeyRound, LoaderCircle, RefreshCw, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button, Card, Dialog, Switch } from '@/design-system';
+import { Button, Card, Dialog, Switch } from '@shared/components';
 import { formatMcpToolLabel, type McpServerRecord } from '@/modules/model-library/data/mcpCatalog';
 
 interface McpCardProps {

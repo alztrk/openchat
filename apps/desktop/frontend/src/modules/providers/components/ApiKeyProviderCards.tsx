@@ -1,7 +1,7 @@
 import { Check, Eye, EyeOff, Info, KeyRound, LoaderCircle, Network, Pencil, Plus, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button, Input } from '@/design-system';
+import { Button, Input } from '@shared/components';
 import type {
   ChatGptApiKeySummary,
   CompatibleProviderId,

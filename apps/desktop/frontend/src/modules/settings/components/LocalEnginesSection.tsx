@@ -1,7 +1,7 @@
 import { FolderOpen, Link, LoaderCircle, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button, Card, Dialog } from '@/design-system';
+import { Button, Card, Dialog } from '@shared/components';
 import type {
   BusyAction,
   DiscoveryResult,
@@ -30,8 +30,8 @@ import {
   localServiceClient,
   type ServiceEvent,
   type ServiceOperation,
-} from '@/platform/local-service';
-import { open } from '@/platform/tauri';
+} from '@shared/lib/platform/local-service';
+import { open } from '@shared/lib/platform/tauri';
 import { EngineCard } from './LocalEngineCard';
 import { InstallProgressCard } from './LocalEngineInstallProgress';
 import { StorageChoiceDialog } from './StorageChoiceDialog';

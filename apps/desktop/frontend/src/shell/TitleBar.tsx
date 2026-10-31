@@ -2,9 +2,9 @@ import { ArrowLeft, ArrowRight, Command, Copy, Minus, PanelLeftClose, PanelLeftO
 import { type MouseEvent, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button } from '@/design-system';
-import { Tooltip } from '@/design-system/Tooltip';
-import { getCurrentWindow, isTauri } from '@/platform/tauri';
+import { Button } from '@shared/components';
+import { Tooltip } from '@shared/components/Tooltip';
+import { getCurrentWindow, isTauri } from '@shared/lib/platform/tauri';
 import { TitleBarSearch } from './TitleBarSearch';
 
 export interface TitleBarProps {

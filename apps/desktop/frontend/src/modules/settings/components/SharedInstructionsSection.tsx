@@ -1,7 +1,7 @@
 import { RefreshCw, RotateCcw, Save } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button, Textarea } from '@/design-system';
+import { Button, Textarea } from '@shared/components';
 import {
   clearSharedInstructions,
   countSharedInstructionsCharacters,
@@ -11,7 +11,7 @@ import {
   SharedInstructionsStorageError,
   writeSharedInstructions,
 } from '@/modules/settings/data/sharedInstructions';
-import { localServiceClient } from '@/platform/local-service';
+import { localServiceClient } from '@shared/lib/platform/local-service';
 
 type LoadState = 'loading' | 'ready' | 'error';
 type SettingsErrorKey =

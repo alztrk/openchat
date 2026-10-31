@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 
-import { Button, Dialog } from '@/design-system';
+import { Button, Dialog } from '@shared/components';
 
 export interface TemporaryChatExitDialogProps {
   open: boolean;

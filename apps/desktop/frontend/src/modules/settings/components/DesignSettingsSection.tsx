@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button, Card, Input, Select, Switch } from '@/design-system';
+import { Button, Card, Input, Select, Switch } from '@shared/components';
 import { useDesignPreferencesStore } from '@/modules/design/data/designPreferences';
 import { type ImageCollection, listImageCollections } from '@/modules/design/data/imageGeneration';
 import { SettingsPreferenceRow } from './SettingsPreferenceRow';

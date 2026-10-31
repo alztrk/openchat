@@ -2,7 +2,7 @@ import { ArrowLeft, ArrowRight, Globe, RotateCw } from 'lucide-react';
 import { type FormEvent, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button, Input } from '@/design-system';
+import { Button, Input } from '@shared/components';
 
 export interface EmbeddedBrowserPanelProps {
   initialUrl?: string;

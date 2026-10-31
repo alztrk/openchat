@@ -2,8 +2,8 @@ import { createElement, type ReactNode } from 'react';
 
 import { MessageMarkdown } from '@/modules/conversations/components/message/MessageMarkdown';
 import { isSafeHttpUrl } from '@/modules/conversations/components/message/messageData';
-import { parseInertHtmlFragment } from '@/shared/utils/inertHtml';
-import { withStableKeys } from '@/shared/utils/reactKeys';
+import { parseInertHtmlFragment } from '@shared/lib/utils/inertHtml';
+import { withStableKeys } from '@shared/lib/utils/reactKeys';
 
 type ReadmeBlock =
   | { kind: 'markdown'; content: string }

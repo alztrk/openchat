@@ -1,7 +1,7 @@
 import { FileDiff, FilePlus2, Info, NotebookPen, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
-import { Button } from '@/design-system';
+import { Button } from '@shared/components';
 import type { ChatFileChange } from '@/modules/conversations/data/chatFileChanges';
 import type { ToolActivity } from './messageData';
 

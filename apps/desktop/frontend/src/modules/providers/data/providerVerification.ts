@@ -1,5 +1,5 @@
-import { unifiedStorage } from '@/platform/storage/unifiedStorage';
-import { containsAsciiControlCharacters } from '@/shared/utils/textValidation';
+import { unifiedStorage } from '@shared/lib/platform/storage/unifiedStorage';
+import { containsAsciiControlCharacters } from '@shared/lib/utils/textValidation';
 
 export type ProviderVerificationOutcome =
   | 'verified'

@@ -2,7 +2,7 @@ import { LoaderCircle } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button } from '@/design-system';
+import { Button } from '@shared/components';
 import { type GalleryImage, galleryPrompt, readGalleryImage } from '@/modules/design/components/designPageUtils';
 
 export interface ImageTileProps {

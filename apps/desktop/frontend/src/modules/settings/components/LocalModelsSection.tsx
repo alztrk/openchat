@@ -1,6 +1,6 @@
 import { FolderOpen, LoaderCircle, Square, Trash2, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { Button, Card } from '@/design-system';
+import { Button, Card } from '@shared/components';
 import type { BusyAction, LocalModel } from '@/modules/settings/data/localEngineCatalog';
 
 export function LocalModelsSection({

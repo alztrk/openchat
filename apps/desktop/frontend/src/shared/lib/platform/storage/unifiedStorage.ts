@@ -1,6 +1,6 @@
-import { localServiceClient } from '@/platform/local-service';
-import { isTauri } from '@/platform/tauri';
-import { isObject } from '@/shared/utils/json';
+import { localServiceClient } from '@shared/lib/platform/local-service';
+import { isTauri } from '@shared/lib/platform/tauri';
+import { isObject } from '@shared/lib/utils/json';
 
 interface MigrationPayload {
   settings: Record<string, string>;

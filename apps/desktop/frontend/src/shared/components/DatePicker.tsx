@@ -4,7 +4,7 @@ import type { KeyboardEvent } from 'react';
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { cn } from '@/shared/utils/cn';
+import { cn } from '@shared/lib/utils/cn';
 import { Button } from './Button';
 
 export interface DatePickerProps {

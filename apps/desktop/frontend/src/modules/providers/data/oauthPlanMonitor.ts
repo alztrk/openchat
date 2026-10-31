@@ -1,5 +1,5 @@
-import { localServiceClient } from '@/platform/local-service';
-import { isObject } from '@/shared/utils/json';
+import { localServiceClient } from '@shared/lib/platform/local-service';
+import { isObject } from '@shared/lib/utils/json';
 import { loadCopilotOAuthStatus, loadCopilotUsage } from './copilotOAuth';
 
 export const OAUTH_PLANS_UPDATED_EVENT = 'openchat:oauth-plans-updated';

@@ -1,4 +1,4 @@
-import { unifiedStorage } from '@/platform/storage/unifiedStorage';
+import { unifiedStorage } from '@shared/lib/platform/storage/unifiedStorage';
 
 const storageKey = 'design.vector_canvas.v1';
 const maximumCanvasBytes = 2 * 1024 * 1024;

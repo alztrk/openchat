@@ -2,7 +2,7 @@ import { AlertCircle, CircleAlert, Copy, File, Info, LoaderCircle } from 'lucide
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button } from '@/design-system';
+import { Button } from '@shared/components';
 import { formatToolPath, preview, safeAttributionNodes } from './toolResultUtils';
 
 export function PathHeading({ path }: { path: string }) {

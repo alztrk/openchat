@@ -2,7 +2,7 @@ import type { LucideIcon } from 'lucide-react';
 import { ChevronDown } from 'lucide-react';
 import { type DragEvent, type ReactNode, useState } from 'react';
 
-import { Button } from '@/design-system';
+import { Button } from '@shared/components';
 
 interface ConversationSidebarSectionProps {
   title: string;

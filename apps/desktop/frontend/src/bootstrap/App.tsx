@@ -55,9 +55,9 @@ import { useAssistantExecutionPreferencesStore } from '@/modules/settings/data/a
 import type { AssistantAgentSnapshot } from '@/modules/settings/data/assistantProfiles';
 import { useChatDisplayPreferencesStore } from '@/modules/settings/data/chatDisplayPreferences';
 import { useKeyboardShortcutsStore } from '@/modules/settings/stores/keyboardShortcutsStore';
-import { localServiceClient } from '@/platform/local-service';
-import { unifiedStorage } from '@/platform/storage/unifiedStorage';
-import { getCurrentWindow, getVersion, invoke, isTauri, listen } from '@/platform/tauri';
+import { localServiceClient } from '@shared/lib/platform/local-service';
+import { unifiedStorage } from '@shared/lib/platform/storage/unifiedStorage';
+import { getCurrentWindow, getVersion, invoke, isTauri, listen } from '@shared/lib/platform/tauri';
 import { BrandMark } from '@/shell/BrandMark';
 import { ConversationActionsHeader } from '@/shell/ConversationActionsHeader';
 import { type AppSurface, NavigationRail } from '@/shell/NavigationRail';

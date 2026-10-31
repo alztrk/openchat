@@ -1,7 +1,7 @@
 import type { ChatConversation } from './chatStorage';
 import type { ConversationMarkdownLabels, ExportToolStatus } from './conversationMarkdownExport';
 
-type TranslationKey = keyof typeof import('@/localization/locales/en.json');
+type TranslationKey = keyof typeof import('@shared/lib/i18n/locales/en.json');
 type Translate = (key: TranslationKey, options?: { count?: number }) => string;
 
 const providerTranslationKeys: Partial<Record<string, TranslationKey>> = {

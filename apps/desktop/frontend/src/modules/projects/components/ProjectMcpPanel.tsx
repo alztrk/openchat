@@ -2,7 +2,7 @@ import { KeyRound, Pencil, Plus, Radio, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button, Input, Select, Switch, Textarea } from '@/design-system';
+import { Button, Input, Select, Switch, Textarea } from '@shared/components';
 import type { ChatProject } from '@/modules/conversations/data/chatStorage';
 import {
   type ProjectMcpServer,
@@ -16,7 +16,7 @@ import {
 } from '@/modules/projects/data/projectPermissionSettings';
 import type { ProjectToolPermissionRule } from '@/modules/projects/data/projectPreferences';
 import { type ConnectorToolComparison, compareConnectorToolNames } from '@/modules/settings/data/connectorManifest';
-import { LocalServiceError, localServiceClient } from '@/platform/local-service';
+import { LocalServiceError, localServiceClient } from '@shared/lib/platform/local-service';
 import { ProjectMcpCredentialDialog } from './ProjectMcpCredentialDialog';
 
 interface ProjectMcpPanelProps {
@@ -25,7 +25,7 @@ interface ProjectMcpPanelProps {
 }
 
 type PermissionChoice = ProjectToolPermissionRule | 'inherit';
-type TranslationKey = keyof typeof import('@/localization/locales/en.json');
+type TranslationKey = keyof typeof import('@shared/lib/i18n/locales/en.json');
 type McpError =
   | 'projectMcpLoadFailed'
   | 'projectMcpSaveFailed'

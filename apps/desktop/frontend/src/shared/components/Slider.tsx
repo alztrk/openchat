@@ -1,7 +1,7 @@
 import type { InputHTMLAttributes } from 'react';
 import { forwardRef } from 'react';
 
-import { cn } from '@/shared/utils/cn';
+import { cn } from '@shared/lib/utils/cn';
 import { Field, type FieldLayout } from './Field';
 
 /** Native range input with optional field metadata and consistent focus behavior. */

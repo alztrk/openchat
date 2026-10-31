@@ -1,7 +1,7 @@
 import { Check, ChevronLeft, ChevronRight, MessagesSquare, Send, X } from 'lucide-react';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button, Card, Checkbox, Textarea } from '@/design-system';
+import { Button, Card, Checkbox, Textarea } from '@shared/components';
 import {
   type AgentQuestionAnswer,
   type AgentQuestionGroup,
@@ -10,7 +10,7 @@ import {
 } from '@/modules/conversations/data/agentQuestions';
 import { type ChatMessage, getMessages, saveMessage } from '@/modules/conversations/data/chatStorage';
 import { useChatStore } from '@/modules/conversations/stores/chatStore';
-import { LocalServiceError, localServiceClient } from '@/platform/local-service';
+import { LocalServiceError, localServiceClient } from '@shared/lib/platform/local-service';
 
 interface UserQuestionPanelProps {
   conversationId: string | null;

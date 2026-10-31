@@ -1,4 +1,4 @@
-import { type JsonObject, LocalServiceError } from '@/platform/local-service';
+import { type JsonObject, LocalServiceError } from '@shared/lib/platform/local-service';
 
 export interface HubModel {
   repoId: string;

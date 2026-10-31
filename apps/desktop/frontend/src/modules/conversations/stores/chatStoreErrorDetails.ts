@@ -1,5 +1,5 @@
 import type { TFunction } from 'i18next';
-import { LocalServiceError } from '@/platform/local-service';
+import { LocalServiceError } from '@shared/lib/platform/local-service';
 
 const knownServiceErrorKeyMap: Record<string, string> = {
   'chat history could not be updated.': 'chatHistoryUnavailable',

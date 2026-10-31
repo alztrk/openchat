@@ -1,5 +1,5 @@
-import { unifiedStorage } from '@/platform/storage/unifiedStorage';
-import { isObject } from '@/shared/utils/json';
+import { unifiedStorage } from '@shared/lib/platform/storage/unifiedStorage';
+import { isObject } from '@shared/lib/utils/json';
 
 export type SidebarSectionId = 'projects' | 'folders' | 'pinned' | 'chats' | 'archived';
 export type SidebarSortMode = 'updatedAt' | 'createdAt' | 'alphabetical' | 'manual';

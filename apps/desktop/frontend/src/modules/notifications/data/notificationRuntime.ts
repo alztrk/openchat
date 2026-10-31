@@ -1,4 +1,4 @@
-import { i18n } from '@/localization/i18n';
+import { i18n } from '@shared/lib/i18n/i18n';
 import { parseAgentQuestionGroup } from '@/modules/conversations/data/agentQuestions';
 import { type ChatConversation, type ChatMessage, getConversation } from '@/modules/conversations/data/chatStorage';
 import {

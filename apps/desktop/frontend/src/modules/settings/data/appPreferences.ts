@@ -1,5 +1,5 @@
-import { unifiedStorage } from '@/platform/storage/unifiedStorage';
-import { invoke, isTauri } from '@/platform/tauri';
+import { unifiedStorage } from '@shared/lib/platform/storage/unifiedStorage';
+import { invoke, isTauri } from '@shared/lib/platform/tauri';
 
 export type AppSurface = 'chats' | 'design' | 'models' | 'security' | 'settings';
 export type StartupSurfacePreference = 'last' | AppSurface;

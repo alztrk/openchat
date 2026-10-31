@@ -1,5 +1,5 @@
-import type { JsonObject } from '@/platform/local-service';
-import { isObject, numberOrNull } from '@/shared/utils/json';
+import type { JsonObject } from '@shared/lib/platform/local-service';
+import { isObject, numberOrNull } from '@shared/lib/utils/json';
 import type { ChatModel } from './chatModels';
 import type { CustomProviderSummary } from './providerCredentials';
 import type { ChatRoute } from './routes';

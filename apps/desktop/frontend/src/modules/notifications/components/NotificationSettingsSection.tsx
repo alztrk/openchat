@@ -2,8 +2,8 @@ import { BellOff, BellRing, LoaderCircle, Play, RefreshCw, Send } from 'lucide-r
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button, Input, Slider, Switch } from '@/design-system';
-import type en from '@/localization/locales/en.json';
+import { Button, Input, Slider, Switch } from '@shared/components';
+import type en from '@shared/lib/i18n/locales/en.json';
 import { type ChatProject, listProjects } from '@/modules/conversations/data/chatStorage';
 import {
   type NotificationPreferences,
@@ -14,7 +14,7 @@ import {
   type WindowsNotificationStatus,
   writeNotificationPreference,
 } from '@/modules/notifications/data/notificationPreferences';
-import { playTestChime } from '@/shared/utils/audioFeedback';
+import { playTestChime } from '@shared/lib/utils/audioFeedback';
 
 type LoadState = 'loading' | 'loaded' | 'failed';
 type TranslationKey = keyof typeof en;

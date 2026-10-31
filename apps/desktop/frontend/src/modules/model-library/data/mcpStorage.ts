@@ -1,4 +1,4 @@
-import { invoke } from '@/platform/tauri';
+import { invoke } from '@shared/lib/platform/tauri';
 
 import type { McpServerRecord } from './mcpCatalog';
 

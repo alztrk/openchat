@@ -1,7 +1,7 @@
 import * as TabsPrimitive from '@radix-ui/react-tabs';
 import type * as React from 'react';
 
-import { cn } from '@/shared/utils/cn';
+import { cn } from '@shared/lib/utils/cn';
 
 /** Available visual treatments for the tab list. */
 type TabsListVariant = 'default' | 'line' | 'rounded';

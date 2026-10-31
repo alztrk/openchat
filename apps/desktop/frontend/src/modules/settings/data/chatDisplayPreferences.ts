@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { unifiedStorage } from '@/platform/storage/unifiedStorage';
+import { unifiedStorage } from '@shared/lib/platform/storage/unifiedStorage';
 
 const storageKey = 'chat.display_preferences';
 

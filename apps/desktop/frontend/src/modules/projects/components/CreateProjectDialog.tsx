@@ -2,8 +2,8 @@ import { Folder, FolderOpen, LoaderCircle } from 'lucide-react';
 import { type FormEvent, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button, Dialog, Input } from '@/design-system';
-import { discardProjectFolderSelection, selectProjectFolder } from '@/platform/tauri';
+import { Button, Dialog, Input } from '@shared/components';
+import { discardProjectFolderSelection, selectProjectFolder } from '@shared/lib/platform/tauri';
 
 /** Props for collecting a project name and native folder selection. */
 interface CreateProjectDialogProps {

@@ -2,7 +2,7 @@ import { Blocks, Cpu, MessageSquareText, UsersRound } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button } from '@/design-system';
+import { Button } from '@shared/components';
 import { AssistantProfilesSettingsSection } from '@/modules/settings/components/AssistantProfilesSettingsSection';
 import { McpCatalogTab } from './McpCatalogTab';
 import { ModelCatalogTab } from './ModelCatalogTab';

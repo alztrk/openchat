@@ -5,8 +5,8 @@ import { modelRouteKey, readModelPreferences } from '@/modules/providers/data/mo
 import { readAssistantExecutionPreferences } from '@/modules/settings/data/assistantExecutionPreferences';
 import { personalMemoryContextForConversation } from '@/modules/settings/data/personalMemory';
 import { readSharedInstructions } from '@/modules/settings/data/sharedInstructions';
-import { LocalServiceError, localServiceClient } from '@/platform/local-service';
-import { invoke } from '@/platform/tauri';
+import { LocalServiceError, localServiceClient } from '@shared/lib/platform/local-service';
+import { invoke } from '@shared/lib/platform/tauri';
 import type { PendingChatAttachment } from './chatAttachments';
 import type { ChatMessage } from './chatStorage';
 

@@ -1,7 +1,7 @@
 import { LoaderCircle, Search, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button, Input } from '@/design-system';
+import { Button, Input } from '@shared/components';
 import {
   formatMcpToolLabel,
   type McpCategory,

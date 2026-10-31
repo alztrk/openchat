@@ -1,6 +1,6 @@
 import type { HTMLAttributes } from 'react';
 
-import { cn } from '@/shared/utils/cn';
+import { cn } from '@shared/lib/utils/cn';
 
 /** Supported shape presets for skeleton placeholders. */
 export type SkeletonVariant = 'rounded' | 'circular' | 'text';

@@ -1,4 +1,4 @@
-import { type JsonObject, LocalServiceError, localServiceClient } from '@/platform/local-service';
+import { type JsonObject, LocalServiceError, localServiceClient } from '@shared/lib/platform/local-service';
 
 export type ChatFileChangeKind = 'added' | 'modified' | 'deleted';
 export type ChatFileChangeStatus = 'active' | 'reverted' | 'conflict';

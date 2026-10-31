@@ -1,4 +1,4 @@
-import { type JsonObject, LocalServiceError } from '@/platform/local-service';
+import { type JsonObject, LocalServiceError } from '@shared/lib/platform/local-service';
 import type { ChatModel } from './chatModels';
 
 export function loadRouteParameters(model: ChatModel): JsonObject {

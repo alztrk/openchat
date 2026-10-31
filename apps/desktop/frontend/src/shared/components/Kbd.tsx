@@ -1,6 +1,6 @@
 import type { HTMLAttributes, ReactNode } from 'react';
 
-import { cn } from '@/shared/utils/cn';
+import { cn } from '@shared/lib/utils/cn';
 
 export interface KbdProps extends HTMLAttributes<HTMLElement> {
   /** Individual shortcut key or sequence of keys to render. */

@@ -1,5 +1,5 @@
 import { type DefaultModelPreference, parseDefaultModelPreference } from '@/modules/providers/data/modelPreferences';
-import { unifiedStorage } from '@/platform/storage/unifiedStorage';
+import { unifiedStorage } from '@shared/lib/platform/storage/unifiedStorage';
 
 export type ProjectToolPermissionRule = 'ask' | 'allow' | 'deny';
 export type ToolPermissionMode = 'require_approval' | 'approve_safe_operations' | 'full_access';

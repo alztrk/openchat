@@ -2,7 +2,7 @@ import { CircleAlert, CircleCheck, CircleUserRound, LoaderCircle, LogIn, Refresh
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button, Card, Dialog } from '@/design-system';
+import { Button, Card, Dialog } from '@shared/components';
 import {
   type CopilotDeviceFlow,
   type CopilotOAuthConnection,
@@ -19,7 +19,7 @@ import {
   refreshOAuthPlans,
   subscribeToOAuthPlanUpdates,
 } from '@/modules/providers/data/oauthPlanMonitor';
-import { LocalServiceError } from '@/platform/local-service';
+import { LocalServiceError } from '@shared/lib/platform/local-service';
 import { ProviderIcon } from './ProviderIcon';
 
 interface CopilotOAuthCardProps {

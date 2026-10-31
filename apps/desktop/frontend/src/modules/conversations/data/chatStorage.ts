@@ -1,7 +1,7 @@
 import type { ChatRoute } from '@/modules/providers/data/routes';
 import { type AssistantAgentSnapshot, isAssistantAgentSnapshot } from '@/modules/settings/data/assistantProfiles';
-import { localServiceClient } from '@/platform/local-service';
-import { invoke } from '@/platform/tauri';
+import { localServiceClient } from '@shared/lib/platform/local-service';
+import { invoke } from '@shared/lib/platform/tauri';
 
 import {
   type AttachmentWritePayload,

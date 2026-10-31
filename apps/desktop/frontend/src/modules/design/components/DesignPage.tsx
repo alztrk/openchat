@@ -28,7 +28,7 @@ import {
 } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button, Checkbox, ColorPicker, DatePicker, Dialog, Input, Select, Slider, Textarea } from '@/design-system';
+import { Button, Checkbox, ColorPicker, DatePicker, Dialog, Input, Select, Slider, Textarea } from '@shared/components';
 import { listConversationAttachments } from '@/modules/conversations/data/chatStorage';
 import { DesignCanvas } from '@/modules/design/components/DesignCanvas';
 import {
@@ -112,7 +112,7 @@ import {
   setImageCollectionItem,
 } from '@/modules/design/data/imageGeneration';
 import { type ChatGptAccountQuotaStatus, refreshChatGptAccountQuota } from '@/modules/providers/data/oauthRateLimits';
-import { LocalServiceError, type ServiceOperation } from '@/platform/local-service/LocalServiceClient';
+import { LocalServiceError, type ServiceOperation } from '@shared/lib/platform/local-service/LocalServiceClient';
 
 interface ImagePageCursor {
   design: number | null;

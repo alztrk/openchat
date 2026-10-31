@@ -1,7 +1,7 @@
 import type { TextareaHTMLAttributes } from 'react';
 import { forwardRef } from 'react';
 
-import { cn } from '@/shared/utils/cn';
+import { cn } from '@shared/lib/utils/cn';
 import { Field, type FieldControlProps, type FieldLayout } from './Field';
 
 export type TextareaAppearance = 'default' | 'bare';

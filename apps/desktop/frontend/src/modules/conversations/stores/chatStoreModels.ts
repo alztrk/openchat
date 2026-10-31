@@ -9,7 +9,7 @@ import {
   readLastSelectedModelPreference,
 } from '@/modules/providers/data/modelPreferences';
 import { refreshOAuthRateLimits } from '@/modules/providers/data/oauthRateLimits';
-import type { LocalServiceClient } from '@/platform/local-service';
+import type { LocalServiceClient } from '@shared/lib/platform/local-service';
 import type { ChatState } from './chatStore';
 import { isSameRoute } from './chatStoreUtils';
 import { loadModelCatalogsProgressively, type ModelCatalogProgress } from './modelCatalogProgress';

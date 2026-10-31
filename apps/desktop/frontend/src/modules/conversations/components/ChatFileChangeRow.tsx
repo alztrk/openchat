@@ -1,6 +1,6 @@
 import { Check, FilePlus2, Info, LoaderCircle, NotebookPen, Trash2, TriangleAlert } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { Button } from '@/design-system';
+import { Button } from '@shared/components';
 import type { ChatFileChange } from '@/modules/conversations/data/chatFileChanges';
 
 export function FileKindIcon({ kind }: { kind: ChatFileChange['kind'] }) {

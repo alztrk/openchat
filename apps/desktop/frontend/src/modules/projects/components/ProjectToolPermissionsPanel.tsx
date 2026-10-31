@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button, Select } from '@/design-system';
+import { Button, Select } from '@shared/components';
 import type { ChatProject } from '@/modules/conversations/data/chatStorage';
 import {
   loadProjectToolPermissionRules,
@@ -9,7 +9,7 @@ import {
   saveProjectToolPermissionRules,
 } from '@/modules/projects/data/projectPermissionSettings';
 import type { ProjectToolPermissionRule, ToolPermissionMode } from '@/modules/projects/data/projectPreferences';
-import { localServiceClient } from '@/platform/local-service';
+import { localServiceClient } from '@shared/lib/platform/local-service';
 
 const standardTools = [
   'list_files',
@@ -219,9 +219,9 @@ function parseIds(value: unknown, pattern: RegExp, error: string): string[] {
 
 function toolLabel(
   name: string,
-  t: (key: keyof typeof import('@/localization/locales/en.json'), options?: Record<string, unknown>) => string,
+  t: (key: keyof typeof import('@shared/lib/i18n/locales/en.json'), options?: Record<string, unknown>) => string,
 ): string {
-  const labelKey: Partial<Record<string, keyof typeof import('@/localization/locales/en.json')>> = {
+  const labelKey: Partial<Record<string, keyof typeof import('@shared/lib/i18n/locales/en.json')>> = {
     list_files: 'toolListFiles',
     search_files: 'toolSearchFiles',
     read_file: 'toolReadFile',
@@ -247,7 +247,7 @@ function toolLabel(
   return key ? t(key) : t('toolConfiguredProjectTool', { name });
 }
 
-function permissionModeTranslationKey(mode: ToolPermissionMode): keyof typeof import('@/localization/locales/en.json') {
+function permissionModeTranslationKey(mode: ToolPermissionMode): keyof typeof import('@shared/lib/i18n/locales/en.json') {
   switch (mode) {
     case 'require_approval':
       return 'toolPermissionRequireApproval';

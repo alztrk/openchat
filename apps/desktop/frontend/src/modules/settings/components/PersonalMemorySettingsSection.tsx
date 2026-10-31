@@ -2,7 +2,7 @@ import { Brain, LoaderCircle, RefreshCw, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button, Card, Dialog, Switch } from '@/design-system';
+import { Button, Card, Dialog, Switch } from '@shared/components';
 import {
   clearPersonalMemory,
   deletePersonalMemoryFact,

@@ -2,7 +2,7 @@ import { AlertCircle, CheckCircle2, Info, X } from 'lucide-react';
 import type { HTMLAttributes, ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { cn } from '@/shared/utils/cn';
+import { cn } from '@shared/lib/utils/cn';
 
 /** Semantic color intent for the toast alert. */
 export type ToastVariant = 'destructive' | 'info' | 'success' | 'warning';

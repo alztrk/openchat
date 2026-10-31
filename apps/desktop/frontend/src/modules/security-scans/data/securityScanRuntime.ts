@@ -8,7 +8,7 @@ import {
   resolveServiceFailureCode,
 } from '@/modules/conversations/stores/chatStoreErrorDetails';
 import { applyStreamEvent, upsertMessage } from '@/modules/conversations/stores/chatStoreUtils';
-import { LocalServiceError, localServiceClient, type ServiceOperation } from '@/platform/local-service';
+import { LocalServiceError, localServiceClient, type ServiceOperation } from '@shared/lib/platform/local-service';
 import { retryDelayFromProviderDetails } from './securityScanRetry';
 import {
   cancelSecurityScan,

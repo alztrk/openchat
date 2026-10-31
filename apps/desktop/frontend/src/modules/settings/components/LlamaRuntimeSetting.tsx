@@ -1,7 +1,7 @@
 import { FolderOpen, Link, LoaderCircle, Search } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
-import { Button, Card } from '@/design-system';
+import { Button, Card } from '@shared/components';
 import type { ExternalServer } from '@/modules/settings/data/localEngineCatalog';
 
 interface LlamaRuntimeSettingProps {

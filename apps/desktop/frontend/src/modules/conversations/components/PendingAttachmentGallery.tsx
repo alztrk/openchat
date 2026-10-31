@@ -1,7 +1,7 @@
 import { Paperclip, X } from 'lucide-react';
 import { useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button, Dialog, Slider } from '@/design-system';
+import { Button, Dialog, Slider } from '@shared/components';
 import type { PendingChatAttachment } from '@/modules/conversations/data/chatAttachments';
 
 interface PendingAttachmentGalleryProps {
