@@ -34,9 +34,10 @@ node scripts/benchmark/run.mjs
 
 ### Run a single tool benchmark
 ```bash
-node scripts/benchmark/run.mjs search
-node scripts/benchmark/run.mjs hashline
+node scripts/benchmark/run.mjs edit_file
+node scripts/benchmark/run.mjs search_files
 node scripts/benchmark/run.mjs write_file
+node scripts/benchmark/run.mjs execute_command
 ```
 
 ### Run benchmarks and save results
@@ -56,17 +57,17 @@ cargo test token_count
 
 ## Available Benchmarks
 
-| Tool | Description | Notes |
-|------|-------------|-------|
-| `search` | File search with pattern matching | Tests indexed vs direct search |
-| `hashline` | Resilient file edit via hashline anchors | Measures edit resolution speed |
-| `write_file` | Create or overwrite a file | Tests write speed with size variants |
-| `read_file` | Read file contents | Tests read speed with size variants |
-| `edit_file` | Multi-stage text replacement | Tests exact, normalized, hashline, drift stages |
-| `list_files` | List directory contents | Tests directory traversal speed |
-| `web_search` | Multi-engine web search | Measures HTTP latency + parsing |
-| `terminal` | Command execution | Depends on host system |
-| `project_tasks` | Project task management | Tests task CRUD operations |
+| Tool | Description | Backend Rust Source |
+|------|-------------|---------------------|
+| `edit_file` | Replace text with 4-stage pipeline (exact → normalized → hashline → drift) | `hashline.rs::apply_resilient_edit()` called by `edit_file` tool |
+| `search_files` | File content search with pattern matching | `search.rs::search_files()` |
+| `write_file` | Create or overwrite entire file content | `mod.rs::write_file()` |
+| `read_file` | Read file contents with size limits | `mod.rs::read_file()` |
+| `list_files` | List directory contents with metadata | `mod.rs::list_files()` |
+| `execute_command` | Execute shell command with sandbox | `terminal.rs::execute_with_workspace_roots()` |
+| `project_tasks` | Project task CRUD operations | `project_tasks.rs` |
+| `get_file_info` | Get file metadata (size, type, permissions) | `mod.rs::get_file_info()` |
+| `web_search` | Parse search results from HTML (Bing/DuckDuckGo) | `web_search.rs::parse_bing_html()` |
 
 ## Adding New Benchmarks
 

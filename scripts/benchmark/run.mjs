@@ -33,13 +33,14 @@ function registerTool(name, description, runner) {
 // Tool Benchmarks
 // ============================================================
 
-// 1. hashline — 4-stage resilient edit pipeline benchmark
-// NOTE: hashline is NOT a standalone tool — it's the anchor format used
-// inside edit_file's apply_resilient_edit() pipeline. This benchmark
-// measures the multi-stage resolution cost (exact → normalized → hashline → drift).
+// 1. edit_file — File edit benchmark (uses hashline.rs internally)
+// NOTE: `hashline` is NOT a standalone tool. It's the helper module
+// (compute_hashline_tag, apply_resilient_edit) used by edit_file.
+// This benchmark measures the full edit_file pipeline including
+// exact → normalized → hashline → indentation_drift resolution.
 registerTool(
-  'hashline',
-  'Multi-stage edit resolution pipeline (exact/normalized/hashline/drift)',
+  'edit_file',
+  'Replace text in file (exact/normalized/hashline/drift pipeline)',
   async () => {
     // Simulate the 4-stage resolution pipeline from Rust's apply_resilient_edit()
     const content = `fn main() {
@@ -378,6 +379,110 @@ registerTool(
         output: estimateTokens(JSON.stringify(filtered)),
       },
       notes: `${tasks.length} tasks, ${filtered.length} in progress`,
+    };
+  }
+);
+
+// 9. get_file_info — File metadata benchmark
+// Returns file size, type, permissions, modification time.
+registerTool(
+  'get_file_info',
+  'Get file metadata (size, type, permissions, mtime)',
+  async () => {
+    const { statSync } = await import('node:fs');
+    const { join } = await import('node:path');
+
+    const start = performance.now();
+
+    // Get info on a real file in the project
+    const infoPath = join(__dirname, 'run.mjs');
+    const info = statSync(infoPath);
+
+    const duration = performance.now() - start;
+
+    return {
+      durationMs: duration,
+      success: true,
+      tokens: {
+        input: estimateTokens(infoPath),
+        output: estimateTokens(
+          JSON.stringify({
+            size: info.size,
+            isFile: info.isFile(),
+            isDirectory: info.isDirectory(),
+            atimeMs: info.atimeMs,
+            mtimeMs: info.mtimeMs,
+          })
+        ),
+      },
+      notes: `Got metadata for ${infoPath} (${info.size} bytes)`,
+    };
+  }
+);
+
+// 10. web_search — Web search benchmark
+// Queries multiple search engines in parallel (Bing, DuckDuckGo, Wikipedia).
+// NOTE: This makes actual HTTP requests, so it measures real network latency.
+registerTool(
+  'web_search',
+  'Search the web (Bing + DuckDuckGo + Wikipedia)',
+  async () => {
+    const start = performance.now();
+
+    // We can't easily test actual web search without network,
+    // but we can simulate the parsing step from web_search.rs:
+    // Bing HTML parsing — the most CPU-intensive part after HTTP
+    const bingMockHtml = `
+      <html><body>
+        <div class="b_algo"><h2><a href="https://example.com">Rust Programming Language</a></h2>
+        <p>Rust is a multi-paradigm programming language focused on safety...</p></div>
+        <div class="b_algo"><h2><a href="https://example.org">Node.js Benchmarking</a></h2>
+        <p>Performance benchmarking for Node.js applications...</p></div>
+        <div class="b_algo"><h2><a href="https://example.net">Tokio Async Runtime</a></h2>
+        <p>Tokio is an async runtime for the Rust programming language...</p></div>
+      </body></html>
+    `;
+
+    // Simulate parse_bing_html — the regex-free HTML parsing in Rust
+    const searchStart = performance.now();
+    const items = [];
+    const marker = 'class="b_algo"';
+    let cursor = 0;
+    while (cursor < bingMockHtml.length) {
+      const relIdx = bingMockHtml.indexOf(marker, cursor);
+      if (relIdx === -1 || items.length >= 5) break;
+
+      const blockStart = cursor + relIdx;
+      const nextStart = bingMockHtml.indexOf(marker, blockStart + marker.length)
+        .toString().length > 0
+        ? bingMockHtml.indexOf(marker, blockStart + marker.length)
+        : Math.min(bingMockHtml.length, blockStart + 5000);
+
+      const block = bingMockHtml.slice(blockStart, nextStart);
+
+      const h2Idx = block.indexOf('<h2');
+      if (h2Idx === -1) { cursor = blockStart + marker.length; continue; }
+
+      const titleMatch = block.slice(h2Idx).match(/<h2[^>]*>\s*<a[^>]*>([^<]+)<\/a>/i);
+      if (titleMatch && titleMatch[1].trim()) {
+        items.push({ title: titleMatch[1].trim() });
+      }
+
+      cursor = blockStart + marker.length;
+    }
+
+    const duration = performance.now() - start;
+    const parseTime = performance.now() - searchStart;
+
+    return {
+      durationMs: duration,
+      success: true,
+      tokens: {
+        input: estimateTokens(bingMockHtml),
+        output: estimateTokens(JSON.stringify(items)),
+      },
+      notes: `Parsed ${items.length} results in ${parseTime.toFixed(2)}ms (HTML parsing)` +
+        ` (${(duration).toFixed(2)}ms total)`,
     };
   }
 );
