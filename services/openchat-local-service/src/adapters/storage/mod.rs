@@ -358,7 +358,6 @@ impl AppStorage {
         let (connection, _) = database_key.open_or_migrate(&database_path)?;
         disable_trusted_schema(&connection)?;
         connection.busy_timeout(Duration::from_secs(5))?;
-        database_queue::acquire_exclusive_lock(&connection)?;
 
         if database_had_data_on_open {
             database_guard::verify_integrity(&connection)?;

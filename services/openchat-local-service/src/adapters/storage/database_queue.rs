@@ -203,47 +203,6 @@ impl DatabaseQueueHandle {
     }
 }
 
-/// Holds an SQLite exclusive lock for the lifetime of the service-owned connection.
-///
-/// SQLite-aware processes outside this service cannot open the primary database while this
-/// connection remains alive. The process must retain the same connection for that lock to hold.
-pub(super) fn acquire_exclusive_lock(connection: &Connection) -> rusqlite::Result<()> {
-    connection
-        .pragma_update(None, "locking_mode", "EXCLUSIVE")
-        .map_err(map_lock_error)?;
-    let locking_mode = connection
-        .pragma_query_value(None, "locking_mode", |row| row.get::<_, String>(0))
-        .map_err(map_lock_error)?;
-    if !locking_mode.eq_ignore_ascii_case("exclusive") {
-        return Err(rusqlite::Error::InvalidQuery);
-    }
-
-    connection
-        .execute_batch("BEGIN EXCLUSIVE; COMMIT;")
-        .map_err(map_lock_error)
-}
-
-fn map_lock_error(error: rusqlite::Error) -> rusqlite::Error {
-    if matches!(
-        &error,
-        rusqlite::Error::SqliteFailure(failure, _)
-            if matches!(
-                failure.code,
-                rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked
-            )
-    ) {
-        return rusqlite::Error::SqliteFailure(
-            ffi::Error::new(ffi::SQLITE_BUSY),
-            Some(
-                "Could not acquire the primary database lock; close other applications using this database and restart OpenChat."
-                    .to_owned(),
-            ),
-        );
-    }
-
-    error
-}
-
 impl Deref for QueuedConnection<'_> {
     type Target = Connection;
 

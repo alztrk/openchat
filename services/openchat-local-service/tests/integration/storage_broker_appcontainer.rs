@@ -209,6 +209,119 @@ async fn broker_runs_sqlcipher_protocol_in_a_temporary_appcontainer() {
         );
     }
 
+    let mut concurrent_broker = profile
+        .spawn_broker()
+        .expect("start a second broker against the same temporary storage profile");
+    let mut concurrent_stdin = concurrent_broker
+        .take_stdin()
+        .expect("take second broker stdin");
+    let concurrent_stdout = concurrent_broker
+        .take_stdout()
+        .expect("take second broker stdout");
+    let mut concurrent_stdout = BufReader::new(concurrent_stdout);
+    let mut concurrent_stderr = concurrent_broker
+        .take_stderr()
+        .expect("take second broker stderr");
+
+    let concurrent_result = timeout(Duration::from_secs(15), async {
+        let mut bootstrap_status = [0; 5];
+        concurrent_stdin.write_all(b"OCK1\x01").await?;
+        concurrent_stdin.write_all(&*key).await?;
+        concurrent_stdout.read_exact(&mut bootstrap_status).await?;
+        if bootstrap_status != *b"OCK1\x02" {
+            return Err(io::Error::other(
+                "second broker could not open the shared SQLCipher database",
+            ));
+        }
+
+        write_request(
+            &mut concurrent_stdin,
+            &serde_json::json!({
+                "operation": "hello",
+                "version": BROKER_PROTOCOL_VERSION,
+            }),
+        )
+        .await?;
+        let hello = read_response(&mut concurrent_stdout).await?;
+        if hello["result"] != "ready" || hello["version"] != BROKER_PROTOCOL_VERSION {
+            return Err(io::Error::other(
+                "second broker rejected the storage protocol handshake",
+            ));
+        }
+
+        write_request(
+            &mut concurrent_stdin,
+            &serde_json::json!({
+                "operation": "execute_batch",
+                "sql": "INSERT INTO broker_restart_probe VALUES ('written-by-second-broker');",
+            }),
+        )
+        .await?;
+        let insert = read_response(&mut concurrent_stdout).await?;
+        if insert["result"] != "unit" {
+            return Err(io::Error::other(
+                "second broker could not write to the shared database",
+            ));
+        }
+
+        write_request(
+            &mut stdin,
+            &serde_json::json!({
+                "operation": "query",
+                "sql": "SELECT value FROM broker_restart_probe WHERE value = 'written-by-second-broker'",
+                "parameters": [],
+            }),
+        )
+        .await?;
+        let shared_value = read_response(&mut stdout).await?;
+        if shared_value["result"] != "rows"
+            || shared_value["rows"][0][0]["value"] != "written-by-second-broker"
+        {
+            return Err(io::Error::other(
+                "first broker could not read the value written by the second broker",
+            ));
+        }
+
+        Ok::<(), io::Error>(())
+    })
+    .await;
+
+    if let Err(error) = concurrent_result {
+        drop(concurrent_stdin);
+        drop(concurrent_stdout);
+        let mut diagnostic = Vec::new();
+        let _ = timeout(
+            Duration::from_secs(2),
+            concurrent_stderr.read_to_end(&mut diagnostic),
+        )
+        .await;
+        panic!(
+            "simultaneous AppContainer brokers could not share storage: {error}; stderr={}",
+            String::from_utf8_lossy(&diagnostic)
+        );
+    }
+
+    drop(concurrent_stdin);
+    let concurrent_exit_status = timeout(Duration::from_secs(5), concurrent_broker.wait())
+        .await
+        .expect("second broker exits after stdin closes")
+        .expect("wait for second broker");
+    let mut concurrent_diagnostic = Vec::new();
+    timeout(
+        Duration::from_secs(2),
+        concurrent_stderr.read_to_end(&mut concurrent_diagnostic),
+    )
+    .await
+    .expect("second broker diagnostics are readable")
+    .expect("read second broker diagnostics");
+    assert!(
+        concurrent_exit_status.success(),
+        "second broker exited with {concurrent_exit_status}; stderr={}",
+        String::from_utf8_lossy(&concurrent_diagnostic)
+    );
+    drop(concurrent_stdout);
+    drop(concurrent_stderr);
+
     drop(stdin);
     let exit_status = timeout(Duration::from_secs(5), broker.wait())
         .await
