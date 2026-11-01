@@ -942,9 +942,9 @@ pub async fn send_message(
 
     for attempt in 0..4 {
         let outcome: Result<bool, rusqlite::Error> = (|| {
-            let database = storage.connect()?;
+            let mut database = storage.connect()?;
             chatgpt_store::save_assistant_message_on_connection(
-                &database,
+                &mut database,
                 AssistantMessageWrite {
                     conversation_id,
                     message_id: &message_id,

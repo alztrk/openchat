@@ -325,7 +325,7 @@ pub fn apply_generated_title(
 }
 
 pub fn save_assistant_message_on_connection(
-    database: &StorageConnection<'_>,
+    database: &mut StorageConnection<'_>,
     message: AssistantMessageWrite<'_>,
 ) -> rusqlite::Result<()> {
     let elapsed_microseconds = message
@@ -335,7 +335,9 @@ pub fn save_assistant_message_on_connection(
         let seconds = message.elapsed?.as_secs_f64();
         (seconds > 0.0).then_some(tokens as f64 / seconds)
     });
-    let existing_content = database
+    let transaction =
+        database.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+    let existing_content = transaction
         .query_row(
             "SELECT content FROM messages
              WHERE conversation_id = ?1 AND id = ?2 AND role = 'assistant'",
@@ -348,7 +350,7 @@ pub fn save_assistant_message_on_connection(
         message.content,
     )
     .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
-    database.execute(
+    transaction.execute(
         "INSERT INTO messages (
             id, conversation_id, role, content, created_at, output_tokens,
             tokens_per_second, elapsed_microseconds, status
@@ -370,10 +372,11 @@ pub fn save_assistant_message_on_connection(
             message.status,
         ],
     )?;
-    database.execute(
+    transaction.execute(
         "UPDATE conversations SET updated_at = MAX(updated_at, ?2) WHERE id = ?1",
         params![message.conversation_id, message.created_at_unix_ms],
     )?;
+    transaction.commit()?;
     Ok(())
 }
 
@@ -381,8 +384,8 @@ pub fn save_assistant_message(
     storage: &AppStorage,
     message: AssistantMessageWrite<'_>,
 ) -> rusqlite::Result<()> {
-    let database = storage.connect()?;
-    save_assistant_message_on_connection(&database, message)
+    let mut database = storage.connect()?;
+    save_assistant_message_on_connection(&mut database, message)
 }
 
 pub fn save_assistant_tool_checkpoint(
