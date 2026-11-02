@@ -31,7 +31,7 @@ bytes = "1"
 rustls-native-certs = "0.8"
 ring = "0.17.14"
 sha2 = "0.10"
-similar = "2.7"
+similar = "3.2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 futures-util = "0.3"
@@ -51,7 +51,7 @@ tokenizers = { version = "0.22.2", default-features = false, features = ["fancy-
 zip = { version = "9.0.4", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 flate2 = { version = "1", default-features = false, features = ["zlib-rs"] }
 tar = "0.4"
-zeroize = "=1.8.1"
+zeroize = "=1.9.1"
 cap-std = "=4.0.3"
 cap-primitives = "=4.0.3"
 which = "8"
@@ -61,7 +61,7 @@ process-wrap = { version = "=10.0.1", default-features = false, features = ["kil
 
 [target.'cfg(windows)'.dependencies]
 keyring = { version = "=3.6.3", default-features = false, features = ["windows-native"] }
-rmcp = { version = "=3.0.1", default-features = false, features = ["client", "transport-async-rw", "transport-streamable-http-client-reqwest"] }
+rmcp = { version = "=3.7.0", default-features = false, features = ["client", "transport-async-rw", "transport-streamable-http-client-reqwest"] }
 windows-sys = { version = "=0.61.2", features = [
     "Win32_Foundation",
     "Win32_Security",

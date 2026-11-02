@@ -1,4 +1,5 @@
-import { Github, MessageSquare, PanelRight } from 'lucide-react';
+import { SiGithub } from '@icons-pack/react-simple-icons';
+import { MessageSquare, PanelRight } from 'lucide-react';
 import {
   lazy,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -1277,7 +1278,7 @@ export function App() {
             target="_blank"
             title={t('github')}
           >
-            <Github aria-hidden="true" size={14} />
+            <SiGithub aria-hidden="true" size={14} />
             <span className="ml-1">{t('github')}</span>
           </a>
           <span>{appVersion ? `v${appVersion}` : null}</span>

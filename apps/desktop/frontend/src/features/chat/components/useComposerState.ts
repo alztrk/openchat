@@ -233,7 +233,7 @@ export function useComposerState({
     clearPendingAttachments();
     setComposerMode('normal');
     temporaryDisclosureProviderIdRef.current = null;
-  }, [activeConversationId]);
+  }, [activeConversationId, clearPendingAttachments]);
 
   useEffect(() => {
     if (!isTemporaryChat) temporaryDisclosureProviderIdRef.current = null;

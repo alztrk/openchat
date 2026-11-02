@@ -16,7 +16,8 @@ import perplexityIconUrl from '@assets/icons/providers/perplexity.svg?no-inline'
 import sambaNovaIconUrl from '@assets/icons/providers/sambanova.svg?no-inline';
 import togetherIconUrl from '@assets/icons/providers/together.svg?no-inline';
 import xAiIconUrl from '@assets/icons/providers/xai.svg?no-inline';
-import { Github, Network, Star } from 'lucide-react';
+import { SiGithub } from '@icons-pack/react-simple-icons';
+import { Network, Star } from 'lucide-react';
 import { LocalEngineIcon } from './EngineIcon';
 
 export const providerIconUrls: Record<string, string> = {
@@ -63,7 +64,7 @@ export function ProviderIcon({ className, providerId, size = 24, tone = 'seconda
   }
   if (providerId === 'copilot') {
     return (
-      <Github
+      <SiGithub
         aria-hidden="true"
         className={`shrink-0 ${tone === 'accent' ? 'text-accent-icon' : 'text-secondary-icon'}${className ? ` ${className}` : ''}`}
         size={size}

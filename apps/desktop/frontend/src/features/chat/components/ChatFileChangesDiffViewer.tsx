@@ -84,18 +84,21 @@ export function DiffContent({
     <section aria-label={t('fileChangesDiffTitle')} className="openchat-scroll-area min-h-0 flex-1 overflow-auto">
       {!flush && canRevertHunks ? (
         <div className="flex flex-wrap items-center gap-1 border-b border-border/60 px-2 py-1">
-          {Array.from({ length: hunkCount }, (_, hunkIndex) => (
+          {Array.from({ length: hunkCount }, (_, index) => ({
+            id: `hunk-${index}`,
+            index,
+          })).map((hunk) => (
             <Button
-              aria-label={`${t('fileChangesRejectHunk')} ${hunkIndex + 1}`}
+              aria-label={`${t('fileChangesRejectHunk')} ${hunk.index + 1}`}
               className="min-h-0 shrink-0 gap-1 rounded-control border-border bg-surface px-2 py-0.5 text-caption font-medium text-secondary-text transition-colors hover:bg-hover hover:text-destructive disabled:opacity-50"
               disabled={mutatingHunkIndex !== null}
-              key={hunkIndex}
-              onClick={() => onRevertHunk(hunkIndex)}
+              key={hunk.id}
+              onClick={() => onRevertHunk(hunk.index)}
               size="small"
               type="button"
               variant="secondary"
             >
-              {mutatingHunkIndex === hunkIndex ? (
+              {mutatingHunkIndex === hunk.index ? (
                 <LoaderCircle aria-hidden="true" className="animate-spin" size={11} />
               ) : (
                 <Undo2 aria-hidden="true" size={11} />
