@@ -2,16 +2,16 @@ import { AlertCircle, CircleAlert, Copy, File, Info, LoaderCircle } from 'lucide
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button } from '@shared/components';
+import { Button, TitleTooltip } from '@shared/components';
 import { formatToolPath, preview, safeAttributionNodes } from './toolResultUtils';
 
 export function PathHeading({ path }: { path: string }) {
   return (
     <p className="flex min-w-0 items-center gap-2 text-xs text-secondary-text">
       <File aria-hidden="true" className="shrink-0" size={14} />
-      <span className="truncate" title={path}>
+      <TitleTooltip title={path}><span className="truncate" >
         {formatToolPath(path)}
-      </span>
+      </span></TitleTooltip>
     </p>
   );
 }
@@ -134,9 +134,9 @@ export function ToolResultNotice({
           {message}
         </span>
         {path ? (
-          <p className="mt-1 break-all font-code text-secondary-text" title={path}>
+          <TitleTooltip title={path}><p className="mt-1 break-all font-code text-secondary-text" >
             {formatToolPath(path)}
-          </p>
+          </p></TitleTooltip>
         ) : null}
       </div>
     </div>

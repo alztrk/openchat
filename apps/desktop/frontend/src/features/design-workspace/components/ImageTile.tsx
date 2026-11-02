@@ -7,11 +7,12 @@ import { type GalleryImage, galleryPrompt, readGalleryImage } from '@features/de
 
 export interface ImageTileProps {
   entry: GalleryImage;
+  galleryIndex: number;
   root: Element | null;
   onSelect(src: string): void;
 }
 
-export function ImageTile({ entry, root, onSelect }: ImageTileProps) {
+export function ImageTile({ entry, galleryIndex, root, onSelect }: ImageTileProps) {
   const { t } = useTranslation();
   const tileRef = useRef<HTMLButtonElement>(null);
   const [inRange, setInRange] = useState(false);
@@ -58,6 +59,7 @@ export function ImageTile({ entry, root, onSelect }: ImageTileProps) {
     <Button
       aria-label={t('designOpenImage', { label: label.slice(0, 100) })}
       className="group design-image-tile relative min-h-0 w-full grid aspect-square min-w-0 overflow-hidden rounded-control border border-border bg-raised text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+      data-gallery-index={galleryIndex}
       onClick={() => {
         if (src) onSelect(src);
       }}

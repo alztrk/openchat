@@ -11,7 +11,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ProviderIcon } from '@features/provider-settings/components/ProviderIcon';
-import { Button, Card, DatePicker, SegmentedControl, Select } from '@shared/components';
+import { Button, Card, DatePicker, SegmentedControl, Select, TitleTooltip } from '@shared/components';
 import { LocalServiceError, localServiceClient } from '@shared/lib/platform/local-service';
 import { BreakdownCard, MetricCard, TrendChart } from './StatisticsCharts';
 import { SettingsSectionSkeleton } from './SettingsSectionSkeleton';
@@ -508,9 +508,9 @@ export function StatisticsSettingsSection({ onOpenConversation }: StatisticsSett
                       type="button"
                     >
                       <span className="grid min-w-0 flex-1 gap-1">
-                        <span className="truncate text-sm text-text" title={conversation.title}>
+                        <TitleTooltip title={conversation.title}><span className="truncate text-sm text-text" >
                           {conversation.title}
-                        </span>
+                        </span></TitleTooltip>
                         <span className="truncate text-xs text-secondary-text">
                           {conversationDateFormat.format(new Date(conversation.lastRequestAtUnixMs))} · {requestCount}{' '}
                           {t('statisticsRequests')}
@@ -594,9 +594,9 @@ function StatisticsQuotaHistory({
             >
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <div className="grid min-w-0 gap-1">
-                  <h4 className="truncate text-sm font-semibold" title={workspaceLabel}>
+                  <TitleTooltip title={workspaceLabel}><h4 className="truncate text-sm font-semibold" >
                     {workspaceLabel}
-                  </h4>
+                  </h4></TitleTooltip>
                   <time
                     className="text-xs text-secondary-text"
                     dateTime={new Date(snapshot.fetchedAtUnixMs).toISOString()}

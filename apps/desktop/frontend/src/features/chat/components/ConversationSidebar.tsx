@@ -26,7 +26,7 @@ import {
 } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button, Checkbox, Dialog, Input } from '@shared/components';
+import { Button, Checkbox, Dialog, Input, TitleTooltip } from '@shared/components';
 import type { ChatConversation } from '@features/chat/data/chatStorage';
 import {
   type CustomSidebarFolder,
@@ -1096,7 +1096,7 @@ export function ConversationSidebar({
 
         {!isDrawer ? (
           // biome-ignore lint/a11y/useSemanticElements: Custom interactive resize separator for the sidebar width.
-          <div
+          <TitleTooltip title={t('resizeSidebar')}><div
             aria-label={t('resizeSidebar')}
             aria-orientation="vertical"
             aria-valuemax={SIDEBAR_MAX_WIDTH}
@@ -1111,7 +1111,7 @@ export function ConversationSidebar({
             onPointerDown={handleResizePointerDown}
             role="separator"
             tabIndex={0}
-            title={t('resizeSidebar')}
+
           >
             <span
               className={`pointer-events-none absolute inset-y-0 right-0 w-0.5 transition-colors duration-quick ${
@@ -1120,7 +1120,7 @@ export function ConversationSidebar({
                   : 'bg-transparent group-hover/resizer:bg-accent/50 group-focus-visible/resizer:bg-accent'
               }`}
             />
-          </div>
+          </div></TitleTooltip>
         ) : null}
 
         {createProjectOpen ? (

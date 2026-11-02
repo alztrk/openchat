@@ -298,9 +298,7 @@ export function MessageList({
                 onOpenWorkspaceFile={onOpenWorkspaceFile}
                 onEditMessage={onEditMessage}
                 onRetryMessage={canRetry ? onRetryMessage : undefined}
-                onSelectResponseVersion={(selectedMessage, versionIndex) => {
-                  selectResponseVersion(selectedMessage, versionIndex);
-                }}
+                onSelectResponseVersion={selectResponseVersion}
                 responseVersionCount={row?.responseVersionCount}
                 responseVersionIndex={row?.responseVersionIndex}
               />

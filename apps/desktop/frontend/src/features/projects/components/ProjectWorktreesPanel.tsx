@@ -9,7 +9,12 @@ import {
   loadToolPermissionMode,
 } from '@features/projects/data/projectPermissionSettings';
 import type { ProjectToolPermissionRule, ToolPermissionMode } from '@features/projects/data/projectPreferences';
-import { LocalServiceError, localServiceClient, type ServiceOperation } from '@shared/lib/platform/local-service';
+import {
+  LocalServiceError,
+  localServiceClient,
+  localServiceErrorDetails,
+  type ServiceOperation,
+} from '@shared/lib/platform/local-service';
 
 interface ProjectWorktreesPanelProps {
   project: ChatProject;
@@ -661,10 +666,7 @@ function taskErrorKey(error: unknown, cancelling: boolean): WorktreeErrorKey {
 }
 
 function readErrorDetails(error: unknown): string | null {
-  const value = error instanceof LocalServiceError ? (error.details ?? error.message) : error;
-  if (typeof value !== 'string' && !(value instanceof Error)) return null;
-  const details = typeof value === 'string' ? value : value.message;
-  return details.trim().slice(0, 1000) || null;
+  return localServiceErrorDetails(error);
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {

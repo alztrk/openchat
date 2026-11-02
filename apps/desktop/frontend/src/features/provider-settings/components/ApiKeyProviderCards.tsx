@@ -1,7 +1,7 @@
 import { Check, Eye, EyeOff, Info, KeyRound, LoaderCircle, Network, Pencil, Plus, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button, Input } from '@shared/components';
+import { Button, Input, TitleTooltip } from '@shared/components';
 import type {
   ChatGptApiKeySummary,
   CompatibleProviderId,
@@ -332,15 +332,15 @@ function CredentialStatus({
   const statusLabel = text ?? (keySuffix ? t('apiKeySavedWithSuffix', { suffix: keySuffix }) : t('apiKeyConfigured'));
 
   return (
-    <span
+    <TitleTooltip title={statusLabel}><span
       aria-label={statusLabel}
       className="inline-flex items-center gap-1 text-xs text-success"
       role="status"
-      title={statusLabel}
+
     >
       <Check aria-hidden="true" size={14} />
       {keySuffix ? <span>••{keySuffix}</span> : null}
-    </span>
+    </span></TitleTooltip>
   );
 }
 

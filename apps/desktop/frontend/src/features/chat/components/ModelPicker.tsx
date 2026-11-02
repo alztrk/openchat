@@ -3,7 +3,7 @@ import { Bot, ChevronDown, LoaderCircle, LogIn, LogOut, RefreshCw, Search, Star,
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button, Input, Tooltip } from '@shared/components';
+import { Button, Input, Tooltip, TitleTooltip } from '@shared/components';
 import type { ChatModelFavorite } from '@features/chat/data/chatStorage';
 import { favoriteSourceConnection } from '@features/chat/state/chatStoreUtils';
 import { ProviderIcon } from '@features/provider-settings/components/ProviderIcon';
@@ -537,10 +537,10 @@ function ModelOption({
             <ProviderIcon className="shrink-0" providerId={model.providerId} size={17} />
             <span className="flex min-w-0 flex-1 flex-col gap-0.5">
               <span className="block truncate">{model.displayName}</span>
-              <span
+              <TitleTooltip title={pricing ? t('modelDetailsPricingSource') : undefined}><span
                 className="inline-flex min-w-0 items-center gap-1.5 truncate text-xs text-secondary-text"
                 role={isPricingLoading ? 'status' : undefined}
-                title={pricing ? t('modelDetailsPricingSource') : undefined}
+
               >
                 {isPricingLoading ? (
                   <>
@@ -580,7 +580,7 @@ function ModelOption({
                   <Text aria-hidden="true" className="text-secondary-icon" size={12} />
                   {contextLabel}
                 </span>
-              </span>
+              </span></TitleTooltip>
             </span>
           </Button>
         </span>

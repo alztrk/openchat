@@ -2,6 +2,7 @@ import * as DropdownMenuPrimitive from '@radix-ui/react-dropdown-menu';
 import { type ComponentPropsWithoutRef, type ElementRef, forwardRef } from 'react';
 
 import { cn } from '@shared/lib/utils/cn';
+import { TitleTooltip } from './Tooltip';
 
 export const DropdownMenu = DropdownMenuPrimitive.Root;
 export const DropdownMenuTrigger = DropdownMenuPrimitive.Trigger;
@@ -53,8 +54,11 @@ export const DropdownMenuSubContent = forwardRef<
 export const DropdownMenuItem = forwardRef<
   ElementRef<typeof DropdownMenuPrimitive.Item>,
   ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.Item>
->(function DropdownMenuItem({ className, ...props }, ref) {
-  return <DropdownMenuPrimitive.Item className={cn('openchat-dropdown-menu-item', className)} ref={ref} {...props} />;
+>(function DropdownMenuItem({ className, title, ...props }, ref) {
+  const item = (
+    <DropdownMenuPrimitive.Item className={cn('openchat-dropdown-menu-item', className)} ref={ref} {...props} />
+  );
+  return <TitleTooltip title={title}>{item}</TitleTooltip>;
 });
 
 export const DropdownMenuLabel = forwardRef<

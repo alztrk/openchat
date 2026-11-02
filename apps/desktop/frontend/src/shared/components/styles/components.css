@@ -358,13 +358,24 @@ html[data-motion-input='keyboard'] .openchat-dialog {
   animation: openchat-overlay-in var(--motion-duration-fast) var(--motion-ease-out) both;
 }
 
-.openchat-tooltip {
+.openchat-tooltip-anchor {
+  display: contents;
+}
+
+.openchat-tooltip-positioner {
   z-index: 1000;
   width: max-content;
-  max-width: min(18rem, calc(100vw - 16px));
-  max-height: calc(100vh - 16px);
+  max-width: min(18rem, calc(100vw - 24px));
+  max-height: calc(100vh - 24px);
+  pointer-events: none;
+}
+
+.openchat-tooltip {
+  width: max-content;
+  max-width: 100%;
+  max-height: 100%;
   overflow-y: auto;
-  transform-origin: var(--radix-tooltip-content-transform-origin);
+  transform-origin: center;
   border: 1px solid rgb(var(--border) / var(--border-alpha, 0.1));
   border-radius: var(--radius-control);
   padding: 7px 10px;
@@ -377,11 +388,6 @@ html[data-motion-input='keyboard'] .openchat-dialog {
   line-height: calc(16px * var(--app-text-scale, 1));
   overflow-wrap: anywhere;
   animation: openchat-content-in var(--motion-duration-fast) var(--motion-ease-out) both;
-}
-
-.openchat-tooltip-arrow {
-  fill: rgb(var(--raised-surface));
-  stroke: rgb(var(--border) / var(--border-alpha, 0.1));
 }
 
 @media (prefers-reduced-motion: reduce) {

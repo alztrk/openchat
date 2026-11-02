@@ -2,7 +2,7 @@
  * Virtualizes conversation rows and preserves stable scroll positioning.
  *
  * Prefix offsets are rebuilt when messages, viewport width, or measured row heights change.
- * Scroll-only updates reuse those offsets and compute just the overscanned visible slice.
+ * Scroll-only updates reuse those offsets and move the rendered window only near its edge.
  */
 import type { RefCallback } from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -12,7 +12,10 @@ import { estimateWrappedLineCount } from '@features/chat/data/virtualMessageLayo
 
 const verticalPadding = 24;
 const rowGap = 24;
-const overscanPixels = 640;
+const minimumDirectionalOverscanPixels = 640;
+const maximumDirectionalOverscanPixels = 1_920;
+const minimumReverseOverscanPixels = 320;
+const maximumReverseOverscanPixels = 640;
 const latestMessageThreshold = 96;
 
 /** A message and its stable position in the unvirtualized conversation order. */
@@ -23,9 +26,13 @@ export interface VirtualMessageRow {
 
 /** Current scroll coordinates used to choose the virtual window. */
 interface Viewport {
-  scrollTop: number;
   height: number;
   width: number;
+}
+
+interface VisibleRange {
+  start: number;
+  end: number;
 }
 
 /**
@@ -49,52 +56,25 @@ export function useVirtualMessageList(messages: ChatMessage[], conversationId: s
   const rowObserver = useRef<ResizeObserver | null>(null);
   const followLatestMessage = useRef(true);
   const lastScrollTop = useRef(0);
+  const scrollDirection = useRef<'forward' | 'backward' | null>(null);
   const measuredViewportWidth = useRef(0);
+  const visibleRangeRef = useRef<VisibleRange>({ start: 0, end: 0 });
   const [layoutRevision, setLayoutRevision] = useState(0);
-  const [viewport, setViewport] = useState<Viewport>({ scrollTop: 0, height: 0, width: 0 });
+  const [viewport, setViewport] = useState<Viewport>({ height: 0, width: 0 });
+  const [visibleRange, setVisibleRange] = useState<VisibleRange>({ start: 0, end: 0 });
 
-  /** Copies scroll and client dimensions only when the viewport has actually changed. */
+  /** Publishes viewport dimensions, which change far less often than scroll position. */
   const updateViewport = useCallback(() => {
     const element = containerRef.current;
     if (!element) return;
     setViewport((current) => {
       const next = {
-        scrollTop: element.scrollTop,
         height: element.clientHeight,
         width: element.clientWidth,
       };
-      return current.scrollTop === next.scrollTop && current.height === next.height && current.width === next.width
-        ? current
-        : next;
+      return current.height === next.height && current.width === next.width ? current : next;
     });
   }, []);
-
-  /** Updates latest-message follow state before publishing the new scroll position. */
-  const handleScroll = useCallback(() => {
-    const element = containerRef.current;
-    if (!element) return;
-    const distanceFromBottom = Math.max(0, element.scrollHeight - element.clientHeight - element.scrollTop);
-    if (distanceFromBottom <= latestMessageThreshold) {
-      followLatestMessage.current = true;
-    } else if (element.scrollTop < lastScrollTop.current - 2) {
-      followLatestMessage.current = false;
-    }
-    lastScrollTop.current = element.scrollTop;
-    updateViewport();
-  }, [updateViewport]);
-
-  useEffect(() => {
-    const element = containerRef.current;
-    if (!element) return;
-    const viewportObserver = new ResizeObserver(updateViewport);
-    viewportObserver.observe(element);
-    element.addEventListener('scroll', handleScroll, { passive: true });
-    updateViewport();
-    return () => {
-      viewportObserver.disconnect();
-      element.removeEventListener('scroll', handleScroll);
-    };
-  }, [handleScroll, updateViewport]);
 
   useEffect(() => {
     const observer = new ResizeObserver((entries) => {
@@ -125,6 +105,7 @@ export function useVirtualMessageList(messages: ChatMessage[], conversationId: s
   useEffect(() => {
     followLatestMessage.current = true;
     lastScrollTop.current = 0;
+    scrollDirection.current = null;
     rowHeights.current.clear();
     rowCallbacks.current.clear();
     measuredViewportWidth.current = 0;
@@ -196,12 +177,109 @@ export function useVirtualMessageList(messages: ChatMessage[], conversationId: s
     return nextOffsets;
   }, [layoutRevision, messages, viewport.width]);
 
-  const layout = useMemo(() => {
-    const visibleStart = findIndexAtOffset(offsets, Math.max(0, viewport.scrollTop - verticalPadding - overscanPixels));
+  /** Moves the rendered window only when the viewport approaches its buffered edge. */
+  const updateVisibleRange = useCallback(() => {
+    const element = containerRef.current;
+    if (!element) return;
+    const totalHeight = offsetAt(offsets, messages.length);
+    const viewportStart = Math.min(totalHeight, Math.max(0, element.scrollTop - verticalPadding));
+    const viewportEnd = Math.min(
+      totalHeight,
+      Math.max(viewportStart, element.scrollTop + element.clientHeight - verticalPadding),
+    );
+    const current = visibleRangeRef.current;
+    const currentStart = Math.min(current.start, messages.length);
+    const currentEnd = Math.min(messages.length, Math.max(currentStart, current.end));
+    const bufferBefore = viewportStart - offsetAt(offsets, currentStart);
+    const bufferAfter = offsetAt(offsets, currentEnd) - viewportEnd;
+    const isOutsideWindow = bufferBefore < 0 || bufferAfter < 0;
+    const refreshThreshold = Math.min(
+      maximumReverseOverscanPixels,
+      Math.max(minimumReverseOverscanPixels, Math.ceil(element.clientHeight * 0.75)),
+    );
+    const isNearWindowEdge =
+      scrollDirection.current === 'forward'
+        ? bufferAfter <= refreshThreshold
+        : scrollDirection.current === 'backward'
+          ? bufferBefore <= refreshThreshold
+          : bufferBefore <= refreshThreshold || bufferAfter <= refreshThreshold;
+    if (!isOutsideWindow && !isNearWindowEdge) return;
+
+    const directionalOverscan = Math.min(
+      maximumDirectionalOverscanPixels,
+      Math.max(minimumDirectionalOverscanPixels, Math.ceil(element.clientHeight * 1.5)),
+    );
+    const reverseOverscan = Math.min(
+      maximumReverseOverscanPixels,
+      Math.max(minimumReverseOverscanPixels, Math.ceil(element.clientHeight * 0.5)),
+    );
+    const overscanBefore =
+      scrollDirection.current === 'forward'
+        ? reverseOverscan
+        : scrollDirection.current === 'backward'
+          ? directionalOverscan
+          : minimumDirectionalOverscanPixels;
+    const overscanAfter =
+      scrollDirection.current === 'backward'
+        ? reverseOverscan
+        : scrollDirection.current === 'forward'
+          ? directionalOverscan
+          : minimumDirectionalOverscanPixels;
+    const visibleStart = findIndexAtOffset(
+      offsets,
+      Math.max(0, viewportStart - overscanBefore),
+    );
     const visibleEnd = Math.min(
       messages.length,
-      findIndexAtOffset(offsets, viewport.scrollTop + viewport.height - verticalPadding + overscanPixels) + 1,
+      findIndexAtOffset(offsets, viewportEnd + overscanAfter) + 1,
     );
+    if (currentStart === visibleStart && currentEnd === visibleEnd) return;
+    const next = { start: visibleStart, end: visibleEnd };
+    visibleRangeRef.current = next;
+    setVisibleRange(next);
+  }, [messages.length, offsets]);
+
+  /** Tracks follow behavior on every scroll while rendering only when the virtual window changes. */
+  const handleScroll = useCallback(() => {
+    const element = containerRef.current;
+    if (!element) return;
+    const scrollDelta = element.scrollTop - lastScrollTop.current;
+    const distanceFromBottom = Math.max(0, element.scrollHeight - element.clientHeight - element.scrollTop);
+    if (distanceFromBottom <= latestMessageThreshold) {
+      followLatestMessage.current = true;
+    } else if (scrollDelta < 0) {
+      followLatestMessage.current = false;
+    }
+    if (scrollDelta > 0) scrollDirection.current = 'forward';
+    else if (scrollDelta < 0) scrollDirection.current = 'backward';
+    lastScrollTop.current = element.scrollTop;
+    updateVisibleRange();
+  }, [updateVisibleRange]);
+
+  useEffect(() => {
+    const element = containerRef.current;
+    if (!element) return;
+    const viewportObserver = new ResizeObserver(() => {
+      updateViewport();
+      updateVisibleRange();
+    });
+    viewportObserver.observe(element);
+    element.addEventListener('scroll', handleScroll, { passive: true });
+    updateViewport();
+    updateVisibleRange();
+    return () => {
+      viewportObserver.disconnect();
+      element.removeEventListener('scroll', handleScroll);
+    };
+  }, [handleScroll, updateViewport, updateVisibleRange]);
+
+  useEffect(() => {
+    updateVisibleRange();
+  }, [updateVisibleRange]);
+
+  const layout = useMemo(() => {
+    const visibleStart = Math.min(visibleRange.start, messages.length);
+    const visibleEnd = Math.min(messages.length, Math.max(visibleStart, visibleRange.end));
     const rows = messages.slice(visibleStart, visibleEnd).map((message, offset) => ({
       index: visibleStart + offset,
       message,
@@ -212,7 +290,7 @@ export function useVirtualMessageList(messages: ChatMessage[], conversationId: s
       rows,
       topPadding: verticalPadding + offsetAt(offsets, visibleStart),
     };
-  }, [messages, offsets, viewport.height, viewport.scrollTop]);
+  }, [messages, offsets, visibleRange.end, visibleRange.start]);
 
   /**
    * Moves to a message's estimated or measured position and centers it when space permits.
@@ -230,13 +308,16 @@ export function useVirtualMessageList(messages: ChatMessage[], conversationId: s
       const rowEnd = offsetAt(offsets, index + 1);
       const rowHeight = rowEnd - rowStart;
       const centeredOffset = rowStart - Math.max(0, (viewport.height - rowHeight) / 2);
+      const targetScrollTop = verticalPadding + Math.max(0, centeredOffset);
+      scrollDirection.current = targetScrollTop >= element.scrollTop ? 'forward' : 'backward';
       element.scrollTo({
-        top: verticalPadding + Math.max(0, centeredOffset),
+        top: targetScrollTop,
         behavior: 'smooth',
       });
+      updateVisibleRange();
       return true;
     },
-    [messages, offsets, viewport.height],
+    [messages, offsets, updateVisibleRange, viewport.height],
   );
 
   /** Pins the viewport to the current end and resumes following future content. */
@@ -246,7 +327,9 @@ export function useVirtualMessageList(messages: ChatMessage[], conversationId: s
     followLatestMessage.current = true;
     element.scrollTop = element.scrollHeight;
     lastScrollTop.current = element.scrollTop;
-  }, []);
+    scrollDirection.current = 'forward';
+    updateVisibleRange();
+  }, [updateVisibleRange]);
 
   const totalHeight = offsetAt(offsets, messages.length);
 

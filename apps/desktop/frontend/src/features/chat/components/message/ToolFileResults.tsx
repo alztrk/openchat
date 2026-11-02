@@ -1,7 +1,7 @@
 import { Check, File, Folder, FolderOpen } from 'lucide-react';
 import { cloneElement, isValidElement, lazy, Suspense, useEffect, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button } from '@shared/components';
+import { Button, TitleTooltip } from '@shared/components';
 import { readConversationFileChangeDiff, type ChatFileChangeDiff } from '@features/chat/data/chatFileChanges';
 import type { ToolActivity } from './messageData';
 import { ReadCodeLines } from './ReadCodeLines';
@@ -58,9 +58,9 @@ export function FileListingResult({
         {location ? (
           <>
             <FolderOpen aria-hidden="true" className="shrink-0" size={15} />
-            <span className="min-w-0 flex-1 truncate" title={location}>
+            <TitleTooltip title={location}><span className="min-w-0 flex-1 truncate" >
               {formatToolPath(location)}
-            </span>
+            </span></TitleTooltip>
           </>
         ) : (
           <span className="min-w-0 flex-1" />
@@ -78,9 +78,9 @@ export function FileListingResult({
               ) : (
                 <File aria-hidden="true" className="shrink-0 text-secondary-icon" size={16} />
               )}
-              <span className="min-w-0 flex-1 truncate" title={entry.name}>
+              <TitleTooltip title={entry.name}><span className="min-w-0 flex-1 truncate" >
                 {entry.name}
-              </span>
+              </span></TitleTooltip>
             </li>
           ))}
         </ul>
@@ -150,9 +150,9 @@ export function SearchResult({
                     {formatToolPath(match.path)}
                   </Button>
                 ) : (
-                  <span className="min-w-0 flex-1 truncate" title={match.path}>
+                  <TitleTooltip title={match.path}><span className="min-w-0 flex-1 truncate" >
                     {formatToolPath(match.path)}
-                  </span>
+                  </span></TitleTooltip>
                 )}
                 <span className="shrink-0 rounded-control bg-composer px-1.5 py-0.5">{match.line}</span>
               </div>
@@ -267,12 +267,12 @@ export function FileInfoResult({ output, locale }: { output: ToolRecord; locale:
           {isDirectory ? <Folder aria-hidden="true" size={20} /> : <File aria-hidden="true" size={20} />}
         </span>
         <div className="min-w-0">
-          <p className="truncate text-sm font-semibold text-text" title={path}>
+          <TitleTooltip title={path}><p className="truncate text-sm font-semibold text-text" >
             {pathName(path)}
-          </p>
-          <p className="mt-0.5 break-all text-xs text-secondary-text" title={path}>
+          </p></TitleTooltip>
+          <TitleTooltip title={path}><p className="mt-0.5 break-all text-xs text-secondary-text" >
             {formatToolPath(path)}
-          </p>
+          </p></TitleTooltip>
         </div>
       </div>
       <div className="flex flex-wrap gap-2 text-xs text-secondary-text">

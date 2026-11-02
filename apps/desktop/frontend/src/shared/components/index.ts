@@ -37,5 +37,5 @@ export { Slider, type SliderProps } from './Slider';
 export { Switch, type SwitchProps } from './Switch';
 export { Textarea, type TextareaAppearance, type TextareaDensity, type TextareaProps } from './Textarea';
 export { Toast, type ToastProps, type ToastVariant } from './Toast';
-export { Tooltip, type TooltipProps } from './Tooltip';
+export { TitleTooltip, Tooltip, type TitleTooltipProps, type TooltipProps } from './Tooltip';
 export { Tabs, TabsContent, TabsList, TabsTrigger } from './tabs';

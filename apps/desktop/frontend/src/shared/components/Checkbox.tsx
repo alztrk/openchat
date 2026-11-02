@@ -1,12 +1,13 @@
 import type { InputHTMLAttributes } from 'react';
 
 import { cn } from '@shared/lib/utils/cn';
+import { TitleTooltip } from './Tooltip';
 
 /** Native checkbox with the shared focus, border and accent treatment. */
 export type CheckboxProps = Omit<InputHTMLAttributes<HTMLInputElement>, 'type'>;
 
-export function Checkbox({ className, ...props }: CheckboxProps) {
-  return (
+export function Checkbox({ className, title, ...props }: CheckboxProps) {
+  const checkbox = (
     <input
       {...props}
       className={cn(
@@ -16,4 +17,5 @@ export function Checkbox({ className, ...props }: CheckboxProps) {
       type="checkbox"
     />
   );
+  return <TitleTooltip title={title}>{checkbox}</TitleTooltip>;
 }

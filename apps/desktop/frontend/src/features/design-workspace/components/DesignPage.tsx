@@ -28,9 +28,10 @@ import {
 } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button, Checkbox, ColorPicker, DatePicker, Dialog, Input, Select, Slider, Textarea } from '@shared/components';
+import { Button, Checkbox, ColorPicker, DatePicker, Dialog, Input, Select, Slider, Textarea, TitleTooltip } from '@shared/components';
 import { listConversationAttachments } from '@features/chat/data/chatStorage';
 import { DesignCanvas } from '@features/design-workspace/components/DesignCanvas';
+import { DesignImageGallery } from '@features/design-workspace/components/DesignImageGallery';
 import {
   buildStructuredImagePrompt,
   customSizeOption,
@@ -73,7 +74,6 @@ import {
   supportsHighQualityTier,
   withAnnotations,
 } from '@features/design-workspace/components/designPageUtils';
-import { ImageTile } from '@features/design-workspace/components/ImageTile';
 import {
   clampDesignPanelWidth,
   DESIGN_PANEL_DEFAULT_WIDTH,
@@ -112,7 +112,11 @@ import {
   setImageCollectionItem,
 } from '@features/design-workspace/data/imageGeneration';
 import { type ChatGptAccountQuotaStatus, refreshChatGptAccountQuota } from '@features/provider-settings/data/oauthRateLimits';
-import { LocalServiceError, type ServiceOperation } from '@shared/lib/platform/local-service/LocalServiceClient';
+import {
+  LocalServiceError,
+  serviceErrorCategoryTranslationKey,
+  type ServiceOperation,
+} from '@shared/lib/platform/local-service/LocalServiceClient';
 
 interface ImagePageCursor {
   design: number | null;
@@ -661,7 +665,8 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
       } else if (error instanceof LocalServiceError && error.code === 'image_api_rate_limited') {
         setGenerationError(t('designApiRateLimited'));
       } else {
-        setGenerationError(error instanceof Error ? error.message : t('designGenerationFailed'));
+        const categoryKey = error instanceof LocalServiceError ? serviceErrorCategoryTranslationKey(error.category) : null;
+        setGenerationError(categoryKey ? t(categoryKey) : t('designGenerationFailed'));
       }
     } finally {
       if (activeOperationRef.current === operation) activeOperationRef.current = null;
@@ -1459,7 +1464,7 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
           </div>
         ) : null}
         {/* biome-ignore lint/a11y/useSemanticElements: Custom interactive resize separator for the design settings panel. */}
-        <div
+        <TitleTooltip title={t('resizeSidebar')}><div
           aria-label={t('resizeSidebar')}
           aria-orientation="vertical"
           aria-valuemax={DESIGN_PANEL_MAX_WIDTH}
@@ -1472,7 +1477,7 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
           ref={controlPanelResizerRef}
           role="separator"
           tabIndex={0}
-          title={t('resizeSidebar')}
+
         >
           <span
             className={`pointer-events-none absolute inset-y-0 right-0 w-0.5 transition-colors duration-quick ${
@@ -1481,7 +1486,7 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
                 : 'bg-transparent group-hover/design-resizer:bg-accent/50 group-focus-visible/design-resizer:bg-accent'
             }`}
           />
-        </div>
+        </div></TitleTooltip>
       </aside>
 
       <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background">
@@ -1725,7 +1730,7 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
           </section>
         ) : null}
 
-        <div aria-live="polite" className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-7" ref={galleryScrollRef}>
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-7" ref={galleryScrollRef}>
           {galleryError !== 'none' && gallery.length === 0 ? (
             <div className="mx-auto grid max-w-lg gap-3 py-12 text-center" role="alert">
               <p className="text-sm text-destructive">{t('designLibraryFailed')}</p>
@@ -1759,39 +1764,12 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
 
           {gallery.length > 0 || generationInProgress ? (
             <>
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
-                {generationInProgress ? (
-                  <>
-                    <span className="sr-only" role="status">
-                      {t('designGenerationInProgress')}
-                    </span>
-                    {Array.from({ length: generationPlaceholderCount }, (_, index) => index + 1).map((slot) => (
-                      <div
-                        aria-hidden="true"
-                        className="design-image-tile relative grid aspect-square min-w-0 place-items-center overflow-hidden rounded-control border border-border bg-raised"
-                        key={`generation-placeholder-${slot}`}
-                      >
-                        <span className="openchat-skeleton absolute inset-0 bg-selected" />
-                        <span className="relative z-10 grid justify-items-center gap-3 text-accent">
-                          <LoaderCircle className="openchat-ai-ring-spinner" size={28} />
-                          <span className="text-sm font-medium">{t('designGenerationInProgress')}</span>
-                        </span>
-                        <span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 to-transparent px-3 pb-2 pt-8 text-xs font-medium text-white">
-                          {t('designGenerationInProgressHint')}
-                        </span>
-                      </div>
-                    ))}
-                  </>
-                ) : null}
-                {gallery.map((entry) => (
-                  <ImageTile
-                    entry={entry}
-                    key={entry.key}
-                    root={galleryScrollRef.current}
-                    onSelect={(src) => setSelectedImage({ image: entry, src })}
-                  />
-                ))}
-              </div>
+              <DesignImageGallery
+                entries={gallery}
+                generationPlaceholderCount={generationInProgress ? generationPlaceholderCount : 0}
+                onSelect={(image, src) => setSelectedImage({ image, src })}
+                scrollElementRef={galleryScrollRef}
+              />
               {hasMore ? (
                 <div className="flex justify-center py-6">
                   <Button

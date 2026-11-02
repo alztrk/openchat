@@ -223,7 +223,7 @@ export function ConversationSidebarToolbar({
           </DropdownMenuSub>
         </DropdownMenuContent>
       </DropdownMenu>
-      <div className="conversation-sidebar-new-chat-group flex h-9 min-w-0 flex-1 overflow-hidden rounded-button border border-border bg-surface/80 shadow-2xs backdrop-blur-sm">
+      <div className="conversation-sidebar-new-chat-group grid h-9 min-w-0 flex-1 overflow-hidden rounded-button border border-border bg-surface/80 shadow-2xs backdrop-blur-sm">
         <Button
           aria-label={t('newChat')}
           className="conversation-sidebar-new-chat-main group min-h-0 h-full min-w-0 flex-1 justify-between rounded-none border-0 bg-transparent px-3 text-left text-settings-description font-medium text-text shadow-none transition-colors duration-quick hover:bg-raised/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-focus"

@@ -2,7 +2,7 @@ import { Folder, FolderOpen, LoaderCircle, MessageSquarePlus, RefreshCw } from '
 import { type DragEvent, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button } from '@shared/components';
+import { Button, TitleTooltip } from '@shared/components';
 import { ConversationSidebarRow } from '@features/chat/components/ConversationSidebarRow';
 import { ConversationSidebarSection } from '@features/chat/components/ConversationSidebarSection';
 import type { ChatConversation, ExportFormat } from '@entities/conversation';
@@ -175,12 +175,12 @@ export function ProjectSidebarSection({
                       />
                       <span className={`sidebar-project-title min-w-0 flex-1 truncate ${selected ? 'font-normal' : 'font-medium'}`}>{project.name}</span>
                       {project.workspaceRoots.length > 1 ? (
-                        <span
+                        <TitleTooltip title={t('projectWorkspaceRootCount', { count: project.workspaceRoots.length })}><span
                           className="shrink-0 text-xs text-secondary-text/70"
-                          title={t('projectWorkspaceRootCount', { count: project.workspaceRoots.length })}
+
                         >
                           +{project.workspaceRoots.length - 1}
-                        </span>
+                        </span></TitleTooltip>
                       ) : null}
                     </Button>
                     <div className="project-sidebar-actions pointer-events-none absolute inset-y-0 right-1.5 flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity duration-quick group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100">

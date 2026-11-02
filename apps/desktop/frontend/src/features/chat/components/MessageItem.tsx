@@ -1,5 +1,5 @@
 import { Brain, Check, ChevronLeft, ChevronRight, CircleAlert, Copy, GitBranch, Link, RefreshCw } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { memo, useEffect, useRef, useState } from 'react';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button, Dialog } from '@shared/components';
@@ -47,7 +47,7 @@ export interface MessageItemProps {
   onCheckpointRestored?: () => void;
 }
 
-export function MessageItem({
+export const MessageItem = memo(function MessageItem({
   isSearchMatch = false,
   assistantModelFallback = null,
   assistantProviderFallback = null,
@@ -416,7 +416,7 @@ export function MessageItem({
       </Dialog>
     </article>
   );
-}
+});
 
 function AssistantHeader({ modelId, providerId }: { modelId: string | null; providerId: string | null }) {
   const { t } = useTranslation();

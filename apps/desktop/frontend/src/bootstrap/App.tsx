@@ -60,7 +60,7 @@ import { useKeyboardShortcutsStore } from '@features/app-settings/stores/keyboar
 import { localServiceClient } from '@shared/lib/platform/local-service';
 import { unifiedStorage } from '@shared/lib/platform/storage/unifiedStorage';
 import { getCurrentWindow, getVersion, invoke, isTauri, listen } from '@shared/lib/platform/tauri';
-import { BrandMark } from '@shared/components';
+import { BrandMark, TitleTooltip } from '@shared/components';
 import { type AppSurface, ConversationActionsHeader, NavigationRail, TitleBar } from '@widgets/index';
 import { AppModals } from './AppModals';
 import { useAppDragDrop } from './useAppDragDrop';
@@ -1270,17 +1270,17 @@ export function App() {
       </div>
       <footer className="app-shell-chrome app-shell-footer flex select-none items-center justify-between gap-2 px-2 py-1 text-xs font-medium text-secondary-text">
         <span className="flex items-center gap-2">
-          <a
+          <TitleTooltip title={t('github')}><a
             aria-label={t('openChatGitHubRepository')}
             className="inline-flex items-center rounded-xs hover:text-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
             href="https://github.com/alztrk/openchat"
             rel="noreferrer"
             target="_blank"
-            title={t('github')}
+
           >
             <SiGithub aria-hidden="true" size={14} />
             <span className="ml-1">{t('github')}</span>
-          </a>
+          </a></TitleTooltip>
           <span>{appVersion ? `v${appVersion}` : null}</span>
         </span>
         <span className="flex select-none items-center gap-1.5">

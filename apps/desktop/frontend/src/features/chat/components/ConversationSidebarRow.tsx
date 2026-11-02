@@ -33,7 +33,7 @@ import {
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 
-import { Button, Input } from '@shared/components';
+import { Button, Input, TitleTooltip } from '@shared/components';
 import type { ChatConversation, ChatProject, ExportFormat } from '@features/chat/data/chatStorage';
 import type { CustomSidebarFolder, SidebarViewMode } from '@features/chat/data/sidebarPreferences';
 import { setSidebarDraggingConversationId } from '@features/chat/data/sidebarPreferences';
@@ -525,7 +525,7 @@ export function ConversationSidebarRow({
       ) : (
         <>
           {/* biome-ignore lint/a11y/useSemanticElements: The row contains nested action buttons, so it cannot be a native button. */}
-          <div
+          <TitleTooltip title={conversation.title}><div
             aria-current={active ? 'page' : undefined}
             className={`conversation-sidebar-row-title min-w-0 flex-1 flex items-center justify-start gap-2 rounded-button bg-transparent px-3 text-left text-settings-description transition-all duration-quick hover:bg-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus ${
               canDrag ? 'cursor-grab active:cursor-grabbing' : ''
@@ -547,7 +547,7 @@ export function ConversationSidebarRow({
             onKeyDown={handleRowKeyDown}
             role="button"
             tabIndex={disabled ? -1 : 0}
-            title={conversation.title}
+
           >
             {isAiWorking ? (
               <span
@@ -571,7 +571,7 @@ export function ConversationSidebarRow({
                 </span>
               ) : null}
             </span>
-          </div>
+          </div></TitleTooltip>
           <div
             className={`conversation-sidebar-row-actions pointer-events-none flex items-center gap-0.5 opacity-0 transition-opacity duration-quick ${
               menuOpen

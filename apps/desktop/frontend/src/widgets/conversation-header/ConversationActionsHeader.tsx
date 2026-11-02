@@ -1,8 +1,7 @@
-import { Clock3, Files, MessageSquare, MessageSquarePlus, PanelRight } from 'lucide-react';
+import { Clock3, MessageSquare, MessageSquarePlus, PanelRight } from 'lucide-react';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@shared/components';
-import { ConversationTitleEditor } from '@features/chat/components/ConversationTitleEditor';
 import type { ChatConversation } from '@features/chat/data/chatStorage';
 import { useChatStore } from '@features/chat/state/chatStore';
 import { ConversationExportMenu } from './ConversationExportMenu';
@@ -24,7 +23,6 @@ export function ConversationActionsHeader({
 }: ConversationActionsHeaderProps) {
   const { t } = useTranslation();
   const storeConversations = useChatStore((state) => state.conversations);
-  const renameConversation = useChatStore((state) => state.renameConversation);
   const temporaryChat = useChatStore((state) => (isPanelConversation ? null : state.temporaryChat));
   const isSending = useChatStore((state) => state.isSending);
   const sendingConversationId = useChatStore((state) => state.sendingConversationId);
@@ -67,14 +65,13 @@ export function ConversationActionsHeader({
         ) : activeConversation ? (
           <div className="flex min-w-0 max-w-full flex-1 items-center gap-1.5">
             <MessageSquare aria-hidden="true" className="shrink-0 text-secondary-icon" size={16} />
-            <div className="min-w-0 max-w-full flex-1 [&_button]:min-h-8 [&_button]:px-1 [&_input]:!text-sm [&_input]:!font-medium [&_span]:!text-sm [&_span]:!font-medium">
-              <ConversationTitleEditor
-                isAiWorking={isActiveConversationAiWorking}
-                key={activeConversation.id}
-                onSave={(title) => renameConversation(activeConversation.id, title)}
-                title={activeConversation.title}
-              />
-            </div>
+            <h1
+              className={`min-w-0 max-w-full flex-1 truncate text-sm font-semibold ${
+                isActiveConversationAiWorking ? 'openchat-title-shimmer' : 'text-text'
+              }`}
+            >
+              {activeConversation.title}
+            </h1>
           </div>
         ) : (
           <div className="flex min-w-0 items-center gap-2 select-none">
@@ -85,17 +82,6 @@ export function ConversationActionsHeader({
       </div>
 
       <div className="flex shrink-0 items-center gap-1">
-        <Button
-          aria-label={t('attachmentLibraryOpenPicker')}
-          className="size-8 rounded-control text-secondary-icon"
-          disabled
-          size="icon"
-          title={t('attachmentLibraryOpenPicker')}
-          type="button"
-          variant="ghost"
-        >
-          <Files aria-hidden="true" size={15} />
-        </Button>
         {onToggleRightPanel ? (
           <Button
             aria-label={isRightPanelOpen ? t('closeRightPanel') : t('openRightPanel')}

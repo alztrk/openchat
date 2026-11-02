@@ -1,4 +1,4 @@
-import { Link2, LoaderCircle, RefreshCw } from 'lucide-react';
+import { Link2, RefreshCw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { BrandMark, Button } from '@shared/components';
 
@@ -27,9 +27,7 @@ export function ConversationEmptyState({
 }: ConversationEmptyStateProps) {
   const { t } = useTranslation();
   const workspaceSelectionRequired = chatGptWorkspaceSelectionRequired && !hasAvailableModels;
-  const title = isLoading
-    ? t('modelsLoading')
-    : workspaceSelectionRequired
+  const title = workspaceSelectionRequired
       ? t('chatGptWorkspaceSelectionTitle')
       : !hasAvailableModels
         ? modelCatalogFailed
@@ -40,9 +38,7 @@ export function ConversationEmptyState({
         : selectedModel
           ? t('emptyChatWelcomeTitle')
           : t('emptyChatSelectModelTitle');
-  const description = isLoading
-    ? null
-    : workspaceSelectionRequired
+  const description = workspaceSelectionRequired
       ? t('chatGptWorkspaceSelectionRequired')
       : !hasAvailableModels
         ? modelCatalogFailed
@@ -59,13 +55,10 @@ export function ConversationEmptyState({
   return (
     <div className="conversation-empty-state flex min-h-0 flex-1 flex-col overflow-y-auto px-4 py-6 sm:px-6 sm:py-8">
       <div className="conversation-empty-state__content mx-auto my-auto w-full max-w-conversation pb-4 text-center">
-        {selectedModel && hasAvailableModels && !isLoading ? (
+        {selectedModel ? (
           <div className="conversation-empty-state__brand-mark mb-4">
             <BrandMark size="welcome" />
           </div>
-        ) : null}
-        {isLoading ? (
-          <LoaderCircle aria-hidden="true" className="mx-auto mb-4 animate-spin text-accent" size={24} />
         ) : null}
         <h1
           aria-live="polite"

@@ -11,9 +11,12 @@ import {
   Trash2,
 } from 'lucide-react';
 import {
+  createContext,
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
+  type ReactNode,
   useCallback,
+  useContext,
   useEffect,
   useId,
   useMemo,
@@ -44,7 +47,7 @@ function readSecurityScanSidebarWidth(): number {
   return Number.isFinite(width) ? clampSecurityScanSidebarWidth(width) : SIDEBAR_DEFAULT_WIDTH;
 }
 
-import { Button, Checkbox, Dialog, Select } from '@shared/components';
+import { Button, Checkbox, Dialog, Select, TitleTooltip } from '@shared/components';
 import { MessageList } from '@features/chat/components/MessageList';
 import type { ChatProject } from '@entities/project';
 import { useChatStore } from '@features/chat/state/chatStore';
@@ -81,7 +84,6 @@ export function SecurityScanPage() {
   const [deleteTarget, setDeleteTarget] = useState<SecurityScan | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [refreshTime, setRefreshTime] = useState(Date.now());
   const [sidebarWidth, setSidebarWidth] = useState(readSecurityScanSidebarWidth);
   const [isResizingSidebar, setIsResizingSidebar] = useState(false);
   const isRefreshingScansRef = useRef(false);
@@ -108,10 +110,8 @@ export function SecurityScanPage() {
   useEffect(() => {
     void refreshScans();
     const listTimer = window.setInterval(() => void refreshScans(), REFRESH_INTERVAL_MS);
-    const elapsedTimer = window.setInterval(() => setRefreshTime(Date.now()), MS_PER_SECOND);
     return () => {
       window.clearInterval(listTimer);
-      window.clearInterval(elapsedTimer);
     };
   }, [refreshScans]);
 
@@ -200,7 +200,8 @@ export function SecurityScanPage() {
   );
 
   return (
-    <div className="security-scan-page-container flex min-h-0 min-w-0 flex-1">
+    <SecurityScanClockProvider active={scans.some((scan) => scan.finishedAtUnixMs === null)}>
+      <div className="security-scan-page-container flex min-h-0 min-w-0 flex-1">
       <div className="security-scan-page flex min-h-0 min-w-0 flex-1 flex-row overflow-hidden bg-background">
       <aside
         className={`security-scan-sidebar conversation-sidebar app-content-divider relative flex h-full shrink-0 flex-col border-y-0 border-r bg-navigation ${isResizingSidebar ? 'select-none' : ''}`}
@@ -242,7 +243,6 @@ export function SecurityScanPage() {
                   key={scan.id}
                   active={scan.id === selectedScanId}
                   modelLabel={resolveScanModelLabel(scan, models, t('securityScanModelUnavailable'))}
-                  now={refreshTime}
                   onDelete={() => setDeleteTarget(scan)}
                   onSelect={() => {
                     setShowCreateForm(false);
@@ -255,7 +255,7 @@ export function SecurityScanPage() {
           )}
         </div>
         {/* biome-ignore lint/a11y/useSemanticElements: Custom interactive resize separator for the security scan sidebar. */}
-        <div
+        <TitleTooltip title={t('resizeSidebar')}><div
           aria-label={t('resizeSidebar')}
           aria-orientation="vertical"
           aria-valuemax={SIDEBAR_MAX_WIDTH}
@@ -270,12 +270,12 @@ export function SecurityScanPage() {
           onPointerDown={handleSidebarResizePointerDown}
           role="separator"
           tabIndex={0}
-          title={t('resizeSidebar')}
+
         >
           <span
             className={`pointer-events-none absolute inset-y-0 right-0 w-0.5 transition-colors ${isResizingSidebar ? 'bg-focus' : 'bg-transparent group-hover/resizer:bg-border group-focus-visible/resizer:bg-focus'}`}
           />
-        </div>
+        </div></TitleTooltip>
       </aside>
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background">
@@ -295,7 +295,7 @@ export function SecurityScanPage() {
                   </span>
                   <span className="inline-flex items-center gap-1 tabular-nums">
                     <Clock3 aria-hidden="true" size={13} />
-                    {formatElapsed(selectedScan, refreshTime)}
+                    <SecurityScanElapsedTime scan={selectedScan} />
                   </span>
                 </div>
               </div>
@@ -408,14 +408,41 @@ export function SecurityScanPage() {
         ) : null}
       </Dialog>
       </div>
-    </div>
+      </div>
+    </SecurityScanClockProvider>
   );
+}
+
+const SecurityScanClockContext = createContext<number | null>(null);
+
+function SecurityScanClockProvider({ active, children }: { active: boolean; children: ReactNode }) {
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (!active) return;
+    const update = () => setNow(Date.now());
+    update();
+    const timer = window.setInterval(update, MS_PER_SECOND);
+    return () => window.clearInterval(timer);
+  }, [active]);
+
+  return <SecurityScanClockContext.Provider value={now}>{children}</SecurityScanClockContext.Provider>;
+}
+
+function SecurityScanElapsedTime({ scan }: { scan: SecurityScan }) {
+  if (scan.finishedAtUnixMs !== null) return formatElapsed(scan, scan.finishedAtUnixMs);
+  return <LiveSecurityScanElapsedTime scan={scan} />;
+}
+
+function LiveSecurityScanElapsedTime({ scan }: { scan: SecurityScan }) {
+  const now = useContext(SecurityScanClockContext);
+  if (now === null) throw new Error('Live security scan elapsed time requires the clock provider.');
+  return formatElapsed(scan, now);
 }
 
 interface ScanListItemProps {
   active: boolean;
   modelLabel: string;
-  now: number;
   onDelete(): void;
   onSelect(): void;
   scan: SecurityScan;
@@ -432,7 +459,7 @@ const statusLabels = {
   failed: 'securityScanStatusFailed',
 } as const satisfies Record<SecurityScanStatus, `securityScanStatus${string}`>;
 
-function ScanListItem({ active, modelLabel, now, onDelete, onSelect, scan }: ScanListItemProps) {
+function ScanListItem({ active, modelLabel, onDelete, onSelect, scan }: ScanListItemProps) {
   const { i18n, t } = useTranslation();
   const status = visibleScanStatus(scan, null);
   const createdAtLabel = formatScanCreatedAt(scan, i18n.resolvedLanguage);
@@ -447,20 +474,20 @@ function ScanListItem({ active, modelLabel, now, onDelete, onSelect, scan }: Sca
       >
         <span className="flex min-w-0 items-center gap-1.5 pr-7">
           <span className="min-w-0 flex-1 truncate text-sm font-medium text-text">{scan.projectName}</span>
-          <time className="security-scan-card-created-at shrink-0 text-xs tabular-nums text-secondary-text" dateTime={new Date(scan.createdAtUnixMs).toISOString()} title={createdAtLabel}>
+          <TitleTooltip title={createdAtLabel}><time className="security-scan-card-created-at shrink-0 text-xs tabular-nums text-secondary-text" dateTime={new Date(scan.createdAtUnixMs).toISOString()} >
             {createdAtLabel}
-          </time>
-          <time className="security-scan-card-created-time hidden shrink-0 text-xs tabular-nums text-secondary-text" dateTime={new Date(scan.createdAtUnixMs).toISOString()} title={createdAtLabel}>
+          </time></TitleTooltip>
+          <TitleTooltip title={createdAtLabel}><time className="security-scan-card-created-time hidden shrink-0 text-xs tabular-nums text-secondary-text" dateTime={new Date(scan.createdAtUnixMs).toISOString()} >
             {createdAtTimeLabel}
-          </time>
-          <span aria-label={t(statusLabelKey(status))} className="inline-flex shrink-0" role="img" title={t(statusLabelKey(status))}>
+          </time></TitleTooltip>
+          <TitleTooltip title={t(statusLabelKey(status))}><span aria-label={t(statusLabelKey(status))} className="inline-flex shrink-0" role="img" >
             <StatusDot status={status} />
-          </span>
+          </span></TitleTooltip>
         </span>
         <span className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-secondary-text">
           {scan.providerId ? <ProviderIcon providerId={scan.providerId} size={13} /> : null}
           <span className="min-w-0 flex-1 truncate">{modelLabel}</span>
-          <span className="shrink-0 tabular-nums">{formatElapsed(scan, now)}</span>
+          <span className="shrink-0 tabular-nums"><SecurityScanElapsedTime scan={scan} /></span>
         </span>
       </button>
       <Button

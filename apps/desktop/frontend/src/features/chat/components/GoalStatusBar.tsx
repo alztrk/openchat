@@ -12,7 +12,7 @@ import {
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button } from '@shared/components';
+import { Button, TitleTooltip } from '@shared/components';
 import type { ChatGoal, ChatGoalStatus } from '@features/chat/data/chatGoals';
 import { useChatStore } from '@features/chat/state/chatStore';
 
@@ -96,9 +96,9 @@ export function GoalStatusBar({ goal }: GoalStatusBarProps) {
           <p aria-live="polite" className="shrink-0 text-xs font-semibold text-text">
             {t(statusLabels[goal.status])}
           </p>
-          <p className="min-w-0 truncate text-xs text-secondary-text" title={detail}>
+          <TitleTooltip title={detail}><p className="min-w-0 truncate text-xs text-secondary-text" >
             {detail}
-          </p>
+          </p></TitleTooltip>
         </div>
         {goal.todos.length > 0 ? (
           <Button

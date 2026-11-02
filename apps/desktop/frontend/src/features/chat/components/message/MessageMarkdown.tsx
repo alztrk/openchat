@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next';
 // Copy notification delay
 const COPY_NOTIFICATION_DELAY_MS = 2_000;
 
-import { Button } from '@shared/components';
+import { Button, TitleTooltip } from '@shared/components';
 import { isWithinRichMarkdownBudget } from '@features/chat/data/messageMarkdownBudget';
 import { useChatDisplayPreferencesStore } from '@features/app-settings/data/chatDisplayPreferences';
 import { withStableKeys } from '@shared/lib/utils/reactKeys';
@@ -572,17 +572,17 @@ function renderInlineToken(
     const source = sourceById.get(citation[1] ?? '');
     if (source) {
       return (
-        <button
+        <TitleTooltip title={source.title}><button
           aria-haspopup="dialog"
           aria-label={source.title}
           className="cursor-pointer border-0 bg-transparent p-0 text-accent underline decoration-accent/50 underline-offset-2 hover:text-accent-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
           key={key}
           onClick={() => onCitationSelect(source)}
-          title={source.title}
+
           type="button"
         >
           {token}
-        </button>
+        </button></TitleTooltip>
       );
     }
   }

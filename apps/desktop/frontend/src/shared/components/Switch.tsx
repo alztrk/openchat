@@ -1,6 +1,7 @@
 import type { ButtonHTMLAttributes } from 'react';
 
 import { cn } from '@shared/lib/utils/cn';
+import { TitleTooltip } from './Tooltip';
 
 /** Controlled props for the shared native-button switch. */
 export interface SwitchProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'onChange'> {
@@ -11,8 +12,8 @@ export interface SwitchProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement
 }
 
 /** Renders an accessible switch; callers supply its label through native ARIA attributes. */
-export function Switch({ checked, className, onCheckedChange, ...props }: SwitchProps) {
-  return (
+export function Switch({ checked, className, onCheckedChange, title, ...props }: SwitchProps) {
+  const switchButton = (
     <button
       aria-checked={checked}
       className={cn(
@@ -33,4 +34,5 @@ export function Switch({ checked, className, onCheckedChange, ...props }: Switch
       />
     </button>
   );
+  return <TitleTooltip title={title}>{switchButton}</TitleTooltip>;
 }

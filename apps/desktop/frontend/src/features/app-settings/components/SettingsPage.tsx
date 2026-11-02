@@ -25,7 +25,7 @@ import type {
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button, Input } from '@shared/components';
+import { Button, Input, TitleTooltip } from '@shared/components';
 import { SettingsSectionSkeleton } from './SettingsSectionSkeleton';
 import type { ThemePreference } from './GeneralSettingsSection';
 
@@ -821,7 +821,7 @@ function SettingsSidebarResizer({
 }: SettingsSidebarResizerProps) {
   return (
     // biome-ignore lint/a11y/useSemanticElements: Custom interactive resize separator for the settings sidebar width.
-    <div
+    <TitleTooltip title={label}><div
       aria-label={label}
       aria-orientation="vertical"
       aria-valuemax={maxWidth}
@@ -833,10 +833,10 @@ function SettingsSidebarResizer({
       onPointerDown={onPointerDown}
       role="separator"
       tabIndex={0}
-      title={label}
+
     >
       <span className="settings-sidebar-resizer-line" />
-    </div>
+    </div></TitleTooltip>
   );
 }
 

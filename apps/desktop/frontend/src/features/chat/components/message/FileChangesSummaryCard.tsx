@@ -1,7 +1,7 @@
 import { FileDiff, FilePlus2, Info, NotebookPen, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
-import { Button } from '@shared/components';
+import { Button, TitleTooltip } from '@shared/components';
 import type { ChatFileChange } from '@features/chat/data/chatFileChanges';
 import type { ToolActivity } from './messageData';
 
@@ -82,9 +82,9 @@ export function FileChangesSummaryCard({
                   {change.path}
                 </Button>
               ) : (
-                <span className="min-w-0 flex-1 truncate text-text" title={change.path}>
+                <TitleTooltip title={change.path}><span className="min-w-0 flex-1 truncate text-text" >
                   {change.path}
-                </span>
+                </span></TitleTooltip>
               )}
               {change.addedLines !== null ? (
                 <span className="shrink-0 font-semibold text-success">+{change.addedLines}</span>

@@ -1,3 +1,4 @@
+import { TitleTooltip } from "@shared/components";
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react';
 import type { KeyboardEvent } from 'react';
@@ -309,13 +310,12 @@ export function DatePicker({ disabled = false, label, max, min, onChange, value 
               <fieldset className="grid min-w-0 grid-cols-7 gap-1" onKeyDown={handleCalendarKeyDown}>
                 <legend className="sr-only">{monthLabel}</legend>
                 {weekdays.map((weekday) => (
-                  <span
+                  <TitleTooltip key={weekday.key} title={weekday.full}><span
                     className="flex h-8 items-center justify-center text-xs font-medium text-secondary-text"
-                    key={weekday.key}
-                    title={weekday.full}
+
                   >
                     {weekday.short}
-                  </span>
+                  </span></TitleTooltip>
                 ))}
                 {calendarDays.map((date) => {
                   const key = dateKey(date);

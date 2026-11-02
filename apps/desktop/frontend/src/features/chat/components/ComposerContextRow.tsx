@@ -9,7 +9,7 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-  Input,
+  Input, TitleTooltip,
 } from '@shared/components';
 import type { PendingChatAttachment } from '@features/chat/data/chatAttachments';
 import type { ChatMessage } from '@features/chat/data/chatStorage';
@@ -126,12 +126,12 @@ export function ComposerContextRow({
                 {selectedProject?.name ?? t('noProjectSelected')}
               </span>
               {selectedProject && selectedProject.workspaceRoots.length > 1 ? (
-                <span
+                <TitleTooltip title={t('projectWorkspaceRootCount', { count: selectedProject.workspaceRoots.length })}><span
                   className="shrink-0 text-secondary-text"
-                  title={t('projectWorkspaceRootCount', { count: selectedProject.workspaceRoots.length })}
+
                 >
                   +{selectedProject.workspaceRoots.length - 1}
-                </span>
+                </span></TitleTooltip>
               ) : null}
               <ChevronDown aria-hidden="true" className="shrink-0 text-secondary-icon" size={14} />
             </Button>
@@ -176,12 +176,12 @@ export function ComposerContextRow({
                         <Folder aria-hidden="true" className="shrink-0 text-secondary-icon" size={14} />
                         <span className="min-w-0 flex-1 truncate">{project.name}</span>
                         {project.workspaceRoots.length > 1 ? (
-                          <span
+                          <TitleTooltip title={t('projectWorkspaceRootCount', { count: project.workspaceRoots.length })}><span
                             className="shrink-0 text-secondary-text"
-                            title={t('projectWorkspaceRootCount', { count: project.workspaceRoots.length })}
+
                           >
                             +{project.workspaceRoots.length - 1}
-                          </span>
+                          </span></TitleTooltip>
                         ) : null}
                         {isSelected ? <Check aria-hidden="true" className="shrink-0 text-accent" size={14} /> : null}
                       </Button>
@@ -234,13 +234,13 @@ export function ComposerContextRow({
           </DropdownMenuContent>
         </DropdownMenu>
         {activeAgent ? (
-          <span
+          <TitleTooltip title={activeAgent.name}><span
             className="flex min-w-0 max-w-52 items-center gap-1.5 rounded-control bg-raised/70 px-2 py-1 text-xs text-secondary-text"
-            title={activeAgent.name}
+
           >
             <Bot aria-hidden="true" className="shrink-0 text-secondary-icon" size={14} />
             <span className="truncate">{activeAgent.name}</span>
-          </span>
+          </span></TitleTooltip>
         ) : null}
       </div>
       {fileChanges ? (

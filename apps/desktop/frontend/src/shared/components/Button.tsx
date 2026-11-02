@@ -2,6 +2,7 @@ import { LoaderCircle } from 'lucide-react';
 import { type ButtonHTMLAttributes, forwardRef, type ReactNode } from 'react';
 
 import { cn } from '@shared/lib/utils/cn';
+import { TitleTooltip } from './Tooltip';
 
 /** Semantic visual treatment available to shared buttons. */
 export type ButtonVariant = 'primary' | 'secondary' | 'elevated' | 'ghost' | 'destructive';
@@ -10,7 +11,9 @@ export type ButtonSize = 'default' | 'small' | 'icon';
 export type ButtonShape = 'rounded' | 'pill';
 
 /** Native button attributes with the design system's visual variants. */
-export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+export interface ButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'title'> {
+  /** Displays a viewport-aware tooltip instead of a native browser title bubble. */
+  title?: string;
   /** Visual intent; defaults to `secondary`. */
   variant?: ButtonVariant;
   /** Preset dimensions; defaults to `default`. */
@@ -50,6 +53,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
     disabled,
     loading = false,
     loadingContent,
+    title: tooltipLabel,
     variant = 'secondary',
     size = 'default',
     shape = 'rounded',
@@ -59,7 +63,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
   },
   ref,
 ) {
-  return (
+  const button = (
     <button
       aria-busy={loading ? true : ariaBusy}
       className={cn(
@@ -85,4 +89,5 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       )}
     </button>
   );
+  return <TitleTooltip title={tooltipLabel}>{button}</TitleTooltip>;
 });

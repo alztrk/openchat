@@ -3,6 +3,7 @@ import { forwardRef } from 'react';
 
 import { cn } from '@shared/lib/utils/cn';
 import { Field, type FieldControlProps, type FieldLayout } from './Field';
+import { TitleTooltip } from './Tooltip';
 
 export type InputAppearance = 'default' | 'bare';
 export type InputDensity = 'default' | 'compact';
@@ -51,6 +52,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
     fieldLayout = 'stacked',
     id,
     label,
+    title,
     ...props
   },
   ref,
@@ -60,20 +62,22 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
     'aria-describedby': controlDescription,
     'aria-invalid': controlInvalid,
   }: InputControlProps) => (
-    <input
-      {...props}
-      id={controlId}
-      aria-describedby={controlDescription}
-      aria-invalid={controlInvalid}
-      className={cn(
-        'w-full text-text outline-none placeholder:text-secondary-text focus-visible:ring-2 focus-visible:ring-focus disabled:cursor-not-allowed disabled:opacity-50',
-        appearanceClasses[appearance],
-        densityClasses[density],
-        error && 'border-destructive',
-        className,
-      )}
-      ref={ref}
-    />
+    <TitleTooltip title={title}>
+      <input
+        {...props}
+        id={controlId}
+        aria-describedby={controlDescription}
+        aria-invalid={controlInvalid}
+        className={cn(
+          'w-full text-text outline-none placeholder:text-secondary-text focus-visible:ring-2 focus-visible:ring-focus disabled:cursor-not-allowed disabled:opacity-50',
+          appearanceClasses[appearance],
+          densityClasses[density],
+          error && 'border-destructive',
+          className,
+        )}
+        ref={ref}
+      />
+    </TitleTooltip>
   );
 
   if (fieldLayout === 'none') {

@@ -1,3 +1,4 @@
+import { TitleTooltip } from "@shared/components";
 import { AlertCircle, ChartNoAxesCombined, LoaderCircle } from 'lucide-react';
 import { type KeyboardEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -318,11 +319,12 @@ export function ContextUsageIndicator({
       <summary
         aria-label={`${t('contextUsageTitle')}: ${statusText}`}
         className="context-usage-trigger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
-        title={`${contextCountLabel} · ${t('contextUsageTitle')}: ${statusText}`}
       >
-        <span aria-hidden="true" className="context-usage-count">
-          {contextCountLabel}
-        </span>
+        <TitleTooltip title={`${contextCountLabel} · ${t('contextUsageTitle')}: ${statusText}`}>
+          <span aria-hidden="true" className="context-usage-count">
+            {contextCountLabel}
+          </span>
+        </TitleTooltip>
         {configurationState === 'loading' ? (
           <LoaderCircle aria-hidden="true" className="animate-spin text-secondary-icon" size={20} />
         ) : detailsUnavailable ? (
@@ -346,9 +348,9 @@ export function ContextUsageIndicator({
         <header className="grid gap-1">
           <h2 className="font-semibold text-text">{t('contextUsageTitle')}</h2>
           <div className="flex flex-wrap items-center justify-between gap-2 text-secondary-text">
-            <span className="min-w-0 truncate" title={modelLabel}>
+            <TitleTooltip title={modelLabel}><span className="min-w-0 truncate" >
               {modelLabel}
-            </span>
+            </span></TitleTooltip>
             <span className="shrink-0">
               {t('contextUsageSummary', {
                 used: formatCount(snapshot.totalTokens),

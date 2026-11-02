@@ -2,7 +2,7 @@ import { Check, Copy, ExternalLink, Terminal } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button } from '@shared/components';
+import { Button, TitleTooltip } from '@shared/components';
 import { isSafeHttpUrl, type ToolActivity } from './messageData';
 import {
   CopyTextButton,
@@ -190,9 +190,9 @@ export function WebSearchResult({ output }: { output: ToolRecord }) {
                 <span className="shrink-0 rounded-control bg-selected px-1.5 py-0.5 font-semibold text-accent-icon">
                   {result.engine.toUpperCase()}
                 </span>
-                <span className="min-w-0 flex-1 truncate" title={domain}>
+                <TitleTooltip title={domain}><span className="min-w-0 flex-1 truncate" >
                   {domain}
-                </span>
+                </span></TitleTooltip>
                 <CopyTextButton content={result.url} label={t('toolCopyUrl')} />
                 <a
                   aria-label={t('toolOpenUrl')}
@@ -287,9 +287,9 @@ export function GitResult({
                 className="flex min-h-9 flex-wrap items-center gap-2 border-b border-border px-2.5 py-2 last:border-b-0"
                 key={file.path}
               >
-                <span className="min-w-0 flex-1 truncate font-code text-xs text-text" title={file.path}>
+                <TitleTooltip title={file.path}><span className="min-w-0 flex-1 truncate font-code text-xs text-text" >
                   {formatToolPath(file.path)}
-                </span>
+                </span></TitleTooltip>
                 <span className="text-xs text-secondary-text">{file.status}</span>
                 {file.staged ? <MetaChip label={t('toolGitStaged')} /> : null}
                 {file.unstaged ? <MetaChip label={t('toolGitUnstaged')} /> : null}

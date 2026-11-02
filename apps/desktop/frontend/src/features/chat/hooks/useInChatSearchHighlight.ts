@@ -109,10 +109,11 @@ export function useInChatSearchHighlight(
       rangesRef.current = discoveredRanges;
 
       if (discoveredRanges.length > 0) {
+        const currentMatchIndex = useChatStore.getState().searchMatchIndex;
         const activeIdx =
-          targetInitialIndex !== -1 && searchMatchIndex === 0
+          targetInitialIndex !== -1 && currentMatchIndex === 0
             ? targetInitialIndex
-            : Math.min(searchMatchIndex, discoveredRanges.length - 1);
+            : Math.min(currentMatchIndex, discoveredRanges.length - 1);
 
         setSearchMatchInfo(activeIdx, discoveredRanges.length);
 
@@ -133,14 +134,31 @@ export function useInChatSearchHighlight(
     };
 
     scan();
-    const deferredTimer = setTimeout(scan, 80);
 
     return () => {
-      clearTimeout(deferredTimer);
       CSS.highlights.delete('openchat-search-match');
       CSS.highlights.delete('openchat-search-active');
     };
-  }, [containerRef, query, activeTargetId, renderRevision, searchMatchIndex, setSearchMatchInfo]);
+  }, [containerRef, query, activeTargetId, renderRevision, setSearchMatchInfo]);
+
+  useEffect(() => {
+    if (typeof CSS === 'undefined' || !('highlights' in CSS)) return;
+    const ranges = rangesRef.current;
+    if (ranges.length === 0) {
+      CSS.highlights.delete('openchat-search-active');
+      return;
+    }
+
+    const activeIndex = Math.min(searchMatchIndex, ranges.length - 1);
+    const activeRange = ranges[activeIndex];
+    const matchRanges = ranges.filter((_, index) => index !== activeIndex);
+    try {
+      CSS.highlights.set('openchat-search-match', new Highlight(...matchRanges));
+      CSS.highlights.set('openchat-search-active', activeRange ? new Highlight(activeRange) : new Highlight());
+    } catch {
+      // Highlight registration can fail while the DOM is being replaced.
+    }
+  }, [searchMatchIndex]);
 
   // Scroll to active range when searchMatchIndex changes
   useEffect(() => {

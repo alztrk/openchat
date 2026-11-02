@@ -16,7 +16,7 @@ export const dev = {
     ensureNoArguments('dev', []);
     buildLocalService('debug', false);
     ensureFrontendDependencies();
-    runNpm(['run', 'tauri:dev']);
+    runNpm(['run', 'tauri:dev:raw']);
   },
 };
 
@@ -85,7 +85,7 @@ export const devTestProfile = {
         }
 
         await runInterruptibleCommand(process.execPath, [
-          npmCliPath, 'run', 'tauri:dev', '--', '--features', 'desktop-profile-test-support',
+          npmCliPath, 'run', 'tauri:dev:raw', '--', '--features', 'desktop-profile-test-support',
           '--', '--', '--desktop-test-profile-root', profileRoot,
         ], { cwd: getFrontendDirectory(), interruptController });
       },
@@ -131,7 +131,7 @@ export const startupBenchmark = {
         }
 
         await runInterruptibleCommand(process.execPath, [
-          npmCliPath, 'run', 'tauri:dev', '--', '--features', 'startup-benchmark',
+          npmCliPath, 'run', 'tauri:dev:raw', '--', '--features', 'startup-benchmark',
           '--', '--', '--startup-benchmark-root', profileRoot,
         ], { cwd: getFrontendDirectory(), interruptController });
         interruptController.throwIfInterrupted();

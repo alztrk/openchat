@@ -2,7 +2,7 @@ import { Folder, FolderPlus, LoaderCircle, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button } from '@shared/components';
+import { Button, TitleTooltip } from '@shared/components';
 import type { ChatProject } from '@entities/project';
 import {
   addProjectWorkspaceRoot,
@@ -101,9 +101,9 @@ export function ProjectWorkspaceRootsPanel({ project }: ProjectWorkspaceRootsPan
               key={rootPath}
             >
               <Folder aria-hidden="true" className="shrink-0 text-secondary-icon" size={15} />
-              <span className="min-w-0 flex-1 truncate font-code text-xs text-text" title={displayPath}>
+              <TitleTooltip title={displayPath}><span className="min-w-0 flex-1 truncate font-code text-xs text-text" >
                 {displayPath}
-              </span>
+              </span></TitleTooltip>
               {index === 0 ? (
                 <span className="shrink-0 rounded-control border border-border bg-raised px-2 py-1 text-xs text-secondary-text">
                   {t('projectWorkspaceRootPrimary')}

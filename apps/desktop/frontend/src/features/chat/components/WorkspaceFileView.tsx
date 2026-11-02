@@ -1,3 +1,4 @@
+import { TitleTooltip } from "@shared/components";
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { FileTypeIcon } from './ChatFileChangeRow';
@@ -36,9 +37,9 @@ export function WorkspaceFileView({ file }: { file: FileWorkspaceTab }) {
     <section aria-label={t('workspaceFileContent', { name: file.fileName })} className="flex min-h-0 flex-1 flex-col">
       <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border px-3 text-xs text-secondary-text">
         <FileTypeIcon path={file.path} size={14} />
-        <span className="truncate" title={file.fileName}>
+        <TitleTooltip title={file.fileName}><span className="truncate" >
           {file.fileName}
-        </span>
+        </span></TitleTooltip>
         <span className="ml-auto shrink-0">{t('workspaceFileLineCount', { count: lines.length })}</span>
       </div>
       {file.content.length === 0 ? (

@@ -20,7 +20,7 @@ import {
 import { type FormEvent, type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button, Card, Input, RadioGroup, Select } from '@shared/components';
+import { Button, Card, Input, RadioGroup, Select, TitleTooltip } from '@shared/components';
 import type {
   HubDetails,
   HubFile,
@@ -298,9 +298,9 @@ export function ModelCatalogTab() {
         <th className="max-w-0 px-3 py-2.5 text-left font-normal" scope="row">
           <span className="flex min-w-0 items-center gap-2">
             <File aria-hidden="true" className="shrink-0 text-secondary-icon" size={15} />
-            <span className="min-w-0 truncate font-mono text-xs text-text" title={file.path}>
+            <TitleTooltip title={file.path}><span className="min-w-0 truncate font-mono text-xs text-text" >
               {file.path}
-            </span>
+            </span></TitleTooltip>
           </span>
         </th>
         <td className="whitespace-nowrap px-3 py-2.5 text-right text-xs text-secondary-text">

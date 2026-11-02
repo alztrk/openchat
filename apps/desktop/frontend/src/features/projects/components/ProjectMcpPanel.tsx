@@ -16,7 +16,7 @@ import {
 } from '@features/projects/data/projectPermissionSettings';
 import type { ProjectToolPermissionRule } from '@features/projects/data/projectPreferences';
 import { type ConnectorToolComparison, compareConnectorToolNames } from '@features/app-settings/data/connectorManifest';
-import { LocalServiceError, localServiceClient } from '@shared/lib/platform/local-service';
+import { localServiceClient, localServiceErrorDetails } from '@shared/lib/platform/local-service';
 import { ProjectMcpCredentialDialog } from './ProjectMcpCredentialDialog';
 
 interface ProjectMcpPanelProps {
@@ -996,10 +996,7 @@ class CredentialCleanupError extends Error {
 }
 
 function readErrorDetails(error: unknown): string | null {
-  const value = error instanceof LocalServiceError ? (error.details ?? error.message) : error;
-  if (typeof value !== 'string' && !(value instanceof Error)) return null;
-  const details = typeof value === 'string' ? value : value.message;
-  return details.trim().slice(0, 1000) || null;
+  return localServiceErrorDetails(error);
 }
 
 function omitKey<T>(value: Record<string, T>, key: string): Record<string, T> {

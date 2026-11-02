@@ -48,7 +48,7 @@ import SiVuedotjs from '@icons-pack/react-simple-icons/icons/SiVuedotjs';
 import SiYaml from '@icons-pack/react-simple-icons/icons/SiYaml';
 import SiZig from '@icons-pack/react-simple-icons/icons/SiZig';
 import { useTranslation } from 'react-i18next';
-import { Button } from '@shared/components';
+import { Button, TitleTooltip } from '@shared/components';
 import type { ChatFileChange } from '@features/chat/data/chatFileChanges';
 
 type LanguageIconComponent = typeof SiTypescript;
@@ -227,13 +227,13 @@ export function FileChangeRow({
           ) : null}
         </div>
       ) : change.status === 'conflict' ? (
-        <span aria-label={t('fileChangesConflict')} role="img" title={t('fileChangesConflict')}>
+        <TitleTooltip title={t('fileChangesConflict')}><span aria-label={t('fileChangesConflict')} role="img" >
           <TriangleAlert aria-hidden="true" className="text-destructive" size={16} />
-        </span>
+        </span></TitleTooltip>
       ) : !change.diffAvailable ? (
-        <span aria-label={t('fileChangesDiffUnavailable')} role="img" title={t('fileChangesDiffUnavailable')}>
+        <TitleTooltip title={t('fileChangesDiffUnavailable')}><span aria-label={t('fileChangesDiffUnavailable')} role="img" >
           <Info aria-hidden="true" className="text-secondary-icon" size={16} />
-        </span>
+        </span></TitleTooltip>
       ) : null}
     </li>
   );

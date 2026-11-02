@@ -28,7 +28,7 @@ import {
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button } from '@shared/components';
+import { Button, TitleTooltip } from '@shared/components';
 import {
   getConversationFileCheckpointRecoveryStatus,
   revertConversationFileCheckpointOperation,
@@ -252,9 +252,9 @@ export function ToolActivityAccordion({
           {headingLabel}
         </span>
         {isCommandExecutionTool && requestedCommand ? (
-          <span className="min-w-0 flex-1 break-words whitespace-pre-wrap text-xs text-secondary-text" title={requestedCommand}>
+          <TitleTooltip title={requestedCommand}><span className="min-w-0 flex-1 break-words whitespace-pre-wrap text-xs text-secondary-text" >
             {requestedCommand}
-          </span>
+          </span></TitleTooltip>
         ) : null}
         {isFileEditTool && toolFileName ? (
           editedFile && onOpenEditedFile ? (
@@ -274,9 +274,9 @@ export function ToolActivityAccordion({
               {toolFileName}
             </Button>
           ) : (
-            <span className="min-w-0 flex-1 truncate text-xs text-secondary-text" title={requestedPath ?? undefined}>
+            <TitleTooltip title={requestedPath ?? undefined}><span className="min-w-0 flex-1 truncate text-xs text-secondary-text" >
               {toolFileName}
-            </span>
+            </span></TitleTooltip>
           )
         ) : null}
         {isFileReadTool && toolFileName && requestedPath ? (
@@ -297,15 +297,15 @@ export function ToolActivityAccordion({
               {toolFileName}
             </Button>
           ) : (
-            <span className="min-w-0 flex-1 truncate text-xs text-secondary-text" title={requestedPath}>
+            <TitleTooltip title={requestedPath}><span className="min-w-0 flex-1 truncate text-xs text-secondary-text" >
               {toolFileName}
-            </span>
+            </span></TitleTooltip>
           )
         ) : null}
         {isFileSearchTool && requestedSearchQuery ? (
-          <span className="min-w-0 flex-1 truncate text-xs text-secondary-text" title={requestedSearchQuery}>
+          <TitleTooltip title={requestedSearchQuery}><span className="min-w-0 flex-1 truncate text-xs text-secondary-text" >
             {requestedSearchQuery}
-          </span>
+          </span></TitleTooltip>
         ) : null}
         {isFileSearchTool && searchMatchCount !== null ? (
           <span className="shrink-0 text-xs text-secondary-text">
@@ -313,14 +313,14 @@ export function ToolActivityAccordion({
           </span>
         ) : null}
         {isWebSearchTool && webSearchQuery ? (
-          <span className="min-w-0 flex-1 truncate text-xs text-secondary-text" title={webSearchQuery}>
+          <TitleTooltip title={webSearchQuery}><span className="min-w-0 flex-1 truncate text-xs text-secondary-text" >
             {webSearchQuery}
-          </span>
+          </span></TitleTooltip>
         ) : null}
         {isReadUrlTool && webPageUrl ? (
-          <span className="min-w-0 flex-1 truncate font-code text-xs text-secondary-text" title={webPageUrl}>
+          <TitleTooltip title={webPageUrl}><span className="min-w-0 flex-1 truncate font-code text-xs text-secondary-text" >
             {webPageUrl}
-          </span>
+          </span></TitleTooltip>
         ) : null}
         {isWebSearchTool && webSearchResultCount !== null ? (
           <span className="shrink-0 text-xs text-secondary-text">
@@ -404,8 +404,10 @@ export function ToolActivityAccordion({
             </p>
             <ul aria-label={t('fileChangesRecoveryFiles')} className="grid gap-1 text-xs text-secondary-text">
               {activity.fileChanges.slice(0, 3).map((change) => (
-                <li className="truncate" key={change.id} title={change.path}>
-                  {change.path}
+                <li className="truncate" key={change.id}>
+                  <TitleTooltip title={change.path}>
+                    <span className="contents">{change.path}</span>
+                  </TitleTooltip>
                 </li>
               ))}
             </ul>
@@ -430,8 +432,10 @@ export function ToolActivityAccordion({
                     className="mt-2 grid max-h-40 gap-1 overflow-y-auto text-xs text-secondary-text"
                   >
                     {activity.fileChanges.slice(3).map((change) => (
-                      <li className="truncate" key={change.id} title={change.path}>
-                        {change.path}
+                      <li className="truncate" key={change.id}>
+                        <TitleTooltip title={change.path}>
+                          <span className="contents">{change.path}</span>
+                        </TitleTooltip>
                       </li>
                     ))}
                   </ul>

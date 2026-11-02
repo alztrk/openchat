@@ -2,7 +2,7 @@ import { Check, Pencil, X } from 'lucide-react';
 import { type FormEvent, type KeyboardEvent, useCallback, useEffect, useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button, Input } from '@shared/components';
+import { Button, Input, TitleTooltip } from '@shared/components';
 
 interface ConversationTitleEditorProps {
   title: string;
@@ -103,12 +103,12 @@ export function ConversationTitleEditor({ isAiWorking = false, onSave, title }: 
         title={t('renameConversation')}
         variant="ghost"
       >
-        <span
+        <TitleTooltip title={title}><span
           className={`min-w-0 flex-1 truncate text-base font-semibold ${isAiWorking ? 'openchat-title-shimmer' : 'text-text'}`}
-          title={title}
+
         >
           {title}
-        </span>
+        </span></TitleTooltip>
         <Pencil aria-hidden="true" className="shrink-0 text-secondary-icon" size={15} />
       </Button>
     );

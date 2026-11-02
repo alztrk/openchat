@@ -6,6 +6,7 @@ import {
   Globe,
   LoaderCircle,
   MessageSquare,
+  Paperclip,
   Plus,
   Rows3,
   Undo2,
@@ -34,9 +35,10 @@ import { DiffContent } from './ChatFileChangesDiffViewer';
 import { EmbeddedBrowserPanel } from './EmbeddedBrowserPanel';
 import { detectFileLanguage } from './message/detectFileLanguage';
 import { SubagentsPanel } from './SubagentsPanel';
+import { ConversationAttachmentsPanel } from './ConversationAttachmentsPanel';
 import { type FileWorkspaceTab, WorkspaceFileView } from './WorkspaceFileView';
 
-export type RightWorkspaceTab = 'changes' | 'browser' | 'subagents';
+export type RightWorkspaceTab = 'changes' | 'browser' | 'subagents' | 'attachments';
 
 type BuiltinWorkspaceTab = {
   id: string;
@@ -75,7 +77,7 @@ export interface ChatFileChangesPanelProps {
   onChangesUpdated?(conversationId: string, changes: ChatFileChange[]): void;
 }
 
-type FileChangeError = 'load' | 'diff' | 'conflict' | 'applied' | 'revertAll' | 'revert';
+type FileChangeError = 'load' | 'diff' | 'conflict' | 'approveConflict' | 'applied' | 'revertAll' | 'revert';
 
 export function ChatFileChangesPanel({
   conversationId,
@@ -117,6 +119,8 @@ export function ChatFileChangesPanel({
   const [mutatingChangeId, setMutatingChangeId] = useState<string | null>(null);
   const [mutatingHunkIndex, setMutatingHunkIndex] = useState<number | null>(null);
   const [diffRevision, setDiffRevision] = useState(0);
+  const diffCacheRef = useRef(new Map<string, ChatFileChangeDiff>());
+  const diffCacheRevisionRef = useRef<string | null>(null);
   const selectedChangeIdRef = useRef<string | null>(null);
   const changesRequestRef = useRef(0);
   const activeTabIdRef = useRef(activeTabId);
@@ -132,7 +136,7 @@ export function ChatFileChangesPanel({
 
   const openBuiltinTab = useCallback(
     (tab: RightWorkspaceTab, tabConversationId: string | null = conversationId) => {
-      const id = tab === 'changes' ? 'builtin:changes' : `builtin:${tab}:${tabConversationId ?? 'global'}`;
+      const id = tab === 'changes' || tab === 'attachments' ? `builtin:${tab}` : `builtin:${tab}:${tabConversationId ?? 'global'}`;
       const nextTab: BuiltinWorkspaceTab = { id, kind: 'builtin', tab, conversationId: tabConversationId };
       setOpenTabs((current) => {
         if (tab !== 'changes') return current.some((item) => item.id === id) ? current : [...current, nextTab];
@@ -152,8 +156,10 @@ export function ChatFileChangesPanel({
   useEffect(() => {
     setOpenTabs((current) =>
       current.map((tab) =>
-        tab.kind === 'builtin' && tab.tab === 'changes' && tab.conversationId !== conversationId
-          ? { ...tab, conversationId }
+        tab.kind === 'builtin' &&
+        (tab.tab === 'changes' || tab.tab === 'attachments') &&
+        (tab.conversationId !== conversationId || tab.id !== `builtin:${tab.tab}`)
+          ? { ...tab, id: `builtin:${tab.tab}`, conversationId }
           : tab,
       ),
     );
@@ -311,19 +317,35 @@ export function ChatFileChangesPanel({
     };
   }, [loadChanges, refreshRevision]);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: Both revisions invalidate the selected diff after related file changes.
   useEffect(() => {
     if (!panelConversationId || !selectedChangeId) {
       setSelectedDiff(null);
       setIsLoadingDiff(false);
       return;
     }
+    const cacheRevision = JSON.stringify([panelConversationId, refreshRevision, diffRevision]);
+    if (diffCacheRevisionRef.current !== cacheRevision) {
+      diffCacheRef.current.clear();
+      diffCacheRevisionRef.current = cacheRevision;
+    }
     let current = true;
-    setSelectedDiff(null);
-    setIsLoadingDiff(true);
+    const cacheKey = JSON.stringify([panelConversationId, selectedChangeId]);
+    const cachedDiff = diffCacheRef.current.get(cacheKey);
+    setSelectedDiff(cachedDiff ?? null);
+    setIsLoadingDiff(cachedDiff === undefined);
     setError((currentError) => (currentError === 'conflict' ? currentError : null));
+    if (cachedDiff !== undefined) {
+      return () => {
+        current = false;
+      };
+    }
     void readConversationFileChangeDiff(panelConversationId, selectedChangeId)
       .then((diff) => {
+        diffCacheRef.current.set(cacheKey, diff);
+        if (diffCacheRef.current.size > 20) {
+          const oldestCacheKey = diffCacheRef.current.keys().next().value;
+          if (oldestCacheKey !== undefined) diffCacheRef.current.delete(oldestCacheKey);
+        }
         if (!current) return;
         setSelectedDiff(diff);
         setIsLoadingDiff(false);
@@ -371,7 +393,7 @@ export function ChatFileChangesPanel({
       const isConflict = failure instanceof LocalServiceError && failure.code === 'file_change_conflict';
       const wasApplied =
         failure instanceof LocalServiceError && failure.code === 'file_change_applied_response_unavailable';
-      setError(isConflict ? 'conflict' : wasApplied ? 'applied' : 'revert');
+      setError(isConflict ? 'approveConflict' : wasApplied ? 'applied' : 'revert');
       if (isConflict || wasApplied) void loadChanges(change.id, true);
     } finally {
       setMutatingChangeId(null);
@@ -387,6 +409,9 @@ export function ChatFileChangesPanel({
       setChanges(updated);
       onChangesUpdated?.(panelConversationId, updated);
       setDiffRevision((revision) => revision + 1);
+      if (updated.some((change) => change.status === 'conflict' && !change.approved)) {
+        setError('approveConflict');
+      }
     } catch {
       setError('revert');
     } finally {
@@ -465,13 +490,15 @@ export function ChatFileChangesPanel({
         ? 'fileChangesDiffFailed'
         : error === 'conflict'
           ? 'fileChangesConflict'
-          : error === 'applied'
-            ? 'fileChangesAppliedRefresh'
-            : error === 'revertAll'
-              ? 'fileChangesRevertAllFailed'
-              : error === 'revert'
-                ? 'fileChangesRevertFailed'
-                : null;
+          : error === 'approveConflict'
+            ? 'fileChangesApproveConflict'
+            : error === 'applied'
+              ? 'fileChangesAppliedRefresh'
+              : error === 'revertAll'
+                ? 'fileChangesRevertAllFailed'
+                : error === 'revert'
+                  ? 'fileChangesRevertFailed'
+                  : null;
 
   return (
     <aside
@@ -541,6 +568,8 @@ export function ChatFileChangesPanel({
                     <FileDiff aria-hidden="true" className="shrink-0 text-accent" size={14} />
                   ) : tab.tab === 'browser' ? (
                     <Globe aria-hidden="true" className="shrink-0 text-accent" size={14} />
+                  ) : tab.tab === 'attachments' ? (
+                    <Paperclip aria-hidden="true" className="shrink-0 text-accent" size={14} />
                   ) : (
                     <GitFork aria-hidden="true" className="shrink-0 text-accent" size={14} />
                   )}
@@ -587,6 +616,10 @@ export function ChatFileChangesPanel({
             <DropdownMenuItem onSelect={() => openBuiltinTab('subagents', activeTabConversationId ?? conversationId)}>
               <GitFork aria-hidden="true" size={15} />
               <span>{t('subagentsPanelTitle')}</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => openBuiltinTab('attachments', activeTabConversationId ?? conversationId)}>
+              <Paperclip aria-hidden="true" size={15} />
+              <span>{t('conversationAttachmentsTitle')}</span>
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -653,6 +686,8 @@ export function ChatFileChangesPanel({
           <EmbeddedBrowserPanel initialUrl={initialBrowserUrl} />
         ) : activeTab.tab === 'subagents' ? (
           <SubagentsPanel conversationId={panelConversationId} />
+        ) : activeTab.tab === 'attachments' ? (
+          <ConversationAttachmentsPanel conversationId={panelConversationId} />
         ) : (
           <>
             <div className="flex min-h-10 shrink-0 flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-1.5 text-xs">
@@ -761,7 +796,7 @@ export function ChatFileChangesPanel({
                         onRevert={() => void revertChange(change)}
                         onSelect={() => {
                           setError(null);
-                          setSelectedChangeId(change.id);
+                          setSelectedChangeId((current) => (current === change.id ? null : change.id));
                         }}
                       />
                       {selectedChangeId === change.id ? (
@@ -799,9 +834,10 @@ export function ChatFileChangesPanel({
 
 function builtinTabLabelKey(
   tabId: RightWorkspaceTab,
-): 'fileChangesTitle' | 'browserPanelTitle' | 'subagentsPanelTitle' {
+): 'fileChangesTitle' | 'browserPanelTitle' | 'subagentsPanelTitle' | 'conversationAttachmentsTitle' {
   if (tabId === 'changes') return 'fileChangesTitle';
   if (tabId === 'browser') return 'browserPanelTitle';
+  if (tabId === 'attachments') return 'conversationAttachmentsTitle';
   return 'subagentsPanelTitle';
 }
 

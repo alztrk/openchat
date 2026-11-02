@@ -3,6 +3,7 @@ import { forwardRef } from 'react';
 
 import { cn } from '@shared/lib/utils/cn';
 import { Field, type FieldControlProps, type FieldLayout } from './Field';
+import { TitleTooltip } from './Tooltip';
 
 export type TextareaAppearance = 'default' | 'bare';
 export type TextareaDensity = 'default' | 'compact';
@@ -51,6 +52,7 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(function 
     fieldLayout = 'stacked',
     id,
     label,
+    title,
     ...props
   },
   ref,
@@ -60,20 +62,22 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(function 
     'aria-describedby': controlDescription,
     'aria-invalid': controlInvalid,
   }: TextareaControlProps) => (
-    <textarea
-      {...props}
-      id={controlId}
-      aria-describedby={controlDescription}
-      aria-invalid={controlInvalid}
-      className={cn(
-        'w-full resize-y text-text outline-none placeholder:text-secondary-text focus-visible:ring-2 focus-visible:ring-focus disabled:cursor-not-allowed disabled:opacity-50',
-        appearanceClasses[appearance],
-        densityClasses[density],
-        error && 'border-destructive',
-        className,
-      )}
-      ref={ref}
-    />
+    <TitleTooltip title={title}>
+      <textarea
+        {...props}
+        id={controlId}
+        aria-describedby={controlDescription}
+        aria-invalid={controlInvalid}
+        className={cn(
+          'w-full resize-y text-text outline-none placeholder:text-secondary-text focus-visible:ring-2 focus-visible:ring-focus disabled:cursor-not-allowed disabled:opacity-50',
+          appearanceClasses[appearance],
+          densityClasses[density],
+          error && 'border-destructive',
+          className,
+        )}
+        ref={ref}
+      />
+    </TitleTooltip>
   );
 
   if (fieldLayout === 'none') {
