@@ -1,9 +1,7 @@
 import { type JsonObject, LocalServiceError, localServiceClient } from '@shared/lib/platform/local-service';
 
-import {
-  isRetryableChatStorageErrorDetail,
-  recordFileChangesLoadFailure as recordNativeFileChangesLoadFailure,
-} from './chatStorage';
+import { recordFileChangesLoadFailure as recordNativeFileChangesLoadFailure } from './chatStorage';
+import { chatStorageRetryDelay } from './chatStorageRetry';
 
 export type ChatFileChangeKind = 'added' | 'modified' | 'deleted';
 export type ChatFileChangeStatus = 'active' | 'reverted' | 'conflict';
@@ -31,9 +29,6 @@ export interface ChatFileChangeDiff {
 }
 
 const pendingFileChangeLists = new Map<string, Promise<ChatFileChange[]>>();
-const FILE_CHANGE_LIST_RETRY_DELAYS_MS = [250, 750] as const;
-const FILE_CHANGE_LIST_BROKER_RETRY_DELAYS_MS = [250, 750, 1500] as const;
-
 export function parseChatFileChange(value: unknown): ChatFileChange | null {
   if (!isRecord(value)) return null;
   if (
@@ -84,22 +79,9 @@ export async function listConversationFileChanges(conversationId: string): Promi
         const response = await localServiceClient.call('chat.file_changes.list', { conversationId });
         return parseChatFileChanges(response);
       } catch (error) {
-        const isBrokerFailure =
-          error instanceof LocalServiceError &&
-          (error.details === 'sqlite_io_error' || error.details === 'storage_broker_timeout');
-        const retryDelay = isBrokerFailure
-          ? FILE_CHANGE_LIST_BROKER_RETRY_DELAYS_MS[attempt]
-          : FILE_CHANGE_LIST_RETRY_DELAYS_MS[attempt];
-        if (
-          !(error instanceof LocalServiceError) ||
-          error.code !== 'file_changes_temporarily_busy' ||
-          !error.retryable ||
-          !error.details ||
-          (error.details !== 'file_change_lock_busy' && !isRetryableChatStorageErrorDetail(error.details)) ||
-          retryDelay === undefined
-        ) {
-          throw error;
-        }
+        if (!(error instanceof LocalServiceError)) throw error;
+        const retryDelay = chatStorageRetryDelay('fileChangesList', error, attempt);
+        if (retryDelay === null) throw error;
         await new Promise<void>((resolve) => globalThis.setTimeout(resolve, retryDelay));
       }
     }
@@ -123,7 +105,9 @@ export async function listConversationFileChanges(conversationId: string): Promi
 export async function recordFileChangesLoadFailure(stage: 'inline' | 'panel', error: unknown): Promise<void> {
   const code = error instanceof LocalServiceError && isDiagnosticCode(error.code) ? error.code : 'unexpected_error';
   const detailCode =
-    error instanceof LocalServiceError && error.details && isDiagnosticCode(error.details) ? error.details : null;
+    error instanceof LocalServiceError && error.diagnosticCode && isDiagnosticCode(error.diagnosticCode)
+      ? error.diagnosticCode
+      : null;
 
   try {
     await recordNativeFileChangesLoadFailure(stage, code, detailCode);

@@ -63,7 +63,7 @@ export async function loadContextUsageConfiguration(
   projectId: string | null,
   toolPermissionMode: ToolPermissionMode | 'plan',
   isTemporaryChat = false,
-): Promise<ContextUsageConfiguration> {
+): Promise<ContextUsageConfiguration | null> {
   try {
     const sharedInstructions = readSharedInstructions() ?? '';
     const personalMemory = isTemporaryChat
@@ -97,6 +97,7 @@ export async function loadContextUsageConfiguration(
     });
     return parseContextUsageConfiguration(response);
   } catch (cause) {
+    if (isUnsupportedContextUsage(cause)) return null;
     await recordContextUsageFailure('contextConfiguration', cause);
     throw cause;
   }
@@ -112,7 +113,10 @@ export async function inspectContextUsageMemory(conversationId: string): Promise
   }
 }
 
-async function recordContextUsageFailure(operation: 'contextConfiguration' | 'memoryInspection', cause: unknown) {
+async function recordContextUsageFailure(
+  operation: 'contextConfiguration' | 'fullEstimate' | 'memoryInspection',
+  cause: unknown,
+) {
   const code =
     cause instanceof LocalServiceError && /^[a-z0-9_]{1,96}$/.test(cause.code)
       ? cause.code
@@ -158,9 +162,13 @@ export async function loadFullContextUsage(
     });
     return parseFullContextUsageSnapshot(result, configuration, memory);
   } catch (cause) {
-    await recordContextUsageFailure('contextConfiguration', cause);
+    if (!isUnsupportedContextUsage(cause)) await recordContextUsageFailure('fullEstimate', cause);
     throw cause;
   }
+}
+
+function isUnsupportedContextUsage(cause: unknown): boolean {
+  return cause instanceof LocalServiceError && cause.code === 'service_capability_unavailable';
 }
 
 function parseFullContextUsageSnapshot(

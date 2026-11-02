@@ -12,7 +12,7 @@ import type {
 } from '@features/app-settings/data/assistantProfiles';
 import { readyAssistantAgentTemplates } from '@features/app-settings/data/readyAssistantAgents';
 import { useAssistantProfilesStore } from '@features/app-settings/stores/assistantProfilesStore';
-import { LocalServiceError, localServiceClient } from '@shared/lib/platform/local-service';
+import { localServiceClient, localServiceErrorDetails } from '@shared/lib/platform/local-service';
 import { SettingsSectionSkeleton } from './SettingsSectionSkeleton';
 
 type ProjectCatalogState = 'idle' | 'loading' | 'ready' | 'error';
@@ -630,9 +630,7 @@ export function AssistantProfilesSettingsSection({ showReadyAgents = false }: { 
 }
 
 function readServiceErrorDetails(error: unknown): string | null {
-  const value = error instanceof LocalServiceError ? (error.details ?? error.message) : error;
-  const details = value instanceof Error ? value.message : typeof value === 'string' ? value : null;
-  return details?.trim().slice(0, 1000) || null;
+  return localServiceErrorDetails(error);
 }
 
 function ProfileToolCheckbox({

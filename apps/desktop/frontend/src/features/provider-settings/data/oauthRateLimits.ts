@@ -299,11 +299,8 @@ function latestReset(values: readonly (number | null)[]): number | null {
 }
 
 function retryAtFromError(error: unknown): number | null {
-  if (!(error instanceof LocalServiceError) || error.details === null) return null;
-  const match = /retry-after-seconds=(\d{1,8})/.exec(error.details);
-  if (!match) return null;
-  const seconds = Number(match[1]);
-  return Number.isSafeInteger(seconds) && seconds > 0 ? Date.now() + seconds * 1000 : null;
+  if (!(error instanceof LocalServiceError) || error.retryAfterMs === null) return null;
+  return Date.now() + error.retryAfterMs;
 }
 
 function subscribe(listener: () => void): () => void {

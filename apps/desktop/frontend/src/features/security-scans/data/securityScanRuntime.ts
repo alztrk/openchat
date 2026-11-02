@@ -10,7 +10,7 @@ import {
 } from '@features/chat/state/chatStoreErrorDetails';
 import { applyStreamEvent, upsertMessage } from '@features/chat/state/chatStoreUtils';
 import { LocalServiceError, localServiceClient, type ServiceOperation } from '@shared/lib/platform/local-service';
-import { retryDelayFromProviderDetails } from './securityScanRetry';
+import { retryDelayFromServiceError } from './securityScanRetry';
 import {
   cancelSecurityScan,
   deleteSecurityScan,
@@ -493,7 +493,7 @@ async function startOperation(scan: SecurityScan, resumeRunId: string | null): P
         scheduleQuotaResume(
           scan,
           goal,
-          error instanceof LocalServiceError ? retryDelayFromProviderDetails(error.details) : null,
+          retryDelayFromServiceError(error),
         );
       }
     } catch (goalError) {

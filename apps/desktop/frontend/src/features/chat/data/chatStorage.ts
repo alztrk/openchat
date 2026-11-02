@@ -23,21 +23,6 @@ import type {
 
 // Four storage-broker round trips can each wait up to 16 seconds before returning.
 const MESSAGE_SAVE_TIMEOUT_MS = 75_000;
-const RETRYABLE_CHAT_STORAGE_ERROR_DETAILS = new Set([
-  'sqlite_busy',
-  'sqlite_busy_snapshot',
-  'sqlite_busy_timeout',
-  'sqlite_locked',
-  'sqlite_io_error',
-  'database_queue_full',
-  'database_queue_wait_timeout',
-  'storage_broker_timeout',
-]);
-
-export function isRetryableChatStorageErrorDetail(detail: string): boolean {
-  return RETRYABLE_CHAT_STORAGE_ERROR_DETAILS.has(detail);
-}
-
 export interface ChatMessagePersistenceMetrics {
   contentBytes: number;
   citationSourceBytes: number;
@@ -212,8 +197,9 @@ export async function deleteConversation(conversationId: string): Promise<void> 
 export async function recordChatRequestFailure(
   stage: 'conversationCreation' | 'userMessagePersistence' | 'requestExecution',
   code: string,
+  detailCode: string | null,
 ): Promise<void> {
-  await invoke('record_chat_request_failure', { stage, code });
+  await invoke('record_chat_request_failure', { stage, code, detailCode });
 }
 
 export async function recordChatMessagePersistenceFailure(

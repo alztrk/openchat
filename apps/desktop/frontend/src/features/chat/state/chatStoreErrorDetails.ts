@@ -1,5 +1,9 @@
 import type { TFunction } from 'i18next';
-import { LocalServiceError } from '@shared/lib/platform/local-service';
+import {
+  classifyServiceErrorCode,
+  LocalServiceError,
+  serviceErrorCategoryTranslationKey,
+} from '@shared/lib/platform/local-service';
 
 const knownServiceErrorKeyMap: Record<string, string> = {
   'chat history could not be updated.': 'chatHistoryUnavailable',
@@ -69,6 +73,12 @@ const serviceErrorCodeKeyMap: Record<string, string> = {
   security_scan_request_failed: 'securityScanRequestFailed',
 };
 
+export function serviceErrorCategoryMessageKey(
+  category: LocalServiceError['category'],
+): ReturnType<typeof serviceErrorCategoryTranslationKey> {
+  return serviceErrorCategoryTranslationKey(category);
+}
+
 export function formatFailureCodeMessage(
   failureCode: string | null | undefined,
   t: TFunction,
@@ -131,6 +141,8 @@ export function formatUnknownServiceError(error: unknown, t: TFunction, fallback
         return t(key, { defaultValue: key });
       }
     }
+    const categoryKey = serviceErrorCategoryMessageKey(error.category);
+    if (categoryKey) return t(categoryKey, { defaultValue: categoryKey });
   } else if (error instanceof Error) {
     const lower = error.message.trim().toLowerCase();
     const messageKey = knownServiceErrorKeyMap[lower];
@@ -162,7 +174,10 @@ export function formatServiceErrorMessage(errorMessage: string | null | undefine
     }
   }
 
-  return trimmed;
+  const codeKey = serviceErrorCodeKeyMap[trimmed];
+  if (codeKey) return t(codeKey, { defaultValue: codeKey });
+  const categoryKey = serviceErrorCategoryMessageKey(classifyServiceErrorCode(trimmed));
+  return categoryKey ? t(categoryKey, { defaultValue: categoryKey }) : null;
 }
 
 export function isRedundantHistoryError(errorMessage: string | null | undefined): boolean {
@@ -171,7 +186,7 @@ export function isRedundantHistoryError(errorMessage: string | null | undefined)
   return (
     lower.includes('chat history could not be updated') ||
     lower.includes('chat history could not be read') ||
-    lower.includes('storage_unavailable')
+    classifyServiceErrorCode(lower) === 'storage'
   );
 }
 
@@ -184,13 +199,8 @@ export function getOpenCodeRetryAtUnixMs(error: unknown, providerId: string): nu
     return null;
   }
 
-  const match = /(?:^|[;\s])retry-after-seconds=(\d+)(?=$|[;\s])/u.exec(error.details ?? '');
-  if (!match) return null;
-
-  const retryAfterSeconds = Number(match[1]);
-  if (!Number.isSafeInteger(retryAfterSeconds) || retryAfterSeconds < 0) return null;
-
-  const retryAtUnixMs = Date.now() + retryAfterSeconds * 1000;
+  if (error.retryAfterMs === null) return null;
+  const retryAtUnixMs = Date.now() + error.retryAfterMs;
   if (!Number.isSafeInteger(retryAtUnixMs) || retryAtUnixMs > 8_640_000_000_000_000) return null;
   return retryAtUnixMs;
 }

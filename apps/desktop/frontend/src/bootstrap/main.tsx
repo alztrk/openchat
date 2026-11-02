@@ -53,8 +53,9 @@ async function startApplication(options: { startWithEmptyStorage?: boolean } = {
   await unifiedStorage.initialize(options);
   const appImportPromise = import('./App');
   await appStylesPromise;
-  const [{ App }, { i18n, i18nReady }, [React, root]] = await Promise.all([
+  const [{ App }, { ApplicationErrorBoundary }, { i18n, i18nReady }, [React, root]] = await Promise.all([
     appImportPromise,
+    import('@widgets/application-error'),
     i18nModulePromise,
     reactRootPromise,
   ]);
@@ -65,7 +66,15 @@ async function startApplication(options: { startWithEmptyStorage?: boolean } = {
     document.documentElement.lang = language;
   });
 
-  renderAndRevealWindow(() => root.render(React.createElement(React.StrictMode, null, React.createElement(App))));
+  renderAndRevealWindow(() =>
+    root.render(
+      React.createElement(
+        React.StrictMode,
+        null,
+        React.createElement(ApplicationErrorBoundary, null, React.createElement(App)),
+      ),
+    ),
+  );
 }
 
 void startApplication().catch(async (error: unknown) => {

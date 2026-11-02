@@ -1,6 +1,11 @@
 import type { TFunction } from 'i18next';
 import type { ReactNode } from 'react';
 
+import {
+  classifyServiceErrorCode,
+  serviceErrorCategoryTranslationKey,
+  type ServiceErrorCategory,
+} from '@shared/lib/platform/local-service';
 import { parseInertHtmlFragment } from '@shared/lib/utils/inertHtml';
 import { isSafeHttpUrl, type ToolActivity } from './messageData';
 
@@ -111,8 +116,39 @@ export function translateToolError(output: ToolRecord | null, t: TFunction): str
   const code = stringValue(error?.code);
   const translationKey = code ? toolErrorTranslationKeys[code] : undefined;
   const genericMessage = t('toolOperationFailed');
-  const message = translationKey ? t(translationKey, { defaultValue: genericMessage }) : genericMessage;
+  const category = parseServiceErrorCategory(error?.category) ?? (code ? classifyServiceErrorCode(code) : null);
+  const categoryKey = category ? serviceErrorCategoryTranslationKey(category) : undefined;
+  const message = translationKey
+    ? t(translationKey, { defaultValue: genericMessage })
+    : categoryKey
+      ? t(categoryKey, { defaultValue: genericMessage })
+      : genericMessage;
   return message;
+}
+
+function parseServiceErrorCategory(value: unknown): ServiceErrorCategory | null {
+  switch (value) {
+    case 'validation':
+    case 'authentication':
+    case 'authorization':
+    case 'not_found':
+    case 'conflict':
+    case 'rate_limit':
+    case 'network':
+    case 'provider':
+    case 'storage':
+    case 'filesystem':
+    case 'process':
+    case 'protocol':
+    case 'timeout':
+    case 'resource_limit':
+    case 'cancelled':
+    case 'unavailable':
+    case 'internal':
+      return value;
+    default:
+      return null;
+  }
 }
 
 /** Stable backend tool error codes mapped to UI translation keys. */

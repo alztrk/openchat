@@ -1,8 +1,5 @@
 import { create } from 'zustand';
 
-// Error message truncation limit
-const MAX_ERROR_TRUNCATION_LENGTH = 1000;
-
 import {
   type ChatConversation,
   type ChatMessage,
@@ -71,6 +68,23 @@ export interface ChatToolPermissionRequest {
 }
 
 export type ChatErrorCode =
+  | 'serviceErrorValidation'
+  | 'serviceErrorAuthentication'
+  | 'serviceErrorAuthorization'
+  | 'serviceErrorNotFound'
+  | 'serviceErrorConflict'
+  | 'serviceErrorRateLimit'
+  | 'serviceErrorNetwork'
+  | 'serviceErrorProvider'
+  | 'serviceErrorStorage'
+  | 'serviceErrorFilesystem'
+  | 'serviceErrorProcess'
+  | 'serviceErrorProtocol'
+  | 'serviceErrorTimeout'
+  | 'serviceErrorResourceLimit'
+  | 'serviceErrorCancelled'
+  | 'serviceErrorUnavailable'
+  | 'serviceErrorInternal'
   | 'chatHistoryUnavailable'
   | 'messageHistoryLoadFailed'
   | 'messageSaveFailed'
@@ -343,14 +357,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         storageInitializationErrorCode: error instanceof LocalServiceError ? error.code : null,
         projectsStatus: 'error',
         errorCode: 'messageHistoryLoadFailed',
-        errorMessage:
-          error instanceof LocalServiceError
-            ? (error.details ?? error.message).trim().slice(0, MAX_ERROR_TRUNCATION_LENGTH) || null
-            : error instanceof Error
-              ? error.message.trim().slice(0, MAX_ERROR_TRUNCATION_LENGTH) || null
-              : typeof error === 'string'
-                ? error.trim().slice(0, MAX_ERROR_TRUNCATION_LENGTH) || null
-                : null,
+        errorMessage: error instanceof LocalServiceError ? error.code : null,
       });
     }
   },
@@ -696,7 +703,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
   ...createBranchesActions(set, get),
 
   setSearchMatchInfo(index: number, count: number): void {
-    set({ searchMatchIndex: index, searchMatchCount: count });
+    set((state) => {
+      if (state.searchMatchIndex === index && state.searchMatchCount === count) return state;
+      return { searchMatchIndex: index, searchMatchCount: count };
+    });
   },
   nextSearchMatch(): void {
     const { searchMatchIndex, searchMatchCount } = get();

@@ -17,9 +17,6 @@ import type { ChatState } from './chatStore';
 import { getOpenCodeRetryAtUnixMs } from './chatStoreErrorDetails';
 import { createStreamMessagePublisher } from './streamMessagePublisher';
 
-// Error message truncation limit
-const MAX_ERROR_TRUNCATION_LENGTH = 1000;
-
 export interface TemporaryChatSession {
   id: string;
   route: ChatModel | null;
@@ -398,15 +395,7 @@ export function createTemporarySendMessageAction(
 }
 
 function readTemporaryChatErrorDetails(error: unknown): string | null {
-  const value =
-    error instanceof LocalServiceError
-      ? (error.details ?? error.message)
-      : error instanceof Error
-        ? error.message
-        : typeof error === 'string'
-          ? error
-          : null;
-  return value?.trim().slice(0, MAX_ERROR_TRUNCATION_LENGTH) || null;
+  return error instanceof LocalServiceError ? error.code : null;
 }
 
 export function createSaveTemporaryChatAction(

@@ -2,6 +2,7 @@ import { AlertTriangle, Copy, LoaderCircle, Minus, Square, X } from 'lucide-reac
 import { type MouseEvent, useEffect, useLayoutEffect, useState } from 'react';
 import { BrandMark, Button, Tooltip } from '@shared/components';
 import english from '@shared/lib/i18n/locales/en.json';
+import { LocalServiceError, localServiceErrorDetails } from '@shared/lib/platform/local-service';
 import { unifiedStorage } from '@shared/lib/platform/storage/unifiedStorage';
 import { getCurrentWindow, isTauri } from '@shared/lib/platform/tauri';
 
@@ -41,15 +42,26 @@ function getStartupCopy(): StartupErrorCopy {
   return english;
 }
 
-// Error message truncation limit (shared with chatStore)
-const MAX_ERROR_TRUNCATION_LENGTH = 1000;
-
-function readStartupErrorDetails(error: unknown): string | null {
-  if (error instanceof Error) {
-    const details = 'details' in error && typeof error.details === 'string' ? error.details : error.message;
-    return details.trim().slice(0, MAX_ERROR_TRUNCATION_LENGTH) || null;
+function normalizeStartupError(error: unknown): LocalServiceError {
+  if (error instanceof LocalServiceError) {
+    return new LocalServiceError(
+      error.code,
+      'The application could not start.',
+      error.retryable,
+      null,
+      {
+        category: error.category,
+        diagnosticCode: error.diagnosticCode,
+        correlationId: error.correlationId,
+        retryAfterMs: error.retryAfterMs,
+      },
+    );
   }
-  return typeof error === 'string' ? error.trim().slice(0, MAX_ERROR_TRUNCATION_LENGTH) || null : null;
+  return new LocalServiceError(
+    'application_startup_failed',
+    'The application could not start.',
+    true,
+  );
 }
 
 function findLocale(value: string | null): StartupLocale | null {
@@ -95,12 +107,14 @@ export function StartupErrorPage({ error, onRetry, onStartWithEmptyProfile }: St
   const [copy, setCopy] = useState(getStartupCopy);
   const desktop = isTauri();
   const [isRetrying, setIsRetrying] = useState(false);
-  const [currentError, setCurrentError] = useState(error);
-  const errorDetails = readStartupErrorDetails(currentError);
+  const [currentError, setCurrentError] = useState(() => normalizeStartupError(error));
+  const errorDetails = localServiceErrorDetails(currentError);
   const legacyProfileConflict =
-    errorDetails?.includes('legacy_profile_conflict:') === true ||
-    errorDetails?.includes('legacy_profile_check_failed:') === true;
-  const localServiceConflict = errorDetails?.toLowerCase().includes('request identifier is already in use') === true;
+    currentError.code === 'legacy_profile_conflict' ||
+    currentError.code === 'legacy_profile_check_failed' ||
+    currentError.diagnosticCode === 'legacy_profile_conflict' ||
+    currentError.diagnosticCode === 'legacy_profile_check_failed';
+  const localServiceConflict = currentError.code === 'duplicate_request_id';
   const [confirmingEmptyProfile, setConfirmingEmptyProfile] = useState(false);
   const [maximized, setMaximized] = useState(false);
   const [systemIsDark, setSystemIsDark] = useState(() => window.matchMedia('(prefers-color-scheme: dark)').matches);
@@ -135,9 +149,7 @@ export function StartupErrorPage({ error, onRetry, onStartWithEmptyProfile }: St
   }, [themePreference]);
 
   useEffect(() => {
-    globalThis.reportError(
-      currentError instanceof Error ? currentError : new Error('OpenChat startup failed.', { cause: currentError }),
-    );
+    globalThis.reportError(currentError);
   }, [currentError]);
 
   useEffect(() => {
@@ -179,7 +191,7 @@ export function StartupErrorPage({ error, onRetry, onStartWithEmptyProfile }: St
     try {
       await startup();
     } catch (cause) {
-      setCurrentError(cause);
+      setCurrentError(normalizeStartupError(cause));
       setConfirmingEmptyProfile(false);
       setIsRetrying(false);
     }

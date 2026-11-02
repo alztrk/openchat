@@ -1,4 +1,9 @@
 import { invoke } from '@shared/lib/platform/tauri';
+import {
+  classifyServiceErrorCode,
+  localServiceErrorDetails,
+  type ServiceErrorCategory,
+} from '@shared/lib/platform/local-service';
 
 import type { McpServerRecord } from './mcpCatalog';
 
@@ -18,24 +23,17 @@ export interface GlobalMcpLoadResult {
 }
 
 export class McpStorageClientError extends Error {
-  constructor(
-    readonly code: string,
-    message: string,
-    readonly details: string | null,
-  ) {
-    super(message);
+  readonly category: ServiceErrorCategory;
+
+  constructor(readonly code: string) {
+    super('The local MCP storage request failed.');
     this.name = 'McpStorageClientError';
+    this.category = classifyServiceErrorCode(code);
   }
 }
 
 export function mcpStorageErrorDetails(error: unknown): string | null {
-  if (!(error instanceof McpStorageClientError)) return null;
-  const message = error.message.trim();
-  const details = error.details?.trim();
-  const values = [message, details]
-    .filter((value): value is string => typeof value === 'string' && value.length > 0)
-    .filter((value, index, all) => all.indexOf(value) === index);
-  return values.length > 0 ? values.join('\n').slice(0, 2048) : null;
+  return error instanceof McpStorageClientError ? localServiceErrorDetails(error) : null;
 }
 
 export async function loadGlobalMcpServers(): Promise<GlobalMcpLoadResult> {
@@ -97,33 +95,29 @@ async function invokeMcp<T>(command: string, args?: Record<string, unknown>): Pr
   try {
     return await invoke<T>(command, args);
   } catch (error) {
-    const failure = readError(error);
-    throw new McpStorageClientError(failure.code, failure.message, failure.details);
+    throw new McpStorageClientError(readErrorCode(error));
   }
 }
 
-function readError(error: unknown): { code: string; message: string; details: string | null } {
-  const fallback = {
-    code: 'mcp_storage_unavailable',
-    message: 'The local MCP storage request failed.',
-    details: null,
-  };
+function readErrorCode(error: unknown): string {
+  const fallback = 'mcp_storage_unavailable';
   if (isObject(error)) {
-    return {
-      code: typeof error.code === 'string' ? error.code : fallback.code,
-      message: typeof error.message === 'string' ? error.message : fallback.message,
-      details: typeof error.details === 'string' ? error.details.slice(0, 2048) : null,
-    };
+    return isStableErrorCode(error.code) ? error.code : fallback;
   }
+  if (error instanceof Error) return readErrorCode(error.message);
   if (typeof error === 'string') {
     try {
       const parsed: unknown = JSON.parse(error);
-      if (isObject(parsed)) return readError(parsed);
+      if (isObject(parsed) && isStableErrorCode(parsed.code)) return parsed.code;
     } catch {
       return fallback;
     }
   }
   return fallback;
+}
+
+function isStableErrorCode(value: unknown): value is string {
+  return typeof value === 'string' && /^[a-z][a-z0-9_]{0,95}$/u.test(value);
 }
 
 function isMcpServer(value: unknown): value is McpServerRecord {

@@ -1,14 +1,10 @@
 import type { StoreApi } from 'zustand';
 
-// Error message truncation limit
-const MAX_ERROR_TRUNCATION_LENGTH = 1000;
-
 import { isTerminalChatGoalStatus, parseChatGoal } from '@features/chat/data/chatGoals';
 import {
   type ChatConversation,
   type ChatMessage,
   createConversation,
-  isRetryableChatStorageErrorDetail,
   listConversations,
   recordChatMessagePersistenceFailure,
   recordChatRequestFailure,
@@ -36,7 +32,8 @@ import { readSharedInstructions } from '@features/app-settings/data/sharedInstru
 import { type LocalServiceClient, LocalServiceError } from '@shared/lib/platform/local-service';
 import { getAudioContext, playAssistantResponseAudio } from '@features/notifications/audioFeedback';
 import type { ChatState } from './chatStore';
-import { getOpenCodeRetryAtUnixMs } from './chatStoreErrorDetails';
+import { getOpenCodeRetryAtUnixMs, serviceErrorCategoryMessageKey } from './chatStoreErrorDetails';
+import { chatStorageRetryDelay } from '../data/chatStorageRetry';
 import { refreshConversationListAfterResponse } from './chatStorePostResponse';
 import { loadTitleGenerationRequest } from './chatStoreTitleGeneration';
 import { handleToolPermissionEvent } from './chatStoreToolPermissions';
@@ -44,11 +41,31 @@ import { applyStreamEvent, isSameRoute, numberOrNull, titleFromMessage, upsertMe
 import { createStreamMessagePublisher } from './streamMessagePublisher';
 
 const STREAM_PERSISTENCE_CHECKPOINT_BYTES = 256 * 1024;
-const MESSAGE_SAVE_RETRY_DELAYS_MS = [200, 500] as const;
-const MESSAGE_SAVE_TIMEOUT_RETRY_DELAYS_MS = [1000] as const;
-const SQLITE_BUSY_SNAPSHOT_RETRY_DELAYS_MS = [200, 500, 1000, 1500] as const;
-const STORAGE_BROKER_RETRY_DELAYS_MS = [250, 750, 1500] as const;
 const streamTextEncoder = new TextEncoder();
+const CHAT_STORAGE_DETAIL_CODES = new Set([
+  'database_queue_full',
+  'database_queue_wait_timeout',
+  'invalid_query',
+  'message_content_too_large',
+  'message_metadata_too_large',
+  'sqlite_busy',
+  'sqlite_busy_snapshot',
+  'sqlite_busy_timeout',
+  'sqlite_cannot_open',
+  'sqlite_corrupt',
+  'sqlite_disk_full',
+  'sqlite_failure',
+  'sqlite_io_error',
+  'sqlite_locked',
+  'sqlite_permission_denied',
+  'sqlite_schema_changed',
+  'sqlite_5',
+  'sqlite_517',
+  'storage_broker_timeout',
+  'storage_conversion_failed',
+  'storage_operation_failed',
+  'stored_value_invalid',
+]);
 
 type ChatStoreSetState = StoreApi<ChatState>['setState'];
 type ChatStoreGetState = StoreApi<ChatState>['getState'];
@@ -517,7 +534,7 @@ export function createSendMessageAction(
               'message_save_failed',
               'The assistant response could not be saved.',
               false,
-              cause instanceof LocalServiceError ? (cause.details ?? cause.code) : null,
+              cause instanceof LocalServiceError ? (cause.diagnosticCode ?? cause.code) : null,
             );
           }
         }
@@ -557,7 +574,18 @@ export function createSendMessageAction(
       return true;
     } catch (error) {
       try {
-        await recordChatRequestFailure(sendStage, error instanceof LocalServiceError ? error.code : 'unexpected_error');
+        const detailCode =
+          error instanceof LocalServiceError &&
+          error.code === 'local_storage_failed' &&
+          error.diagnosticCode !== null &&
+          CHAT_STORAGE_DETAIL_CODES.has(error.diagnosticCode)
+            ? error.diagnosticCode
+            : null;
+        await recordChatRequestFailure(
+          sendStage,
+          error instanceof LocalServiceError ? error.code : 'unexpected_error',
+          detailCode,
+        );
       } catch (diagnosticError) {
         globalThis.reportError(
           new Error('The chat request failure could not be recorded.', { cause: diagnosticError }),
@@ -590,10 +618,10 @@ export function createSendMessageAction(
                       ? 'providerCredentialMissing'
                       : error instanceof LocalServiceError && error.code === 'connection_unavailable'
                         ? 'providerConnectionUnavailable'
-                        : 'chatRequestFailed';
-      const errorMessage =
-        error instanceof LocalServiceError ? (error.details ?? error.message).trim().slice(0, MAX_ERROR_TRUNCATION_LENGTH) || null : null;
-      setRequestError(code, errorMessage, getOpenCodeRetryAtUnixMs(error, selectedModel.providerId));
+                        : error instanceof LocalServiceError
+                          ? (serviceErrorCategoryMessageKey(error.category) ?? 'chatRequestFailed')
+                          : 'chatRequestFailed';
+      setRequestError(code, null, getOpenCodeRetryAtUnixMs(error, selectedModel.providerId));
       await persistenceQueue;
       const streamedMessage = assistantMessage.current;
       if (streamedMessage) {
@@ -682,26 +710,9 @@ async function saveMessageWithRetry(
       await saveMessage(message, attachments, options);
       return;
     } catch (error) {
-      const isServiceTimeout = error instanceof LocalServiceError && error.code === 'service_timeout';
-      const isStorageBrokerFailure =
-        error instanceof LocalServiceError &&
-        (error.details === 'sqlite_io_error' || error.details === 'storage_broker_timeout');
-      const retryDelays = isServiceTimeout
-        ? MESSAGE_SAVE_TIMEOUT_RETRY_DELAYS_MS
-        : isStorageBrokerFailure
-          ? STORAGE_BROKER_RETRY_DELAYS_MS
-          : error instanceof LocalServiceError && error.details === 'sqlite_busy_snapshot'
-            ? SQLITE_BUSY_SNAPSHOT_RETRY_DELAYS_MS
-            : MESSAGE_SAVE_RETRY_DELAYS_MS;
-      const retryDelay = retryDelays[attempt];
-      if (
-        !(error instanceof LocalServiceError) ||
-        !error.retryable ||
-        (!isServiceTimeout && (!error.details || !isRetryableChatStorageErrorDetail(error.details))) ||
-        retryDelay === undefined
-      ) {
-        throw error;
-      }
+      if (!(error instanceof LocalServiceError)) throw error;
+      const retryDelay = chatStorageRetryDelay('messageSave', error, attempt);
+      if (retryDelay === null) throw error;
       await new Promise<void>((resolve) => window.setTimeout(resolve, retryDelay));
     }
   }
@@ -717,8 +728,8 @@ async function logMessagePersistenceFailure(
   const code =
     error instanceof LocalServiceError && /^[a-z0-9_]{1,96}$/.test(error.code) ? error.code : 'unexpected_error';
   const detailCode =
-    error instanceof LocalServiceError && error.details && /^[a-z0-9_]{1,96}$/.test(error.details)
-      ? error.details
+    error instanceof LocalServiceError && error.diagnosticCode && /^[a-z0-9_]{1,96}$/.test(error.diagnosticCode)
+      ? error.diagnosticCode
       : null;
   try {
     const metadataBytes = (value: string) => streamTextEncoder.encode(value).byteLength;
