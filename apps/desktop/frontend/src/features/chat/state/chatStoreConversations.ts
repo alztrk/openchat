@@ -324,7 +324,7 @@ export function createConversationsActions(set: StoreSet, get: StoreGet) {
       if (!selectedConversation) return;
       const selectedModel = get().models.find((model) => isSameRoute(model, selectedConversation));
       const savedReasoningEffort = selectedModel?.supportsReasoning
-        ? get().modelReasoningEfforts[modelRouteKey(selectedModel)]
+        ? selectedConversation.reasoningEffort ?? get().modelReasoningEfforts[modelRouteKey(selectedModel)]
         : undefined;
       set({
         selectedModelKey: selectedModel?.key ?? null,

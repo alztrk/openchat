@@ -243,6 +243,8 @@
   --spacing-worktree-details: 62vh;
   --spacing-worktree-output: 55vh;
   --spacing-conversation-menu: min(70vh, 24rem);
+  --spacing-conversation-todos: min(24rem, calc(100vw - 1rem));
+  --spacing-conversation-todos-height: min(70vh, 36rem);
   --spacing-diagnostics-preview: 360px;
   --spacing-desktop-window: 480px;
   --spacing-attachment-card: 200px;

@@ -267,6 +267,7 @@ export function createSendMessageAction(
             selectedModel,
             state.pendingProjectId,
             agentSnapshot,
+            state.selectedReasoningEffort,
           );
         } catch (cause) {
           globalThis.reportError(new Error('The new conversation could not be persisted.', { cause }));
@@ -286,6 +287,7 @@ export function createSendMessageAction(
           apiKeyConnectionId: selectedModel.apiKeyConnectionId ?? null,
           projectId: state.pendingProjectId,
           agent: agentSnapshot,
+          reasoningEffort: state.selectedReasoningEffort,
           isPinned: false,
           isArchived: false,
           createdAt: now,

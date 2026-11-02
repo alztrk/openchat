@@ -84,6 +84,7 @@ macro_rules! conversation_from_row {
             "isArchived": row.get::<_, bool>(10)?,
             "createdAt": row.get::<_, i64>(11)?,
             "updatedAt": row.get::<_, i64>(12)?,
+            "reasoningEffort": row.get::<_, Option<String>>(14)?,
             "agent": agent,
         }))
     }};
@@ -97,6 +98,8 @@ mod conversations;
 mod errors;
 #[path = "storage_chat/projects.rs"]
 mod projects;
+#[path = "storage_chat/todos.rs"]
+mod todos;
 #[path = "storage_chat/validation.rs"]
 mod validation;
 
@@ -139,6 +142,7 @@ async fn dispatch_inner(
         "storage.chat.conversations.create" => create_conversation(params, storage),
         "storage.chat.conversations.rename" => rename_conversation(params, storage),
         "storage.chat.conversations.route.set" => set_conversation_route(params, storage),
+        "storage.chat.conversations.reasoning.set" => set_conversation_reasoning(params, storage),
         "storage.chat.conversations.pinned.set" => set_conversation_pinned(params, storage),
         "storage.chat.conversations.project.set" => move_conversations(params, storage),
         "storage.chat.conversations.archived.set" => set_conversations_archived(params, storage),
@@ -154,6 +158,11 @@ async fn dispatch_inner(
         "storage.chat.responses.has_completed" => has_completed_assistant_response(storage),
         "storage.chat.favorites.list" => list_model_favorites(storage),
         "storage.chat.favorites.set" => set_model_favorite(params, storage),
+        "storage.chat.todos.list" => todos::list(params, storage),
+        "storage.chat.todos.create" => todos::create(params, storage),
+        "storage.chat.todos.update" => todos::update(params, storage),
+        "storage.chat.todos.delete" => todos::delete(params, storage),
+        "storage.chat.todos.clear" => todos::clear(params, storage),
         "storage.chat.attachments.read" => read_message_attachment(params, storage),
         "storage.chat.attachments.list" => list_conversation_attachments(params, storage),
         _ => Err(ServiceError::new(

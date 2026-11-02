@@ -173,7 +173,11 @@ pub fn shared_instructions(input: SharedInstructionInput<'_>) -> String {
         }
     }
     if permission_mode == ToolPermissionMode::Plan {
-        instructions.push_str("\n\nTool permission mode: Plan. Do not call tools or access external data. Use only the conversation and general knowledge to propose an actionable plan. Present it for the user's review and wait for explicit approval before taking action. No tools are available, and the service rejects every tool call.");
+        if tools_available {
+            instructions.push_str("\n\nTool permission mode: Plan. Do not use filesystem, terminal, network, project, delegation, or other execution tools. Use only the conversation and general knowledge to prepare an actionable plan. Break the plan into ordered, independently trackable steps and save those steps to this conversation's todo list with todo_create. Todo data is not included in the conversation context; call todo_list only when you need to inspect existing items to avoid duplicates or revise the list. You may use todo tools to create, update, or remove items, but do not begin implementing the plan. Present the plan for the user's review and wait for explicit approval before taking action.");
+        } else {
+            instructions.push_str("\n\nTool permission mode: Plan. No todo tools are available for this model. Use only the conversation and general knowledge to prepare an actionable plan, divide it into ordered steps, and present the plan for the user's review. Do not use external data or begin implementing the plan; wait for explicit approval before taking action.");
+        }
     } else if tools_available {
         instructions.push_str("\n\n");
         if provider_id == "opencode" {
@@ -530,7 +534,7 @@ mod tests {
     }
 
     #[test]
-    fn plan_mode_instructions_disable_tools_and_wait_for_approval() {
+    fn plan_mode_only_allows_todos_and_waits_for_approval() {
         let instructions = shared_instructions(SharedInstructionInput {
             custom: None,
             project: None,
@@ -547,7 +551,8 @@ mod tests {
         });
 
         assert!(instructions.contains("Tool permission mode: Plan."));
-        assert!(instructions.contains("Do not call tools or access external data."));
+        assert!(instructions.contains("save those steps to this conversation's todo list"));
+        assert!(instructions.contains("Do not use filesystem, terminal, network"));
         assert!(instructions.contains("wait for explicit approval before taking action."));
         assert!(!instructions.contains("Tool schemas define each available tool"));
         assert!(!instructions.contains("project memory secret"));

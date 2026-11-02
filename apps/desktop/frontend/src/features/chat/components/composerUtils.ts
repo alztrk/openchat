@@ -7,6 +7,7 @@ export type ChatCommandFeedbackKey =
   | 'chatGptFastModeSettingsLoadFailed'
   | 'chatGptFastModeSettingsSaveFailed'
   | 'conversationModelSaveFailed'
+  | 'conversationReasoningSaveFailed'
   | 'conversationTitleSaveFailed'
   | 'ghostTextSuggestionUnavailable'
   | 'messageHistoryLoadFailed'

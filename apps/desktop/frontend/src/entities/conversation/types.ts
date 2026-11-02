@@ -31,6 +31,7 @@ export interface ChatConversation {
   titleSource: string;
   providerId: string | null;
   modelId: string | null;
+  reasoningEffort: string | null;
   connectionId: string | null;
   workspaceId: string | null;
   apiKeyConnectionId: string | null;

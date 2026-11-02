@@ -32,6 +32,7 @@ pub(crate) fn needs_repair(connection: &Connection) -> rusqlite::Result<bool> {
         ("conversations", "is_bookmarked"),
         ("conversations", "product_workspace_id"),
         ("conversations", "agent_json"),
+        ("conversations", "reasoning_effort"),
         ("messages", "id"),
         ("messages", "conversation_id"),
         ("messages", "role"),
@@ -383,6 +384,29 @@ pub fn migrate_chat_schema(connection: &mut Connection) -> rusqlite::Result<()> 
     if version < 22 {
         add_column(&transaction, "conversations", "agent_json", "TEXT")?;
         transaction.pragma_update(None, "user_version", 22)?;
+        version = 22;
+    }
+    if version < 23 {
+        transaction.execute_batch(
+            "CREATE TABLE IF NOT EXISTS conversation_todos (
+                id TEXT PRIMARY KEY NOT NULL,
+                conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+                title TEXT NOT NULL,
+                description TEXT,
+                status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'completed', 'cancelled')),
+                position INTEGER NOT NULL DEFAULT 0 CHECK (position >= 0),
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+             );
+             CREATE INDEX IF NOT EXISTS idx_conversation_todos_order
+                ON conversation_todos(conversation_id, status, position, created_at, id);",
+        )?;
+        transaction.pragma_update(None, "user_version", 23)?;
+        version = 23;
+    }
+    if version < 24 {
+        add_column(&transaction, "conversations", "reasoning_effort", "TEXT")?;
+        transaction.pragma_update(None, "user_version", 24)?;
     }
     transaction.commit()?;
     repair_chat_schema(connection)
@@ -470,6 +494,7 @@ fn validate_chat_schema(connection: &Connection) -> rusqlite::Result<()> {
         ("conversations", "created_at"),
         ("conversations", "updated_at"),
         ("conversations", "model_id"),
+        ("conversations", "reasoning_effort"),
         ("messages", "id"),
         ("messages", "conversation_id"),
         ("messages", "role"),

@@ -17,7 +17,7 @@ pub(crate) use domain::{
     instructions, local_engines, oauth, openai_api, openai_compatible, pending_archive_export,
     permissions, profile_archive, project_instructions, project_memory, project_skills,
     provider_credentials, provider_schema, response_budget, security_scan, temporary_conversation,
-    tools, usage_statistics, user_question_broker, workspace_settings,
+    todos, tools, usage_statistics, user_question_broker, workspace_settings,
 };
 
 #[path = "adapters/filesystem.rs"]
@@ -61,4 +61,4 @@ pub use storage::migrate_chat_schema;
 pub use storage_broker::run_broker_stdio;
 
 /// Chat schema version supported by this service build.
-pub const CHAT_SCHEMA_VERSION: i64 = 22;
+pub const CHAT_SCHEMA_VERSION: i64 = 24;

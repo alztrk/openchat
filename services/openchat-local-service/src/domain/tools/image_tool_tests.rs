@@ -65,7 +65,7 @@ fn profile_tool_allowlist_only_advertises_selected_tools() {
 }
 
 #[test]
-fn plan_mode_does_not_advertise_tools() {
+fn plan_mode_only_advertises_todo_tools() {
     let mut tools = definitions_for_chatgpt_model();
     tools.push(ToolDefinition {
         name: "mcp__server__write".to_owned(),
@@ -76,7 +76,9 @@ fn plan_mode_does_not_advertise_tools() {
 
     disable_tools_for_plan_mode(&mut tools);
 
-    assert!(tools.is_empty());
+    assert!(!tools.is_empty());
+    assert!(tools.iter().all(|tool| tool.name.starts_with("todo_")));
+    assert!(tools.iter().any(|tool| tool.name == "todo_create"));
 }
 
 #[test]

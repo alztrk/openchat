@@ -307,6 +307,92 @@ async fn persisted_conversation_and_message_metadata_clear_credential_fields() {
 }
 
 #[tokio::test]
+async fn conversation_todos_are_scoped_persistent_and_deleted_with_the_conversation() {
+    let directory = TestDirectory::new();
+    let storage = AppStorage::open_at(directory.0.join("data")).expect("open test storage");
+    storage
+        .prepare_chat_schema_migration(crate::CHAT_SCHEMA_VERSION)
+        .expect("prepare chat schema");
+    storage
+        .initialize_backend_schema()
+        .expect("initialize backend schema");
+
+    for id in ["todo-conversation-a", "todo-conversation-b"] {
+        dispatch(
+            "storage.chat.conversations.create",
+            &json!({"input":{"id":id,"title":"Todo test","providerId":"provider","modelId":"model"}}),
+            &storage,
+        )
+        .await
+        .expect("create conversation");
+    }
+    let created = dispatch(
+        "storage.chat.todos.create",
+        &json!({"conversationId":"todo-conversation-a","items":[{"title":"First step"},{"title":"Second step","description":"Details"}]}),
+        &storage,
+    ).await.expect("create todos");
+    assert_eq!(created["todos"].as_array().map(Vec::len), Some(2));
+    let todo_id = created["todos"][0]["id"].as_str().expect("todo id");
+
+    let other_chat = dispatch(
+        "storage.chat.todos.list",
+        &json!({"conversationId":"todo-conversation-b"}),
+        &storage,
+    )
+    .await
+    .expect("list other conversation todos");
+    assert_eq!(other_chat["todos"], json!([]));
+    dispatch(
+        "storage.chat.todos.create",
+        &json!({"conversationId":"todo-conversation-b","items":[{"title":"Temporary todo"}]}),
+        &storage,
+    )
+    .await
+    .expect("create todo for clearing");
+    let cleared = dispatch(
+        "storage.chat.todos.clear",
+        &json!({"conversationId":"todo-conversation-b"}),
+        &storage,
+    )
+    .await
+    .expect("clear conversation todos");
+    assert_eq!(cleared["deletedCount"], 1);
+    assert!(
+        dispatch(
+            "storage.chat.todos.update",
+            &json!({"conversationId":"todo-conversation-b","todoId":todo_id,"status":"completed"}),
+            &storage
+        )
+        .await
+        .is_err()
+    );
+
+    dispatch(
+        "storage.chat.todos.update",
+        &json!({"conversationId":"todo-conversation-a","todoId":todo_id,"status":"completed"}),
+        &storage,
+    )
+    .await
+    .expect("complete todo");
+    dispatch(
+        "storage.chat.conversations.delete",
+        &json!({"conversationId":"todo-conversation-a"}),
+        &storage,
+    )
+    .await
+    .expect("delete conversation");
+    let connection = storage.connect().expect("connect to storage");
+    let remaining: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM conversation_todos WHERE conversation_id = 'todo-conversation-a'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("count deleted conversation todos");
+    assert_eq!(remaining, 0);
+}
+
+#[tokio::test]
 async fn added_workspace_root_returns_canonical_path_and_can_be_removed() {
     let directory = TestDirectory::new();
     let storage = AppStorage::open_at(directory.0.join("data")).expect("open test storage");

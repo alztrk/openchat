@@ -162,6 +162,17 @@ export async function setConversationRoute(conversationId: string, route: ChatRo
   );
 }
 
+export async function setConversationReasoningEffort(
+  conversationId: string,
+  reasoningEffort: string | null,
+): Promise<void> {
+  expectSaved(
+    await localServiceClient.call('storage.chat.conversations.reasoning.set', {
+      input: { conversationId, reasoningEffort },
+    }),
+  );
+}
+
 export async function setConversationPinned(conversationId: string, isPinned: boolean): Promise<void> {
   expectSaved(
     await localServiceClient.call('storage.chat.conversations.pinned.set', {
@@ -386,6 +397,7 @@ export async function createConversation(
   route: ChatRoute,
   projectId: string | null = null,
   agent: AssistantAgentSnapshot | null = null,
+  reasoningEffort: string | null = null,
 ): Promise<void> {
   expectSaved(
     await localServiceClient.call('storage.chat.conversations.create', {
@@ -399,6 +411,7 @@ export async function createConversation(
         apiKeyConnectionId: route.apiKeyConnectionId ?? null,
         projectId,
         agent,
+        reasoningEffort,
       },
     }),
   );
@@ -642,6 +655,7 @@ function isConversation(value: unknown): value is ChatConversation {
     isString(value.titleSource) &&
     isNullableString(value.providerId) &&
     isNullableString(value.modelId) &&
+    isNullableString(value.reasoningEffort) &&
     isNullableString(value.connectionId) &&
     isNullableString(value.workspaceId) &&
     isNullableString(value.apiKeyConnectionId) &&

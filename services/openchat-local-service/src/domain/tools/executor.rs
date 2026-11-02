@@ -10,7 +10,7 @@ use crate::{
         ImageQuality,
     },
     permissions::ToolPermissionBroker,
-    protocol::{EventSink, ServiceError},
+    protocol::{EventSink, Response, ServiceError},
     provider_schema::{
         ChatStreamEvent, ChatStreamSnapshot, ToolActivity, ToolCall, ToolDefinition, ToolResult,
     },
@@ -940,6 +940,40 @@ impl ToolExecutor {
                 }
             };
         let call = resolved_call.as_ref();
+        if call.name.starts_with("todo_") {
+            let result = crate::todos::execute_tool(
+                storage,
+                &snapshot.conversation_id,
+                &call.name,
+                &call.arguments,
+            );
+            let output = match result {
+                Ok(output) => output,
+                Err(error) => tool_error(error.code, &error.message),
+            };
+            let updated = !output.get("error").is_some();
+            self.emit_activity(
+                storage,
+                ToolActivity::finished(call, None, output.clone()),
+                request_id,
+                snapshot,
+                events,
+            )
+            .await?;
+            if updated {
+                let _ = events
+                    .send(&Response::event(
+                        request_id.clone(),
+                        "chat.todos.updated",
+                        json!({"conversationId": snapshot.conversation_id}),
+                    ))
+                    .await;
+            }
+            return Ok(ToolResult {
+                call_id: call.id.clone(),
+                output,
+            });
+        }
         if self.permission_mode == ToolPermissionMode::Plan {
             return self
                 .deny_plan_mode_tool(call, request_id, snapshot, events, storage)

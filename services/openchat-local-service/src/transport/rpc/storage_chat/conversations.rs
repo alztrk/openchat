@@ -79,7 +79,7 @@ pub(super) fn list_conversations(storage: &AppStorage) -> Result<Value, ServiceE
         .prepare(
             "SELECT id, title, title_source, provider_id, model_id, connection_id,
                     workspace_id, api_key_connection_id, project_id,
-                    is_pinned, is_archived, created_at, updated_at, agent_json
+                    is_pinned, is_archived, created_at, updated_at, agent_json, reasoning_effort
              FROM conversations
              WHERE NOT EXISTS (
                 SELECT 1 FROM security_scans WHERE security_scans.conversation_id = conversations.id
@@ -108,7 +108,7 @@ pub(super) fn get_conversation(
         .query_row(
             "SELECT id, title, title_source, provider_id, model_id, connection_id,
                     workspace_id, api_key_connection_id, project_id,
-                    is_pinned, is_archived, created_at, updated_at, agent_json
+                    is_pinned, is_archived, created_at, updated_at, agent_json, reasoning_effort
              FROM conversations WHERE id = ?1",
             [id],
             |row| conversation_from_row!(row),
@@ -134,14 +134,16 @@ pub(super) fn create_conversation(
     let agent_json = optional_json_object(input, "agent")?
         .map(serialize_json_without_sensitive_values)
         .transpose()?;
+    let reasoning_effort = optional_bounded_string(input, "reasoningEffort", 128, true)?;
     let now = unix_time_millis()?;
     let connection = storage.connect().map_err(storage_error)?;
     connection
         .execute(
             "INSERT INTO conversations (
                 id, title, title_source, provider_id, model_id, connection_id,
-                workspace_id, api_key_connection_id, project_id, agent_json, created_at, updated_at
-             ) VALUES (?1, ?2, 'automatic', ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?10)",
+                workspace_id, api_key_connection_id, project_id, agent_json, reasoning_effort,
+                created_at, updated_at
+             ) VALUES (?1, ?2, 'automatic', ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?11)",
             params![
                 id,
                 title,
@@ -152,6 +154,7 @@ pub(super) fn create_conversation(
                 api_key_connection_id,
                 project_id,
                 agent_json,
+                reasoning_effort,
                 now,
             ],
         )
@@ -210,6 +213,29 @@ pub(super) fn set_conversation_route(
                 unix_time_millis()?,
                 conversation_id,
             ],
+        )
+        .map_err(storage_error)?;
+    if changed != 1 {
+        return Err(not_found("conversation"));
+    }
+    Ok(json!({"saved": true}))
+}
+
+pub(super) fn set_conversation_reasoning(
+    params: &Value,
+    storage: &AppStorage,
+) -> Result<Value, ServiceError> {
+    let input = input_object(params)?;
+    let conversation_id = required_safe_id(input, "conversationId")?;
+    let reasoning_effort = optional_bounded_string(input, "reasoningEffort", 128, true)?;
+    let connection = storage.connect().map_err(storage_error)?;
+    let changed = connection
+        .execute(
+            "UPDATE conversations SET reasoning_effort = ?1 WHERE id = ?2
+             AND NOT EXISTS (
+                 SELECT 1 FROM security_scans WHERE security_scans.conversation_id = conversations.id
+             )",
+            params![reasoning_effort, conversation_id],
         )
         .map_err(storage_error)?;
     if changed != 1 {
@@ -327,6 +353,12 @@ pub(super) fn delete_conversation(
         .map_err(storage_error)?;
     transaction
         .execute(
+            "DELETE FROM conversation_todos WHERE conversation_id = ?1",
+            [id],
+        )
+        .map_err(storage_error)?;
+    transaction
+        .execute(
             "DELETE FROM saved_output_versions WHERE conversation_id = ?1",
             [id],
         )
@@ -351,7 +383,8 @@ pub(super) fn clear_conversation_history(storage: &AppStorage) -> Result<Value, 
     let transaction = connection.transaction().map_err(storage_error)?;
     transaction
         .execute_batch(
-            "DELETE FROM attachment_text_index;
+            "DELETE FROM conversation_todos;
+             DELETE FROM attachment_text_index;
              DELETE FROM saved_output_versions;
              DELETE FROM saved_outputs;
              DELETE FROM conversations;",

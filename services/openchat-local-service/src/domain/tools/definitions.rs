@@ -211,7 +211,7 @@ pub fn definitions_for_request(
 }
 
 pub(crate) fn disable_tools_for_plan_mode(definitions: &mut Vec<ToolDefinition>) {
-    definitions.clear();
+    definitions.retain(|tool| tool.name.starts_with("todo_"));
 }
 
 pub fn context_usage_definitions(
@@ -604,5 +604,23 @@ pub fn definitions() -> Vec<ToolDefinition> {
             "additionalProperties": false
         }),
     });
+    definitions.extend(todo_tool_definitions());
     definitions
+}
+
+fn todo_tool_definitions() -> Vec<ToolDefinition> {
+    [
+        ("todo_list", "Read this conversation's todo list only when needed. Todo items are not included in the normal conversation context.", json!({"type":"object","properties":{},"additionalProperties":false})),
+        ("todo_create", "Create one or more todos for this conversation. Use this for actionable steps in a Plan mode plan. Do not add items for a simple answer or brainstorm.", json!({"type":"object","properties":{"items":{"type":"array","minItems":1,"maxItems":50,"items":{"type":"object","properties":{"title":{"type":"string","minLength":1,"maxLength":300},"description":{"type":"string","maxLength":2000}},"required":["title"],"additionalProperties":false}}},"required":["items"],"additionalProperties":false})),
+        ("todo_update", "Update one todo in this conversation. Use todo_list first if you do not already know the todoId.", json!({"type":"object","properties":{"todoId":{"type":"string","minLength":1,"maxLength":128},"title":{"type":"string","minLength":1,"maxLength":300},"description":{"type":["string","null"],"maxLength":2000},"status":{"type":"string","enum":["open","completed","cancelled"]}},"required":["todoId"],"additionalProperties":false})),
+        ("todo_delete", "Delete one todo from this conversation. Use todo_list first if you do not already know the todoId.", json!({"type":"object","properties":{"todoId":{"type":"string","minLength":1,"maxLength":128}},"required":["todoId"],"additionalProperties":false})),
+        ("todo_clear", "Delete every todo in this conversation. Use only when the user explicitly asks to clear or remove the entire todo list.", json!({"type":"object","properties":{},"additionalProperties":false})),
+    ]
+    .into_iter()
+    .map(|(name, description, parameters)| ToolDefinition {
+        name: name.to_owned(),
+        description: description.to_owned(),
+        parameters,
+    })
+    .collect()
 }

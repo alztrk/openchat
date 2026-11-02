@@ -10,6 +10,7 @@ import {
   listModelFavorites,
   listProjects,
   setConversationRoute,
+  setConversationReasoningEffort,
   setModelFavorite,
 } from '@features/chat/data/chatStorage';
 import type { ChatModel, ChatModelProvider } from '@entities/model';
@@ -110,6 +111,7 @@ export type ChatErrorCode =
   | 'goalObjectiveRequired'
   | 'goalObjectiveTooLong'
   | 'conversationModelSaveFailed'
+  | 'conversationReasoningSaveFailed'
   | 'temporaryChatConnectionRequired'
   | 'temporaryChatRemoveAttachmentsFirst'
   | 'temporaryChatStopBeforeLeaving'
@@ -213,7 +215,7 @@ export interface ChatState {
   setPendingAttachmentCount(count: number): void;
   selectModel(key: string | null): void;
   selectConversationModel(key: string, conversationId?: string): Promise<boolean>;
-  selectReasoningEffort(effort: string | null): void;
+  selectReasoningEffort(effort: string | null): Promise<void>;
   selectConversation(id: string, targetMessageId?: string | null, targetQuery?: string | null): Promise<void>;
   refreshActiveGoal(conversationId: string): Promise<void>;
   refreshInterruptedRun(conversationId: string): Promise<void>;
@@ -463,10 +465,30 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
   },
 
-  selectReasoningEffort(effort) {
+  async selectReasoningEffort(effort) {
     const current = get();
     const model = current.models.find((item) => item.key === current.selectedModelKey);
     if (effort !== null && (!model?.supportsReasoning || !model.reasoningLevels.includes(effort))) return;
+    const conversationId = current.temporaryChat ? null : current.activeConversationId;
+    if (conversationId !== null) {
+      try {
+        await setConversationReasoningEffort(conversationId, effort);
+        set((latest) => ({
+          selectedReasoningEffort: latest.activeConversationId === conversationId
+            ? effort
+            : latest.selectedReasoningEffort,
+          conversations: latest.conversations.map((conversation) =>
+            conversation.id === conversationId ? { ...conversation, reasoningEffort: effort } : conversation,
+          ),
+          errorCode: latest.activeConversationId === conversationId ? null : latest.errorCode,
+        }));
+      } catch {
+        if (get().activeConversationId === conversationId) {
+          set({ errorCode: 'conversationReasoningSaveFailed', opencodeRetryAtUnixMs: null });
+        }
+      }
+      return;
+    }
     set({ selectedReasoningEffort: effort });
   },
 
