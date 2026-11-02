@@ -100,15 +100,21 @@ impl UserQuestionBroker {
             (group, pending, receiver)
         };
 
-        if crate::chatgpt_store::save_assistant_tool_checkpoint(storage, snapshot, tool_activities)
-            .is_err()
+        if let Err(error) = crate::chatgpt_store::save_assistant_tool_checkpoint_with_retry(
+            storage,
+            snapshot,
+            tool_activities,
+            "question_tool_checkpoint_save",
+        )
+        .await
         {
             waiters.remove(&group.group_id);
             return Err(ServiceError::new(
                 "question_storage_unavailable",
                 "The pending question could not be saved. Try again.",
                 true,
-            ));
+            )
+            .with_details(crate::storage::sqlite_error_code(&error)));
         }
         drop(waiters);
 

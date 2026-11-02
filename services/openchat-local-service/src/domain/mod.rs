@@ -73,6 +73,7 @@ pub(crate) mod temporary_conversation;
 #[path = "conversations/token_estimator.rs"]
 pub(crate) mod token_estimator;
 #[path = "conversations/tokenizer.rs"]
+#[cfg(test)]
 pub(crate) mod tokenizer;
 #[path = "tools/mod.rs"]
 pub(crate) mod tools;

@@ -51,6 +51,7 @@ pub(crate) fn source_for_model(model_id: &str) -> TokenEstimateSource {
     }
 }
 
+#[cfg(test)]
 pub(crate) fn supports_model_tokenizer(model_id: &str) -> bool {
     source_for_model(model_id) == TokenEstimateSource::ModelTokenizer
 }
@@ -79,8 +80,7 @@ fn heuristic_text_tokens(text: &str) -> i64 {
     }
 
     let is_dense_payload = text.len() >= 128
-        && (whitespace_count == 0
-            || punctuation_count.saturating_mul(2) >= character_count);
+        && (whitespace_count == 0 || punctuation_count.saturating_mul(2) >= character_count);
     if is_dense_payload {
         return i64::try_from(text.len()).unwrap_or(i64::MAX);
     }

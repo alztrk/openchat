@@ -169,17 +169,7 @@ impl TrackingError {
 
 pub(crate) fn map_storage_error(error: rusqlite::Error) -> TrackingError {
     let code = crate::storage::sqlite_error_code(&error);
-    if matches!(
-        code,
-        "sqlite_busy"
-            | "sqlite_busy_snapshot"
-            | "sqlite_busy_timeout"
-            | "sqlite_locked"
-            | "database_queue_full"
-            | "database_queue_wait_timeout"
-            | "storage_broker_timeout"
-            | "sqlite_io_error"
-    ) {
+    if crate::storage::is_retryable_storage_error_code(code) {
         TrackingError::StorageBusy(code)
     } else {
         TrackingError::StorageFailure(code)
@@ -258,7 +248,11 @@ fn summary_for_entry_with_expected_match(
             .baseline_blob_hash
             .as_deref()
             .is_some_and(|hash| super::blobs::snapshot_blob_exists(data_root, hash));
-    let can_revert = !approved && status == "active" && expected_matches && backup_available;
+    let can_revert = !approved
+        && status == "active"
+        && entry.root_identity.is_some()
+        && expected_matches
+        && backup_available;
     let kind = if !entry.baseline_exists {
         "added"
     } else if !entry.expected_exists {

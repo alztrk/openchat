@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 
 use serde_json::Value;
 
-use super::{ChatGptService, database_error, invalid_response_error, protocol_error};
+use super::{ChatGptService, invalid_response_error, protocol_error};
 use crate::{
     chatgpt_store::{self, AssistantMessageWrite},
     protocol::{EventSink, ServiceError},
@@ -214,19 +214,21 @@ impl ChatGptService {
                         .as_mut()
                         .is_some_and(|checkpoint| checkpoint.record_text_delta(delta.len()));
                 if should_checkpoint {
-                    chatgpt_store::save_assistant_message(
-                        &self.storage,
-                        AssistantMessageWrite {
-                            conversation_id,
-                            message_id,
-                            content,
-                            status: "streaming",
-                            created_at_unix_ms: created_at,
-                            output_tokens: None,
-                            elapsed: None,
-                        },
-                    )
-                    .map_err(database_error)?;
+                    self.retry_storage_operation("send_text_checkpoint_save", || {
+                        chatgpt_store::save_assistant_message(
+                            &self.storage,
+                            AssistantMessageWrite {
+                                conversation_id,
+                                message_id,
+                                content,
+                                status: "streaming",
+                                created_at_unix_ms: created_at,
+                                output_tokens: None,
+                                elapsed: None,
+                            },
+                        )
+                    })
+                    .await?;
                     if let Some(checkpoint) = checkpoint.as_mut() {
                         checkpoint.mark_persisted();
                     }

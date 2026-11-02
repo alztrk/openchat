@@ -891,7 +891,7 @@ fn file_tool_writes_wait_for_checkpoint_lock_while_reads_remain_available() {
     let guard = super::lock_file_changes().expect("hold file-change lock");
     let read = crate::tools::read_file(&root.0, "note.txt", 1, 1)
         .expect("read-only file access remains available");
-    assert_eq!(read["lines"][0]["text"], "before");
+    assert_eq!(read["d"][0][1], "before");
 
     let (thread_id_sender, thread_id_receiver) = mpsc::channel();
     let (start_sender, start_receiver) = mpsc::channel();

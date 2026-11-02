@@ -1,10 +1,14 @@
 //! Frontend-invocable Tauri native commands for local service lifecycle and permissions.
 
 use std::{
+    fs::{self, OpenOptions},
+    io::Write,
+    path::{Path, PathBuf},
     sync::{mpsc, Arc},
-    time::Duration,
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
+use openchat_local_service::StartupFailure;
 use serde_json::{json, Value};
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_shell::{process::CommandEvent, ShellExt};
@@ -14,6 +18,8 @@ use super::dialogs::{NativeDialogLocale, PermissionDialogCopy};
 use super::process::*;
 use super::rpc_frame::*;
 use super::types::*;
+
+const MAX_STARTUP_DIAGNOSTIC_LOG_BYTES: u64 = 1024 * 1024;
 
 /// Starts the sidecar during native startup so it can initialize while the WebView loads.
 pub(crate) fn start_local_service_early(app: &AppHandle) -> Result<u64, String> {
@@ -35,7 +41,16 @@ pub(crate) fn start_local_service_with_empty_storage(
     app: AppHandle,
     state: State<'_, LocalServiceState>,
 ) -> Result<u64, String> {
-    state.stop()?;
+    state.stop().map_err(|_| {
+        startup_failure_response(
+            state.storage_root_override.as_deref(),
+            "service_stop_failed",
+            "process",
+            "The local service could not be stopped cleanly.",
+            "service_stop_failed",
+            true,
+        )
+    })?;
     start_local_service_process(app, &state, true)
 }
 
@@ -44,18 +59,34 @@ fn start_local_service_process(
     state: &LocalServiceState,
     start_with_empty_storage: bool,
 ) -> Result<u64, String> {
-    let mut process = state
-        .process
-        .lock()
-        .map_err(|_| "Local service state is unavailable.")?;
+    let diagnostic_storage_root = state.storage_root_override.clone();
+    let mut process = match state.process.lock() {
+        Ok(process) => process,
+        Err(_) => {
+            return Err(startup_failure_response(
+                diagnostic_storage_root.as_deref(),
+                "service_state_unavailable",
+                "unavailable",
+                "The local service state is unavailable.",
+                "service_state_lock_failed",
+                true,
+            ));
+        }
+    };
     if let Some(current) = process.current.as_ref() {
         return Ok(current.generation);
     }
 
-    let generation = process
-        .next_generation
-        .checked_add(1)
-        .ok_or("The local service generation limit was reached.")?;
+    let Some(generation) = process.next_generation.checked_add(1) else {
+        return Err(startup_failure_response(
+            diagnostic_storage_root.as_deref(),
+            "service_generation_limit_reached",
+            "resource_limit",
+            "The local service could not start another process.",
+            "service_generation_limit_reached",
+            false,
+        ));
+    };
     let parent_pid = std::process::id().to_string();
     let storage_root = state
         .storage_root_override
@@ -77,16 +108,21 @@ fn start_local_service_process(
                 .spawn()
         })
     };
-    let spawn_result = spawn("binaries/openchat-local-service")
-        .map_err(|primary_error| format!("Primary sidecar launch failed: {primary_error}"))
-        .or_else(|primary_error| {
-            let fallback_result = spawn("openchat-local-service");
-            fallback_result.map_err(|fallback_error| {
-                format!("{primary_error}; fallback sidecar launch failed: {fallback_error}")
-            })
-        });
-    let (mut events, child) =
-        spawn_result.map_err(|error| format!("The local service could not be started: {error}"))?;
+    let spawn_result =
+        spawn("binaries/openchat-local-service").or_else(|_| spawn("openchat-local-service"));
+    let (mut events, child) = match spawn_result {
+        Ok(process) => process,
+        Err(_) => {
+            return Err(startup_failure_response(
+                diagnostic_storage_root.as_deref(),
+                "service_start_failed",
+                "process",
+                "The local service could not be started.",
+                "sidecar_launch_failed",
+                true,
+            ));
+        }
+    };
     process.next_generation = generation;
     process.current = Some(RunningProcess { generation, child });
 
@@ -106,8 +142,11 @@ fn start_local_service_process(
                         }
                         observe_service_output(&shared_permissions, generation, &line);
                         let output = LocalServiceEvent::Output { generation, line };
-                        if let Err(error) = app.emit_to("main", LOCAL_SERVICE_EVENT, output) {
-                            eprintln!("OpenChat local service output could not reach the renderer: {error}");
+                        if app.emit_to("main", LOCAL_SERVICE_EVENT, output).is_err() {
+                            report_local_service_host_error(
+                                "protocol",
+                                "renderer_output_delivery_failed",
+                            );
                             break;
                         }
                     }
@@ -123,20 +162,29 @@ fn start_local_service_process(
                 CommandEvent::Stderr(bytes) => {
                     for byte in bytes {
                         if byte == b'\n' {
-                            if let Some(details) = local_service_failure_details(&stderr_line) {
+                            if let Some(failure) = local_service_startup_failure(&stderr_line) {
+                                if record_local_service_startup_failure(
+                                    diagnostic_storage_root.as_deref(),
+                                    &failure,
+                                )
+                                .is_err()
+                                {
+                                    eprintln!("local_service_startup_diagnostic_write_failed");
+                                }
                                 let failure = LocalServiceEvent::Failure {
                                     generation,
-                                    details,
+                                    failure,
                                 };
-                                if let Err(error) =
-                                    app.emit_to("main", LOCAL_SERVICE_EVENT, failure)
-                                {
-                                    eprintln!("OpenChat local service failure could not reach the renderer: {error}");
+                                if app.emit_to("main", LOCAL_SERVICE_EVENT, failure).is_err() {
+                                    report_local_service_host_error(
+                                        "protocol",
+                                        "renderer_failure_delivery_failed",
+                                    );
                                     break;
                                 }
                             }
                             stderr_line.clear();
-                        } else if stderr_line.len() < MAX_LOCAL_SERVICE_ERROR_DETAIL_BYTES {
+                        } else if stderr_line.len() < MAX_LOCAL_SERVICE_STARTUP_FAILURE_BYTES {
                             stderr_line.push(byte);
                         }
                     }
@@ -155,25 +203,23 @@ fn start_local_service_process(
                 process.current.take().map(|item| item.child)
             }
             Ok(_) => None,
-            Err(error) => {
-                eprintln!(
-                    "OpenChat local service state could not be locked after process exit: {error}"
-                );
+            Err(_) => {
+                report_local_service_host_error("process", "service_state_lock_failed_after_exit");
                 None
             }
         };
         if terminate_child {
             if let Some(child) = child {
-                if let Err(error) = child.kill() {
-                    eprintln!("OpenChat local service could not be stopped after a bridge failure: {error}");
+                if child.kill().is_err() {
+                    report_local_service_host_error("process", "service_termination_failed");
                 }
             }
         }
         clear_generation_permissions(&shared_permissions, generation);
         clear_native_responses(&shared_native_responses, generation);
         let stopped = LocalServiceEvent::Stopped { generation };
-        if let Err(error) = app.emit_to("main", LOCAL_SERVICE_EVENT, stopped) {
-            eprintln!("OpenChat local service stop event could not reach the renderer: {error}");
+        if app.emit_to("main", LOCAL_SERVICE_EVENT, stopped).is_err() {
+            report_local_service_host_error("protocol", "renderer_stop_delivery_failed");
         }
     });
 
@@ -378,13 +424,152 @@ fn zeroize_json_value(value: &mut Value) {
     }
 }
 
-fn local_service_failure_details(line: &[u8]) -> Option<String> {
+fn local_service_startup_failure(line: &[u8]) -> Option<StartupFailure> {
     let line = String::from_utf8_lossy(line);
-    let details = line
+    let payload = line
         .trim_end_matches('\r')
         .strip_prefix(LOCAL_SERVICE_ERROR_PREFIX)?
         .trim();
-    (!details.is_empty()).then(|| details.to_owned())
+    if payload.is_empty() {
+        return None;
+    }
+    let mut failure = serde_json::from_str::<StartupFailure>(payload).ok()?;
+    let valid_code = |value: &str| {
+        !value.is_empty()
+            && value.len() <= 96
+            && value.as_bytes()[0].is_ascii_lowercase()
+            && value
+                .bytes()
+                .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_')
+    };
+    let valid_category = matches!(
+        failure.category.as_str(),
+        "validation"
+            | "authentication"
+            | "authorization"
+            | "not_found"
+            | "conflict"
+            | "rate_limit"
+            | "network"
+            | "provider"
+            | "storage"
+            | "filesystem"
+            | "process"
+            | "protocol"
+            | "timeout"
+            | "resource_limit"
+            | "cancelled"
+            | "unavailable"
+            | "internal"
+    );
+    let valid_reference = failure.correlation_id.len() == 32
+        && failure
+            .correlation_id
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte));
+    let valid_message = !failure.message.is_empty()
+        && failure.message.len() <= 512
+        && !failure.message.chars().any(char::is_control);
+    if !valid_code(&failure.code)
+        || !valid_category
+        || !valid_reference
+        || !valid_message
+        || failure
+            .diagnostic_code
+            .as_deref()
+            .is_some_and(|code| !valid_code(code))
+    {
+        return None;
+    }
+    failure.message = "The local service could not be started.".to_owned();
+    Some(failure)
+}
+
+fn record_local_service_startup_failure(
+    storage_root: Option<&Path>,
+    failure: &StartupFailure,
+) -> std::io::Result<()> {
+    let root = match storage_root {
+        Some(root) => root.to_path_buf(),
+        None => PathBuf::from(std::env::var_os("LOCALAPPDATA").ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "the local application data directory is unavailable",
+            )
+        })?)
+        .join("OpenChat"),
+    };
+    let log_directory = root.join("logs");
+    fs::create_dir_all(&log_directory)?;
+    let log_path = log_directory.join("openchat-service.log");
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(std::io::Error::other)?
+        .as_millis();
+    let diagnostic_code = failure.diagnostic_code.as_deref().unwrap_or("none");
+    let entry = format!(
+        "timestamp_unix_ms={timestamp} pid={} component=local_service event=startup_failed category={} code={} diagnostic_code={} correlation_id={} retryable={} message={}\n",
+        std::process::id(),
+        failure.category,
+        failure.code,
+        diagnostic_code,
+        failure.correlation_id,
+        failure.retryable,
+        failure.message,
+    );
+    if entry.len() > 4096 {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "startup diagnostic entry exceeded its size limit",
+        ));
+    }
+
+    let mut file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(log_path)?;
+    let entry_size = u64::try_from(entry.len()).map_err(std::io::Error::other)?;
+    if file.metadata()?.len().saturating_add(entry_size) > MAX_STARTUP_DIAGNOSTIC_LOG_BYTES {
+        file.set_len(0)?;
+    }
+    file.write_all(entry.as_bytes())?;
+    file.flush()
+}
+
+fn startup_failure_response(
+    storage_root: Option<&Path>,
+    code: &str,
+    category: &str,
+    message: &str,
+    diagnostic_code: &str,
+    retryable: bool,
+) -> String {
+    let failure = StartupFailure {
+        code: code.to_owned(),
+        category: category.to_owned(),
+        message: message.to_owned(),
+        diagnostic_code: Some(diagnostic_code.to_owned()),
+        correlation_id: uuid::Uuid::new_v4().simple().to_string(),
+        retryable,
+    };
+    if record_local_service_startup_failure(storage_root, &failure).is_err() {
+        eprintln!("local_service_startup_diagnostic_write_failed");
+    }
+    match serialize_startup_failure(&failure) {
+        Ok(payload) => payload,
+        Err(_) => "startup_failure_serialization_failed".to_owned(),
+    }
+}
+
+fn serialize_startup_failure(failure: &StartupFailure) -> Result<String, serde_json::Error> {
+    serde_json::to_string(failure)
+}
+
+fn report_local_service_host_error(category: &str, code: &str) {
+    let correlation_id = uuid::Uuid::new_v4().simple();
+    eprintln!(
+        "component=local_service category={category} code={code} correlation_id={correlation_id}"
+    );
 }
 
 /// Writes one bounded, newline-terminated JSON-RPC frame to the owned service process.

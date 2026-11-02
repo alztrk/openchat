@@ -827,17 +827,20 @@ fn contains_free_usage_limit_error(value: &Value) -> bool {
     }
 }
 
-fn save_message(
+async fn save_message(
     storage: &AppStorage,
     message: AssistantMessageWrite<'_>,
 ) -> Result<(), ServiceError> {
-    crate::chatgpt_store::save_assistant_message(storage, message).map_err(|error| {
-        log_send_storage_failure(
-            storage,
-            "chat.send.compatible_assistant_persist",
-            sqlite_error_code(&error),
-        );
-        storage_error()
+    crate::chatgpt_store::save_assistant_message_with_retry(
+        storage,
+        message,
+        "compatible_assistant_message_save",
+    )
+    .await
+    .map_err(|error| {
+        let code = sqlite_error_code(&error);
+        log_send_storage_failure(storage, "chat.send.compatible_assistant_persist", code);
+        storage_error().with_details(code)
     })
 }
 
@@ -957,7 +960,10 @@ pub(super) fn chat_request_http_error_with_retry_after(
         && matches!(provider_id, Some("copilot" | "opencode"))
         && let Some(seconds) = retry_after_seconds
     {
-        error.details = Some(format!("HTTP status 429; retry-after-seconds={seconds}"));
+        error = error
+            .with_retry_after_ms(seconds.saturating_mul(1_000))
+            .with_diagnostic_code("http_429")
+            .with_details(format!("HTTP status 429; retry-after-seconds={seconds}"));
     }
     error
 }
@@ -977,7 +983,10 @@ pub(super) fn opencode_free_usage_limit_error(retry_after_seconds: Option<u64>) 
         false,
     );
     if let Some(seconds) = retry_after_seconds {
-        error.details = Some(format!("HTTP status 429; retry-after-seconds={seconds}"));
+        error = error
+            .with_retry_after_ms(seconds.saturating_mul(1_000))
+            .with_diagnostic_code("http_429")
+            .with_details(format!("HTTP status 429; retry-after-seconds={seconds}"));
     }
     error
 }

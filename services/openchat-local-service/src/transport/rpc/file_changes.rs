@@ -8,6 +8,7 @@ use crate::{file_changes, protocol::ServiceError, storage::AppStorage};
 use super::required_string;
 
 /// Dispatches one file-change request without exposing filesystem paths to the renderer.
+#[cfg(test)]
 pub(super) fn dispatch(
     method: &str,
     params: &Value,
@@ -32,7 +33,7 @@ pub(super) fn dispatch_with_cancellation(
                 conversation_id,
                 cancellation,
             )
-                .map_err(map_file_change_list_error)?;
+            .map_err(map_file_change_list_error)?;
             Ok(json!({"changes": changes}))
         }
         "chat.file_changes.checkpoints.list" => {

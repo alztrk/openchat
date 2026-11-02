@@ -370,11 +370,11 @@ pub(crate) fn approve_all_changes(
         load_changes(&connection, conversation_id).map_err(|_| RevertError::Unavailable)?;
     drop(connection);
     for entry in &mut entries {
-        if entry.status == "active"
-            && !is_entry_approved(entry)
-            && is_current_version(entry).unwrap_or(false)
-        {
-            entry.baseline_hash = Some(APPROVED_BASELINE_SENTINEL.to_owned());
+        if entry.status == "active" && !is_entry_approved(entry) {
+            match is_current_version(entry).map_err(|_| RevertError::Unavailable)? {
+                true => entry.baseline_hash = Some(APPROVED_BASELINE_SENTINEL.to_owned()),
+                false => entry.status = "conflict".to_owned(),
+            }
         }
     }
     let mut connection = storage.connect().map_err(|_| RevertError::Unavailable)?;

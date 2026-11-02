@@ -23,7 +23,7 @@ use crate::{
     protocol::{EventSink, Request, Response, ServiceError},
     provider_credentials, provider_ids,
     service::OperationGate,
-    storage::AppStorage,
+    storage::{AppStorage, is_retryable_storage_error_code, sqlite_error_code},
     tools::{self, ToolPermissionMode},
     usage_statistics,
     user_question_broker::UserQuestionBroker,
@@ -187,6 +187,7 @@ pub(crate) async fn dispatch(context: RpcDispatchContext<'_>) -> Result<Value, S
     if method.starts_with("chat.memory.")
         || method.starts_with("chat.history.")
         || method == "chat.context.usage.estimate"
+        || method == "chat.context.usage.full_estimate"
         || method == "chat.document.extract"
         || method.starts_with("browser.")
         || method.starts_with("conversation.archive.")
@@ -241,20 +242,18 @@ pub(crate) async fn dispatch(context: RpcDispatchContext<'_>) -> Result<Value, S
             let backup_created = storage
                 .prepare_chat_schema_migration(chat_schema_version)
                 .map_err(|error| {
-                    ServiceError::new(
+                    database_initialization_error(
                         "database_prepare_failed",
                         "The local database could not be safely prepared for an update.",
-                        false,
+                        error,
                     )
-                    .with_details(error.to_string())
                 })?;
             let schema_version = storage.initialize_backend_schema().map_err(|error| {
-                ServiceError::new(
+                database_initialization_error(
                     "storage_initialization_failed",
                     "Local conversation storage could not be initialized.",
-                    false,
+                    error,
                 )
-                .with_details(error.to_string())
             })?;
             crate::image_library::recover_incomplete_generations(storage)?;
             service.schedule_pending_credential_cleanup();
@@ -299,6 +298,9 @@ pub(crate) async fn dispatch(context: RpcDispatchContext<'_>) -> Result<Value, S
                 "status": "ready",
                 "schema_version": schema_version,
                 "backupCreated": backup_created,
+                "capabilities": {
+                    "contextUsageProtocolVersion": 1,
+                },
                 "settings": settings,
             }))
         }
@@ -900,6 +902,16 @@ fn optional_string<'a>(params: &'a Value, name: &str) -> Result<Option<&'a str>,
     }
 }
 
+fn database_initialization_error(
+    code: &'static str,
+    message: &'static str,
+    error: rusqlite::Error,
+) -> ServiceError {
+    let detail_code = sqlite_error_code(&error);
+    ServiceError::new(code, message, is_retryable_storage_error_code(detail_code))
+        .with_details(detail_code)
+}
+
 fn optional_bool(params: &Value, name: &str) -> Result<Option<bool>, ServiceError> {
     match params.get(name) {
         None | Some(Value::Null) => Ok(None),
@@ -935,7 +947,44 @@ mod tests {
     };
 
     use super::chat_request::{parse_project_skill_ids, parse_title_generation};
-    use super::{RpcDispatchContext, dispatch, take_optional_api_key};
+    use super::{
+        RpcDispatchContext, database_initialization_error, dispatch, take_optional_api_key,
+    };
+
+    #[test]
+    fn database_startup_errors_expose_stable_codes_and_retry_only_transient_failures() {
+        let transient = database_initialization_error(
+            "storage_initialization_failed",
+            "Local conversation storage could not be initialized.",
+            rusqlite::Error::SqliteFailure(
+                rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_BUSY),
+                Some("private database detail".to_owned()),
+            ),
+        );
+        assert_eq!(transient.code, "storage_initialization_failed");
+        assert!(transient.retryable);
+        assert_eq!(transient.details.as_deref(), Some("sqlite_busy"));
+
+        let transient_prepare = database_initialization_error(
+            "database_prepare_failed",
+            "The local database could not be safely prepared for an update.",
+            rusqlite::Error::SqliteFailure(
+                rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_BUSY),
+                None,
+            ),
+        );
+        assert!(transient_prepare.retryable);
+        assert_eq!(transient_prepare.details.as_deref(), Some("sqlite_busy"));
+
+        let permanent = database_initialization_error(
+            "database_prepare_failed",
+            "The local database could not be safely prepared for an update.",
+            rusqlite::Error::InvalidQuery,
+        );
+        assert_eq!(permanent.code, "database_prepare_failed");
+        assert!(!permanent.retryable);
+        assert_eq!(permanent.details.as_deref(), Some("invalid_query"));
+    }
 
     #[test]
     fn project_skill_ids_are_bounded_before_owned_values_are_created() {

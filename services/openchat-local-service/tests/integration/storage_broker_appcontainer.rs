@@ -26,10 +26,16 @@ async fn brokers_share_the_database_operation_lock_across_processes() {
         .spawn_broker()
         .expect("start the second storage broker process");
     let mut first_stdin = first_broker.take_stdin().expect("take first broker stdin");
-    let first_stdout = first_broker.take_stdout().expect("take first broker stdout");
+    let first_stdout = first_broker
+        .take_stdout()
+        .expect("take first broker stdout");
     let mut first_stdout = BufReader::new(first_stdout);
-    let mut second_stdin = second_broker.take_stdin().expect("take second broker stdin");
-    let second_stdout = second_broker.take_stdout().expect("take second broker stdout");
+    let mut second_stdin = second_broker
+        .take_stdin()
+        .expect("take second broker stdin");
+    let second_stdout = second_broker
+        .take_stdout()
+        .expect("take second broker stdout");
     let mut second_stdout = BufReader::new(second_stdout);
     let key = Zeroizing::new([0x5a; 32]);
 
@@ -43,7 +49,9 @@ async fn brokers_share_the_database_operation_lock_across_processes() {
         first_stdin.write_all(&*key).await?;
         first_stdout.read_exact(&mut bootstrap_status).await?;
         if bootstrap_status != *b"OCK1\x02" {
-            return Err(io::Error::other("first broker did not initialize its database"));
+            return Err(io::Error::other(
+                "first broker did not initialize its database",
+            ));
         }
         write_request(
             &mut first_stdin,
@@ -55,7 +63,9 @@ async fn brokers_share_the_database_operation_lock_across_processes() {
         .await?;
         let hello = read_response(&mut first_stdout).await?;
         if hello["result"] != "ready" || hello["version"] != BROKER_PROTOCOL_VERSION {
-            return Err(io::Error::other("first broker rejected the protocol handshake"));
+            return Err(io::Error::other(
+                "first broker rejected the protocol handshake",
+            ));
         }
 
         bootstrap_existing_database(&mut second_stdin, &mut second_stdout, &key).await?;
@@ -70,7 +80,9 @@ async fn brokers_share_the_database_operation_lock_across_processes() {
         .await?;
         let begin = read_response(&mut first_stdout).await?;
         if begin["result"] != "unit" {
-            return Err(io::Error::other("first broker could not hold a transaction"));
+            return Err(io::Error::other(
+                "first broker could not hold a transaction",
+            ));
         }
 
         write_request(
@@ -93,16 +105,24 @@ async fn brokers_share_the_database_operation_lock_across_processes() {
             () = sleep(Duration::from_millis(200)) => {}
         }
 
-        write_request(&mut first_stdin, &serde_json::json!({"operation": "commit"})).await?;
+        write_request(
+            &mut first_stdin,
+            &serde_json::json!({"operation": "commit"}),
+        )
+        .await?;
         let commit = read_response(&mut first_stdout).await?;
         if commit["result"] != "unit" {
-            return Err(io::Error::other("first broker could not release its transaction"));
+            return Err(io::Error::other(
+                "first broker could not release its transaction",
+            ));
         }
         let query = timeout(Duration::from_secs(2), &mut second_response)
             .await
             .map_err(io::Error::other)??;
         if query["result"] != "rows" || query["rows"][0][0]["value"] != 1 {
-            return Err(io::Error::other("second broker did not resume after the lock release"));
+            return Err(io::Error::other(
+                "second broker did not resume after the lock release",
+            ));
         }
         Ok::<(), io::Error>(())
     })

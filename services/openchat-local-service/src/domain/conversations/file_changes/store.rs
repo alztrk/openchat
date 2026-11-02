@@ -266,9 +266,10 @@ pub(crate) fn list_changes_with_cancellation(
         return Err(TrackingError::Cancelled);
     }
     validate_conversation_id(conversation_id)?;
-    let has_legacy_directory = legacy_conversation_directory(storage.root(), conversation_id, false)
-        .map_err(|error| log_file_change_list_failure(storage, "legacy_check", error, started))?
-        .is_some();
+    let has_legacy_directory =
+        legacy_conversation_directory(storage.root(), conversation_id, false)
+            .map_err(|error| log_file_change_list_failure(storage, "legacy_check", error, started))?
+            .is_some();
     let mut guard = None;
     let mut lock_wait_ms = 0;
     if has_legacy_directory {
@@ -286,7 +287,11 @@ pub(crate) fn list_changes_with_cancellation(
                 );
                 return Err(TrackingError::Cancelled);
             }
-            Err(error) => return Err(log_file_change_list_failure(storage, "lock", error, started)),
+            Err(error) => {
+                return Err(log_file_change_list_failure(
+                    storage, "lock", error, started,
+                ));
+            }
         });
         lock_wait_ms = lock_started.elapsed().as_millis();
     }
@@ -321,6 +326,7 @@ pub(crate) fn list_changes_with_cancellation(
     drop(connection);
     drop(guard);
 
+    let validation_started = Instant::now();
     let mut summaries = Vec::with_capacity(changes.len());
     for entry in &changes {
         if *cancellation.borrow() {
@@ -330,19 +336,20 @@ pub(crate) fn list_changes_with_cancellation(
                 summaries.len(),
                 lock_wait_ms,
                 database_ms,
-                0,
+                validation_started.elapsed().as_millis(),
             );
             return Err(TrackingError::Cancelled);
         }
         // Listing uses the manifest snapshot; revert and approval re-check file contents before mutation.
         summaries.push(summary_for_entry(storage.root(), entry, false));
     }
-    if lock_wait_ms >= 100 || database_ms >= 250 {
+    let validation_ms = validation_started.elapsed().as_millis();
+    if lock_wait_ms >= 100 || database_ms >= 250 || validation_ms >= 100 {
         let _ = storage.log_file_changes_list_timing(
             changes.len(),
             lock_wait_ms,
             database_ms,
-            0,
+            validation_ms,
         );
     }
     Ok(summaries)

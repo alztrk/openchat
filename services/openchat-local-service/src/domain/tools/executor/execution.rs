@@ -111,11 +111,13 @@ pub(crate) async fn execute_model_tool_with_workspace_roots(
                 {
                     Ok(val) => return val,
                     Err(error) => {
-                        let mut output =
-                            json!({"error": {"code": error.code, "message": error.message}});
-                        if let Some(details) = error.details {
-                            output["error"]["details"] = Value::String(details);
-                        }
+                        let output = json!({
+                            "error": {
+                                "code": error.code,
+                                "category": crate::error::ErrorCategory::from_code(error.code).as_str(),
+                                "message": error.message,
+                            }
+                        });
                         return output;
                     }
                 }
@@ -243,11 +245,12 @@ fn service_error(error: ServiceError) -> Value {
     let mut result = json!({
         "error": {
             "code": error.code,
+            "category": error.category.as_str(),
             "message": error.message,
         }
     });
-    if let Some(details) = error.details {
-        result["error"]["details"] = Value::String(details);
+    if let Some(diagnostic_code) = error.diagnostic_code {
+        result["error"]["diagnosticCode"] = Value::String(diagnostic_code);
     }
     result
 }

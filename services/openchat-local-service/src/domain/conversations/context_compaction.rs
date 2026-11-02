@@ -205,15 +205,13 @@ pub(crate) fn request_context_token_estimate(model_id: &str, value: &serde_json:
             .map(|v| request_context_token_estimate(model_id, v))
             .fold(2_i64, i64::saturating_add) // Array brackets.
             .saturating_add(i64::try_from(values.len().saturating_sub(1)).unwrap_or(i64::MAX)),
-        serde_json::Value::String(text) => {
-            request_text_token_estimate(text).saturating_add(2)
-        }
+        serde_json::Value::String(text) => request_text_token_estimate(text).saturating_add(2),
         serde_json::Value::Null => 4,
         serde_json::Value::Bool(true) => 4,
         serde_json::Value::Bool(false) => 5,
         serde_json::Value::Number(number) => {
             i64::try_from(number.to_string().len()).unwrap_or(i64::MAX)
-        },
+        }
     }
 }
 
@@ -525,8 +523,10 @@ pub(crate) fn message_token_estimate(model_id: &str, message: &StoredMessage) ->
         .map(|(heading, content)| {
             dense_payload_byte_estimate(heading)
                 .unwrap_or_else(|| text_token_estimate(model_id, heading))
-                .saturating_add(dense_payload_byte_estimate(content)
-                        .unwrap_or_else(|| text_token_estimate(model_id, content)))
+                .saturating_add(
+                    dense_payload_byte_estimate(content)
+                        .unwrap_or_else(|| text_token_estimate(model_id, content)),
+                )
         })
         .fold(0, i64::saturating_add);
     let image_tokens = if message.role == "user" {
@@ -717,18 +717,9 @@ mod tests {
         assert_eq!(request_text_token_estimate("a"), 1);
         assert_eq!(request_text_token_estimate("abcd"), 2);
         assert_eq!(request_text_token_estimate("Türkçe"), 6);
-        assert_eq!(
-            request_text_token_estimate(&"a ".repeat(64)),
-            43
-        );
-        assert_eq!(
-            request_text_token_estimate(&"!. ".repeat(43)),
-            129
-        );
-        assert_eq!(
-            request_text_token_estimate(&"é".repeat(64)),
-            128
-        );
+        assert_eq!(request_text_token_estimate(&"a ".repeat(64)), 43);
+        assert_eq!(request_text_token_estimate(&"!. ".repeat(43)), 129);
+        assert_eq!(request_text_token_estimate(&"é".repeat(64)), 128);
     }
 
     #[test]

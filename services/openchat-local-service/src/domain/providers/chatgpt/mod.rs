@@ -5,6 +5,7 @@
 
 use std::{
     collections::HashMap,
+    future::Future,
     sync::Arc,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
@@ -28,8 +29,11 @@ use crate::{
     protocol::ServiceError,
     provider_schema::{MessageRole, ProviderChatRequest, ProviderMessage},
     service::OperationGate,
-    storage::{AppStorage, ChatGptStreamDiagnostic},
+    storage::{
+        AppStorage, ChatGptStreamDiagnostic, is_retryable_storage_error_code, sqlite_error_code,
+    },
     tools,
+    usage_statistics::{UsageRequestDetails, UsageRequestTracker},
 };
 
 mod account;
@@ -61,6 +65,11 @@ const RESET_CREDIT_CONSUME_TIMEOUT: Duration = Duration::from_secs(10);
 const ACCESS_TOKEN_REFRESH_WINDOW: Duration = Duration::from_secs(5 * 60);
 const MAX_JSON_BODY_BYTES: usize = 4 * 1024 * 1024;
 const MAX_STREAM_EVENT_BYTES: usize = 1024 * 1024;
+const CHATGPT_STORAGE_READ_RETRY_DELAYS: [Duration; 3] = [
+    Duration::from_millis(150),
+    Duration::from_millis(400),
+    Duration::from_millis(900),
+];
 
 #[derive(Clone)]
 pub struct ChatGptService {
@@ -197,8 +206,11 @@ impl ChatGptService {
         let project_skills = &context.project_skills;
         let project_root = context.project_root;
         let project_name = context.project_name;
-        let route = chatgpt_store::conversation_route(&self.storage, conversation_id)
-            .map_err(database_error)?
+        let route = self
+            .retry_storage_operation("send_preflight_route", || {
+                chatgpt_store::conversation_route(&self.storage, conversation_id)
+            })
+            .await?
             .ok_or_else(|| {
                 ServiceError::new(
                     "conversation_not_routed",
@@ -206,21 +218,36 @@ impl ChatGptService {
                     false,
                 )
             })?;
-        self.ensure_active_connection(&route.connection_id)?;
-        let workspace = chatgpt_store::connection_workspace(
-            &self.storage,
-            &route.connection_id,
-            &route.workspace_id,
-        )
-        .map_err(database_error)?
-        .ok_or_else(connection_unavailable)?;
-        let mut model = chatgpt_store::selected_model(
-            &self.storage,
-            &route.connection_id,
-            &route.workspace_id,
-            &route.model_id,
-        )
-        .map_err(database_error)?
+        let connections = self
+            .retry_storage_operation("send_preflight_connection_list", || {
+                chatgpt_store::list_connections(&self.storage)
+            })
+            .await?;
+        if !connections.iter().any(|connection| {
+            connection.id == route.connection_id && connection.auth_status == "active"
+        }) {
+            return Err(connection_unavailable());
+        }
+        let workspace = self
+            .retry_storage_operation("send_preflight_workspace", || {
+                chatgpt_store::connection_workspace(
+                    &self.storage,
+                    &route.connection_id,
+                    &route.workspace_id,
+                )
+            })
+            .await?
+            .ok_or_else(connection_unavailable)?;
+        let mut model = self
+            .retry_storage_operation("send_preflight_model", || {
+                chatgpt_store::selected_model(
+                    &self.storage,
+                    &route.connection_id,
+                    &route.workspace_id,
+                    &route.model_id,
+                )
+            })
+            .await?
         .filter(|model| model.is_available)
         .ok_or_else(|| {
             ServiceError::new(
@@ -242,9 +269,11 @@ impl ChatGptService {
                 false,
             ));
         }
-        let context_state =
-            chatgpt_store::load_conversation_context_state(&self.storage, conversation_id)
-                .map_err(database_error)?;
+        let context_state = self
+            .retry_storage_operation("send_preflight_context_state", || {
+                chatgpt_store::load_conversation_context_state(&self.storage, conversation_id)
+            })
+            .await?;
         let active_compaction_route_matches = context_state.as_ref().is_some_and(|state| {
             crate::context_compaction::compaction_payload_matches_route(
                 state,
@@ -259,20 +288,29 @@ impl ChatGptService {
                 .as_ref()
                 .and_then(|state| state.compacted_through_message_id.as_deref())
         {
-            match chatgpt_store::conversation_messages_from_boundary(
-                &self.storage,
-                conversation_id,
-                boundary_id,
-            )
-            .map_err(database_error)?
+            match self
+                .retry_storage_operation("send_preflight_messages_from_boundary", || {
+                    chatgpt_store::conversation_messages_from_boundary(
+                        &self.storage,
+                        conversation_id,
+                        boundary_id,
+                    )
+                })
+                .await?
             {
                 Some(messages) => messages,
-                None => chatgpt_store::conversation_messages(&self.storage, conversation_id)
-                    .map_err(database_error)?,
+                None => {
+                    self.retry_storage_operation("send_preflight_messages", || {
+                        chatgpt_store::conversation_messages(&self.storage, conversation_id)
+                    })
+                    .await?
+                }
             }
         } else {
-            chatgpt_store::conversation_messages(&self.storage, conversation_id)
-                .map_err(database_error)?
+            self.retry_storage_operation("send_preflight_messages", || {
+                chatgpt_store::conversation_messages(&self.storage, conversation_id)
+            })
+            .await?
         };
         if excluded_assistant_message_id
             .is_some_and(|id| !chatgpt_store::is_retryable_latest_assistant_message(&messages, id))
@@ -491,18 +529,28 @@ impl ChatGptService {
                 false,
             ));
         }
-        self.ensure_active_connection(connection_id)?;
-        let workspace =
-            chatgpt_store::connection_workspace(&self.storage, connection_id, workspace_id)
-                .map_err(database_error)?
-                .ok_or_else(connection_unavailable)?;
-        let model = chatgpt_store::selected_model(
-            &self.storage,
-            connection_id,
-            workspace_id,
-            model_id,
-        )
-        .map_err(database_error)?
+        let connections = self
+            .retry_storage_operation("temporary_preflight_connection_list", || {
+                chatgpt_store::list_connections(&self.storage)
+            })
+            .await?;
+        if !connections
+            .iter()
+            .any(|connection| connection.id == connection_id && connection.auth_status == "active")
+        {
+            return Err(connection_unavailable());
+        }
+        let workspace = self
+            .retry_storage_operation("temporary_preflight_workspace", || {
+                chatgpt_store::connection_workspace(&self.storage, connection_id, workspace_id)
+            })
+            .await?
+            .ok_or_else(connection_unavailable)?;
+        let model = self
+            .retry_storage_operation("temporary_preflight_model", || {
+                chatgpt_store::selected_model(&self.storage, connection_id, workspace_id, model_id)
+            })
+            .await?
         .filter(|model| model.is_available)
         .ok_or_else(|| {
             ServiceError::new(
@@ -819,7 +867,8 @@ impl ChatGptService {
             .await?;
         let refreshed = self
             .oauth
-            .load_tokens(&self.storage, request.connection_id)?;
+            .load_tokens(&self.storage, request.connection_id)
+            .await?;
         self.request_once(&request, refreshed.access_token())
             .await
             .and_then(|response| {
@@ -879,7 +928,8 @@ impl ChatGptService {
         }
         let refreshed = self
             .oauth
-            .load_tokens(&self.storage, request.connection_id)?;
+            .load_tokens(&self.storage, request.connection_id)
+            .await?;
         let response = tokio::select! {
             changed = cancellation.changed() => {
                 let _ = changed;
@@ -941,7 +991,7 @@ impl ChatGptService {
         &self,
         connection_id: &str,
     ) -> Result<OAuthTokenPair, ServiceError> {
-        let tokens = self.oauth.load_tokens(&self.storage, connection_id)?;
+        let tokens = self.oauth.load_tokens(&self.storage, connection_id).await?;
         if !tokens.expires_within(SystemTime::now(), ACCESS_TOKEN_REFRESH_WINDOW) {
             return Ok(tokens);
         }
@@ -949,7 +999,7 @@ impl ChatGptService {
         let observed_access_token = Zeroizing::new(tokens.access_token().to_owned());
         self.refresh_if_unchanged(connection_id, &observed_access_token)
             .await?;
-        self.oauth.load_tokens(&self.storage, connection_id)
+        self.oauth.load_tokens(&self.storage, connection_id).await
     }
 
     async fn refresh_if_unchanged(
@@ -959,7 +1009,7 @@ impl ChatGptService {
     ) -> Result<(), ServiceError> {
         let lock = self.connection_refresh_lock(connection_id).await;
         let _guard = lock.lock().await;
-        let current_tokens = self.oauth.load_tokens(&self.storage, connection_id)?;
+        let current_tokens = self.oauth.load_tokens(&self.storage, connection_id).await?;
         if current_tokens.access_token() != observed_access_token {
             return Ok(());
         }
@@ -1049,6 +1099,112 @@ impl ChatGptService {
         )
     }
 
+    pub(super) async fn retry_storage_operation<T, F>(
+        &self,
+        operation: &'static str,
+        mut read: F,
+    ) -> Result<T, ServiceError>
+    where
+        F: FnMut() -> rusqlite::Result<T> + Send,
+    {
+        let started = Instant::now();
+        let mut attempt = 0;
+        loop {
+            match read() {
+                Ok(value) => return Ok(value),
+                Err(error) => {
+                    attempt += 1;
+                    let code = sqlite_error_code(&error);
+                    let retry_delay = storage_operation_retry_delay(code, attempt);
+                    let (event, delay_ms) = match retry_delay {
+                        Some(delay) => ("storage_retry_scheduled", Some(delay.as_millis())),
+                        None => ("storage_failed", None),
+                    };
+                    if self
+                        .storage
+                        .log_chatgpt_storage_diagnostic(event, operation, code, attempt, delay_ms)
+                        .is_err()
+                    {
+                        eprintln!("chatgpt_storage_diagnostic_write_failed");
+                    }
+                    if let Some(delay) = retry_delay {
+                        tokio::time::sleep(delay).await;
+                    } else {
+                        self.record_chatgpt_event(
+                            "storage_operation_failed",
+                            operation,
+                            None,
+                            Some(code),
+                            Some(started.elapsed().as_millis()),
+                            Some(attempt),
+                        );
+                        return Err(database_error(error));
+                    }
+                }
+            }
+        }
+    }
+
+    pub(super) async fn retry_storage_future<T, F, Fut>(
+        &self,
+        operation: &'static str,
+        mut read: F,
+    ) -> Result<T, ServiceError>
+    where
+        F: FnMut() -> Fut + Send,
+        Fut: Future<Output = rusqlite::Result<T>> + Send,
+        T: Send,
+    {
+        let started = Instant::now();
+        let mut attempt = 0;
+        loop {
+            match read().await {
+                Ok(value) => return Ok(value),
+                Err(error) => {
+                    attempt += 1;
+                    let code = sqlite_error_code(&error);
+                    let retry_delay = storage_operation_retry_delay(code, attempt);
+                    let (event, delay_ms) = match retry_delay {
+                        Some(delay) => ("storage_retry_scheduled", Some(delay.as_millis())),
+                        None => ("storage_failed", None),
+                    };
+                    if self
+                        .storage
+                        .log_chatgpt_storage_diagnostic(event, operation, code, attempt, delay_ms)
+                        .is_err()
+                    {
+                        eprintln!("chatgpt_storage_diagnostic_write_failed");
+                    }
+                    if let Some(delay) = retry_delay {
+                        tokio::time::sleep(delay).await;
+                    } else {
+                        self.record_chatgpt_event(
+                            "storage_operation_failed",
+                            operation,
+                            None,
+                            Some(code),
+                            Some(started.elapsed().as_millis()),
+                            Some(attempt),
+                        );
+                        return Err(database_error(error));
+                    }
+                }
+            }
+        }
+    }
+
+    pub(super) async fn start_usage_request<'a>(
+        &'a self,
+        operation: &'static str,
+        request: UsageRequestDetails<'_>,
+    ) -> Result<UsageRequestTracker<'a>, ServiceError> {
+        let event_id = Uuid::new_v4();
+        self.retry_storage_operation(operation, || {
+            UsageRequestTracker::start_with_event_id(&self.storage, event_id, request)
+        })
+        .await
+    }
+
     fn ensure_active_connection(&self, connection_id: &str) -> Result<(), ServiceError> {
         let connections = chatgpt_store::list_connections(&self.storage).map_err(database_error)?;
         if connections
@@ -1077,11 +1233,14 @@ impl ChatGptService {
             })
     }
 
-    fn persist_terminal_message(
+    async fn persist_terminal_message(
         &self,
         message: chatgpt_store::AssistantMessageWrite<'_>,
     ) -> Result<(), ServiceError> {
-        chatgpt_store::save_assistant_message(&self.storage, message).map_err(database_error)
+        self.retry_storage_operation("send_terminal_assistant_message_save", || {
+            chatgpt_store::save_assistant_message(&self.storage, message)
+        })
+        .await
     }
 
     fn record_chatgpt_event(
@@ -1224,12 +1383,32 @@ fn now_unix_millis() -> Result<i64, ServiceError> {
     })
 }
 
-pub(super) fn database_error(_: DatabaseError) -> ServiceError {
+pub(super) fn database_error(error: DatabaseError) -> ServiceError {
+    let code = sqlite_error_code(&error);
     ServiceError::new(
         "local_storage_failed",
         "ChatGPT data could not be read from or written to the local database.",
-        true,
+        is_retryable_storage_error_code(code),
     )
+    .with_details(code)
+}
+
+fn storage_operation_retry_delay(code: &str, attempt: usize) -> Option<Duration> {
+    match code {
+        "sqlite_busy" | "sqlite_busy_snapshot" | "sqlite_locked" | "sqlite_5" | "sqlite_517" => {
+            CHATGPT_STORAGE_READ_RETRY_DELAYS.get(attempt - 1).copied()
+        }
+        "sqlite_busy_timeout"
+        | "sqlite_io_error"
+        | "database_queue_full"
+        | "database_queue_wait_timeout"
+        | "storage_broker_timeout"
+            if attempt == 1 =>
+        {
+            Some(Duration::from_millis(500))
+        }
+        _ => None,
+    }
 }
 
 fn network_error() -> ServiceError {

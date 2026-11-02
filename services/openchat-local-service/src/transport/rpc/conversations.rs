@@ -8,8 +8,8 @@ use serde_json::{Value, json};
 use tokio::sync::watch;
 
 use crate::{
-    chatgpt_store, context_usage, conversation_archive, document_parser, instructions, openai_compatible,
-    profile_archive,
+    chatgpt_store, context_usage, conversation_archive, document_parser, instructions,
+    openai_compatible, profile_archive,
     protocol::{EventSink, Response, ServiceError},
     storage::{AppStorage, sqlite_error_code},
     tools::{self, ToolPermissionMode},
@@ -465,24 +465,27 @@ pub(super) async fn dispatch(
             let model_id_ref = model_id.as_deref().unwrap_or("unknown-model");
             let result: Result<Value, ServiceError> = (|| {
                 let messages = if let Some(conversation_id) = &conversation_id {
-                    chatgpt_store::conversation_messages(storage, conversation_id).map_err(|_| {
-                        ServiceError::new(
-                            "storage_unavailable",
-                            "Chat history could not be read for token estimation.",
-                            true,
-                        )
-                    })?
+                    chatgpt_store::conversation_messages(storage, conversation_id).map_err(
+                        |_| {
+                            ServiceError::new(
+                                "storage_unavailable",
+                                "Chat history could not be read for token estimation.",
+                                true,
+                            )
+                        },
+                    )?
                 } else {
                     Vec::new()
                 };
                 let context_state = if let Some(conversation_id) = &conversation_id {
-                    chatgpt_store::load_conversation_context_state(storage, conversation_id).map_err(|_| {
-                        ServiceError::new(
-                            "storage_unavailable",
-                            "Chat context state could not be read for token estimation.",
-                            true,
-                        )
-                    })?
+                    chatgpt_store::load_conversation_context_state(storage, conversation_id)
+                        .map_err(|_| {
+                            ServiceError::new(
+                                "storage_unavailable",
+                                "Chat context state could not be read for token estimation.",
+                                true,
+                            )
+                        })?
                 } else {
                     None
                 };
@@ -517,7 +520,7 @@ pub(super) async fn dispatch(
                 }))
             })();
             result
-        },
+        }
         "chat.memory.search" => {
             let conversation_id = required_memory_conversation_id(params)?;
             let query = required_memory_search_query(params)?;
@@ -950,8 +953,6 @@ fn invalid_memory_archive_settings_params() -> ServiceError {
         false,
     )
 }
-
-
 
 fn required_string_array(params: &Value, name: &str) -> Result<Vec<String>, ServiceError> {
     params

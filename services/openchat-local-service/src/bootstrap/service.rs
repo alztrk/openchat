@@ -18,12 +18,14 @@ use std::{
 
 use crate::{
     chatgpt::ChatGptService,
+    error::{ErrorCategory, is_safe_diagnostic_code},
     permissions::ToolPermissionBroker,
-    protocol::{EventSink, Request, Response, ServiceError},
+    protocol::{EventSink, MAX_REQUEST_PARAMETER_NODES, Request, Response, ServiceError},
     rpc,
-    storage::AppStorage,
+    storage::{AppStorage, sqlite_error_code},
     user_question_broker::UserQuestionBroker,
 };
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tokio::{
     io::{AsyncBufRead, AsyncBufReadExt, BufReader},
@@ -37,14 +39,24 @@ const MAX_REQUEST_ID_BYTES: usize = 256;
 /// Keeps dispatch comparisons and request bookkeeping bounded to protocol method names.
 const MAX_REQUEST_METHOD_BYTES: usize = 128;
 const MAX_ACTIVE_OPERATIONS: usize = 64;
+/// Leaves capacity for persistence, cancellation, and other short RPCs during parallel chats.
+const MAX_ACTIVE_CHAT_OPERATIONS: usize = 48;
 const MAX_ACTIVE_REQUEST_BYTES: usize = 64 * 1024 * 1024;
+/// Reserves enough request bytes for one maximum-sized non-chat operation.
+const MAX_ACTIVE_CHAT_REQUEST_BYTES: usize = MAX_ACTIVE_REQUEST_BYTES - MAX_REQUEST_BYTES;
 /// Bounds retained JSON trees across concurrent operations, in addition to raw request bytes.
 const MAX_ACTIVE_REQUEST_PARAMETER_NODES: usize = 250_000;
+/// Reserves enough parsed values for one maximum-complexity non-chat operation.
+const MAX_ACTIVE_CHAT_PARAMETER_NODES: usize =
+    MAX_ACTIVE_REQUEST_PARAMETER_NODES - MAX_REQUEST_PARAMETER_NODES;
 
 /// Tracks RPC cancellation channels and work admitted under count, byte, and value limits.
 #[derive(Default)]
 struct ActiveOperations {
     requests: HashMap<String, ActiveOperation>,
+    chat_operations: usize,
+    chat_request_bytes: usize,
+    chat_parameter_nodes: usize,
     request_bytes: usize,
     parameter_nodes: usize,
 }
@@ -53,6 +65,7 @@ struct ActiveOperations {
 struct ActiveOperation {
     cancellation: tokio_watch::Sender<bool>,
     cancellation_gate: Arc<OperationGate>,
+    is_chat_operation: bool,
     request_bytes: usize,
     parameter_nodes: usize,
 }
@@ -102,7 +115,12 @@ impl OperationGate {
 #[derive(Debug, Eq, PartialEq)]
 enum OperationAdmissionError {
     DuplicateId,
-    CapacityExceeded,
+    ChatOperationLimitExceeded,
+    ChatRequestByteLimitExceeded,
+    ChatParameterNodeLimitExceeded,
+    OperationLimitExceeded,
+    RequestByteLimitExceeded,
+    ParameterNodeLimitExceeded,
 }
 
 impl ActiveOperations {
@@ -112,20 +130,43 @@ impl ActiveOperations {
         operation_key: String,
         cancellation: tokio_watch::Sender<bool>,
         cancellation_gate: Arc<OperationGate>,
+        is_chat_operation: bool,
         request_bytes: usize,
         parameter_nodes: usize,
     ) -> Result<(), OperationAdmissionError> {
         if self.requests.contains_key(&operation_key) {
             return Err(OperationAdmissionError::DuplicateId);
         }
-        if self.requests.len() >= MAX_ACTIVE_OPERATIONS
-            || self.request_bytes.saturating_add(request_bytes) > MAX_ACTIVE_REQUEST_BYTES
-            || self.parameter_nodes.saturating_add(parameter_nodes)
-                > MAX_ACTIVE_REQUEST_PARAMETER_NODES
+        if is_chat_operation && self.chat_operations >= MAX_ACTIVE_CHAT_OPERATIONS {
+            return Err(OperationAdmissionError::ChatOperationLimitExceeded);
+        }
+        if is_chat_operation
+            && self.chat_request_bytes.saturating_add(request_bytes) > MAX_ACTIVE_CHAT_REQUEST_BYTES
         {
-            return Err(OperationAdmissionError::CapacityExceeded);
+            return Err(OperationAdmissionError::ChatRequestByteLimitExceeded);
+        }
+        if is_chat_operation
+            && self.chat_parameter_nodes.saturating_add(parameter_nodes)
+                > MAX_ACTIVE_CHAT_PARAMETER_NODES
+        {
+            return Err(OperationAdmissionError::ChatParameterNodeLimitExceeded);
+        }
+        if self.requests.len() >= MAX_ACTIVE_OPERATIONS {
+            return Err(OperationAdmissionError::OperationLimitExceeded);
+        }
+        if self.request_bytes.saturating_add(request_bytes) > MAX_ACTIVE_REQUEST_BYTES {
+            return Err(OperationAdmissionError::RequestByteLimitExceeded);
+        }
+        if self.parameter_nodes.saturating_add(parameter_nodes) > MAX_ACTIVE_REQUEST_PARAMETER_NODES
+        {
+            return Err(OperationAdmissionError::ParameterNodeLimitExceeded);
         }
 
+        if is_chat_operation {
+            self.chat_operations += 1;
+            self.chat_request_bytes += request_bytes;
+            self.chat_parameter_nodes += parameter_nodes;
+        }
         self.request_bytes += request_bytes;
         self.parameter_nodes += parameter_nodes;
         self.requests.insert(
@@ -133,6 +174,7 @@ impl ActiveOperations {
             ActiveOperation {
                 cancellation,
                 cancellation_gate,
+                is_chat_operation,
                 request_bytes,
                 parameter_nodes,
             },
@@ -143,6 +185,15 @@ impl ActiveOperations {
     /// Releases the count and payload budget associated with a completed operation.
     fn unregister(&mut self, operation_key: &str) {
         if let Some(operation) = self.requests.remove(operation_key) {
+            if operation.is_chat_operation {
+                self.chat_operations = self.chat_operations.saturating_sub(1);
+                self.chat_request_bytes = self
+                    .chat_request_bytes
+                    .saturating_sub(operation.request_bytes);
+                self.chat_parameter_nodes = self
+                    .chat_parameter_nodes
+                    .saturating_sub(operation.parameter_nodes);
+            }
             self.request_bytes = self.request_bytes.saturating_sub(operation.request_bytes);
             self.parameter_nodes = self
                 .parameter_nodes
@@ -164,18 +215,42 @@ pub enum RunError {
     /// The process arguments do not match the supported command-line form.
     InvalidArguments,
     /// The application storage could not be opened or initialized.
-    StorageInitialization(String),
+    StorageInitialization {
+        /// Stable machine-readable code for the storage failure.
+        code: &'static str,
+        /// Optional allowlisted diagnostic code from the storage subsystem.
+        diagnostic_code: Option<&'static str>,
+    },
     /// A service could not be initialized; the values are its stable code and safe message.
     ServiceInitialization {
         /// Stable machine-readable code for the failed initialization step.
         code: &'static str,
         /// User-safe summary of the initialization failure.
         message: String,
-        /// Optional diagnostic detail from the underlying subsystem.
-        details: Option<String>,
+        /// Optional allowlisted diagnostic code from the underlying subsystem.
+        diagnostic_code: Option<String>,
     },
     /// The standard-input/output RPC transport failed.
-    Protocol(String),
+    Protocol(&'static str),
+}
+
+/// Safe machine-readable failure emitted when the local service cannot start.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StartupFailure {
+    /// Stable machine-readable failure code.
+    pub code: String,
+    /// Stable broad error category.
+    pub category: String,
+    /// Safe summary that never includes operating-system or database error text.
+    pub message: String,
+    /// Optional allowlisted diagnostic code for support investigations.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub diagnostic_code: Option<String>,
+    /// Random identifier that correlates this failure with local diagnostics.
+    pub correlation_id: String,
+    /// Whether retrying the startup operation may succeed.
+    pub retryable: bool,
 }
 
 impl std::fmt::Display for RunError {
@@ -186,26 +261,88 @@ impl std::fmt::Display for RunError {
                     "usage: openchat-local-service [--data-root <absolute-path>] [--start-with-empty-storage] [--parent-pid <process-id>]",
                 )
             }
-            Self::StorageInitialization(details) => {
-                write!(formatter, "local_storage_initialization_failed: {details}")
+            Self::StorageInitialization { code, .. } => {
+                write!(formatter, "local_storage_initialization_failed: {code}")
             }
             Self::ServiceInitialization {
                 code,
                 message,
-                details,
+                ..
             } => {
-                write!(
-                    formatter,
-                    "local_service_initialization_failed: {code}: {message}"
-                )?;
-                if let Some(details) = details {
-                    write!(formatter, " ({details})")?;
-                }
-                Ok(())
+                write!(formatter, "local_service_initialization_failed: {code}: {message}")
             }
-            Self::Protocol(details) => {
-                write!(formatter, "local_service_protocol_failed: {details}")
+            Self::Protocol(diagnostic_code) => {
+                write!(formatter, "local_service_protocol_failed: {diagnostic_code}")
             }
+        }
+    }
+}
+
+impl RunError {
+    /// Converts the internal startup failure into the safe event contract consumed by Tauri.
+    pub fn startup_failure(&self) -> StartupFailure {
+        let (code, category, message, diagnostic_code, retryable) = match self {
+            Self::InvalidArguments => (
+                "invalid_service_arguments",
+                ErrorCategory::Validation,
+                "The local service arguments are invalid.",
+                None,
+                false,
+            ),
+            Self::StorageInitialization {
+                code,
+                diagnostic_code,
+            } => match *diagnostic_code {
+                Some("legacy_profile_conflict") => (
+                    "legacy_profile_conflict",
+                    ErrorCategory::Conflict,
+                    "The previous storage profile could not be opened safely.",
+                    Some("sqlite_cannot_open"),
+                    false,
+                ),
+                Some("legacy_profile_check_failed") => (
+                    "legacy_profile_check_failed",
+                    ErrorCategory::Storage,
+                    "The previous storage profile could not be checked safely.",
+                    Some("sqlite_cannot_open"),
+                    false,
+                ),
+                _ => (
+                    "storage_initialization_failed",
+                    ErrorCategory::Storage,
+                    "Local storage could not be initialized.",
+                    Some(*code),
+                    false,
+                ),
+            },
+            Self::ServiceInitialization {
+                code,
+                message,
+                diagnostic_code,
+            } => (
+                *code,
+                ErrorCategory::from_code(code),
+                message.as_str(),
+                diagnostic_code
+                    .as_deref()
+                    .filter(|value| is_safe_diagnostic_code(value)),
+                false,
+            ),
+            Self::Protocol(diagnostic_code) => (
+                "local_service_protocol_failed",
+                ErrorCategory::Protocol,
+                "The local service protocol could not be started.",
+                Some(*diagnostic_code),
+                true,
+            ),
+        };
+        StartupFailure {
+            code: code.to_owned(),
+            category: category.as_str().to_owned(),
+            message: message.to_owned(),
+            diagnostic_code: diagnostic_code.map(str::to_owned),
+            correlation_id: uuid::Uuid::new_v4().simple().to_string(),
+            retryable,
         }
     }
 }
@@ -225,18 +362,41 @@ pub async fn run() -> Result<(), RunError> {
             (None, true) => AppStorage::open_with_empty_legacy_profile(),
             (Some(_), true) => return Err(RunError::InvalidArguments),
         }
-        .map_err(|error| RunError::StorageInitialization(error.to_string()))?,
+        .map_err(|error| {
+            let diagnostic_code = match &error {
+                rusqlite::Error::SqliteFailure(_, Some(message)) => {
+                    if message.starts_with("legacy_profile_conflict:") {
+                        Some("legacy_profile_conflict")
+                    } else if message.starts_with("legacy_profile_check_failed:") {
+                        Some("legacy_profile_check_failed")
+                    } else {
+                        None
+                    }
+                }
+                _ => None,
+            };
+            RunError::StorageInitialization {
+                code: sqlite_error_code(&error),
+                diagnostic_code,
+            }
+        })?,
     );
     let service = Arc::new(ChatGptService::new(Arc::clone(&storage)).map_err(|error| {
         RunError::ServiceInitialization {
             code: error.code,
             message: error.message,
-            details: error.details,
+            diagnostic_code: error.diagnostic_code,
         }
     })?);
-    run_protocol(storage, service)
-        .await
-        .map_err(|error| RunError::Protocol(error.to_string()))
+    run_protocol(storage, service).await.map_err(|error| {
+        let diagnostic_code = match error.kind() {
+            io::ErrorKind::BrokenPipe => "protocol_broken_pipe",
+            io::ErrorKind::UnexpectedEof => "protocol_unexpected_eof",
+            io::ErrorKind::TimedOut => "protocol_io_timeout",
+            _ => "protocol_io_failure",
+        };
+        RunError::Protocol(diagnostic_code)
+    })
 }
 
 struct ServiceArguments {
@@ -315,7 +475,7 @@ fn monitor_parent_process(parent_pid: Option<u32>) -> Result<(), RunError> {
         return Err(RunError::ServiceInitialization {
             code: "parent_process_unavailable",
             message: "The desktop process could not be monitored.".to_owned(),
-            details: None,
+            diagnostic_code: Some("parent_process_open_failed".to_owned()),
         });
     }
     // SAFETY: OpenProcess returned an owned process handle transferred exactly once.
@@ -335,7 +495,7 @@ fn monitor_parent_process(parent_pid: Option<u32>) -> Result<(), RunError> {
         .map_err(|_| RunError::ServiceInitialization {
             code: "parent_process_monitor_unavailable",
             message: "The desktop process could not be monitored.".to_owned(),
-            details: None,
+            diagnostic_code: Some("parent_process_monitor_start_failed".to_owned()),
         })?;
     Ok(())
 }
@@ -515,6 +675,8 @@ async fn run_protocol(
         }
 
         let operation_key = request_key(&request.id);
+        let is_chat_operation =
+            matches!(request.method.as_str(), "chat.send" | "chat.temporary.send");
         let (cancellation_sender, cancellation_receiver) = tokio_watch::channel(false);
         let cancellation_gate = Arc::new(OperationGate::default());
         let admission = {
@@ -523,6 +685,7 @@ async fn run_protocol(
                 operation_key.clone(),
                 cancellation_sender,
                 Arc::clone(&cancellation_gate),
+                is_chat_operation,
                 request_bytes,
                 parameter_nodes,
             )
@@ -535,11 +698,42 @@ async fn run_protocol(
                     "The local service request identifier is already in use.",
                     false,
                 ),
-                OperationAdmissionError::CapacityExceeded => ServiceError::new(
+                OperationAdmissionError::ChatOperationLimitExceeded => ServiceError::new(
+                    "local_service_busy",
+                    "The local service is handling its parallel chat limit. Retry shortly.",
+                    true,
+                )
+                .with_details("active_chat_operation_limit"),
+                OperationAdmissionError::ChatRequestByteLimitExceeded => ServiceError::new(
+                    "local_service_busy",
+                    "The local service is preserving request capacity for persistence and control work.",
+                    true,
+                )
+                .with_details("active_chat_request_bytes_limit"),
+                OperationAdmissionError::ChatParameterNodeLimitExceeded => ServiceError::new(
+                    "local_service_busy",
+                    "The local service is preserving request capacity for persistence and control work.",
+                    true,
+                )
+                .with_details("active_chat_parameter_nodes_limit"),
+                OperationAdmissionError::OperationLimitExceeded => ServiceError::new(
                     "local_service_busy",
                     "The local service is handling its request limit. Retry shortly.",
                     true,
-                ),
+                )
+                .with_details("active_operation_limit"),
+                OperationAdmissionError::RequestByteLimitExceeded => ServiceError::new(
+                    "local_service_busy",
+                    "The local service is handling its request limit. Retry shortly.",
+                    true,
+                )
+                .with_details("active_request_bytes_limit"),
+                OperationAdmissionError::ParameterNodeLimitExceeded => ServiceError::new(
+                    "local_service_busy",
+                    "The local service is handling its request limit. Retry shortly.",
+                    true,
+                )
+                .with_details("active_parameter_nodes_limit"),
             };
             output
                 .send(&Response::failure(request.id.clone(), service_error))
@@ -577,7 +771,13 @@ async fn run_protocol(
                 if let Err(error) = &result
                     && let Some(operation) = diagnostic_operation
                     && operation_storage
-                        .log_rpc_failure(operation, error.code)
+                        .log_rpc_failure_with_context(
+                            &operation,
+                            error.code,
+                            error.category.as_str(),
+                            &error.correlation_id,
+                            error.diagnostic_code.as_deref(),
+                        )
                         .is_err()
                 {
                     eprintln!("rpc_failure_diagnostic_write_failed");
@@ -610,20 +810,23 @@ async fn run_protocol(
     Ok(())
 }
 
-fn rpc_failure_diagnostic_operation(request: &Request) -> Option<&'static str> {
-    match request.method.as_str() {
-        "chat.send" => Some("chat.send"),
-        "chat.temporary.send" => Some("chat.temporary.send"),
-        "chat.memory.inspect" => Some("chat.memory.inspect"),
-        "chatgpt.images.generate" => Some("chatgpt.images.generate"),
-        "chatgpt.connections.delete" => Some("chatgpt.connections.delete"),
-        "chat.context.usage.estimate" => Some("chat.context.usage.estimate"),
-        "compatible.models.list"
-            if request.params.get("providerId").and_then(Value::as_str) == Some("copilot") =>
-        {
-            Some("copilot.models.list")
-        }
-        _ => None,
+fn rpc_failure_diagnostic_operation(request: &Request) -> Option<String> {
+    if request.method == "compatible.models.list" {
+        return (request.params.get("providerId").and_then(Value::as_str) == Some("copilot"))
+            .then(|| "copilot.models.list".to_owned());
+    }
+
+    let method = request.method.as_str();
+    if !method.is_empty()
+        && method.len() <= 96
+        && method.as_bytes()[0].is_ascii_lowercase()
+        && method.bytes().all(|byte| {
+            byte.is_ascii_lowercase() || byte.is_ascii_digit() || matches!(byte, b'_' | b'-' | b'.')
+        })
+    {
+        Some(method.to_owned())
+    } else {
+        None
     }
 }
 
@@ -805,7 +1008,17 @@ mod tests {
         };
         assert_eq!(
             rpc_failure_diagnostic_operation(&chat_request),
-            Some("chat.send")
+            Some("chat.send".to_owned())
+        );
+
+        let message_save_request = Request {
+            id: json!(6),
+            method: "storage.chat.messages.save".to_owned(),
+            params: json!({"input": {"content": "private user content"}}),
+        };
+        assert_eq!(
+            rpc_failure_diagnostic_operation(&message_save_request),
+            Some("storage.chat.messages.save".to_owned())
         );
 
         let memory_inspect_request = Request {
@@ -815,7 +1028,7 @@ mod tests {
         };
         assert_eq!(
             rpc_failure_diagnostic_operation(&memory_inspect_request),
-            Some("chat.memory.inspect")
+            Some("chat.memory.inspect".to_owned())
         );
 
         let connection_delete_request = Request {
@@ -825,7 +1038,7 @@ mod tests {
         };
         assert_eq!(
             rpc_failure_diagnostic_operation(&connection_delete_request),
-            Some("chatgpt.connections.delete")
+            Some("chatgpt.connections.delete".to_owned())
         );
 
         let copilot_catalog_request = Request {
@@ -835,7 +1048,7 @@ mod tests {
         };
         assert_eq!(
             rpc_failure_diagnostic_operation(&copilot_catalog_request),
-            Some("copilot.models.list")
+            Some("copilot.models.list".to_owned())
         );
 
         let other_catalog_request = Request {
@@ -1033,6 +1246,7 @@ mod tests {
                     format!("request-{index}"),
                     cancellation,
                     Arc::new(OperationGate::default()),
+                    false,
                     1,
                     0,
                 )
@@ -1044,10 +1258,11 @@ mod tests {
                 "overflow".to_owned(),
                 cancellation,
                 Arc::new(OperationGate::default()),
+                false,
                 1,
                 0,
             ),
-            Err(OperationAdmissionError::CapacityExceeded)
+            Err(OperationAdmissionError::OperationLimitExceeded)
         );
         let (cancellation, _) = tokio_watch::channel(false);
         assert_eq!(
@@ -1055,6 +1270,7 @@ mod tests {
                 "request-0".to_owned(),
                 cancellation,
                 Arc::new(OperationGate::default()),
+                false,
                 1,
                 0,
             ),
@@ -1068,6 +1284,7 @@ mod tests {
                 "replacement".to_owned(),
                 cancellation,
                 Arc::new(OperationGate::default()),
+                false,
                 1,
                 0,
             )
@@ -1080,6 +1297,7 @@ mod tests {
                 "large".to_owned(),
                 cancellation,
                 Arc::new(OperationGate::default()),
+                false,
                 MAX_ACTIVE_REQUEST_BYTES,
                 0,
             )
@@ -1090,10 +1308,11 @@ mod tests {
                 "next".to_owned(),
                 cancellation,
                 Arc::new(OperationGate::default()),
+                false,
                 1,
                 0,
             ),
-            Err(OperationAdmissionError::CapacityExceeded)
+            Err(OperationAdmissionError::RequestByteLimitExceeded)
         );
         byte_limited.unregister("large");
         assert_eq!(byte_limited.request_bytes, 0);
@@ -1103,6 +1322,7 @@ mod tests {
                 "small".to_owned(),
                 cancellation,
                 Arc::new(OperationGate::default()),
+                false,
                 1,
                 0,
             )
@@ -1118,6 +1338,7 @@ mod tests {
                 "large-tree".to_owned(),
                 cancellation,
                 Arc::new(OperationGate::default()),
+                false,
                 1,
                 MAX_ACTIVE_REQUEST_PARAMETER_NODES,
             )
@@ -1129,10 +1350,11 @@ mod tests {
                 "next-node".to_owned(),
                 cancellation,
                 Arc::new(OperationGate::default()),
+                false,
                 1,
                 1,
             ),
-            Err(OperationAdmissionError::CapacityExceeded)
+            Err(OperationAdmissionError::ParameterNodeLimitExceeded)
         );
         operations.unregister("large-tree");
         assert_eq!(operations.parameter_nodes, 0);
@@ -1143,6 +1365,7 @@ mod tests {
                 "replacement-tree".to_owned(),
                 cancellation,
                 Arc::new(OperationGate::default()),
+                false,
                 1,
                 1,
             )

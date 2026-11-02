@@ -52,8 +52,7 @@ fn message_from_stored_row(
         sanitize_stored_metadata(row.personal_memory_fact_ids, 11, false, remaining_nodes)?;
     let reasoning_summaries =
         sanitize_stored_metadata(row.reasoning_summaries, 12, false, remaining_nodes)?;
-    let tool_activities =
-        sanitize_stored_metadata(row.tool_activities, 13, true, remaining_nodes)?;
+    let tool_activities = sanitize_stored_metadata(row.tool_activities, 13, true, remaining_nodes)?;
     Ok(json!({
         "id": row.id,
         "conversationId": row.conversation_id,
@@ -418,7 +417,10 @@ pub(super) fn save_message(
     )?;
     let reasoning_summaries =
         optional_json_array(input, "reasoningSummaries", &mut remaining_metadata_nodes)?;
-    let tool_activities = if input.get("toolActivities").is_some_and(|value| !value.is_null()) {
+    let tool_activities = if input
+        .get("toolActivities")
+        .is_some_and(|value| !value.is_null())
+    {
         Some(optional_json_array(
             input,
             "toolActivities",
@@ -579,7 +581,7 @@ pub(super) fn save_message(
 
 fn log_message_save_failure(storage: &AppStorage, stage: &'static str, error: &ServiceError) {
     if storage
-        .log_chat_message_save_failure(stage, error.code, error.details.as_deref())
+        .log_chat_message_save_failure(stage, error.code, error.diagnostic_code.as_deref())
         .is_err()
     {
         eprintln!("chat_message_save_diagnostic_write_failed");

@@ -312,6 +312,7 @@ impl FirstOutputLatencyRecorder {
 }
 
 /// Describes the provider request whose usage should be recorded.
+#[derive(Clone, Copy)]
 pub(crate) struct UsageRequestDetails<'a> {
     /// Conversation whose provider request should be attributed.
     pub(crate) conversation_id: &'a str,
@@ -406,9 +407,20 @@ impl<'a> UsageRequestTracker<'a> {
         storage: &'a AppStorage,
         request: UsageRequestDetails<'_>,
     ) -> rusqlite::Result<Self> {
-        let event_id = Uuid::new_v4().simple().to_string();
+        Self::start_with_event_id(storage, Uuid::new_v4(), request)
+    }
+
+    /// Inserts a pending request event with a caller-owned idempotency key.
+    ///
+    /// Reusing the same id after an ambiguous broker response cannot create duplicate usage rows.
+    pub(crate) fn start_with_event_id(
+        storage: &'a AppStorage,
+        event_id: Uuid,
+        request: UsageRequestDetails<'_>,
+    ) -> rusqlite::Result<Self> {
+        let event_id = event_id.simple().to_string();
         let database = storage.connect()?;
-        database.execute(
+        let inserted = database.execute(
             "INSERT INTO usage_events (
                 event_id, event_kind, conversation_id, assistant_message_id,
                 provider_id, model_id, reasoning_effort, operation, status,
@@ -417,9 +429,9 @@ impl<'a> UsageRequestTracker<'a> {
              ) VALUES (
                 ?1, 'request', ?2, ?3, ?4, ?5, ?6, ?7, 'pending', ?8, 'unavailable', ?9, ?10,
                 ?11, ?12, COALESCE(?13, (SELECT project_id FROM conversations WHERE id = ?2)), ?14
-             )",
+             ) ON CONFLICT(event_id) DO NOTHING",
             params![
-                event_id,
+                &event_id,
                 request.conversation_id,
                 request.assistant_message_id,
                 request.provider_id,
@@ -435,6 +447,42 @@ impl<'a> UsageRequestTracker<'a> {
                 request.parent_run_id,
             ],
         )?;
+        if inserted == 0 {
+            let matches_pending_request = database.query_row(
+                "SELECT EXISTS(
+                    SELECT 1 FROM usage_events
+                    WHERE event_id = ?1 AND event_kind = 'request'
+                      AND conversation_id = ?2 AND assistant_message_id IS ?3
+                      AND provider_id IS ?4 AND model_id IS ?5
+                      AND reasoning_effort IS ?6 AND operation = ?7
+                      AND status = 'pending' AND fast_requested = ?8
+                      AND run_id IS ?9 AND connection_id IS ?10
+                      AND workspace_id IS ?11 AND parent_run_id IS ?12
+                      AND project_id IS COALESCE(
+                          ?13, (SELECT project_id FROM conversations WHERE id = ?2)
+                      )
+                )",
+                params![
+                    &event_id,
+                    request.conversation_id,
+                    request.assistant_message_id,
+                    request.provider_id,
+                    request.model_id,
+                    request.reasoning_effort,
+                    request.operation,
+                    request.fast_requested,
+                    request.run_id,
+                    request.connection_id,
+                    request.workspace_id,
+                    request.parent_run_id,
+                    request.project_id,
+                ],
+                |row| row.get::<_, bool>(0),
+            )?;
+            if !matches_pending_request {
+                return Err(rusqlite::Error::QueryReturnedNoRows);
+            }
+        }
         Ok(Self {
             storage,
             event_id,

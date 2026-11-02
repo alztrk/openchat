@@ -20,8 +20,6 @@ pub(super) use zeroize::{Zeroize, Zeroizing};
 
 pub(super) use crate::{
     conversation_limits::{
-        MAXIMUM_CHAT_MESSAGE_CONTENT_BYTES as MAX_MESSAGE_CONTENT_BYTES,
-        MAXIMUM_CHAT_MESSAGE_METADATA_BYTES as MAX_MESSAGE_METADATA_BYTES,
         MAXIMUM_ATTACHMENT_FILE_COUNT as MAX_ATTACHMENT_COUNT,
         MAXIMUM_ATTACHMENT_IMAGE_BYTES as MAX_IMAGE_BYTES,
         MAXIMUM_ATTACHMENT_IMAGE_COUNT as MAX_IMAGE_COUNT,
@@ -29,14 +27,19 @@ pub(super) use crate::{
         MAXIMUM_ATTACHMENT_MIME_TYPE_BYTES as MAX_ATTACHMENT_MIME_BYTES,
         MAXIMUM_ATTACHMENT_NAME_BYTES as MAX_ATTACHMENT_NAME_BYTES, MAXIMUM_ATTACHMENT_NAME_CHARS,
         MAXIMUM_ATTACHMENT_TEXT_BYTES as MAX_TEXT_BYTES,
-        MAXIMUM_ATTACHMENT_TOTAL_BYTES as MAX_ATTACHMENT_BYTES, MESSAGE_CONTENT_PREFIX,
+        MAXIMUM_ATTACHMENT_TOTAL_BYTES as MAX_ATTACHMENT_BYTES,
+        MAXIMUM_CHAT_MESSAGE_CONTENT_BYTES as MAX_MESSAGE_CONTENT_BYTES,
+        MAXIMUM_CHAT_MESSAGE_METADATA_BYTES as MAX_MESSAGE_METADATA_BYTES, MESSAGE_CONTENT_PREFIX,
     },
     protocol::{
         MAX_REQUEST_PARAMETER_NODES, ServiceError, clear_sensitive_json_values,
         parse_bounded_json_value,
     },
     service::OperationGate,
-    storage::{AppStorage, StorageConnection, StorageRow, sqlite_error_code},
+    storage::{
+        AppStorage, StorageConnection, StorageRow, is_retryable_storage_error_code,
+        sqlite_error_code,
+    },
 };
 
 pub(super) use super::invalid_request_params;
@@ -105,6 +108,7 @@ use projects::*;
 use validation::*;
 
 /// Dispatches durable conversation, project, message, favorite, and attachment storage calls.
+#[cfg(test)]
 pub(super) async fn dispatch(
     method: &str,
     params: &Value,

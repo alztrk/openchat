@@ -13,6 +13,8 @@ use tokio::{
 };
 use zeroize::Zeroize;
 
+use crate::error::{ErrorCategory, is_safe_diagnostic_code};
+
 #[derive(Clone)]
 /// Serializes complete protocol responses to the sidecar's stdout stream.
 pub struct EventSink {
@@ -758,12 +760,19 @@ impl Response {
 }
 
 #[derive(Clone, Debug, Serialize)]
-/// Machine-readable service failure with user-safe text and retry guidance.
+#[serde(rename_all = "camelCase")]
+/// Machine-readable service failure with a stable class, safe message, and retry guidance.
 pub struct ServiceError {
     pub code: &'static str,
+    pub(crate) category: ErrorCategory,
     pub message: String,
     pub retryable: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) diagnostic_code: Option<String>,
+    pub(crate) correlation_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) retry_after_ms: Option<u64>,
+    #[serde(skip)]
     pub details: Option<String>,
 }
 
@@ -772,15 +781,39 @@ impl ServiceError {
     pub fn new(code: &'static str, message: impl Into<String>, retryable: bool) -> Self {
         Self {
             code,
+            category: ErrorCategory::from_code(code),
             message: message.into(),
             retryable,
+            diagnostic_code: None,
+            correlation_id: uuid::Uuid::new_v4().simple().to_string(),
+            retry_after_ms: None,
             details: None,
         }
     }
 
-    /// Adds a safe diagnostic detail from the failing subsystem without changing the stable code.
+    /// Retains internal diagnostic detail and promotes stable codes to the public diagnostic field.
     pub fn with_details(mut self, details: impl Into<String>) -> Self {
-        self.details = Some(details.into());
+        let details = details.into();
+        if is_safe_diagnostic_code(&details) {
+            self.diagnostic_code = Some(details.clone());
+        }
+        self.details = Some(details);
+        self
+    }
+
+    /// Adds a bounded diagnostic code without exposing arbitrary subsystem details.
+    pub fn with_diagnostic_code(mut self, diagnostic_code: impl Into<String>) -> Self {
+        let diagnostic_code = diagnostic_code.into();
+        if is_safe_diagnostic_code(&diagnostic_code) {
+            self.diagnostic_code = Some(diagnostic_code);
+        }
+        self
+    }
+
+    /// Adds a bounded provider retry delay in milliseconds.
+    pub fn with_retry_after_ms(mut self, retry_after_ms: u64) -> Self {
+        const MAX_RETRY_AFTER_MS: u64 = 24 * 60 * 60 * 1_000;
+        self.retry_after_ms = Some(retry_after_ms.min(MAX_RETRY_AFTER_MS));
         self
     }
 }

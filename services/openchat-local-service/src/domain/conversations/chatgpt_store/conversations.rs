@@ -342,7 +342,9 @@ pub fn save_assistant_message_on_connection(
     message: AssistantMessageWrite<'_>,
 ) -> rusqlite::Result<()> {
     if message.content.len() > crate::conversation_limits::MAXIMUM_CHAT_MESSAGE_CONTENT_BYTES {
-        return Err(message_size_limit_error("chat message content limit exceeded"));
+        return Err(message_size_limit_error(
+            "chat message content limit exceeded",
+        ));
     }
     let elapsed_microseconds = message
         .elapsed
@@ -421,10 +423,13 @@ pub fn save_assistant_tool_checkpoint(
             activities_json.len(),
             persisted_activity_count,
         );
-        return Err(message_size_limit_error("chat message content limit exceeded"));
+        return Err(message_size_limit_error(
+            "chat message content limit exceeded",
+        ));
     }
     let mut database = storage.connect()?;
-    let transaction = database.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+    let transaction =
+        database.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
     let existing_content = transaction
         .query_row(
             "SELECT content FROM messages
@@ -446,7 +451,9 @@ pub fn save_assistant_tool_checkpoint(
             activities_json.len(),
             persisted_activity_count,
         );
-        return Err(message_size_limit_error("chat message content limit exceeded"));
+        return Err(message_size_limit_error(
+            "chat message content limit exceeded",
+        ));
     }
     transaction.execute(
         "INSERT INTO messages (

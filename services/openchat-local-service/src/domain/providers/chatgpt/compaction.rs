@@ -16,12 +16,12 @@ use crate::{
     protocol::ServiceError,
     provider_schema::ToolDefinition,
     storage::AppStorage,
-    usage_statistics::{UsageData, UsageRequestDetails, UsageRequestTracker},
+    usage_statistics::{UsageData, UsageRequestDetails},
 };
 
 use super::{
-    CHATGPT_CODEX_BASE, ChatGptService, MAX_STREAM_EVENT_BYTES, StreamRequest, database_error,
-    http_error, invalid_response_error, network_error_with_details, request_cancelled,
+    CHATGPT_CODEX_BASE, ChatGptService, MAX_STREAM_EVENT_BYTES, StreamRequest, http_error,
+    invalid_response_error, network_error_with_details, request_cancelled,
 };
 
 const MAX_COMPACTION_OUTPUT_ITEMS: usize = 1;
@@ -61,8 +61,11 @@ pub(super) async fn prepare_input(
         reasoning_effort,
         messages,
     } = request;
-    let mut state = chatgpt_store::load_conversation_context_state(storage, conversation_id)
-        .map_err(database_error)?;
+    let mut state = service
+        .retry_storage_operation("send_compaction_context_state", || {
+            chatgpt_store::load_conversation_context_state(storage, conversation_id)
+        })
+        .await?;
     let state_ref = state.as_ref();
     let active_compaction_matches = state_ref.is_some_and(|state| {
         context_compaction::compaction_payload_matches_route(
@@ -174,8 +177,11 @@ pub(super) async fn prepare_input(
             last_prompt_connection_id: None,
             last_prompt_workspace_id: None,
         };
-        chatgpt_store::save_compaction_state(storage, conversation_id, &checkpoint_state)
-            .map_err(database_error)?;
+        service
+            .retry_storage_operation("send_compaction_save_state", || {
+                chatgpt_store::save_compaction_state(storage, conversation_id, &checkpoint_state)
+            })
+            .await?;
         start_index = compacted_through_index + 1;
         state = Some(checkpoint_state);
     }
@@ -226,15 +232,17 @@ pub(super) async fn prepare_input(
             .find(|message| message.role == "user")
             .map(|message| message.content.as_str())
     {
-        let excerpts = chatgpt_store::retrieve_archived_memories(
-            storage,
-            conversation_id,
-            boundary_id,
-            query,
-            model.context_window,
-        )
-        .await
-        .map_err(database_error)?;
+        let excerpts = service
+            .retry_storage_future("send_compaction_archived_memories", || {
+                chatgpt_store::retrieve_archived_memories(
+                    storage,
+                    conversation_id,
+                    boundary_id,
+                    query,
+                    model.context_window,
+                )
+            })
+            .await?;
         if let Some(context) = context_compaction::archived_memory_context(&excerpts) {
             input.push(json!({"role": "user", "content": context}));
         }
@@ -284,7 +292,7 @@ fn compaction_input(
             _ => {}
         }
     }
-    let tool_output_limit = prune_level.old_tool_output_limit();
+    let tool_output_limit = Some(prune_level.old_tool_output_limit().unwrap_or(usize::MAX));
     input.extend(
         messages
             .iter()
@@ -326,27 +334,32 @@ async fn request_remote_compaction(
         request.reasoning_effort,
         request.supports_reasoning_summary_parameter,
     )?;
-    let mut usage_request = UsageRequestTracker::start(
-        &request.service.storage,
-        UsageRequestDetails {
-            conversation_id: request.conversation_id,
-            assistant_message_id: None,
-            provider_id: "chatgpt",
-            model_id: request.model_id,
-            reasoning_effort: request.reasoning_effort,
-            operation: "compaction",
-            fast_requested: false,
-            run_id: Some(request.run_id),
-            connection_id: Some(request.connection_id),
-            workspace_id: Some(request.workspace_id),
-            project_id: None,
-            parent_run_id: None,
-        },
-    )
-    .map_err(database_error)?;
-    usage_request
-        .record_request_manifest(&body, None)
-        .map_err(database_error)?;
+    let mut usage_request = request
+        .service
+        .start_usage_request(
+            "send_compaction_usage_request_start",
+            UsageRequestDetails {
+                conversation_id: request.conversation_id,
+                assistant_message_id: None,
+                provider_id: "chatgpt",
+                model_id: request.model_id,
+                reasoning_effort: request.reasoning_effort,
+                operation: "compaction",
+                fast_requested: false,
+                run_id: Some(request.run_id),
+                connection_id: Some(request.connection_id),
+                workspace_id: Some(request.workspace_id),
+                project_id: None,
+                parent_run_id: None,
+            },
+        )
+        .await?;
+    request
+        .service
+        .retry_storage_operation("send_compaction_usage_manifest", || {
+            usage_request.record_request_manifest(&body, None)
+        })
+        .await?;
     let response = match request
         .service
         .authorized_stream_request(
@@ -364,7 +377,10 @@ async fn request_remote_compaction(
     {
         Ok(Some(response)) => response,
         Ok(None) => {
-            usage_request.cancel().map_err(database_error)?;
+            request
+                .service
+                .retry_storage_operation("send_compaction_usage_cancel", || usage_request.cancel())
+                .await?;
             return Err(request_cancelled());
         }
         Err(error) => return Err(error),
@@ -376,11 +392,22 @@ async fn request_remote_compaction(
     let mut usage = UsageData::default();
     let result = parse_remote_compaction_stream(response, cancellation, &mut usage).await;
     if result.is_ok() {
-        usage_request.complete(&usage).map_err(database_error)?;
+        request
+            .service
+            .retry_storage_operation("send_compaction_usage_complete", || {
+                usage_request.complete(&usage)
+            })
+            .await?;
     } else if matches!(&result, Err(error) if error.code == "request_cancelled") {
-        usage_request.cancel().map_err(database_error)?;
+        request
+            .service
+            .retry_storage_operation("send_compaction_usage_cancel", || usage_request.cancel())
+            .await?;
     } else {
-        usage_request.fail(&usage).map_err(database_error)?;
+        request
+            .service
+            .retry_storage_operation("send_compaction_usage_fail", || usage_request.fail(&usage))
+            .await?;
     }
     result
 }

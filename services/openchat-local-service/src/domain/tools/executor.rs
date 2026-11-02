@@ -1643,11 +1643,13 @@ impl ToolExecutor {
                     {
                         Ok(output) => output,
                         Err(error) => {
-                            let mut output =
-                                json!({"error":{"code":error.code,"message":error.message}});
-                            if let Some(details) = error.details {
-                                output["error"]["details"] = Value::String(details);
-                            }
+                            let output = json!({
+                                "error": {
+                                    "code": error.code,
+                                    "category": crate::error::ErrorCategory::from_code(error.code).as_str(),
+                                    "message": error.message,
+                                }
+                            });
                             output
                         }
                     },
@@ -1749,7 +1751,13 @@ fn is_valid_wire_tool_name(name: &str) -> bool {
 }
 
 fn tool_error(code: &str, message: &str) -> Value {
-    json!({"error": {"code": code, "message": message}})
+    json!({
+        "error": {
+            "code": code,
+            "category": crate::error::ErrorCategory::from_code(code).as_str(),
+            "message": message,
+        }
+    })
 }
 
 /// Recursively scans JSON values in tool outputs and redacts known credential patterns and keys.
@@ -1764,6 +1772,22 @@ pub(crate) fn redact_tool_output(value: &mut Value) {
             }
         }
         Value::Object(map) => {
+            let error_category = map
+                .get("error")
+                .and_then(Value::as_object)
+                .and_then(|error| error.get("code"))
+                .and_then(Value::as_str)
+                .map(|code| {
+                    crate::error::ErrorCategory::from_code(code)
+                        .as_str()
+                        .to_owned()
+                });
+            if let (Some(category), Some(error)) = (
+                error_category,
+                map.get_mut("error").and_then(Value::as_object_mut),
+            ) {
+                error.insert("category".to_owned(), Value::String(category));
+            }
             for val in map.values_mut() {
                 redact_tool_output(val);
             }

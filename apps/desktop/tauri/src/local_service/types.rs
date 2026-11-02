@@ -11,6 +11,7 @@ use std::{
     },
 };
 
+use openchat_local_service::StartupFailure;
 use serde::{
     de::{self, IgnoredAny, MapAccess, SeqAccess, Visitor},
     Deserialize, Deserializer, Serialize,
@@ -20,7 +21,7 @@ use tauri_plugin_shell::process::CommandChild;
 
 pub(crate) const LOCAL_SERVICE_EVENT: &str = "openchat:local-service";
 pub(crate) const LOCAL_SERVICE_ERROR_PREFIX: &str = "openchat-local-service-error: ";
-pub(crate) const MAX_LOCAL_SERVICE_ERROR_DETAIL_BYTES: usize = 2048;
+pub(crate) const MAX_LOCAL_SERVICE_STARTUP_FAILURE_BYTES: usize = 2048;
 pub(crate) const MAX_RPC_FRAME_BYTES: usize = 24 * 1024 * 1024;
 pub(crate) const MAX_PROJECT_PERMISSION_RPC_FRAME_BYTES: usize = 136 * 1024;
 pub(crate) const MAX_PROJECT_PERMISSION_RULE_COUNT: usize = 1_080;
@@ -277,9 +278,17 @@ impl Drop for PermissionPolicyConfirmationGuard<'_> {
 #[derive(Clone, Serialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub(crate) enum LocalServiceEvent {
-    Output { generation: u64, line: String },
-    Failure { generation: u64, details: String },
-    Stopped { generation: u64 },
+    Output {
+        generation: u64,
+        line: String,
+    },
+    Failure {
+        generation: u64,
+        failure: StartupFailure,
+    },
+    Stopped {
+        generation: u64,
+    },
 }
 
 /// Manages the runtime process and generation state of the local service.

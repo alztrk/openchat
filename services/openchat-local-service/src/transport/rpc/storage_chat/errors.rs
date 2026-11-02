@@ -12,21 +12,10 @@ pub(super) fn unix_time_millis() -> Result<i64, ServiceError> {
 
 pub(super) fn storage_error(error: rusqlite::Error) -> ServiceError {
     let detail_code = sqlite_error_code(&error);
-    let retryable = matches!(
-        detail_code,
-        "sqlite_busy"
-            | "sqlite_busy_snapshot"
-            | "sqlite_busy_timeout"
-            | "sqlite_locked"
-            | "database_queue_full"
-            | "database_queue_wait_timeout"
-            | "storage_broker_timeout"
-            | "sqlite_io_error"
-    );
     ServiceError::new(
         "storage_chat_unavailable",
         "Local conversation storage is unavailable.",
-        retryable,
+        is_retryable_storage_error_code(detail_code),
     )
     .with_details(detail_code)
 }

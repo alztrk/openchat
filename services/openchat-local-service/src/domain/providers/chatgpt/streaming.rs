@@ -28,8 +28,8 @@ use super::response_parser::{
 };
 use super::{
     CHATGPT_CODEX_BASE, ChatGptService, MAX_STREAM_EVENT_BYTES, StreamRequest,
-    TemporaryResponseContext, database_error, http_error, invalid_response_error,
-    network_error_with_details, now_unix_millis, protocol_error,
+    TemporaryResponseContext, http_error, invalid_response_error, network_error_with_details,
+    now_unix_millis, protocol_error,
 };
 use crate::{
     chat_operation::ChatSendContext,
@@ -41,7 +41,7 @@ use crate::{
     response_budget::ProviderResponseBudget,
     storage::ChatGptStreamDiagnostic,
     tools::{ImageGenerationContext, ToolExecutionContext, ToolExecutor},
-    usage_statistics::{UsageData, UsageRequestDetails, UsageRequestTracker},
+    usage_statistics::{UsageData, UsageRequestDetails},
 };
 
 const MAX_TRANSIENT_RESPONSE_RETRIES: usize = 2;
@@ -290,19 +290,21 @@ impl ChatGptService {
         let mut message_checkpoint = AssistantMessageCheckpoint::default();
         let mut reasoning_summaries = Vec::new();
         self.record_chatgpt_event("request_started", "responses", None, None, None, None);
-        chatgpt_store::save_assistant_message(
-            &self.storage,
-            AssistantMessageWrite {
-                conversation_id,
-                message_id: &message_id,
-                content: &content,
-                status: "streaming",
-                created_at_unix_ms: created_at,
-                output_tokens: None,
-                elapsed: None,
-            },
-        )
-        .map_err(database_error)?;
+        self.retry_storage_operation("send_initial_assistant_message_save", || {
+            chatgpt_store::save_assistant_message(
+                &self.storage,
+                AssistantMessageWrite {
+                    conversation_id,
+                    message_id: &message_id,
+                    content: &content,
+                    status: "streaming",
+                    created_at_unix_ms: created_at,
+                    output_tokens: None,
+                    elapsed: None,
+                },
+            )
+        })
+        .await?;
 
         events
             .send(
@@ -334,7 +336,8 @@ impl ChatGptService {
                 created_at_unix_ms: created_at,
                 output_tokens: None,
                 elapsed: Some(started.elapsed()),
-            })?;
+            })
+            .await?;
             return Ok(json!({
                 "conversationId": conversation_id,
                 "messageId": message_id,
@@ -420,7 +423,8 @@ impl ChatGptService {
                         created_at_unix_ms: created_at,
                         output_tokens,
                         elapsed: Some(elapsed),
-                    })?;
+                    })
+                    .await?;
                     return Err(ServiceError::new(
                         "project_history_context_cleanup_failed",
                         "The project history context could not be removed before a follow-up request.",
@@ -467,40 +471,38 @@ impl ChatGptService {
                     created_at_unix_ms: created_at,
                     output_tokens,
                     elapsed: Some(elapsed),
-                })?;
+                })
+                .await?;
                 return Err(error);
             }
             let mut round_output_tokens = None;
             let mut round_input_tokens = None;
             let mut round_usage = UsageData::default();
             let mut response_output_items = Vec::new();
-            let mut usage_request = UsageRequestTracker::start(
-                &self.storage,
-                UsageRequestDetails {
-                    conversation_id,
-                    assistant_message_id: Some(&message_id),
-                    provider_id: "chatgpt",
-                    model_id: &model.id,
-                    reasoning_effort: payload.pointer("/reasoning/effort").and_then(Value::as_str),
-                    operation,
-                    fast_requested: payload
-                        .get("service_tier")
-                        .and_then(Value::as_str)
-                        .is_some_and(|tier| tier == "priority"),
-                    run_id: Some(&run_id),
-                    connection_id: Some(&route.connection_id),
-                    workspace_id: Some(&route.workspace_id),
-                    project_id: None,
-                    parent_run_id: None,
-                },
-            )
-            .map_err(|_| {
-                ServiceError::new(
-                    "usage_statistics_unavailable",
-                    "The model request could not be recorded locally.",
-                    true,
+            let mut usage_request = self
+                .start_usage_request(
+                    "send_usage_request_start",
+                    UsageRequestDetails {
+                        conversation_id,
+                        assistant_message_id: Some(&message_id),
+                        provider_id: "chatgpt",
+                        model_id: &model.id,
+                        reasoning_effort: payload
+                            .pointer("/reasoning/effort")
+                            .and_then(Value::as_str),
+                        operation,
+                        fast_requested: payload
+                            .get("service_tier")
+                            .and_then(Value::as_str)
+                            .is_some_and(|tier| tier == "priority"),
+                        run_id: Some(&run_id),
+                        connection_id: Some(&route.connection_id),
+                        workspace_id: Some(&route.workspace_id),
+                        project_id: None,
+                        parent_run_id: None,
+                    },
                 )
-            })?;
+                .await?;
             let request_sources = crate::usage_statistics::RequestDataSources {
                 instruction_sources: crate::usage_statistics::instruction_source_categories(
                     custom_instructions,
@@ -512,9 +514,10 @@ impl ChatGptService {
                 ),
                 ..Default::default()
             };
-            usage_request
-                .record_request_manifest(&payload, Some(&request_sources))
-                .map_err(database_error)?;
+            self.retry_storage_operation("send_usage_request_manifest", || {
+                usage_request.record_request_manifest(&payload, Some(&request_sources))
+            })
+            .await?;
             let provider_request_started = Instant::now();
             let mut retries = 0;
             let response_result = loop {
@@ -666,12 +669,16 @@ impl ChatGptService {
                             created_at_unix_ms: created_at,
                             output_tokens: None,
                             elapsed: Some(started.elapsed()),
-                        })?;
+                        })
+                        .await?;
                         return Err(error);
                     }
                 }
                 Ok(None) => {
-                    usage_request.cancel().map_err(database_error)?;
+                    self.retry_storage_operation("send_usage_request_cancel", || {
+                        usage_request.cancel()
+                    })
+                    .await?;
                     let elapsed = started.elapsed();
                     self.record_chatgpt_event(
                         "request_cancelled",
@@ -689,7 +696,8 @@ impl ChatGptService {
                         created_at_unix_ms: created_at,
                         output_tokens: None,
                         elapsed: Some(elapsed),
-                    })?;
+                    })
+                    .await?;
                     return Ok(json!({
                         "conversationId": conversation_id,
                         "messageId": message_id,
@@ -716,7 +724,8 @@ impl ChatGptService {
                         created_at_unix_ms: created_at,
                         output_tokens: None,
                         elapsed: Some(started.elapsed()),
-                    })?;
+                    })
+                    .await?;
                     return Err(error);
                 }
             };
@@ -737,7 +746,10 @@ impl ChatGptService {
                 let next = tokio::select! {
                     changed = cancellation.changed() => {
                         if changed.is_err() || *cancellation.borrow() {
-                            usage_request.cancel().map_err(database_error)?;
+                            self.retry_storage_operation("send_usage_request_cancel", || {
+                                usage_request.cancel()
+                            })
+                            .await?;
                             self.record_chatgpt_event(
                                 "request_cancelled",
                                 "responses",
@@ -754,7 +766,8 @@ impl ChatGptService {
                                 created_at_unix_ms: created_at,
                                 output_tokens,
                                 elapsed: Some(started.elapsed()),
-                            })?;
+                            })
+                            .await?;
                             return Ok(json!({
                                 "conversationId": conversation_id,
                                 "messageId": message_id,
@@ -823,7 +836,8 @@ impl ChatGptService {
                         created_at_unix_ms: created_at,
                         output_tokens,
                         elapsed: Some(started.elapsed()),
-                    })?;
+                    })
+                    .await?;
                     return Err(error);
                 }
                 pending_bytes.extend_from_slice(&chunk);
@@ -844,7 +858,8 @@ impl ChatGptService {
                         created_at_unix_ms: created_at,
                         output_tokens,
                         elapsed: Some(started.elapsed()),
-                    })?;
+                    })
+                    .await?;
                     return Err(ServiceError::new(
                         "response_event_too_large",
                         "ChatGPT returned an oversized stream event. The partial answer was saved.",
@@ -923,7 +938,8 @@ impl ChatGptService {
                                     created_at_unix_ms: created_at,
                                     output_tokens,
                                     elapsed: Some(started.elapsed()),
-                                })?;
+                                })
+                                .await?;
                                 return Err(error);
                             }
                         }
@@ -967,7 +983,10 @@ impl ChatGptService {
                 })
             });
             if let Some(error) = stream_error {
-                usage_request.fail(&round_usage).map_err(database_error)?;
+                self.retry_storage_operation("send_usage_request_fail", || {
+                    usage_request.fail(&round_usage)
+                })
+                .await?;
                 if stream_continuations < MAX_STREAM_CONTINUATIONS
                     && is_retryable_stream_error(&error)
                 {
@@ -1003,22 +1022,25 @@ impl ChatGptService {
                                 created_at_unix_ms: created_at,
                                 output_tokens,
                                 elapsed: Some(started.elapsed()),
-                            })?;
+                            })
+                            .await?;
                             return Err(continuation_error);
                         }
-                        chatgpt_store::save_assistant_message(
-                            &self.storage,
-                            AssistantMessageWrite {
-                                conversation_id,
-                                message_id: &message_id,
-                                content: &content,
-                                status: "streaming",
-                                created_at_unix_ms: created_at,
-                                output_tokens: None,
-                                elapsed: None,
-                            },
-                        )
-                        .map_err(database_error)?;
+                        self.retry_storage_operation("send_continuation_message_save", || {
+                            chatgpt_store::save_assistant_message(
+                                &self.storage,
+                                AssistantMessageWrite {
+                                    conversation_id,
+                                    message_id: &message_id,
+                                    content: &content,
+                                    status: "streaming",
+                                    created_at_unix_ms: created_at,
+                                    output_tokens: None,
+                                    elapsed: None,
+                                },
+                            )
+                        })
+                        .await?;
                         events
                             .send(
                                 &ChatStreamEvent::TextUpdated(ChatStreamSnapshot::new(
@@ -1058,7 +1080,8 @@ impl ChatGptService {
                             created_at_unix_ms: created_at,
                             output_tokens,
                             elapsed: Some(started.elapsed()),
-                        })?;
+                        })
+                        .await?;
                         return Ok(json!({
                             "conversationId": conversation_id,
                             "messageId": message_id,
@@ -1093,13 +1116,15 @@ impl ChatGptService {
                     created_at_unix_ms: created_at,
                     output_tokens,
                     elapsed: Some(started.elapsed()),
-                })?;
+                })
+                .await?;
                 return Err(error);
             }
 
-            usage_request
-                .complete(&round_usage)
-                .map_err(database_error)?;
+            self.retry_storage_operation("send_usage_request_complete", || {
+                usage_request.complete(&round_usage)
+            })
+            .await?;
 
             if let Some(round_tokens) = round_output_tokens {
                 output_tokens = Some(output_tokens.unwrap_or(0i64).saturating_add(round_tokens));
@@ -1108,19 +1133,21 @@ impl ChatGptService {
             let final_text = response_output_text(&response_output_items);
             if !final_text.is_empty() && final_text != content.as_str() {
                 content = final_text;
-                chatgpt_store::save_assistant_message(
-                    &self.storage,
-                    AssistantMessageWrite {
-                        conversation_id,
-                        message_id: &message_id,
-                        content: &content,
-                        status: "streaming",
-                        created_at_unix_ms: created_at,
-                        output_tokens: None,
-                        elapsed: None,
-                    },
-                )
-                .map_err(database_error)?;
+                self.retry_storage_operation("send_final_text_snapshot_save", || {
+                    chatgpt_store::save_assistant_message(
+                        &self.storage,
+                        AssistantMessageWrite {
+                            conversation_id,
+                            message_id: &message_id,
+                            content: &content,
+                            status: "streaming",
+                            created_at_unix_ms: created_at,
+                            output_tokens: None,
+                            elapsed: None,
+                        },
+                    )
+                })
+                .await?;
                 events
                     .send(
                         &ChatStreamEvent::TextUpdated(ChatStreamSnapshot::new(
@@ -1145,7 +1172,8 @@ impl ChatGptService {
                         created_at_unix_ms: created_at,
                         output_tokens,
                         elapsed: Some(started.elapsed()),
-                    })?;
+                    })
+                    .await?;
                     return Err(error);
                 }
             };
@@ -1163,7 +1191,8 @@ impl ChatGptService {
                         created_at_unix_ms: created_at,
                         output_tokens,
                         elapsed: Some(started.elapsed()),
-                    })?;
+                    })
+                    .await?;
                     return Err(invalid_response_error());
                 };
                 input.push(goals::responses_continuation_input());
@@ -1217,7 +1246,8 @@ impl ChatGptService {
                                 created_at_unix_ms: created_at,
                                 output_tokens,
                                 elapsed: Some(elapsed),
-                            })?;
+                            })
+                            .await?;
                             return Ok(json!({
                                 "conversationId": conversation_id,
                                 "messageId": message_id,
@@ -1240,7 +1270,8 @@ impl ChatGptService {
                                 created_at_unix_ms: created_at,
                                 output_tokens,
                                 elapsed: Some(started.elapsed()),
-                            })?;
+                            })
+                            .await?;
                             return Err(error);
                         }
                     };
@@ -1255,7 +1286,8 @@ impl ChatGptService {
                         created_at_unix_ms: created_at,
                         output_tokens,
                         elapsed: Some(started.elapsed()),
-                    })?;
+                    })
+                    .await?;
                     return Err(invalid_response_error());
                 };
                 input.extend(response_output_items);
@@ -1278,7 +1310,8 @@ impl ChatGptService {
                                     created_at_unix_ms: created_at,
                                     output_tokens,
                                     elapsed: Some(started.elapsed()),
-                                })?;
+                                })
+                                .await?;
                                 return Err(invalid_response_error());
                             }
                         },
@@ -1291,7 +1324,8 @@ impl ChatGptService {
                                 created_at_unix_ms: created_at,
                                 output_tokens,
                                 elapsed: Some(started.elapsed()),
-                            })?;
+                            })
+                            .await?;
                             return Err(error);
                         }
                     };
@@ -1317,7 +1351,8 @@ impl ChatGptService {
                         created_at_unix_ms: created_at,
                         output_tokens,
                         elapsed: Some(started.elapsed()),
-                    })?;
+                    })
+                    .await?;
                     return Err(ServiceError::new(
                         "invalid_provider_response",
                         "The provider continued acting after closing the goal.",
@@ -1336,7 +1371,8 @@ impl ChatGptService {
                         created_at_unix_ms: created_at,
                         output_tokens,
                         elapsed: Some(started.elapsed()),
-                    })?;
+                    })
+                    .await?;
                     return Err(error);
                 }
                 tool_executor.begin_round(&regular_calls);
@@ -1368,7 +1404,8 @@ impl ChatGptService {
                             created_at_unix_ms: created_at,
                             output_tokens,
                             elapsed: Some(started.elapsed()),
-                        })?;
+                        })
+                        .await?;
                         return Err(error);
                     }
                 };
@@ -1387,7 +1424,8 @@ impl ChatGptService {
                         created_at_unix_ms: created_at,
                         output_tokens,
                         elapsed: Some(started.elapsed()),
-                    })?;
+                    })
+                    .await?;
                     return Err(error);
                 }
                 let mut results_by_id = control_results
@@ -1434,7 +1472,8 @@ impl ChatGptService {
                                 created_at_unix_ms: created_at,
                                 output_tokens,
                                 elapsed: Some(elapsed),
-                            })?;
+                            })
+                            .await?;
                             return Ok(json!({
                                 "conversationId": conversation_id,
                                 "messageId": message_id,
@@ -1457,7 +1496,8 @@ impl ChatGptService {
                                 created_at_unix_ms: created_at,
                                 output_tokens,
                                 elapsed: Some(started.elapsed()),
-                            })?;
+                            })
+                            .await?;
                             return Err(error);
                         }
                     };
@@ -1472,7 +1512,8 @@ impl ChatGptService {
                         created_at_unix_ms: created_at,
                         output_tokens,
                         elapsed: Some(started.elapsed()),
-                    })?;
+                    })
+                    .await?;
                     return Err(invalid_response_error());
                 };
                 input.extend(response_output_items);
@@ -1486,7 +1527,8 @@ impl ChatGptService {
                             created_at_unix_ms: created_at,
                             output_tokens,
                             elapsed: Some(started.elapsed()),
-                        })?;
+                        })
+                        .await?;
                         return Err(invalid_response_error());
                     };
                     let output = match crate::attachments::function_call_output_value(
@@ -1507,7 +1549,8 @@ impl ChatGptService {
                                     created_at_unix_ms: created_at,
                                     output_tokens,
                                     elapsed: Some(started.elapsed()),
-                                })?;
+                                })
+                                .await?;
                                 return Err(invalid_response_error());
                             }
                         },
@@ -1520,7 +1563,8 @@ impl ChatGptService {
                                 created_at_unix_ms: created_at,
                                 output_tokens,
                                 elapsed: Some(started.elapsed()),
-                            })?;
+                            })
+                            .await?;
                             return Err(error);
                         }
                     };
@@ -1548,19 +1592,21 @@ impl ChatGptService {
             }
             citation_sources = attach_provider_citations(&response_output_items, &mut content);
             if !citation_sources.is_empty() {
-                chatgpt_store::save_assistant_message(
-                    &self.storage,
-                    AssistantMessageWrite {
-                        conversation_id,
-                        message_id: &message_id,
-                        content: &content,
-                        status: "streaming",
-                        created_at_unix_ms: created_at,
-                        output_tokens: None,
-                        elapsed: None,
-                    },
-                )
-                .map_err(database_error)?;
+                self.retry_storage_operation("send_citation_snapshot_save", || {
+                    chatgpt_store::save_assistant_message(
+                        &self.storage,
+                        AssistantMessageWrite {
+                            conversation_id,
+                            message_id: &message_id,
+                            content: &content,
+                            status: "streaming",
+                            created_at_unix_ms: created_at,
+                            output_tokens: None,
+                            elapsed: None,
+                        },
+                    )
+                })
+                .await?;
                 events
                     .send(
                         &ChatStreamEvent::TextUpdated(ChatStreamSnapshot::new(
@@ -1610,7 +1656,8 @@ impl ChatGptService {
                     created_at_unix_ms: created_at,
                     output_tokens,
                     elapsed: Some(started.elapsed()),
-                })?;
+                })
+                .await?;
                 self.record_chatgpt_event(
                     "request_failed",
                     "responses",
@@ -1643,24 +1690,39 @@ impl ChatGptService {
             created_at_unix_ms: created_at,
             output_tokens,
             elapsed: Some(elapsed),
-        })?;
+        })
+        .await?;
         if let (Some(input_tokens), Some(last_message_id)) = (input_tokens, last_prompt_message_id)
-            && chatgpt_store::save_prompt_usage(
-                &self.storage,
-                conversation_id,
-                chatgpt_store::PromptUsage {
-                    input_tokens,
-                    last_message_id,
-                    provider_id: "chatgpt",
-                    model_id: &model.id,
-                    connection_id: Some(&route.connection_id),
-                    workspace_id: Some(&route.workspace_id),
-                },
-            )
-            .is_err()
-            && self.storage.log_context_usage_save_failure().is_err()
         {
-            eprintln!("context_usage_diagnostic_write_failed");
+            let prompt_usage = self
+                .retry_storage_operation("send_prompt_usage_save", || {
+                    chatgpt_store::save_prompt_usage(
+                        &self.storage,
+                        conversation_id,
+                        chatgpt_store::PromptUsage {
+                            input_tokens,
+                            last_message_id,
+                            provider_id: "chatgpt",
+                            model_id: &model.id,
+                            connection_id: Some(&route.connection_id),
+                            workspace_id: Some(&route.workspace_id),
+                        },
+                    )
+                })
+                .await;
+            if let Err(error) = prompt_usage {
+                self.record_chatgpt_event(
+                    "context_usage_save_failed",
+                    "send_prompt_usage_save",
+                    None,
+                    Some(error.code),
+                    None,
+                    None,
+                );
+                if self.storage.log_context_usage_save_failure().is_err() {
+                    eprintln!("context_usage_diagnostic_write_failed");
+                }
+            }
         }
         self.record_chatgpt_event(
             "request_completed",

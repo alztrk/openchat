@@ -71,17 +71,33 @@ pub fn get_chat_schema_version() -> i64 {
 
 /// Records a failed renderer chat request using only a fixed stage and error code.
 #[tauri::command]
-pub fn record_chat_request_failure(stage: String, code: String) -> Result<(), ChatStorageError> {
+pub fn record_chat_request_failure(
+    stage: String,
+    code: String,
+    detail_code: Option<String>,
+) -> Result<(), ChatStorageError> {
     let stage = match stage.as_str() {
         "conversationCreation" => "conversation_creation",
         "userMessagePersistence" => "user_message_persistence",
         "requestExecution" => "request_execution",
         _ => return Err(ChatStorageError::invalid_input()),
     };
-    if code.is_empty() || !valid_diagnostic_code(&code) {
+    if code.is_empty()
+        || !valid_diagnostic_code(&code)
+        || detail_code
+            .as_deref()
+            .is_some_and(|detail| !valid_diagnostic_code(detail))
+    {
         return Err(ChatStorageError::invalid_input());
     }
-    append_diagnostic("app", "chat_request_failed", "stage", stage, &code, None)
+    append_diagnostic(
+        "app",
+        "chat_request_failed",
+        "stage",
+        stage,
+        &code,
+        detail_code.as_deref(),
+    )
 }
 
 /// Records bounded chat-message persistence failures without message content or IDs.
@@ -116,7 +132,9 @@ pub fn record_chat_message_persistence_failure(
     ]
     .into_iter()
     .any(|value| value > MAX_CHAT_PERSISTENCE_DIAGNOSTIC_VALUE)
-        || metrics.tool_activity_count.is_some_and(|count| count > 100_000)
+        || metrics
+            .tool_activity_count
+            .is_some_and(|count| count > 100_000)
         || metrics.attachment_count > 10
     {
         return Err(ChatStorageError::invalid_input());
@@ -195,6 +213,7 @@ pub fn record_context_usage_failure(
 ) -> Result<(), ChatStorageError> {
     let operation = match operation.as_str() {
         "contextConfiguration" => "context_configuration",
+        "fullEstimate" => "full_estimate",
         "memoryInspection" => "memory_inspection",
         _ => return Err(ChatStorageError::invalid_input()),
     };
@@ -337,8 +356,15 @@ fn append_diagnostic_at_with_message_metrics(
             metrics.attachment_bytes,
         )
     });
+    let process_id = std::process::id();
+    let build_profile = if cfg!(debug_assertions) {
+        "debug"
+    } else {
+        "release"
+    };
     let line = format!(
-        "timestamp_unix_ms={timestamp} component={component} event={event} {field_name}={operation}{code_field}{detail_code_field}{metrics_fields}\n"
+        "timestamp_unix_ms={timestamp} pid={process_id} version={} build_profile={build_profile} component={component} event={event} {field_name}={operation}{code_field}{detail_code_field}{metrics_fields}\n",
+        env!("CARGO_PKG_VERSION")
     );
     if file
         .metadata()
@@ -414,9 +440,18 @@ mod tests {
         .expect("append diagnostic");
 
         let contents = fs::read_to_string(&log_path).expect("read diagnostic log");
+        let build_profile = if cfg!(debug_assertions) {
+            "debug"
+        } else {
+            "release"
+        };
         assert_eq!(
             contents,
-            "timestamp_unix_ms=123 component=app event=chat_request_failed stage=request_execution code=provider_error\n"
+            format!(
+                "timestamp_unix_ms=123 pid={} version={} build_profile={build_profile} component=app event=chat_request_failed stage=request_execution code=provider_error\n",
+                std::process::id(),
+                env!("CARGO_PKG_VERSION")
+            )
         );
         assert!(
             log_path.metadata().expect("read log size").len() <= MAX_CHAT_STORAGE_DIAGNOSTIC_BYTES

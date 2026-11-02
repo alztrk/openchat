@@ -105,8 +105,9 @@ pub(super) fn execute_direct_file_change_with_tracking(
         Ok(capture) => capture,
         Err(error) => {
             let mut output = tool_error(error.code, &error.message);
-            if let Some(details) = error.details {
-                output["error"]["details"] = json!(details);
+            output["error"]["category"] = json!(error.category.as_str());
+            if let Some(diagnostic_code) = error.diagnostic_code {
+                output["error"]["diagnosticCode"] = json!(diagnostic_code);
             }
             drop(guard);
             return (output, Vec::new(), Some(error.code.to_owned()), None);
@@ -133,8 +134,9 @@ pub(super) fn execute_direct_file_change_with_tracking(
     };
     let output = result.unwrap_or_else(|error| {
         let mut output = tool_error(error.code, &error.message);
-        if let Some(details) = error.details {
-            output["error"]["details"] = json!(details);
+        output["error"]["category"] = json!(error.category.as_str());
+        if let Some(diagnostic_code) = error.diagnostic_code {
+            output["error"]["diagnosticCode"] = json!(diagnostic_code);
         }
         output
     });

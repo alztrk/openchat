@@ -6,7 +6,8 @@ use uuid::Uuid;
 use super::{
     AppStorage, CopilotCatalogFilterSummary, MAX_DIAGNOSTIC_LOG_BYTES,
     MINIMUM_SQLITE_VERSION_NUMBER, database_guard, database_key::DatabaseKey,
-    disable_trusted_schema, sqlite_error_code, validate_sqlite_runtime,
+    disable_trusted_schema, is_retryable_storage_error_code, sqlite_error_code,
+    validate_sqlite_runtime,
 };
 
 #[test]
@@ -271,7 +272,7 @@ fn diagnostic_log_stays_bounded_and_records_only_safe_runtime_fields() {
 }
 
 #[test]
-fn rpc_failure_diagnostic_records_only_operation_and_error_code() {
+fn rpc_failure_diagnostic_records_operation_code_and_class() {
     let directory = TestDirectory::new();
     let storage = AppStorage::open_at(directory.0.clone()).expect("open test storage");
 
@@ -282,7 +283,11 @@ fn rpc_failure_diagnostic_records_only_operation_and_error_code() {
     let log_path = directory.0.join("logs").join("openchat-service.log");
     let entry = fs::read_to_string(log_path).expect("read diagnostic log");
     assert!(entry.contains("component=rpc event=request_failed"));
-    assert!(entry.contains("operation=chat.send code=provider_credentials_missing"));
+    assert!(
+        entry.contains(
+            "operation=chat.send code=provider_credentials_missing category=authentication"
+        )
+    );
     assert!(!entry.contains("prompt"));
     assert!(!entry.contains("apiKey"));
 }
@@ -299,6 +304,36 @@ fn sqlite_error_diagnostics_use_stable_codes_without_error_details() {
         sqlite_error_code(&rusqlite::Error::InvalidQuery),
         "invalid_query"
     );
+}
+
+#[test]
+fn storage_error_retry_policy_matches_only_transient_failures() {
+    for code in [
+        "sqlite_busy",
+        "sqlite_busy_snapshot",
+        "sqlite_busy_timeout",
+        "sqlite_locked",
+        "sqlite_io_error",
+        "database_queue_full",
+        "database_queue_wait_timeout",
+        "storage_broker_timeout",
+    ] {
+        assert!(is_retryable_storage_error_code(code), "{code} should retry");
+    }
+
+    for code in [
+        "sqlite_corrupt",
+        "sqlite_cannot_open",
+        "sqlite_permission_denied",
+        "sqlite_disk_full",
+        "invalid_query",
+        "storage_operation_failed",
+    ] {
+        assert!(
+            !is_retryable_storage_error_code(code),
+            "{code} must not retry"
+        );
+    }
 }
 
 #[test]

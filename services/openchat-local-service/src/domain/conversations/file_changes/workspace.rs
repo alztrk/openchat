@@ -1247,16 +1247,31 @@ pub(crate) fn is_current_version_from_directory(
         Err(error) => return Err(error),
     }
     match open_workspace_file(directory, relative) {
-        Ok((file, metadata)) if metadata.len() <= MAX_SNAPSHOT_FILE_BYTES => {
-            let current = snapshot_file(file, metadata.len())?;
-            Ok(entry.expected_exists && Some(current.hash) == entry.expected_hash)
+        Ok((file, _)) => {
+            let current_hash = hash_file(file)?;
+            Ok(entry.expected_exists && Some(current_hash) == entry.expected_hash)
         }
-        Ok((_, metadata)) if metadata.len() > MAX_SNAPSHOT_FILE_BYTES => Ok(false),
-        Ok(_) => Ok(false),
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(!entry.expected_exists),
         Err(error) if error.kind() == io::ErrorKind::InvalidInput => Ok(false),
         Err(_) => Err(TrackingError::SnapshotUnavailable),
     }
+}
+
+/// Hashes a current file version with fixed memory use, regardless of file size.
+fn hash_file(file: impl Read) -> Result<String, TrackingError> {
+    let mut hasher = Sha256::new();
+    let mut file = file;
+    let mut buffer = [0u8; 64 * 1024];
+    loop {
+        let read = file
+            .read(&mut buffer)
+            .map_err(|_| TrackingError::SnapshotUnavailable)?;
+        if read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..read]);
+    }
+    Ok(format!("{:x}", hasher.finalize()))
 }
 
 pub(crate) fn ensure_child_directory(

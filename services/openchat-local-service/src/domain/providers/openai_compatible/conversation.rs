@@ -820,7 +820,8 @@ pub async fn send_message(
             output_tokens,
             elapsed: None,
         },
-    )?;
+    )
+    .await?;
     if events
         .send(
             &ChatStreamEvent::Started(ChatStreamSnapshot::new(
@@ -845,7 +846,8 @@ pub async fn send_message(
                 output_tokens,
                 elapsed: Some(started.elapsed()),
             },
-        )?;
+        )
+        .await?;
         return Err(protocol_error());
     }
 
@@ -921,7 +923,8 @@ pub async fn send_message(
                     output_tokens,
                     elapsed: Some(started.elapsed()),
                 },
-            )?;
+            )
+            .await?;
             return Err(error);
         }
     };

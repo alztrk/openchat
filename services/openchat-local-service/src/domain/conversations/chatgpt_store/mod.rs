@@ -33,9 +33,8 @@ pub use connections::{
 pub use conversations::{
     apply_generated_title, conversation_messages, conversation_messages_from_boundary,
     conversation_route, conversation_title_is_automatic, create_title_job, finish_title_job,
-    is_custom_title, is_default_title,
-    is_retryable_latest_assistant_message, save_assistant_message,
-    save_assistant_message_on_connection, save_assistant_tool_checkpoint,
+    is_custom_title, is_default_title, is_retryable_latest_assistant_message,
+    save_assistant_message, save_assistant_message_on_connection, save_assistant_tool_checkpoint,
     should_generate_automatic_title, should_generate_automatic_title_on_connection,
 };
 pub use memory::{
@@ -47,6 +46,94 @@ pub use memory::{
 };
 pub use models::{list_fresh_models, list_models, save_models, selected_model};
 pub use usage::{latest_usage_snapshot, save_usage_snapshot};
+
+/// Retries a storage write only for bounded, recognized transient database failures.
+pub(crate) async fn retry_storage_operation<T, F>(
+    storage: &crate::storage::AppStorage,
+    operation: &'static str,
+    mut write: F,
+) -> rusqlite::Result<T>
+where
+    F: FnMut() -> rusqlite::Result<T> + Send,
+{
+    let mut attempt = 0;
+    loop {
+        match write() {
+            Ok(value) => return Ok(value),
+            Err(error) => {
+                attempt += 1;
+                let code = crate::storage::sqlite_error_code(&error);
+                let retry_delay = storage_operation_retry_delay(code, attempt);
+                let event = if retry_delay.is_some() {
+                    "storage_retry_scheduled"
+                } else {
+                    "storage_failed"
+                };
+                let delay_ms = retry_delay.map(|delay| delay.as_millis());
+                if storage
+                    .log_chatgpt_storage_diagnostic(event, operation, code, attempt, delay_ms)
+                    .is_err()
+                {
+                    eprintln!("chatgpt_storage_diagnostic_write_failed");
+                }
+                if let Some(delay) = retry_delay {
+                    tokio::time::sleep(delay).await;
+                } else {
+                    return Err(error);
+                }
+            }
+        }
+    }
+}
+
+/// Saves an assistant message with bounded retries for transient storage failures.
+pub(crate) async fn save_assistant_message_with_retry(
+    storage: &crate::storage::AppStorage,
+    message: AssistantMessageWrite<'_>,
+    operation: &'static str,
+) -> rusqlite::Result<()> {
+    retry_storage_operation(storage, operation, || {
+        save_assistant_message(storage, message)
+    })
+    .await
+}
+
+/// Saves an assistant tool checkpoint with bounded retries for transient storage failures.
+pub(crate) async fn save_assistant_tool_checkpoint_with_retry(
+    storage: &crate::storage::AppStorage,
+    snapshot: &crate::provider_schema::ChatStreamSnapshot,
+    activities: &[ToolActivity],
+    operation: &'static str,
+) -> rusqlite::Result<()> {
+    retry_storage_operation(storage, operation, || {
+        save_assistant_tool_checkpoint(storage, snapshot, activities)
+    })
+    .await
+}
+
+fn storage_operation_retry_delay(code: &str, attempt: usize) -> Option<Duration> {
+    const SQLITE_BUSY_RETRY_DELAYS: [Duration; 3] = [
+        Duration::from_millis(150),
+        Duration::from_millis(400),
+        Duration::from_millis(900),
+    ];
+
+    match code {
+        "sqlite_busy" | "sqlite_busy_snapshot" | "sqlite_locked" | "sqlite_5" | "sqlite_517" => {
+            SQLITE_BUSY_RETRY_DELAYS.get(attempt - 1).copied()
+        }
+        "sqlite_busy_timeout"
+        | "sqlite_io_error"
+        | "database_queue_full"
+        | "database_queue_wait_timeout"
+        | "storage_broker_timeout"
+            if attempt == 1 =>
+        {
+            Some(Duration::from_millis(500))
+        }
+        _ => None,
+    }
+}
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -164,6 +251,7 @@ impl ToolActivity {
     }
 }
 
+#[derive(Clone, Copy)]
 pub struct AssistantMessageWrite<'a> {
     pub conversation_id: &'a str,
     pub message_id: &'a str,

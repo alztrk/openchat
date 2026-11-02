@@ -423,8 +423,9 @@ fn filesystem_path_error(error: &std::io::Error, operation: &str) -> Value {
 
 fn service_tool_error(error: crate::protocol::ServiceError) -> Value {
     let mut output = tool_error(error.code, &error.message);
-    if let Some(details) = error.details {
-        output["error"]["details"] = Value::String(details);
+    output["error"]["category"] = Value::String(error.category.as_str().to_owned());
+    if let Some(diagnostic_code) = error.diagnostic_code {
+        output["error"]["diagnosticCode"] = Value::String(diagnostic_code);
     }
     output
 }

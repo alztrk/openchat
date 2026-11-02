@@ -166,20 +166,25 @@ impl OAuthClient {
         }
     }
 
-    pub fn load_tokens(
+    pub async fn load_tokens(
         &self,
         storage: &AppStorage,
         connection_id: &str,
     ) -> Result<OAuthTokenPair, ServiceError> {
-        let reference = chatgpt_store::credential_reference(storage, connection_id)
-            .map_err(database_error)?
-            .ok_or_else(|| {
-                ServiceError::new(
-                    "connection_not_found",
-                    "The selected ChatGPT connection could not be found.",
-                    false,
-                )
-            })?;
+        let reference = chatgpt_store::retry_storage_operation(
+            storage,
+            "oauth_credential_reference_load",
+            || chatgpt_store::credential_reference(storage, connection_id),
+        )
+        .await
+        .map_err(database_error)?
+        .ok_or_else(|| {
+            ServiceError::new(
+                "connection_not_found",
+                "The selected ChatGPT connection could not be found.",
+                false,
+            )
+        })?;
         let reference = parse_reference(connection_id, &reference)?;
         self.credential_store
             .load_token_pair(storage, &reference)
@@ -742,12 +747,26 @@ struct TokenResponse {
     id_token: Option<Zeroizing<String>>,
 }
 
-fn database_error(_: DatabaseError) -> ServiceError {
+fn database_error(error: DatabaseError) -> ServiceError {
+    let detail_code = crate::storage::sqlite_error_code(&error);
     ServiceError::new(
         "local_storage_failed",
         "ChatGPT connection data could not be read or saved in the local database.",
-        true,
+        matches!(
+            detail_code,
+            "sqlite_busy"
+                | "sqlite_busy_snapshot"
+                | "sqlite_busy_timeout"
+                | "sqlite_locked"
+                | "sqlite_5"
+                | "sqlite_517"
+                | "sqlite_io_error"
+                | "database_queue_full"
+                | "database_queue_wait_timeout"
+                | "storage_broker_timeout"
+        ),
     )
+    .with_details(detail_code)
 }
 
 fn credential_error(error: CredentialStoreError) -> ServiceError {

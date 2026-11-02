@@ -93,6 +93,22 @@ impl std::fmt::Display for RemoteStorageError {
 
 impl std::error::Error for RemoteStorageError {}
 
+impl RemoteStorageError {
+    pub(crate) fn diagnostic_code(self) -> &'static str {
+        match self {
+            Self::Transport => "storage_broker_transport_unavailable",
+            Self::FrameTooLarge => "storage_broker_frame_too_large",
+            Self::UnexpectedEndOfStream => "storage_broker_unexpected_eof",
+            Self::InvalidFrame => "storage_broker_invalid_frame",
+            Self::InvalidResponse => "storage_broker_invalid_response",
+            Self::ProtocolVersionMismatch => "storage_broker_protocol_mismatch",
+            Self::ServerRejected { .. } => "storage_broker_request_rejected",
+            Self::Poisoned => "storage_broker_poisoned",
+            Self::TimedOut => "storage_broker_timeout",
+        }
+    }
+}
+
 /// A serialized, mutex-owned standard-handle connection to the storage broker.
 ///
 /// Requests and responses are strictly paired. The mutex prevents concurrent callers from
@@ -585,8 +601,8 @@ mod tests {
 
     use windows_sys::Win32::{Foundation::HANDLE, System::Pipes::CreatePipe};
 
-    use super::{BROKER_RESPONSE_TIMEOUT, RemoteStorageError, read_frame};
     use super::super::{SQLITE_BUSY_TIMEOUT, STORAGE_DATABASE_LOCK_TIMEOUT};
+    use super::{BROKER_RESPONSE_TIMEOUT, RemoteStorageError, read_frame};
 
     fn anonymous_pipe() -> (File, File) {
         let mut read = null_mut();

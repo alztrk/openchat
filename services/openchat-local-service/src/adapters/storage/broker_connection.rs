@@ -1042,32 +1042,10 @@ fn protocol_transaction_behavior(
 
 fn remote_error(error: RemoteStorageError) -> Error {
     match error {
-        RemoteStorageError::Transport | RemoteStorageError::UnexpectedEndOfStream => {
-            sqlite_failure(ffi::SQLITE_IOERR, "The storage broker is unavailable.")
-        }
-        RemoteStorageError::FrameTooLarge => sqlite_failure(
-            ffi::SQLITE_TOOBIG,
-            "The storage request exceeded its frame limit.",
-        ),
-        RemoteStorageError::InvalidFrame | RemoteStorageError::InvalidResponse => sqlite_failure(
-            ffi::SQLITE_MISUSE,
-            "The storage broker response is invalid.",
-        ),
-        RemoteStorageError::ProtocolVersionMismatch => sqlite_failure(
-            ffi::SQLITE_MISMATCH,
-            "The storage broker protocol is unsupported.",
-        ),
-        RemoteStorageError::TimedOut => sqlite_failure(
-            ffi::SQLITE_IOERR,
-            "The storage broker did not respond in time.",
-        ),
         RemoteStorageError::ServerRejected { code } => {
             sqlite_failure(code, sqlite_code_message(code))
         }
-        RemoteStorageError::Poisoned => sqlite_failure(
-            ffi::SQLITE_MISUSE,
-            "The storage broker connection is unavailable.",
-        ),
+        transport_error => Error::ToSqlConversionFailure(Box::new(transport_error)),
     }
 }
 

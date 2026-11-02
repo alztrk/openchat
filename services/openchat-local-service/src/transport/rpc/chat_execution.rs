@@ -1117,8 +1117,8 @@ mod tests {
     };
 
     use super::{
-        ChatRunFinalization, SavedChatRoute, classify_run_outcome, finish_run, load_project_context,
-        restore_run,
+        ChatRunFinalization, SavedChatRoute, classify_run_outcome, finish_run,
+        load_project_context, restore_run,
     };
 
     struct TestDirectory(PathBuf);
@@ -1256,12 +1256,8 @@ mod tests {
                 params![conversation_id],
             )
             .expect("insert latest user message");
-        crate::project_memory::set_history_context_enabled(
-            &mut connection,
-            &project_id,
-            true,
-        )
-        .expect("enable project history context");
+        crate::project_memory::set_history_context_enabled(&mut connection, &project_id, true)
+            .expect("enable project history context");
         drop(connection);
 
         let route = SavedChatRoute {
@@ -1355,12 +1351,9 @@ mod tests {
         let goal = prepared
             .goal_execution
             .expect("restored run should retain its goal");
-        let persisted = user_questions::load_run_for_conversation(
-            &connection,
-            &conversation_id,
-            &run_id,
-        )
-        .expect("read resumed goal");
+        let persisted =
+            user_questions::load_run_for_conversation(&connection, &conversation_id, &run_id)
+                .expect("read resumed goal");
         assert_eq!(persisted.status, AgentRunStatus::Running);
         assert_eq!(persisted.checkpoint_revision, goal.checkpoint_revision);
         assert_eq!(

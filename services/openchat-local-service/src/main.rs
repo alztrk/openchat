@@ -28,7 +28,12 @@ fn main() {
 #[tokio::main]
 async fn run_local_service() {
     if let Err(error) = openchat_local_service::run().await {
-        eprintln!("openchat-local-service-error: {error}");
+        match serde_json::to_string(&error.startup_failure()) {
+            Ok(failure) => eprintln!("openchat-local-service-error: {failure}"),
+            Err(_) => {
+                eprintln!("openchat-local-service-error: startup_failure_serialization_failed")
+            }
+        }
         std::process::exit(1);
     }
 }

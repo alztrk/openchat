@@ -29,6 +29,8 @@ use windows_sys::Win32::Storage::FileSystem::FILE_ATTRIBUTE_REPARSE_POINT;
 use broker_connection::BrokerConnection;
 #[cfg(windows)]
 use ipc_protocol::LegacyImportStatus;
+#[cfg(windows)]
+use remote_connection::RemoteStorageError;
 
 const MAX_DIAGNOSTIC_LOG_BYTES: u64 = 1024 * 1024;
 const MAX_DIAGNOSTIC_ENTRY_BYTES: usize = 4096;
@@ -126,9 +128,35 @@ pub(crate) fn sqlite_error_code(error: &rusqlite::Error) -> &'static str {
         },
         rusqlite::Error::InvalidQuery => "invalid_query",
         rusqlite::Error::FromSqlConversionFailure(_, _, _) => "stored_value_invalid",
-        rusqlite::Error::ToSqlConversionFailure(_) => "storage_conversion_failed",
+        rusqlite::Error::ToSqlConversionFailure(source) => {
+            #[cfg(windows)]
+            if let Some(error) = source.downcast_ref::<RemoteStorageError>() {
+                return error.diagnostic_code();
+            }
+            #[cfg(not(windows))]
+            let _ = source;
+            "storage_conversion_failed"
+        }
         _ => "storage_operation_failed",
     }
+}
+
+pub(crate) fn is_retryable_storage_error_code(code: &str) -> bool {
+    matches!(
+        code,
+        "sqlite_busy"
+            | "sqlite_busy_snapshot"
+            | "sqlite_busy_timeout"
+            | "sqlite_locked"
+            | "sqlite_io_error"
+            | "sqlite_5"
+            | "sqlite_517"
+            | "database_queue_full"
+            | "database_queue_wait_timeout"
+            | "storage_broker_timeout"
+            | "storage_broker_transport_unavailable"
+            | "storage_broker_unexpected_eof"
+    )
 }
 
 /// Carries the bounded usage fields permitted in a provider diagnostic entry.
@@ -588,6 +616,42 @@ impl AppStorage {
         })
     }
 
+    /// Records a bounded ChatGPT storage retry or failure without request data.
+    ///
+    /// # Errors
+    /// Returns an I/O error if diagnostic fields are invalid or the log cannot be updated.
+    pub(crate) fn log_chatgpt_storage_diagnostic(
+        &self,
+        event: &'static str,
+        operation: &'static str,
+        code: &'static str,
+        attempt: usize,
+        delay_ms: Option<u128>,
+    ) -> io::Result<()> {
+        if !matches!(event, "storage_retry_scheduled" | "storage_failed")
+            || !is_safe_diagnostic_code(operation)
+            || !is_safe_diagnostic_code(code)
+            || attempt == 0
+            || attempt > 8
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "ChatGPT storage diagnostic fields are invalid",
+            ));
+        }
+
+        self.append_diagnostic("chatgpt", event, |entry| {
+            write!(
+                entry,
+                " operation={operation} code={code} attempt={attempt}"
+            )?;
+            if let Some(delay_ms) = delay_ms {
+                write!(entry, " delay_ms={delay_ms}")?;
+            }
+            Ok(())
+        })
+    }
+
     /// Appends a correlated response-stream diagnostic without provider content or credentials.
     ///
     /// # Errors
@@ -687,7 +751,7 @@ impl AppStorage {
         })
     }
 
-    /// Records a failed RPC using only a fixed operation label and stable error code.
+    /// Records a failed RPC using a fixed operation label, stable error code, and class.
     ///
     /// # Errors
     /// Returns an I/O error if the diagnostic log cannot be updated.
@@ -696,8 +760,67 @@ impl AppStorage {
         operation: &'static str,
         code: &'static str,
     ) -> io::Result<()> {
+        self.log_rpc_failure_with_detail(operation, code, None)
+    }
+
+    /// Records a failed RPC and an optional stable diagnostic code from the service error.
+    ///
+    /// Detail values are written only when they match the bounded diagnostic-code format.
+    ///
+    /// # Errors
+    /// Returns an I/O error if the diagnostic log cannot be updated.
+    pub(crate) fn log_rpc_failure_with_detail(
+        &self,
+        operation: &'static str,
+        code: &'static str,
+        detail_code: Option<&str>,
+    ) -> io::Result<()> {
+        let category = crate::error::ErrorCategory::from_code(code).as_str();
         self.append_diagnostic("rpc", "request_failed", |entry| {
-            write!(entry, " operation={operation} code={code}")
+            write!(
+                entry,
+                " operation={operation} code={code} category={category}"
+            )?;
+            if let Some(detail_code) = detail_code.filter(|value| is_safe_diagnostic_code(value)) {
+                write!(entry, " detail_code={detail_code}")?;
+            }
+            Ok(())
+        })
+    }
+
+    /// Records a failed RPC with bounded class and correlation metadata.
+    ///
+    /// # Errors
+    /// Returns an I/O error if the operation metadata is invalid or the diagnostic log cannot be updated.
+    pub(crate) fn log_rpc_failure_with_context(
+        &self,
+        operation: &str,
+        code: &str,
+        category: &str,
+        correlation_id: &str,
+        diagnostic_code: Option<&str>,
+    ) -> io::Result<()> {
+        if !is_safe_diagnostic_operation(operation)
+            || !is_safe_diagnostic_code(code)
+            || !is_safe_diagnostic_code(category)
+            || !is_correlation_id(correlation_id)
+            || diagnostic_code.is_some_and(|value| !is_safe_diagnostic_code(value))
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "RPC failure diagnostic metadata is invalid.",
+            ));
+        }
+
+        self.append_diagnostic("rpc", "request_failed", |entry| {
+            write!(
+                entry,
+                " operation={operation} code={code} category={category} correlation_id={correlation_id}"
+            )?;
+            if let Some(diagnostic_code) = diagnostic_code {
+                write!(entry, " diagnostic_code={diagnostic_code}")?;
+            }
+            Ok(())
         })
     }
 
@@ -798,7 +921,10 @@ impl AppStorage {
         database_ms: u128,
         validation_ms: u128,
     ) -> io::Result<()> {
-        if !matches!(stage, "before_start" | "lock" | "after_manifest" | "validation") {
+        if !matches!(
+            stage,
+            "before_start" | "lock" | "after_manifest" | "validation"
+        ) {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 "file-change cancellation diagnostic fields are invalid",
@@ -1074,9 +1200,16 @@ impl AppStorage {
             .map_err(io::Error::other)?
             .as_millis();
         let mut entry = Vec::new();
+        let process_id = std::process::id();
+        let build_profile = if cfg!(debug_assertions) {
+            "debug"
+        } else {
+            "release"
+        };
         write!(
             entry,
-            "timestamp_unix_ms={timestamp} component={component} event={event}"
+            "timestamp_unix_ms={timestamp} pid={process_id} version={} build_profile={build_profile} component={component} event={event}",
+            env!("CARGO_PKG_VERSION")
         )?;
         write_fields(&mut entry)?;
         writeln!(entry)?;
@@ -1373,6 +1506,19 @@ fn is_safe_diagnostic_code(value: &str) -> bool {
         && value
             .bytes()
             .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_')
+}
+
+fn is_safe_diagnostic_operation(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 96
+        && value.as_bytes()[0].is_ascii_lowercase()
+        && value.bytes().all(|byte| {
+            byte.is_ascii_lowercase() || byte.is_ascii_digit() || matches!(byte, b'_' | b'-' | b'.')
+        })
+}
+
+fn is_correlation_id(value: &str) -> bool {
+    value.len() == 32 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
 #[cfg(windows)]

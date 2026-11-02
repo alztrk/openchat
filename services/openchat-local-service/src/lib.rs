@@ -9,14 +9,15 @@
 compile_error!("desktop profile test support is unavailable in optimized builds");
 
 mod domain;
+mod error;
 pub(crate) use domain::{
     attachments, chat_operation, chatgpt, chatgpt_store, connector_packages, connectors,
-    context_compaction, context_usage, conversation_archive, copilot_oauth, document_parser, file_changes,
-    git_inspection, git_worktrees, goals, history, hugging_face, image_library, instructions,
-    local_engines, oauth, openai_api, openai_compatible, pending_archive_export, permissions,
-    profile_archive, project_instructions, project_memory, project_skills, provider_credentials,
-    provider_schema, response_budget, security_scan, temporary_conversation, tools,
-    usage_statistics, user_question_broker, workspace_settings,
+    context_compaction, context_usage, conversation_archive, copilot_oauth, document_parser,
+    file_changes, git_inspection, git_worktrees, goals, history, hugging_face, image_library,
+    instructions, local_engines, oauth, openai_api, openai_compatible, pending_archive_export,
+    permissions, profile_archive, project_instructions, project_memory, project_skills,
+    provider_credentials, provider_schema, response_budget, security_scan, temporary_conversation,
+    tools, usage_statistics, user_question_broker, workspace_settings,
 };
 
 #[path = "adapters/filesystem.rs"]
@@ -54,7 +55,7 @@ pub mod storage_broker_test_support;
 /// Cross-platform process isolation and sandboxing.
 pub mod sandbox;
 
-pub use service::{RunError, run};
+pub use service::{RunError, StartupFailure, run};
 pub use storage::migrate_chat_schema;
 #[cfg(windows)]
 pub use storage_broker::run_broker_stdio;
