@@ -496,3 +496,56 @@ async fn live_manual_benchmark_web_search_and_read_url() {
 
     println!("========== [CANLI TEST BITTI] ==========\n");
 }
+
+#[tokio::test]
+#[ignore = "manual GitHub web smoke test requires public network access"]
+async fn live_manual_github_search() {
+    use super::super::web_search::execute_web_search;
+
+    let query = "site:github.com/rust-lang/rust";
+    let search = execute_web_search(query, Some(5))
+        .await
+        .expect("execute a GitHub repository search");
+    let results = search["results"]
+        .as_array()
+        .expect("web search returns a results array");
+    let urls = results
+        .iter()
+        .filter_map(|result| result["url"].as_str())
+        .collect::<Vec<_>>();
+    println!("Query `{query}` returned: {urls:?}");
+
+    assert!(
+        urls.iter().any(|url| {
+            url::Url::parse(url).is_ok_and(|url| {
+                url.host_str() == Some("github.com")
+                    && (url.path() == "/rust-lang/rust"
+                        || url.path().starts_with("/rust-lang/rust/"))
+            })
+        }),
+        "site-restricted search should return a page in the requested GitHub repository"
+    );
+}
+
+#[tokio::test]
+#[ignore = "manual GitHub page-read smoke test requires public network access"]
+async fn live_manual_github_read_url() {
+    use super::super::web_search::execute_read_url;
+
+    let page = execute_read_url("https://github.com/rust-lang/rust", Some(2_000))
+        .await
+        .expect("read the public GitHub repository page");
+    assert_eq!(page["url"], "https://github.com/rust-lang/rust");
+    assert!(
+        page["title"]
+            .as_str()
+            .is_some_and(|title| title.to_ascii_lowercase().contains("rust")),
+        "GitHub page title should identify the Rust repository"
+    );
+    assert!(
+        page["content"]
+            .as_str()
+            .is_some_and(|content| !content.trim().is_empty()),
+        "GitHub page should yield readable content"
+    );
+}

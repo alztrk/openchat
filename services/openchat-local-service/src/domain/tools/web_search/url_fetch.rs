@@ -9,7 +9,10 @@ use std::{
 };
 
 use futures_util::StreamExt;
-use reqwest::{Client, StatusCode, header::LOCATION};
+use reqwest::{
+    Client, StatusCode,
+    header::{ACCEPT, ACCEPT_LANGUAGE, HeaderMap, HeaderValue, LOCATION},
+};
 use tokio::{net::lookup_host, time::timeout};
 use url::{Host, Url};
 
@@ -57,8 +60,14 @@ async fn fetch_public_page_with_scheme(
 
     for redirect_number in 0..=MAX_REDIRECTS {
         let client = pinned_public_http_client(&url, Some(REQUEST_TIMEOUT)).await?;
-        let response = client
-            .get(url.clone())
+        let mut request = client.get(url.clone());
+        if url.host_str() == Some("api.github.com") {
+            request = request
+                .header(ACCEPT, "application/vnd.github+json")
+                .header("X-GitHub-Api-Version", "2022-11-28");
+        }
+
+        let response = request
             .send()
             .await
             .map_err(|_| "The requested web page could not be reached.".to_owned())?;
@@ -187,10 +196,24 @@ pub(crate) async fn pinned_public_http_client(
         return Err("The URL host resolves to a restricted network address.".to_owned());
     }
 
+    let mut default_headers = HeaderMap::new();
+    default_headers.insert(
+        ACCEPT,
+        HeaderValue::from_static(
+            "text/html,application/xhtml+xml,application/json;q=0.9,application/xml;q=0.8,text/plain;q=0.7,*/*;q=0.5",
+        ),
+    );
+    default_headers.insert(
+        ACCEPT_LANGUAGE,
+        HeaderValue::from_static("tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7"),
+    );
+
     let mut builder = Client::builder()
         .no_proxy()
         .redirect(reqwest::redirect::Policy::none())
-        .connect_timeout(CONNECT_TIMEOUT);
+        .connect_timeout(CONNECT_TIMEOUT)
+        .user_agent(concat!("OpenChat/", env!("CARGO_PKG_VERSION")))
+        .default_headers(default_headers);
     if let Some(request_timeout) = request_timeout {
         builder = builder.timeout(request_timeout);
     }
