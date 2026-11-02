@@ -54,12 +54,6 @@ The CLI is modularized into:
 
 ---
 
-### GitHub Repository Checks
-* When a task requires checking a GitHub-hosted repository, issue, pull request, commit, or release, use the GitHub CLI (`gh`) first when it is installed and can access the requested resource.
-* Verify CLI availability with `Get-Command gh` in PowerShell or `command -v gh` in Unix shells. If access is unclear, use `gh auth status` only to confirm it; never print, copy, or expose credentials or tokens.
-* Prefer read-only commands such as `gh repo view`, `gh issue view`, `gh pr view`, `gh release view`, and read-only `gh api` requests. Mutating GitHub commands remain subject to the explicit-approval rules above.
-* If `gh` is unavailable, unauthenticated, or cannot provide the requested public information, continue with web search and cite the direct source pages. Do not imply that web search can access private repository content; if private content is needed and unavailable, state that and request an authorized source.
-
 ## 3. Mandatory Target Directory and Cargo Rules
 
 ### Strict Single Target Directory Policy: `target/debug`
