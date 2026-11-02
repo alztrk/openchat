@@ -1,10 +1,9 @@
-//! Searches configured web providers and fetches bounded public-page content.
+//! Searches the web with Exa and a DuckDuckGo fallback, and fetches bounded public-page content.
 //!
 //! Provider responses and page bodies are size-limited; the fetcher revalidates redirect
 //! targets and pins DNS results so private or local network addresses are not requested.
 
 use std::{
-    collections::HashSet,
     sync::{Arc, LazyLock},
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
@@ -13,7 +12,7 @@ use futures_util::StreamExt;
 
 pub(crate) mod url_fetch;
 
-use base64::Engine;
+use reqwest::StatusCode;
 use reqwest::header::{ACCEPT, ACCEPT_LANGUAGE, HeaderMap, HeaderValue, USER_AGENT};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -21,12 +20,14 @@ use tokio::sync::Mutex;
 use url::Url;
 
 const DEFAULT_TIMEOUT_SECS: u64 = 8;
+const EXA_TIMEOUT_SECS: u64 = 15;
 const MAX_HTML_BYTES: usize = 1024 * 1024; // 1 MB max fetch
 const MAX_SEARCH_RESPONSE_BYTES: usize = MAX_HTML_BYTES;
 const DEFAULT_MAX_CHARS: usize = 6000;
 const DEFAULT_SEARCH_LIMIT: usize = 8;
 const MAX_SEARCH_LIMIT: usize = 20;
 const CACHE_TTL_SECS: u64 = 300; // 5 minutes cache
+const EXA_MCP_ENDPOINT: &str = "https://mcp.exa.ai/mcp";
 
 static HTTP_CLIENT: LazyLock<Result<reqwest::Client, reqwest::Error>> = LazyLock::new(|| {
     let mut headers = HeaderMap::new();
@@ -62,6 +63,22 @@ fn http_client() -> Result<&'static reqwest::Client, String> {
     HTTP_CLIENT
         .as_ref()
         .map_err(|_| "The web search client could not be initialized.".to_owned())
+}
+
+static EXA_HTTP_CLIENT: LazyLock<Result<reqwest::Client, reqwest::Error>> = LazyLock::new(|| {
+    reqwest::Client::builder()
+        .timeout(Duration::from_secs(EXA_TIMEOUT_SECS))
+        .redirect(reqwest::redirect::Policy::none())
+        .tcp_nodelay(true)
+        .pool_idle_timeout(Duration::from_secs(120))
+        .pool_max_idle_per_host(10)
+        .build()
+});
+
+fn exa_http_client() -> Result<&'static reqwest::Client, String> {
+    EXA_HTTP_CLIENT
+        .as_ref()
+        .map_err(|_| "The Exa search client could not be initialized.".to_owned())
 }
 
 /// Reads a search provider response while bounding the decoded body in memory.
@@ -107,7 +124,7 @@ struct CacheEntry<T> {
 }
 
 struct SearchCache {
-    searches: Vec<(String, CacheEntry<Vec<SearchResultItem>>)>,
+    searches: Vec<(String, usize, CacheEntry<Vec<SearchResultItem>>)>,
     pages: Vec<(String, CacheEntry<Value>)>,
 }
 
@@ -117,228 +134,6 @@ static CACHE: LazyLock<Arc<Mutex<SearchCache>>> = LazyLock::new(|| {
         pages: Vec::new(),
     }))
 });
-
-// SearXNG Public Instances Pool
-const SEARXNG_INSTANCES: &[&str] = &[
-    "https://searx.be",
-    "https://priv.au",
-    "https://search.ononoki.org",
-    "https://searx.fmac.xyz",
-    "https://baresearch.org",
-];
-
-/// Fetches search results directly from Bing HTML (fast, rich, anti-bot resilient)
-async fn search_bing_html(query: &str, limit: usize) -> Result<Vec<SearchResultItem>, String> {
-    let encoded: String = url::form_urlencoded::byte_serialize(query.as_bytes()).collect();
-    let url = format!("https://www.bing.com/search?q={encoded}&setlang=tr");
-    let resp = http_client()?
-        .get(&url)
-        .send()
-        .await
-        .map_err(|e| format!("Bing request failed: {e}"))?;
-
-    if !resp.status().is_success() {
-        return Err(format!("Bing returned status {}", resp.status()));
-    }
-
-    let body = read_bounded_search_response(resp).await?;
-    let html = String::from_utf8_lossy(&body);
-
-    Ok(parse_bing_html(html.as_ref(), limit))
-}
-
-pub fn parse_bing_html(html: &str, limit: usize) -> Vec<SearchResultItem> {
-    let mut items = Vec::new();
-    let marker = "class=\"b_algo\"";
-    let mut cursor = 0;
-
-    while let Some(rel_idx) = html[cursor..].find(marker) {
-        if items.len() >= limit {
-            break;
-        }
-        let block_start = cursor + rel_idx;
-        let next_start = html[block_start + marker.len()..]
-            .find(marker)
-            .map(|i| block_start + marker.len() + i)
-            .unwrap_or(html.len())
-            .min(block_start + 12000);
-        let block = &html[block_start..next_start];
-
-        if let Some(h2_idx) = block.find("<h2") {
-            let h2_part = &block[h2_idx..];
-            if let Some(a_idx) = h2_part.find("<a") {
-                let a_part = &h2_part[a_idx..];
-                let href = a_part
-                    .find("href=\"")
-                    .and_then(|h_start| {
-                        let after = &a_part[h_start + 6..];
-                        after.find('"').map(|end| &after[..end])
-                    })
-                    .unwrap_or("");
-
-                let title = if let Some(tag_close) = a_part.find('>') {
-                    if let Some(a_close) = a_part[tag_close..].find("</a>") {
-                        clean_html_tags(&a_part[tag_close + 1..tag_close + a_close])
-                    } else {
-                        String::new()
-                    }
-                } else {
-                    String::new()
-                };
-
-                let target_url = decode_bing_url(href)
-                    .or_else(|| {
-                        if href.starts_with("http") && !href.contains("bing.com/ck/") {
-                            Some(href.to_owned())
-                        } else {
-                            extract_cite_url(block)
-                        }
-                    })
-                    .unwrap_or_default();
-
-                let snippet = if let Some(cap_idx) = block.find("b_caption") {
-                    let cap_part = &block[cap_idx..];
-                    if let Some(p_start) = cap_part.find("<p") {
-                        if let Some(p_close_tag) = cap_part[p_start..].find('>') {
-                            let text_start = p_start + p_close_tag + 1;
-                            if let Some(p_end) = cap_part[text_start..].find("</p>") {
-                                clean_html_tags(&cap_part[text_start..text_start + p_end])
-                            } else {
-                                String::new()
-                            }
-                        } else {
-                            String::new()
-                        }
-                    } else {
-                        String::new()
-                    }
-                } else {
-                    String::new()
-                };
-
-                if !target_url.is_empty() && !title.is_empty() {
-                    items.push(SearchResultItem {
-                        title,
-                        url: target_url,
-                        snippet,
-                        engine: "bing".to_owned(),
-                    });
-                }
-            }
-        }
-
-        cursor = block_start + marker.len();
-    }
-
-    items
-}
-
-fn decode_bing_url(raw_href: &str) -> Option<String> {
-    let u_idx = if let Some(pos) = raw_href.find("&amp;u=a1") {
-        pos + 9
-    } else if let Some(pos) = raw_href.find("&u=a1") {
-        pos + 5
-    } else if let Some(pos) = raw_href.find("u=a1") {
-        pos + 4
-    } else {
-        return None;
-    };
-
-    let b64_part = &raw_href[u_idx..];
-    let end = b64_part
-        .find('&')
-        .or_else(|| b64_part.find('"'))
-        .unwrap_or(b64_part.len());
-    let b64_str = &b64_part[..end];
-
-    let decoded = base64::engine::general_purpose::URL_SAFE_NO_PAD
-        .decode(b64_str)
-        .or_else(|_| base64::engine::general_purpose::STANDARD.decode(b64_str))
-        .or_else(|_| base64::engine::general_purpose::STANDARD_NO_PAD.decode(b64_str))
-        .or_else(|_| base64::engine::general_purpose::URL_SAFE.decode(b64_str));
-
-    if let Ok(bytes) = decoded
-        && let Ok(url) = String::from_utf8(bytes)
-        && url.starts_with("http")
-    {
-        return Some(url);
-    }
-    None
-}
-
-fn extract_cite_url(block: &str) -> Option<String> {
-    let start = block.find("<cite>")? + 6;
-    let end = block[start..].find("</cite>")?;
-    let raw = clean_html_tags(&block[start..start + end]);
-    let first = raw.split_whitespace().next()?.to_owned();
-    if first.starts_with("http://") || first.starts_with("https://") {
-        Some(first)
-    } else if first.starts_with("www.") {
-        Some(format!("https://{first}"))
-    } else {
-        None
-    }
-}
-
-/// Fetches search results from a SearXNG instance (returns combined Google/Bing results)
-async fn search_searxng_instance(
-    instance: &str,
-    query: &str,
-    limit: usize,
-) -> Result<Vec<SearchResultItem>, String> {
-    let encoded_query: String = url::form_urlencoded::byte_serialize(query.as_bytes()).collect();
-    let url = format!("{instance}/search?q={encoded_query}&format=json&categories=general");
-    let resp = http_client()?
-        .get(&url)
-        .send()
-        .await
-        .map_err(|e| format!("SearXNG request failed: {e}"))?;
-
-    if !resp.status().is_success() {
-        return Err(format!("SearXNG returned status {}", resp.status()));
-    }
-
-    let body = read_bounded_search_response(resp).await?;
-    let json_val: Value =
-        serde_json::from_slice(&body).map_err(|_| "Failed to parse SearXNG JSON.".to_owned())?;
-
-    let mut items = Vec::new();
-    if let Some(results) = json_val.get("results").and_then(Value::as_array) {
-        for res in results.iter().take(limit * 2) {
-            let title = res
-                .get("title")
-                .and_then(Value::as_str)
-                .unwrap_or("")
-                .trim();
-            let link = res.get("url").and_then(Value::as_str).unwrap_or("").trim();
-            let snippet = res
-                .get("content")
-                .and_then(Value::as_str)
-                .unwrap_or("")
-                .trim();
-            let engine = res
-                .get("engine")
-                .and_then(Value::as_str)
-                .unwrap_or("google")
-                .to_lowercase();
-
-            if !title.is_empty() && !link.is_empty() && link.starts_with("http") {
-                items.push(SearchResultItem {
-                    title: clean_html_tags(title),
-                    url: link.to_owned(),
-                    snippet: clean_html_tags(snippet),
-                    engine,
-                });
-            }
-        }
-    }
-
-    if items.is_empty() {
-        Err("SearXNG returned empty results".to_owned())
-    } else {
-        Ok(items)
-    }
-}
 
 /// Fallback: Fetches results from DuckDuckGo HTML endpoint (zero-JS)
 async fn search_duckduckgo_html(
@@ -450,6 +245,160 @@ fn extract_ddg_target_url(raw_href: &str) -> String {
     }
 }
 
+/// Calls Exa's hosted MCP search tool and converts its text response to search results.
+async fn search_exa_mcp(query: &str, limit: usize) -> Result<Vec<SearchResultItem>, String> {
+    let request_body = json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/call",
+        "params": {
+            "name": "web_search_exa",
+            "arguments": {
+                "query": query,
+                "numResults": limit,
+            }
+        }
+    });
+
+    let response = exa_http_client()?
+        .post(EXA_MCP_ENDPOINT)
+        .header(ACCEPT, "application/json, text/event-stream")
+        .json(&request_body)
+        .send()
+        .await
+        .map_err(|_| "The Exa search request failed.".to_owned())?;
+    if !response.status().is_success() {
+        return Err(format!("Exa returned HTTP {}.", response.status()));
+    }
+
+    let body = read_bounded_search_response(response).await?;
+    let body = std::str::from_utf8(&body)
+        .map_err(|_| "Exa returned a response that was not valid UTF-8.".to_owned())?;
+    parse_exa_mcp_response(body, limit)
+}
+
+fn parse_exa_mcp_response(body: &str, limit: usize) -> Result<Vec<SearchResultItem>, String> {
+    let mut payloads = Vec::new();
+    let trimmed_body = body.trim();
+    if trimmed_body.starts_with('{') {
+        payloads.push(trimmed_body.to_owned());
+    } else {
+        let mut event_data = Vec::new();
+        for line in body.lines() {
+            let line = line.trim_end_matches('\r');
+            if line.is_empty() {
+                if !event_data.is_empty() {
+                    payloads.push(event_data.join("\n"));
+                    event_data.clear();
+                }
+            } else if let Some(data) = line.strip_prefix("data:") {
+                event_data.push(data.trim_start().to_owned());
+            }
+        }
+        if !event_data.is_empty() {
+            payloads.push(event_data.join("\n"));
+        }
+    }
+
+    if payloads.is_empty() {
+        return Err("Exa returned an empty MCP response.".to_owned());
+    }
+
+    let mut results = Vec::new();
+    let mut found_text = false;
+    for payload in payloads {
+        if payload == "[DONE]" {
+            continue;
+        }
+        let response: Value = serde_json::from_str(&payload)
+            .map_err(|_| "Exa returned an unreadable MCP response.".to_owned())?;
+        if response.get("error").is_some() {
+            return Err("Exa returned a JSON-RPC error.".to_owned());
+        }
+        let result = response.get("result").unwrap_or(&response);
+        if result.get("isError").and_then(Value::as_bool) == Some(true) {
+            return Err("Exa reported that the search failed.".to_owned());
+        }
+        let content = result
+            .get("content")
+            .and_then(Value::as_array)
+            .ok_or_else(|| "Exa returned an MCP response without content.".to_owned())?;
+
+        for text in content
+            .iter()
+            .filter_map(|item| item.get("text").and_then(Value::as_str))
+        {
+            found_text = true;
+            results.extend(parse_exa_search_text(
+                text,
+                limit.saturating_sub(results.len()),
+            ));
+            if results.len() >= limit {
+                return Ok(results);
+            }
+        }
+    }
+
+    if found_text {
+        Ok(results)
+    } else {
+        Err("Exa returned an MCP response without text results.".to_owned())
+    }
+}
+
+fn parse_exa_search_text(text: &str, limit: usize) -> Vec<SearchResultItem> {
+    let lines = text.lines().collect::<Vec<_>>();
+    let mut results = Vec::new();
+    let mut cursor = 0;
+
+    while cursor < lines.len() && results.len() < limit {
+        let Some(title) = lines[cursor].strip_prefix("Title: ") else {
+            cursor += 1;
+            continue;
+        };
+
+        let block_start = cursor + 1;
+        let block_end = lines[block_start..]
+            .iter()
+            .position(|line| line.starts_with("Title: "))
+            .map(|offset| block_start + offset)
+            .unwrap_or(lines.len());
+        let block = &lines[block_start..block_end];
+        let url = block
+            .iter()
+            .find_map(|line| line.strip_prefix("URL: "))
+            .and_then(parse_search_result_url);
+        let content_start = block
+            .iter()
+            .position(|line| matches!(*line, "Highlights:" | "Text:"));
+        let snippet = content_start
+            .map(|start| block[start + 1..].join("\n").trim().to_owned())
+            .unwrap_or_default();
+
+        if !title.trim().is_empty()
+            && let Some(url) = url
+        {
+            results.push(SearchResultItem {
+                title: title.trim().to_owned(),
+                url,
+                snippet: snippet.chars().take(4000).collect(),
+                engine: "exa".to_owned(),
+            });
+        }
+        cursor = block_end;
+    }
+
+    results
+}
+
+fn parse_search_result_url(raw_url: &str) -> Option<String> {
+    let url = Url::parse(raw_url.trim()).ok()?;
+    if !matches!(url.scheme(), "http" | "https") || url.host_str().is_none() {
+        return None;
+    }
+    Some(url.to_string())
+}
+
 pub fn clean_html_tags(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     let mut in_tag = false;
@@ -541,94 +490,7 @@ pub fn clean_html_tags(text: &str) -> String {
     out
 }
 
-/// Fetches encyclopedic / factual entries directly from Wikipedia OpenSearch API concurrently
-async fn search_wikipedia(query: &str, limit: usize) -> Result<Vec<SearchResultItem>, String> {
-    let encoded: String = url::form_urlencoded::byte_serialize(query.as_bytes()).collect();
-    let tr_url = format!(
-        "https://tr.wikipedia.org/w/api.php?action=opensearch&search={encoded}&limit={limit}&namespace=0&format=json"
-    );
-    let en_url = format!(
-        "https://en.wikipedia.org/w/api.php?action=opensearch&search={encoded}&limit={limit}&namespace=0&format=json"
-    );
-
-    let tr_fut = async {
-        let response = http_client()?
-            .get(&tr_url)
-            .send()
-            .await
-            .map_err(|_| "The Turkish Wikipedia request failed.".to_owned())?;
-        if !response.status().is_success() {
-            return Err(format!(
-                "Turkish Wikipedia returned HTTP {}.",
-                response.status()
-            ));
-        }
-        let body = read_bounded_search_response(response).await?;
-        let json_value = serde_json::from_slice::<Value>(&body)
-            .map_err(|_| "The Turkish Wikipedia response could not be read.".to_owned())?;
-        parse_wikipedia_opensearch(&json_value)
-    };
-
-    let en_fut = async {
-        let response = http_client()?
-            .get(&en_url)
-            .send()
-            .await
-            .map_err(|_| "The English Wikipedia request failed.".to_owned())?;
-        if !response.status().is_success() {
-            return Err(format!(
-                "English Wikipedia returned HTTP {}.",
-                response.status()
-            ));
-        }
-        let body = read_bounded_search_response(response).await?;
-        let json_value = serde_json::from_slice::<Value>(&body)
-            .map_err(|_| "The English Wikipedia response could not be read.".to_owned())?;
-        parse_wikipedia_opensearch(&json_value)
-    };
-
-    let (tr_res, en_res) = tokio::join!(tr_fut, en_fut);
-    tr_res.or(en_res)
-}
-
-fn parse_wikipedia_opensearch(val: &Value) -> Result<Vec<SearchResultItem>, String> {
-    let titles = val.get(1).and_then(Value::as_array);
-    let descs = val.get(2).and_then(Value::as_array);
-    let urls = val.get(3).and_then(Value::as_array);
-
-    let (Some(titles), Some(urls)) = (titles, urls) else {
-        return Err("No wikipedia results".to_string());
-    };
-    let mut items = Vec::new();
-    for (i, title_val) in titles.iter().enumerate() {
-        let title = title_val.as_str().unwrap_or("").trim();
-        let url = urls.get(i).and_then(Value::as_str).unwrap_or("").trim();
-        let snippet = descs
-            .and_then(|d| d.get(i))
-            .and_then(Value::as_str)
-            .unwrap_or("")
-            .trim();
-        if !title.is_empty() && !url.is_empty() {
-            items.push(SearchResultItem {
-                title: title.to_owned(),
-                url: url.to_owned(),
-                snippet: if snippet.is_empty() {
-                    format!("Vikipedi makalesi: {title}")
-                } else {
-                    snippet.to_owned()
-                },
-                engine: "wikipedia".to_owned(),
-            });
-        }
-    }
-    if items.is_empty() {
-        Err("No wikipedia results".to_string())
-    } else {
-        Ok(items)
-    }
-}
-
-/// Executes a fast parallel multi-engine web search (Bing + Wikipedia + DuckDuckGo + SearXNG)
+/// Searches Exa first and uses DuckDuckGo only when Exa fails or has no matching results.
 pub async fn execute_web_search(query: &str, limit_opt: Option<usize>) -> Result<Value, String> {
     let query_trimmed = query.trim();
     if query_trimmed.is_empty() {
@@ -641,7 +503,13 @@ pub async fn execute_web_search(query: &str, limit_opt: Option<usize>) -> Result
     // 1. Check cache
     {
         let cache = CACHE.lock().await;
-        if let Some((_, entry)) = cache.searches.iter().find(|(q, _)| q == query_trimmed)
+        if let Some((_, _, entry)) =
+            cache
+                .searches
+                .iter()
+                .find(|(cached_query, cached_limit, _)| {
+                    cached_query == query_trimmed && *cached_limit == limit
+                })
             && entry.timestamp.elapsed() < Duration::from_secs(CACHE_TTL_SECS)
         {
             return Ok(format_search_response(
@@ -652,94 +520,65 @@ pub async fn execute_web_search(query: &str, limit_opt: Option<usize>) -> Result
         }
     }
 
-    // 2. Primary Fast Race: Bing + Wikipedia (both sub-200ms)
-    let bing_future = search_bing_html(query_trimmed, limit);
-    let wiki_future = async {
-        tokio::time::timeout(
-            Duration::from_millis(300),
-            search_wikipedia(query_trimmed, 2),
-        )
-        .await
-        .unwrap_or(Err("Wikipedia timeout".to_string()))
-    };
-
-    let (bing_res, wiki_res) = tokio::join!(bing_future, wiki_future);
-
-    let mut combined = Vec::new();
-    let mut seen_urls = HashSet::new();
-
-    // 1. Add Wikipedia result first if available (instant authoritative definition)
-    if let Ok(results) = wiki_res {
-        for item in results {
-            if seen_urls.insert(item.url.clone()) {
-                combined.push(item);
-            }
-        }
+    let site_restriction = site_restriction_from_query(query_trimmed);
+    if let Some(restriction) = site_restriction.as_ref()
+        && let Some(item) = search_github_repository(restriction).await?
+    {
+        let results = [item];
+        let retrieved_at_unix_ms = now_unix_millis()?;
+        cache_search_results(query_trimmed, limit, &results, retrieved_at_unix_ms).await;
+        return Ok(format_search_response(
+            query_trimmed,
+            &results,
+            retrieved_at_unix_ms,
+        ));
     }
 
-    // 2. Add Bing results (highest quality web results)
-    let bing_has_results = if let Ok(results) = bing_res {
-        let has = !results.is_empty();
-        for item in results {
-            if seen_urls.insert(item.url.clone()) {
-                combined.push(item);
-            }
+    let mut exa_error = None;
+    let mut final_results = match search_exa_mcp(query_trimmed, limit).await {
+        Ok(results) => results
+            .into_iter()
+            .filter(|item| matches_site_restriction(item, site_restriction.as_ref()))
+            .take(limit)
+            .collect::<Vec<_>>(),
+        Err(error) => {
+            exa_error = Some(error);
+            Vec::new()
         }
-        has
-    } else {
-        false
     };
 
-    // 3. Fallback: Only if Bing produced 0 results (network error or blocked), query secondary engines
-    if !bing_has_results {
-        let ddg_future = search_duckduckgo_html(query_trimmed, limit);
-        let searx_future = async {
-            for instance in SEARXNG_INSTANCES.iter().take(2) {
-                if let Ok(res) = search_searxng_instance(instance, query_trimmed, limit).await {
-                    return Ok(res);
-                }
+    if final_results.is_empty() {
+        let duckduckgo_results = match search_duckduckgo_html(query_trimmed, limit).await {
+            Ok(results) => results
+                .into_iter()
+                .filter(|item| matches_site_restriction(item, site_restriction.as_ref()))
+                .take(limit)
+                .collect::<Vec<_>>(),
+            Err(error) => {
+                return Err(match exa_error {
+                    Some(exa_error) => {
+                        format!(
+                            "Exa search failed: {exa_error} DuckDuckGo fallback failed: {error}"
+                        )
+                    }
+                    None => format!("DuckDuckGo fallback failed: {error}"),
+                });
             }
-            Err("All SearXNG instances failed".to_owned())
         };
 
-        let (ddg_res, searx_res) = tokio::join!(ddg_future, searx_future);
-
-        if let Ok(results) = ddg_res {
-            for item in results {
-                if seen_urls.insert(item.url.clone()) {
-                    combined.push(item);
-                }
-            }
+        if duckduckgo_results.is_empty()
+            && let Some(exa_error) = exa_error
+        {
+            return Err(format!(
+                "Exa search failed: {exa_error} DuckDuckGo returned no matching results."
+            ));
         }
-
-        if let Ok(results) = searx_res {
-            for item in results {
-                if seen_urls.insert(item.url.clone()) {
-                    combined.push(item);
-                }
-            }
-        }
+        final_results = duckduckgo_results;
     }
-
-    let final_results: Vec<SearchResultItem> = combined.into_iter().take(limit).collect();
 
     let retrieved_at_unix_ms = now_unix_millis()?;
 
-    // Store in cache
-    {
-        let mut cache = CACHE.lock().await;
-        if cache.searches.len() > 100 {
-            cache.searches.remove(0);
-        }
-        cache.searches.push((
-            query_trimmed.to_owned(),
-            CacheEntry {
-                data: final_results.clone(),
-                timestamp: Instant::now(),
-                retrieved_at_unix_ms,
-            },
-        ));
-    }
+    cache_search_results(query_trimmed, limit, &final_results, retrieved_at_unix_ms).await;
 
     Ok(format_search_response(
         query_trimmed,
@@ -766,6 +605,155 @@ fn format_search_response(
             "engine": item.engine,
         })).collect::<Vec<_>>()
     })
+}
+
+async fn cache_search_results(
+    query: &str,
+    limit: usize,
+    results: &[SearchResultItem],
+    retrieved_at_unix_ms: i64,
+) {
+    let mut cache = CACHE.lock().await;
+    if cache.searches.len() > 100 {
+        cache.searches.remove(0);
+    }
+    cache.searches.push((
+        query.to_owned(),
+        limit,
+        CacheEntry {
+            data: results.to_vec(),
+            timestamp: Instant::now(),
+            retrieved_at_unix_ms,
+        },
+    ));
+}
+
+fn site_restriction_from_query(query: &str) -> Option<Url> {
+    let site = query.split_whitespace().find_map(|term| {
+        let (operator, value) = term.split_once(':')?;
+        operator.eq_ignore_ascii_case("site").then_some(value)
+    })?;
+    let site_url = Url::parse(&format!("https://{site}")).ok()?;
+    if site_url.host_str().is_none() || site_url.query().is_some() || site_url.fragment().is_some()
+    {
+        return None;
+    }
+    Some(site_url)
+}
+
+fn github_repository_segments(restriction: &Url) -> Option<(&str, &str)> {
+    if restriction.host_str() != Some("github.com") {
+        return None;
+    }
+    let segments = restriction
+        .path()
+        .trim_matches('/')
+        .split('/')
+        .collect::<Vec<_>>();
+    let [owner, repository] = segments.as_slice() else {
+        return None;
+    };
+    let is_safe_segment = |segment: &str| {
+        !segment.is_empty()
+            && segment != "."
+            && segment != ".."
+            && segment
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
+    };
+    (is_safe_segment(owner) && is_safe_segment(repository)).then_some((*owner, *repository))
+}
+
+async fn search_github_repository(restriction: &Url) -> Result<Option<SearchResultItem>, String> {
+    let Some((owner, repository)) = github_repository_segments(restriction) else {
+        return Ok(None);
+    };
+
+    let mut api_url = Url::parse("https://api.github.com/")
+        .map_err(|_| "The GitHub API address is invalid.".to_owned())?;
+    api_url
+        .path_segments_mut()
+        .map_err(|_| "The GitHub API address cannot accept a repository path.".to_owned())?
+        .extend(["repos", owner, repository]);
+
+    let response = http_client()?
+        .get(api_url)
+        .header(ACCEPT, "application/vnd.github+json")
+        .header("X-GitHub-Api-Version", "2022-11-28")
+        .send()
+        .await
+        .map_err(|_| "The GitHub repository request failed.".to_owned())?;
+    if response.status() == StatusCode::NOT_FOUND {
+        return Ok(None);
+    }
+    if !response.status().is_success() {
+        return Err(format!(
+            "GitHub returned HTTP {} while looking up the repository.",
+            response.status()
+        ));
+    }
+
+    let body = read_bounded_search_response(response).await?;
+    let repository_data: Value = serde_json::from_slice(&body)
+        .map_err(|_| "GitHub returned an unreadable repository response.".to_owned())?;
+    let title = repository_data
+        .get("full_name")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "GitHub's repository response omitted its name.".to_owned())?;
+    let url = repository_data
+        .get("html_url")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "GitHub's repository response omitted its page URL.".to_owned())?;
+    let item = SearchResultItem {
+        title: title.to_owned(),
+        url: url.to_owned(),
+        snippet: repository_data
+            .get("description")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_owned(),
+        engine: "github".to_owned(),
+    };
+    if !matches_site_restriction(&item, Some(restriction)) {
+        return Err("GitHub returned a repository outside the requested site path.".to_owned());
+    }
+
+    Ok(Some(item))
+}
+
+fn matches_site_restriction(item: &SearchResultItem, restriction: Option<&Url>) -> bool {
+    let Some(restriction) = restriction else {
+        return true;
+    };
+    let Ok(result_url) = Url::parse(&item.url) else {
+        return false;
+    };
+    if !matches!(result_url.scheme(), "http" | "https") {
+        return false;
+    }
+
+    let Some(expected_host) = restriction.host_str() else {
+        return false;
+    };
+    let Some(result_host) = result_url.host_str() else {
+        return false;
+    };
+    if result_host != expected_host
+        && !result_host
+            .strip_suffix(expected_host)
+            .is_some_and(|prefix| prefix.ends_with('.'))
+    {
+        return false;
+    }
+
+    let expected_path = restriction.path().trim_end_matches('/');
+    expected_path.is_empty()
+        || expected_path == "/"
+        || result_url.path() == expected_path
+        || result_url
+            .path()
+            .strip_prefix(expected_path)
+            .is_some_and(|suffix| suffix.starts_with('/'))
 }
 
 /// Reads a web page and converts its readable content to clean Markdown
@@ -997,7 +985,9 @@ mod tests {
 
     use super::{
         MAX_SEARCH_RESPONSE_BYTES, SearchResultItem, append_bounded_search_chunk,
-        extract_ddg_target_url, format_search_response,
+        extract_ddg_target_url, format_search_response, github_repository_segments,
+        matches_site_restriction, parse_exa_mcp_response, parse_exa_search_text,
+        site_restriction_from_query,
     };
 
     #[test]
@@ -1047,7 +1037,7 @@ mod tests {
                 title: "OpenChat docs".to_owned(),
                 url: "https://example.org/docs".to_owned(),
                 snippet: "Documentation".to_owned(),
-                engine: "bing".to_owned(),
+                engine: "exa".to_owned(),
             }],
             1_800_000_000_000,
         );
@@ -1059,5 +1049,117 @@ mod tests {
             result["results"][0]["url"],
             json!("https://example.org/docs")
         );
+    }
+
+    #[test]
+    fn parses_exa_sse_results_into_search_items() {
+        let body = concat!(
+            "event: message\n",
+            "data: {\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"Title: Rust documentation\\nURL: https://www.rust-lang.org/\\nPublished: N/A\\nAuthor: N/A\\nHighlights:\\nThe Rust programming language.\"}]}}\n\n"
+        );
+
+        let results = parse_exa_mcp_response(body, 8).expect("valid Exa SSE response");
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].title, "Rust documentation");
+        assert_eq!(results[0].url, "https://www.rust-lang.org/");
+        assert_eq!(results[0].snippet, "The Rust programming language.");
+        assert_eq!(results[0].engine, "exa");
+    }
+
+    #[test]
+    fn parses_exa_json_results_and_respects_result_limit() {
+        let body = json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "result": {
+                "content": [{
+                    "type": "text",
+                    "text": concat!(
+                        "Title: First result\nURL: https://example.org/one\nHighlights:\nFirst snippet\n\n---\n\n",
+                        "Title: Second result\nURL: https://example.org/two\nHighlights:\nSecond snippet"
+                    )
+                }]
+            }
+        })
+        .to_string();
+
+        let results = parse_exa_mcp_response(&body, 1).expect("valid Exa JSON response");
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].title, "First result");
+    }
+
+    #[test]
+    fn ignores_exa_results_with_non_http_urls() {
+        let text = concat!(
+            "Title: Invalid result\nURL: file:///etc/passwd\nHighlights:\nNot a web page\n\n---\n\n",
+            "Title: Valid result\nURL: https://example.org/\nHighlights:\nA web page"
+        );
+
+        let results = parse_exa_search_text(text, 8);
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].title, "Valid result");
+    }
+
+    #[test]
+    fn site_restriction_matches_only_requested_host_and_path() {
+        let restriction = site_restriction_from_query("site:github.com/rust-lang/rust")
+            .expect("valid site restriction");
+        let item = |url: &str| SearchResultItem {
+            title: "Rust repository".to_owned(),
+            url: url.to_owned(),
+            snippet: String::new(),
+            engine: "test".to_owned(),
+        };
+
+        assert!(matches_site_restriction(
+            &item("https://github.com/rust-lang/rust/wiki"),
+            Some(&restriction)
+        ));
+        assert!(!matches_site_restriction(
+            &item("https://github.com/rust-lang/rustlings"),
+            Some(&restriction)
+        ));
+        assert!(!matches_site_restriction(
+            &item("https://github.com/other/repo"),
+            Some(&restriction)
+        ));
+        assert!(!matches_site_restriction(
+            &item("https://example.org/rust-lang/rust"),
+            Some(&restriction)
+        ));
+    }
+
+    #[test]
+    fn site_restriction_allows_subdomains_and_unrestricted_queries() {
+        let restriction = site_restriction_from_query("SITE:github.com").expect("valid site");
+        let item = SearchResultItem {
+            title: "Rust repository".to_owned(),
+            url: "https://gist.github.com/user/id".to_owned(),
+            snippet: String::new(),
+            engine: "test".to_owned(),
+        };
+
+        assert!(matches_site_restriction(&item, Some(&restriction)));
+        assert!(matches_site_restriction(&item, None));
+    }
+
+    #[test]
+    fn github_site_paths_are_accepted_only_for_exact_repository_routes() {
+        let repository = site_restriction_from_query("site:github.com/rust-lang/rust")
+            .expect("repository site restriction");
+        let nested_page = site_restriction_from_query("site:github.com/rust-lang/rust/tree/main")
+            .expect("nested site restriction");
+        let other_host = site_restriction_from_query("site:example.org/rust-lang/rust")
+            .expect("other host restriction");
+
+        assert_eq!(
+            github_repository_segments(&repository),
+            Some(("rust-lang", "rust"))
+        );
+        assert_eq!(github_repository_segments(&nested_page), None);
+        assert_eq!(github_repository_segments(&other_host), None);
     }
 }

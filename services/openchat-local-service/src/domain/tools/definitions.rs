@@ -422,7 +422,7 @@ pub fn definitions() -> Vec<ToolDefinition> {
         ),
         (
             "web_search",
-            "Search the web across Google, Bing, and DuckDuckGo in parallel. Returns top results with titles, URLs, and snippets.",
+            "Search the web with Exa and use DuckDuckGo if Exa fails or returns no matching results. Returns titles, URLs, and snippets.",
             json!({
                 "type": "object",
                 "properties": {

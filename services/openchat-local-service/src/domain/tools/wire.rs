@@ -157,7 +157,7 @@ pub fn opencode_wire_tool(tool: &ToolDefinition) -> Value {
                 "required": ["query"],
                 "additionalProperties": false
             }),
-            "Search the web across Google, Bing, and DuckDuckGo in parallel with anti-bot resistance and clean snippet output.",
+            "Search the web using Exa, with DuckDuckGo as a fallback if Exa fails or returns no matching results.",
         ),
         "read_url_content" => (
             json!({
