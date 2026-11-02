@@ -32,11 +32,30 @@ export function LlamaRuntimeSetting({
   const { t } = useTranslation();
 
   return (
-    <Card className="grid gap-3 bg-composer" padding="default">
+    <Card className="grid gap-3 bg-surface" padding="compact">
       <section className="grid gap-2">
-        <div>
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <h4 className="font-semibold text-text">{t('localEngineExecutable')}</h4>
-          <p className="mt-1 text-sm text-secondary-text">{t('localEngineExecutableDescription')}</p>
+          <div className="flex flex-wrap gap-1.5">
+            <Button
+              disabled={executableActive}
+              onClick={onChooseExecutable}
+              size="small"
+              variant={!executableAvailable ? 'primary' : 'secondary'}
+            >
+              {executableActive ? (
+                <LoaderCircle aria-hidden="true" className="animate-spin" size={16} />
+              ) : (
+                <FolderOpen aria-hidden="true" size={16} />
+              )}
+              {t('localEngineExecutableChoose')}
+            </Button>
+            {executablePath ? (
+              <Button disabled={executableActive} onClick={onClearExecutable} size="small" variant="ghost">
+                {t('localEngineExecutableClear')}
+              </Button>
+            ) : null}
+          </div>
         </div>
         <p className={`break-all font-mono text-xs ${executableAvailable ? 'text-secondary-text' : 'text-warning'}`}>
           {executablePath ?? t('localEngineExecutableNotConfigured')}
@@ -46,67 +65,48 @@ export function LlamaRuntimeSetting({
             {t('localEngineExecutableMissing')}
           </p>
         ) : null}
-        <div className="flex flex-wrap gap-2">
-          <Button disabled={executableActive} onClick={onChooseExecutable} size="small" variant="secondary">
-            {executableActive ? (
-              <LoaderCircle aria-hidden="true" className="animate-spin" size={16} />
-            ) : (
-              <FolderOpen aria-hidden="true" size={16} />
-            )}
-            {t('localEngineExecutableChoose')}
-          </Button>
-          {executablePath ? (
-            <Button disabled={executableActive} onClick={onClearExecutable} size="small" variant="ghost">
-              {t('localEngineExecutableClear')}
-            </Button>
-          ) : null}
-        </div>
       </section>
-      <section className="grid gap-2 border-t border-border pt-3">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="min-w-0">
-            <h4 className="font-semibold text-text">{t('localEngineExternalServerCheck')}</h4>
-            {externalServers.length === 0 ? (
-              <p className="mt-1 text-sm text-secondary-text">{t('localEngineExternalServerNotConnected')}</p>
-            ) : null}
-          </div>
+      {showExternalCheck || externalServers.length > 0 ? (
+        <section className="grid gap-2 rounded-control border border-border bg-raised p-2.5">
           {showExternalCheck ? (
-            <Button disabled={externalActive} onClick={onCheckExternalServers} size="small" variant="secondary">
-              {externalActive ? (
-                <LoaderCircle aria-hidden="true" className="animate-spin" size={16} />
-              ) : (
-                <Search aria-hidden="true" size={16} />
-              )}
-              {t('localEngineExternalServerCheck')}
-            </Button>
+            <div className="flex justify-end">
+              <Button disabled={externalActive} onClick={onCheckExternalServers} size="small" variant="secondary">
+                {externalActive ? (
+                  <LoaderCircle aria-hidden="true" className="animate-spin" size={16} />
+                ) : (
+                  <Search aria-hidden="true" size={16} />
+                )}
+                {t('localEngineExternalServerCheck')}
+              </Button>
+            </div>
           ) : null}
-        </div>
-        {externalServers.length > 0 ? (
-          <ul className="grid gap-2">
-            {externalServers.map((server) => (
-              <li
-                className="flex flex-wrap items-center justify-between gap-3 rounded-control border border-border bg-raised px-3 py-2"
-                key={`${server.processId}:${server.port}`}
-              >
-                <p className="flex min-w-0 items-center gap-2 text-sm text-secondary-text">
-                  <Link aria-hidden="true" className="shrink-0 text-accent-icon" size={15} />
-                  <span>
-                    {t('localEngineExternalServerConnected', { port: server.port, count: server.modelIds.length })}
-                  </span>
-                </p>
-                <Button
-                  disabled={externalActive}
-                  onClick={() => onDisconnectExternalServer(server)}
-                  size="small"
-                  variant="ghost"
+          {externalServers.length > 0 ? (
+            <ul className="grid gap-2">
+              {externalServers.map((server) => (
+                <li
+                  className="flex flex-wrap items-center justify-between gap-3 rounded-control border border-border bg-surface px-3 py-2"
+                  key={`${server.processId}:${server.port}`}
                 >
-                  {t('localEngineExternalServerDisconnect')}
-                </Button>
-              </li>
-            ))}
-          </ul>
-        ) : null}
-      </section>
+                  <p className="flex min-w-0 items-center gap-2 text-sm text-secondary-text">
+                    <Link aria-hidden="true" className="shrink-0 text-accent-icon" size={15} />
+                    <span>
+                      {t('localEngineExternalServerConnected', { port: server.port, count: server.modelIds.length })}
+                    </span>
+                  </p>
+                  <Button
+                    disabled={externalActive}
+                    onClick={() => onDisconnectExternalServer(server)}
+                    size="small"
+                    variant="ghost"
+                  >
+                    {t('localEngineExternalServerDisconnect')}
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </section>
+      ) : null}
     </Card>
   );
 }

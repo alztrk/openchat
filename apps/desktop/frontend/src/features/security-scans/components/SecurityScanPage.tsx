@@ -10,7 +10,16 @@ import {
   StopCircle,
   Trash2,
 } from 'lucide-react';
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import {
+  type KeyboardEvent as ReactKeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { useTranslation } from 'react-i18next';
 
 // Time constants
@@ -19,6 +28,21 @@ const SECONDS_PER_MINUTE = 60;
 const SECONDS_PER_HOUR = 3_600;
 const REFRESH_INTERVAL_MS = 5_000;
 const INITIAL_CHECK_DELAY_MS = 2_500;
+const SIDEBAR_DEFAULT_WIDTH = 280;
+const SIDEBAR_MIN_WIDTH = 180;
+const SIDEBAR_MAX_WIDTH = 420;
+const SIDEBAR_WIDTH_STORAGE_KEY = 'security_scans.sidebar_width';
+
+function clampSecurityScanSidebarWidth(width: number): number {
+  return Math.round(Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, width)));
+}
+
+function readSecurityScanSidebarWidth(): number {
+  const storedWidth = unifiedStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY);
+  if (storedWidth === null) return SIDEBAR_DEFAULT_WIDTH;
+  const width = Number(storedWidth);
+  return Number.isFinite(width) ? clampSecurityScanSidebarWidth(width) : SIDEBAR_DEFAULT_WIDTH;
+}
 
 import { Button, Checkbox, Dialog, Select } from '@shared/components';
 import { MessageList } from '@features/chat/components/MessageList';
@@ -27,6 +51,7 @@ import { useChatStore } from '@features/chat/state/chatStore';
 import { formatFailureCodeMessage } from '@features/chat/state/chatStoreErrorDetails';
 import { ProviderIcon } from '@features/provider-settings/components/ProviderIcon';
 import type { ChatModel } from '@entities/model';
+import { unifiedStorage } from '@shared/lib/platform/storage/unifiedStorage';
 import {
   deleteSecurityScanRuntime,
   formatSecurityScanError,
@@ -39,6 +64,7 @@ import {
 import {
   createSecurityScan,
   listSecurityScans,
+  securityScanObjective,
   type SecurityScan,
   type SecurityScanStatus,
 } from '../data/securityScans';
@@ -56,6 +82,8 @@ export function SecurityScanPage() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [refreshTime, setRefreshTime] = useState(Date.now());
+  const [sidebarWidth, setSidebarWidth] = useState(readSecurityScanSidebarWidth);
+  const [isResizingSidebar, setIsResizingSidebar] = useState(false);
   const isRefreshingScansRef = useRef(false);
 
   const refreshScans = useCallback(async () => {
@@ -92,6 +120,7 @@ export function SecurityScanPage() {
   const selectedScanRef = useRef<SecurityScan | null>(selectedScan);
   selectedScanRef.current = selectedScan;
   const runtime = useSecurityScanRuntime(activeScanId);
+  const selectedStatus = selectedScan ? visibleScanStatus(selectedScan, runtime.goal) : null;
 
   useEffect(() => {
     const current = selectedScanRef.current;
@@ -124,6 +153,46 @@ export function SecurityScanPage() {
     }
   };
 
+  const handleSidebarResizePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = sidebarWidth;
+    setIsResizingSidebar(true);
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      setSidebarWidth(clampSecurityScanSidebarWidth(startWidth + moveEvent.clientX - startX));
+    };
+
+    const handlePointerEnd = (endEvent: PointerEvent) => {
+      const finalWidth = clampSecurityScanSidebarWidth(startWidth + endEvent.clientX - startX);
+      setSidebarWidth(finalWidth);
+      setIsResizingSidebar(false);
+      unifiedStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, String(finalWidth));
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerEnd);
+      window.removeEventListener('pointercancel', handlePointerEnd);
+    };
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerEnd);
+    window.addEventListener('pointercancel', handlePointerEnd);
+  };
+
+  const handleSidebarResizeKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+      event.preventDefault();
+      const width = clampSecurityScanSidebarWidth(sidebarWidth + (event.key === 'ArrowRight' ? 12 : -12));
+      setSidebarWidth(width);
+      unifiedStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, String(width));
+    } else if (event.key === 'Home' || event.key === 'End') {
+      event.preventDefault();
+      const width = event.key === 'Home' ? SIDEBAR_MIN_WIDTH : SIDEBAR_MAX_WIDTH;
+      setSidebarWidth(width);
+      unifiedStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, String(width));
+    }
+  };
+
   const capableModels = useMemo(() => models.filter((model) => model.supportsTools !== false), [models]);
   const providers = useMemo(
     () => [...new Map(capableModels.map((model) => [model.providerId, model.providerId])).values()].sort(),
@@ -131,11 +200,29 @@ export function SecurityScanPage() {
   );
 
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-row overflow-hidden bg-background">
-      <aside className="conversation-sidebar app-content-divider flex h-full shrink-0 flex-col border-y-0 border-r bg-navigation">
-        <div className="flex min-h-16 items-center gap-3 border-b border-border px-4 py-3">
+    <div className="security-scan-page-container flex min-h-0 min-w-0 flex-1">
+      <div className="security-scan-page flex min-h-0 min-w-0 flex-1 flex-row overflow-hidden bg-background">
+      <aside
+        className={`security-scan-sidebar conversation-sidebar app-content-divider relative flex h-full shrink-0 flex-col border-y-0 border-r bg-navigation ${isResizingSidebar ? 'select-none' : ''}`}
+        style={{ width: `${sidebarWidth}px` }}
+      >
+        <div className="flex min-h-16 items-center gap-2 border-b border-border px-3 py-3">
           <ShieldCheck aria-hidden="true" className="shrink-0 text-accent" size={20} />
-          <h1 className="min-w-0 truncate text-base font-semibold text-text">{t('securityScansTitle')}</h1>
+          <h1 className="min-w-0 flex-1 truncate text-base font-semibold text-text">{t('securityScansTitle')}</h1>
+          <Button
+            aria-label={t(showCreateForm ? 'securityScanCloseCreate' : 'securityScanNew')}
+            className="shrink-0 px-2"
+            onClick={() => {
+              setShowCreateForm((current) => !current);
+              setError(null);
+            }}
+            size="small"
+            title={t(showCreateForm ? 'securityScanCloseCreate' : 'securityScanNew')}
+            variant="secondary"
+          >
+            <Plus aria-hidden="true" size={16} />
+            <span className="security-scan-new-label">{t(showCreateForm ? 'securityScanCloseCreate' : 'securityScanNew')}</span>
+          </Button>
         </div>
         <div className="flex items-center justify-between px-4 py-3">
           <h2 className="text-sm font-medium text-secondary-text">{t('securityScanList')}</h2>
@@ -167,27 +254,78 @@ export function SecurityScanPage() {
             </ul>
           )}
         </div>
+        {/* biome-ignore lint/a11y/useSemanticElements: Custom interactive resize separator for the security scan sidebar. */}
+        <div
+          aria-label={t('resizeSidebar')}
+          aria-orientation="vertical"
+          aria-valuemax={SIDEBAR_MAX_WIDTH}
+          aria-valuemin={SIDEBAR_MIN_WIDTH}
+          aria-valuenow={sidebarWidth}
+          className="security-scan-sidebar-resizer group/resizer absolute inset-y-0 right-0 z-20 w-1.5 cursor-col-resize select-none focus-visible:outline-none"
+          onDoubleClick={() => {
+            setSidebarWidth(SIDEBAR_DEFAULT_WIDTH);
+            unifiedStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, String(SIDEBAR_DEFAULT_WIDTH));
+          }}
+          onKeyDown={handleSidebarResizeKeyDown}
+          onPointerDown={handleSidebarResizePointerDown}
+          role="separator"
+          tabIndex={0}
+          title={t('resizeSidebar')}
+        >
+          <span
+            className={`pointer-events-none absolute inset-y-0 right-0 w-0.5 transition-colors ${isResizingSidebar ? 'bg-focus' : 'bg-transparent group-hover/resizer:bg-border group-focus-visible/resizer:bg-focus'}`}
+          />
+        </div>
       </aside>
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background">
-        <header className="flex min-h-16 shrink-0 items-center justify-end gap-4 border-b border-border px-4 py-3 md:px-6">
-          <Button
-            onClick={() => {
-              setShowCreateForm((current) => !current);
-              setError(null);
-            }}
-            size="small"
-            variant={showCreateForm ? 'secondary' : 'primary'}
-          >
-            <Plus aria-hidden="true" size={16} />
-            {t(showCreateForm ? 'securityScanCloseCreate' : 'securityScanNew')}
-          </Button>
+        <header className="flex min-h-16 shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-border px-4 py-3 md:px-6">
+          {!showCreateForm && selectedScan ? (
+            <div className="flex min-w-0 flex-1 flex-wrap items-center justify-between gap-x-4 gap-y-2">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="max-w-full truncate text-base font-semibold text-text">{selectedScan.projectName}</h2>
+                </div>
+                <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-secondary-text">
+                  <span className="inline-flex min-w-0 items-center gap-1.5">
+                    {selectedScan.providerId ? <ProviderIcon providerId={selectedScan.providerId} size={13} /> : null}
+                    <span className="truncate">
+                      {resolveScanModelLabel(selectedScan, models, t('securityScanModelUnavailable'))}
+                    </span>
+                  </span>
+                  <span className="inline-flex items-center gap-1 tabular-nums">
+                    <Clock3 aria-hidden="true" size={13} />
+                    {formatElapsed(selectedScan, refreshTime)}
+                  </span>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                {selectedStatus === 'paused' || selectedStatus === 'interrupted' || selectedStatus === 'waiting_provider' ? (
+                  <Button onClick={() => void resumeSecurityScan(selectedScan, runtime.goal)} size="small" variant="secondary">
+                    {t(selectedStatus === 'waiting_provider' ? 'securityScanResumeNow' : 'securityScanResume')}
+                  </Button>
+                ) : null}
+                {runtime.isActive || (selectedStatus !== null && !['completed', 'cancelled', 'failed'].includes(selectedStatus)) ? (
+                  <Button onClick={() => void stopSecurityScan(selectedScan)} size="small" variant="destructive">
+                    <StopCircle aria-hidden="true" size={15} />
+                    {t('securityScanStop')}
+                  </Button>
+                ) : null}
+                <Button onClick={() => setDeleteTarget(selectedScan)} size="small" variant="ghost">
+                  <Trash2 aria-hidden="true" size={15} />
+                  {t('securityScanDelete')}
+                </Button>
+              </div>
+            </div>
+          ) : null}
         </header>
 
         {error ? (
-          <div className="mx-4 mt-3 flex items-start gap-2 rounded-control border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive md:mx-6">
-            <CircleAlert aria-hidden="true" className="mt-0.5 shrink-0" size={16} />
-            <p role="alert">{error}</p>
+          <div className="mx-auto mt-3 w-full max-w-conversation px-4 md:px-6">
+            <div className="flex items-start gap-2 rounded-control border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+              <CircleAlert aria-hidden="true" className="mt-0.5 shrink-0" size={16} />
+              <p role="alert">{error}</p>
+            </div>
           </div>
         ) : null}
 
@@ -228,11 +366,10 @@ export function SecurityScanPage() {
               goal={runtime.goal}
               isActive={runtime.isActive}
               messages={runtime.messages}
-              modelLabel={resolveScanModelLabel(selectedScan, models, t('securityScanModelUnavailable'))}
-              now={refreshTime}
-              onDelete={() => setDeleteTarget(selectedScan)}
-              onResume={() => void resumeSecurityScan(selectedScan, runtime.goal)}
-              onStop={() => void stopSecurityScan(selectedScan)}
+              onStartNewScan={() => {
+                setShowCreateForm(true);
+                setError(null);
+              }}
               scan={selectedScan}
               runtimeError={formatSecurityScanError(runtime.error, t)}
             />
@@ -270,6 +407,7 @@ export function SecurityScanPage() {
           </div>
         ) : null}
       </Dialog>
+      </div>
     </div>
   );
 }
@@ -295,26 +433,33 @@ const statusLabels = {
 } as const satisfies Record<SecurityScanStatus, `securityScanStatus${string}`>;
 
 function ScanListItem({ active, modelLabel, now, onDelete, onSelect, scan }: ScanListItemProps) {
-  const { t } = useTranslation();
+  const { i18n, t } = useTranslation();
   const status = visibleScanStatus(scan, null);
+  const createdAtLabel = formatScanCreatedAt(scan, i18n.resolvedLanguage);
+  const createdAtTimeLabel = formatScanCreatedTime(scan, i18n.resolvedLanguage);
   return (
     <li className="group relative">
       <button
         aria-current={active ? 'true' : undefined}
-        className={`w-full rounded-control border px-3 py-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus ${active ? 'border-border bg-selected' : 'border-transparent hover:bg-hover'}`}
+        className={`w-full rounded-control border px-2.5 py-1.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus ${active ? 'border-border bg-selected' : 'border-transparent hover:bg-hover'}`}
         onClick={onSelect}
         type="button"
       >
-        <span className="flex min-w-0 items-center justify-between gap-2 pr-7">
-          <span className="truncate text-sm font-medium text-text">{scan.projectName}</span>
-          <StatusDot status={status} />
+        <span className="flex min-w-0 items-center gap-1.5 pr-7">
+          <span className="min-w-0 flex-1 truncate text-sm font-medium text-text">{scan.projectName}</span>
+          <time className="security-scan-card-created-at shrink-0 text-xs tabular-nums text-secondary-text" dateTime={new Date(scan.createdAtUnixMs).toISOString()} title={createdAtLabel}>
+            {createdAtLabel}
+          </time>
+          <time className="security-scan-card-created-time hidden shrink-0 text-xs tabular-nums text-secondary-text" dateTime={new Date(scan.createdAtUnixMs).toISOString()} title={createdAtLabel}>
+            {createdAtTimeLabel}
+          </time>
+          <span aria-label={t(statusLabelKey(status))} className="inline-flex shrink-0" role="img" title={t(statusLabelKey(status))}>
+            <StatusDot status={status} />
+          </span>
         </span>
-        <span className="mt-1 flex min-w-0 items-center gap-1.5 pr-7 text-xs text-secondary-text">
+        <span className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-secondary-text">
           {scan.providerId ? <ProviderIcon providerId={scan.providerId} size={13} /> : null}
-          <span className="truncate">{modelLabel}</span>
-        </span>
-        <span className="mt-1.5 flex items-center justify-between gap-2 text-xs text-secondary-text">
-          <span className="truncate">{t(statusLabelKey(status))}</span>
+          <span className="min-w-0 flex-1 truncate">{modelLabel}</span>
           <span className="shrink-0 tabular-nums">{formatElapsed(scan, now)}</span>
         </span>
       </button>
@@ -511,11 +656,7 @@ interface ScanDetailProps {
   goal: ReturnType<typeof useSecurityScanRuntime>['goal'];
   isActive: boolean;
   messages: ReturnType<typeof useSecurityScanRuntime>['messages'];
-  modelLabel: string;
-  now: number;
-  onDelete(): void;
-  onResume(): void;
-  onStop(): void;
+  onStartNewScan(): void;
   scan: SecurityScan;
   runtimeError: string | null;
 }
@@ -524,11 +665,7 @@ function ScanDetail({
   goal,
   isActive,
   messages,
-  modelLabel,
-  now,
-  onDelete,
-  onResume,
-  onStop,
+  onStartNewScan,
   scan,
   runtimeError,
 }: ScanDetailProps) {
@@ -538,147 +675,181 @@ function ScanDetail({
   const pendingStep = pendingStepIndex >= 0 ? (goal?.todos[pendingStepIndex]?.text ?? null) : null;
   const completedSteps = goal?.todos.filter((todo) => todo.completed).length ?? 0;
   const totalSteps = goal?.todos.length ?? 0;
-  const canStop = isActive || !['completed', 'cancelled', 'failed'].includes(status);
-  const hasFailedMessage = messages.some((message) => message.status === 'failed');
-  const displayedError =
-    runtimeError ?? (!hasFailedMessage && status === 'failed' ? formatFailureCodeMessage(scan.failureCode, t) : null);
-  const canResume =
-    status === 'paused' ||
-    status === 'interrupted' ||
-    status === 'waiting_provider' ||
-    (status === 'queued' && (displayedError !== null || hasFailedMessage));
-
+  const visibleMessages = messages.filter(
+    (message) => !(message.role === 'user' && message.content === securityScanObjective),
+  );
+  const hasFailedAssistantMessage = visibleMessages.some(
+    (message) => message.role === 'assistant' && message.status === 'failed',
+  );
+  const hasAssistantReport = visibleMessages.some(
+    (message) => message.role === 'assistant' && message.content.trim().length > 0,
+  );
+  const planStatusLabel =
+    status === 'running'
+      ? (pendingStep ?? t('securityScanInspecting'))
+      : status === 'completed'
+        ? t('securityScanPlanComplete')
+        : t(statusLabelKey(status));
+  const displayedError = runtimeError ?? (!hasFailedAssistantMessage && status === 'failed' ? formatFailureCodeMessage(scan.failureCode, t) : null);
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-      <header className="flex shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-border px-4 py-3 md:px-6">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <h2 className="max-w-full truncate text-base font-semibold text-text">{scan.projectName}</h2>
-            <StatusBadge status={status} />
-          </div>
-          <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-secondary-text">
-            <span className="inline-flex min-w-0 items-center gap-1.5">
-              {scan.providerId ? <ProviderIcon providerId={scan.providerId} size={13} /> : null}
-              <span className="truncate">{modelLabel}</span>
-            </span>
-            <span className="inline-flex items-center gap-1 tabular-nums">
-              <Clock3 aria-hidden="true" size={13} />
-              {formatElapsed(scan, now)}
-            </span>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          {canResume ? (
-            <Button onClick={onResume} size="small" variant="secondary">
-              {t(status === 'waiting_provider' ? 'securityScanResumeNow' : 'securityScanResume')}
-            </Button>
-          ) : null}
-          {canStop ? (
-            <Button onClick={onStop} size="small" variant="destructive">
-              <StopCircle aria-hidden="true" size={15} />
-              {t('securityScanStop')}
-            </Button>
-          ) : null}
-          <Button onClick={onDelete} size="small" variant="ghost">
-            <Trash2 aria-hidden="true" size={15} />
-            {t('securityScanDelete')}
-          </Button>
-        </div>
-      </header>
-
-      <section aria-label={t('securityScanPlan')} className="shrink-0 border-b border-border px-4 py-3 md:px-6">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex min-w-0 items-center gap-2">
+      {status !== 'failed' || totalSteps > 0 ? (
+        <section aria-label={t('securityScanPlan')} className="shrink-0 border-b border-border px-4 py-3 md:px-6">
+        <div className="mx-auto w-full max-w-conversation">
+          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+            <div className="flex min-w-0 items-center gap-2">
             {status === 'running' ? (
-              <Activity aria-hidden="true" className="shrink-0 text-accent motion-safe:animate-pulse" size={16} />
+                <Activity aria-hidden="true" className="shrink-0 text-accent" size={16} />
+              ) : status === 'completed' ? (
+                <CircleCheck aria-hidden="true" className="shrink-0 text-success" size={16} />
             ) : (
-              <ListChecks aria-hidden="true" className="shrink-0 text-secondary-icon" size={16} />
-            )}
-            <span className="truncate text-sm font-medium text-text">
-              {pendingStep ?? (goal?.todos.length ? t('securityScanPlanComplete') : t('securityScanInspecting'))}
-            </span>
+                <ListChecks aria-hidden="true" className="shrink-0 text-secondary-icon" size={16} />
+              )}
+              <div className="min-w-0">
+                <p className="text-xs text-secondary-text">{t('securityScanPlan')}</p>
+                {status !== 'failed' ? (
+                  <p className="truncate text-sm font-medium text-text">{planStatusLabel}</p>
+                ) : null}
+              </div>
+            </div>
+            {status === 'failed' && hasFailedAssistantMessage ? (
+              <Button onClick={onStartNewScan} size="small" variant="secondary">
+                <Plus aria-hidden="true" size={15} />
+                {t('securityScanNew')}
+              </Button>
+            ) : null}
           </div>
           {totalSteps > 0 ? (
-            <span className="shrink-0 text-xs tabular-nums text-secondary-text">
-              {completedSteps}/{totalSteps}
-            </span>
+            <div className="mt-2 flex items-center gap-3">
+              <progress
+                aria-label={t('securityScanPlanProgress')}
+                className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full accent-accent"
+                max={totalSteps}
+                value={completedSteps}
+              />
+              <span className="shrink-0 text-xs tabular-nums text-secondary-text">
+                {completedSteps}/{totalSteps}
+              </span>
+            </div>
+          ) : null}
+          {goal?.todos.length ? (
+            <details className="mt-2.5 rounded-control border border-border">
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 text-xs text-secondary-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus">
+                <span>{t('securityScanViewPlan')}</span>
+                <span className="shrink-0 tabular-nums">
+                  {completedSteps}/{totalSteps}
+                </span>
+              </summary>
+              <ol className="openchat-scroll-area conversation-sidebar-scroll-area grid max-h-36 grid-cols-1 gap-1 overflow-y-auto border-t border-border p-1.5">
+                {goal.todos.map((todo, index) => {
+                  const isCurrentStep = !todo.completed && index === pendingStepIndex;
+                  const duplicateIndex = goal.todos.slice(0, index).filter((item) => item.text === todo.text).length;
+                  return (
+                    <li
+                      className={`flex min-w-0 items-start gap-2 rounded-control px-2 py-1 text-xs ${
+                        isCurrentStep ? 'bg-selected font-medium text-text' : 'text-secondary-text'
+                      }`}
+                      key={`${todo.text}:${duplicateIndex}`}
+                    >
+                      {todo.completed ? (
+                        <CircleCheck aria-hidden="true" className="mt-0.5 shrink-0 text-success" size={14} />
+                      ) : isCurrentStep ? (
+                        <span aria-hidden="true" className="mt-1.5 size-2 shrink-0 rounded-full bg-accent" />
+                      ) : (
+                        <span aria-hidden="true" className="mt-1.5 size-2 shrink-0 rounded-full border border-border" />
+                      )}
+                      <span className={`min-w-0 flex-1 break-words leading-5 ${todo.completed ? 'line-through' : ''}`}>
+                        {todo.text}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ol>
+            </details>
           ) : null}
         </div>
-        {totalSteps > 0 ? (
-          <progress
-            aria-label={t('securityScanPlanProgress')}
-            className="mt-2 h-1.5 w-full overflow-hidden rounded-full accent-accent"
-            max={totalSteps}
-            value={completedSteps}
-          />
-        ) : null}
-        {goal?.todos.length ? (
-          <div className="openchat-scroll-area conversation-sidebar-scroll-area mt-2.5 max-h-36 rounded-control border border-border bg-surface p-1.5">
-            <ol className="grid grid-cols-1 gap-1">
-              {goal.todos.map((todo, index) => {
-                const isCurrentStep = !todo.completed && index === pendingStepIndex;
-                const duplicateIndex = goal.todos.slice(0, index).filter((item) => item.text === todo.text).length;
-                return (
-                  <li
-                    className={`flex min-w-0 items-start gap-2 rounded-control px-2 py-1 text-xs ${
-                      isCurrentStep ? 'bg-selected font-medium text-text' : 'text-secondary-text'
-                    }`}
-                    key={`${todo.text}:${duplicateIndex}`}
-                  >
-                    {todo.completed ? (
-                      <CircleCheck aria-hidden="true" className="mt-0.5 shrink-0 text-success" size={14} />
-                    ) : isCurrentStep ? (
-                      <span aria-hidden="true" className="mt-1.5 size-2 shrink-0 rounded-full bg-accent" />
-                    ) : (
-                      <span aria-hidden="true" className="mt-1.5 size-2 shrink-0 rounded-full border border-border" />
-                    )}
-                    <span className={`min-w-0 flex-1 break-words leading-5 ${todo.completed ? 'line-through' : ''}`}>
-                      {todo.text}
-                    </span>
-                  </li>
-                );
-              })}
-            </ol>
-          </div>
-        ) : null}
-      </section>
+        </section>
+      ) : null}
 
       {status === 'waiting_provider' ? (
-        <div className="mx-4 mt-3 flex shrink-0 items-start gap-2 rounded-control border border-border bg-background px-3 py-2 text-sm text-secondary-text md:mx-6">
-          <Clock3 aria-hidden="true" className="mt-0.5 shrink-0" size={15} />
-          <p>{t('securityScanQuotaWaiting')}</p>
+        <div className="mx-auto mt-3 w-full max-w-conversation px-4 md:px-6">
+          <div className="flex items-start gap-2 rounded-control border border-border bg-background px-3 py-2 text-sm text-secondary-text">
+            <Clock3 aria-hidden="true" className="mt-0.5 shrink-0" size={15} />
+            <p>{t('securityScanQuotaWaiting')}</p>
+          </div>
         </div>
       ) : null}
-      {displayedError ? (
-        <div className="mx-4 mt-3 flex shrink-0 items-start gap-2 rounded-control border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive md:mx-6">
-          <CircleAlert aria-hidden="true" className="mt-0.5 shrink-0" size={15} />
-          <p role="alert">{displayedError}</p>
+      {displayedError && status !== 'failed' ? (
+        <div className="mx-auto mt-3 w-full max-w-conversation px-4 md:px-6">
+          <div className="flex items-start gap-2 rounded-control border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+            <CircleAlert aria-hidden="true" className="mt-0.5 shrink-0" size={15} />
+            <p role="alert">{displayedError}</p>
+          </div>
         </div>
       ) : null}
 
-      {messages.length > 0 ? (
+      {status === 'completed' && hasAssistantReport ? (
+        <div className="mx-auto mt-3 flex w-full max-w-conversation items-start gap-2 px-4 md:px-6">
+          <CircleCheck aria-hidden="true" className="mt-0.5 shrink-0 text-success" size={16} />
+          <div className="min-w-0">
+            <h3 className="text-sm font-medium text-text">{t('securityScanResults')}</h3>
+            {totalSteps > 0 ? (
+              <p className="mt-0.5 text-xs text-secondary-text">
+                {t('securityScanPlanComplete')} · <span className="tabular-nums">{completedSteps}/{totalSteps}</span>
+              </p>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+
+      {visibleMessages.length > 0 || isActive ? (
         <MessageList
           assistantModelFallback={scan.modelId}
           assistantProviderFallback={scan.providerId}
           conversationIdOverride={scan.conversationId}
           isLoadingMessagesOverride={false}
-          messagesOverride={messages}
-          showAssistantLoading={isActive && messages.at(-1)?.role !== 'assistant'}
+          messagesOverride={visibleMessages}
+          showAssistantLoading={isActive && visibleMessages.at(-1)?.role !== 'assistant'}
         />
-      ) : (
+      ) : status === 'failed' && !hasFailedAssistantMessage ? (
+        <div className="openchat-scroll-area flex min-h-0 flex-1 items-center justify-center overflow-y-auto p-4 md:p-6">
+          <section
+            className="w-full max-w-assistant-message rounded-control border border-destructive/40 bg-destructive/5 p-4"
+            role="alert"
+          >
+            <div className="flex items-start gap-3">
+              <CircleAlert aria-hidden="true" className="mt-0.5 shrink-0 text-destructive" size={18} />
+              <div className="min-w-0">
+                <p className="text-sm text-text">{displayedError ?? t('securityScanRequestFailed')}</p>
+              </div>
+            </div>
+            <Button className="mt-4" onClick={onStartNewScan} size="small" variant="secondary">
+              <Plus aria-hidden="true" size={15} />
+              {t('securityScanNew')}
+            </Button>
+          </section>
+        </div>
+      ) : status === 'completed' ? (
         <div className="flex min-h-0 flex-1 items-center justify-center p-6">
           <div className="max-w-sm text-center">
-            {status === 'running' || isActive ? (
-              <Activity aria-hidden="true" className="mx-auto mb-3 text-accent motion-safe:animate-pulse" size={24} />
+            <CircleCheck aria-hidden="true" className="mx-auto mb-3 text-success" size={24} />
+            <p className="text-sm text-secondary-text">{t('securityScanNoReport')}</p>
+          </div>
+        </div>
+      ) : status !== 'failed' ? (
+        <div className="flex min-h-0 flex-1 items-center justify-center p-6">
+          <div className="max-w-sm text-center">
+            {status === 'running' ? (
+              <Activity aria-hidden="true" className="mx-auto mb-3 text-accent" size={24} />
             ) : (
               <ShieldCheck aria-hidden="true" className="mx-auto mb-3 text-secondary-icon" size={24} />
             )}
             <p className="text-sm text-secondary-text">
-              {status === 'running' || isActive ? t('securityScanInspecting') : t('securityScanNoMessages')}
+              {status === 'running' ? t('securityScanInspecting') : t(statusLabelKey(status))}
             </p>
           </div>
         </div>
-      )}
+      ) : null}
     </div>
   );
 }
@@ -703,23 +874,13 @@ function EmptySelection({ isLoading, onCreate }: { isLoading: boolean; onCreate(
   );
 }
 
-function StatusBadge({ status }: { status: SecurityScanStatus }) {
-  const { t } = useTranslation();
-  return (
-    <span className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs ${statusColor(status)}`}>
-      <StatusDot status={status} />
-      {t(statusLabelKey(status))}
-    </span>
-  );
-}
-
 function StatusDot({ status }: { status: SecurityScanStatus }) {
   return (
     <span
       aria-hidden="true"
       className={`size-1.5 shrink-0 rounded-full ${
         status === 'running'
-          ? 'bg-accent motion-safe:animate-pulse'
+          ? 'bg-accent'
           : status === 'completed'
             ? 'bg-success'
             : status === 'failed'
@@ -751,16 +912,6 @@ function statusLabelKey(status: SecurityScanStatus): (typeof statusLabels)[Secur
   return statusLabels[status];
 }
 
-function statusColor(status: SecurityScanStatus): string {
-  if (status === 'completed') return 'border-success/30 bg-success/5 text-success';
-  if (status === 'failed') return 'border-destructive/30 bg-destructive/5 text-destructive';
-  if (status === 'running') return 'border-accent/30 bg-accent/5 text-accent';
-  if (status === 'waiting_provider' || status === 'paused' || status === 'interrupted') {
-    return 'border-warning/30 bg-warning/5 text-text';
-  }
-  return 'border-border bg-background text-secondary-text';
-}
-
 function projectRoots(project: ChatProject | null): string[] {
   if (!project) return [];
   return project.workspaceRoots.length > 0 ? project.workspaceRoots : [project.folderPath];
@@ -775,6 +926,19 @@ function formatElapsed(scan: SecurityScan, now: number): string {
   return hours > 0
     ? `${hours}:${String(minutes).padStart(2, '0')}:${String(remainder).padStart(2, '0')}`
     : `${minutes}:${String(remainder).padStart(2, '0')}`;
+}
+
+function formatScanCreatedAt(scan: SecurityScan, locale: string | undefined): string {
+  return new Intl.DateTimeFormat(locale, {
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    month: 'short',
+  }).format(scan.createdAtUnixMs);
+}
+
+function formatScanCreatedTime(scan: SecurityScan, locale: string | undefined): string {
+  return new Intl.DateTimeFormat(locale, { hour: '2-digit', minute: '2-digit' }).format(scan.createdAtUnixMs);
 }
 
 function resolveScanModelLabel(scan: SecurityScan, models: readonly ChatModel[], fallback: string): string {

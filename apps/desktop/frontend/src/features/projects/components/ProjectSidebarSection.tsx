@@ -1,4 +1,4 @@
-import { Folder, FolderOpen, LoaderCircle, MessageSquarePlus, MoreHorizontal, RefreshCw } from 'lucide-react';
+import { Folder, FolderOpen, LoaderCircle, MessageSquarePlus, RefreshCw } from 'lucide-react';
 import { type DragEvent, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -8,7 +8,6 @@ import { ConversationSidebarSection } from '@features/chat/components/Conversati
 import type { ChatConversation, ExportFormat } from '@entities/conversation';
 import type { ChatProject } from '@entities/project';
 import type { CustomSidebarFolder, SidebarViewMode } from '@features/chat/data/sidebarPreferences';
-
 interface ProjectSidebarSectionProps {
   projects: readonly ChatProject[];
   customFolders?: readonly CustomSidebarFolder[];
@@ -22,7 +21,6 @@ interface ProjectSidebarSectionProps {
   isConversationAiWorking?(conversationId: string): boolean;
   onToggleCollapsed(): void;
   onRetry(): void;
-  onOpenOptions(project: ChatProject): void;
   onCreateProjectChat(projectId: string): void;
   onSelectConversation(id: string): void;
   onTogglePinned(conversation: ChatConversation): void;
@@ -51,7 +49,6 @@ export function ProjectSidebarSection({
   isConversationAiWorking,
   onToggleCollapsed,
   onRetry,
-  onOpenOptions,
   onCreateProjectChat,
   onSelectConversation,
   onTogglePinned,
@@ -148,13 +145,13 @@ export function ProjectSidebarSection({
                   <div
                     className={`relative flex min-h-9 items-center rounded-button transition-colors duration-quick ${
                       selected
-                        ? 'bg-selected/65 font-medium text-text'
+                        ? 'font-normal text-secondary-text'
                         : 'text-text/85 hover:bg-hover/85 hover:text-text focus-within:bg-hover/85 focus-within:text-text'
                     }`}
                   >
                     <Button
                       aria-expanded={projectConversations.length > 0 ? isProjectExpanded : undefined}
-                      className="min-h-9 min-w-0 flex-1 justify-start gap-2.5 px-3 py-1.5 text-left transition-all duration-quick group-focus-within:pr-16 group-hover:pr-16"
+                      className={`min-h-9 min-w-0 flex-1 justify-start gap-2.5 px-3 py-1.5 text-left transition-all duration-quick group-focus-within:pr-16 group-hover:pr-16 ${selected ? 'hover:bg-transparent focus-visible:bg-transparent' : ''}`}
                       data-sidebar-nav-item="true"
                       onClick={() => {
                         if (projectConversations.length > 0) {
@@ -176,7 +173,7 @@ export function ProjectSidebarSection({
                         className={`shrink-0 transition-colors ${selected ? 'text-accent' : 'text-secondary-icon'}`}
                         size={15}
                       />
-                      <span className="sidebar-project-title min-w-0 flex-1 truncate font-medium">{project.name}</span>
+                      <span className={`sidebar-project-title min-w-0 flex-1 truncate ${selected ? 'font-normal' : 'font-medium'}`}>{project.name}</span>
                       {project.workspaceRoots.length > 1 ? (
                         <span
                           className="shrink-0 text-xs text-secondary-text/70"
@@ -198,20 +195,10 @@ export function ProjectSidebarSection({
                       >
                         <MessageSquarePlus aria-hidden="true" size={14} />
                       </Button>
-                      <Button
-                        aria-label={`${t('projectOptions')}: ${project.name}`}
-                        className="size-7 rounded-control text-secondary-icon hover:bg-surface/80 hover:text-text"
-                        onClick={() => onOpenOptions(project)}
-                        size="icon"
-                        title={t('projectOptionsButtonTitle', { name: project.name })}
-                        variant="ghost"
-                      >
-                        <MoreHorizontal aria-hidden="true" size={14} />
-                      </Button>
                     </div>
                   </div>
                   {projectConversations.length > 0 && isProjectExpanded ? (
-                    <ul className="ml-4 grid gap-0.5 border-l border-border pl-2 py-0.5">
+                    <ul className="project-conversation-thread-list ml-4 grid gap-0.5 border-l border-border/70 py-1 pl-2">
                       {projectConversations.map((conversation) => (
                         <ConversationSidebarRow
                           active={activeConversationId === conversation.id}

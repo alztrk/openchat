@@ -5,8 +5,7 @@ use reqwest::Response;
 
 use crate::protocol::ServiceError;
 
-/// Maximum raw provider-stream bytes accepted for one assistant response.
-pub(crate) const MAX_PROVIDER_RESPONSE_BYTES: usize = 16 * 1024 * 1024;
+/// Default assistant-turn budget is effectively unbounded.
 
 /// Maximum raw provider response bytes accepted for an automatic conversation title.
 pub(crate) const MAX_TITLE_RESPONSE_BYTES: usize = 64 * 1024;
@@ -56,7 +55,7 @@ impl Default for ProviderResponseBudget {
     fn default() -> Self {
         Self {
             received_bytes: 0,
-            maximum_bytes: MAX_PROVIDER_RESPONSE_BYTES,
+            maximum_bytes: usize::MAX,
         }
     }
 }

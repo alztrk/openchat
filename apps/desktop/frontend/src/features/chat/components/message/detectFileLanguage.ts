@@ -1,5 +1,5 @@
 const fileLanguages: Readonly<Record<string, string>> = {
-  bash: 'bash',
+  bash: 'shell',
   c: 'c',
   cc: 'cpp',
   cpp: 'cpp',
@@ -10,7 +10,7 @@ const fileLanguages: Readonly<Record<string, string>> = {
   html: 'html',
   htm: 'html',
   java: 'java',
-  js: 'javascript',
+  js: 'js',
   jsx: 'jsx',
   json: 'json',
   jsonc: 'json',
@@ -19,10 +19,10 @@ const fileLanguages: Readonly<Record<string, string>> = {
   ps1: 'powershell',
   py: 'python',
   rs: 'rust',
-  sh: 'bash',
+  sh: 'shell',
   sql: 'sql',
   toml: 'toml',
-  ts: 'typescript',
+  ts: 'ts',
   tsx: 'tsx',
   xml: 'html',
   yaml: 'yaml',
@@ -31,7 +31,7 @@ const fileLanguages: Readonly<Record<string, string>> = {
 
 export function detectFileLanguage(path: string): string | null {
   const filename = path.replaceAll('\\', '/').split('/').at(-1)?.toLowerCase() ?? '';
-  if (filename === 'dockerfile' || filename.startsWith('dockerfile.')) return 'docker';
+  if (filename === 'dockerfile' || filename.startsWith('dockerfile.')) return 'dockerfile';
   const extension = filename.split('.').at(-1);
   return extension ? (fileLanguages[extension] ?? null) : null;
 }

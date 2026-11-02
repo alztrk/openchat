@@ -2,6 +2,7 @@ import { RefreshCw, RotateCcw, Save } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button, Textarea } from '@shared/components';
+import { SettingsSectionSkeleton } from './SettingsSectionSkeleton';
 import {
   clearSharedInstructions,
   countSharedInstructionsCharacters,
@@ -126,9 +127,9 @@ export function SharedInstructionsSection() {
   };
 
   return (
-    <section aria-labelledby="settings-page-heading" className="grid gap-3.5">
+    <section aria-labelledby="settings-page-heading" className="settings-section grid content-start gap-6">
       {loadState === 'loading' ? (
-        <progress aria-label={t('sharedInstructionsLoading')} className="h-1 w-full accent-accent" max={100} />
+        <SettingsSectionSkeleton label={t('sharedInstructionsLoading')} />
       ) : loadState === 'error' ? (
         <div className="flex flex-wrap items-center justify-between gap-3" role="alert">
           <p className="text-sm text-destructive">{t(errorKey ?? 'sharedInstructionsLoadFailed')}</p>
@@ -143,15 +144,15 @@ export function SharedInstructionsSection() {
           </Button>
         </div>
       ) : (
-        <div className="grid gap-4">
+        <div className="settings-surface-card grid gap-4 overflow-hidden rounded-card border border-border bg-raised p-4 sm:p-5">
           {defaultLoadFailed ? (
             <p className="text-sm text-warning" role="status">
               {t('defaultInstructionsLoadFailed')}
             </p>
           ) : null}
           <Textarea
-            aria-describedby="shared-instructions-description shared-instructions-count"
-            className="min-h-32 max-h-56 resize-y bg-composer px-4 py-3.5 text-base disabled:opacity-60"
+            aria-describedby="shared-instructions-count"
+            className="shared-instructions-editor resize-y bg-composer px-4 py-3.5 text-base disabled:opacity-60"
             id="shared-instructions-input"
             label={t('sharedInstructions')}
             maxLength={maximumSharedInstructionsCharacters}
@@ -161,7 +162,7 @@ export function SharedInstructionsSection() {
               setFeedbackKey(null);
             }}
             placeholder={t('sharedInstructionsHint')}
-            rows={4}
+            rows={10}
             value={instructions}
           />
           {tooManyCharacters ? (
@@ -183,7 +184,7 @@ export function SharedInstructionsSection() {
               {t(feedbackKey)}
             </p>
           ) : null}
-          <div className="flex flex-wrap items-center justify-between gap-3 px-3">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
             <span className="text-xs text-secondary-text" id="shared-instructions-count">
               {characterCount}/{maximumSharedInstructionsCharacters}
             </span>
@@ -192,6 +193,7 @@ export function SharedInstructionsSection() {
                 disabled={isSaving || !defaultInstructions || instructions === defaultInstructions}
                 loading={savingAction === 'restore'}
                 onClick={restoreDefaults}
+                size="small"
                 variant="ghost"
               >
                 <RotateCcw aria-hidden="true" size={16} />

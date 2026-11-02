@@ -105,7 +105,13 @@ pub(crate) async fn dispatch(context: RpcDispatchContext<'_>) -> Result<Value, S
         return storage_attachment_index::dispatch(&method, storage).await;
     }
     if method.starts_with("storage.chat.") {
-        return storage_chat::dispatch(&method, &request.params, storage).await;
+        return storage_chat::dispatch_with_gate(
+            &method,
+            &request.params,
+            storage,
+            &cancellation_gate,
+        )
+        .await;
     }
     if method.starts_with("storage.") {
         return storage_settings::dispatch(&method, &request.params, storage, &events).await;
@@ -114,7 +120,12 @@ pub(crate) async fn dispatch(context: RpcDispatchContext<'_>) -> Result<Value, S
         return connector_catalog::dispatch(&method, &request.params, storage).await;
     }
     if method.starts_with("chat.file_changes.") {
-        return file_changes::dispatch(&method, &request.params, storage);
+        return file_changes::dispatch_with_cancellation(
+            &method,
+            &request.params,
+            storage,
+            &cancellation,
+        );
     }
     if method.starts_with("security.scans.") {
         return security_scans::dispatch(&method, &request.params, storage);

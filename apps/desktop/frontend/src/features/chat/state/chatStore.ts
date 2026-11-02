@@ -124,6 +124,7 @@ export interface ChatState {
   pendingQuestionSendBlock: { conversationId: string; blocked: boolean } | null;
   selectedReasoningEffort: string | null;
   activeGoal: ChatGoal | null;
+  interruptedRun: { conversationId: string; runId: string } | null;
   goalStatus: ServiceStatus;
   isChangingGoal: boolean;
   pendingProjectId: string | null;
@@ -139,7 +140,9 @@ export interface ChatState {
   modelFavorites: ChatModelFavorite[];
   pendingAttachmentCount: number;
   pendingToolPermissionRequest: ChatToolPermissionRequest | null;
+  pendingToolPermissionRequests: ChatToolPermissionRequest[];
   isRespondingToToolPermission: boolean;
+  respondingToolPermissionIds: string[];
   toolPermissionError: 'toolPermissionRequestExpired' | 'toolPermissionResponseFailed' | null;
   hasConfiguredProvider: boolean;
   chatGptWorkspaceSelectionRequired: boolean;
@@ -158,7 +161,9 @@ export interface ChatState {
   isLoadingMessages: boolean;
   isSending: boolean;
   sendingConversationId: string | null;
+  sendingConversationIds: string[];
   activeOperation: ServiceOperation | null;
+  activeOperationsByConversation: Record<string, ServiceOperation>;
   modelError: boolean;
   errorCode: ChatErrorCode | null;
   errorMessage: string | null;
@@ -186,7 +191,7 @@ export interface ChatState {
   finishConversationCompaction(conversationId: string): void;
   toggleFavoriteModel(model: ChatModel): Promise<boolean>;
   removeModelFavorite(favorite: ChatModelFavorite): Promise<boolean>;
-  respondToToolPermission(approved: boolean): Promise<void>;
+  respondToToolPermission(approved: boolean, conversationId?: string | null): Promise<void>;
   startTemporaryChat(): boolean;
   discloseTemporaryProvider(providerId: string): void;
   saveTemporaryChat(): Promise<boolean>;
@@ -197,6 +202,8 @@ export interface ChatState {
   selectReasoningEffort(effort: string | null): void;
   selectConversation(id: string, targetMessageId?: string | null, targetQuery?: string | null): Promise<void>;
   refreshActiveGoal(conversationId: string): Promise<void>;
+  refreshInterruptedRun(conversationId: string): Promise<void>;
+  resumeInterruptedGoalsAfterRestart(): Promise<void>;
   pauseActiveGoal(reason?: 'user_paused' | 'budget_exceeded'): Promise<void>;
   stopActiveGoal(): Promise<void>;
   updateMessage(message: ChatMessage): void;
@@ -213,7 +220,7 @@ export interface ChatState {
   ): Promise<boolean>;
   retryMessage(messageId: string): Promise<boolean>;
   branchFromUserMessage(messageId: string, editedContent: string, branchTitle: string): Promise<boolean>;
-  stopResponse(): Promise<void>;
+  stopResponse(conversationId?: string | null): Promise<void>;
   dismissError(): void;
   setSearchMatchInfo(index: number, count: number): void;
   nextSearchMatch(): void;
@@ -238,6 +245,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   pendingQuestionSendBlock: null,
   selectedReasoningEffort: null,
   activeGoal: null,
+  interruptedRun: null,
   goalStatus: 'idle',
   isChangingGoal: false,
   pendingProjectId: null,
@@ -253,7 +261,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
   modelFavorites: [],
   pendingAttachmentCount: 0,
   pendingToolPermissionRequest: null,
+  pendingToolPermissionRequests: [],
   isRespondingToToolPermission: false,
+  respondingToolPermissionIds: [],
   toolPermissionError: null,
   hasConfiguredProvider: false,
   chatGptWorkspaceSelectionRequired: false,
@@ -272,7 +282,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
   isLoadingMessages: false,
   isSending: false,
   sendingConversationId: null,
+  sendingConversationIds: [],
   activeOperation: null,
+  activeOperationsByConversation: {},
   modelError: false,
   errorCode: null,
   errorMessage: null,
@@ -324,6 +336,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         ...mapModelPreferences(preferences),
       });
       await Promise.all([get().refreshModelFavorites(), get().refreshModels()]);
+      void get().resumeInterruptedGoalsAfterRestart();
     } catch (error) {
       set({
         serviceStatus: 'error',

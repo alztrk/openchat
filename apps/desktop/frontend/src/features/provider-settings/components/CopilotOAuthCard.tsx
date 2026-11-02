@@ -318,12 +318,12 @@ export function CopilotOAuthCard({ serviceReady, onChanged }: CopilotOAuthCardPr
   };
 
   return (
-    <Card className="overflow-hidden">
-      <div className="flex flex-wrap items-start justify-between gap-4 p-5">
+    <Card className="overflow-hidden bg-raised">
+      <div className="flex flex-wrap items-center justify-between gap-4 p-4">
         <div className="flex min-w-0 items-start gap-3">
-          <ProviderIcon className="mt-0.5" providerId="copilot" size={28} />
+          <ProviderIcon className="mt-0.5" providerId="copilot" size={24} />
           <div className="min-w-0">
-            <h3 className="font-semibold">{t('providerNameCopilot')}</h3>
+            <h3 className="text-sm font-medium">{t('providerNameCopilot')}</h3>
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -343,20 +343,20 @@ export function CopilotOAuthCard({ serviceReady, onChanged }: CopilotOAuthCardPr
       </div>
 
       {loading ? (
-        <div className="border-t border-border px-5 py-4" role="status">
+        <div className="border-t border-border px-4 py-4" role="status">
           <p className="text-sm text-secondary-text">{t('copilotOAuthLoading')}</p>
         </div>
       ) : connections.length > 0 ? (
-        <ul className="grid gap-3 border-t border-border px-5 py-3">
+        <ul className="grid gap-2 border-t border-border p-3">
           {connections.map((item) => {
             const selected = item.id === selectedConnectionId;
             const needsSignIn = item.authStatus === 'reauth_required';
             return (
               <li
-                className={`rounded-card border p-3 ${selected ? 'border-border bg-raised' : 'border-transparent bg-surface'}`}
+                className="rounded-control border border-border bg-surface p-3"
                 key={item.id}
               >
-                <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="flex flex-wrap items-center justify-between gap-3">
                   <div className="flex min-w-0 items-start gap-3">
                     <CircleUserRound aria-hidden="true" className="mt-0.5 shrink-0 text-secondary-icon" size={20} />
                     <div className="min-w-0">

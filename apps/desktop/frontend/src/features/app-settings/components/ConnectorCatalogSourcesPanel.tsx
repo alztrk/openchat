@@ -2,7 +2,7 @@ import { Check, Download, LoaderCircle, Plus, RefreshCw, Trash2 } from 'lucide-r
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button, Card, Dialog, Input } from '@shared/components';
+import { Button, Card, Input } from '@shared/components';
 import {
   type ConnectorCatalogEntry,
   type ConnectorCatalogSource,
@@ -35,7 +35,7 @@ export function ConnectorCatalogSourcesPanel({
   const [sourceError, setSourceError] = useState(false);
   const [isSavingSources, setIsSavingSources] = useState(false);
   const [loadAttempt, setLoadAttempt] = useState(0);
-  const [showAddDialog, setShowAddDialog] = useState(false);
+  const [showAddForm, setShowAddForm] = useState(false);
   const [name, setName] = useState('');
   const [url, setUrl] = useState('');
   const [publicKey, setPublicKey] = useState('');
@@ -94,7 +94,7 @@ export function ConnectorCatalogSourcesPanel({
         return;
       }
       if (await persistSources([...sources, source])) {
-        setShowAddDialog(false);
+        setShowAddForm(false);
         setName('');
         setUrl('');
         setPublicKey('');
@@ -161,23 +161,25 @@ export function ConnectorCatalogSourcesPanel({
   };
 
   return (
-    <section aria-labelledby="connector-catalog-sources-heading" className="grid gap-4">
+    <section aria-labelledby="connector-catalog-sources-heading" className="settings-section-group grid">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <h3 className="font-medium text-text" id="connector-catalog-sources-heading">
             {t('connectorSourcesTitle')}
           </h3>
-          <p className="mt-1 text-sm text-secondary-text">{t('connectorSourcesDescription')}</p>
+          <p className="mt-1 max-w-4xl text-sm text-secondary-text">{t('connectorSourcesDescription')}</p>
         </div>
-        <Button disabled={isSavingSources} onClick={() => setShowAddDialog(true)} size="small" variant="secondary">
+        <Button
+          disabled={isSavingSources || showAddForm}
+          onClick={() => setShowAddForm(true)}
+          size="small"
+          variant="secondary"
+        >
           <Plus aria-hidden="true" size={15} />
           {t('connectorSourceAdd')}
         </Button>
       </div>
-      <Card className="flex gap-3" padding="default" role="note">
-        <p className="text-sm text-secondary-text">{t('connectorSourceIdentityWarning')}</p>
-      </Card>
-
+      <div className="settings-surface-card grid gap-4 overflow-hidden rounded-card border border-border bg-raised p-4 sm:p-5">
       {loadFailed ? (
         <div className="flex flex-wrap items-center gap-3" role="alert">
           <p className="text-sm text-destructive">{t('connectorSourceLoadError')}</p>
@@ -232,6 +234,69 @@ export function ConnectorCatalogSourcesPanel({
           ))}
         </div>
       )}
+      {showAddForm ? (
+        <div className="grid gap-4 border-t border-border pt-4">
+          <h4 className="font-medium text-text">{t('connectorSourceAdd')}</h4>
+          <form
+            className="grid gap-4"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void addSource();
+            }}
+          >
+            <Input
+              disabled={isSavingSources}
+              label={t('connectorSourceName')}
+              onChange={(event) => setName(event.target.value)}
+              placeholder={t('connectorSourceNamePlaceholder')}
+              required
+              value={name}
+            />
+            <Input
+              autoComplete="url"
+              disabled={isSavingSources}
+              label={t('connectorSourceUrl')}
+              onChange={(event) => setUrl(event.target.value)}
+              placeholder={t('connectorSourceUrlPlaceholder')}
+              required
+              type="url"
+              value={url}
+            />
+            <Input
+              autoCapitalize="none"
+              autoComplete="off"
+              disabled={isSavingSources}
+              label={t('connectorSourcePublicKey')}
+              onChange={(event) => setPublicKey(event.target.value)}
+              placeholder={t('connectorSourcePublicKeyPlaceholder')}
+              required
+              value={publicKey}
+            />
+            <p className="text-xs text-secondary-text">{t('connectorSourceKeyHelp')}</p>
+            {addFailed ? (
+              <p className="text-sm text-destructive" role="alert">
+                {t('connectorSourceAddFailed')}
+              </p>
+            ) : null}
+            <div className="flex flex-wrap justify-end gap-2 border-t border-border pt-3">
+              <Button
+                disabled={isSavingSources}
+                onClick={() => {
+                  setShowAddForm(false);
+                  setAddFailed(false);
+                }}
+                type="button"
+                variant="ghost"
+              >
+                {t('cancel')}
+              </Button>
+              <Button loading={isSavingSources} type="submit" variant="primary">
+                {t('connectorSourceAdd')}
+              </Button>
+            </div>
+          </form>
+        </div>
+      ) : null}
       {sourceError ? (
         <p className="text-sm text-destructive" role="alert">
           {t('connectorSourceAddFailed')}
@@ -288,55 +353,7 @@ export function ConnectorCatalogSourcesPanel({
           ) : null}
         </section>
       ) : null}
-
-      <Dialog
-        onOpenChange={(open) => {
-          if (!open) {
-            setShowAddDialog(false);
-            setAddFailed(false);
-          }
-        }}
-        open={showAddDialog}
-        title={t('connectorSourceAddDialogTitle')}
-      >
-        <div className="grid gap-4">
-          <Input
-            disabled={isSavingSources}
-            label={t('connectorSourceName')}
-            onChange={(event) => setName(event.target.value)}
-            value={name}
-          />
-          <Input
-            autoComplete="url"
-            disabled={isSavingSources}
-            label={t('connectorSourceUrl')}
-            onChange={(event) => setUrl(event.target.value)}
-            value={url}
-          />
-          <Input
-            autoCapitalize="none"
-            autoComplete="off"
-            disabled={isSavingSources}
-            label={t('connectorSourcePublicKey')}
-            onChange={(event) => setPublicKey(event.target.value)}
-            value={publicKey}
-          />
-          <p className="text-xs text-secondary-text">{t('connectorSourceKeyHelp')}</p>
-          {addFailed ? (
-            <p className="text-sm text-destructive" role="alert">
-              {t('connectorSourceAddFailed')}
-            </p>
-          ) : null}
-          <div className="flex justify-end gap-2 border-t border-border pt-3">
-            <Button disabled={isSavingSources} onClick={() => setShowAddDialog(false)} variant="ghost">
-              {t('cancel')}
-            </Button>
-            <Button loading={isSavingSources} onClick={() => void addSource()} variant="primary">
-              {t('connectorSourceAdd')}
-            </Button>
-          </div>
-        </div>
-      </Dialog>
+      </div>
     </section>
   );
 }

@@ -161,7 +161,7 @@ export function ConversationSidebarToolbar({
         <DropdownMenuTrigger asChild>
           <Button
             aria-label={t('moreOptions')}
-            className="conversation-sidebar-minimal-menu-trigger size-9 shrink-0 border-border bg-surface/80 px-0 text-secondary-icon shadow-2xs backdrop-blur-sm transition-all duration-quick hover:border-control-border hover:bg-raised/90 hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+            className="conversation-sidebar-minimal-menu-trigger size-9 shrink-0 border-transparent bg-transparent px-0 text-secondary-icon shadow-none transition-colors duration-quick hover:border-transparent hover:bg-hover/70 hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
             size="icon"
             title={t('moreOptions')}
             type="button"
@@ -271,7 +271,7 @@ export function ConversationSidebarToolbar({
       </div>
       <Button
         aria-label={t('createProject')}
-        className="conversation-sidebar-toolbar-button size-9 shrink-0 border-border bg-surface/80 px-0 text-secondary-icon shadow-2xs backdrop-blur-sm transition-all duration-quick hover:border-control-border hover:bg-raised/90 hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus disabled:opacity-45"
+        className="conversation-sidebar-toolbar-button size-9 shrink-0 border-transparent bg-transparent px-0 text-secondary-icon shadow-none transition-colors duration-quick hover:border-transparent hover:bg-hover/70 hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus disabled:opacity-45"
         disabled={isBusy}
         onClick={onCreateProject}
         size="icon"
@@ -287,7 +287,7 @@ export function ConversationSidebarToolbar({
         className={`conversation-sidebar-toolbar-button size-9 shrink-0 border px-0 backdrop-blur-sm transition-all duration-quick focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus ${
           temporaryChat
             ? 'border-accent/40 bg-accent/15 text-accent hover:bg-accent/25'
-            : 'border-border bg-surface/80 text-secondary-icon shadow-2xs hover:border-control-border hover:bg-raised/90 hover:text-text'
+            : 'border-transparent bg-transparent text-secondary-icon shadow-none hover:border-transparent hover:bg-hover/70 hover:text-text'
         }`}
         onClick={onStartTemporaryChat}
         size="icon"
@@ -301,7 +301,7 @@ export function ConversationSidebarToolbar({
         <DropdownMenuTrigger asChild>
           <Button
             aria-label={t('sidebarViewAndSortOptions')}
-            className="conversation-sidebar-toolbar-button size-9 shrink-0 border-border bg-surface/80 px-0 text-secondary-icon shadow-2xs backdrop-blur-sm transition-all duration-quick hover:border-control-border hover:bg-raised/90 hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus data-[state=open]:border-control-border data-[state=open]:bg-raised data-[state=open]:text-text"
+            className="conversation-sidebar-toolbar-button size-9 shrink-0 border-transparent bg-transparent px-0 text-secondary-icon shadow-none transition-colors duration-quick hover:border-transparent hover:bg-hover/70 hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus data-[state=open]:bg-hover data-[state=open]:text-text"
             size="icon"
             title={t('sidebarViewAndSortOptions')}
             type="button"

@@ -34,6 +34,7 @@ use windows::Win32::System::Com::{
     CLSCTX_LOCAL_SERVER, COINIT_APARTMENTTHREADED, COINIT_MULTITHREADED, REGCLS_MULTIPLEUSE,
 };
 use windows::Win32::System::Variant::VT_LPWSTR;
+use windows::Win32::System::WinRT::{RoInitialize, RoUninitialize, RO_INIT_SINGLETHREADED};
 use windows::Win32::UI::Notifications::{
     INotificationActivationCallback, INotificationActivationCallback_Impl,
     NOTIFICATION_USER_INPUT_DATA,
@@ -63,6 +64,7 @@ const ACTIVATOR_CLASS_ID: GUID = GUID::from_u128(0x7db420de_9ea4_4e36_91f5_8d222
 const ACTIVATOR_CLASS_ID_TEXT: &str = "7db420de-9ea4-4e36-91f5-8d2224017381";
 
 static APP_IDENTITY: OnceLock<Result<(), String>> = OnceLock::new();
+static TOAST_IDENTITY: OnceLock<Result<(), String>> = OnceLock::new();
 static NOTIFIER: OnceLock<Result<ToastsNotifier, String>> = OnceLock::new();
 static ACTIVE_NOTIFICATIONS: OnceLock<Mutex<Vec<Notification<'static>>>> = OnceLock::new();
 
@@ -76,8 +78,44 @@ impl Drop for ComApartmentGuard {
     }
 }
 
+struct WinRtApartmentGuard;
+
+impl Drop for WinRtApartmentGuard {
+    fn drop(&mut self) {
+        // SAFETY: This guard is created only after WinRT initialization succeeds on this thread.
+        unsafe { RoUninitialize() };
+    }
+}
+
 pub(crate) fn read_status() -> String {
-    let Ok(notifier) = notifier() else {
+    if TOAST_IDENTITY.get_or_init(register_toast_identity).is_err() {
+        return "unavailable".to_owned();
+    }
+
+    let (status_sender, status_receiver) = mpsc::sync_channel(1);
+    let worker = thread::Builder::new()
+        .name("openchat-notification-status".to_owned())
+        .spawn(move || {
+            // WinRT toast APIs require WinRT initialization on the calling thread.
+            // SAFETY: This worker is new and owns its WinRT apartment for this call.
+            if unsafe { RoInitialize(RO_INIT_SINGLETHREADED) }.is_err() {
+                let _ = status_sender.send("unavailable".to_owned());
+                return;
+            }
+            let _apartment = WinRtApartmentGuard;
+            let _ = status_sender.send(read_status_on_current_thread());
+        });
+    if worker.is_err() {
+        return "unavailable".to_owned();
+    }
+
+    status_receiver
+        .recv()
+        .unwrap_or_else(|_| "unavailable".to_owned())
+}
+
+fn read_status_on_current_thread() -> String {
+    let Ok(notifier) = ToastsNotifier::new(Some(APP_USER_MODEL_ID)) else {
         return "unavailable".to_owned();
     };
     // SAFETY: The notifier owns a live COM interface for the duration of this call.
@@ -295,6 +333,10 @@ pub(crate) fn send_user_question(
 fn notifier() -> Result<&'static ToastsNotifier, String> {
     activation_setup_result()?;
     APP_IDENTITY.get_or_init(register_app_identity).clone()?;
+    notifier_instance()
+}
+
+fn notifier_instance() -> Result<&'static ToastsNotifier, String> {
     match NOTIFIER.get_or_init(|| {
         ToastsNotifier::new(Some(APP_USER_MODEL_ID))
             .map_err(|_| "Windows notification delivery is unavailable.".to_owned())
@@ -305,12 +347,18 @@ fn notifier() -> Result<&'static ToastsNotifier, String> {
 }
 
 fn register_app_identity() -> Result<(), String> {
+    TOAST_IDENTITY
+        .get_or_init(register_toast_identity)
+        .clone()?;
+    register_custom_activator()?;
+    start_activation_class_server()
+}
+
+fn register_toast_identity() -> Result<(), String> {
     // SAFETY: The macro supplies a static NUL-terminated application identifier.
     unsafe { SetCurrentProcessExplicitAppUserModelID(w!("OpenChat.Desktop")) }
         .map_err(|_| "Windows could not register the OpenChat notification identity.".to_owned())?;
-    ensure_toast_shortcut()?;
-    register_custom_activator()?;
-    start_activation_class_server()
+    ensure_toast_shortcut()
 }
 
 fn register_custom_activator() -> Result<(), String> {

@@ -1,9 +1,9 @@
 import type { TFunction } from 'i18next';
-import { AlertCircle, Download, Info, LoaderCircle, Pencil, Plus, Trash2 } from 'lucide-react';
+import { AlertCircle, Download, LoaderCircle, Pencil, Plus, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button, Card, Dialog, Input } from '@shared/components';
+import { Button, Card, Input } from '@shared/components';
 import { useChatStore } from '@features/chat/state/chatStore';
 import { type ProjectMcpServer, parseProjectMcpCatalog } from '@features/projects/data/projectMcp';
 import {
@@ -20,7 +20,8 @@ import {
 import type { ConnectorManifest } from '@features/app-settings/data/connectorManifest';
 import { localServiceClient } from '@shared/lib/platform/local-service';
 import { ConnectorCatalogSourcesPanel } from './ConnectorCatalogSourcesPanel';
-import { ConnectorTemplateDialog } from './ConnectorTemplateDialog';
+import { ConnectorTemplateForm } from './ConnectorTemplateForm';
+import { SettingsSectionSkeleton } from './SettingsSectionSkeleton';
 
 type LoadState = 'loading' | 'ready' | 'failed';
 type SaveOutcome = 'saved' | 'duplicate' | 'failed';
@@ -272,19 +273,7 @@ export function ConnectorCatalogSettingsSection() {
   };
 
   return (
-    <section aria-labelledby="settings-page-heading" className="grid gap-5">
-      <p className="text-sm text-secondary-text">{t('connectorCatalogIntro')}</p>
-      <Card className="flex gap-3" padding="default" role="note">
-        <Info aria-hidden="true" className="mt-0.5 shrink-0 text-info" size={18} />
-        <p className="text-sm text-secondary-text">{t('connectorCatalogSecurityNotice')}</p>
-      </Card>
-      {activeProjectId === null ? (
-        <Card className="flex gap-3" id="connector-catalog-no-project" padding="default" role="note">
-          <Info aria-hidden="true" className="mt-0.5 shrink-0 text-secondary-text" size={18} />
-          <p className="text-sm text-secondary-text">{t('connectorCatalogNoProject')}</p>
-        </Card>
-      ) : null}
-
+    <section aria-labelledby="settings-page-heading" className="settings-section grid content-start gap-6">
       {installFeedback ? (
         <p aria-live="polite" className="text-sm text-success" role="status">
           {t('connectorCatalogInstalled')}
@@ -318,71 +307,119 @@ export function ConnectorCatalogSettingsSection() {
         </div>
       ) : null}
 
-      {loadState === 'failed' ? (
-        <Card className="grid gap-3" padding="comfortable" role="alert">
-          <p className="flex items-center gap-2 text-sm text-destructive">
-            <AlertCircle aria-hidden="true" size={16} />
-            {t(errorKey ?? 'connectorCatalogLoadFailed')}
-          </p>
-          <Button className="justify-self-start" onClick={() => setLoadAttempt((attempt) => attempt + 1)} size="small">
-            {t('retry')}
-          </Button>
-        </Card>
-      ) : (
-        <>
-          {loadState !== 'loading' && entries.length > 0 ? (
-            <Input
-              label={t('connectorCatalogSearch')}
-              onChange={(event) => setSearch(event.target.value)}
-              value={search}
-            />
+      <div className="settings-section-group grid">
+        <div className="flex flex-wrap items-end justify-between gap-3 px-1">
+          <div className="min-w-0">
+            <h2 className="text-sm font-semibold text-secondary-text">{t('connectorCatalogTemplatesTitle')}</h2>
+            <p className="mt-1 text-sm text-secondary-text">{t('connectorCatalogTemplatesDescription')}</p>
+          </div>
+          {loadState !== 'failed' && editorEntry === undefined ? (
+            <Button
+              disabled={loadState !== 'ready' || isSaving}
+              onClick={() => {
+                setInstallEntryTarget(null);
+                setDeleteEntry(null);
+                setEditorEntry(null);
+              }}
+              size="small"
+              variant="secondary"
+            >
+              <Plus aria-hidden="true" size={16} />
+              {t('connectorCatalogAdd')}
+            </Button>
           ) : null}
-
-          {loadState === 'loading' ? (
-            <div aria-live="polite" className="flex justify-center py-8" role="status">
-              <LoaderCircle aria-hidden="true" className="animate-spin text-secondary-text" size={22} />
+        </div>
+        <div
+          className={`connector-catalog-surface settings-surface-card rounded-card border border-border bg-raised p-4 sm:p-5 ${
+            editorEntry !== undefined && entries.length > 0 ? 'connector-catalog-surface--editing' : ''
+          }`}
+        >
+          {loadState === 'failed' ? (
+            <div className="grid gap-3" role="alert">
+              <p className="flex items-center gap-2 text-sm text-destructive">
+                <AlertCircle aria-hidden="true" size={16} />
+                {t(errorKey ?? 'connectorCatalogLoadFailed')}
+              </p>
+              <Button
+                className="justify-self-start"
+                onClick={() => setLoadAttempt((attempt) => attempt + 1)}
+                size="small"
+              >
+                {t('retry')}
+              </Button>
             </div>
-          ) : entries.length === 0 ? (
-            <Card padding="comfortable">
-              <p className="text-sm text-secondary-text">{t('connectorCatalogEmpty')}</p>
-            </Card>
-          ) : visibleEntries.length === 0 ? (
-            <Card padding="comfortable">
-              <p className="text-sm text-secondary-text">{t('connectorCatalogNoResults')}</p>
-            </Card>
           ) : (
-            <div className="grid gap-3">
-              {visibleEntries.map((entry) => (
-                <ConnectorEntryCard
-                  canInstall={
-                    serviceStatus === 'ready' &&
-                    activeProjectId !== null &&
-                    installingId === null &&
-                    (entry.package === undefined || entry.package.authenticodeSignerSha256 !== undefined)
-                  }
-                  entry={entry}
-                  hasProject={activeProjectId !== null}
-                  installing={installingId === entry.id}
-                  key={entry.id}
-                  onDelete={() => setDeleteEntry(entry)}
-                  onEdit={() => setEditorEntry(entry)}
-                  onInstall={() => setInstallEntryTarget(entry)}
-                  t={t}
+            <>
+              {editorEntry !== undefined ? (
+                <ConnectorTemplateForm
+                  entry={editorEntry}
+                  key={editorEntry?.id ?? 'new-template'}
+                  onClose={() => setEditorEntry(undefined)}
+                  onSave={saveEntry}
                 />
-              ))}
-            </div>
+              ) : null}
+              <div className={`connector-catalog-list ${editorEntry !== undefined ? 'connector-catalog-list--editing' : ''}`}>
+                {loadState !== 'loading' && entries.length > 0 ? (
+                  <Input
+                    label={t('connectorCatalogSearch')}
+                    onChange={(event) => setSearch(event.target.value)}
+                    value={search}
+                  />
+                ) : null}
+                {loadState === 'loading' ? (
+                  <SettingsSectionSkeleton label={t('settingsSectionLoading')} />
+                ) : entries.length === 0 ? (
+                  editorEntry === undefined ? <p className="text-sm text-secondary-text">{t('connectorCatalogEmpty')}</p> : null
+                ) : visibleEntries.length === 0 ? (
+                <p className="text-sm text-secondary-text">{t('connectorCatalogNoResults')}</p>
+                ) : (
+                <div className="connector-catalog-entries grid gap-3">
+                  {visibleEntries.map((entry) => (
+                    <ConnectorEntryCard
+                      canInstall={
+                        serviceStatus === 'ready' &&
+                        activeProjectId !== null &&
+                        installingId === null &&
+                        (entry.package === undefined || entry.package.authenticodeSignerSha256 !== undefined)
+                      }
+                      entry={entry}
+                      deletePending={deleteEntry?.id === entry.id}
+                      installPending={installEntryTarget?.id === entry.id}
+                      installing={installingId === entry.id}
+                      key={entry.id}
+                      onCancelDelete={() => setDeleteEntry(null)}
+                      onCancelInstall={() => setInstallEntryTarget(null)}
+                      onConfirmDelete={confirmDelete}
+                      onConfirmInstall={() => {
+                        setInstallEntryTarget(null);
+                        void installEntry(entry);
+                      }}
+                      onDelete={() => {
+                        setEditorEntry(undefined);
+                        setInstallEntryTarget(null);
+                        setDeleteEntry(entry);
+                      }}
+                      onEdit={() => {
+                        setDeleteEntry(null);
+                        setInstallEntryTarget(null);
+                        setEditorEntry(entry);
+                      }}
+                      onInstall={() => {
+                        setEditorEntry(undefined);
+                        setDeleteEntry(null);
+                        setInstallEntryTarget(entry);
+                      }}
+                      saving={isSaving}
+                      t={t}
+                    />
+                  ))}
+                </div>
+                )}
+              </div>
+            </>
           )}
-
-          <Button
-            className="justify-self-start"
-            disabled={loadState !== 'ready' || isSaving}
-            onClick={() => setEditorEntry(null)}
-          >
-            <Plus aria-hidden="true" size={16} />
-            {t('connectorCatalogAdd')}
-          </Button>
-        </>
-      )}
+        </div>
+      </div>
 
       {errorKey === 'connectorCatalogSaveFailed' ? (
         <p className="text-sm text-destructive" role="alert">
@@ -396,83 +433,44 @@ export function ConnectorCatalogSettingsSection() {
         onImport={saveEntry}
       />
 
-      {editorEntry !== undefined ? (
-        <ConnectorTemplateDialog
-          entry={editorEntry}
-          onOpenChange={(open) => {
-            if (!open) setEditorEntry(undefined);
-          }}
-          onSave={saveEntry}
-        />
-      ) : null}
-
-      {installEntryTarget !== null ? (
-        <ConnectorInstallDialog
-          entry={installEntryTarget}
-          onConfirm={() => {
-            const entry = installEntryTarget;
-            setInstallEntryTarget(null);
-            void installEntry(entry);
-          }}
-          onOpenChange={(open) => {
-            if (!open) setInstallEntryTarget(null);
-          }}
-        />
-      ) : null}
-
-      <Dialog
-        onOpenChange={(open) => {
-          if (!open) setDeleteEntry(null);
-        }}
-        open={deleteEntry !== null}
-        title={t('connectorCatalogDelete')}
-      >
-        <p className="mb-5 text-sm text-secondary-text">{t('connectorCatalogDeleteConfirm')}</p>
-        <div className="flex flex-wrap justify-end gap-2">
-          <Button disabled={isSaving} onClick={() => setDeleteEntry(null)}>
-            {t('cancel')}
-          </Button>
-          <Button disabled={isSaving} onClick={confirmDelete} variant="destructive">
-            {isSaving ? (
-              <LoaderCircle aria-hidden="true" className="animate-spin" size={16} />
-            ) : (
-              <Trash2 aria-hidden="true" size={16} />
-            )}
-            {t('connectorCatalogDelete')}
-          </Button>
-        </div>
-      </Dialog>
     </section>
   );
 }
 
 function ConnectorEntryCard({
   canInstall,
+  deletePending,
   entry,
-  hasProject,
+  installPending,
   installing,
+  onCancelDelete,
+  onCancelInstall,
+  onConfirmDelete,
+  onConfirmInstall,
   onDelete,
   onEdit,
   onInstall,
+  saving,
   t,
 }: {
   canInstall: boolean;
+  deletePending: boolean;
   entry: ConnectorCatalogEntry;
-  hasProject: boolean;
+  installPending: boolean;
+  onCancelDelete(): void;
+  onCancelInstall(): void;
+  onConfirmDelete(): void;
+  onConfirmInstall(): void;
   onDelete(): void;
   onEdit(): void;
   onInstall(): void;
   installing: boolean;
+  saving: boolean;
   t: TFunction;
 }) {
   const missingSignerFingerprint = entry.package !== undefined && entry.package.authenticodeSignerSha256 === undefined;
   const signerNoticeId = `connector-catalog-signer-unavailable-${entry.id}`;
-  const describedBy = [
-    hasProject ? null : 'connector-catalog-no-project',
-    missingSignerFingerprint ? signerNoticeId : null,
-  ]
-    .filter((value): value is string => value !== null)
-    .join(' ');
+  const describedBy = missingSignerFingerprint ? signerNoticeId : undefined;
 
   return (
     <Card className="grid gap-4 sm:p-5" padding="default">
@@ -515,9 +513,9 @@ function ConnectorEntryCard({
       ) : null}
 
       <Button
-        aria-describedby={describedBy || undefined}
+        aria-describedby={describedBy}
         className="justify-self-start"
-        disabled={!canInstall || installing}
+        disabled={!canInstall || installing || saving}
         onClick={onInstall}
       >
         {installing ? (
@@ -527,18 +525,40 @@ function ConnectorEntryCard({
         )}
         {t('connectorCatalogInstall')}
       </Button>
+      {installPending ? (
+        <ConnectorInstallConfirmation entry={entry} onCancel={onCancelInstall} onConfirm={onConfirmInstall} />
+      ) : null}
+      {deletePending ? (
+        <fieldset className="grid gap-3 border-t border-border pt-4">
+          <legend className="sr-only">{t('connectorCatalogDelete')}</legend>
+          <p className="text-sm text-secondary-text">{t('connectorCatalogDeleteConfirm')}</p>
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button disabled={saving} onClick={onCancelDelete} variant="ghost">
+              {t('cancel')}
+            </Button>
+            <Button disabled={saving} onClick={onConfirmDelete} variant="destructive">
+              {saving ? (
+                <LoaderCircle aria-hidden="true" className="animate-spin" size={16} />
+              ) : (
+                <Trash2 aria-hidden="true" size={16} />
+              )}
+              {t('connectorCatalogDelete')}
+            </Button>
+          </div>
+        </fieldset>
+      ) : null}
     </Card>
   );
 }
 
-function ConnectorInstallDialog({
+function ConnectorInstallConfirmation({
   entry,
+  onCancel,
   onConfirm,
-  onOpenChange,
 }: {
   entry: ConnectorCatalogEntry;
+  onCancel(): void;
   onConfirm(): void;
-  onOpenChange(open: boolean): void;
 }) {
   const { i18n, t } = useTranslation();
   const authentication =
@@ -551,13 +571,8 @@ function ConnectorInstallDialog({
         : t('connectorCatalogProjectEnvironmentCredentials');
 
   return (
-    <Dialog
-      className="max-h-dialog-viewport overflow-y-auto"
-      onOpenChange={onOpenChange}
-      open
-      title={t('connectorCatalogInstall')}
-    >
-      <div className="grid gap-3">
+    <section aria-label={t('connectorCatalogInstall')} className="grid gap-3 border-t border-border pt-4">
+      <h4 className="font-medium text-text">{t('connectorCatalogInstall')}</h4>
         <p className="text-sm text-secondary-text">{t('connectorCatalogInstallPrompt')}</p>
         {entry.package ? <p className="text-sm text-secondary-text">{t('connectorPackageDownloadPrompt')}</p> : null}
         <dl className="grid gap-2 text-sm">
@@ -602,13 +617,12 @@ function ConnectorInstallDialog({
           </>
         ) : null}
         <div className="flex flex-wrap justify-end gap-2 border-t border-border pt-3">
-          <Button onClick={() => onOpenChange(false)}>{t('cancel')}</Button>
+          <Button onClick={onCancel} variant="ghost">{t('cancel')}</Button>
           <Button onClick={onConfirm} variant="primary">
             {t('connectorCatalogInstall')}
           </Button>
         </div>
-      </div>
-    </Dialog>
+    </section>
   );
 }
 

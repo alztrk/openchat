@@ -604,6 +604,8 @@ html[data-motion-input='keyboard'] .openchat-dialog {
   border-radius: var(--radius-button);
   padding: 0.5rem 0.625rem;
   outline: none;
+  cursor: pointer;
+  user-select: none;
   color: rgb(var(--text));
   font-size: var(--text-sm);
 }
@@ -625,12 +627,85 @@ html[data-motion-input='keyboard'] .openchat-dialog {
   box-shadow: none;
 }
 
+@supports (interpolate-size: allow-keywords) {
+  .openchat-tool-accordion {
+    interpolate-size: allow-keywords;
+  }
+
+  .openchat-tool-accordion::details-content {
+    block-size: 0;
+    overflow: clip;
+    transition:
+      block-size 180ms ease,
+      content-visibility 180ms allow-discrete;
+  }
+
+  .openchat-tool-accordion[open]::details-content {
+    block-size: auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .openchat-tool-accordion::details-content {
+    transition: none;
+  }
+}
+
 .shiki-token {
   color: var(--shiki-light, inherit);
 }
 
 .dark .shiki-token {
   color: var(--shiki-dark, inherit);
+}
+
+.th-token {
+  color: inherit;
+}
+
+.th-comment,
+.th-meta,
+.th-heading {
+  color: rgb(var(--secondary-text));
+}
+
+.th-keyword,
+.th-operator,
+.th-command {
+  color: rgb(var(--accent));
+}
+
+.th-string,
+.th-literal,
+.th-inserted {
+  color: rgb(var(--success));
+}
+
+.th-number,
+.th-link {
+  color: rgb(var(--info));
+}
+
+.th-function,
+.th-property,
+.th-selector,
+.th-type,
+.th-attr,
+.th-variable {
+  color: rgb(var(--warning));
+}
+
+.th-tag,
+.th-deleted {
+  color: rgb(var(--destructive));
+}
+
+.tool-patch-diff {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  --diffs-font-family: var(--font-code);
+  --diffs-font-size: var(--text-xs);
 }
 
 .tool-code-token-comment,

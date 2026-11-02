@@ -1,4 +1,4 @@
-import { Check, Copy, ExternalLink, Globe, Search, Terminal } from 'lucide-react';
+import { Check, Copy, ExternalLink, Terminal } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -24,7 +24,15 @@ import {
   translateToolError,
 } from './toolResultUtils';
 
-export function TerminalResult({ activity, output }: { activity: ToolActivity; output: ToolRecord }) {
+export function TerminalResult({
+  activity,
+  output,
+  compact = false,
+}: {
+  activity: ToolActivity;
+  output: ToolRecord;
+  compact?: boolean;
+}) {
   const { t } = useTranslation();
   const argumentsValue = asRecord(activity.arguments);
   const command = stringValue(argumentsValue?.command) ?? stringValue(output.command);
@@ -39,6 +47,7 @@ export function TerminalResult({ activity, output }: { activity: ToolActivity; o
   // biome-ignore lint/suspicious/noControlCharactersInRegex: The escape character identifies ANSI CSI sequences.
   const cleanOutput = rawOutput.replace(/\u001b\[[0-9;]*[a-zA-Z]/g, '').trim();
   const errorMessage = translateToolError(output, t);
+  const terminalOutput = cleanOutput || errorMessage;
   const running = output.is_running === true || activity.status === 'running';
   const waitingForInput = output.waiting_for_input === true || (running && output.waiting_for_input !== false);
   const terminated = output.status === 'terminated' || output.is_killed === true;
@@ -60,6 +69,14 @@ export function TerminalResult({ activity, output }: { activity: ToolActivity; o
       () => setCopyState('failed'),
     );
   };
+
+  if (compact) {
+    return terminalOutput ? (
+      <pre className="m-0 max-h-60 min-h-0 overflow-auto whitespace-pre-wrap break-words font-code text-xs leading-5 text-text">
+        {terminalOutput}
+      </pre>
+    ) : null;
+  }
 
   return (
     <div className="grid gap-2 pb-2">
@@ -122,10 +139,8 @@ export function TerminalResult({ activity, output }: { activity: ToolActivity; o
   );
 }
 
-export function WebSearchResult({ activity, output }: { activity: ToolActivity; output: ToolRecord }) {
+export function WebSearchResult({ output }: { output: ToolRecord }) {
   const { i18n, t } = useTranslation();
-  const args = asRecord(activity.arguments);
-  const query = stringValue(args?.query) ?? stringValue(output.query) ?? '';
   const sourceType = stringValue(output.sourceType);
   const sourceLabel = sourceType === 'local_web_search' ? t('toolLocalWebSource') : null;
   const retrievedAt = sourceType === 'local_web_search' ? safeTimestamp(output.retrievedAtUnixMs) : null;
@@ -157,27 +172,20 @@ export function WebSearchResult({ activity, output }: { activity: ToolActivity; 
   if (results.length !== output.results.length) return <ToolResultNotice message={t('toolOperationUnavailable')} />;
   if (results.length === 0) {
     return (
-      <div className="grid gap-2 pb-2">
+      <div className="grid gap-2">
         {attributionHtml ? <SafeWebAttribution html={attributionHtml} /> : null}
         <ToolResultNotice message={t('toolWebSearchNoResults')} />
       </div>
     );
   }
   return (
-    <div className="grid gap-2 pb-2">
+    <div className="grid gap-2">
       {attributionHtml ? <SafeWebAttribution html={attributionHtml} /> : null}
-      <div className="flex min-w-0 items-center gap-2 text-xs text-secondary-text">
-        <Search aria-hidden="true" className="shrink-0 text-secondary-icon" size={15} />
-        <span className="min-w-0 flex-1 truncate font-medium text-secondary-text">{query || t('toolSearchQuery')}</span>
-        <span className="shrink-0 rounded-control border border-border bg-surface px-1.5 py-0.5 font-semibold text-secondary-text">
-          {t('toolWebSearchResultCount', { count: results.length })}
-        </span>
-      </div>
-      <ul className="grid gap-2">
+      <ul className="divide-y divide-border border-y border-border">
         {results.map((result) => {
           const domain = new URL(result.url).host || result.url;
           return (
-            <li className="grid gap-1 rounded-control border border-border bg-surface p-2.5" key={result.url}>
+            <li className="grid gap-1.5 py-3 first:pt-2 last:pb-2" key={`${result.url}-${result.sourceId ?? ''}`}>
               <div className="flex min-w-0 items-center gap-1 text-xs text-secondary-text">
                 <span className="shrink-0 rounded-control bg-selected px-1.5 py-0.5 font-semibold text-accent-icon">
                   {result.engine.toUpperCase()}
@@ -357,79 +365,39 @@ export function GitResult({
 export function ReadUrlResult({
   activity,
   output,
-  locale,
 }: {
   activity: ToolActivity;
   output: ToolRecord;
-  locale: string;
 }) {
   const { t } = useTranslation();
   const args = asRecord(activity.arguments);
   const url = stringValue(output.url) ?? stringValue(args?.url) ?? activity.targetPath;
-  const title = stringValue(output.title);
   const content = stringValue(output.content);
   const length = integerValue(output.length);
   if (
     !url ||
     !isSafeHttpUrl(url) ||
-    title === null ||
     content === null ||
     length === null ||
     length < 0 ||
     typeof output.truncated !== 'boolean'
   )
     return <ToolResultNotice message={t('toolOperationUnavailable')} />;
-  const retrievedAt = safeTimestamp(output.retrievedAtUnixMs);
-  const sourceId = stringValue(output.sourceId);
-  const sourceType = stringValue(output.sourceType);
-  const sourceLabel = sourceType === 'local_read_url' ? t('toolLocalPageSource') : null;
   return (
-    <div className="grid gap-2 rounded-control border border-border bg-surface p-2.5 pb-2">
-      <div className="flex flex-wrap items-center gap-2 text-xs">
-        <Globe aria-hidden="true" className="shrink-0 text-accent-icon" size={14} />
-        <span className="min-w-0 flex-1 truncate font-semibold text-text">{title || new URL(url).host}</span>
-        <span className="rounded-control bg-selected px-2 py-1 text-secondary-text">
-          {t('toolReadUrlLength', { count: length })}
-        </span>
-        {output.truncated ? (
-          <span className="rounded-control bg-selected px-2 py-1 text-warning">{t('toolOperationTruncated')}</span>
-        ) : null}
-      </div>
-      <div className="flex min-w-0 items-center gap-2 text-xs text-secondary-text">
-        <span className="min-w-0 flex-1 truncate font-code" title={url}>
-          {url}
-        </span>
-        <CopyTextButton content={content} label={t('toolCopyContent')} />
-        <a
-          aria-label={t('toolOpenUrl')}
-          className="grid size-11 shrink-0 place-items-center rounded-button text-accent-icon hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
-          href={url}
-          rel="noopener noreferrer"
-          target="_blank"
-        >
-          <ExternalLink aria-hidden="true" size={14} />
-        </a>
-      </div>
-      {sourceId || sourceLabel || retrievedAt !== null ? (
-        <div className="flex flex-wrap items-center gap-2 text-xs text-secondary-text">
-          {sourceId ? (
-            <span className="rounded-control bg-selected px-1.5 py-0.5 text-secondary-text">
-              {t('toolCitationSource', { sourceId })}
-            </span>
-          ) : null}
-          {sourceLabel ? (
-            <span className="rounded-control bg-selected px-1.5 py-0.5 text-secondary-text">{sourceLabel}</span>
-          ) : null}
-          {retrievedAt !== null ? (
-            <span>{t('toolSourceRetrievedAt', { time: formatRetrievedAt(retrievedAt, locale) })}</span>
-          ) : null}
-        </div>
-      ) : null}
+    <div className="grid gap-2">
       {content ? (
-        <pre className="max-h-56 overflow-auto whitespace-pre-wrap break-words rounded-control border border-border bg-composer p-2 text-xs leading-5 text-text">
-          {content}
-        </pre>
-      ) : null}
+        <>
+          <div className="flex justify-end px-2 pt-1">
+            <CopyTextButton content={content} label={t('toolCopyContent')} />
+          </div>
+          <pre className="m-0 max-h-72 overflow-auto whitespace-pre-wrap break-words px-3 py-2 text-xs leading-5 text-text">
+            {content}
+          </pre>
+        </>
+      ) : (
+        <ToolResultNotice message={t('toolReadUrlNoText')} />
+      )}
+      {output.truncated ? <ResultFootnote message={t('toolOperationTruncated')} /> : null}
     </div>
   );
 }

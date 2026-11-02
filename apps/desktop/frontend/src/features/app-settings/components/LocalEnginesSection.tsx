@@ -2,6 +2,7 @@ import { FolderOpen, Link, LoaderCircle, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button, Card, Dialog } from '@shared/components';
+import { SettingsSectionSkeleton } from './SettingsSectionSkeleton';
 import type {
   BusyAction,
   DiscoveryResult,
@@ -414,9 +415,7 @@ export function LocalEnginesSection() {
   return (
     <section aria-labelledby="settings-page-heading" className="grid gap-6">
       {loadState === 'loading' ? (
-        <div aria-live="polite" className="flex justify-center py-8" role="status">
-          <LoaderCircle aria-hidden="true" className="animate-spin text-secondary-text" size={22} />
-        </div>
+        <SettingsSectionSkeleton label={t('settingsSectionLoading')} />
       ) : null}
       {loadState === 'error' ? (
         <div className="rounded-card border border-destructive/40 bg-surface p-4" role="alert">

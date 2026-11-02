@@ -6,7 +6,7 @@
 
 use serde_json::json;
 
-use super::tokenizer;
+use super::token_estimator;
 use crate::chatgpt_store::{ArchivedMemoryExcerpt, ConversationContextState, StoredMessage};
 
 pub(crate) const COMPACTION_TRIGGER_PERCENT: i64 = 80;
@@ -206,12 +206,14 @@ pub(crate) fn request_context_token_estimate(model_id: &str, value: &serde_json:
             .fold(2_i64, i64::saturating_add) // Array brackets.
             .saturating_add(i64::try_from(values.len().saturating_sub(1)).unwrap_or(i64::MAX)),
         serde_json::Value::String(text) => {
-            request_text_token_estimate(model_id, text).saturating_add(2)
+            request_text_token_estimate(text).saturating_add(2)
         }
         serde_json::Value::Null => 4,
         serde_json::Value::Bool(true) => 4,
         serde_json::Value::Bool(false) => 5,
-        serde_json::Value::Number(number) => text_token_estimate(model_id, &number.to_string()),
+        serde_json::Value::Number(number) => {
+            i64::try_from(number.to_string().len()).unwrap_or(i64::MAX)
+        },
     }
 }
 
@@ -241,7 +243,7 @@ pub(crate) fn request_image_count(value: &serde_json::Value) -> i64 {
 /// Estimates request text without allocating or invoking a model tokenizer.
 ///
 /// Dense structured content uses its UTF-8 byte length to avoid underestimating context usage.
-fn request_text_token_estimate(model_id: &str, text: &str) -> i64 {
+fn request_text_token_estimate(text: &str) -> i64 {
     let byte_length = text.len();
     let mut whitespace_count = 0usize;
     let mut punctuation_count = 0usize;
@@ -269,7 +271,7 @@ fn request_text_token_estimate(model_id: &str, text: &str) -> i64 {
     if byte_length >= 128
         && (whitespace_count == 0 || punctuation_count.saturating_mul(2) >= character_count)
     {
-        return text_token_estimate(model_id, text);
+        return i64::try_from(byte_length).unwrap_or(i64::MAX);
     }
 
     i64::try_from(ascii_bytes.div_ceil(3))
@@ -279,6 +281,27 @@ fn request_text_token_estimate(model_id: &str, text: &str) -> i64 {
                 .unwrap_or(i64::MAX)
                 .saturating_mul(2),
         )
+}
+
+fn dense_payload_byte_estimate(text: &str) -> Option<i64> {
+    if text.len() < 128 {
+        return None;
+    }
+
+    let mut whitespace_count = 0usize;
+    let mut punctuation_count = 0usize;
+    let mut character_count = 0usize;
+    for character in text.chars() {
+        character_count += 1;
+        if character.is_whitespace() {
+            whitespace_count += 1;
+        } else if !character.is_alphanumeric() {
+            punctuation_count += 1;
+        }
+    }
+
+    (whitespace_count == 0 || punctuation_count.saturating_mul(2) >= character_count)
+        .then(|| i64::try_from(text.len()).unwrap_or(i64::MAX))
 }
 
 /// Formats archived memory excerpts as bounded historical context, if present.
@@ -484,7 +507,7 @@ pub(crate) fn compaction_prefix_end(
         retained_tokens = retained_tokens.saturating_add(candidate_tokens);
         tail_start = candidate;
     }
-    (tail_start > start_index).then_some(tail_start - 1)
+    (tail_start > start_index).then(|| tail_start - 1)
 }
 
 /// Estimates the context cost of one stored message, including its attachments.
@@ -494,13 +517,16 @@ pub(crate) fn message_token_estimate(model_id: &str, message: &StoredMessage) ->
     {
         tokens
     } else {
-        text_token_estimate(model_id, &message.content)
+        dense_payload_byte_estimate(&message.content)
+            .unwrap_or_else(|| text_token_estimate(model_id, &message.content))
     };
     let activity_tokens = crate::history::tool_activity_summary_segments(message)
         .iter()
         .map(|(heading, content)| {
-            text_token_estimate(model_id, heading)
-                .saturating_add(text_token_estimate(model_id, content))
+            dense_payload_byte_estimate(heading)
+                .unwrap_or_else(|| text_token_estimate(model_id, heading))
+                .saturating_add(dense_payload_byte_estimate(content)
+                        .unwrap_or_else(|| text_token_estimate(model_id, content)))
         })
         .fold(0, i64::saturating_add);
     let image_tokens = if message.role == "user" {
@@ -520,9 +546,9 @@ pub(crate) fn message_token_estimate(model_id: &str, message: &StoredMessage) ->
         .saturating_add(image_tokens)
 }
 
-/// Estimates text tokens using tiktoken BPE for the given model.
+/// Estimates text tokens with a registered model tokenizer or an explicit fallback.
 pub(crate) fn text_token_estimate(model_id: &str, text: &str) -> i64 {
-    tokenizer::count_tokens(model_id, text)
+    token_estimator::estimate_text(model_id, text).tokens
 }
 
 pub(crate) fn estimated_history_tokens(
@@ -688,19 +714,19 @@ mod tests {
 
     #[test]
     fn request_text_estimate_preserves_ascii_unicode_and_dense_text_rules() {
-        assert_eq!(request_text_token_estimate(TEST_MODEL, "a"), 1);
-        assert_eq!(request_text_token_estimate(TEST_MODEL, "abcd"), 2);
-        assert_eq!(request_text_token_estimate(TEST_MODEL, "Türkçe"), 6);
+        assert_eq!(request_text_token_estimate("a"), 1);
+        assert_eq!(request_text_token_estimate("abcd"), 2);
+        assert_eq!(request_text_token_estimate("Türkçe"), 6);
         assert_eq!(
-            request_text_token_estimate(TEST_MODEL, &"a ".repeat(64)),
+            request_text_token_estimate(&"a ".repeat(64)),
             43
         );
         assert_eq!(
-            request_text_token_estimate(TEST_MODEL, &"!. ".repeat(43)),
+            request_text_token_estimate(&"!. ".repeat(43)),
             129
         );
         assert_eq!(
-            request_text_token_estimate(TEST_MODEL, &"é".repeat(64)),
+            request_text_token_estimate(&"é".repeat(64)),
             128
         );
     }
@@ -956,7 +982,7 @@ mod tests {
             active_compaction_matches: false,
         }));
 
-        let at_threshold = usage_state(1630, "opencode", "model-a", None);
+        let at_threshold = usage_state(1636, "opencode", "model-a", None);
         assert!(should_compact(CompactionCheck {
             context_window: Some(2048),
             state: Some(&at_threshold),
@@ -985,8 +1011,15 @@ mod tests {
 
     #[test]
     fn compaction_keeps_the_latest_user_message_and_immediate_tail() {
+        let old_content = (0..160)
+            .map(|index| {
+                format!(
+                    "Historical detail {index} records a distinct observation for later reference. "
+                )
+            })
+            .collect::<String>();
         let messages = [
-            message("old", "user", &"old detail ".repeat(300)),
+            message("old", "user", &old_content),
             message("assistant", "assistant", "recent answer"),
             message("latest", "user", "continue"),
         ];

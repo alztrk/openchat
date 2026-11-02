@@ -224,6 +224,10 @@ export function createTemporarySendMessageAction(
       temporaryChat: nextSession,
       messages: [...current.messages, userMessage],
       isSending: true,
+      sendingConversationId: session.id,
+      sendingConversationIds: current.sendingConversationIds.includes(session.id)
+        ? current.sendingConversationIds
+        : [...current.sendingConversationIds, session.id],
       errorCode: null,
       errorMessage: null,
       opencodeRetryAtUnixMs: null,
@@ -271,7 +275,7 @@ export function createTemporarySendMessageAction(
       window.dispatchEvent(
         new CustomEvent('openchat-chat-request-started', { detail: { conversationId: session.id } }),
       );
-      operation = await localServiceClient.startOperation('chat.temporary.send', parameters, (event) => {
+      const activeOperation = await localServiceClient.startOperation('chat.temporary.send', parameters, (event) => {
         const message = applyStreamEvent(event, assistantMessage, {
           conversationId: session.id,
           providerId: selectedModel.providerId,
@@ -281,7 +285,14 @@ export function createTemporarySendMessageAction(
         assistantMessage = message;
         streamUi.enqueue(message, event.name === 'chat.text.delta');
       });
-      set({ activeOperation: operation });
+      operation = activeOperation;
+      set((current) => ({
+        activeOperation: activeOperation,
+        activeOperationsByConversation: {
+          ...current.activeOperationsByConversation,
+          [session.id]: activeOperation,
+        },
+      }));
       const result = await operation.result;
       streamUi.flush();
       if (
@@ -369,11 +380,19 @@ export function createTemporarySendMessageAction(
         new CustomEvent('openchat-chat-request-finished', { detail: { conversationId: session.id } }),
       );
       streamUi.dispose();
-      if (get().temporaryChat?.id === session.id) {
-        set({ isSending: false, activeOperation: null });
-      } else if (get().activeOperation === operation) {
-        set({ isSending: false, activeOperation: null });
-      }
+      set((current) => {
+        const sendingConversationIds = current.sendingConversationIds.filter((id) => id !== session.id);
+        const activeOperationsByConversation = Object.fromEntries(
+          Object.entries(current.activeOperationsByConversation).filter(([id]) => id !== session.id),
+        );
+        return {
+          isSending: sendingConversationIds.length > 0,
+          sendingConversationIds,
+          sendingConversationId: sendingConversationIds[0] ?? null,
+          activeOperationsByConversation,
+          activeOperation: Object.values(activeOperationsByConversation)[0] ?? null,
+        };
+      });
     }
   };
 }

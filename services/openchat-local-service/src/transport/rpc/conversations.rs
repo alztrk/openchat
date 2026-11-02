@@ -8,7 +8,7 @@ use serde_json::{Value, json};
 use tokio::sync::watch;
 
 use crate::{
-    chatgpt_store, conversation_archive, document_parser, instructions, openai_compatible,
+    chatgpt_store, context_usage, conversation_archive, document_parser, instructions, openai_compatible,
     profile_archive,
     protocol::{EventSink, Response, ServiceError},
     storage::{AppStorage, sqlite_error_code},
@@ -426,109 +426,98 @@ pub(super) async fn dispatch(
         "chat.context.usage.full_estimate" => {
             let model_id = optional_string(params, "modelId")?;
             let conversation_id = optional_string(params, "conversationId")?;
-            let draft_text = optional_string(params, "draft")?;
-            let attachment_list: Vec<(String, String, i64)> = match params.get("attachments") {
+            let provider_id = optional_string(params, "providerId")?;
+            let connection_id = optional_string(params, "connectionId")?;
+            let workspace_id = optional_string(params, "workspaceId")?;
+            let draft_text = optional_string(params, "draft")?.unwrap_or_default();
+            let attachment_list = match params.get("attachments") {
                 None => Vec::new(),
                 Some(Value::Array(items)) => items
                     .iter()
-                    .filter_map(|item| {
-                        item.as_object().and_then(|o| {
-                            let name = o.get("name")?.as_str()?.to_owned();
-                            let kind = o.get("kind")?.as_str()?.to_owned();
-                            let size_bytes = o.get("sizeBytes")?.as_u64()? as i64;
-                            Some((name, kind, size_bytes))
+                    .map(|item| {
+                        let object = item.as_object().ok_or_else(invalid_context_usage_params)?;
+                        let name = object
+                            .get("name")
+                            .and_then(Value::as_str)
+                            .filter(|name| !name.is_empty() && name.len() <= 1024)
+                            .ok_or_else(invalid_context_usage_params)?
+                            .to_owned();
+                        let kind = object
+                            .get("kind")
+                            .and_then(Value::as_str)
+                            .filter(|kind| matches!(*kind, "image" | "text"))
+                            .ok_or_else(invalid_context_usage_params)?
+                            .to_owned();
+                        let size_bytes = object
+                            .get("sizeBytes")
+                            .and_then(Value::as_u64)
+                            .and_then(|size| i64::try_from(size).ok())
+                            .ok_or_else(invalid_context_usage_params)?;
+                        Ok(context_usage::PendingAttachmentEstimate {
+                            name,
+                            kind,
+                            size_bytes,
                         })
                     })
-                    .collect(),
-                _ => return Err(invalid_context_usage_params()),
+                    .collect::<Result<Vec<_>, ServiceError>>()?,
+                Some(_) => return Err(invalid_context_usage_params()),
             };
-            let result: Result<Value, ServiceError> = (move || {
-                let model_id_ref = model_id.as_deref().unwrap_or("gpt-4");
-                // Load conversation messages from storage (tiktoken counts these)
-                let messages = if let Some(conv_id) = &conversation_id {
-                    chatgpt_store::conversation_messages(storage, conv_id).map_err(|_| {
+            let model_id_ref = model_id.as_deref().unwrap_or("unknown-model");
+            let result: Result<Value, ServiceError> = (|| {
+                let messages = if let Some(conversation_id) = &conversation_id {
+                    chatgpt_store::conversation_messages(storage, conversation_id).map_err(|_| {
                         ServiceError::new(
                             "storage_unavailable",
                             "Chat history could not be read for token estimation.",
-                            false,
+                            true,
                         )
                     })?
                 } else {
                     Vec::new()
                 };
-                // Tokenize all messages (user + assistant)
-                let message_tokens: i64 = messages
-                    .iter()
-                    .map(|m| crate::context_compaction::message_token_estimate(model_id_ref, m))
-                    .sum();
-                // Tool usage (from activity summaries)
-                let tool_usage_tokens: i64 = messages
-                    .iter()
-                    .flat_map(|m| crate::history::tool_activity_summary_segments(m).into_iter())
-                    .map(|(h, c)| {
-                        crate::context_compaction::text_token_estimate(model_id_ref, &h)
-                            .saturating_add(crate::context_compaction::text_token_estimate(
-                                model_id_ref,
-                                &c,
-                            ))
-                    })
-                    .sum();
-                // Attachments
-                let attachment_tokens: i64 = attachment_list
-                    .iter()
-                    .map(|(_, kind, size)| {
-                        if *kind == "image" {
-                            2048i64
-                        } else {
-                            crate::context_compaction::text_token_estimate(
-                                model_id_ref,
-                                &size.to_string(),
-                            )
-                        }
-                    })
-                    .sum();
-                // Draft
-                let draft_tokens = draft_text
-                    .as_ref()
-                    .map(|d| crate::context_compaction::text_token_estimate(model_id_ref, d))
-                    .unwrap_or(0);
-                // Summary from compaction memory
-                let summary_tokens: i64 = if let Some(conv_id) = &conversation_id {
-                    chatgpt_store::load_conversation_context_state(storage, conv_id)
-                        .ok()
-                        .flatten()
-                        .and_then(|s| {
-                            if s.compaction_kind.as_deref() == Some("summary") {
-                                s.compaction_payload.as_deref().map(|p| {
-                                    crate::context_compaction::text_token_estimate(model_id_ref, p)
-                                })
-                            } else {
-                                None
-                            }
-                        })
-                        .unwrap_or(0)
+                let context_state = if let Some(conversation_id) = &conversation_id {
+                    chatgpt_store::load_conversation_context_state(storage, conversation_id).map_err(|_| {
+                        ServiceError::new(
+                            "storage_unavailable",
+                            "Chat context state could not be read for token estimation.",
+                            true,
+                        )
+                    })?
                 } else {
-                    0
+                    None
                 };
-                let total_tokens = message_tokens
-                    .saturating_add(tool_usage_tokens)
-                    .saturating_add(attachment_tokens)
-                    .saturating_add(draft_tokens)
-                    .saturating_add(summary_tokens);
+                let estimate = context_usage::estimate_full_context_usage(
+                    model_id_ref,
+                    provider_id.as_deref(),
+                    connection_id.as_deref(),
+                    workspace_id.as_deref(),
+                    &messages,
+                    context_state.as_ref(),
+                    &draft_text,
+                    &attachment_list,
+                );
                 Ok(json!({
-                    "totalTokens": total_tokens,
-                    "userMessageTokens": messages.iter().filter(|m| m.role == "user").map(|m| crate::context_compaction::message_token_estimate(model_id_ref, m)).sum::<i64>(),
-                    "assistantMessageTokens": messages.iter().filter(|m| m.role == "assistant").map(|m| crate::context_compaction::message_token_estimate(model_id_ref, m)).sum::<i64>(),
-                    "attachments": attachment_list.iter().map(|(name, kind, size)| json!({"name": name, "tokens": if *kind == "image" { 2048i64 } else { crate::context_compaction::text_token_estimate(model_id_ref, &size.to_string()) }})).collect::<Vec<_>>(),
-                    "toolUsage": [{"name": "tool_activities", "tokens": tool_usage_tokens}],
-                    "memoryTokens": summary_tokens,
-                    "draftTokens": draft_tokens,
-                    "providerInputTokens": Option::<i64>::None,
-                    "usageMode": "estimated",
+                    "totalTokens": estimate.total_tokens,
+                    "userMessageTokens": estimate.user_message_tokens,
+                    "assistantMessageTokens": estimate.assistant_message_tokens,
+                    "attachments": estimate.attachments.iter().map(|item| json!({
+                        "name": item.name,
+                        "tokens": item.tokens,
+                        "isDraft": item.is_draft,
+                    })).collect::<Vec<_>>(),
+                    "toolUsage": estimate.tool_usage.iter().map(|item| json!({
+                        "name": item.name,
+                        "tokens": item.tokens,
+                    })).collect::<Vec<_>>(),
+                    "memoryTokens": estimate.memory_tokens,
+                    "draftTokens": estimate.draft_tokens,
+                    "providerInputTokens": estimate.provider_input_tokens,
+                    "usageMode": estimate.usage_mode,
+                    "estimateSource": estimate.estimate_source,
                 }))
             })();
             result
-        }
+        },
         "chat.memory.search" => {
             let conversation_id = required_memory_conversation_id(params)?;
             let query = required_memory_search_query(params)?;
@@ -946,6 +935,14 @@ fn archive_index_settings_json(settings: &chatgpt_store::ArchiveIndexSettings) -
     })
 }
 
+fn invalid_context_usage_params() -> ServiceError {
+    ServiceError::new(
+        "invalid_request_params",
+        "The context usage request is invalid.",
+        false,
+    )
+}
+
 fn invalid_memory_archive_settings_params() -> ServiceError {
     ServiceError::new(
         "conversation_memory_settings_invalid",
@@ -954,13 +951,7 @@ fn invalid_memory_archive_settings_params() -> ServiceError {
     )
 }
 
-fn invalid_context_usage_params() -> ServiceError {
-    ServiceError::new(
-        "invalid_request_params",
-        "The context usage request is invalid.",
-        false,
-    )
-}
+
 
 fn required_string_array(params: &Value, name: &str) -> Result<Vec<String>, ServiceError> {
     params

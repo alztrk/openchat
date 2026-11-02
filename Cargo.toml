@@ -1,6 +1,11 @@
 [workspace]
 resolver = "3"
 members = ["services/openchat-local-service", "apps/desktop/tauri"]
+exclude = ["vendor/tiktoken"]
+
+# Keep the tokenizer cache off Tokio's bounded worker stacks on Windows.
+[patch.crates-io]
+tiktoken = { path = "vendor/tiktoken" }
 
 [profile.dev]
 debug = "line-tables-only"

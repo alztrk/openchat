@@ -2,14 +2,12 @@ import { LoaderCircle, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button, Dialog } from '@shared/components';
+import { Button, Card, Dialog } from '@shared/components';
 import { useChatStore } from '@features/chat/state/chatStore';
 import { historyStorageStatusForInitialization } from '@features/app-settings/data/historyStorageStatus';
-import { AttachmentIndexSettingsSection } from './AttachmentIndexSettingsSection';
 import { ConversationArchiveSettingsSection } from './ConversationArchiveSettingsSection';
 import { ProfileArchiveSettingsSection } from './ProfileArchiveSettingsSection';
 import { SettingsPreferenceRow } from './SettingsPreferenceRow';
-import { SupportDiagnosticsSettingsSection } from './SupportDiagnosticsSettingsSection';
 
 export function LocalDataSettingsSection() {
   const { t } = useTranslation();
@@ -23,23 +21,6 @@ export function LocalDataSettingsSection() {
   const [clearSucceeded, setClearSucceeded] = useState(false);
   const historyStatus = historyStorageStatusForInitialization(serviceStatus, storageInitializationErrorCode);
   const available = historyStatus === 'available';
-  const statusKey =
-    historyStatus === 'available'
-      ? 'historyDeviceStatus'
-      : historyStatus === 'loading'
-        ? 'historyCheckingStatus'
-        : 'historyStorageUnavailableStatus';
-  const descriptionKey =
-    historyStatus === 'available'
-      ? 'historyDeviceDescription'
-      : historyStatus === 'loading'
-        ? 'historyCheckingDescription'
-        : historyStatus === 'corrupt'
-          ? 'historyStorageCorruptDescription'
-          : historyStatus === 'backupUnavailable'
-            ? 'historyStorageBackupFailedDescription'
-            : 'historyStorageUnavailableDescription';
-
   const clearHistory = async () => {
     if (!available || isSending || isClearing) return;
     setIsClearing(true);
@@ -57,26 +38,19 @@ export function LocalDataSettingsSection() {
   };
 
   return (
-    <section aria-labelledby="settings-page-heading" className="grid gap-5">
-      <SettingsPreferenceRow description={t(descriptionKey)} label={t('conversationHistory')}>
-        <span
-          className={`mt-1 w-36 justify-self-start rounded-control border px-2 py-1 text-center text-xs ${available ? 'border-success text-success' : 'border-border text-secondary-text'}`}
+    <section aria-labelledby="settings-page-heading" className="grid gap-4">
+      <div className="grid gap-3 xl:grid-cols-2">
+        <ConversationArchiveSettingsSection enabled={available} />
+        <ProfileArchiveSettingsSection enabled={available} />
+      </div>
+
+      <Card className="rounded-card border border-destructive/30 bg-destructive/5 p-4">
+        <SettingsPreferenceRow
+          description={t('clearConversationHistoryDescription')}
+          label={t('clearConversationHistory')}
         >
-          {t(statusKey)}
-        </span>
-      </SettingsPreferenceRow>
-
-      <ConversationArchiveSettingsSection enabled={available} />
-      <ProfileArchiveSettingsSection enabled={available} />
-      <AttachmentIndexSettingsSection />
-      <SupportDiagnosticsSettingsSection />
-
-      <SettingsPreferenceRow
-        description={t('clearConversationHistoryDescription')}
-        label={t('clearConversationHistory')}
-      >
-        {(descriptionId) => (
-          <div className="grid justify-items-start gap-2">
+          {(descriptionId) => (
+            <div className="grid justify-items-start gap-2">
             <Button
               aria-describedby={descriptionId}
               className="w-full max-w-44 border-destructive text-destructive hover:bg-destructive/10"
@@ -106,9 +80,10 @@ export function LocalDataSettingsSection() {
                 {t('clearHistorySucceeded')}
               </p>
             ) : null}
-          </div>
-        )}
-      </SettingsPreferenceRow>
+            </div>
+          )}
+        </SettingsPreferenceRow>
+      </Card>
 
       <Dialog onOpenChange={setIsConfirmingClear} open={isConfirmingClear} title={t('confirmClearHistoryTitle')}>
         <div className="grid gap-4">

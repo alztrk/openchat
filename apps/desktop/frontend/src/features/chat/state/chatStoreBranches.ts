@@ -97,8 +97,14 @@ export function createBranchesActions(set: StoreSet, get: StoreGet) {
       }
     },
 
-    async stopResponse(): Promise<void> {
-      const operation = get().activeOperation;
+    async stopResponse(conversationId?: string | null): Promise<void> {
+      const state = get();
+      const targetConversationId = conversationId === undefined ? state.activeConversationId : conversationId;
+      if (conversationId !== undefined && targetConversationId === null) return;
+      const operation = targetConversationId
+        ? state.activeOperationsByConversation[targetConversationId] ??
+          (state.sendingConversationIds.length <= 1 ? state.activeOperation : undefined)
+        : state.activeOperation;
       if (!operation) return;
       await operation.cancel();
     },

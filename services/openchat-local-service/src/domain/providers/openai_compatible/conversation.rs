@@ -961,12 +961,13 @@ pub async fn send_message(
             )?;
             if status == "completed"
                 && let Some(input_tokens) = input_tokens
+                && let Some(last_prompt_message_id) = provider_request.last_message_id.as_deref()
                 && chatgpt_store::save_prompt_usage_on_connection(
                     &database,
                     conversation_id,
                     chatgpt_store::PromptUsage {
                         input_tokens,
-                        last_message_id: &message_id,
+                        last_message_id: last_prompt_message_id,
                         provider_id,
                         model_id: &route.model_id,
                         connection_id: route.connection_id.as_deref(),

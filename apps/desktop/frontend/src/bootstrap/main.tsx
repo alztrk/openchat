@@ -46,12 +46,12 @@ async function startApplication(options: { startWithEmptyStorage?: boolean } = {
   }
 
   const appStylesPromise = loadAppStyles();
-  const appImportPromise = import('./App');
   const storageModulePromise = import('@shared/lib/platform/storage/unifiedStorage');
   const i18nModulePromise = import('@shared/lib/i18n/i18n');
   const reactRootPromise = getReactRoot();
   const { unifiedStorage } = await storageModulePromise;
   await unifiedStorage.initialize(options);
+  const appImportPromise = import('./App');
   await appStylesPromise;
   const [{ App }, { i18n, i18nReady }, [React, root]] = await Promise.all([
     appImportPromise,

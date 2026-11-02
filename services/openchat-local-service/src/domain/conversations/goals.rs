@@ -11,7 +11,7 @@ use crate::{
     protocol::{EventSink, Response, ServiceError},
     provider_schema::{ToolCall, ToolDefinition, ToolResult},
     storage::{
-        AppStorage,
+        AppStorage, StorageConnection,
         user_questions::{self, AgentRun, GoalRunTransition},
     },
 };
@@ -185,7 +185,7 @@ pub(crate) fn control_tool_definitions() -> [ToolDefinition; 3] {
     [
         ToolDefinition {
             name: START_GOAL_TOOL_NAME.to_owned(),
-            description: "Start a persistent multi-turn goal for substantial work that the user asked you to carry out. Provide a clear, bounded objective. Do not use this for simple questions or work that fits in one response.".to_owned(),
+            description: "Start a persistent multi-turn goal only when the user explicitly requested Goal mode or clearly asked for autonomous continuation across multiple turns. Never start one based only on task size or complexity. Provide a clear, bounded objective.".to_owned(),
             parameters: json!({
                 "type": "object",
                 "properties": {
@@ -220,7 +220,7 @@ pub(crate) fn control_tool_definitions() -> [ToolDefinition; 3] {
 }
 
 pub(crate) fn append_goal_tool_instructions(instructions: &mut String) {
-    instructions.push_str("\n\nPersistent goals: For substantial work the user asked you to carry out across multiple turns, call `start_goal` with a clear objective. Do not start a goal for simple questions or work that fits in one response. Only one active goal is allowed in each chat. While a goal is active, use `goal_update` after meaningful progress, when the goal is complete, or when you need user input. Use `stop_goal` when the user asks you to stop or continuing is no longer appropriate. After a terminal goal update or `stop_goal`, give a concise final summary and take no further actions.");
+    instructions.push_str("\n\nPersistent goals: Start a persistent goal only when the user explicitly asks for Goal mode, uses `/goal`, or clearly asks you to continue working autonomously across multiple turns. Do not infer permission to start Goal mode from task size, complexity, or your own judgment. Only one active goal is allowed in each chat. While a goal is active, use `goal_update` after meaningful progress, when the goal is complete, or when you need user input. Use `stop_goal` when the user asks you to stop or continuing is no longer appropriate. After a terminal goal update or `stop_goal`, give a concise final summary and take no further actions.");
 }
 
 pub(crate) fn append_goal_instructions(instructions: &mut String, objective: &str) {
@@ -565,13 +565,9 @@ pub(crate) fn save_final_state(
     save_progress(storage, execution)
 }
 
-pub(crate) fn set_running(
-    storage: &AppStorage,
-    execution: &mut GoalExecution,
-) -> Result<(), ServiceError> {
+pub(crate) fn prepare_running(execution: &mut GoalExecution) {
     execution.decision = GoalDecision::Continue;
     set_checkpoint_goal_state(execution, "running", Value::Null);
-    save_progress(storage, execution)
 }
 
 pub(crate) fn pause_run(
@@ -663,8 +659,15 @@ pub(crate) fn latest_active_goal(
 
 fn save_progress(storage: &AppStorage, execution: &mut GoalExecution) -> Result<(), ServiceError> {
     let mut connection = storage.connect().map_err(|_| storage_error())?;
+    save_progress_on_connection(&mut connection, execution)
+}
+
+fn save_progress_on_connection(
+    connection: &mut StorageConnection<'_>,
+    execution: &mut GoalExecution,
+) -> Result<(), ServiceError> {
     let updated = user_questions::update_goal_run(
-        &mut connection,
+        connection,
         &execution.conversation_id,
         &execution.run_id,
         execution.checkpoint_revision,

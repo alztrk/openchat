@@ -696,7 +696,7 @@ mod tests {
 
     use crate::{
         chatgpt_store::{ConversationContextState, StoredMessage},
-        context_compaction,
+        context_compaction::{self, PruneLevel},
         usage_statistics::UsageData,
     };
 
@@ -815,7 +815,7 @@ mod tests {
             message("new-assistant", "assistant", "I will keep it."),
         ];
 
-        let input = compaction_input(Some(&state), true, &messages)
+        let input = compaction_input(Some(&state), true, PruneLevel::None, &messages)
             .expect("build next checkpoint request input");
 
         assert_eq!(input[0], checkpoint);
@@ -845,7 +845,8 @@ mod tests {
                 status: crate::provider_schema::ToolActivityStatus::Completed,
             });
 
-        let input = compaction_input(None, false, &[assistant]).expect("build compaction input");
+        let input = compaction_input(None, false, PruneLevel::None, &[assistant])
+            .expect("build compaction input");
 
         assert_eq!(input[0]["type"], "function_call");
         assert_eq!(input[0]["call_id"], "call-42");
@@ -879,7 +880,8 @@ mod tests {
                 status: crate::provider_schema::ToolActivityStatus::Completed,
             });
         let messages = [assistant];
-        let input = compaction_input(None, false, &messages).expect("build compaction input");
+        let input = compaction_input(None, false, PruneLevel::None, &messages)
+            .expect("build compaction input");
 
         let request = fit_compaction_request_body(
             "gpt-test-model",
@@ -1002,7 +1004,7 @@ mod tests {
         );
         let messages = [message("new-user", "user", "Continue.")];
 
-        let input = compaction_input(Some(&state), true, &messages)
+        let input = compaction_input(Some(&state), true, PruneLevel::None, &messages)
             .expect("build checkpoint from portable summary");
 
         assert_eq!(input[0]["role"], "user");

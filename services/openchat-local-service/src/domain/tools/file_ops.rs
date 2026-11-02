@@ -267,6 +267,15 @@ pub(crate) fn edit_opened_file(
         ));
     }
 
+    // Check for multiple occurrences to avoid ambiguous edits
+    let first_match = content.find(old_string).unwrap();
+    let second_match = content[first_match + old_string.len()..].find(old_string);
+    if second_match.is_some() {
+        return Err(invalid(
+            "The target text to replace occurs multiple times. Make the match more specific to avoid ambiguous edits.",
+        ));
+    }
+
     let output = content.replace(old_string, new_string);
 
     file.seek(SeekFrom::Start(0))

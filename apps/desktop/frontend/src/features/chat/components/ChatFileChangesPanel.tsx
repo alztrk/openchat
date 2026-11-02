@@ -1,7 +1,6 @@
 import {
   CheckCheck,
   Columns2,
-  FileCode2,
   FileDiff,
   GitFork,
   Globe,
@@ -12,7 +11,7 @@ import {
   Undo2,
   X,
 } from 'lucide-react';
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Button, DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@shared/components';
@@ -22,6 +21,7 @@ import {
   type ChatFileChange,
   type ChatFileChangeDiff,
   listConversationFileChanges,
+  recordFileChangesLoadFailure,
   readConversationFileChangeDiff,
   revertAllConversationFileChanges,
   revertConversationFileChange,
@@ -29,7 +29,7 @@ import {
 } from '@features/chat/data/chatFileChanges';
 import { readOpenConversationTabs, writeOpenConversationTabs } from '@features/chat/data/sidebarPreferences';
 import { LocalServiceError } from '@shared/lib/platform/local-service';
-import { FileChangeRow } from './ChatFileChangeRow';
+import { FileChangeRow, FileTypeIcon } from './ChatFileChangeRow';
 import { DiffContent } from './ChatFileChangesDiffViewer';
 import { EmbeddedBrowserPanel } from './EmbeddedBrowserPanel';
 import { detectFileLanguage } from './message/detectFileLanguage';
@@ -92,7 +92,7 @@ export function ChatFileChangesPanel({
   const { t } = useTranslation();
   const workspaceId = useId();
   const [openTabs, setOpenTabs] = useState<WorkspaceTab[]>(() => [
-    { id: 'builtin:changes:global', kind: 'builtin', tab: 'changes', conversationId: null },
+    { id: 'builtin:changes', kind: 'builtin', tab: 'changes', conversationId },
     ...readOpenConversationTabs().map((id) => ({
       id: `conversation:${id}`,
       kind: 'conversation' as const,
@@ -102,7 +102,7 @@ export function ChatFileChangesPanel({
   const [activeTabId, setActiveTabId] = useState<string>(() => {
     const restoredConversationTabs = readOpenConversationTabs();
     const lastConversationId = restoredConversationTabs.at(-1);
-    return lastConversationId ? `conversation:${lastConversationId}` : 'builtin:changes:global';
+    return lastConversationId ? `conversation:${lastConversationId}` : 'builtin:changes';
   });
   const [tabStorageError, setTabStorageError] = useState(false);
   const handledFileRequestId = useRef<number | null>(null);
@@ -132,13 +132,32 @@ export function ChatFileChangesPanel({
 
   const openBuiltinTab = useCallback(
     (tab: RightWorkspaceTab, tabConversationId: string | null = conversationId) => {
-      const id = `builtin:${tab}:${tabConversationId ?? 'global'}`;
+      const id = tab === 'changes' ? 'builtin:changes' : `builtin:${tab}:${tabConversationId ?? 'global'}`;
       const nextTab: BuiltinWorkspaceTab = { id, kind: 'builtin', tab, conversationId: tabConversationId };
-      setOpenTabs((current) => (current.some((item) => item.id === id) ? current : [...current, nextTab]));
+      setOpenTabs((current) => {
+        if (tab !== 'changes') return current.some((item) => item.id === id) ? current : [...current, nextTab];
+
+        const existingIndex = current.findIndex((item) => item.kind === 'builtin' && item.tab === 'changes');
+        if (existingIndex < 0) return [...current, nextTab];
+
+        return current
+          .filter((item, index) => item.kind !== 'builtin' || item.tab !== 'changes' || index === existingIndex)
+          .map((item) => (item.kind === 'builtin' && item.tab === 'changes' ? nextTab : item));
+      });
       setActiveTabId(id);
     },
     [conversationId],
   );
+
+  useEffect(() => {
+    setOpenTabs((current) =>
+      current.map((tab) =>
+        tab.kind === 'builtin' && tab.tab === 'changes' && tab.conversationId !== conversationId
+          ? { ...tab, conversationId }
+          : tab,
+      ),
+    );
+  }, [conversationId]);
 
   const openConversationTab = useCallback((targetConversationId: string) => {
     const id = `conversation:${targetConversationId}`;
@@ -188,7 +207,7 @@ export function ChatFileChangesPanel({
     if (invalidTabs.length === 0) return;
     const invalidTabIds = new Set(invalidTabs.map((tab) => tab.id));
     setOpenTabs((current) => current.filter((tab) => !invalidTabIds.has(tab.id)));
-    if (invalidTabIds.has(activeTabId)) setActiveTabId('builtin:changes:global');
+    if (invalidTabIds.has(activeTabId)) setActiveTabId('builtin:changes');
   }, [activeTabId, conversationListReady, conversations, openTabs]);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: Conversation changes must clear the selected diff and its error state.
@@ -228,7 +247,9 @@ export function ChatFileChangesPanel({
         setChanges(updated);
         setSelectedChangeId(selection);
         onChangesUpdated?.(targetConversationId, updated);
-      } catch {
+      } catch (error: unknown) {
+        if (request !== changesRequestRef.current) return;
+        await recordFileChangesLoadFailure('panel', error);
         if (request !== changesRequestRef.current) return;
         if (!keepError) setError('load');
       } finally {
@@ -253,23 +274,34 @@ export function ChatFileChangesPanel({
       (change) => normalizeFilePath(change.path) === normalizeFilePath(fileRequest.path),
     );
     const fileName = fileRequest.path.replaceAll('\\', '/').split('/').at(-1) || fileRequest.path;
-    const tabId = `file-${fileRequest.requestId}`;
+    const targetConversationId = fileRequest.conversationId ?? conversationId;
+    const existingFileTab = openTabs.find(
+      (tab) =>
+        tab.kind === 'file' &&
+        typeof tab.path === 'string' &&
+        normalizeFilePath(tab.path) === normalizeFilePath(fileRequest.path),
+    );
+    const tabId = existingFileTab?.id ?? `file-${fileRequest.requestId}`;
     handledFileRequestId.current = fileRequest.requestId;
-    setOpenTabs((current) => [
-      ...current.filter((tab) => tab.id !== tabId),
-      {
-        id: tabId,
-        kind: 'file',
-        conversationId: fileRequest.conversationId ?? conversationId,
-        fileName,
-        content: fileRequest.content ?? '',
-        language: detectFileLanguage(fileName),
-        changeId: matchingChange?.id ?? null,
-      },
-    ]);
+    const nextFileTab: FileWorkspaceTab = {
+      id: tabId,
+      kind: 'file',
+      conversationId: targetConversationId,
+      path: fileRequest.path,
+      fileName,
+      content: fileRequest.content,
+      language: detectFileLanguage(fileName),
+      changeId: matchingChange?.id ?? null,
+    };
+    setOpenTabs((current) => {
+      if (!existingFileTab) return [...current, nextFileTab];
+      const existingIndex = current.findIndex((tab) => tab.id === existingFileTab.id);
+      if (existingIndex < 0) return [...current, nextFileTab];
+      return current.map((tab, index) => (index === existingIndex ? nextFileTab : tab));
+    });
     setActiveTabId(tabId);
     if (matchingChange) setSelectedChangeId(matchingChange.id);
-  }, [changes, conversationId, fileRequest, isLoading, loadChanges, openBuiltinTab]);
+  }, [changes, conversationId, fileRequest, isLoading, loadChanges, openBuiltinTab, openTabs]);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: The revision is an external signal to reload the file-change list.
   useEffect(() => {
@@ -502,7 +534,7 @@ export function ChatFileChangesPanel({
                   variant="ghost"
                 >
                   {tab.kind === 'file' ? (
-                    <FileCode2 aria-hidden="true" className="shrink-0 text-accent" size={14} />
+                    <FileTypeIcon path={tab.path} size={14} />
                   ) : tab.kind === 'conversation' ? (
                     <MessageSquare aria-hidden="true" className="shrink-0 text-accent" size={14} />
                   ) : tab.tab === 'changes' ? (
@@ -577,7 +609,7 @@ export function ChatFileChangesPanel({
           </div>
         ) : activeTab.kind === 'file' ? (
           <div className="flex min-h-0 flex-1 flex-col">
-            <div className="min-h-0 flex-1">
+            <div className="flex min-h-0 flex-1 flex-col">
               <WorkspaceFileView file={activeTab} />
             </div>
             {activeTab.changeId && selectedDiff ? (
@@ -629,30 +661,64 @@ export function ChatFileChangesPanel({
                 <span className="shrink-0 font-semibold text-success">+{added}</span>
                 <span className="shrink-0 font-semibold text-destructive">-{removed}</span>
               </div>
-              {pendingApprovalChanges.length > 0 ? (
-                <div className="flex items-center gap-1">
-                  <Button
-                    className="h-7 gap-1 px-2 text-caption"
-                    disabled={mutatingChangeId !== null}
-                    onClick={() => void handleApproveAll()}
-                    size="small"
-                    variant="secondary"
-                  >
-                    <CheckCheck aria-hidden="true" size={13} />
-                    <span>{t('fileChangesApproveAll')}</span>
-                  </Button>
-                  <Button
-                    className="h-7 gap-1 px-2 text-caption"
-                    disabled={mutatingChangeId !== null}
-                    onClick={() => void handleRevertAll()}
-                    size="small"
-                    variant="ghost"
-                  >
-                    <Undo2 aria-hidden="true" size={13} />
-                    <span>{t('fileChangesRejectAll')}</span>
-                  </Button>
-                </div>
-              ) : null}
+              <div className="flex items-center gap-1">
+                <Button
+                  aria-label={t('fileChangesViewUnified')}
+                  aria-pressed={diffViewMode === 'unified'}
+                  className={`h-7 w-7 min-h-0 p-0 transition-colors ${
+                    diffViewMode === 'unified'
+                      ? 'bg-accent text-white'
+                      : 'bg-raised text-secondary-text hover:text-text'
+                  }`}
+                  onClick={() => setDiffViewMode('unified')}
+                  size="small"
+                  title={t('fileChangesViewUnified')}
+                  type="button"
+                  variant="ghost"
+                >
+                  <Rows3 aria-hidden="true" size={14} />
+                </Button>
+                <Button
+                  aria-label={t('fileChangesViewSplit')}
+                  aria-pressed={diffViewMode === 'split'}
+                  className={`h-7 w-7 min-h-0 p-0 transition-colors ${
+                    diffViewMode === 'split'
+                      ? 'bg-accent text-white'
+                      : 'bg-raised text-secondary-text hover:text-text'
+                  }`}
+                  onClick={() => setDiffViewMode('split')}
+                  size="small"
+                  title={t('fileChangesViewSplit')}
+                  type="button"
+                  variant="ghost"
+                >
+                  <Columns2 aria-hidden="true" size={14} />
+                </Button>
+                {pendingApprovalChanges.length > 0 ? (
+                  <Fragment>
+                    <Button
+                      className="h-7 gap-1 px-2 text-caption"
+                      disabled={mutatingChangeId !== null}
+                      onClick={() => void handleApproveAll()}
+                      size="small"
+                      variant="secondary"
+                    >
+                      <CheckCheck aria-hidden="true" size={13} />
+                      <span>{t('fileChangesApproveAll')}</span>
+                    </Button>
+                    <Button
+                      className="h-7 gap-1 px-2 text-caption"
+                      disabled={mutatingChangeId !== null}
+                      onClick={() => void handleRevertAll()}
+                      size="small"
+                      variant="ghost"
+                    >
+                      <Undo2 aria-hidden="true" size={13} />
+                      <span>{t('fileChangesRejectAll')}</span>
+                    </Button>
+                  </Fragment>
+                ) : null}
+              </div>
             </div>
             {errorKey ? (
               <p
@@ -682,80 +748,46 @@ export function ChatFileChangesPanel({
               <div className="flex min-h-0 flex-1 flex-col">
                 <ul
                   aria-label={t('fileChangesTitle')}
-                  className="chat-file-changes-list min-h-0 shrink-0 overflow-y-auto py-1"
+                  className="chat-file-changes-list min-h-0 flex-1 overflow-y-auto py-1"
                 >
                   {changes.map((change) => (
-                    <FileChangeRow
-                      change={change}
-                      isAnyMutating={mutatingChangeId !== null}
-                      isMutating={mutatingChangeId === change.id}
-                      isSelected={selectedChangeId === change.id}
-                      key={change.id}
-                      onApprove={() => void approveChange(change)}
-                      onRevert={() => void revertChange(change)}
-                      onSelect={() => {
-                        setError(null);
-                        setSelectedChangeId(change.id);
-                      }}
-                    />
+                    <Fragment key={change.id}>
+                      <FileChangeRow
+                        change={change}
+                        isAnyMutating={mutatingChangeId !== null}
+                        isMutating={mutatingChangeId === change.id}
+                        isSelected={selectedChangeId === change.id}
+                        onApprove={() => void approveChange(change)}
+                        onRevert={() => void revertChange(change)}
+                        onSelect={() => {
+                          setError(null);
+                          setSelectedChangeId(change.id);
+                        }}
+                      />
+                      {selectedChangeId === change.id ? (
+                        <li aria-label={selectedDiff?.path ?? change.path} className="chat-file-change-inline-diff">
+                          <div className="chat-file-change-inline-diff-content">
+                            <DiffContent
+                              canRevertHunks={
+                                selectedChange !== null &&
+                                selectedChange.id === change.id &&
+                                selectedChange.status === 'active' &&
+                                !selectedChange.approved &&
+                                selectedChange.canRevert &&
+                                selectedChange.kind === 'modified'
+                              }
+                              diff={selectedDiff}
+                              isLoading={isLoadingDiff}
+                              mutatingHunkIndex={mutatingHunkIndex}
+                              onRevertHunk={(hunkIndex) => void handleRevertHunk(hunkIndex)}
+                              viewMode={diffViewMode}
+                            />
+                          </div>
+                        </li>
+                      ) : null}
+                    </Fragment>
                   ))}
                 </ul>
-                <section
-                  aria-label={selectedDiff?.path ?? t('fileChangesDiffTitle')}
-                  className="chat-file-changes-diff flex min-h-0 flex-1 flex-col border-t border-border"
-                >
-                  <div className="flex h-10 shrink-0 items-center justify-between gap-2 border-b border-border/60 px-3">
-                    <h3 className="min-w-0 flex-1 truncate text-xs font-semibold text-text">
-                      {selectedDiff?.path ?? selectedChangePath(changes, selectedChangeId) ?? t('fileChangesDiffTitle')}
-                    </h3>
-                    <div className="flex shrink-0 items-center gap-1">
-                      <Button
-                        aria-pressed={diffViewMode === 'unified'}
-                        className={`min-h-0 gap-1 rounded-control px-2 py-0.5 text-caption font-medium transition-colors ${
-                          diffViewMode === 'unified'
-                            ? 'bg-accent text-white'
-                            : 'bg-raised text-secondary-text hover:text-text'
-                        }`}
-                        onClick={() => setDiffViewMode('unified')}
-                        size="small"
-                        type="button"
-                        variant="ghost"
-                      >
-                        <Rows3 aria-hidden="true" size={12} />
-                        <span>{t('fileChangesViewUnified')}</span>
-                      </Button>
-                      <Button
-                        aria-pressed={diffViewMode === 'split'}
-                        className={`min-h-0 gap-1 rounded-control px-2 py-0.5 text-caption font-medium transition-colors ${
-                          diffViewMode === 'split'
-                            ? 'bg-accent text-white'
-                            : 'bg-raised text-secondary-text hover:text-text'
-                        }`}
-                        onClick={() => setDiffViewMode('split')}
-                        size="small"
-                        type="button"
-                        variant="ghost"
-                      >
-                        <Columns2 aria-hidden="true" size={12} />
-                        <span>{t('fileChangesViewSplit')}</span>
-                      </Button>
-                    </div>
-                  </div>
-                  <DiffContent
-                    canRevertHunks={
-                      selectedChange !== null &&
-                      selectedChange.status === 'active' &&
-                      !selectedChange.approved &&
-                      selectedChange.canRevert &&
-                      selectedChange.kind === 'modified'
-                    }
-                    diff={selectedDiff}
-                    isLoading={isLoadingDiff}
-                    mutatingHunkIndex={mutatingHunkIndex}
-                    onRevertHunk={(hunkIndex) => void handleRevertHunk(hunkIndex)}
-                    viewMode={diffViewMode}
-                  />
-                </section>
               </div>
             )}
           </>
@@ -784,8 +816,4 @@ function firstChangeId(changes: ChatFileChange[]): string | null {
     changes[0]?.id ??
     null
   );
-}
-
-function selectedChangePath(changes: ChatFileChange[], selectedId: string | null): string | null {
-  return changes.find((change) => change.id === selectedId)?.path ?? null;
 }

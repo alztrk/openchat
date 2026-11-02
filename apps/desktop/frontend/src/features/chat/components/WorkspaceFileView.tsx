@@ -1,12 +1,13 @@
-import { FileCode2 } from 'lucide-react';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+import { FileTypeIcon } from './ChatFileChangeRow';
 import { highlightFileLines, useHighlightingState } from './message/FileSyntaxHighlight';
 
 export interface FileWorkspaceTab {
   id: string;
   kind: 'file';
   conversationId: string | null;
+  path: string;
   fileName: string;
   content: string;
   language: string | null;
@@ -34,7 +35,7 @@ export function WorkspaceFileView({ file }: { file: FileWorkspaceTab }) {
   return (
     <section aria-label={t('workspaceFileContent', { name: file.fileName })} className="flex min-h-0 flex-1 flex-col">
       <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border px-3 text-xs text-secondary-text">
-        <FileCode2 aria-hidden="true" className="shrink-0 text-accent" size={14} />
+        <FileTypeIcon path={file.path} size={14} />
         <span className="truncate" title={file.fileName}>
           {file.fileName}
         </span>

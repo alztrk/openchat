@@ -33,6 +33,13 @@ use ipc_protocol::LegacyImportStatus;
 const MAX_DIAGNOSTIC_LOG_BYTES: u64 = 1024 * 1024;
 const MAX_DIAGNOSTIC_ENTRY_BYTES: usize = 4096;
 const MINIMUM_SQLITE_VERSION_NUMBER: i32 = 3_051_003;
+pub(crate) const SQLITE_BUSY_TIMEOUT: Duration = Duration::from_secs(5);
+#[cfg(windows)]
+pub(crate) const STORAGE_DATABASE_LOCK_TIMEOUT: Duration = Duration::from_secs(7);
+#[cfg(windows)]
+pub(crate) const STORAGE_BROKER_RESPONSE_TIMEOUT: Duration = Duration::from_secs(16);
+#[cfg(windows)]
+pub(crate) const STORAGE_BROKER_STARTUP_TIMEOUT: Duration = Duration::from_secs(60);
 #[cfg(windows)]
 const LEGACY_IMPORT_JOURNAL_CONTENT: &[u8] = b"OpenChat legacy storage import v1\n";
 #[cfg(windows)]
@@ -66,6 +73,44 @@ pub(crate) fn sqlite_error_code(error: &rusqlite::Error) -> &'static str {
         {
             "database_queue_full"
         }
+        rusqlite::Error::SqliteFailure(_, message)
+            if message
+                .as_deref()
+                .is_some_and(|message| message == "database operation queue wait timed out") =>
+        {
+            "database_queue_wait_timeout"
+        }
+        rusqlite::Error::SqliteFailure(_, message)
+            if message.as_deref().is_some_and(|message| {
+                message == "The storage broker did not respond in time."
+            }) =>
+        {
+            "storage_broker_timeout"
+        }
+        rusqlite::Error::SqliteFailure(_, message)
+            if message
+                .as_deref()
+                .is_some_and(|message| message == "chat message content limit exceeded") =>
+        {
+            "message_content_too_large"
+        }
+        rusqlite::Error::SqliteFailure(_, message)
+            if message
+                .as_deref()
+                .is_some_and(|message| message == "chat message metadata limit exceeded") =>
+        {
+            "message_metadata_too_large"
+        }
+        rusqlite::Error::SqliteFailure(failure, _)
+            if failure.extended_code == rusqlite::ffi::SQLITE_BUSY_SNAPSHOT =>
+        {
+            "sqlite_busy_snapshot"
+        }
+        rusqlite::Error::SqliteFailure(failure, _)
+            if failure.extended_code == rusqlite::ffi::SQLITE_BUSY_TIMEOUT =>
+        {
+            "sqlite_busy_timeout"
+        }
         rusqlite::Error::SqliteFailure(failure, _) => match failure.code {
             rusqlite::ErrorCode::DatabaseBusy => "sqlite_busy",
             rusqlite::ErrorCode::DatabaseLocked => "sqlite_locked",
@@ -98,6 +143,63 @@ pub(crate) struct ProviderUsageDiagnostic<'a> {
     pub(crate) cache_discount: Option<f64>,
     pub(crate) estimated_prompt_tokens: i64,
     pub(crate) image_inputs: i64,
+}
+
+/// Contains only bounded metadata for one ChatGPT response stream diagnostic.
+pub(crate) struct ChatGptStreamDiagnostic<'a> {
+    pub(crate) event: &'static str,
+    pub(crate) stream_id: &'a str,
+    pub(crate) attempt: Option<usize>,
+    pub(crate) retry_count: Option<usize>,
+    pub(crate) retry_delay_ms: Option<u128>,
+    pub(crate) continuation_count: Option<usize>,
+    pub(crate) status: Option<u16>,
+    pub(crate) http_version: Option<&'static str>,
+    pub(crate) content_encoding: Option<&'static str>,
+    pub(crate) transfer_encoding: Option<&'static str>,
+    pub(crate) content_length_header_bytes: Option<u64>,
+    pub(crate) elapsed_ms: Option<u128>,
+    pub(crate) body_chunks_received: Option<usize>,
+    pub(crate) decoded_body_bytes_received: Option<usize>,
+    pub(crate) first_chunk_ms: Option<u128>,
+    pub(crate) last_chunk_idle_ms: Option<u128>,
+    pub(crate) error_code: Option<&'static str>,
+    pub(crate) reqwest_error_class: Option<&'static str>,
+    pub(crate) source_error_class: Option<&'static str>,
+    pub(crate) source_io_kind: Option<&'static str>,
+    pub(crate) retryable: Option<bool>,
+    pub(crate) completion_event_seen: Option<bool>,
+    pub(crate) partial_text_available: Option<bool>,
+}
+
+impl<'a> ChatGptStreamDiagnostic<'a> {
+    pub(crate) fn new(event: &'static str, stream_id: &'a str) -> Self {
+        Self {
+            event,
+            stream_id,
+            attempt: None,
+            retry_count: None,
+            retry_delay_ms: None,
+            continuation_count: None,
+            status: None,
+            http_version: None,
+            content_encoding: None,
+            transfer_encoding: None,
+            content_length_header_bytes: None,
+            elapsed_ms: None,
+            body_chunks_received: None,
+            decoded_body_bytes_received: None,
+            first_chunk_ms: None,
+            last_chunk_idle_ms: None,
+            error_code: None,
+            reqwest_error_class: None,
+            source_error_class: None,
+            source_io_kind: None,
+            retryable: None,
+            completion_event_seen: None,
+            partial_text_available: None,
+        }
+    }
 }
 
 /// Contains aggregate Copilot model-catalog filter counts without provider payload data.
@@ -357,7 +459,7 @@ impl AppStorage {
         };
         let (connection, _) = database_key.open_or_migrate(&database_path)?;
         disable_trusted_schema(&connection)?;
-        connection.busy_timeout(Duration::from_secs(5))?;
+        connection.busy_timeout(SQLITE_BUSY_TIMEOUT)?;
 
         if database_had_data_on_open {
             database_guard::verify_integrity(&connection)?;
@@ -486,6 +588,105 @@ impl AppStorage {
         })
     }
 
+    /// Appends a correlated response-stream diagnostic without provider content or credentials.
+    ///
+    /// # Errors
+    /// Returns an I/O error if the diagnostic log cannot be updated or the stream ID is invalid.
+    pub(crate) fn log_chatgpt_stream_diagnostic(
+        &self,
+        diagnostic: ChatGptStreamDiagnostic<'_>,
+    ) -> io::Result<()> {
+        if diagnostic.stream_id.len() != 32
+            || !diagnostic
+                .stream_id
+                .bytes()
+                .all(|byte| byte.is_ascii_hexdigit())
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "ChatGPT stream diagnostic ID is invalid",
+            ));
+        }
+
+        self.append_diagnostic("chatgpt", diagnostic.event, |file| {
+            write!(
+                file,
+                " operation=responses stream_id={}",
+                diagnostic.stream_id
+            )?;
+            if let Some(attempt) = diagnostic.attempt {
+                write!(file, " attempt={attempt}")?;
+            }
+            if let Some(retry_count) = diagnostic.retry_count {
+                write!(file, " retry_count={retry_count}")?;
+            }
+            if let Some(retry_delay_ms) = diagnostic.retry_delay_ms {
+                write!(file, " retry_delay_ms={retry_delay_ms}")?;
+            }
+            if let Some(continuation_count) = diagnostic.continuation_count {
+                write!(file, " continuation_count={continuation_count}")?;
+            }
+            if let Some(status) = diagnostic.status {
+                write!(file, " status={status}")?;
+            }
+            if let Some(http_version) = diagnostic.http_version {
+                write!(file, " http_version={http_version}")?;
+            }
+            if let Some(content_encoding) = diagnostic.content_encoding {
+                write!(file, " content_encoding={content_encoding}")?;
+            }
+            if let Some(transfer_encoding) = diagnostic.transfer_encoding {
+                write!(file, " transfer_encoding={transfer_encoding}")?;
+            }
+            if let Some(content_length_header_bytes) = diagnostic.content_length_header_bytes {
+                write!(
+                    file,
+                    " content_length_header_bytes={content_length_header_bytes}"
+                )?;
+            }
+            if let Some(elapsed_ms) = diagnostic.elapsed_ms {
+                write!(file, " elapsed_ms={elapsed_ms}")?;
+            }
+            if let Some(body_chunks_received) = diagnostic.body_chunks_received {
+                write!(file, " body_chunks_received={body_chunks_received}")?;
+            }
+            if let Some(decoded_body_bytes_received) = diagnostic.decoded_body_bytes_received {
+                write!(
+                    file,
+                    " decoded_body_bytes_received={decoded_body_bytes_received}"
+                )?;
+            }
+            if let Some(first_chunk_ms) = diagnostic.first_chunk_ms {
+                write!(file, " first_chunk_ms={first_chunk_ms}")?;
+            }
+            if let Some(last_chunk_idle_ms) = diagnostic.last_chunk_idle_ms {
+                write!(file, " last_chunk_idle_ms={last_chunk_idle_ms}")?;
+            }
+            if let Some(error_code) = diagnostic.error_code {
+                write!(file, " code={error_code}")?;
+            }
+            if let Some(reqwest_error_class) = diagnostic.reqwest_error_class {
+                write!(file, " reqwest_error_class={reqwest_error_class}")?;
+            }
+            if let Some(source_error_class) = diagnostic.source_error_class {
+                write!(file, " source_error_class={source_error_class}")?;
+            }
+            if let Some(source_io_kind) = diagnostic.source_io_kind {
+                write!(file, " source_io_kind={source_io_kind}")?;
+            }
+            if let Some(retryable) = diagnostic.retryable {
+                write!(file, " retryable={retryable}")?;
+            }
+            if let Some(completion_event_seen) = diagnostic.completion_event_seen {
+                write!(file, " completion_event_seen={completion_event_seen}")?;
+            }
+            if let Some(partial_text_available) = diagnostic.partial_text_available {
+                write!(file, " partial_text_available={partial_text_available}")?;
+            }
+            Ok(())
+        })
+    }
+
     /// Records a failed RPC using only a fixed operation label and stable error code.
     ///
     /// # Errors
@@ -497,6 +698,117 @@ impl AppStorage {
     ) -> io::Result<()> {
         self.append_diagnostic("rpc", "request_failed", |entry| {
             write!(entry, " operation={operation} code={code}")
+        })
+    }
+
+    /// Records a message-save failure using only a fixed stage and bounded error codes.
+    ///
+    /// # Errors
+    /// Returns an I/O error if the stage or codes are invalid or the diagnostic log cannot be updated.
+    pub(crate) fn log_chat_message_save_failure(
+        &self,
+        stage: &'static str,
+        code: &'static str,
+        detail_code: Option<&str>,
+    ) -> io::Result<()> {
+        if !matches!(
+            stage,
+            "attachment_staging"
+                | "database_connect"
+                | "transaction_begin"
+                | "message_insert"
+                | "conversation_update"
+                | "attachment_commit"
+                | "transaction_commit"
+        ) || !is_safe_diagnostic_code(code)
+            || detail_code.is_some_and(|value| !is_safe_diagnostic_code(value))
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "chat storage diagnostic fields are invalid",
+            ));
+        }
+
+        self.append_diagnostic("chat_storage", "message_save_failed", |entry| {
+            write!(entry, " stage={stage} code={code}")?;
+            if let Some(detail_code) = detail_code {
+                write!(entry, " detail_code={detail_code}")?;
+            }
+            Ok(())
+        })
+    }
+
+    /// Records a failed file-change list request without paths or conversation IDs.
+    pub(crate) fn log_file_changes_list_failure(
+        &self,
+        stage: &'static str,
+        code: &'static str,
+        elapsed_ms: u128,
+    ) -> io::Result<()> {
+        self.append_diagnostic("file_changes", "list_failed", |entry| {
+            write!(entry, " stage={stage} code={code} elapsed_ms={elapsed_ms}")
+        })
+    }
+
+    /// Records slow file-change reads using bounded aggregate timing data only.
+    pub(crate) fn log_file_changes_list_timing(
+        &self,
+        entry_count: usize,
+        lock_wait_ms: u128,
+        database_ms: u128,
+        validation_ms: u128,
+    ) -> io::Result<()> {
+        self.append_diagnostic("file_changes", "list_slow", |entry| {
+            write!(
+                entry,
+                " entries={entry_count} lock_wait_ms={lock_wait_ms} database_ms={database_ms} validation_ms={validation_ms}"
+            )
+        })
+    }
+
+    /// Records why a tool checkpoint exceeded the same limits used by message storage RPCs.
+    pub(crate) fn log_rejected_assistant_checkpoint(
+        &self,
+        reason: &'static str,
+        content_bytes: usize,
+        metadata_bytes: usize,
+        activity_count: usize,
+    ) -> io::Result<()> {
+        if !matches!(reason, "content_limit" | "metadata_limit") {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "assistant checkpoint diagnostic fields are invalid",
+            ));
+        }
+        self.append_diagnostic("chat_storage", "assistant_checkpoint_rejected", |entry| {
+            write!(
+                entry,
+                " reason={reason} content_bytes={content_bytes} metadata_bytes={metadata_bytes} activity_count={activity_count}"
+            )
+        })
+    }
+
+    /// Records file-change scans cancelled by the caller using aggregate counts and timings only.
+    pub(crate) fn log_file_changes_list_cancelled(
+        &self,
+        stage: &'static str,
+        entry_count: usize,
+        validated_count: usize,
+        lock_wait_ms: u128,
+        database_ms: u128,
+        validation_ms: u128,
+    ) -> io::Result<()> {
+        if !matches!(stage, "before_start" | "lock" | "after_manifest" | "validation") {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "file-change cancellation diagnostic fields are invalid",
+            ));
+        }
+        self.append_diagnostic("file_changes", "list_cancelled", |entry| {
+            write!(
+                entry,
+                " stage={stage} entries={entry_count} validated={validated_count} lock_wait_ms={lock_wait_ms} database_ms={database_ms} validation_ms={validation_ms}"
+            )
         })
     }
 
@@ -1053,6 +1365,14 @@ impl AppStorage {
         self.migration_backup_created.store(true, Ordering::Release);
         Ok(true)
     }
+}
+
+fn is_safe_diagnostic_code(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 96
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_')
 }
 
 #[cfg(windows)]

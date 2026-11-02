@@ -2,7 +2,7 @@ import { BellOff, BellRing, LoaderCircle, Play, RefreshCw, Send } from 'lucide-r
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button, Input, Slider, Switch } from '@shared/components';
+import { Button, Input, Skeleton, Slider, Switch } from '@shared/components';
 import type en from '@shared/lib/i18n/locales/en.json';
 import type { ChatProject } from '@entities/project';
 import { listProjects } from '@features/chat/data/chatStorage';
@@ -16,6 +16,7 @@ import {
   writeNotificationPreference,
 } from '@features/notifications/data/notificationPreferences';
 import { playTestChime } from '@features/notifications/audioFeedback';
+import { UsageAlertPreferencesPanel } from './UsageAlertPreferencesPanel';
 
 type LoadState = 'loading' | 'loaded' | 'failed';
 type TranslationKey = keyof typeof en;
@@ -175,10 +176,18 @@ export function NotificationSettingsSection() {
   const isBlocked = status !== null && status !== 'enabled' && status !== 'notSupported' && status !== 'unavailable';
 
   return (
-    <section aria-labelledby="settings-page-heading" className="grid content-start gap-5">
+    <section aria-labelledby="settings-page-heading" className="app-window-settings-section grid content-start gap-6">
       {loadState === 'loading' ? (
-        <div aria-live="polite" className="flex min-h-24 items-center justify-center">
-          <LoaderCircle aria-hidden="true" className="animate-spin text-secondary-icon" size={22} />
+        <div aria-label={t('settingsSectionLoading')} aria-live="polite" className="grid gap-3" role="status">
+          {[0, 1, 2].map((row) => (
+            <div className="flex min-h-20 items-center justify-between gap-4 rounded-card border border-border bg-raised p-4" key={row}>
+              <div className="grid min-w-0 flex-1 gap-2">
+                <Skeleton className="h-4 w-36 max-w-full" />
+                <Skeleton className="h-3 w-64 max-w-full" />
+              </div>
+              <Skeleton className="h-7 w-12 shrink-0 rounded-full" />
+            </div>
+          ))}
         </div>
       ) : loadState === 'failed' ? (
         <div className="grid justify-items-start gap-3">
@@ -191,8 +200,9 @@ export function NotificationSettingsSection() {
           </Button>
         </div>
       ) : (
-        <div className="grid gap-1">
-          <div aria-live="polite" className="flex items-start gap-3 rounded-control bg-composer p-3">
+        <div className="grid gap-5">
+          <div className="app-window-settings-card overflow-hidden rounded-card border border-border bg-raised">
+            <div aria-live="polite" className="flex items-start gap-3 p-4">
             {status === 'enabled' ? (
               <BellRing aria-hidden="true" className="mt-0.5 shrink-0 text-success" size={18} />
             ) : (
@@ -249,8 +259,12 @@ export function NotificationSettingsSection() {
                 </div>
               ) : null}
             </div>
+            </div>
           </div>
 
+          <UsageAlertPreferencesPanel />
+
+          <div className="app-window-settings-card overflow-hidden rounded-card border border-border bg-raised">
           <PreferenceRow
             description={t('notificationResponsesDescription')}
             disabled={isSaving}
@@ -315,7 +329,7 @@ export function NotificationSettingsSection() {
           />
 
           <section
-            className="grid gap-3 border-t border-border pt-4"
+            className="grid gap-3 border-t border-border px-4 py-4"
             aria-labelledby="notification-quiet-hours-heading"
           >
             <div className="grid gap-1">
@@ -349,7 +363,7 @@ export function NotificationSettingsSection() {
             </div>
           </section>
 
-          <section className="grid gap-3 border-t border-border pt-4" aria-labelledby="notification-projects-heading">
+          <section className="grid gap-3 border-t border-border px-4 py-4" aria-labelledby="notification-projects-heading">
             <div className="grid gap-1">
               <h3 className="font-medium" id="notification-projects-heading">
                 {t('notificationMutedProjects')}
@@ -375,6 +389,7 @@ export function NotificationSettingsSection() {
               ))
             )}
           </section>
+          </div>
 
           {saveFailed ? (
             <p className="text-sm text-destructive" role="alert">
@@ -401,7 +416,7 @@ function PreferenceRow({
   onCheckedChange(value: boolean): void;
 }) {
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border py-3 last:border-b-0">
+    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3 last:border-b-0">
       <div className="grid min-w-0 gap-1">
         <span className="font-medium">{label}</span>
         <span className="text-sm text-secondary-text">{description}</span>
@@ -431,7 +446,7 @@ function VolumeRow({
   testLabel: string;
 }) {
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border py-3 last:border-b-0">
+    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3 last:border-b-0">
       <div className="grid min-w-0 gap-1">
         <span className="font-medium">{label}</span>
         <span className="text-sm text-secondary-text">{description}</span>

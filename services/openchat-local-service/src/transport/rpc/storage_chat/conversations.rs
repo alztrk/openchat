@@ -2,32 +2,75 @@
 
 use super::*;
 
-pub(super) fn message_from_row(
-    row: &StorageRow,
+struct StoredMessageRow {
+    id: String,
+    conversation_id: String,
+    role: String,
+    content: String,
+    created_at: Option<i64>,
+    output_tokens: Option<i64>,
+    tokens_per_second: Option<f64>,
+    elapsed_microseconds: Option<i64>,
+    provider_id: Option<String>,
+    model_id: Option<String>,
+    citation_sources: String,
+    personal_memory_fact_ids: String,
+    reasoning_summaries: String,
+    tool_activities: String,
+    status: String,
+    failure_code: Option<String>,
+}
+
+fn stored_message_row_from_storage(row: &StorageRow) -> rusqlite::Result<StoredMessageRow> {
+    Ok(StoredMessageRow {
+        id: row.get(0)?,
+        conversation_id: row.get(1)?,
+        role: row.get(2)?,
+        content: row.get(3)?,
+        created_at: row.get(4)?,
+        output_tokens: row.get(5)?,
+        tokens_per_second: row.get(6)?,
+        elapsed_microseconds: row.get(7)?,
+        provider_id: row.get(8)?,
+        model_id: row.get(9)?,
+        citation_sources: row.get(10)?,
+        personal_memory_fact_ids: row.get(11)?,
+        reasoning_summaries: row.get(12)?,
+        tool_activities: row.get(13)?,
+        status: row.get(14)?,
+        failure_code: row.get(15)?,
+    })
+}
+
+fn message_from_stored_row(
+    row: StoredMessageRow,
     remaining_nodes: &mut usize,
 ) -> rusqlite::Result<Value> {
-    let citation_sources = sanitize_stored_metadata(row.get(10)?, 10, false, remaining_nodes)?;
+    let citation_sources =
+        sanitize_stored_metadata(row.citation_sources, 10, false, remaining_nodes)?;
     let personal_memory_fact_ids =
-        sanitize_stored_metadata(row.get(11)?, 11, false, remaining_nodes)?;
-    let reasoning_summaries = sanitize_stored_metadata(row.get(12)?, 12, false, remaining_nodes)?;
-    let tool_activities = sanitize_stored_metadata(row.get(13)?, 13, true, remaining_nodes)?;
+        sanitize_stored_metadata(row.personal_memory_fact_ids, 11, false, remaining_nodes)?;
+    let reasoning_summaries =
+        sanitize_stored_metadata(row.reasoning_summaries, 12, false, remaining_nodes)?;
+    let tool_activities =
+        sanitize_stored_metadata(row.tool_activities, 13, true, remaining_nodes)?;
     Ok(json!({
-        "id": row.get::<_, String>(0)?,
-        "conversationId": row.get::<_, String>(1)?,
-        "role": row.get::<_, String>(2)?,
-        "content": row.get::<_, String>(3)?,
-        "createdAt": row.get::<_, Option<i64>>(4)?,
-        "outputTokens": row.get::<_, Option<i64>>(5)?,
-        "tokensPerSecond": row.get::<_, Option<f64>>(6)?,
-        "elapsedMicroseconds": row.get::<_, Option<i64>>(7)?,
-        "providerId": row.get::<_, Option<String>>(8)?,
-        "modelId": row.get::<_, Option<String>>(9)?,
+        "id": row.id,
+        "conversationId": row.conversation_id,
+        "role": row.role,
+        "content": row.content,
+        "createdAt": row.created_at,
+        "outputTokens": row.output_tokens,
+        "tokensPerSecond": row.tokens_per_second,
+        "elapsedMicroseconds": row.elapsed_microseconds,
+        "providerId": row.provider_id,
+        "modelId": row.model_id,
         "citationSources": citation_sources,
         "personalMemoryFactIds": personal_memory_fact_ids,
         "reasoningSummaries": reasoning_summaries,
         "toolActivities": tool_activities,
-        "status": row.get::<_, String>(14)?,
-        "failureCode": row.get::<_, Option<String>>(15)?,
+        "status": row.status,
+        "failureCode": row.failure_code,
     }))
 }
 
@@ -299,6 +342,7 @@ pub(super) fn delete_conversation(
         return Err(not_found("conversation"));
     }
     transaction.commit().map_err(storage_error)?;
+    drop(connection);
     remove_attachment_directory(storage.root(), id)?;
     Ok(json!({"deleted": true}))
 }
@@ -315,6 +359,7 @@ pub(super) fn clear_conversation_history(storage: &AppStorage) -> Result<Value, 
         )
         .map_err(storage_error)?;
     transaction.commit().map_err(storage_error)?;
+    drop(connection);
     remove_all_attachment_directories(storage.root())?;
     Ok(json!({"cleared": true}))
 }
@@ -333,20 +378,28 @@ pub(super) fn list_messages(params: &Value, storage: &AppStorage) -> Result<Valu
              ORDER BY created_at ASC, id ASC LIMIT 10000",
         )
         .map_err(storage_error)?;
-    let mut remaining_nodes = MAX_REQUEST_PARAMETER_NODES;
     let rows = statement
-        .query_map([conversation_id], |row| {
-            message_from_row(row, &mut remaining_nodes)
-        })
+        .query_map([conversation_id], stored_message_row_from_storage)
         .map_err(storage_error)?;
+    let rows = rows
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(storage_error)?;
+    drop(statement);
+    drop(connection);
+
+    let mut remaining_nodes = MAX_REQUEST_PARAMETER_NODES;
     let mut messages = Vec::new();
     for row in rows {
-        messages.push(row.map_err(storage_error)?);
+        messages.push(message_from_stored_row(row, &mut remaining_nodes).map_err(storage_error)?);
     }
     Ok(json!({"messages": messages}))
 }
 
-pub(super) fn save_message(params: &Value, storage: &AppStorage) -> Result<Value, ServiceError> {
+pub(super) fn save_message(
+    params: &Value,
+    storage: &AppStorage,
+    cancellation_gate: Option<&OperationGate>,
+) -> Result<Value, ServiceError> {
     let input = input_object(params)?;
     let id = required_safe_id(input, "id")?;
     let conversation_id = required_safe_id(input, "conversationId")?;
@@ -365,8 +418,15 @@ pub(super) fn save_message(params: &Value, storage: &AppStorage) -> Result<Value
     )?;
     let reasoning_summaries =
         optional_json_array(input, "reasoningSummaries", &mut remaining_metadata_nodes)?;
-    let tool_activities =
-        optional_json_array(input, "toolActivities", &mut remaining_metadata_nodes)?;
+    let tool_activities = if input.get("toolActivities").is_some_and(|value| !value.is_null()) {
+        Some(optional_json_array(
+            input,
+            "toolActivities",
+            &mut remaining_metadata_nodes,
+        )?)
+    } else {
+        None
+    };
     let failure_code = optional_failure_code(input, "failureCode")?;
     let created_at = input
         .get("createdAt")
@@ -404,16 +464,31 @@ pub(super) fn save_message(params: &Value, storage: &AppStorage) -> Result<Value
     let staged = if attachments.is_empty() {
         None
     } else {
-        Some(stage_attachments(
-            storage.root(),
-            conversation_id,
-            id,
-            &attachments,
-        )?)
+        match stage_attachments(storage.root(), conversation_id, id, &attachments) {
+            Ok(staged) => Some(staged),
+            Err(error) => {
+                log_message_save_failure(storage, "attachment_staging", &error);
+                return Err(error);
+            }
+        }
     };
+    let mut connection = match storage.connect() {
+        Ok(connection) => connection,
+        Err(error) => {
+            if let Some(staging) = staged.as_ref().and_then(|staged| staged.staging.as_ref()) {
+                let _ = remove_directory_if_present(staging);
+            }
+            let error = storage_error(error);
+            log_message_save_failure(storage, "database_connect", &error);
+            return Err(error);
+        }
+    };
+    let mut failure_stage = "transaction_begin";
     let write_result = (|| -> Result<(), ServiceError> {
-        let mut connection = storage.connect().map_err(storage_error)?;
-        let transaction = connection.transaction().map_err(storage_error)?;
+        let transaction = connection
+            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+            .map_err(storage_error)?;
+        failure_stage = "message_insert";
         transaction
             .execute(
                 "INSERT INTO messages (
@@ -422,7 +497,7 @@ pub(super) fn save_message(params: &Value, storage: &AppStorage) -> Result<Value
                     citation_sources, personal_memory_fact_ids, reasoning_summaries,
                     tool_activities, status, failure_code
                  ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10,
-                            ?11, ?12, ?13, ?14, ?15, ?16)
+                            ?11, ?12, ?13, COALESCE(?14, '[]'), ?15, ?16)
                  ON CONFLICT(conversation_id, id) DO UPDATE SET
                     role = excluded.role,
                     content = excluded.content,
@@ -435,7 +510,7 @@ pub(super) fn save_message(params: &Value, storage: &AppStorage) -> Result<Value
                     citation_sources = excluded.citation_sources,
                     personal_memory_fact_ids = excluded.personal_memory_fact_ids,
                     reasoning_summaries = excluded.reasoning_summaries,
-                    tool_activities = excluded.tool_activities,
+                    tool_activities = COALESCE(?14, messages.tool_activities),
                     status = excluded.status,
                     failure_code = excluded.failure_code",
                 params![
@@ -458,25 +533,57 @@ pub(super) fn save_message(params: &Value, storage: &AppStorage) -> Result<Value
                 ],
             )
             .map_err(storage_error)?;
+        failure_stage = "conversation_update";
         transaction
             .execute(
                 "UPDATE conversations SET updated_at = MAX(updated_at, ?1) WHERE id = ?2",
                 params![created_at, conversation_id],
             )
             .map_err(storage_error)?;
-        if let Some((staging, destination)) = staged.as_ref() {
-            fs::rename(staging, destination).map_err(|_| storage_unavailable())?;
+        failure_stage = "transaction_commit";
+        if cancellation_gate.is_some_and(|gate| !gate.try_begin_commit()) {
+            return Err(ServiceError::new(
+                "operation_cancelled",
+                "The message save was cancelled before it committed.",
+                false,
+            ));
         }
+        failure_stage = "attachment_commit";
+        if let Some(staged) = staged.as_ref()
+            && let Some(staging) = staged.staging.as_ref()
+        {
+            match fs::rename(staging, &staged.destination) {
+                Ok(()) => {}
+                Err(_) if attachment_directory_matches(&staged.destination, &attachments)? => {
+                    let _ = remove_directory_if_present(staging);
+                }
+                Err(_) => return Err(storage_unavailable()),
+            }
+        }
+        failure_stage = "transaction_commit";
         transaction.commit().map_err(storage_error)
     })();
+    if let Err(error) = &write_result {
+        if error.code != "operation_cancelled" {
+            log_message_save_failure(storage, failure_stage, error);
+        }
+    }
     if write_result.is_err() {
-        if let Some((staging, destination)) = staged {
-            let _ = remove_directory_if_present(&staging);
-            let _ = remove_directory_if_present(&destination);
+        if let Some(staging) = staged.as_ref().and_then(|staged| staged.staging.as_ref()) {
+            let _ = remove_directory_if_present(staging);
         }
         return write_result.map(|_| json!({"saved": true}));
     }
     Ok(json!({"saved": true}))
+}
+
+fn log_message_save_failure(storage: &AppStorage, stage: &'static str, error: &ServiceError) {
+    if storage
+        .log_chat_message_save_failure(stage, error.code, error.details.as_deref())
+        .is_err()
+    {
+        eprintln!("chat_message_save_diagnostic_write_failed");
+    }
 }
 
 pub(super) fn search_messages(params: &Value, storage: &AppStorage) -> Result<Value, ServiceError> {
@@ -643,13 +750,28 @@ pub(super) fn read_message_attachment(
         .optional()
         .map_err(storage_error)?
         .ok_or_else(|| not_found("message"))?;
+    drop(connection);
     let envelope = parse_attachment_envelope(&content)?;
     let metadata = envelope
         .attachments
         .iter()
         .find(|attachment| attachment.id == attachment_id)
         .ok_or_else(|| not_found("attachment"))?;
-    let path = attachment_path(storage.root(), conversation_id, message_id, attachment_id)?;
+    let expected_size = metadata.size_bytes;
+    let path = attachment_path(storage.root(), conversation_id, message_id, attachment_id)
+        .or_else(|_| {
+            let legacy_path = storage
+                .root()
+                .join("attachments")
+                .join(conversation_id)
+                .join(format!("{attachment_id}.data"));
+            let actual_size = fs::metadata(&legacy_path)
+                .map_err(|_| storage_unavailable())?
+                .len();
+            (actual_size == expected_size as u64)
+                .then_some(legacy_path)
+                .ok_or_else(storage_unavailable)
+        })?;
     let bytes = fs::read(path).map_err(|_| storage_unavailable())?;
     if bytes.len() != metadata.size_bytes {
         return Err(storage_unavailable());

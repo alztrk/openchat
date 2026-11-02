@@ -71,7 +71,7 @@ export function CredentialCard({
   const { t } = useTranslation();
   const documentationHost = documentationUrl ? new URL(documentationUrl).hostname : null;
   return (
-    <div className="grid min-w-0 gap-3 p-3 sm:flex sm:items-center sm:justify-between sm:gap-5 sm:p-4">
+    <div className="grid min-w-0 gap-3 rounded-control border border-border bg-surface p-3 sm:flex sm:items-center sm:justify-between sm:gap-5 sm:p-4">
       <div className="flex min-w-0 items-center gap-3 sm:flex-1">
         <ProviderIcon className="shrink-0" providerId={providerId} />
         <div className="grid min-w-0 gap-1">

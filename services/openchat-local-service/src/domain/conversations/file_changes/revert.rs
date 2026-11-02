@@ -20,7 +20,7 @@ use super::workspace::{
     open_workspace_directory, remove_workspace_file_if_unchanged, same_directory_object,
     workspace_directory_matches_path, write_workspace_file_if_unchanged,
 };
-use crate::storage::{AppStorage, StorageConnection};
+use crate::storage::AppStorage;
 
 pub(crate) struct RevertFileTarget {
     pub(crate) directory: crate::filesystem::OpenedDirectory,
@@ -217,21 +217,15 @@ pub(crate) fn revert_change(
     let _guard = lock_file_changes().map_err(|_| RevertError::Unavailable)?;
     cleanup_pending_snapshot_blobs(storage).map_err(|_| RevertError::Unavailable)?;
     migrate_legacy_conversation(storage, conversation_id).map_err(|_| RevertError::Unavailable)?;
-    let mut connection = storage.connect().map_err(|_| RevertError::Unavailable)?;
+    let connection = storage.connect().map_err(|_| RevertError::Unavailable)?;
     let mut entry = load_change(&connection, conversation_id, id)
         .map_err(|_| RevertError::Unavailable)?
         .ok_or(RevertError::Unavailable)?;
+    drop(connection);
     if entry.status == "reverted" {
         return Err(RevertError::AlreadyReverted);
     }
     if entry.status == "conflict" {
-        entry.status = "conflict".to_owned();
-        let transaction = connection
-            .transaction()
-            .map_err(|_| RevertError::Unavailable)?;
-        store_change(&transaction, conversation_id, &entry)
-            .map_err(|_| RevertError::Unavailable)?;
-        transaction.commit().map_err(|_| RevertError::Unavailable)?;
         return Err(RevertError::Conflict);
     }
     let mut target = RevertFileTarget::open(&entry)?;
@@ -239,12 +233,12 @@ pub(crate) fn revert_change(
         .matches_entry(&entry)
         .map_err(|_| RevertError::Unavailable)?
     {
-        mark_revert_conflict(&mut connection, conversation_id, &mut entry)?;
+        mark_revert_conflict(storage, conversation_id, &mut entry)?;
         return Err(RevertError::Conflict);
     }
     let original = target.capture().map_err(|_| RevertError::Unavailable)?;
     if !file_snapshot_matches_entry(&original, &entry) {
-        mark_revert_conflict(&mut connection, conversation_id, &mut entry)?;
+        mark_revert_conflict(storage, conversation_id, &mut entry)?;
         return Err(RevertError::Conflict);
     }
     let baseline_exists = entry.baseline_exists;
@@ -265,12 +259,12 @@ pub(crate) fn revert_change(
             .matches_entry(&entry)
             .map_err(|_| RevertError::Unavailable)?
         {
-            mark_revert_conflict(&mut connection, conversation_id, &mut entry)?;
+            mark_revert_conflict(storage, conversation_id, &mut entry)?;
             return Err(RevertError::Conflict);
         }
         if let Err(error) = target.write_file(original.as_ref(), &content) {
             if error.kind() == io::ErrorKind::WouldBlock {
-                mark_revert_conflict(&mut connection, conversation_id, &mut entry)?;
+                mark_revert_conflict(storage, conversation_id, &mut entry)?;
                 return Err(RevertError::Conflict);
             }
             if rollback_file_change_if_matches(&mut target, &original, &baseline_snapshot) {
@@ -285,7 +279,7 @@ pub(crate) fn revert_change(
             .matches_entry(&entry)
             .map_err(|_| RevertError::Unavailable)?
         {
-            mark_revert_conflict(&mut connection, conversation_id, &mut entry)?;
+            mark_revert_conflict(storage, conversation_id, &mut entry)?;
             return Err(RevertError::Conflict);
         }
         let Some(current) = original.as_ref() else {
@@ -295,7 +289,7 @@ pub(crate) fn revert_change(
             Ok(()) => {}
             Err(error) if error.kind() == io::ErrorKind::NotFound => {}
             Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
-                mark_revert_conflict(&mut connection, conversation_id, &mut entry)?;
+                mark_revert_conflict(storage, conversation_id, &mut entry)?;
                 return Err(RevertError::Conflict);
             }
             Err(error) if error.kind() == io::ErrorKind::InvalidInput => {
@@ -316,25 +310,15 @@ pub(crate) fn revert_change(
     entry.expected_exists = baseline_exists;
     entry.expected_hash = baseline_hash;
     persist_file_change_or_restore(
-        &mut connection,
+        storage,
         conversation_id,
         &entry,
         &mut target,
         &original,
         &baseline_snapshot,
     )?;
-    drop(connection);
-    let connection = storage
-        .connect()
-        .map_err(|_| RevertError::AppliedButResponseUnavailable)?;
-    load_changes(&connection, conversation_id)
+    load_file_change_summaries(storage, conversation_id)
         .map_err(|_| RevertError::AppliedButResponseUnavailable)
-        .map(|entries| {
-            entries
-                .iter()
-                .map(|entry| summary_for_entry(storage.root(), entry, true))
-                .collect()
-        })
 }
 
 /// Marks one active file change as approved by locking its current state.
@@ -348,41 +332,28 @@ pub(crate) fn approve_change(
     let _guard = lock_file_changes().map_err(|_| RevertError::Unavailable)?;
     cleanup_pending_snapshot_blobs(storage).map_err(|_| RevertError::Unavailable)?;
     migrate_legacy_conversation(storage, conversation_id).map_err(|_| RevertError::Unavailable)?;
-    let mut connection = storage.connect().map_err(|_| RevertError::Unavailable)?;
+    let connection = storage.connect().map_err(|_| RevertError::Unavailable)?;
     let mut entry = load_change(&connection, conversation_id, id)
         .map_err(|_| RevertError::Unavailable)?
         .ok_or(RevertError::Unavailable)?;
+    drop(connection);
     if entry.status != "active" {
         return Err(RevertError::Unavailable);
     }
     if !is_current_version(&entry).map_err(|_| RevertError::Unavailable)? {
-        entry.status = "conflict".to_owned();
-        let transaction = connection
-            .transaction()
-            .map_err(|_| RevertError::Unavailable)?;
-        store_change(&transaction, conversation_id, &entry)
-            .map_err(|_| RevertError::Unavailable)?;
-        transaction.commit().map_err(|_| RevertError::Unavailable)?;
+        mark_revert_conflict(storage, conversation_id, &mut entry)?;
         return Err(RevertError::Conflict);
     }
     entry.baseline_hash = Some(APPROVED_BASELINE_SENTINEL.to_owned());
+    let mut connection = storage.connect().map_err(|_| RevertError::Unavailable)?;
     let transaction = connection
         .transaction()
         .map_err(|_| RevertError::Unavailable)?;
     store_change(&transaction, conversation_id, &entry).map_err(|_| RevertError::Unavailable)?;
     transaction.commit().map_err(|_| RevertError::Unavailable)?;
     drop(connection);
-    let connection = storage
-        .connect()
-        .map_err(|_| RevertError::AppliedButResponseUnavailable)?;
-    load_changes(&connection, conversation_id)
+    load_file_change_summaries(storage, conversation_id)
         .map_err(|_| RevertError::AppliedButResponseUnavailable)
-        .map(|entries| {
-            entries
-                .iter()
-                .map(|entry| summary_for_entry(storage.root(), entry, true))
-                .collect()
-        })
 }
 
 /// Marks all active, non-conflicting file changes in a conversation as approved.
@@ -394,9 +365,10 @@ pub(crate) fn approve_all_changes(
     let _guard = lock_file_changes().map_err(|_| RevertError::Unavailable)?;
     cleanup_pending_snapshot_blobs(storage).map_err(|_| RevertError::Unavailable)?;
     migrate_legacy_conversation(storage, conversation_id).map_err(|_| RevertError::Unavailable)?;
-    let mut connection = storage.connect().map_err(|_| RevertError::Unavailable)?;
+    let connection = storage.connect().map_err(|_| RevertError::Unavailable)?;
     let mut entries =
         load_changes(&connection, conversation_id).map_err(|_| RevertError::Unavailable)?;
+    drop(connection);
     for entry in &mut entries {
         if entry.status == "active"
             && !is_entry_approved(entry)
@@ -405,11 +377,13 @@ pub(crate) fn approve_all_changes(
             entry.baseline_hash = Some(APPROVED_BASELINE_SENTINEL.to_owned());
         }
     }
+    let mut connection = storage.connect().map_err(|_| RevertError::Unavailable)?;
     let transaction = connection
         .transaction()
         .map_err(|_| RevertError::Unavailable)?;
     store_changes(&transaction, conversation_id, &entries).map_err(|_| RevertError::Unavailable)?;
     transaction.commit().map_err(|_| RevertError::Unavailable)?;
+    drop(connection);
     Ok(entries
         .iter()
         .map(|entry| summary_for_entry(storage.root(), entry, true))
@@ -463,10 +437,11 @@ pub(crate) fn revert_hunk(
     let _guard = lock_file_changes().map_err(|_| RevertError::Unavailable)?;
     cleanup_pending_snapshot_blobs(storage).map_err(|_| RevertError::Unavailable)?;
     migrate_legacy_conversation(storage, conversation_id).map_err(|_| RevertError::Unavailable)?;
-    let mut connection = storage.connect().map_err(|_| RevertError::Unavailable)?;
+    let connection = storage.connect().map_err(|_| RevertError::Unavailable)?;
     let mut entry = load_change(&connection, conversation_id, id)
         .map_err(|_| RevertError::Unavailable)?
         .ok_or(RevertError::Unavailable)?;
+    drop(connection);
     if entry.status != "active" || is_entry_approved(&entry) || !entry.expected_exists {
         return Err(RevertError::Unavailable);
     }
@@ -475,7 +450,7 @@ pub(crate) fn revert_hunk(
         .matches_entry(&entry)
         .map_err(|_| RevertError::Unavailable)?
     {
-        mark_revert_conflict(&mut connection, conversation_id, &mut entry)?;
+        mark_revert_conflict(storage, conversation_id, &mut entry)?;
         return Err(RevertError::Conflict);
     }
     let baseline_bytes = read_baseline(storage.root(), &entry)
@@ -486,7 +461,7 @@ pub(crate) fn revert_hunk(
         .map_err(|_| RevertError::Unavailable)?
         .ok_or(RevertError::Unavailable)?;
     if !file_snapshot_matches_entry(&Some(original.clone()), &entry) {
-        mark_revert_conflict(&mut connection, conversation_id, &mut entry)?;
+        mark_revert_conflict(storage, conversation_id, &mut entry)?;
         return Err(RevertError::Conflict);
     }
     let current_bytes = original
@@ -542,12 +517,12 @@ pub(crate) fn revert_hunk(
         .matches_entry(&entry)
         .map_err(|_| RevertError::Unavailable)?
     {
-        mark_revert_conflict(&mut connection, conversation_id, &mut entry)?;
+        mark_revert_conflict(storage, conversation_id, &mut entry)?;
         return Err(RevertError::Conflict);
     }
     if let Err(error) = target.write_file(Some(&original), updated_bytes) {
         if error.kind() == io::ErrorKind::WouldBlock {
-            mark_revert_conflict(&mut connection, conversation_id, &mut entry)?;
+            mark_revert_conflict(storage, conversation_id, &mut entry)?;
             return Err(RevertError::Conflict);
         }
         if rollback_file_change_if_matches(&mut target, &Some(original.clone()), &updated_snapshot)
@@ -589,7 +564,7 @@ pub(crate) fn revert_hunk(
                         &Some(original.clone()),
                         &applied_snapshot,
                     ) {
-                        mark_revert_conflict(&mut connection, conversation_id, &mut entry)?;
+                        mark_revert_conflict(storage, conversation_id, &mut entry)?;
                         return Err(RevertError::Conflict);
                     }
                     return Err(RevertError::RollbackFailed);
@@ -615,25 +590,15 @@ pub(crate) fn revert_hunk(
         entry.status = "reverted".to_owned();
     }
     persist_file_change_or_restore(
-        &mut connection,
+        storage,
         conversation_id,
         &entry,
         &mut target,
         &Some(original),
         &applied_snapshot,
     )?;
-    drop(connection);
-    let connection = storage
-        .connect()
-        .map_err(|_| RevertError::AppliedButResponseUnavailable)?;
-    load_changes(&connection, conversation_id)
+    load_file_change_summaries(storage, conversation_id)
         .map_err(|_| RevertError::AppliedButResponseUnavailable)
-        .map(|entries| {
-            entries
-                .iter()
-                .map(|entry| summary_for_entry(storage.root(), entry, true))
-                .collect()
-        })
 }
 
 fn revert_target_matches_snapshot(
@@ -683,11 +648,12 @@ fn rollback_file_change_if_matches(
 }
 
 fn mark_revert_conflict(
-    connection: &mut StorageConnection<'_>,
+    storage: &AppStorage,
     conversation_id: &str,
     entry: &mut ManifestEntry,
 ) -> Result<(), RevertError> {
     entry.status = "conflict".to_owned();
+    let mut connection = storage.connect().map_err(|_| RevertError::Unavailable)?;
     let transaction = connection
         .transaction()
         .map_err(|_| RevertError::Unavailable)?;
@@ -696,7 +662,7 @@ fn mark_revert_conflict(
 }
 
 fn persist_file_change_or_restore(
-    connection: &mut StorageConnection<'_>,
+    storage: &AppStorage,
     conversation_id: &str,
     entry: &ManifestEntry,
     target: &mut RevertFileTarget,
@@ -704,6 +670,7 @@ fn persist_file_change_or_restore(
     applied: &Option<FileSnapshot>,
 ) -> Result<(), RevertError> {
     let persist_result = (|| {
+        let mut connection = storage.connect().map_err(|_| RevertError::Unavailable)?;
         let transaction = connection
             .transaction()
             .map_err(|_| RevertError::Unavailable)?;
@@ -715,4 +682,17 @@ fn persist_file_change_or_restore(
         Err(error) if rollback_file_change_if_matches(target, original, applied) => Err(error),
         Err(_) => Err(RevertError::RollbackFailed),
     }
+}
+
+fn load_file_change_summaries(
+    storage: &AppStorage,
+    conversation_id: &str,
+) -> Result<Vec<FileChangeSummary>, TrackingError> {
+    let connection = storage.connect().map_err(super::types::map_storage_error)?;
+    let entries = load_changes(&connection, conversation_id)?;
+    drop(connection);
+    Ok(entries
+        .iter()
+        .map(|entry| summary_for_entry(storage.root(), entry, true))
+        .collect())
 }

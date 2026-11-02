@@ -1,4 +1,4 @@
-import { ArrowUp, Brain, Paperclip, Square, X } from 'lucide-react';
+import { ArrowUp, Brain, Paperclip, Play, Square, X } from 'lucide-react';
 import { useCallback, useRef, useState } from 'react';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -16,6 +16,7 @@ import { ChatSlashCommandMenu } from './ChatSlashCommandMenu';
 import { ChatSlashModelMenu } from './ChatSlashModelMenu';
 import { ComposerFeedbackList, ComposerModelBanner } from './ComposerAlerts';
 import { ComposerContextRow } from './ComposerContextRow';
+import { GoalStatusBar } from './GoalStatusBar';
 import {
   effectiveContextWindow,
   imageAttachmentExtensions,
@@ -39,6 +40,7 @@ export interface ChatComposerProps {
   isLoadingMessagesOverride?: boolean;
   questionFocusTarget: { conversationId: string; groupId: string } | null;
   onQuestionFocusHandled(): void;
+  fileChanges?: { addedLines: number; removedLines: number; countsUnavailable: boolean; onOpen(): void };
 }
 
 export function ChatComposer({
@@ -52,6 +54,7 @@ export function ChatComposer({
   isLoadingMessagesOverride,
   questionFocusTarget,
   onQuestionFocusHandled,
+  fileChanges,
 }: ChatComposerProps) {
   const { t } = useTranslation();
   const formRef = useRef<HTMLFormElement>(null);
@@ -103,7 +106,8 @@ export function ChatComposer({
     selectedModel,
     isSendBlocked,
     isSending,
-    isAnyConversationSending,
+    canResumeInterruptedRun,
+    resumeInterruptedRun,
     ghostTextSuggestion,
   } = useComposerState({
     droppedFiles,
@@ -126,6 +130,8 @@ export function ChatComposer({
   const pendingProjectId = useChatStore((state) => state.pendingProjectId);
   const hiddenModelKeys = useChatStore((state) => state.hiddenModelKeys);
   const storeActiveConversationId = useChatStore((state) => state.activeConversationId);
+  const temporaryChatId = useChatStore((state) => state.temporaryChat?.id ?? null);
+  const activeGoal = useChatStore((state) => state.activeGoal);
   const activeConversationId = targetConversationId === undefined ? storeActiveConversationId : targetConversationId;
   const storeMessages = useChatStore((state) => state.messages);
   const messages = messagesOverride ?? storeMessages;
@@ -141,6 +147,7 @@ export function ChatComposer({
   const setPendingProjectId = useChatStore((state) => state.setPendingProjectId);
   const selectReasoningEffort = useChatStore((state) => state.selectReasoningEffort);
   const chatErrorCode = useChatStore((state) => state.errorCode);
+  const chatErrorMessage = useChatStore((state) => state.errorMessage);
   const opencodeRetryAtUnixMs = useChatStore((state) => state.opencodeRetryAtUnixMs);
   const modelError = useChatStore((state) => state.modelError);
   const modelContextLimits = useChatStore((state) => state.modelContextLimits);
@@ -240,9 +247,47 @@ export function ChatComposer({
     [addAttachments],
   );
 
+  const handleComposerPaste = useCallback(
+    (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
+      if (
+        isTargetPlaceholder ||
+        pickerModels.length === 0 ||
+        isSending ||
+        isReadingAttachments ||
+        isUpdatingConversationModel
+      ) {
+        return;
+      }
+
+      const supportedImageExtensions: Record<string, string> = {
+        'image/gif': 'gif',
+        'image/jpeg': 'jpg',
+        'image/jpg': 'jpg',
+        'image/png': 'png',
+        'image/webp': 'webp',
+      };
+      const images = Array.from(event.clipboardData.items)
+        .filter((item) => item.kind === 'file' && item.type.startsWith('image/'))
+        .map((item) => {
+          const file = item.getAsFile();
+          if (!file) return null;
+          const extension = supportedImageExtensions[file.type.toLowerCase()];
+          return extension
+            ? new File([file], `pasted-image.${extension}`, { lastModified: file.lastModified, type: file.type })
+            : file;
+        })
+        .filter((file): file is File => file !== null);
+
+      if (images.length === 0) return;
+      event.preventDefault();
+      void addAttachments(images);
+    },
+    [addAttachments, isReadingAttachments, isSending, isTargetPlaceholder, isUpdatingConversationModel, pickerModels],
+  );
+
   return (
-    <div className="shrink-0 px-4 pb-5 pt-3 sm:px-8">
-      <div className="composer-container mx-auto max-w-composer">
+    <div className="shrink-0 px-6 pb-5 pt-3">
+      <div className="composer-container mx-auto max-w-conversation">
         <ComposerModelBanner
           hasModels={models.length > 0}
           hasVisibleModels={selectableModels.length > 0}
@@ -250,11 +295,21 @@ export function ChatComposer({
           onOpenSettings={onOpenSettings}
         />
 
+        <ComposerFeedbackList
+          attachmentErrorKey={attachmentErrorKey}
+          chatErrorCode={chatErrorCode}
+          chatErrorMessage={chatErrorMessage}
+          opencodeRetryAtUnixMs={opencodeRetryAtUnixMs}
+          commandFeedbackKey={commandFeedbackKey}
+          successFeedback={successFeedback}
+        />
+
         <ComposerContextRow
           activeConversationId={activeConversationId}
           contextProjectId={contextProjectId}
           contextToolPermissionMode={contextToolPermissionMode}
           contextWindow={contextWindow}
+          fileChanges={fileChanges}
           isSending={isSending}
           isTemporaryChat={isTemporaryChat}
           messageDraft={messageDraft}
@@ -265,6 +320,8 @@ export function ChatComposer({
           projectsStatus={projectsStatus}
           selectedModel={selectedModel}
         />
+
+        {activeGoal?.conversationId === activeConversationId ? <GoalStatusBar goal={activeGoal} /> : null}
 
         <UserQuestionPanel
           conversationId={activeConversationId}
@@ -293,7 +350,7 @@ export function ChatComposer({
             className="sr-only"
             disabled={
               pickerModels.length === 0 ||
-              isAnyConversationSending ||
+              isSending ||
               isReadingAttachments ||
               isUpdatingConversationModel
             }
@@ -309,7 +366,7 @@ export function ChatComposer({
           {pendingAttachments.length > 0 ? (
             <PendingAttachmentGallery
               attachments={pendingAttachments}
-              disabled={isAnyConversationSending || isReadingAttachments}
+              disabled={isSending || isReadingAttachments}
               onRemove={removeAttachment}
             />
           ) : null}
@@ -330,7 +387,7 @@ export function ChatComposer({
           <div className="relative">
             {slashModelMenuOpen ? (
               <ChatSlashModelMenu
-                canSelect={!isAnyConversationSending && !isUpdatingConversationModel}
+                canSelect={!isSending && !isUpdatingConversationModel}
                 isLoading={modelStatus === 'loading'}
                 chatGptWorkspaceSelectionRequired={chatGptWorkspaceSelectionRequired}
                 models={slashModelCandidates}
@@ -372,6 +429,8 @@ export function ChatComposer({
               appearance="bare"
               fieldLayout="none"
               placeholder={ghostTextSuggestion ?? placeholderHint}
+              title={sendTooltip}
+              wrap="soft"
               onChange={(event) => {
                 const input = event.currentTarget;
                 setMessageDraft(input.value);
@@ -383,6 +442,7 @@ export function ChatComposer({
                 input.style.height = `${input.scrollHeight}px`;
               }}
               onKeyDown={handleKeyDown}
+              onPaste={handleComposerPaste}
               ref={inputRef}
               rows={1}
               value={messageDraft}
@@ -393,7 +453,7 @@ export function ChatComposer({
               <Button
                 aria-label={t('attachmentChooseFile')}
                 disabled={
-                  isTargetPlaceholder || pickerModels.length === 0 || isAnyConversationSending || isReadingAttachments
+                  isTargetPlaceholder || pickerModels.length === 0 || isSending || isReadingAttachments
                 }
                 onClick={() => filePickerRef.current?.click()}
                 size="icon"
@@ -417,7 +477,7 @@ export function ChatComposer({
                 modelFavorites={modelFavorites}
                 modelProviders={modelProviders}
                 models={pickerModels}
-                disabled={isAnyConversationSending || isUpdatingConversationModel}
+                disabled={isSending || isUpdatingConversationModel}
                 onOpenChange={(open) => {
                   setModelPickerOpen(open);
                 }}
@@ -451,7 +511,7 @@ export function ChatComposer({
                   <Select
                     aria-label={t('reasoning')}
                     className="openchat-dropdown-trigger--subtle min-w-0 max-w-full py-2 pl-2.5 pr-2 text-sm"
-                    disabled={isTargetPlaceholder || isAnyConversationSending || isUpdatingConversationModel}
+                    disabled={isTargetPlaceholder || isSending || isUpdatingConversationModel}
                     label={t('reasoning')}
                     leadingIcon={<Brain aria-hidden="true" size={16} />}
                     onChange={(event) => void selectReasoningEffort(event.currentTarget.value || null)}
@@ -478,11 +538,24 @@ export function ChatComposer({
               <Button
                 aria-label={t('stop')}
                 className="size-10"
-                onClick={() => void stopResponse()}
+                onClick={() => void stopResponse(activeConversationId ?? temporaryChatId)}
                 size="icon"
                 variant="secondary"
               >
                 <Square aria-hidden="true" fill="currentColor" size={14} />
+              </Button>
+            ) : canResumeInterruptedRun ? (
+              <Button
+                aria-label={t('continueLabel')}
+                className="size-10"
+                disabled={isTargetPlaceholder || isReadingAttachments || isUpdatingConversationModel || isSendBlocked}
+                onClick={resumeInterruptedRun}
+                size="icon"
+                title={t('continueLabel')}
+                type="button"
+                variant="primary"
+              >
+                <Play aria-hidden="true" size={18} />
               </Button>
             ) : (
               <Button
@@ -494,7 +567,6 @@ export function ChatComposer({
                   !selectedModel?.key ||
                   messageDraft.trim().length === 0 ||
                   isReadingAttachments ||
-                  isAnyConversationSending ||
                   isUpdatingConversationModel ||
                   isSendBlocked ||
                   selectedModelRateLimited
@@ -511,19 +583,12 @@ export function ChatComposer({
         </form>
 
         <AttachmentLibraryDialog
-          disabled={isTargetPlaceholder || isAnyConversationSending || isReadingAttachments}
+          disabled={isTargetPlaceholder || isSending || isReadingAttachments}
           onOpenChange={setIsAttachmentLibraryOpen}
           onSelect={(item) => addExistingAttachments([item])}
           open={isAttachmentLibraryOpen}
         />
 
-        <ComposerFeedbackList
-          attachmentErrorKey={attachmentErrorKey}
-          chatErrorCode={chatErrorCode}
-          opencodeRetryAtUnixMs={opencodeRetryAtUnixMs}
-          commandFeedbackKey={commandFeedbackKey}
-          successFeedback={successFeedback}
-        />
       </div>
     </div>
   );

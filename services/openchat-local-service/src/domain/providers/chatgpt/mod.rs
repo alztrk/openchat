@@ -28,7 +28,7 @@ use crate::{
     protocol::ServiceError,
     provider_schema::{MessageRole, ProviderChatRequest, ProviderMessage},
     service::OperationGate,
-    storage::AppStorage,
+    storage::{AppStorage, ChatGptStreamDiagnostic},
     tools,
 };
 
@@ -1093,9 +1093,23 @@ impl ChatGptService {
         duration_ms: Option<u128>,
         item_count: Option<usize>,
     ) {
-        let _ =
-            self.storage
-                .log_chatgpt_event(event, operation, status, code, duration_ms, item_count);
+        if self
+            .storage
+            .log_chatgpt_event(event, operation, status, code, duration_ms, item_count)
+            .is_err()
+        {
+            eprintln!("chatgpt_diagnostic_log_write_failed");
+        }
+    }
+
+    fn record_chatgpt_stream_diagnostic(&self, diagnostic: ChatGptStreamDiagnostic<'_>) {
+        if self
+            .storage
+            .log_chatgpt_stream_diagnostic(diagnostic)
+            .is_err()
+        {
+            eprintln!("chatgpt_stream_diagnostic_log_write_failed");
+        }
     }
 
     async fn authorized_json_request(

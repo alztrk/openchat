@@ -35,7 +35,7 @@ use super::{
 };
 
 const MAX_BROKER_OPERATIONS: usize = 64;
-const REMOTE_DATABASE_QUEUE_WAIT_TIMEOUT: Duration = Duration::from_secs(30);
+const REMOTE_DATABASE_QUEUE_WAIT_TIMEOUT: Duration = Duration::from_secs(8);
 static BROKER_OPERATION_QUEUE: RemoteDatabaseQueue = RemoteDatabaseQueue {
     state: Mutex::new(RemoteQueueState {
         next_ticket: 0,
@@ -1072,7 +1072,7 @@ fn remote_error(error: RemoteStorageError) -> Error {
 }
 
 fn sqlite_code_message(code: i32) -> &'static str {
-    match code {
+    match code & 0xff {
         ffi::SQLITE_BUSY | ffi::SQLITE_LOCKED => "The database is busy.",
         ffi::SQLITE_CORRUPT | ffi::SQLITE_NOTADB => "The database failed an integrity check.",
         ffi::SQLITE_CANTOPEN | ffi::SQLITE_PERM | ffi::SQLITE_IOERR => {

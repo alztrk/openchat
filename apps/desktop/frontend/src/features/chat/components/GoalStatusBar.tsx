@@ -82,56 +82,29 @@ export function GoalStatusBar({ goal }: GoalStatusBarProps) {
 
   const elapsedLabel = formatElapsed(elapsedMs);
   const completedCount = goal.todos.filter((todo) => todo.completed).length;
+  const tasksId = `goal-tasks-${goal.runId}`;
 
   return (
-    <section
-      aria-label={t(statusLabels[goal.status])}
-      className="mx-auto mb-2 grid w-full max-w-composer gap-1 rounded-control border border-border bg-raised px-3 py-2"
-    >
-      <div className="flex min-w-0 items-center gap-2">
+    <section aria-label={t(statusLabels[goal.status])} className="composer-goal-row overflow-hidden">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 sm:gap-x-3">
         {isRunning ? (
           <CircleDashed aria-hidden="true" className="shrink-0 text-accent" size={16} />
         ) : (
           <CirclePause aria-hidden="true" className="shrink-0 text-accent" size={16} />
         )}
-        <div className="min-w-0 flex-1">
-          <p aria-live="polite" className="truncate text-xs font-semibold text-text">
+        <div className="flex min-w-0 flex-1 basis-48 items-baseline gap-2">
+          <p aria-live="polite" className="shrink-0 text-xs font-semibold text-text">
             {t(statusLabels[goal.status])}
           </p>
-          <p className="truncate text-xs text-secondary-text" title={detail}>
+          <p className="min-w-0 truncate text-xs text-secondary-text" title={detail}>
             {detail}
           </p>
         </div>
-        <span
-          aria-label={t('goalElapsedTime', { time: elapsedLabel })}
-          className="shrink-0 font-mono text-xs tabular-nums text-secondary-text"
-          role="timer"
-        >
-          {elapsedLabel}
-        </span>
-        <Button
-          aria-label={t(canResume ? 'goalResumeAction' : 'goalPauseAction')}
-          disabled={isBusy || (!isRunning && !canResume)}
-          onClick={toggleGoal}
-          size="icon"
-          variant="ghost"
-        >
-          {canResume ? <Play aria-hidden="true" size={15} /> : <Pause aria-hidden="true" size={15} />}
-        </Button>
-        <Button
-          aria-label={t('goalStopAction')}
-          disabled={isBusy}
-          onClick={() => void stopGoal()}
-          size="icon"
-          variant="ghost"
-        >
-          <Square aria-hidden="true" size={14} />
-        </Button>
-      </div>
-      {goal.todos.length > 0 ? (
-        <>
+        {goal.todos.length > 0 ? (
           <Button
-            className="justify-self-start px-1"
+            aria-controls={tasksId}
+            aria-expanded={showTasks}
+            className="shrink-0 px-1"
             onClick={() => setShowTasks((current) => !current)}
             size="small"
             variant="ghost"
@@ -139,24 +112,54 @@ export function GoalStatusBar({ goal }: GoalStatusBarProps) {
             {showTasks ? <ChevronUp aria-hidden="true" size={14} /> : <ChevronDown aria-hidden="true" size={14} />}
             {t('goalTasksCount', { completed: completedCount, total: goal.todos.length })}
           </Button>
-          {showTasks ? (
-            <ul className="grid gap-1 pl-7 text-sm text-text">
-              {goal.todos.map((todo, index) => (
-                <li
-                  className="flex items-start gap-2"
-                  key={`${todo.text}:${goal.todos.slice(0, index).filter((item) => item.text === todo.text).length}`}
-                >
-                  {todo.completed ? (
-                    <CheckCircle2 aria-hidden="true" className="mt-0.5 shrink-0 text-accent" size={15} />
-                  ) : (
-                    <Circle aria-hidden="true" className="mt-0.5 shrink-0 text-secondary-icon" size={15} />
-                  )}
-                  <span>{todo.text}</span>
-                </li>
-              ))}
-            </ul>
-          ) : null}
-        </>
+        ) : null}
+        <div className="ml-auto flex shrink-0 items-center gap-1">
+          <span
+            aria-label={t('goalElapsedTime', { time: elapsedLabel })}
+            className="px-1 font-mono text-xs tabular-nums text-secondary-text"
+            role="timer"
+          >
+            {elapsedLabel}
+          </span>
+          <Button
+            aria-label={t(canResume ? 'goalResumeAction' : 'goalPauseAction')}
+            disabled={isBusy || (!isRunning && !canResume)}
+            onClick={toggleGoal}
+            size="icon"
+            variant="ghost"
+          >
+            {canResume ? <Play aria-hidden="true" size={15} /> : <Pause aria-hidden="true" size={15} />}
+          </Button>
+          <Button
+            aria-label={t('goalStopAction')}
+            disabled={isBusy}
+            onClick={() => void stopGoal()}
+            size="icon"
+            variant="ghost"
+          >
+            <Square aria-hidden="true" size={14} />
+          </Button>
+        </div>
+      </div>
+      {goal.todos.length > 0 ? (
+        <ul
+          className={showTasks ? 'grid gap-1 border-t border-border px-4 py-2.5 text-sm text-text' : 'hidden'}
+          id={tasksId}
+        >
+          {goal.todos.map((todo, index) => (
+            <li
+              className="flex items-start gap-2"
+              key={`${todo.text}:${goal.todos.slice(0, index).filter((item) => item.text === todo.text).length}`}
+            >
+              {todo.completed ? (
+                <CheckCircle2 aria-hidden="true" className="mt-0.5 shrink-0 text-accent" size={15} />
+              ) : (
+                <Circle aria-hidden="true" className="mt-0.5 shrink-0 text-secondary-icon" size={15} />
+              )}
+              <span>{todo.text}</span>
+            </li>
+          ))}
+        </ul>
       ) : null}
     </section>
   );

@@ -29,8 +29,8 @@ export function FileChangesSummaryCard({
 
   const changes = [...changesById.values()];
   const activeChanges = changes.filter((change) => change.status === 'active');
-  const trackingFailed = activities.some((activity) => activity.fileChangesError !== null);
-  if (changes.length === 0 && !trackingFailed) return null;
+  const trackingFailed = changes.length > 0 && activities.some((activity) => activity.fileChangesError !== null);
+  if (changes.length === 0) return null;
 
   const hasUnknownCounts = activeChanges.some((change) => change.addedLines === null || change.removedLines === null);
   const added = activeChanges.reduce((total, change) => total + (change.addedLines ?? 0), 0);

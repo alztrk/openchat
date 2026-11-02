@@ -489,7 +489,7 @@ export function ApiKeyProvidersSection({
   const modelProviderCards =
     snapshot && !loading ? (
       <div className="grid gap-6">
-        <div className="grid min-w-0 divide-y divide-border overflow-hidden rounded-card border border-border bg-surface">
+        <div className="grid min-w-0 gap-2 overflow-hidden rounded-card border border-border bg-raised p-3">
           <CredentialCard
             configured={openCodeConfigured}
             documentationUrl="https://opencode.ai/zen"

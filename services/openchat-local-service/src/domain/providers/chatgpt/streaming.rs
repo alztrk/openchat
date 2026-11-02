@@ -4,9 +4,19 @@
 //! propagated, and tool execution remains constrained by the request allowlist.
 
 use futures_util::StreamExt;
-use reqwest::Method;
+use hyper::Error as HyperError;
+use reqwest::{
+    Method, Response as HttpResponse, StatusCode,
+    header::{CONTENT_ENCODING, CONTENT_LENGTH, TRANSFER_ENCODING},
+};
 use serde_json::{Value, json};
-use std::{collections::HashMap, sync::Arc, time::Instant};
+use std::{
+    collections::HashMap,
+    error::Error as StdError,
+    io,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 use uuid::Uuid;
 
 use super::response_events::{
@@ -29,9 +39,181 @@ use crate::{
     protocol::{Response, ServiceError},
     provider_schema::{ChatStreamEvent, ChatStreamSnapshot},
     response_budget::ProviderResponseBudget,
+    storage::ChatGptStreamDiagnostic,
     tools::{ImageGenerationContext, ToolExecutionContext, ToolExecutor},
     usage_statistics::{UsageData, UsageRequestDetails, UsageRequestTracker},
 };
+
+const MAX_TRANSIENT_RESPONSE_RETRIES: usize = 2;
+const MAX_STREAM_CONTINUATIONS: usize = 2;
+const TRANSIENT_RESPONSE_RETRY_DELAYS: [Duration; MAX_TRANSIENT_RESPONSE_RETRIES] =
+    [Duration::from_millis(500), Duration::from_secs(1)];
+
+fn is_retryable_response_status(status: StatusCode) -> bool {
+    matches!(
+        status,
+        StatusCode::INTERNAL_SERVER_ERROR
+            | StatusCode::BAD_GATEWAY
+            | StatusCode::SERVICE_UNAVAILABLE
+            | StatusCode::GATEWAY_TIMEOUT
+    )
+}
+
+fn is_retryable_stream_error(error: &ServiceError) -> bool {
+    error.retryable
+        && matches!(
+            error.code,
+            "network_unavailable"
+                | "provider_timeout"
+                | "response_incomplete"
+                | "provider_unavailable"
+        )
+}
+
+fn append_response_continuation(payload: &mut Value, content: &str) -> Result<(), ServiceError> {
+    let Some(input) = payload.get_mut("input").and_then(Value::as_array_mut) else {
+        return Err(invalid_response_error());
+    };
+    input.push(json!({"role": "assistant", "content": content}));
+    input.push(json!({
+        "role": "user",
+        "content": "The previous assistant response was interrupted. Continue the same response from its exact stopping point. Do not repeat or summarize any text already present; return only the continuation."
+    }));
+    Ok(())
+}
+
+fn response_content_encoding(response: &HttpResponse) -> &'static str {
+    let Some(value) = response.headers().get(CONTENT_ENCODING) else {
+        return "missing_or_auto_decoded";
+    };
+    let Ok(value) = value.to_str() else {
+        return "invalid";
+    };
+    let value = value.trim();
+    if value.contains(',') {
+        return "multiple";
+    }
+    if value.eq_ignore_ascii_case("gzip") {
+        "gzip"
+    } else if value.eq_ignore_ascii_case("br") {
+        "br"
+    } else if value.eq_ignore_ascii_case("deflate") {
+        "deflate"
+    } else if value.eq_ignore_ascii_case("zstd") {
+        "zstd"
+    } else if value.eq_ignore_ascii_case("identity") {
+        "identity"
+    } else {
+        "other"
+    }
+}
+
+fn response_transfer_encoding(response: &HttpResponse) -> &'static str {
+    let Some(value) = response.headers().get(TRANSFER_ENCODING) else {
+        return "missing";
+    };
+    let Ok(value) = value.to_str() else {
+        return "invalid";
+    };
+    let value = value.trim();
+    if value.contains(',') {
+        return "multiple";
+    }
+    if value.eq_ignore_ascii_case("chunked") {
+        "chunked"
+    } else {
+        "other"
+    }
+}
+
+fn response_content_length(response: &HttpResponse) -> Option<u64> {
+    response
+        .headers()
+        .get(CONTENT_LENGTH)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.parse().ok())
+}
+
+fn response_http_version(response: &HttpResponse) -> &'static str {
+    let version = response.version();
+    if version == http::Version::HTTP_09 {
+        "http/0.9"
+    } else if version == http::Version::HTTP_10 {
+        "http/1.0"
+    } else if version == http::Version::HTTP_11 {
+        "http/1.1"
+    } else if version == http::Version::HTTP_2 {
+        "http/2"
+    } else if version == http::Version::HTTP_3 {
+        "http/3"
+    } else {
+        "other"
+    }
+}
+
+fn reqwest_stream_error_class(error: &reqwest::Error) -> &'static str {
+    if error.is_timeout() {
+        "timeout"
+    } else if error.is_connect() {
+        "connect"
+    } else if error.is_decode() {
+        "decode"
+    } else if error.is_body() {
+        "body"
+    } else if error.is_request() {
+        "request"
+    } else if error.is_status() {
+        "status"
+    } else {
+        "other"
+    }
+}
+
+fn stream_error_source_details(
+    error: &reqwest::Error,
+) -> (Option<&'static str>, Option<&'static str>) {
+    let mut source = StdError::source(error);
+    while let Some(source_error) = source {
+        if let Some(hyper_error) = source_error.downcast_ref::<HyperError>() {
+            if hyper_error.is_incomplete_message() {
+                return (Some("incomplete_http_message"), None);
+            }
+            if hyper_error.is_closed() {
+                return (Some("http_body_channel_closed"), None);
+            }
+            if hyper_error.is_canceled() {
+                return (Some("http_body_cancelled"), None);
+            }
+            if hyper_error.is_timeout() {
+                return (Some("http_body_timeout"), None);
+            }
+            if hyper_error.is_parse() {
+                return (Some("http_protocol_parse"), None);
+            }
+        }
+        if let Some(io_error) = source_error.downcast_ref::<io::Error>() {
+            return (Some("io_error"), Some(io_error_kind_label(io_error.kind())));
+        }
+        source = StdError::source(source_error);
+    }
+    (None, None)
+}
+
+fn io_error_kind_label(kind: io::ErrorKind) -> &'static str {
+    match kind {
+        io::ErrorKind::ConnectionReset => "connection_reset",
+        io::ErrorKind::ConnectionAborted => "connection_aborted",
+        io::ErrorKind::UnexpectedEof => "unexpected_eof",
+        io::ErrorKind::TimedOut => "timed_out",
+        io::ErrorKind::NotConnected => "not_connected",
+        io::ErrorKind::BrokenPipe => "broken_pipe",
+        io::ErrorKind::InvalidData => "invalid_data",
+        io::ErrorKind::Interrupted => "interrupted",
+        io::ErrorKind::WouldBlock => "would_block",
+        io::ErrorKind::Other => "other",
+        _ => "other",
+    }
+}
 
 fn response_tool_names(payload: &Value) -> Vec<String> {
     payload
@@ -101,6 +283,7 @@ impl ChatGptService {
             ..
         } = context;
         let message_id = Uuid::new_v4().simple().to_string();
+        let stream_id = Uuid::new_v4().simple().to_string();
         let created_at = now_unix_millis()?;
         let started = Instant::now();
         let mut content = String::new();
@@ -203,9 +386,19 @@ impl ChatGptService {
         let mut operation = "chat";
         let mut response_budget = ProviderResponseBudget::default();
         let mut initial_provider_request = true;
+        let mut stream_continuations = 0;
+        let mut provider_request_attempts: usize = 0;
+        let mut stream_started_diagnostic =
+            ChatGptStreamDiagnostic::new("stream_started", &stream_id);
+        stream_started_diagnostic.partial_text_available = Some(false);
+        self.record_chatgpt_stream_diagnostic(stream_started_diagnostic);
         'model_turn: loop {
+            let is_stream_continuation = operation == "stream_continuation";
             let is_follow_up_turn = !initial_provider_request;
-            if is_follow_up_turn && let Some(history_context) = project_history_context.take() {
+            if is_follow_up_turn
+                && !is_stream_continuation
+                && let Some(history_context) = project_history_context.take()
+            {
                 let removed = match payload.get_mut("instructions") {
                     Some(Value::String(instructions)) => {
                         crate::instructions::remove_project_history_context(
@@ -323,20 +516,126 @@ impl ChatGptService {
                 .record_request_manifest(&payload, Some(&request_sources))
                 .map_err(database_error)?;
             let provider_request_started = Instant::now();
-            let response = match self
-                .authorized_stream_request(
-                    StreamRequest {
-                        method: Method::POST,
-                        url: format!("{CHATGPT_CODEX_BASE}/responses"),
-                        connection_id: &route.connection_id,
-                        external_workspace_id,
-                        body: Some(payload.clone()),
-                        response_context_id: conversation_id,
-                    },
-                    cancellation,
-                )
-                .await
-            {
+            let mut retries = 0;
+            let response_result = loop {
+                provider_request_attempts = provider_request_attempts.saturating_add(1);
+                let attempt = provider_request_attempts;
+                let attempt_started = Instant::now();
+                let response_result = self
+                    .authorized_stream_request(
+                        StreamRequest {
+                            method: Method::POST,
+                            url: format!("{CHATGPT_CODEX_BASE}/responses"),
+                            connection_id: &route.connection_id,
+                            external_workspace_id,
+                            body: Some(payload.clone()),
+                            response_context_id: conversation_id,
+                        },
+                        cancellation,
+                    )
+                    .await;
+                let attempt_elapsed_ms = attempt_started.elapsed().as_millis();
+                match response_result {
+                    Ok(Some(response)) => {
+                        let status = response.status();
+                        let mut diagnostic =
+                            ChatGptStreamDiagnostic::new("response_headers_received", &stream_id);
+                        diagnostic.attempt = Some(attempt);
+                        diagnostic.status = Some(status.as_u16());
+                        diagnostic.http_version = Some(response_http_version(&response));
+                        diagnostic.content_encoding = Some(response_content_encoding(&response));
+                        diagnostic.transfer_encoding = Some(response_transfer_encoding(&response));
+                        diagnostic.content_length_header_bytes = response_content_length(&response);
+                        diagnostic.elapsed_ms = Some(attempt_elapsed_ms);
+                        self.record_chatgpt_stream_diagnostic(diagnostic);
+
+                        if retries < MAX_TRANSIENT_RESPONSE_RETRIES
+                            && is_retryable_response_status(status)
+                        {
+                            retries += 1;
+                            let delay = TRANSIENT_RESPONSE_RETRY_DELAYS[retries - 1];
+                            let mut diagnostic =
+                                ChatGptStreamDiagnostic::new("request_retry_scheduled", &stream_id);
+                            diagnostic.attempt = Some(attempt);
+                            diagnostic.retry_count = Some(retries);
+                            diagnostic.retry_delay_ms = Some(delay.as_millis());
+                            diagnostic.status = Some(status.as_u16());
+                            diagnostic.elapsed_ms =
+                                Some(provider_request_started.elapsed().as_millis());
+                            diagnostic.error_code = Some("provider_unavailable");
+                            diagnostic.retryable = Some(true);
+                            self.record_chatgpt_stream_diagnostic(diagnostic);
+                            self.record_chatgpt_event(
+                                "retry_scheduled",
+                                "responses",
+                                Some(status.as_u16()),
+                                Some("provider_unavailable"),
+                                Some(provider_request_started.elapsed().as_millis()),
+                                Some(retries),
+                            );
+                            drop(response);
+                            if *cancellation.borrow() {
+                                break Ok(None);
+                            }
+                            tokio::select! {
+                                changed = cancellation.changed() => {
+                                    let _ = changed;
+                                    break Ok(None);
+                                }
+                                () = tokio::time::sleep(delay) => {}
+                            }
+                            continue;
+                        }
+                        break Ok(Some(response));
+                    }
+                    Err(error) => {
+                        let retryable = is_retryable_stream_error(&error);
+                        let mut diagnostic = ChatGptStreamDiagnostic::new(
+                            "request_failed_before_headers",
+                            &stream_id,
+                        );
+                        diagnostic.attempt = Some(attempt);
+                        diagnostic.elapsed_ms = Some(attempt_elapsed_ms);
+                        diagnostic.error_code = Some(error.code);
+                        diagnostic.retryable = Some(retryable);
+                        self.record_chatgpt_stream_diagnostic(diagnostic);
+
+                        if retries < MAX_TRANSIENT_RESPONSE_RETRIES && retryable {
+                            retries += 1;
+                            let delay = TRANSIENT_RESPONSE_RETRY_DELAYS[retries - 1];
+                            let mut diagnostic =
+                                ChatGptStreamDiagnostic::new("request_retry_scheduled", &stream_id);
+                            diagnostic.attempt = Some(attempt);
+                            diagnostic.retry_count = Some(retries);
+                            diagnostic.retry_delay_ms = Some(delay.as_millis());
+                            diagnostic.elapsed_ms =
+                                Some(provider_request_started.elapsed().as_millis());
+                            diagnostic.error_code = Some(error.code);
+                            diagnostic.retryable = Some(true);
+                            self.record_chatgpt_stream_diagnostic(diagnostic);
+                            self.record_chatgpt_event(
+                                "retry_scheduled",
+                                "responses",
+                                None,
+                                Some(error.code),
+                                Some(provider_request_started.elapsed().as_millis()),
+                                Some(retries),
+                            );
+                            tokio::select! {
+                                changed = cancellation.changed() => {
+                                    let _ = changed;
+                                    break Ok(None);
+                                }
+                                () = tokio::time::sleep(delay) => {}
+                            }
+                            continue;
+                        }
+                        break Err(error);
+                    }
+                    Ok(None) => break Ok(None),
+                }
+            };
+            let response = match response_result {
                 Ok(Some(response)) => {
                     let status = response.status();
                     self.record_chatgpt_event(
@@ -422,6 +721,12 @@ impl ChatGptService {
                 }
             };
 
+            let response_status = response.status().as_u16();
+            let body_started = Instant::now();
+            let mut last_chunk_at = body_started;
+            let mut first_chunk_ms = None;
+            let mut body_chunks_received = 0_usize;
+            let mut decoded_body_bytes_received = 0_usize;
             let mut body_stream = response.bytes_stream();
             let mut pending_bytes = Vec::new();
             let mut event_data = Vec::<String>::new();
@@ -471,26 +776,36 @@ impl ChatGptService {
                 let chunk = match chunk {
                     Ok(chunk) => chunk,
                     Err(error) => {
-                        self.record_chatgpt_event(
-                            "request_failed",
-                            "responses",
-                            None,
-                            Some("network_unavailable"),
-                            Some(started.elapsed().as_millis()),
-                            None,
-                        );
-                        self.persist_terminal_message(AssistantMessageWrite {
-                            conversation_id,
-                            message_id: &message_id,
-                            content: &content,
-                            status: "failed",
-                            created_at_unix_ms: created_at,
-                            output_tokens,
-                            elapsed: Some(started.elapsed()),
-                        })?;
-                        return Err(network_error_with_details(error));
+                        let (source_error_class, source_io_kind) =
+                            stream_error_source_details(&error);
+                        let mut diagnostic =
+                            ChatGptStreamDiagnostic::new("response_body_read_failed", &stream_id);
+                        diagnostic.attempt = Some(provider_request_attempts);
+                        diagnostic.status = Some(response_status);
+                        diagnostic.elapsed_ms = Some(body_started.elapsed().as_millis());
+                        diagnostic.body_chunks_received = Some(body_chunks_received);
+                        diagnostic.decoded_body_bytes_received = Some(decoded_body_bytes_received);
+                        diagnostic.first_chunk_ms = first_chunk_ms;
+                        diagnostic.last_chunk_idle_ms = Some(last_chunk_at.elapsed().as_millis());
+                        diagnostic.error_code = Some("network_unavailable");
+                        diagnostic.reqwest_error_class = Some(reqwest_stream_error_class(&error));
+                        diagnostic.source_error_class = source_error_class;
+                        diagnostic.source_io_kind = source_io_kind;
+                        diagnostic.retryable = Some(true);
+                        diagnostic.completion_event_seen = Some(false);
+                        diagnostic.partial_text_available = Some(!content.is_empty());
+                        self.record_chatgpt_stream_diagnostic(diagnostic);
+                        failure = Some(network_error_with_details(error));
+                        break;
                     }
                 };
+                body_chunks_received = body_chunks_received.saturating_add(1);
+                decoded_body_bytes_received =
+                    decoded_body_bytes_received.saturating_add(chunk.len());
+                if first_chunk_ms.is_none() {
+                    first_chunk_ms = Some(body_started.elapsed().as_millis());
+                }
+                last_chunk_at = Instant::now();
                 if let Err(error) = response_budget.consume(chunk.len()) {
                     self.record_chatgpt_event(
                         "request_failed",
@@ -619,34 +934,141 @@ impl ChatGptService {
                 }
             }
 
-            if let Some(error) = failure {
-                usage_request.fail(&round_usage).map_err(database_error)?;
-                self.record_chatgpt_event(
-                    "request_failed",
-                    "responses",
-                    None,
-                    Some(error.code),
-                    Some(started.elapsed().as_millis()),
-                    None,
+            if failure.is_none() {
+                let mut diagnostic = ChatGptStreamDiagnostic::new(
+                    if completed {
+                        "response_body_completed"
+                    } else {
+                        "response_body_ended_without_completion"
+                    },
+                    &stream_id,
                 );
-                self.persist_terminal_message(AssistantMessageWrite {
-                    conversation_id,
-                    message_id: &message_id,
-                    content: &content,
-                    status: "failed",
-                    created_at_unix_ms: created_at,
-                    output_tokens,
-                    elapsed: Some(started.elapsed()),
-                })?;
-                return Err(error);
+                diagnostic.attempt = Some(provider_request_attempts);
+                diagnostic.status = Some(response_status);
+                diagnostic.elapsed_ms = Some(body_started.elapsed().as_millis());
+                diagnostic.body_chunks_received = Some(body_chunks_received);
+                diagnostic.decoded_body_bytes_received = Some(decoded_body_bytes_received);
+                diagnostic.first_chunk_ms = first_chunk_ms;
+                diagnostic.last_chunk_idle_ms = Some(last_chunk_at.elapsed().as_millis());
+                diagnostic.error_code = (!completed).then_some("response_incomplete");
+                diagnostic.retryable = Some(!completed);
+                diagnostic.completion_event_seen = Some(completed);
+                diagnostic.partial_text_available = Some(!content.is_empty());
+                self.record_chatgpt_stream_diagnostic(diagnostic);
             }
-            if !completed {
-                let error = ServiceError::new(
-                    "response_incomplete",
-                    "The ChatGPT response ended before completion. The partial answer was saved.",
-                    true,
-                );
+
+            let stream_error = failure.or_else(|| {
+                (!completed).then(|| {
+                    ServiceError::new(
+                        "response_incomplete",
+                        "The ChatGPT response ended before completion. The partial answer was saved.",
+                        true,
+                    )
+                })
+            });
+            if let Some(error) = stream_error {
                 usage_request.fail(&round_usage).map_err(database_error)?;
+                if stream_continuations < MAX_STREAM_CONTINUATIONS
+                    && is_retryable_stream_error(&error)
+                {
+                    stream_continuations += 1;
+                    let mut diagnostic =
+                        ChatGptStreamDiagnostic::new("stream_continuation_scheduled", &stream_id);
+                    diagnostic.attempt = Some(provider_request_attempts);
+                    diagnostic.continuation_count = Some(stream_continuations);
+                    diagnostic.retry_delay_ms =
+                        Some(TRANSIENT_RESPONSE_RETRY_DELAYS[stream_continuations - 1].as_millis());
+                    diagnostic.elapsed_ms = Some(started.elapsed().as_millis());
+                    diagnostic.error_code = Some(error.code);
+                    diagnostic.retryable = Some(true);
+                    diagnostic.partial_text_available = Some(!content.is_empty());
+                    self.record_chatgpt_stream_diagnostic(diagnostic);
+                    self.record_chatgpt_event(
+                        "continuation_scheduled",
+                        "responses",
+                        None,
+                        Some(error.code),
+                        Some(started.elapsed().as_millis()),
+                        Some(stream_continuations),
+                    );
+                    if !content.is_empty() {
+                        if let Err(continuation_error) =
+                            append_response_continuation(&mut payload, &content)
+                        {
+                            self.persist_terminal_message(AssistantMessageWrite {
+                                conversation_id,
+                                message_id: &message_id,
+                                content: &content,
+                                status: "failed",
+                                created_at_unix_ms: created_at,
+                                output_tokens,
+                                elapsed: Some(started.elapsed()),
+                            })?;
+                            return Err(continuation_error);
+                        }
+                        chatgpt_store::save_assistant_message(
+                            &self.storage,
+                            AssistantMessageWrite {
+                                conversation_id,
+                                message_id: &message_id,
+                                content: &content,
+                                status: "streaming",
+                                created_at_unix_ms: created_at,
+                                output_tokens: None,
+                                elapsed: None,
+                            },
+                        )
+                        .map_err(database_error)?;
+                        events
+                            .send(
+                                &ChatStreamEvent::TextUpdated(ChatStreamSnapshot::new(
+                                    conversation_id,
+                                    &message_id,
+                                    &content,
+                                    created_at,
+                                ))
+                                .into_rpc(request_id.clone()),
+                            )
+                            .await
+                            .map_err(|_| protocol_error())?;
+                    }
+                    operation = "stream_continuation";
+                    let delay = TRANSIENT_RESPONSE_RETRY_DELAYS[stream_continuations - 1];
+                    let cancelled = tokio::select! {
+                        changed = cancellation.changed() => {
+                            let _ = changed;
+                            true
+                        }
+                        () = tokio::time::sleep(delay) => false,
+                    };
+                    if cancelled || *cancellation.borrow() {
+                        self.record_chatgpt_event(
+                            "request_cancelled",
+                            "responses",
+                            None,
+                            Some("request_cancelled"),
+                            Some(started.elapsed().as_millis()),
+                            None,
+                        );
+                        self.persist_terminal_message(AssistantMessageWrite {
+                            conversation_id,
+                            message_id: &message_id,
+                            content: &content,
+                            status: "stopped",
+                            created_at_unix_ms: created_at,
+                            output_tokens,
+                            elapsed: Some(started.elapsed()),
+                        })?;
+                        return Ok(json!({
+                            "conversationId": conversation_id,
+                            "messageId": message_id,
+                            "status": "stopped",
+                            "outputTokens": output_tokens,
+                            "elapsedMicroseconds": started.elapsed().as_micros(),
+                        }));
+                    }
+                    continue 'model_turn;
+                }
                 self.record_chatgpt_event(
                     "request_failed",
                     "responses",
@@ -655,6 +1077,14 @@ impl ChatGptService {
                     Some(started.elapsed().as_millis()),
                     None,
                 );
+                let mut diagnostic = ChatGptStreamDiagnostic::new("stream_failed", &stream_id);
+                diagnostic.attempt = Some(provider_request_attempts);
+                diagnostic.continuation_count = Some(stream_continuations);
+                diagnostic.elapsed_ms = Some(started.elapsed().as_millis());
+                diagnostic.error_code = Some(error.code);
+                diagnostic.retryable = Some(error.retryable);
+                diagnostic.partial_text_available = Some(!content.is_empty());
+                self.record_chatgpt_stream_diagnostic(diagnostic);
                 self.persist_terminal_message(AssistantMessageWrite {
                     conversation_id,
                     message_id: &message_id,
@@ -1240,6 +1670,13 @@ impl ChatGptService {
             Some(elapsed.as_millis()),
             None,
         );
+        let mut diagnostic = ChatGptStreamDiagnostic::new("stream_completed", &stream_id);
+        diagnostic.attempt = Some(provider_request_attempts);
+        diagnostic.continuation_count = Some(stream_continuations);
+        diagnostic.elapsed_ms = Some(elapsed.as_millis());
+        diagnostic.completion_event_seen = Some(true);
+        diagnostic.partial_text_available = Some(!content.is_empty());
+        self.record_chatgpt_stream_diagnostic(diagnostic);
         let title_route = route.clone();
         let title_conversation_id = conversation_id.to_owned();
         let title_excluded_assistant_message_id = excluded_assistant_message_id.map(str::to_owned);

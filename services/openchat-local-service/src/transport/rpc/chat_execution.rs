@@ -241,22 +241,20 @@ pub(super) async fn prepare_run(
         profile_tool_allowlist,
     } = input;
 
-    let mut connection = storage.connect().map_err(|error| {
-        log_chat_storage_failure(storage, "chat.send.prepare_open", &error);
-        storage_unavailable()
-    })?;
-
-    validate_goal_start(
-        storage,
-        &connection,
-        conversation_id,
-        requested_goal_objective,
-    )?;
+    validate_goal_start(storage, conversation_id, requested_goal_objective)?;
     validate_fast_mode(route.provider_id.as_deref(), requested_fast_mode)?;
 
     let mut prepared = if let Some(run_id) = resume_run_id {
-        restore_run(storage, &mut connection, conversation_id, route, run_id)?
+        let mut connection = storage.connect().map_err(|error| {
+            log_chat_storage_failure(storage, "chat.send.prepare_open", &error);
+            storage_unavailable()
+        })?;
+        restore_run(&mut connection, conversation_id, route, run_id)?
     } else if is_security_scan {
+        let mut connection = storage.connect().map_err(|error| {
+            log_chat_storage_failure(storage, "chat.send.prepare_open", &error);
+            storage_unavailable()
+        })?;
         create_run(CreateRun {
             connection: &mut connection,
             conversation_id,
@@ -273,13 +271,16 @@ pub(super) async fn prepare_run(
     } else {
         let project_context = load_project_context(
             storage,
-            &mut connection,
             conversation_id,
             route,
             permission_mode,
             &requested_project_skill_ids,
         )
         .await?;
+        let mut connection = storage.connect().map_err(|error| {
+            log_chat_storage_failure(storage, "chat.send.prepare_open", &error);
+            storage_unavailable()
+        })?;
         create_run(CreateRun {
             connection: &mut connection,
             conversation_id,
@@ -331,19 +332,13 @@ fn empty_project_context() -> ProjectContext {
 /// Ensures a new goal is tied to the latest user message and no other goal is active.
 fn validate_goal_start(
     storage: &AppStorage,
-    connection: &StorageConnection<'_>,
     conversation_id: &str,
     objective: Option<&str>,
 ) -> Result<(), ServiceError> {
     let Some(objective) = objective else {
         return Ok(());
     };
-    let messages = chatgpt_store::conversation_messages_on_connection(
-        connection,
-        storage.root(),
-        conversation_id,
-    )
-    .map_err(|error| {
+    let connection = storage.connect().map_err(|error| {
         log_chat_storage_failure(storage, "chat.send.goal_history_read", &error);
         ServiceError::new(
             "storage_unavailable",
@@ -351,15 +346,67 @@ fn validate_goal_start(
             false,
         )
     })?;
-    if messages
-        .last()
-        .is_none_or(|message| message.role != "user" || message.content.trim() != objective)
+    let latest_message = connection
+        .query_row(
+            "SELECT id, role, content FROM messages
+             WHERE conversation_id = ?1 AND role IN ('user', 'assistant')
+             ORDER BY created_at DESC, id DESC LIMIT 1",
+            [conversation_id],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                ))
+            },
+        )
+        .optional()
+        .map_err(|error| {
+            log_chat_storage_failure(storage, "chat.send.goal_history_read", &error);
+            ServiceError::new(
+                "storage_unavailable",
+                "Chat history could not be read.",
+                false,
+            )
+        })?;
+    drop(connection);
+    let latest_user_content = latest_message
+        .filter(|(_, role, _)| role == "user")
+        .map(|(message_id, _, content)| {
+            crate::attachments::decode_message_content(
+                content,
+                storage.root(),
+                conversation_id,
+                &message_id,
+            )
+            .map(|(content, _)| content)
+            .map_err(|error| {
+                log_chat_storage_failure(storage, "chat.send.goal_history_read", &error);
+                ServiceError::new(
+                    "storage_unavailable",
+                    "Chat history could not be read.",
+                    false,
+                )
+            })
+        })
+        .transpose()?;
+    if latest_user_content
+        .as_deref()
+        .is_none_or(|content| content.trim() != objective)
     {
         return Err(super::chat_request::invalid_chat_goal_request(
             "goal objective",
         ));
     }
-    if crate::storage::user_questions::latest_active_goal_run(connection, conversation_id)
+    let connection = storage.connect().map_err(|error| {
+        log_chat_storage_failure(storage, "chat.send.goal_history_read", &error);
+        ServiceError::new(
+            "storage_unavailable",
+            "Chat history could not be read.",
+            false,
+        )
+    })?;
+    if crate::storage::user_questions::latest_active_goal_run(&connection, conversation_id)
         .map_err(super::map_question_storage_error)?
         .is_some()
     {
@@ -391,7 +438,6 @@ fn validate_fast_mode(
 ///
 /// All checkpoint validation completes before the resume claim is persisted.
 fn restore_run(
-    storage: &AppStorage,
     connection: &mut StorageConnection<'_>,
     conversation_id: &str,
     route: &SavedChatRoute,
@@ -452,10 +498,21 @@ fn restore_run(
         None
     };
 
-    crate::storage::user_questions::claim_run_resume(connection, conversation_id, run_id)
-        .map_err(super::map_question_storage_error)?;
     if let Some(goal) = goal_execution.as_mut() {
-        goals::set_running(storage, goal)?;
+        goals::prepare_running(goal);
+    }
+    let goal_checkpoint = goal_execution
+        .as_ref()
+        .map(|goal| (&goal.checkpoint, goal.checkpoint_revision));
+    let resumed_run = crate::storage::user_questions::claim_run_resume(
+        connection,
+        conversation_id,
+        run_id,
+        goal_checkpoint,
+    )
+    .map_err(super::map_question_storage_error)?;
+    if let Some(goal) = goal_execution.as_mut() {
+        goal.checkpoint_revision = resumed_run.checkpoint_revision;
     }
 
     Ok(PreparedRunState {
@@ -535,7 +592,6 @@ fn restore_fast_mode(checkpoint: &Value, provider_id: Option<&str>) -> Result<bo
 /// Loads bounded project context before any new run state is written.
 async fn load_project_context(
     storage: &AppStorage,
-    connection: &mut StorageConnection<'_>,
     conversation_id: &str,
     route: &SavedChatRoute,
     permission_mode: ToolPermissionMode,
@@ -562,14 +618,58 @@ async fn load_project_context(
             None => return Err(super::invalid_request_params()),
         }
     };
-    let memory_snapshot = if permission_mode == ToolPermissionMode::Plan {
-        None
+    let (memory_snapshot, latest_user_message) = if permission_mode == ToolPermissionMode::Plan {
+        (None, None)
+    } else if let Some(project_id) = route.project_id.as_deref() {
+        let connection = storage.connect().map_err(|error| {
+            log_chat_storage_failure(storage, "chat.send.project_context_open", &error);
+            storage_unavailable()
+        })?;
+        let snapshot = crate::project_memory::snapshot(&connection, project_id)?;
+        let latest_user_message = if snapshot.history_context_enabled {
+            connection
+                .query_row(
+                    "SELECT id, content FROM messages
+                     WHERE conversation_id = ?1 AND role = 'user'
+                     ORDER BY created_at DESC, id DESC LIMIT 1",
+                    [conversation_id],
+                    |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+                )
+                .optional()
+                .map_err(|error| {
+                    log_chat_storage_failure(storage, "chat.send.project_history_read", &error);
+                    ServiceError::new(
+                        "storage_unavailable",
+                        "Chat history could not be read.",
+                        false,
+                    )
+                })?
+        } else {
+            None
+        };
+        drop(connection);
+        let latest_user_message = latest_user_message
+            .map(|(message_id, content)| {
+                crate::attachments::decode_message_content(
+                    content,
+                    storage.root(),
+                    conversation_id,
+                    &message_id,
+                )
+                .map(|(content, _)| content)
+                .map_err(|error| {
+                    log_chat_storage_failure(storage, "chat.send.project_history_read", &error);
+                    ServiceError::new(
+                        "storage_unavailable",
+                        "Chat history could not be read.",
+                        false,
+                    )
+                })
+            })
+            .transpose()?;
+        (Some(snapshot), latest_user_message)
     } else {
-        route
-            .project_id
-            .as_deref()
-            .map(|project_id| crate::project_memory::snapshot(connection, project_id))
-            .transpose()?
+        (None, None)
     };
     let memory_context = memory_snapshot
         .as_ref()
@@ -577,27 +677,6 @@ async fn load_project_context(
     let history_context_enabled = memory_snapshot
         .as_ref()
         .is_some_and(|snapshot| snapshot.history_context_enabled);
-    let latest_user_message = if history_context_enabled {
-        chatgpt_store::conversation_messages_on_connection(
-            connection,
-            storage.root(),
-            conversation_id,
-        )
-        .map_err(|error| {
-            log_chat_storage_failure(storage, "chat.send.project_history_read", &error);
-            ServiceError::new(
-                "storage_unavailable",
-                "Chat history could not be read.",
-                false,
-            )
-        })?
-        .iter()
-        .rev()
-        .find(|message| message.role == "user")
-        .map(|message| message.content.clone())
-    } else {
-        None
-    };
     let history_context = if history_context_enabled {
         match (route.project_id.as_deref(), latest_user_message.as_deref()) {
             (Some(project_id), Some(query)) => {
@@ -1037,7 +1116,10 @@ mod tests {
         user_question_broker::{RunOutcome, UserQuestionBroker},
     };
 
-    use super::{ChatRunFinalization, classify_run_outcome, finish_run};
+    use super::{
+        ChatRunFinalization, SavedChatRoute, classify_run_outcome, finish_run, load_project_context,
+        restore_run,
+    };
 
     struct TestDirectory(PathBuf);
 
@@ -1139,6 +1221,162 @@ mod tests {
                 params![format!("{project_id}-root"), project_id, project_root],
             )
             .expect("insert project workspace root");
+    }
+
+    #[tokio::test]
+    async fn project_history_search_does_not_hold_the_database_queue_lease() {
+        let directory = TestDirectory::new();
+        let project_root = directory.0.join("project");
+        fs::create_dir_all(&project_root).expect("create project root");
+        let storage =
+            AppStorage::open_at(directory.0.join("data")).expect("open isolated test storage");
+        storage
+            .prepare_chat_schema_migration(crate::CHAT_SCHEMA_VERSION)
+            .expect("prepare current chat schema");
+        storage
+            .initialize_backend_schema()
+            .expect("initialize current backend schema");
+
+        let project_id = format!("project-{}", Uuid::new_v4().simple());
+        let conversation_id = format!("conversation-{}", Uuid::new_v4().simple());
+        let project_root = fs::canonicalize(project_root).expect("canonical project root");
+        register_test_project(&storage, &project_id, &project_root);
+        let mut connection = storage.connect().expect("connect to test storage");
+        connection
+            .execute(
+                "INSERT INTO conversations (id, title, project_id, created_at, updated_at)
+                 VALUES (?1, 'Current chat', ?2, 1, 1)",
+                params![conversation_id, project_id],
+            )
+            .expect("insert project conversation");
+        connection
+            .execute(
+                "INSERT INTO messages (id, conversation_id, role, content, created_at, status)
+                 VALUES ('latest-user-message', ?1, 'user', 'Find related project history', 2, 'completed')",
+                params![conversation_id],
+            )
+            .expect("insert latest user message");
+        crate::project_memory::set_history_context_enabled(
+            &mut connection,
+            &project_id,
+            true,
+        )
+        .expect("enable project history context");
+        drop(connection);
+
+        let route = SavedChatRoute {
+            provider_id: Some("test-provider".to_owned()),
+            project_name: Some("Project".to_owned()),
+            project_root: Some(project_root.to_string_lossy().into_owned()),
+            project_id: Some(project_id),
+            stored_api_key_connection_id: None,
+            model_id: Some("test-model".to_owned()),
+            connection_id: None,
+            workspace_id: None,
+        };
+        let project_context = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            load_project_context(
+                &storage,
+                &conversation_id,
+                &route,
+                crate::tools::ToolPermissionMode::FullAccess,
+                &[],
+            ),
+        )
+        .await
+        .expect("project-history search must not wait on its own database lease")
+        .expect("load project context");
+
+        assert!(project_context.history_context.is_none());
+        drop(
+            storage
+                .connect()
+                .expect("database queue should be available after project context search"),
+        );
+    }
+
+    #[test]
+    fn resuming_interrupted_goal_persists_running_state_on_the_claimed_connection() {
+        let directory = TestDirectory::new();
+        let storage =
+            AppStorage::open_at(directory.0.join("data")).expect("open isolated test storage");
+        storage
+            .prepare_chat_schema_migration(crate::CHAT_SCHEMA_VERSION)
+            .expect("prepare current chat schema");
+        storage
+            .initialize_backend_schema()
+            .expect("initialize current backend schema");
+
+        let conversation_id = format!("conversation-{}", Uuid::new_v4().simple());
+        let run_id = format!("run-{}", Uuid::new_v4().simple());
+        let mut connection = storage.connect().expect("connect to test storage");
+        connection
+            .execute(
+                "INSERT INTO conversations (id, title, created_at, updated_at)
+                 VALUES (?1, 'Interrupted goal', 1, 1)",
+                [&conversation_id],
+            )
+            .expect("insert test conversation");
+        let mut checkpoint = json!({
+            "version": 1,
+            "providerId": "test-provider",
+            "modelId": "test-model",
+            "connectionId": null,
+            "workspaceId": null,
+            "providerConnectionId": null,
+            "profileToolAllowlist": [],
+        });
+        crate::goals::initial_checkpoint(&mut checkpoint, "Resume interrupted goal", 1);
+        user_questions::create_run_with_checkpoint(
+            &mut connection,
+            &NewAgentRun {
+                run_id: run_id.clone(),
+                conversation_id: conversation_id.clone(),
+            },
+            &checkpoint,
+        )
+        .expect("create goal run");
+        user_questions::mark_run_interrupted(&mut connection, &conversation_id, &run_id)
+            .expect("mark goal interrupted");
+
+        let route = SavedChatRoute {
+            provider_id: Some("test-provider".to_owned()),
+            project_name: None,
+            project_root: None,
+            project_id: None,
+            stored_api_key_connection_id: None,
+            model_id: Some("test-model".to_owned()),
+            connection_id: None,
+            workspace_id: None,
+        };
+        let prepared = restore_run(&mut connection, &conversation_id, &route, &run_id)
+            .expect("resume goal from its saved checkpoint");
+        let goal = prepared
+            .goal_execution
+            .expect("restored run should retain its goal");
+        let persisted = user_questions::load_run_for_conversation(
+            &connection,
+            &conversation_id,
+            &run_id,
+        )
+        .expect("read resumed goal");
+        assert_eq!(persisted.status, AgentRunStatus::Running);
+        assert_eq!(persisted.checkpoint_revision, goal.checkpoint_revision);
+        assert_eq!(
+            persisted
+                .checkpoint
+                .as_ref()
+                .and_then(|checkpoint| checkpoint.pointer("/goal/state"))
+                .and_then(Value::as_str),
+            Some("running"),
+        );
+        drop(connection);
+        drop(
+            storage
+                .connect()
+                .expect("database queue should be available after goal resume"),
+        );
     }
 
     fn service_error(code: &'static str, retryable: bool) -> ServiceError {

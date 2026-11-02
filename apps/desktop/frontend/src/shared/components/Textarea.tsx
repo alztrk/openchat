@@ -55,10 +55,16 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(function 
   },
   ref,
 ) {
-  const renderTextarea = (controlProps: TextareaControlProps) => (
+  const renderTextarea = ({
+    id: controlId,
+    'aria-describedby': controlDescription,
+    'aria-invalid': controlInvalid,
+  }: TextareaControlProps) => (
     <textarea
       {...props}
-      {...controlProps}
+      id={controlId}
+      aria-describedby={controlDescription}
+      aria-invalid={controlInvalid}
       className={cn(
         'w-full resize-y text-text outline-none placeholder:text-secondary-text focus-visible:ring-2 focus-visible:ring-focus disabled:cursor-not-allowed disabled:opacity-50',
         appearanceClasses[appearance],

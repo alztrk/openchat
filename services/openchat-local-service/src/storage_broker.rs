@@ -8,6 +8,7 @@ use std::{
     os::windows::{ffi::OsStringExt, fs::MetadataExt},
     path::{Path, PathBuf},
     ptr::null_mut,
+    time::Instant,
 };
 use zeroize::Zeroize;
 
@@ -17,13 +18,16 @@ use crate::{
         MAX_STORAGE_SNAPSHOT_BYTES, MAX_STORAGE_TRANSFER_CHUNK_BYTES, STORAGE_PROTOCOL_VERSION,
         StorageRequest, StorageResponse, handle_request, storage_error_response,
     },
-    storage::{AppStorage, DatabaseKey},
+    storage::{AppStorage, DatabaseKey, STORAGE_DATABASE_LOCK_TIMEOUT},
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 use windows_sys::Win32::{
-    Foundation::{CloseHandle, ERROR_INSUFFICIENT_BUFFER, HANDLE, LocalFree},
+    Foundation::{
+        CloseHandle, ERROR_INSUFFICIENT_BUFFER, GetLastError, HANDLE, LocalFree, WAIT_ABANDONED,
+        WAIT_OBJECT_0, WAIT_TIMEOUT,
+    },
     Security::Authorization::ConvertSidToStringSidW,
     Security::Isolation::GetAppContainerFolderPath,
     Security::{
@@ -33,10 +37,85 @@ use windows_sys::Win32::{
     Storage::FileSystem::FILE_ATTRIBUTE_REPARSE_POINT,
     System::{
         Com::CoTaskMemFree,
-        Threading::{GetCurrentProcess, OpenProcessToken},
+        Threading::{
+            CreateMutexW, GetCurrentProcess, OpenProcessToken, ReleaseMutex, WaitForSingleObject,
+        },
     },
 };
 use zeroize::Zeroizing;
+
+const DATABASE_OPERATION_MUTEX_NAME: &str = "Local\\OpenChat.StorageDatabase.Operation.v1";
+
+struct DatabaseOperationLock(HANDLE);
+
+impl DatabaseOperationLock {
+    fn acquire(stage: &'static str) -> rusqlite::Result<Self> {
+        let mut name = DATABASE_OPERATION_MUTEX_NAME
+            .encode_utf16()
+            .collect::<Vec<_>>();
+        name.push(0);
+        // SAFETY: `name` is NUL-terminated UTF-16 and null attributes request the default DACL.
+        let handle = unsafe { CreateMutexW(std::ptr::null(), 0, name.as_ptr()) };
+        if handle.is_null() {
+            eprintln!(
+                "openchat-storage-broker-diagnostic: database_operation_lock_create_failed stage={stage} win32_error={}",
+                unsafe { GetLastError() }
+            );
+            return Err(database_operation_lock_error(rusqlite::ffi::SQLITE_IOERR));
+        }
+
+        let started = Instant::now();
+        let timeout_ms = STORAGE_DATABASE_LOCK_TIMEOUT.as_millis() as u32;
+        // SAFETY: `handle` is a live mutex handle owned by this guard candidate.
+        match unsafe { WaitForSingleObject(handle, timeout_ms) } {
+            WAIT_OBJECT_0 | WAIT_ABANDONED => {
+                let wait_ms = started.elapsed().as_millis();
+                if wait_ms >= 50 {
+                    eprintln!(
+                        "openchat-storage-broker-diagnostic: database_operation_lock_waited stage={stage} wait_ms={wait_ms}"
+                    );
+                }
+                Ok(Self(handle))
+            }
+            WAIT_TIMEOUT => {
+                eprintln!(
+                    "openchat-storage-broker-diagnostic: database_operation_lock_wait_timed_out stage={stage} wait_ms={}",
+                    started.elapsed().as_millis(),
+                );
+                // SAFETY: The mutex was not acquired, so only its owned handle is closed.
+                unsafe { CloseHandle(handle) };
+                Err(database_operation_lock_error(
+                    rusqlite::ffi::SQLITE_BUSY_TIMEOUT,
+                ))
+            }
+            _ => {
+                eprintln!(
+                    "openchat-storage-broker-diagnostic: database_operation_lock_wait_failed stage={stage} win32_error={}",
+                    unsafe { GetLastError() }
+                );
+                // SAFETY: The mutex was not acquired, so only its owned handle is closed.
+                unsafe { CloseHandle(handle) };
+                Err(database_operation_lock_error(rusqlite::ffi::SQLITE_IOERR))
+            }
+        }
+    }
+}
+
+impl Drop for DatabaseOperationLock {
+    fn drop(&mut self) {
+        // SAFETY: This broker request loop acquires and releases the mutex on one thread.
+        unsafe { ReleaseMutex(self.0) };
+        // SAFETY: This guard owns the live mutex handle returned by CreateMutexW.
+        unsafe { CloseHandle(self.0) };
+    }
+}
+
+fn database_operation_lock_error(code: i32) -> rusqlite::Error {
+    rusqlite::Error::SqliteFailure(
+        rusqlite::ffi::Error::new(code),
+        Some("The shared storage database operation could not be acquired.".to_owned()),
+    )
+}
 
 /// Runs the storage protocol over inherited standard handles from the isolated AppContainer.
 pub fn run_broker_stdio() -> Result<(), String> {
@@ -79,6 +158,8 @@ fn run_broker_profile<R: BufRead, W: Write>(
     let database_directory = storage_root.join("db");
     ensure_appcontainer_directory(&profile_root, &database_directory)?;
     let key = receive_database_key(reader, writer, &database_directory.join("openchat.sqlite3"))?;
+    let startup_database_lock = DatabaseOperationLock::acquire("startup")
+        .map_err(|_| "The protected storage database is busy during startup.")?;
     let profile = AppStorage::open_at_with_key(storage_root.clone(), key)
         .map_err(|_| "The AppContainer storage profile could not open safely.".to_owned())?;
     profile
@@ -90,6 +171,7 @@ fn run_broker_profile<R: BufRead, W: Write>(
     clear_key_bootstrap_marker(&database_directory.join("openchat.sqlite3"))?;
 
     write_key_bootstrap_status(writer, 2)?;
+    drop(startup_database_lock);
     serve_profile_connection(reader, writer, &profile)
 }
 
@@ -496,6 +578,9 @@ fn serve_profile_connection<R: BufRead, W: Write>(
 
     // Autocommit requests lease the database only while that request runs. An explicit
     // transaction keeps its lease on this broker connection until it commits, rolls back, or disconnects.
+    let mut transaction_operation_lock = None;
+    // Declared after the lock so an early return drops the database connection (and any
+    // implicit rollback) before releasing the process-shared lease.
     let mut transaction_connection = None;
     let mut pending_import = None;
     let mut pending_snapshot = None;
@@ -514,6 +599,18 @@ fn serve_profile_connection<R: BufRead, W: Write>(
                 )?;
                 break;
             }
+        };
+
+        let mut request_operation_lock = if transaction_operation_lock.is_none() {
+            match DatabaseOperationLock::acquire("request") {
+                Ok(lock) => Some(lock),
+                Err(error) => {
+                    write_response_frame(writer, &storage_error_response(error))?;
+                    continue;
+                }
+            }
+        } else {
+            None
         };
 
         if matches!(&request, StorageRequest::CommitPendingProfileRestore) {
@@ -571,7 +668,7 @@ fn serve_profile_connection<R: BufRead, W: Write>(
                 Ok(connection) => Some(connection),
                 Err(error) => {
                     let code = error
-                        .sqlite_error_code()
+                        .sqlite_extended_error_code()
                         .map_or(rusqlite::ffi::SQLITE_ERROR, |code| code as i32);
                     write_response_frame(
                         writer,
@@ -592,10 +689,16 @@ fn serve_profile_connection<R: BufRead, W: Write>(
             let response = handle_request(connection, request);
             (response, !connection.is_autocommit())
         };
+        if transaction_active {
+            if let Some(lock) = request_operation_lock.take() {
+                transaction_operation_lock = Some(lock);
+            }
+        }
         write_response_frame(writer, &response)?;
 
         if !transaction_active {
             transaction_connection = None;
+            transaction_operation_lock = None;
         }
     }
 

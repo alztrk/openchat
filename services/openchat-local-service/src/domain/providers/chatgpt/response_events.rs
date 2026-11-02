@@ -347,7 +347,27 @@ impl ChatGptService {
                 }
                 return Ok(true);
             }
-            "response.failed" | "response.incomplete" | "error" => {
+            "response.incomplete" => {
+                if event.get("response").is_some() {
+                    *usage = UsageData::from_responses_event(&event, "chatgpt");
+                    *output_tokens = usage.output_tokens;
+                    *input_tokens = usage.input_tokens;
+                }
+                let can_continue = event
+                    .pointer("/response/incomplete_details/reason")
+                    .and_then(Value::as_str)
+                    == Some("max_output_tokens");
+                return Err(ServiceError::new(
+                    if can_continue {
+                        "response_incomplete"
+                    } else {
+                        "provider_request_failed"
+                    },
+                    format!("ChatGPT could not complete the response. {partial_response}"),
+                    can_continue,
+                ));
+            }
+            "response.failed" | "error" => {
                 if event.get("response").is_some() {
                     *usage = UsageData::from_responses_event(&event, "chatgpt");
                     *output_tokens = usage.output_tokens;

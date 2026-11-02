@@ -1,14 +1,19 @@
-import { Check, File, FileText, Folder, FolderOpen, Search } from 'lucide-react';
-import { lazy, Suspense } from 'react';
+import { Check, File, Folder, FolderOpen } from 'lucide-react';
+import { cloneElement, isValidElement, lazy, Suspense, useEffect, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@shared/components';
+import { readConversationFileChangeDiff, type ChatFileChangeDiff } from '@features/chat/data/chatFileChanges';
 import type { ToolActivity } from './messageData';
 import { ReadCodeLines } from './ReadCodeLines';
+import { detectFileLanguage, highlightFileLines, useHighlightingState } from './FileSyntaxHighlight';
+import { DiffContent } from '../ChatFileChangesDiffViewer';
 import { PathHeading, PreviewBlock, ResultFootnote, ToolResultNotice } from './ToolSharedComponents';
 import {
   asRecord,
   formatBytes,
   formatToolPath,
+  getRequestedToolPath,
+  getRequestedSearchQuery,
   integerValue,
   isNonNegativeInteger,
   pathName,
@@ -88,7 +93,15 @@ export function FileListingResult({
   );
 }
 
-export function SearchResult({ activity, output }: { activity: ToolActivity; output: ToolRecord }) {
+export function SearchResult({
+  activity,
+  output,
+  onOpenFile,
+}: {
+  activity: ToolActivity;
+  output: ToolRecord;
+  onOpenFile?: (path: string, content: string) => void;
+}) {
   const { t } = useTranslation();
   if (!Array.isArray(output.matches)) return <ToolResultNotice message={t('toolOperationUnavailable')} />;
   const matches = output.matches.flatMap((value): Array<{ path: string; line: number; text: string }> => {
@@ -106,32 +119,45 @@ export function SearchResult({ activity, output }: { activity: ToolActivity; out
     return [{ path: item.path, line, text: item.text }];
   });
   if (matches.length !== output.matches.length) return <ToolResultNotice message={t('toolOperationUnavailable')} />;
-  const query = stringValue(asRecord(activity.arguments)?.query) ?? stringValue(output.query);
+  const query = getRequestedSearchQuery(activity) ?? '';
   return (
-    <div className="grid gap-2 pb-2">
-      <div className="flex min-w-0 items-center gap-2 text-xs text-secondary-text">
-        <Search aria-hidden="true" className="shrink-0 text-accent-icon" size={15} />
-        <span className="min-w-0 flex-1 truncate font-semibold text-text">{query ?? ''}</span>
-        <span className="shrink-0">{t('toolSearchMatchCount', { count: matches.length })}</span>
-      </div>
+    <div>
       {matches.length === 0 ? (
         <ToolResultNotice message={t('toolSearchNoMatches')} />
       ) : (
-        <ul className="max-h-64 overflow-auto rounded-control border border-border bg-surface">
+        <ul className="max-h-64 overflow-auto border-y border-border">
           {matches.map((match) => (
             <li
-              className="grid gap-1 border-b border-border px-2.5 py-2 last:border-b-0"
+              className="grid gap-1 border-b border-border px-3 py-2 last:border-b-0"
               key={`${match.path}:${match.line}`}
             >
               <div className="flex min-w-0 items-center gap-2 text-xs text-secondary-text">
                 <File aria-hidden="true" className="shrink-0" size={14} />
-                <span className="min-w-0 flex-1 truncate" title={match.path}>
-                  {formatToolPath(match.path)}
-                </span>
+                {onOpenFile ? (
+                  <Button
+                    aria-label={t('workspaceFileContent', { name: formatToolPath(match.path) })}
+                    className="h-auto min-h-0 min-w-0 flex-1 justify-start truncate bg-transparent p-0 text-left text-xs text-secondary-text hover:bg-transparent hover:text-accent"
+                    onClick={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      onOpenFile(match.path, match.text);
+                    }}
+                    size="small"
+                    title={formatToolPath(match.path)}
+                    type="button"
+                    variant="ghost"
+                  >
+                    {formatToolPath(match.path)}
+                  </Button>
+                ) : (
+                  <span className="min-w-0 flex-1 truncate" title={match.path}>
+                    {formatToolPath(match.path)}
+                  </span>
+                )}
                 <span className="shrink-0 rounded-control bg-composer px-1.5 py-0.5">{match.line}</span>
               </div>
               <pre className="whitespace-pre-wrap break-words pl-5 font-code text-xs leading-5 text-text">
-                {match.text}
+                <HighlightedSearchLine path={match.path} query={query} text={match.text} />
               </pre>
             </li>
           ))}
@@ -146,44 +172,63 @@ export function SearchResult({ activity, output }: { activity: ToolActivity; out
   );
 }
 
-export function ReadResult({
-  output,
-  onOpenFile,
-}: {
-  output: ToolRecord;
-  onOpenFile?: (path: string, content: string) => void;
-}) {
+function HighlightedSearchLine({ path, query, text }: { path: string; query: string; text: string }) {
+  useHighlightingState();
+  const tokens = highlightFileLines(detectFileLanguage(path), [text])[0] ?? [text];
+  return tokens.map((token) => {
+    if (!isValidElement<{ children?: ReactNode; className?: string }>(token)) {
+      return typeof token === 'string' ? renderSearchMatch(token, query) : token;
+    }
+    const children = token.props.children;
+    return cloneElement(
+      token,
+      {},
+      typeof children === 'string' ? renderSearchMatch(children, query) : children,
+    );
+  });
+}
+
+function renderSearchMatch(text: string, query: string): ReactNode {
+  if (!query) return text;
+  const parts: ReactNode[] = [];
+  const normalizedText = text.toLocaleLowerCase();
+  const normalizedQuery = query.toLocaleLowerCase();
+  let cursor = 0;
+  let matchIndex = normalizedText.indexOf(normalizedQuery, cursor);
+  while (matchIndex >= 0) {
+    if (matchIndex > cursor) parts.push(text.slice(cursor, matchIndex));
+    parts.push(
+      <mark className="rounded-sm bg-accent/20 text-accent" key={`${matchIndex}-${parts.length}`}>
+        {text.slice(matchIndex, matchIndex + query.length)}
+      </mark>,
+    );
+    cursor = matchIndex + query.length;
+    matchIndex = normalizedText.indexOf(normalizedQuery, cursor);
+  }
+  if (cursor === 0) return text;
+  if (cursor < text.length) parts.push(text.slice(cursor));
+  return parts;
+}
+
+export function ReadResult({ output }: { output: ToolRecord }) {
   const { t } = useTranslation();
-  const path = stringValue(output.path);
-  if (!path || !Array.isArray(output.lines)) return <ToolResultNotice message={t('toolOperationUnavailable')} />;
-  const lines = output.lines.flatMap((value): Array<{ number: number; text: string }> => {
+  const path = stringValue(output.path) ?? stringValue(output.p);
+  const rawLines = output.lines ?? output.d;
+  if (!path || !Array.isArray(rawLines)) return <ToolResultNotice message={t('toolOperationUnavailable')} />;
+  const lines = rawLines.flatMap((value): Array<{ number: number; text: string }> => {
+    if (Array.isArray(value)) {
+      const number = integerValue(value[0]);
+      const text = value[1];
+      return number !== null && number > 0 && typeof text === 'string' ? [{ number, text }] : [];
+    }
     const item = asRecord(value);
     const number = integerValue(item?.line);
     return item && number !== null && number > 0 && typeof item.text === 'string' ? [{ number, text: item.text }] : [];
   });
-  if (lines.length !== output.lines.length) return <ToolResultNotice message={t('toolOperationUnavailable')} />;
+  if (lines.length !== rawLines.length) return <ToolResultNotice message={t('toolOperationUnavailable')} />;
   const plainTextLines = lines.map((line) => line.text || ' ');
   return (
-    <div className="grid gap-2 pb-2">
-      <p className="flex min-w-0 items-center gap-2 text-xs text-secondary-text">
-        <FileText aria-hidden="true" size={15} />
-        {onOpenFile ? (
-          <Button
-            aria-label={t('workspaceFileContent', { name: path })}
-            className="min-w-0 justify-start truncate px-0 text-xs hover:text-accent"
-            onClick={() => onOpenFile(path, lines.map((line) => line.text).join('\n'))}
-            size="small"
-            title={path}
-            variant="ghost"
-          >
-            {formatToolPath(path)}
-          </Button>
-        ) : (
-          <span className="truncate" title={path}>
-            {formatToolPath(path)}
-          </span>
-        )}
-      </p>
+    <div>
       {lines.length === 0 ? (
         <ToolResultNotice message={t('toolReadNoLines')} />
       ) : (
@@ -191,10 +236,20 @@ export function ReadResult({
           <HighlightedReadLines lines={lines} path={path} />
         </Suspense>
       )}
-      <p className="text-xs text-secondary-text">{t('toolReadLineCount', { count: lines.length })}</p>
-      {isNonNegativeInteger(output.nextLine) ? <ResultFootnote message={t('toolReadMoreLines')} /> : null}
     </div>
   );
+}
+
+export function getReadFileContent(output: unknown): string | null {
+  const record = asRecord(output);
+  const rawLines = record?.lines ?? record?.d;
+  if (!Array.isArray(rawLines)) return null;
+  const lines = rawLines.map((value): string | null => {
+    if (Array.isArray(value)) return typeof value[1] === 'string' ? value[1] : null;
+    const item = asRecord(value);
+    return stringValue(item?.text);
+  });
+  return lines.some((line) => line === null) ? null : lines.join('\n');
 }
 
 export function FileInfoResult({ output, locale }: { output: ToolRecord; locale: string }) {
@@ -259,28 +314,64 @@ export function WriteResult({
   );
 }
 
-export function EditResult({ activity, output }: { activity: ToolActivity; output: ToolRecord }) {
-  const { t } = useTranslation();
-  const path = stringValue(output.path);
-  const replacements = integerValue(output.replacements);
-  if (output.success !== true || !path || replacements === null || replacements < 1)
-    return <ToolResultNotice message={t('toolOperationUnavailable')} />;
-  const argumentsValue = asRecord(activity.arguments);
-  const before = stringValue(argumentsValue?.oldString) ?? stringValue(argumentsValue?.old_string);
-  const after = stringValue(argumentsValue?.newString) ?? stringValue(argumentsValue?.new_string);
+export function EditResult({ activity, conversationId }: { activity: ToolActivity; conversationId: string | null }) {
+  const requestedPath = getRequestedToolPath(activity);
+  const editedFile = requestedPath ? findMatchingFileChange(activity.fileChanges, requestedPath) : null;
+  const editedFileId = editedFile?.id ?? null;
+  const editedFilePath = editedFile?.path ?? requestedPath ?? '';
+  const [diff, setDiff] = useState<ChatFileChangeDiff | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    let current = true;
+    if (!conversationId || !editedFileId) {
+      setDiff({ path: editedFilePath, isBinary: false, available: false, diff: '', truncated: false });
+      setIsLoading(false);
+      return () => {
+        current = false;
+      };
+    }
+
+    setIsLoading(true);
+    void readConversationFileChangeDiff(conversationId, editedFileId)
+      .then((result) => {
+        if (!current) return;
+        setDiff(result);
+        setIsLoading(false);
+      })
+      .catch(() => {
+        if (!current) return;
+        setDiff({ path: editedFilePath, isBinary: false, available: false, diff: '', truncated: false });
+        setIsLoading(false);
+      });
+    return () => {
+      current = false;
+    };
+  }, [conversationId, editedFileId, editedFilePath]);
+
   return (
-    <div className="grid gap-2 pb-2">
-      <p className="flex items-center gap-2 text-sm font-medium text-success">
-        <Check aria-hidden="true" size={16} />
-        {t('toolEditSuccess', { count: replacements })}
-      </p>
-      <PathHeading path={path} />
-      {before !== null && after !== null ? (
-        <div className="grid gap-2 sm:grid-cols-2">
-          <PreviewBlock label={t('toolEditBefore')} value={before} />
-          <PreviewBlock label={t('toolEditAfter')} value={after} />
-        </div>
-      ) : null}
+    <div className="flex h-64 min-h-0 flex-col overflow-hidden">
+      <DiffContent
+        canRevertHunks={false}
+        diff={diff}
+        flush
+        isLoading={isLoading}
+        mutatingHunkIndex={null}
+        onRevertHunk={() => undefined}
+        viewMode="unified"
+      />
     </div>
   );
+}
+
+function findMatchingFileChange(activityChanges: ToolActivity['fileChanges'], requestedPath: string) {
+  const normalizePath = (path: string) => path.replaceAll('\\', '/').toLowerCase();
+  const normalizedRequestedPath = normalizePath(requestedPath);
+  const exactMatch = activityChanges.find((change) => normalizePath(change.path) === normalizedRequestedPath);
+  if (exactMatch) return exactMatch;
+
+  const fileName = normalizedRequestedPath.split('/').at(-1);
+  if (!fileName) return null;
+  const nameMatches = activityChanges.filter((change) => normalizePath(change.path).split('/').at(-1) === fileName);
+  return nameMatches.length === 1 ? nameMatches[0] : null;
 }

@@ -8,7 +8,9 @@ import {
   type ChatConversation,
   type ChatMessage,
   createConversation,
+  isRetryableChatStorageErrorDetail,
   listConversations,
+  recordChatMessagePersistenceFailure,
   recordChatRequestFailure,
   saveMessage,
 } from '@features/chat/data/chatStorage';
@@ -42,6 +44,10 @@ import { applyStreamEvent, isSameRoute, numberOrNull, titleFromMessage, upsertMe
 import { createStreamMessagePublisher } from './streamMessagePublisher';
 
 const STREAM_PERSISTENCE_CHECKPOINT_BYTES = 256 * 1024;
+const MESSAGE_SAVE_RETRY_DELAYS_MS = [200, 500] as const;
+const MESSAGE_SAVE_TIMEOUT_RETRY_DELAYS_MS = [1000] as const;
+const SQLITE_BUSY_SNAPSHOT_RETRY_DELAYS_MS = [200, 500, 1000, 1500] as const;
+const STORAGE_BROKER_RETRY_DELAYS_MS = [250, 750, 1500] as const;
 const streamTextEncoder = new TextEncoder();
 
 type ChatStoreSetState = StoreApi<ChatState>['setState'];
@@ -80,8 +86,8 @@ export function createSendMessageAction(
       targetConvId !== null && (state.compactingConversationId === targetConvId || state.isCreatingMessageBranch);
     if (
       (!content && attachments.length === 0 && !resumeRunId && !isRetry && !userMessageAlreadySaved) ||
-      state.isSending ||
       state.isUpdatingConversationModel ||
+      (targetConvId !== null && state.sendingConversationIds.includes(targetConvId)) ||
       pendingQuestionBlocksSend ||
       conversationOperationBlocksSend
     )
@@ -145,13 +151,20 @@ export function createSendMessageAction(
       return false;
     }
 
-    set({
+    set((current) => ({
       isSending: true,
-      sendingConversationId: conversationId,
+      sendingConversationId: conversationId ?? current.sendingConversationId,
+      sendingConversationIds: conversationId && !current.sendingConversationIds.includes(conversationId)
+        ? [...current.sendingConversationIds, conversationId]
+        : current.sendingConversationIds,
+      interruptedRun:
+        resumeRunId !== undefined && current.interruptedRun?.runId === resumeRunId
+          ? null
+          : current.interruptedRun,
       errorCode: null,
       errorMessage: null,
       opencodeRetryAtUnixMs: null,
-    });
+    }));
     if (goalObjective && conversationId !== null) {
       try {
         const response = await localServiceClient.call('chat.goal.active', {
@@ -160,14 +173,22 @@ export function createSendMessageAction(
         if (!('goal' in response)) throw new Error('The active goal response is invalid.');
         const existingGoal = parseChatGoal(response.goal);
         if (existingGoal) {
-          set({ isSending: false, sendingConversationId: null });
+          set((current) => ({
+            isSending: current.sendingConversationIds.some((id) => id !== conversationId),
+            sendingConversationIds: current.sendingConversationIds.filter((id) => id !== conversationId),
+            sendingConversationId: current.sendingConversationIds.find((id) => id !== conversationId) ?? null,
+          }));
           if (isRequestConversationActive()) {
             set({ activeGoal: existingGoal, goalStatus: 'ready', errorCode: 'goalAlreadyActive' });
           }
           return false;
         }
       } catch {
-        set({ isSending: false, sendingConversationId: null });
+        set((current) => ({
+          isSending: current.sendingConversationIds.some((id) => id !== conversationId),
+          sendingConversationIds: current.sendingConversationIds.filter((id) => id !== conversationId),
+          sendingConversationId: current.sendingConversationIds.find((id) => id !== conversationId) ?? null,
+        }));
         if (isRequestConversationActive()) set({ goalStatus: 'error', errorCode: 'goalStateUnavailable' });
         return false;
       }
@@ -189,7 +210,8 @@ export function createSendMessageAction(
       }
     });
     let requestOutcome: ProviderRequestOutcome | null = null;
-    let persistenceError = false;
+    let checkpointFailureLogged = false;
+    let unpersistedTextBytes = 0;
     let persistenceQueue = Promise.resolve();
     let pendingPersistenceMessage: ChatMessage | null = null;
     let persistenceWorkerRunning = false;
@@ -203,9 +225,12 @@ export function createSendMessageAction(
           const pendingMessage = pendingPersistenceMessage;
           pendingPersistenceMessage = null;
           try {
-            await saveMessage(pendingMessage);
-          } catch {
-            persistenceError = true;
+            await saveMessageWithRetry(pendingMessage, [], { preserveToolActivities: true });
+          } catch (error) {
+            if (!checkpointFailureLogged) {
+              checkpointFailureLogged = true;
+              await logMessagePersistenceFailure('assistantCheckpoint', error, pendingMessage, [], false);
+            }
           }
         }
         persistenceWorkerRunning = false;
@@ -231,9 +256,10 @@ export function createSendMessageAction(
           throw cause;
         }
         conversationCreated = true;
+        const createdConversationId = conversationId;
         const now = Date.now();
         const conversation: ChatConversation = {
-          id: conversationId,
+          id: createdConversationId,
           title: conversationTitle,
           titleSource: 'automatic',
           providerId: selectedModel.providerId,
@@ -251,8 +277,11 @@ export function createSendMessageAction(
         set((current) => {
           const shouldActivate = current.activeConversationId === state.activeConversationId;
           return {
-            activeConversationId: shouldActivate ? conversationId : current.activeConversationId,
-            sendingConversationId: conversationId,
+            activeConversationId: shouldActivate ? createdConversationId : current.activeConversationId,
+            sendingConversationId: createdConversationId,
+            sendingConversationIds: current.sendingConversationIds.includes(createdConversationId)
+              ? current.sendingConversationIds
+              : [...current.sendingConversationIds, createdConversationId],
             pendingProjectId: shouldActivate ? null : current.pendingProjectId,
             pendingAgentSnapshot: shouldActivate ? null : current.pendingAgentSnapshot,
             conversations: [conversation, ...current.conversations],
@@ -314,8 +343,9 @@ export function createSendMessageAction(
         };
         sendStage = 'userMessagePersistence';
         try {
-          await saveMessage(userMessage, attachments);
+          await saveMessageWithRetry(userMessage, attachments);
         } catch (cause) {
+          await logMessagePersistenceFailure('userMessage', cause, userMessage, attachments);
           globalThis.reportError(new Error('The initial user message could not be persisted.', { cause }));
           throw cause;
         }
@@ -326,7 +356,6 @@ export function createSendMessageAction(
         options?.onUserMessageCommitted?.(targetConversationId);
       }
 
-      let unpersistedTextBytes = 0;
       const sharedInstructions = readSharedInstructions();
       const storedConversation = get().conversations.find((item) => item.id === targetConversationId);
       const assistantProfile = state.temporaryChat === null ? (storedConversation?.agent ?? null) : null;
@@ -417,6 +446,7 @@ export function createSendMessageAction(
               get().applyTitleUpdate(data.conversationId, data.title);
             }
           }
+        const previousContent = assistantMessage.current?.content ?? '';
           const message = applyStreamEvent(event, assistantMessage.current, {
             conversationId: targetConversationId,
             providerId: selectedModel.providerId,
@@ -426,25 +456,28 @@ export function createSendMessageAction(
           assistantMessage.current = message;
           streamUi.enqueue(message, event.name === 'chat.text.delta');
           if (!isRetry) {
-            if (event.name === 'chat.text.delta' && typeof event.data.delta === 'string') {
-              unpersistedTextBytes += streamTextEncoder.encode(event.data.delta).byteLength;
+            if (message.content !== previousContent) {
+              const appendedContent = message.content.startsWith(previousContent)
+                ? message.content.slice(previousContent.length)
+                : message.content;
+              unpersistedTextBytes += streamTextEncoder.encode(appendedContent).byteLength;
             }
             const shouldPersist =
               unpersistedTextBytes >= STREAM_PERSISTENCE_CHECKPOINT_BYTES ||
-              ['chat.started', 'chat.delta', 'chat.tool.updated', 'chat.citations.updated'].includes(event.name);
+              ['chat.started', 'chat.citations.updated'].includes(event.name);
             if (!shouldPersist) return;
             unpersistedTextBytes = 0;
             enqueueLatestMessageSave(message);
           }
         },
       );
-      set({ activeOperation: operation });
+      set((current) => ({
+        activeOperation: operation,
+        activeOperationsByConversation: { ...current.activeOperationsByConversation, [targetConversationId]: operation },
+      }));
       const result = await operation.result;
       streamUi.flush();
       await persistenceQueue;
-      if (persistenceError) {
-        throw new LocalServiceError('message_save_failed', 'The assistant response could not be saved.');
-      }
 
       const resultStatus = result.status;
       const finalStatus =
@@ -476,7 +509,17 @@ export function createSendMessageAction(
         };
         assistantMessage.current = completedMessage;
         if (finalStatus === 'completed' || (!isRetry && finalStatus === 'stopped')) {
-          await saveMessage(completedMessage);
+          try {
+            await saveMessageWithRetry(completedMessage, [], { preserveToolActivities: true });
+          } catch (cause) {
+            await logMessagePersistenceFailure('assistantFinal', cause, completedMessage, [], false);
+            throw new LocalServiceError(
+              'message_save_failed',
+              'The assistant response could not be saved.',
+              false,
+              cause instanceof LocalServiceError ? (cause.details ?? cause.code) : null,
+            );
+          }
         }
         if (get().activeConversationId === targetConversationId) {
           if (isRetry && finalStatus !== 'completed') {
@@ -571,8 +614,9 @@ export function createSendMessageAction(
         } else {
           streamUi.enqueue(failedMessage, false);
           try {
-            await saveMessage(failedMessage);
-          } catch {
+            await saveMessageWithRetry(failedMessage, [], { preserveToolActivities: true });
+          } catch (cause) {
+            await logMessagePersistenceFailure('assistantRecovery', cause, failedMessage, [], false);
             setRequestError('messageSaveFailed');
           }
         }
@@ -595,12 +639,24 @@ export function createSendMessageAction(
           setRequestError('providerLastRequestSaveFailed');
         }
       }
-      set({
-        isSending: false,
-        sendingConversationId: null,
-        activeOperation: null,
-        pendingToolPermissionRequest: null,
-        isRespondingToToolPermission: false,
+      set((current) => {
+        const activeOperationsByConversation = Object.fromEntries(
+          Object.entries(current.activeOperationsByConversation).filter(([id]) => id !== conversationId),
+        );
+        const sendingConversationIds = current.sendingConversationIds.filter((id) => id !== conversationId);
+        const pendingToolPermissionRequests = current.pendingToolPermissionRequests.filter(
+          (request) => request.conversationId !== conversationId,
+        );
+        return {
+          isSending: sendingConversationIds.length > 0,
+          sendingConversationIds,
+          sendingConversationId: sendingConversationIds[0] ?? null,
+          activeOperationsByConversation,
+          activeOperation: Object.values(activeOperationsByConversation)[0] ?? null,
+          pendingToolPermissionRequests,
+          pendingToolPermissionRequest: pendingToolPermissionRequests[0] ?? null,
+          isRespondingToToolPermission: current.respondingToolPermissionIds.length > 0,
+        };
       });
       const currentGoal = get().activeGoal;
       if (
@@ -609,8 +665,85 @@ export function createSendMessageAction(
       ) {
         await get().refreshActiveGoal(conversationId);
       }
+      if (conversationId && resumeRunId !== undefined) {
+        await get().refreshInterruptedRun(conversationId);
+      }
     }
   };
+}
+
+async function saveMessageWithRetry(
+  message: ChatMessage,
+  attachments: Parameters<typeof saveMessage>[1] = [],
+  options: Parameters<typeof saveMessage>[2] = {},
+): Promise<void> {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      await saveMessage(message, attachments, options);
+      return;
+    } catch (error) {
+      const isServiceTimeout = error instanceof LocalServiceError && error.code === 'service_timeout';
+      const isStorageBrokerFailure =
+        error instanceof LocalServiceError &&
+        (error.details === 'sqlite_io_error' || error.details === 'storage_broker_timeout');
+      const retryDelays = isServiceTimeout
+        ? MESSAGE_SAVE_TIMEOUT_RETRY_DELAYS_MS
+        : isStorageBrokerFailure
+          ? STORAGE_BROKER_RETRY_DELAYS_MS
+          : error instanceof LocalServiceError && error.details === 'sqlite_busy_snapshot'
+            ? SQLITE_BUSY_SNAPSHOT_RETRY_DELAYS_MS
+            : MESSAGE_SAVE_RETRY_DELAYS_MS;
+      const retryDelay = retryDelays[attempt];
+      if (
+        !(error instanceof LocalServiceError) ||
+        !error.retryable ||
+        (!isServiceTimeout && (!error.details || !isRetryableChatStorageErrorDetail(error.details))) ||
+        retryDelay === undefined
+      ) {
+        throw error;
+      }
+      await new Promise<void>((resolve) => window.setTimeout(resolve, retryDelay));
+    }
+  }
+}
+
+async function logMessagePersistenceFailure(
+  stage: 'userMessage' | 'assistantCheckpoint' | 'assistantFinal' | 'assistantRecovery',
+  error: unknown,
+  message: ChatMessage,
+  attachments: Parameters<typeof saveMessage>[1] = [],
+  includeToolActivities = true,
+): Promise<void> {
+  const code =
+    error instanceof LocalServiceError && /^[a-z0-9_]{1,96}$/.test(error.code) ? error.code : 'unexpected_error';
+  const detailCode =
+    error instanceof LocalServiceError && error.details && /^[a-z0-9_]{1,96}$/.test(error.details)
+      ? error.details
+      : null;
+  try {
+    const metadataBytes = (value: string) => streamTextEncoder.encode(value).byteLength;
+    let toolActivityCount: number | null = null;
+    if (includeToolActivities) {
+      try {
+        const parsed: unknown = JSON.parse(message.toolActivities);
+        if (Array.isArray(parsed)) toolActivityCount = parsed.length;
+      } catch {
+        // The byte count is still useful when the stored JSON itself is malformed.
+      }
+    }
+    await recordChatMessagePersistenceFailure(stage, code, detailCode, {
+      contentBytes: metadataBytes(message.content),
+      citationSourceBytes: metadataBytes(message.citationSources),
+      personalMemoryFactIdBytes: metadataBytes(message.personalMemoryFactIds),
+      reasoningSummaryBytes: metadataBytes(message.reasoningSummaries),
+      toolActivityBytes: includeToolActivities ? metadataBytes(message.toolActivities) : 0,
+      toolActivityCount,
+      attachmentCount: attachments.length,
+      attachmentBytes: attachments.reduce((total, attachment) => total + attachment.bytes.byteLength, 0),
+    });
+  } catch (cause) {
+    globalThis.reportError(new Error('The chat message persistence failure could not be recorded.', { cause }));
+  }
 }
 
 function providerRequestOutcomeForError(error: unknown): ProviderRequestOutcome {

@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Card, Select, Switch } from '@shared/components';
+import { Select, Switch } from '@shared/components';
 import { useChatDisplayPreferencesStore } from '@features/app-settings/data/chatDisplayPreferences';
 import { SettingsPreferenceRow } from './SettingsPreferenceRow';
 import { SettingsLoadError, SettingsSaveFeedback } from './SettingsState';
@@ -29,8 +29,8 @@ export function ChatBehaviorSettingsSection() {
   }
 
   return (
-    <section aria-labelledby="settings-page-heading" className="grid gap-5">
-      <Card className="divide-y divide-border">
+    <section aria-labelledby="settings-page-heading" className="settings-section grid content-start gap-6">
+      <div className="settings-surface-card overflow-hidden rounded-card border border-border bg-raised">
         <SettingsPreferenceRow
           description={t('autoFollowResponsesDescription')}
           id="setting-auto-follow"
@@ -84,7 +84,7 @@ export function ChatBehaviorSettingsSection() {
             />
           )}
         </SettingsPreferenceRow>
-      </Card>
+      </div>
       <SettingsSaveFeedback errorMessage={t('chatDisplayPreferencesSaveFailed')} state={saveState} />
     </section>
   );

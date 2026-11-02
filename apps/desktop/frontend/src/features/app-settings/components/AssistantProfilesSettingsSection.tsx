@@ -2,7 +2,7 @@ import { Bot, Pencil, Plus, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button, Card, Checkbox, Dialog, Input, Select, Switch, Textarea } from '@shared/components';
+import { Button, Card, Checkbox, Dialog, Input, Select, Skeleton, Switch, Textarea } from '@shared/components';
 import { useChatStore } from '@features/chat/state/chatStore';
 import { type ProjectMcpServer, parseProjectMcpCatalog } from '@features/projects/data/projectMcp';
 import type {
@@ -13,6 +13,7 @@ import type {
 import { readyAssistantAgentTemplates } from '@features/app-settings/data/readyAssistantAgents';
 import { useAssistantProfilesStore } from '@features/app-settings/stores/assistantProfilesStore';
 import { LocalServiceError, localServiceClient } from '@shared/lib/platform/local-service';
+import { SettingsSectionSkeleton } from './SettingsSectionSkeleton';
 
 type ProjectCatalogState = 'idle' | 'loading' | 'ready' | 'error';
 type McpToolsState = 'idle' | 'loading' | 'ready' | 'error';
@@ -253,9 +254,7 @@ export function AssistantProfilesSettingsSection({ showReadyAgents = false }: { 
     <section aria-label={t('assistantProfiles')} className="grid gap-4">
       <p className="text-sm text-secondary-text">{t('assistantProfilesDescription')}</p>
       {loadState === 'loading' || loadState === 'idle' ? (
-        <p aria-live="polite" className="text-sm text-secondary-text">
-          {t('modelsLoading')}
-        </p>
+        <SettingsSectionSkeleton label={t('settingsSectionLoading')} />
       ) : loadState === 'error' ? (
         <div className="flex flex-wrap items-center justify-between gap-3" role="alert">
           <p className="text-sm text-destructive">{t(errorKey ?? 'assistantProfilesLoadFailed')}</p>
@@ -398,9 +397,10 @@ export function AssistantProfilesSettingsSection({ showReadyAgents = false }: { 
                   <div className="grid gap-2 border-t border-border pt-3">
                     <p className="text-sm font-medium text-text">{t('assistantProfileProjectTools')}</p>
                     {projectCatalogState === 'loading' ? (
-                      <p aria-live="polite" className="text-xs text-secondary-text" role="status">
-                        {t('modelsLoading')}
-                      </p>
+                      <div aria-label={t('settingsSectionLoading')} aria-live="polite" className="grid gap-2" role="status">
+                        <Skeleton className="h-4 w-full" />
+                        <Skeleton className="h-4 w-3/4" />
+                      </div>
                     ) : projectCatalogState === 'error' ? (
                       <div className="flex flex-wrap items-center gap-2" role="alert">
                         <p className="text-xs text-destructive">{t('assistantProfileProjectCatalogUnavailable')}</p>

@@ -1,15 +1,37 @@
-import { Eye, EyeOff, LoaderCircle, RefreshCw, Star, StarOff } from 'lucide-react';
-import { type ReactNode, useMemo, useState } from 'react';
+import {
+  Brain,
+  Check,
+  Eye,
+  EyeOff,
+  LoaderCircle,
+  MoreHorizontal,
+  RefreshCw,
+  SlidersHorizontal,
+  Star,
+  StarOff,
+} from 'lucide-react';
+import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button, Card, Dialog, Input, Select, Switch } from '@shared/components';
-import { providerNameForModel, reasoningLevelLabel } from '@features/chat/components/composerUtils';
-import { useComposerPreferencesStore } from '@features/chat/data/composerPreferences';
+import {
+  Button,
+  Card,
+  Dialog,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger,
+  Input,
+} from '@shared/components';
+import { reasoningLevelLabel } from '@features/chat/components/composerUtils';
 import { useChatStore } from '@features/chat/state/chatStore';
 import { ProviderIcon } from '@features/provider-settings/components/ProviderIcon';
+import { SettingsSectionSkeleton } from './SettingsSectionSkeleton';
 import type { ChatModel } from '@entities/model';
 import { formatModelRouteKey, modelRouteKey } from '@features/provider-settings/data/modelPreferences';
-import { SettingsPreferenceRow } from './SettingsPreferenceRow';
 
 type FeedbackKey =
   | 'defaultModelUpdated'
@@ -49,10 +71,6 @@ const providerTranslationKeys: Record<string, TranslationKey> = {
 export function ModelsSettingsSection() {
   const { t } = useTranslation();
   const models = useChatStore((state) => state.models);
-  const ghostTextEnabled = useComposerPreferencesStore((state) => state.ghostTextEnabled);
-  const setGhostTextEnabled = useComposerPreferencesStore((state) => state.setGhostTextEnabled);
-  const ghostTextModelKey = useComposerPreferencesStore((state) => state.ghostTextModelKey);
-  const setGhostTextModelKey = useComposerPreferencesStore((state) => state.setGhostTextModelKey);
   const modelStatus = useChatStore((state) => state.modelStatus);
   const modelError = useChatStore((state) => state.modelError);
   const modelFavorites = useChatStore((state) => state.modelFavorites);
@@ -84,18 +102,6 @@ export function ModelsSettingsSection() {
   const [feedbackKey, setFeedbackKey] = useState<FeedbackKey | null>(null);
   const [feedbackModelName, setFeedbackModelName] = useState('');
   const [busyFavoriteKeys, setBusyFavoriteKeys] = useState<Set<string>>(() => new Set());
-  const [composerSaveFailed, setComposerSaveFailed] = useState(false);
-
-  const ghostModelOptions = useMemo(() => {
-    const options = [{ value: 'auto', label: t('composerGhostTextModelAuto') }];
-    for (const model of models) {
-      options.push({
-        value: model.key,
-        label: `${providerNameForModel(model, (key) => t(key))}: ${model.displayName}`,
-      });
-    }
-    return options;
-  }, [models, t]);
 
   const groups = useMemo(() => {
     const search = query.trim().toLocaleLowerCase();
@@ -181,52 +187,10 @@ export function ModelsSettingsSection() {
     saveContextLimit(value);
   };
 
-  const changeGhostTextEnabled = (enabled: boolean) => {
-    try {
-      setGhostTextEnabled(enabled);
-      setComposerSaveFailed(false);
-    } catch {
-      setComposerSaveFailed(true);
-    }
-  };
-
-  const changeGhostTextModel = (modelKey: string) => {
-    try {
-      setGhostTextModelKey(modelKey);
-      setComposerSaveFailed(false);
-    } catch {
-      setComposerSaveFailed(true);
-    }
-  };
-
   return (
-    <section aria-labelledby="settings-page-heading" className="grid gap-6">
-      <Card className="grid gap-4" padding="default">
-        <ModelSettingRow description={t('composerGhostTextEnabledDescription')} label={t('composerGhostTextEnabled')}>
-          <Switch
-            aria-label={t('composerGhostTextEnabled')}
-            checked={ghostTextEnabled}
-            onCheckedChange={changeGhostTextEnabled}
-          />
-        </ModelSettingRow>
-        {ghostTextEnabled ? (
-          <ModelSettingRow description={t('composerGhostTextModelDescription')} label={t('composerGhostTextModel')}>
-            <Select
-              label={t('composerGhostTextModel')}
-              onChange={(event) => changeGhostTextModel(event.target.value)}
-              options={ghostModelOptions}
-              value={ghostTextModelKey}
-              visuallyHiddenLabel
-            />
-          </ModelSettingRow>
-        ) : null}
-        {composerSaveFailed ? (
-          <p className="text-sm text-destructive" role="alert">
-            {t('composerPreferenceSaveFailed')}
-          </p>
-        ) : null}
-      </Card>
-
+    <section aria-labelledby="settings-page-heading" className="settings-data-page">
+      <div className="settings-data-group model-catalog-group">
+        <h2 className="settings-data-group-title">{t('settingsModelCatalogTitle')}</h2>
       {defaultModelPreferenceInvalid ? (
         <PreferenceNotice
           action={t('clearDefaultModelPreference')}
@@ -287,7 +251,7 @@ export function ModelsSettingsSection() {
         </p>
       ) : null}
 
-      <div className="flex flex-col gap-3 compact:flex-row compact:items-end">
+      <div className="model-catalog-toolbar">
         <div className="min-w-0 compact:flex-1">
           <Input
             aria-label={t('searchModels')}
@@ -300,7 +264,7 @@ export function ModelsSettingsSection() {
         </div>
         <Button
           aria-label={t('refreshModels')}
-          className="compact:shrink-0"
+          className="model-catalog-refresh"
           disabled={modelStatus === 'loading'}
           onClick={() => void refreshModels(true)}
           variant="secondary"
@@ -315,9 +279,7 @@ export function ModelsSettingsSection() {
       </div>
 
       {modelStatus === 'loading' && models.length === 0 ? (
-        <p aria-live="polite" className="py-6 text-sm text-secondary-text">
-          {t('modelsLoading')}
-        </p>
+        <SettingsSectionSkeleton label={t('modelsLoading')} />
       ) : modelStatus === 'error' ? (
         <Card className="flex flex-wrap items-center justify-between gap-3" padding="comfortable" role="alert">
           <p className="text-sm text-destructive">{t('modelCatalogUnavailable')}</p>
@@ -332,8 +294,8 @@ export function ModelsSettingsSection() {
       ) : (
         <div className="grid gap-4">
           {groups.map(([providerId, providerModels]) => (
-            <Card className="overflow-hidden" key={providerId}>
-              <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
+            <Card className="model-provider-card overflow-hidden bg-raised" key={providerId}>
+              <div className="model-provider-heading">
                 <div className="flex min-w-0 items-center gap-2.5">
                   <ProviderIcon providerId={providerId} size={20} />
                   <h3 className="truncate font-semibold">
@@ -342,7 +304,7 @@ export function ModelsSettingsSection() {
                 </div>
                 <span className="text-xs text-secondary-text">{providerModels.length}</span>
               </div>
-              <ul className="divide-y divide-border">
+              <ul className="grid gap-2 p-3">
                 {providerModels.map((model) => {
                   const routeKey = modelRouteKey(model);
                   const hidden = hiddenModelKeys.includes(routeKey);
@@ -357,8 +319,8 @@ export function ModelsSettingsSection() {
                   const contextLimit = modelContextLimits[routeKey];
                   const reasoningEffort = modelReasoningEfforts[routeKey];
                   return (
-                    <li className="flex flex-wrap items-start justify-between gap-3 px-4 py-3" key={routeKey}>
-                      <div className="min-w-0 flex-1">
+                    <li className="model-catalog-row rounded-control border border-border bg-surface" key={routeKey}>
+                      <div className="model-catalog-details">
                         <div className="flex flex-wrap items-center gap-2">
                           <span className={`font-medium ${hidden ? 'text-secondary-text line-through' : 'text-text'}`}>
                             {model.displayName}
@@ -390,70 +352,93 @@ export function ModelsSettingsSection() {
                           ) : null}
                         </div>
                         <p className="mt-1 break-all font-mono text-xs text-secondary-text">{model.modelId}</p>
-                        <Button
-                          className="mt-1 min-h-8 px-2 text-xs"
-                          onClick={() => openContextLimit(model)}
-                          size="small"
-                          variant="ghost"
-                        >
+                        <p className="mt-1 text-xs text-secondary-text">
+                          {t('modelContextTitle', { model: model.displayName })}:{' '}
                           {contextLimit === undefined
                             ? t('modelContextAutomatic')
                             : t('modelContextCustom', { count: formatTokenCount(contextLimit) })}
-                        </Button>
-                        {model.supportsReasoning ? (
-                          <Select
-                            className="mt-1 min-h-8 text-xs"
-                            label={t('modelDefaultReasoning', { model: model.displayName })}
-                            onChange={(event) => {
-                              const value = event.target.value;
-                              const saved = setModelReasoningEffort(routeKey, value.length === 0 ? null : value);
-                              setFeedbackKey(saved ? null : 'modelPreferencesSaveFailed');
-                            }}
-                            options={[
-                              { value: '', label: t('modelReasoningDefault') },
-                              ...model.reasoningLevels.map((level) => ({
-                                value: level,
-                                label: reasoningLevelLabel(level, (key) => t(key)),
-                              })),
-                            ]}
-                            value={reasoningEffort ?? ''}
-                            visuallyHiddenLabel
-                          />
-                        ) : null}
+                        </p>
                       </div>
-                      <div className="flex flex-wrap items-center gap-1">
-                        <Button
-                          aria-label={t(isFavorite ? 'removeModelFavorite' : 'addModelFavorite')}
-                          disabled={favoriteStatus !== 'ready' || favoriteBusy}
-                          onClick={() => void toggleFavorite(model)}
-                          size="icon"
-                          variant="ghost"
-                        >
-                          {favoriteBusy ? (
-                            <LoaderCircle aria-hidden="true" className="animate-spin" size={17} />
-                          ) : isFavorite ? (
-                            <Star aria-hidden="true" className="text-accent" fill="currentColor" size={17} />
-                          ) : (
-                            <StarOff aria-hidden="true" size={17} />
-                          )}
-                        </Button>
-                        {isDefault ? (
-                          <Button onClick={removeDefault} size="small" variant="secondary">
-                            {t('defaultModel')}
-                          </Button>
-                        ) : (
-                          <Button onClick={() => changeDefault(model)} size="small" variant="ghost">
-                            {t('setDefaultModel')}
-                          </Button>
-                        )}
-                        <Button
-                          aria-label={t(hidden ? 'showModel' : 'hideModel')}
-                          onClick={() => toggleHidden(model)}
-                          size="icon"
-                          variant="ghost"
-                        >
-                          {hidden ? <Eye aria-hidden="true" size={17} /> : <EyeOff aria-hidden="true" size={17} />}
-                        </Button>
+                      <div className="model-catalog-actions">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              aria-label={t('moreOptions')}
+                              size="icon"
+                              title={t('moreOptions')}
+                              type="button"
+                              variant="ghost"
+                            >
+                              <MoreHorizontal aria-hidden="true" size={18} />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" aria-label={t('moreOptions')}>
+                            <DropdownMenuItem onSelect={() => openContextLimit(model)}>
+                              <SlidersHorizontal aria-hidden="true" size={14} />
+                              <span>{t('modelContextCustomLabel')}</span>
+                            </DropdownMenuItem>
+                            {model.supportsReasoning ? (
+                              <DropdownMenuSub>
+                                <DropdownMenuSubTrigger>
+                                  <Brain aria-hidden="true" size={14} />
+                                  <span>{t('modelDefaultReasoning')}</span>
+                                </DropdownMenuSubTrigger>
+                                <DropdownMenuSubContent aria-label={t('modelDefaultReasoning')}>
+                                  <DropdownMenuItem
+                                    aria-checked={reasoningEffort === undefined}
+                                    className="justify-between"
+                                    onSelect={() => {
+                                      const saved = setModelReasoningEffort(routeKey, null);
+                                      setFeedbackKey(saved ? null : 'modelPreferencesSaveFailed');
+                                    }}
+                                    role="menuitemradio"
+                                  >
+                                    <span>{t('modelReasoningDefault')}</span>
+                                    {reasoningEffort === undefined ? <Check aria-hidden="true" size={14} /> : null}
+                                  </DropdownMenuItem>
+                                  {model.reasoningLevels.map((level) => (
+                                    <DropdownMenuItem
+                                      aria-checked={reasoningEffort === level}
+                                      className="justify-between"
+                                      key={level}
+                                      onSelect={() => {
+                                        const saved = setModelReasoningEffort(routeKey, level);
+                                        setFeedbackKey(saved ? null : 'modelPreferencesSaveFailed');
+                                      }}
+                                      role="menuitemradio"
+                                    >
+                                      <span>{reasoningLevelLabel(level, (key) => t(key))}</span>
+                                      {reasoningEffort === level ? <Check aria-hidden="true" size={14} /> : null}
+                                    </DropdownMenuItem>
+                                  ))}
+                                </DropdownMenuSubContent>
+                              </DropdownMenuSub>
+                            ) : null}
+                            <DropdownMenuItem
+                              aria-checked={isFavorite}
+                              disabled={favoriteStatus !== 'ready' || favoriteBusy}
+                              onSelect={() => void toggleFavorite(model)}
+                              role="menuitemcheckbox"
+                            >
+                              {favoriteBusy ? (
+                                <LoaderCircle aria-hidden="true" className="animate-spin" size={14} />
+                              ) : isFavorite ? (
+                                <Star aria-hidden="true" className="text-accent" fill="currentColor" size={14} />
+                              ) : (
+                                <StarOff aria-hidden="true" size={14} />
+                              )}
+                              <span>{t(isFavorite ? 'removeModelFavorite' : 'addModelFavorite')}</span>
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onSelect={() => (isDefault ? removeDefault() : changeDefault(model))}>
+                              <Star aria-hidden="true" size={14} />
+                              <span>{t(isDefault ? 'defaultModel' : 'setDefaultModel')}</span>
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onSelect={() => toggleHidden(model)}>
+                              {hidden ? <Eye aria-hidden="true" size={14} /> : <EyeOff aria-hidden="true" size={14} />}
+                              <span>{t(hidden ? 'showModel' : 'hideModel')}</span>
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </div>
                     </li>
                   );
@@ -463,6 +448,7 @@ export function ModelsSettingsSection() {
           ))}
         </div>
       )}
+      </div>
 
       <Dialog
         open={contextModel !== null}
@@ -509,22 +495,6 @@ export function ModelsSettingsSection() {
         </div>
       </Dialog>
     </section>
-  );
-}
-
-function ModelSettingRow({
-  children,
-  description,
-  label,
-}: {
-  children: ReactNode;
-  description: string;
-  label: string;
-}) {
-  return (
-    <SettingsPreferenceRow description={description} label={label}>
-      {children}
-    </SettingsPreferenceRow>
   );
 }
 

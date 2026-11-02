@@ -38,8 +38,8 @@ export function readComposerGhostTextEnabled(): boolean {
   }
 }
 
-export function writeComposerGhostTextEnabled(enabled: boolean): void {
-  unifiedStorage.setItem(composerGhostTextEnabledStorageKey, String(enabled));
+export async function writeComposerGhostTextEnabled(enabled: boolean): Promise<void> {
+  await unifiedStorage.setPersistedItem(composerGhostTextEnabledStorageKey, String(enabled));
 }
 
 export function readComposerGhostTextModel(): string {
@@ -83,7 +83,7 @@ export interface ComposerPreferencesState {
   submissionMode: ComposerSubmissionMode;
   setSubmissionMode(mode: ComposerSubmissionMode): void;
   ghostTextEnabled: boolean;
-  setGhostTextEnabled(enabled: boolean): void;
+  setGhostTextEnabled(enabled: boolean): Promise<void>;
   ghostTextModelKey: string;
   setGhostTextModelKey(modelKey: string): void;
 }
@@ -96,8 +96,8 @@ export const useComposerPreferencesStore = create<ComposerPreferencesState>((set
     writeComposerSubmissionMode(mode);
     set({ submissionMode: mode });
   },
-  setGhostTextEnabled(enabled) {
-    writeComposerGhostTextEnabled(enabled);
+  async setGhostTextEnabled(enabled) {
+    await writeComposerGhostTextEnabled(enabled);
     set({ ghostTextEnabled: enabled });
   },
   setGhostTextModelKey(modelKey) {

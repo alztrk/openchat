@@ -32,8 +32,8 @@ pub use connections::{
 #[allow(unused_imports)]
 pub use conversations::{
     apply_generated_title, conversation_messages, conversation_messages_from_boundary,
-    conversation_messages_on_connection, conversation_route, conversation_title_is_automatic,
-    create_title_job, finish_title_job, is_custom_title, is_default_title,
+    conversation_route, conversation_title_is_automatic, create_title_job, finish_title_job,
+    is_custom_title, is_default_title,
     is_retryable_latest_assistant_message, save_assistant_message,
     save_assistant_message_on_connection, save_assistant_tool_checkpoint,
     should_generate_automatic_title, should_generate_automatic_title_on_connection,

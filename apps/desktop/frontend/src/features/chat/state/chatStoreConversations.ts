@@ -97,6 +97,7 @@ export function createConversationsActions(set: StoreSet, get: StoreGet) {
           ? savedReasoningEffort
           : null,
       activeGoal: null,
+      interruptedRun: null,
       goalStatus: 'ready',
       isChangingGoal: false,
       pendingProjectId: projectId,
@@ -128,6 +129,7 @@ export function createConversationsActions(set: StoreSet, get: StoreGet) {
           activeConversationId: null,
           selectedReasoningEffort: null,
           activeGoal: null,
+          interruptedRun: null,
           goalStatus: 'ready',
           isChangingGoal: false,
           messages: [],
@@ -194,9 +196,18 @@ export function createConversationsActions(set: StoreSet, get: StoreGet) {
       set({
         conversations: [],
         activeConversationId: null,
+        pendingToolPermissionRequest: null,
+        pendingToolPermissionRequests: [],
+        respondingToolPermissionIds: [],
+        sendingConversationId: null,
+        sendingConversationIds: [],
+        activeOperation: null,
+        activeOperationsByConversation: {},
+        isSending: false,
         isUpdatingConversationModel: false,
         selectedReasoningEffort: null,
         activeGoal: null,
+        interruptedRun: null,
         goalStatus: 'ready',
         isChangingGoal: false,
         pendingProjectId: null,
@@ -259,6 +270,7 @@ export function createConversationsActions(set: StoreSet, get: StoreGet) {
         activeConversationId: id,
         selectedReasoningEffort: null,
         activeGoal: null,
+        interruptedRun: null,
         goalStatus: 'loading',
         isChangingGoal: false,
         pendingProjectId: null,
@@ -334,6 +346,7 @@ export function createConversationsActions(set: StoreSet, get: StoreGet) {
           opencodeRetryAtUnixMs: null,
         });
         void get().refreshActiveGoal(id);
+        void get().refreshInterruptedRun(id);
       } catch {
         if (generation !== messageLoadGeneration) return;
         set({

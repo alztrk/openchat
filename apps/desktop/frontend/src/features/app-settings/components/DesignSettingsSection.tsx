@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button, Card, Input, Select, Switch } from '@shared/components';
+import { Button, Input, Select, Switch } from '@shared/components';
 import { useDesignPreferencesStore } from '@features/design-workspace/data/designPreferences';
 import { type ImageCollection, listImageCollections } from '@features/design-workspace/data/imageGeneration';
 import { SettingsPreferenceRow } from './SettingsPreferenceRow';
@@ -82,9 +82,9 @@ export function DesignSettingsSection() {
     : null;
 
   return (
-    <section aria-labelledby="settings-page-heading" className="grid gap-5">
-      <fieldset className="contents" disabled={saveState === 'saving'}>
-        <Card className="divide-y divide-border">
+    <section aria-labelledby="settings-page-heading" className="app-window-settings-section grid content-start gap-6">
+      <fieldset className="contents" disabled={loadState !== 'ready' || saveState === 'saving'}>
+        <div className="app-window-settings-card overflow-hidden rounded-card border border-border bg-raised">
           <SettingsPreferenceRow
             description={t('designRememberLastGenerationDescription')}
             id="setting-design-remember-last-generation"
@@ -252,9 +252,9 @@ export function DesignSettingsSection() {
               />
             )}
           </SettingsPreferenceRow>
-        </Card>
+        </div>
 
-        <Card className="grid gap-4" padding="default">
+        <div className="app-window-settings-card grid gap-4 rounded-card border border-border bg-raised p-4">
           <div className="grid gap-1">
             <h2 className="font-semibold">{t('designPresets')}</h2>
             <p className="text-sm text-secondary-text">{t('designPresetsDescription')}</p>
@@ -277,13 +277,15 @@ export function DesignSettingsSection() {
               )}
             </SettingsPreferenceRow>
             <div className="flex flex-wrap items-end gap-2">
-              <Input
-                className="min-w-48 flex-1"
-                label={t('designPresetName')}
-                maxLength={48}
-                onChange={(event) => setPresetName(event.target.value)}
-                value={presetName}
-              />
+              <div className="min-w-48 flex-1">
+                <Input
+                  className="w-full"
+                  label={t('designPresetName')}
+                  maxLength={48}
+                  onChange={(event) => setPresetName(event.target.value)}
+                  value={presetName}
+                />
+              </div>
               <Button
                 disabled={preferences.presets.length >= 20 || presetName.trim().length === 0}
                 onClick={() => {
@@ -317,9 +319,10 @@ export function DesignSettingsSection() {
               </div>
             ))}
           </div>
-        </Card>
+        </div>
 
-        <Card className="divide-y divide-border">
+        <div className="app-window-settings-card overflow-hidden rounded-card border border-border bg-raised">
+          <h2 className="px-4 pt-4 font-semibold">{t('designLibraryDefaultsTitle')}</h2>
           <SettingsPreferenceRow
             description={t('designDefaultSortDescription')}
             id="setting-design-sort"
@@ -380,7 +383,7 @@ export function DesignSettingsSection() {
               )
             }
           </SettingsPreferenceRow>
-        </Card>
+        </div>
       </fieldset>
       <SettingsSaveFeedback errorMessage={t('designPreferencesSaveFailed')} state={saveState} />
     </section>

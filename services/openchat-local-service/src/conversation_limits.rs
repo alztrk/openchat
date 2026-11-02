@@ -1,4 +1,9 @@
-//! Shared attachment limits for renderer, desktop host, and local-service boundaries.
+//! Shared chat storage limits for renderer, desktop host, and local-service boundaries.
+
+/// Maximum UTF-8 byte length accepted for a persisted chat message body.
+pub const MAXIMUM_CHAT_MESSAGE_CONTENT_BYTES: usize = 4_000_000;
+/// Maximum serialized byte length accepted for each persisted chat metadata array.
+pub const MAXIMUM_CHAT_MESSAGE_METADATA_BYTES: usize = 4_000_000;
 
 /// Maximum number of attachments accepted in one message.
 pub const MAXIMUM_ATTACHMENT_FILE_COUNT: usize = 10;

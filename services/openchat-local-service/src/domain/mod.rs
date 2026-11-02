@@ -15,6 +15,8 @@ pub(crate) mod connector_packages;
 pub(crate) mod connectors;
 #[path = "conversations/context_compaction.rs"]
 pub(crate) mod context_compaction;
+#[path = "conversations/context_usage.rs"]
+pub(crate) mod context_usage;
 #[path = "conversations/conversation_archive.rs"]
 pub(crate) mod conversation_archive;
 #[path = "providers/copilot_oauth.rs"]
@@ -68,6 +70,8 @@ pub(crate) mod response_budget;
 pub(crate) mod security_scan;
 #[path = "conversations/temporary_conversation.rs"]
 pub(crate) mod temporary_conversation;
+#[path = "conversations/token_estimator.rs"]
+pub(crate) mod token_estimator;
 #[path = "conversations/tokenizer.rs"]
 pub(crate) mod tokenizer;
 #[path = "tools/mod.rs"]

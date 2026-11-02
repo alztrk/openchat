@@ -20,6 +20,8 @@ pub(super) use zeroize::{Zeroize, Zeroizing};
 
 pub(super) use crate::{
     conversation_limits::{
+        MAXIMUM_CHAT_MESSAGE_CONTENT_BYTES as MAX_MESSAGE_CONTENT_BYTES,
+        MAXIMUM_CHAT_MESSAGE_METADATA_BYTES as MAX_MESSAGE_METADATA_BYTES,
         MAXIMUM_ATTACHMENT_FILE_COUNT as MAX_ATTACHMENT_COUNT,
         MAXIMUM_ATTACHMENT_IMAGE_BYTES as MAX_IMAGE_BYTES,
         MAXIMUM_ATTACHMENT_IMAGE_COUNT as MAX_IMAGE_COUNT,
@@ -33,6 +35,7 @@ pub(super) use crate::{
         MAX_REQUEST_PARAMETER_NODES, ServiceError, clear_sensitive_json_values,
         parse_bounded_json_value,
     },
+    service::OperationGate,
     storage::{AppStorage, StorageConnection, StorageRow, sqlite_error_code},
 };
 
@@ -41,8 +44,6 @@ pub(super) use super::invalid_request_params;
 const MAX_IDENTIFIER_BYTES: usize = 128;
 const MAX_TITLE_CHARS: usize = 512;
 const MAX_MODEL_ID_CHARS: usize = 512;
-const MAX_MESSAGE_CONTENT_BYTES: usize = 4_000_000;
-const MAX_MESSAGE_METADATA_BYTES: usize = 4_000_000;
 const MAX_AGENT_METADATA_BYTES: usize = 128 * 1024;
 const MAX_EMBEDDED_METADATA_JSON_DEPTH: usize = 4;
 const MAX_EMBEDDED_METADATA_JSON_BYTES: usize = 4_000_000;
@@ -109,6 +110,25 @@ pub(super) async fn dispatch(
     params: &Value,
     storage: &AppStorage,
 ) -> Result<Value, ServiceError> {
+    dispatch_inner(method, params, storage, None).await
+}
+
+/// Dispatches chat-storage requests with the operation cancellation gate used by the RPC host.
+pub(super) async fn dispatch_with_gate(
+    method: &str,
+    params: &Value,
+    storage: &AppStorage,
+    cancellation_gate: &OperationGate,
+) -> Result<Value, ServiceError> {
+    dispatch_inner(method, params, storage, Some(cancellation_gate)).await
+}
+
+async fn dispatch_inner(
+    method: &str,
+    params: &Value,
+    storage: &AppStorage,
+    cancellation_gate: Option<&OperationGate>,
+) -> Result<Value, ServiceError> {
     match method {
         "storage.chat.conversations.list" => list_conversations(storage),
         "storage.chat.conversations.get" => get_conversation(params, storage),
@@ -125,7 +145,7 @@ pub(super) async fn dispatch(
         "storage.chat.projects.workspace.add" => add_project_workspace_root(params, storage),
         "storage.chat.projects.workspace.remove" => remove_project_workspace_root(params, storage),
         "storage.chat.messages.list" => list_messages(params, storage),
-        "storage.chat.messages.save" => save_message(params, storage),
+        "storage.chat.messages.save" => save_message(params, storage, cancellation_gate),
         "storage.chat.messages.search" => search_messages(params, storage),
         "storage.chat.responses.has_completed" => has_completed_assistant_response(storage),
         "storage.chat.favorites.list" => list_model_favorites(storage),

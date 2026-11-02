@@ -1,9 +1,13 @@
-import { ChevronDown, ChevronUp, Clock3, FileDiff, FileUp, MessageSquare, X } from 'lucide-react';
+import { ChevronDown, ChevronUp, Clock3, FileUp, MessageSquare, X } from 'lucide-react';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Button, Dialog, Toast } from '@shared/components';
-import { type ChatFileChange, listConversationFileChanges } from '@features/chat/data/chatFileChanges';
+import {
+  type ChatFileChange,
+  listConversationFileChanges,
+  recordFileChangesLoadFailure,
+} from '@features/chat/data/chatFileChanges';
 import { type ChatConversation, type ChatMessage, getMessages } from '@features/chat/data/chatStorage';
 import { findInChatMatches, type InChatFilterType } from '@features/chat/data/inChatSearch';
 import { getSidebarDraggingConversationId } from '@features/chat/data/sidebarPreferences';
@@ -17,7 +21,6 @@ import { ChatComposer } from './ChatComposer';
 import type { RightWorkspaceTab, WorkspaceFileRequest, WorkspaceFileSelection } from './ChatFileChangesPanel';
 import { ConversationEmptyState } from './ConversationEmptyState';
 import { EditMessageBranchDialog } from './EditMessageBranchDialog';
-import { GoalStatusBar } from './GoalStatusBar';
 import { InChatSearchBar } from './InChatSearchBar';
 import { parseToolActivities } from './message/messageData';
 import { ToolPermissionCard } from './ToolPermissionCard';
@@ -93,6 +96,7 @@ export function ConversationPane({
   }>({ conversationId: null, changes: [] });
   const [fileChangesLoadError, setFileChangesLoadError] = useState(false);
   const [fileChangesLoadRevision, setFileChangesLoadRevision] = useState(0);
+  const fileChangesLoadRequestKeyRef = useRef<string | null>(null);
   const [editingMessage, setEditingMessage] = useState<ChatMessage | null>(null);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -190,7 +194,6 @@ export function ConversationPane({
   const selectedModelKey = useChatStore((state) => state.selectedModelKey);
   const hasConfiguredProvider = useChatStore((state) => state.hasConfiguredProvider);
   const refreshModels = useChatStore((state) => state.refreshModels);
-  const activeGoal = useChatStore((state) => state.activeGoal);
   const goalStatus = useChatStore((state) => state.goalStatus);
   const refreshActiveGoal = useChatStore((state) => state.refreshActiveGoal);
   const temporaryChat = useChatStore((state) => (isConversationOverride ? null : state.temporaryChat));
@@ -198,8 +201,14 @@ export function ConversationPane({
   const retryMessage = useChatStore((state) => state.retryMessage);
   const branchFromUserMessage = useChatStore((state) => state.branchFromUserMessage);
   const isCreatingBranch = useChatStore((state) => state.isCreatingMessageBranch);
-  const pendingToolPermissionRequest = useChatStore((state) => state.pendingToolPermissionRequest);
-  const isRespondingToToolPermission = useChatStore((state) => state.isRespondingToToolPermission);
+  const pendingToolPermissionRequest = useChatStore((state) =>
+    state.pendingToolPermissionRequests.find((request) => request.conversationId === activeConversationId) ?? null,
+  );
+  const isRespondingToToolPermission = useChatStore((state) =>
+    state.pendingToolPermissionRequests
+      .filter((request) => request.conversationId === activeConversationId)
+      .some((request) => state.respondingToolPermissionIds.includes(request.id)),
+  );
   const toolPermissionError = useChatStore((state) => state.toolPermissionError);
   const respondToToolPermission = useChatStore((state) => state.respondToToolPermission);
   const searchHighlightQuery = useChatStore((state) => state.searchHighlightQuery);
@@ -211,10 +220,12 @@ export function ConversationPane({
   const clearSearchHighlight = useChatStore((state) => state.clearSearchHighlight);
   const isTemporaryChat = temporaryChat !== null;
   const isSendingInStore = useChatStore((state) => state.isSending);
+  const sendingConversationIds = useChatStore((state) => state.sendingConversationIds);
   const sendingConversationId = useChatStore((state) => state.sendingConversationId);
-  const isSending = isConversationOverride
-    ? isSendingInStore && sendingConversationId === activeConversationId
-    : isSendingInStore;
+  const isSending = activeConversationId !== null
+    ? sendingConversationIds.includes(activeConversationId) ||
+      (isSendingInStore && sendingConversationId === activeConversationId)
+    : isTemporaryChat && isSendingInStore;
   const isEmptyConversation = messages.length === 0 && !isLoadingMessages && !isSending;
   const centerEmptyConversation =
     isEmptyConversation && !isLargeText && paneSize.width >= 640 && paneSize.height >= 640;
@@ -247,6 +258,26 @@ export function ConversationPane({
     () => parseToolActivities(latestToolActivitiesJson),
     [latestToolActivitiesJson],
   );
+  const hasPendingToolActivities = latestAssistantActivities.some(
+    (activity) =>
+      activity.status === 'awaitingApproval' ||
+      activity.status === 'waitingForUser' ||
+      activity.status === 'running',
+  );
+  const fileChangesRefreshRevision = useMemo(() => {
+    const terminalActivities = latestAssistantActivities.filter(
+      (activity) =>
+        activity.status === 'completed' ||
+        activity.status === 'failed' ||
+        activity.status === 'denied' ||
+        activity.status === 'cancelled',
+    );
+    const terminalRevision = terminalActivities
+      .map((activity) => `${activity.callId}:${activity.status}:${activity.fileChanges.length}`)
+      .join('|');
+    return `${latestAssistant?.id ?? ''}:${terminalRevision}`;
+  }, [latestAssistant?.id, latestAssistantActivities]);
+  const fileChangesLoadKey = `${fileChangesLoadRevision}:${fileChangesRefreshRevision}`;
   const activityFileChanges = useMemo(
     () => latestAssistantActivities.flatMap((activity) => activity.fileChanges),
     [latestAssistantActivities],
@@ -319,29 +350,44 @@ export function ConversationPane({
     setActiveMatchIndex(0);
   }, [activeConversationId]);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: File-change revisions and new tool output are explicit refresh signals.
   useEffect(() => {
     if (activeConversationId === null || isTemporaryChat) {
+      fileChangesLoadRequestKeyRef.current = null;
       setFileChangesState({ conversationId: activeConversationId, changes: [] });
       setFileChangesLoadError(false);
       return;
     }
+    if (isFileChangesPanelOpen || workspaceFileRequest !== null || hasPendingToolActivities) return;
     let current = true;
+    const requestKey = `${activeConversationId}:${fileChangesLoadKey}`;
+    fileChangesLoadRequestKeyRef.current = requestKey;
     setFileChangesLoadError(false);
     void listConversationFileChanges(activeConversationId)
       .then((changes) => {
-        if (current) {
+        if (current && fileChangesLoadRequestKeyRef.current === requestKey) {
           setFileChangesState({ conversationId: activeConversationId, changes });
           setFileChangesLoadError(false);
         }
       })
-      .catch(() => {
-        if (current) setFileChangesLoadError(true);
+      .catch(async (error: unknown) => {
+        if (!current || fileChangesLoadRequestKeyRef.current !== requestKey) return;
+        await recordFileChangesLoadFailure('inline', error);
+        if (current && fileChangesLoadRequestKeyRef.current === requestKey) setFileChangesLoadError(true);
       });
     return () => {
       current = false;
+      if (fileChangesLoadRequestKeyRef.current === requestKey) {
+        fileChangesLoadRequestKeyRef.current = null;
+      }
     };
-  }, [activeConversationId, fileChangesLoadRevision, isTemporaryChat, latestAssistant?.id, latestToolActivitiesJson]);
+  }, [
+    activeConversationId,
+    fileChangesLoadKey,
+    hasPendingToolActivities,
+    isFileChangesPanelOpen,
+    isTemporaryChat,
+    workspaceFileRequest,
+  ]);
 
   const updateConversationFileChanges = useCallback(
     (conversationId: string, changes: ChatFileChange[]) => {
@@ -733,45 +779,11 @@ export function ConversationPane({
                 </Button>
               </div>
             ) : null}
-            {activeConversationId && !isTemporaryChat && latestFileChanges.length > 0 ? (
-              <div className="flex flex-wrap justify-center gap-2 px-4 pb-2">
-                <Button
-                  className="min-h-9"
-                  onClick={() => {
-                    setRightPanelTab('changes');
-                    setIsFileChangesPanelOpen(true);
-                  }}
-                  size="small"
-                  variant="secondary"
-                >
-                  <FileDiff aria-hidden="true" size={15} />
-                  <span>{t('fileChangesOpenButton')}</span>
-                  {latestFileChanges.some((change) => change.addedLines === null || change.removedLines === null) ? (
-                    <span className="text-xs text-secondary-text">{t('fileChangesSomeCountsUnavailable')}</span>
-                  ) : (
-                    <span className="flex gap-1 text-xs font-semibold">
-                      <span className="text-success">
-                        +
-                        {latestFileChanges
-                          .filter((change) => change.status === 'active')
-                          .reduce((sum, change) => sum + (change.addedLines ?? 0), 0)}
-                      </span>
-                      <span className="text-destructive">
-                        -
-                        {latestFileChanges
-                          .filter((change) => change.status === 'active')
-                          .reduce((sum, change) => sum + (change.removedLines ?? 0), 0)}
-                      </span>
-                    </span>
-                  )}
-                </Button>
-              </div>
-            ) : null}
             {pendingToolPermissionRequest?.conversationId === activeConversationId ? (
               <ToolPermissionCard
                 errorKey={toolPermissionError}
                 isResponding={isRespondingToToolPermission}
-                onRespond={(approved) => void respondToToolPermission(approved)}
+                onRespond={(approved) => void respondToToolPermission(approved, activeConversationId)}
                 request={pendingToolPermissionRequest}
               />
             ) : null}
@@ -802,9 +814,31 @@ export function ConversationPane({
                 </Button>
               </div>
             ) : null}
-            {activeGoal?.conversationId === activeConversationId ? <GoalStatusBar goal={activeGoal} /> : null}
             <ChatComposer
               droppedFiles={droppedFiles}
+              fileChanges={
+                activeConversationId && !isTemporaryChat && latestFileChanges.length > 0
+                  ? {
+                      addedLines: latestFileChanges
+                        .filter((change) => change.status === 'active')
+                        .reduce((sum, change) => sum + (change.addedLines ?? 0), 0),
+                      removedLines: latestFileChanges
+                        .filter((change) => change.status === 'active')
+                        .reduce((sum, change) => sum + (change.removedLines ?? 0), 0),
+                      countsUnavailable: latestFileChanges.some(
+                        (change) => change.addedLines === null || change.removedLines === null,
+                      ),
+                      onOpen: () => {
+                        if (onOpenRightPanel) {
+                          onOpenRightPanel('changes');
+                        } else {
+                          setRightPanelTab('changes');
+                          setIsFileChangesPanelOpen(true);
+                        }
+                      },
+                    }
+                  : undefined
+              }
               isLoadingMessagesOverride={isLoadingMessages}
               isTemporaryChat={temporaryChat !== null}
               messagesOverride={messages}
@@ -879,7 +913,7 @@ export function ConversationPane({
                 fileRequest={workspaceFileRequest}
                 key={activeConversationId ?? 'workspace-panel'}
                 onChangesUpdated={updateConversationFileChanges}
-                refreshRevision={latestToolActivitiesJson}
+                refreshRevision={fileChangesRefreshRevision}
               />
             </Suspense>
           ) : null}

@@ -39,6 +39,7 @@ export interface ComposerContextRowProps {
   messageDraft: string;
   messages: readonly ChatMessage[];
   pendingAttachments: PendingChatAttachment[];
+  fileChanges?: { addedLines: number; removedLines: number; countsUnavailable: boolean; onOpen(): void };
 }
 
 export function ComposerContextRow({
@@ -55,6 +56,7 @@ export function ComposerContextRow({
   messageDraft,
   messages,
   pendingAttachments,
+  fileChanges,
 }: ComposerContextRowProps) {
   const { t, i18n } = useTranslation();
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
@@ -100,7 +102,9 @@ export function ComposerContextRow({
   }, [projectMenuOpen]);
 
   return (
-    <div className="composer-context-row flex min-w-0 items-center justify-between gap-3">
+    <div
+      className={`composer-context-row grid min-w-0 items-center gap-2 ${fileChanges ? 'composer-context-row--with-changes' : 'composer-context-row--without-changes'}`}
+    >
       <div className="flex min-w-0 flex-1 items-center gap-2">
         <Folder aria-hidden="true" className="shrink-0 text-secondary-icon" size={16} />
         <DropdownMenu
@@ -239,6 +243,20 @@ export function ComposerContextRow({
           </span>
         ) : null}
       </div>
+      {fileChanges ? (
+        <Button className="shrink-0" onClick={fileChanges.onOpen} size="small" variant="secondary">
+          <span>{t('fileChangesOpenButton')}</span>
+          {fileChanges.countsUnavailable ? (
+            <span className="text-xs text-secondary-text">{t('fileChangesSomeCountsUnavailable')}</span>
+          ) : (
+            <span className="flex gap-1 text-xs font-semibold">
+              <span className="text-success">+{fileChanges.addedLines}</span>
+              <span className="text-destructive">-{fileChanges.removedLines}</span>
+            </span>
+          )}
+        </Button>
+      ) : null}
+      <div className="flex min-w-0 justify-end">
       {selectedModel && contextToolPermissionMode !== null ? (
         <ContextUsageIndicator
           contextWindow={contextWindow}
@@ -257,6 +275,7 @@ export function ComposerContextRow({
           {t('toolPermissionSettingsLoadFailed')}
         </p>
       ) : null}
+      </div>
       {createProjectOpen ? (
         <Suspense
           fallback={

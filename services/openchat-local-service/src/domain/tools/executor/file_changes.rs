@@ -420,5 +420,8 @@ pub(super) fn tracking_error_code(error: crate::file_changes::TrackingError) -> 
         crate::file_changes::TrackingError::WorkspaceTooLarge => "workspace_too_large",
         crate::file_changes::TrackingError::SnapshotUnavailable => "snapshot_unavailable",
         crate::file_changes::TrackingError::StorageUnavailable => "storage_unavailable",
+        crate::file_changes::TrackingError::StorageFailure(code) => code,
+        crate::file_changes::TrackingError::StorageBusy(code) => code,
+        crate::file_changes::TrackingError::Cancelled => "operation_cancelled",
     }
 }

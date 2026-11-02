@@ -10,6 +10,7 @@ import {
   estimateContextUsage,
   inspectContextUsageMemory,
   loadContextUsageConfiguration,
+  loadFullContextUsage,
 } from '@features/chat/data/contextUsage';
 import type { ToolPermissionMode } from '@features/projects/data/projectPreferences';
 import type { ChatModel } from '@entities/model';
@@ -121,10 +122,40 @@ export function ContextUsageIndicator({
     };
   }, [conversationId, isSending]);
 
-  const snapshot = useMemo(
+  const localSnapshot = useMemo(
     () => estimateContextUsage(messages, draft, pendingAttachments, model, configuration, memory),
     [configuration, draft, memory, messages, model, pendingAttachments],
   );
+  const [serverSnapshot, setServerSnapshot] = useState<ReturnType<typeof estimateContextUsage> | null>(null);
+  const snapshot = serverSnapshot ?? localSnapshot;
+
+  useEffect(() => {
+    if (isSending || configurationState === 'idle' || configurationState === 'loading') return;
+    let current = true;
+    setServerSnapshot(null);
+    const timer = window.setTimeout(() => {
+      void loadFullContextUsage(model, conversationId, draft, pendingAttachments, configuration, memory)
+        .then((nextSnapshot) => {
+          if (current) setServerSnapshot(nextSnapshot);
+        })
+        .catch(() => {
+          // loadFullContextUsage records the diagnostic; retain the local fallback.
+        });
+    }, 350);
+    return () => {
+      current = false;
+      window.clearTimeout(timer);
+    };
+  }, [
+    configuration,
+    configurationState,
+    conversationId,
+    draft,
+    isSending,
+    memory,
+    model,
+    pendingAttachments,
+  ]);
   const usageFraction = contextWindow !== null && contextWindow > 0 ? snapshot.totalTokens / contextWindow : null;
   const percent = usageFraction === null ? null : Math.min(100, Math.round(usageFraction * 100));
   const numberFormat = useMemo(
@@ -400,9 +431,19 @@ export function ContextUsageIndicator({
             {t('contextUsageOverLimit')}
           </p>
         ) : null}
+        <p className="mt-3 text-secondary-text" role="status">
+          {t('contextUsageEstimateSource', {
+            source: t(
+              snapshot.estimateSource === 'model_tokenizer'
+                ? 'contextUsageModelTokenizer'
+                : 'contextUsageApproximateFallback',
+            ),
+          })}
+        </p>
         {snapshot.providerInputTokens !== null ? (
           <p className="mt-3 border-t border-border pt-2 text-secondary-text" role="status">
-            {t('contextUsageProviderMeasurement', { count: formatCount(snapshot.providerInputTokens) })}
+            {t('contextUsageProviderMeasurement', { count: formatCount(snapshot.providerInputTokens) })}{' '}
+            {t('contextUsageProviderPlusEstimate')}
           </p>
         ) : null}
       </section>

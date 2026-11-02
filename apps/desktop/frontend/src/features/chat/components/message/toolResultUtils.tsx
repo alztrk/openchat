@@ -66,8 +66,41 @@ export function getRequestedToolPath(activity: ToolActivity): string | null {
   return targetPath || null;
 }
 
+export function getRequestedSearchQuery(activity: ToolActivity): string | null {
+  const args = asRecord(activity.arguments);
+  const output = asRecord(activity.output);
+  const query =
+    stringValue(args?.query)?.trim() ||
+    stringValue(args?.pattern)?.trim() ||
+    stringValue(output?.query)?.trim();
+  return query || null;
+}
+
+export function getSearchMatchCount(activity: ToolActivity): number | null {
+  const output = asRecord(activity.output);
+  return Array.isArray(output?.matches) ? output.matches.length : null;
+}
+
+export function getReadFileLineRange(activity: ToolActivity): { start: number; end: number } | null {
+  const output = asRecord(activity.output);
+  const lines = output?.lines ?? output?.d;
+  if (!Array.isArray(lines) || lines.length === 0) return null;
+  const getLineNumber = (value: unknown): number | null => {
+    if (Array.isArray(value)) return integerValue(value[0]);
+    return integerValue(asRecord(value)?.line);
+  };
+  const start = getLineNumber(lines[0]);
+  const end = getLineNumber(lines.at(-1));
+  return start !== null && end !== null && start > 0 && end >= start ? { start, end } : null;
+}
+
 export function formatToolPath(path: string): string {
-  return path;
+  const extendedUncPrefix = '\\\\?\\UNC\\';
+  if (path.toLowerCase().startsWith(extendedUncPrefix.toLowerCase())) {
+    return `\\\\${path.slice(extendedUncPrefix.length)}`;
+  }
+  const extendedPathPrefix = '\\\\?\\';
+  return path.startsWith(extendedPathPrefix) ? path.slice(extendedPathPrefix.length) : path;
 }
 
 /** Translates known tool errors and keeps unknown backend messages out of the UI. */

@@ -22,11 +22,12 @@ import {
   useMemo,
   useRef,
   useState,
+  useId,
 } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button, Dialog, Input } from '@shared/components';
-import type { ChatConversation, ChatProject } from '@features/chat/data/chatStorage';
+import { Button, Checkbox, Dialog, Input } from '@shared/components';
+import type { ChatConversation } from '@features/chat/data/chatStorage';
 import {
   type CustomSidebarFolder,
   clampSidebarWidth,
@@ -37,6 +38,7 @@ import {
   readSidebarSortMode,
   readSidebarViewMode,
   readSidebarWidth,
+  readSkipConversationDeleteConfirmation,
   SIDEBAR_DEFAULT_WIDTH,
   SIDEBAR_MAX_WIDTH,
   SIDEBAR_MIN_WIDTH,
@@ -50,6 +52,7 @@ import {
   writeSidebarSortMode,
   writeSidebarViewMode,
   writeSidebarWidth,
+  writeSkipConversationDeleteConfirmation,
 } from '@features/chat/data/sidebarPreferences';
 import { useConversationSidebarActions } from '@features/chat/hooks/useConversationSidebarActions';
 import { useChatStore } from '@features/chat/state/chatStore';
@@ -60,7 +63,6 @@ import {
 import { ProjectSidebarSection } from '@features/projects/components/ProjectSidebarSection';
 import { type AssistantAgentSnapshot, snapshotAssistantProfile } from '@features/app-settings/data/assistantProfiles';
 import { useAssistantProfilesStore } from '@features/app-settings/stores/assistantProfilesStore';
-import { discardProjectFolderSelection, selectProjectFolder } from '@shared/lib/platform/tauri';
 import { ConversationSidebarEditDialog } from './ConversationSidebarEditDialog';
 import { ConversationSidebarRow } from './ConversationSidebarRow';
 import { ConversationSidebarSection } from './ConversationSidebarSection';
@@ -80,12 +82,6 @@ const CreateProjectDialog = lazy(() =>
     default: module.CreateProjectDialog,
   })),
 );
-const ProjectOptionsDialog = lazy(() =>
-  import('@features/projects/components/ProjectOptionsDialog').then((module) => ({
-    default: module.ProjectOptionsDialog,
-  })),
-);
-
 const SIDEBAR_COMPACT_WIDTH = 256;
 
 export interface ConversationSidebarProps {
@@ -112,10 +108,13 @@ export function ConversationSidebar({
   onStartTemporaryChat,
 }: ConversationSidebarProps) {
   const { t } = useTranslation();
+  const deleteDontAskCheckboxId = useId();
   const [createProjectOpen, setCreateProjectOpen] = useState(false);
-  const [projectOptionsTarget, setProjectOptionsTarget] = useState<ChatProject | null>(null);
   const [editTarget, setEditTarget] = useState<{ conversation: ChatConversation; mode: 'rename' } | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ChatConversation | null>(null);
+  const [skipDeleteConfirmation, setSkipDeleteConfirmation] = useState(readSkipConversationDeleteConfirmation);
+  const [dontAskBeforeDeleting, setDontAskBeforeDeleting] = useState(false);
+  const [deletePreferenceError, setDeletePreferenceError] = useState<string | null>(null);
   const [sidebarPreferences] = useState(readCollapsedSidebarSections);
   const [collapsedSections, setCollapsedSections] = useState<ReadonlySet<SidebarSectionId>>(
     () => sidebarPreferences.collapsedSections,
@@ -161,6 +160,7 @@ export function ConversationSidebar({
   const serviceErrorMessage = useChatStore((state) => state.errorMessage);
   const activeConversationId = useChatStore((state) => state.activeConversationId);
   const sendingConversationId = useChatStore((state) => state.sendingConversationId);
+  const sendingConversationIds = useChatStore((state) => state.sendingConversationIds);
   const compactingConversationId = useChatStore((state) => state.compactingConversationId);
   const selectConversation = useChatStore((state) => state.selectConversation);
   const startNewChat = useChatStore((state) => state.startNewChat);
@@ -188,8 +188,11 @@ export function ConversationSidebar({
   } = useConversationSidebarActions();
 
   const isConversationAiWorking = useCallback(
-    (conversationId: string) => sendingConversationId === conversationId || compactingConversationId === conversationId,
-    [compactingConversationId, sendingConversationId],
+    (conversationId: string) =>
+      sendingConversationIds.includes(conversationId) ||
+      sendingConversationId === conversationId ||
+      compactingConversationId === conversationId,
+    [compactingConversationId, sendingConversationId, sendingConversationIds],
   );
 
   useEffect(() => {
@@ -281,9 +284,31 @@ export function ConversationSidebar({
 
   const confirmPermanentDelete = async () => {
     if (!deleteTarget) return;
+    if (dontAskBeforeDeleting) {
+      try {
+        await writeSkipConversationDeleteConfirmation();
+        setSkipDeleteConfirmation(true);
+      } catch (cause) {
+        globalThis.reportError(new Error('The delete confirmation preference could not be saved.', { cause }));
+        setDeletePreferenceError(t('deleteConfirmationPreferenceSaveFailed'));
+        return;
+      }
+    }
     if (await deleteConversation(deleteTarget)) {
       setDeleteTarget(null);
+      setDontAskBeforeDeleting(false);
+      setDeletePreferenceError(null);
     }
+  };
+
+  const requestConversationDelete = (conversation: ChatConversation) => {
+    if (skipDeleteConfirmation) {
+      void deleteConversation(conversation);
+      return;
+    }
+    setDontAskBeforeDeleting(false);
+    setDeletePreferenceError(null);
+    setDeleteTarget(conversation);
   };
 
   const handleMoveConversationToFolder = (conversation: ChatConversation, targetFolderId: string | null) => {
@@ -544,8 +569,9 @@ export function ConversationSidebar({
   ) =>
     rows.map((conversation) => (
       <div
-        style={{ contentVisibility: 'auto' }}
+        className="min-w-0 w-full"
         key={conversation.id}
+        style={{ contentVisibility: 'auto' }}
       >
         <ConversationSidebarRow
           active={activeConversationId === conversation.id}
@@ -555,29 +581,28 @@ export function ConversationSidebar({
           currentFolderId={options.currentFolderId ?? folderIdByConversationId.get(conversation.id) ?? null}
           currentProjectId={conversation.projectId ?? options.currentProjectId}
           customFolders={customFolders}
-        disabled={isBusy}
-        isAiWorking={isConversationAiWorking(conversation.id)}
-        key={conversation.id}
-        onArchive={() => void archiveConversation(conversation)}
-        onDelete={() => setDeleteTarget(conversation)}
-        onDuplicate={() => handleDuplicateConversation(conversation)}
-        onExport={(format) => void exportConversation(conversation, format)}
-        onInlineRename={(title) => saveTitle(conversation.id, title)}
-        onMoveToChats={() => {
-          handleMoveConversationToFolder(conversation, null);
-          void moveConversation(conversation, null);
-        }}
-        onMoveToFolder={(folderId) => handleMoveConversationToFolder(conversation, folderId)}
-        onMoveToProject={(projectId) => {
-          handleMoveConversationToFolder(conversation, null);
-          void moveConversation(conversation, projectId);
-        }}
-        onRename={() => setEditTarget({ conversation, mode: 'rename' })}
-        onReorderConversation={handleReorderConversation}
-        onSelect={() => requestSelectConversation(conversation.id)}
-        onTogglePinned={() => void togglePinned(conversation)}
-        projects={projects}
-        viewMode={viewMode}
+          disabled={isBusy}
+          isAiWorking={isConversationAiWorking(conversation.id)}
+          onArchive={() => void archiveConversation(conversation)}
+          onDelete={() => requestConversationDelete(conversation)}
+          onDuplicate={() => handleDuplicateConversation(conversation)}
+          onExport={(format) => void exportConversation(conversation, format)}
+          onInlineRename={(title) => saveTitle(conversation.id, title)}
+          onMoveToChats={() => {
+            handleMoveConversationToFolder(conversation, null);
+            void moveConversation(conversation, null);
+          }}
+          onMoveToFolder={(folderId) => handleMoveConversationToFolder(conversation, folderId)}
+          onMoveToProject={(projectId) => {
+            handleMoveConversationToFolder(conversation, null);
+            void moveConversation(conversation, projectId);
+          }}
+          onRename={() => setEditTarget({ conversation, mode: 'rename' })}
+          onReorderConversation={handleReorderConversation}
+          onSelect={() => requestSelectConversation(conversation.id)}
+          onTogglePinned={() => void togglePinned(conversation)}
+          projects={projects}
+          viewMode={viewMode}
       />
       </div>
     ));
@@ -704,11 +729,11 @@ export function ConversationSidebar({
 
         <section
           aria-label={t('statisticsConversations')}
-          className="openchat-scroll-area conversation-sidebar-scroll-area min-w-0 flex-1 px-2.5 pb-4 pt-1"
+          className="openchat-scroll-area conversation-sidebar-scroll-area min-w-0 flex-1 px-3 pb-4 pt-1.5"
           onKeyDown={handleScrollAreaKeyDown}
           ref={scrollAreaRef}
         >
-          <div className="grid gap-4">
+          <div className="grid gap-3">
             {feedback ? (
               <p
                 className={`rounded-button border border-border bg-surface px-3 py-2 text-xs ${feedback.success ? 'text-success' : 'text-destructive'}`}
@@ -780,7 +805,7 @@ export function ConversationSidebar({
                         onCloseMobile?.();
                       })
                     }
-                    onDelete={(conversation) => setDeleteTarget(conversation)}
+                    onDelete={requestConversationDelete}
                     onDropConversationToProject={dropConversationToProject}
                     onDuplicate={handleDuplicateConversation}
                     onExport={(conversation, format) => void exportConversation(conversation, format)}
@@ -788,7 +813,6 @@ export function ConversationSidebar({
                     onMoveToChats={(conversation) => void moveConversation(conversation, null)}
                     onMoveToFolder={(conversation, folderId) => handleMoveConversationToFolder(conversation, folderId)}
                     onMoveToProject={(conversation, projectId) => void moveConversation(conversation, projectId)}
-                    onOpenOptions={setProjectOptionsTarget}
                     onRename={(conversation) => setEditTarget({ conversation, mode: 'rename' })}
                     onRetry={() => void refreshProjects().catch(() => showFeedback('projectLoadFailed'))}
                     onSelectConversation={(id) => requestSelectConversation(id)}
@@ -1022,7 +1046,7 @@ export function ConversationSidebar({
                       {unassignedConversations.length === 0 ? (
                         <div className="px-3 py-2 text-xs text-secondary-text">{t('noChatsTitle')}</div>
                       ) : recencyBuckets.length > 0 ? (
-                        <ul className="grid gap-3.5">
+                        <ul className="grid gap-3">
                           {recencyBuckets.map((bucket) => (
                             <li className="grid gap-0.5" key={bucket.id}>
                               <div className="px-3 pb-1 text-xs font-medium text-secondary-text/70 select-none">
@@ -1122,59 +1146,6 @@ export function ConversationSidebar({
             />
           </Suspense>
         ) : null}
-        {projectOptionsTarget ? (
-          <Suspense
-            fallback={
-              <Dialog
-                onOpenChange={(open) => {
-                  if (!open) setProjectOptionsTarget(null);
-                }}
-                open
-                title={t('projectOptionsTitle')}
-              >
-                <p aria-live="polite" className="py-8 text-center text-sm text-secondary-text" role="status">
-                  {t('projectLoading')}
-                </p>
-              </Dialog>
-            }
-          >
-            <ProjectOptionsDialog
-              onOpenChange={(open) => {
-                if (!open) setProjectOptionsTarget(null);
-              }}
-              onUseWorktree={async (path, branch) => {
-                if (!projectOptionsTarget) return;
-                onRequestTemporaryExit(async () => {
-                  const existing = useChatStore
-                    .getState()
-                    .projects.find(
-                      (project) => normalizeProjectPath(project.folderPath) === normalizeProjectPath(path),
-                    );
-                  if (existing) {
-                    startNewChat(existing.id);
-                    return;
-                  }
-                  const folder = await selectProjectFolder({ title: t('chooseProjectFolder'), initialPath: path });
-                  if (!folder) return;
-                  try {
-                    await createProject(`${projectOptionsTarget.name} (${branch})`, folder.selectionId);
-                  } finally {
-                    await discardProjectFolderSelection(folder.selectionId);
-                  }
-                  const created = useChatStore
-                    .getState()
-                    .projects.find(
-                      (project) => normalizeProjectPath(project.folderPath) === normalizeProjectPath(folder.folderPath),
-                    );
-                  if (!created) throw new Error('The worktree project could not be loaded.');
-                  startNewChat(created.id);
-                });
-              }}
-              open
-              project={projectOptionsTarget}
-            />
-          </Suspense>
-        ) : null}
         <ConversationSidebarEditDialog
           conversation={editTarget?.conversation ?? null}
           mode={editTarget?.mode ?? null}
@@ -1186,7 +1157,11 @@ export function ConversationSidebar({
         />
         <Dialog
           onOpenChange={(open) => {
-            if (!open) setDeleteTarget(null);
+            if (!open) {
+              setDeleteTarget(null);
+              setDontAskBeforeDeleting(false);
+              setDeletePreferenceError(null);
+            }
           }}
           open={deleteTarget !== null}
           title={t('confirmDeleteConversationTitle')}
@@ -1196,6 +1171,22 @@ export function ConversationSidebar({
               <p className="text-sm text-secondary-text">
                 {t('confirmDeleteConversation', { title: deleteTarget.title })}
               </p>
+              <label
+                className="flex w-fit cursor-pointer items-center gap-2 text-sm text-secondary-text"
+                htmlFor={deleteDontAskCheckboxId}
+              >
+                <Checkbox
+                  checked={dontAskBeforeDeleting}
+                  id={deleteDontAskCheckboxId}
+                  onChange={(event) => setDontAskBeforeDeleting(event.currentTarget.checked)}
+                />
+                <span>{t('deleteConversationDontAskAgain')}</span>
+              </label>
+              {deletePreferenceError ? (
+                <p className="text-xs text-destructive" role="alert">
+                  {deletePreferenceError}
+                </p>
+              ) : null}
               <div className="flex justify-end gap-2 border-t border-border pt-4">
                 <Button disabled={isBusy} onClick={() => setDeleteTarget(null)} variant="ghost">
                   {t('cancel')}

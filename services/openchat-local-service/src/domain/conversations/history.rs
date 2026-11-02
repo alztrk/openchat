@@ -365,6 +365,11 @@ pub(crate) fn tool_activity_summary_segments(message: &StoredMessage) -> Vec<(St
         .collect()
 }
 
+#[allow(dead_code)]
+pub(crate) fn summary_text(message: &StoredMessage) -> String {
+    summary_text_with_tool_output_limit(message, None)
+}
+
 pub(crate) fn summary_text_with_tool_output_limit(
     message: &StoredMessage,
     tool_output_limit: Option<usize>,

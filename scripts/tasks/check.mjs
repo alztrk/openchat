@@ -16,7 +16,7 @@ export const check = {
       runNpmAsync(['exec', '--', 'tsc', '--noEmit']),
       runCommand('cargo', ['fmt', '--all', '--', '--check'], { cwd: getWorkspaceRoot() }),
       runCommand('cargo', ['check', '--workspace'], { cwd: getWorkspaceRoot() }),
-      runCommand('cargo', ['test', '--workspace', '--features', 'openchat-local-service/desktop-profile-test-support', '--', '--test-threads=0'], {
+      runCommand('cargo', ['test', '--workspace', '--features', 'openchat-local-service/desktop-profile-test-support'], {
         cwd: getWorkspaceRoot(),
       }),
     ]);

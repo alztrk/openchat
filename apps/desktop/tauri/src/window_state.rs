@@ -8,9 +8,7 @@ use std::{
     io::Write,
     path::PathBuf,
 };
-use tauri::{
-    AppHandle, Manager, PhysicalPosition, PhysicalSize, Position, Size, WebviewWindow, Window,
-};
+use tauri::{AppHandle, Manager, WebviewWindow, Window};
 
 const WINDOW_STATE_FILE_NAME: &str = "window-state.json";
 
@@ -49,24 +47,10 @@ impl Default for WindowStateRecord {
     }
 }
 
-/// Restores window size, position, and maximized state from the window-state file.
-pub fn restore_window_state(window: &WebviewWindow) {
-    if let Some(state) = load_window_state(window.app_handle()) {
-        if state.maximized {
-            let _ = window.maximize();
-        } else {
-            if state.width >= MIN_WINDOW_WIDTH && state.height >= MIN_WINDOW_HEIGHT {
-                let _ = window.set_size(Size::Physical(PhysicalSize {
-                    width: state.width,
-                    height: state.height,
-                }));
-            }
-            let _ = window.set_position(Position::Physical(PhysicalPosition {
-                x: state.x,
-                y: state.y,
-            }));
-        }
-    }
+/// Starts the window maximized while keeping the native window frame.
+pub fn restore_window_state(window: &WebviewWindow) -> tauri::Result<()> {
+    window.maximize()?;
+    Ok(())
 }
 
 /// Persists the current window state to the window-state file.

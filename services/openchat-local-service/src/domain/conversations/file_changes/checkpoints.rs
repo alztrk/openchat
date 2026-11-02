@@ -5,7 +5,7 @@ use std::{
     ffi::OsString,
     io,
     path::{Path, PathBuf},
-    sync::{Arc, Mutex, MutexGuard},
+    sync::{Arc, Mutex},
 };
 
 use rusqlite::{OptionalExtension, params};
@@ -15,13 +15,13 @@ use similar::TextDiff;
 use uuid::Uuid;
 
 use super::{
-    FileChangeDelta, FileSnapshot, MAX_DIFF_LINES, MAX_DIFF_OUTPUT_BYTES, MAX_TEXT_DIFF_BYTES,
-    TrackingError, WorkspaceMutationGuard, as_text, capture_file_from_directory,
-    cleanup_pending_snapshot_blobs, ensure_no_symlink_path_from_directory, ensure_snapshot_blob,
-    lock_file_changes, open_workspace_directory, read_snapshot_blob,
-    remove_workspace_file_if_unchanged, safe_relative_path, sha256, unix_time_millis,
-    validate_change_id, validate_conversation_id, workspace_directory_matches_path,
-    write_workspace_file_if_unchanged,
+    FileChangeDelta, FileChangeLockGuard, FileSnapshot, MAX_DIFF_LINES, MAX_DIFF_OUTPUT_BYTES,
+    MAX_TEXT_DIFF_BYTES, TrackingError, WorkspaceMutationGuard, as_text,
+    capture_file_from_directory, cleanup_pending_snapshot_blobs,
+    ensure_no_symlink_path_from_directory, ensure_snapshot_blob, lock_file_changes,
+    open_workspace_directory, read_snapshot_blob, remove_workspace_file_if_unchanged,
+    safe_relative_path, sha256, unix_time_millis, validate_change_id, validate_conversation_id,
+    workspace_directory_matches_path, write_workspace_file_if_unchanged,
 };
 use crate::storage::{AppStorage, StorageConnection, StorageTransaction};
 
@@ -426,6 +426,7 @@ pub(crate) fn read_checkpoint_diff(
         .map_err(|_| TrackingError::StorageUnavailable)?;
     let file = load_checkpoint_file(&connection, conversation_id, checkpoint_id, file_id)?
         .ok_or(TrackingError::SnapshotUnavailable)?;
+    drop(connection);
     let before = read_state_content(
         storage.root(),
         file.before_exists,
@@ -854,7 +855,7 @@ fn apply_restore_plans(
     mut plans: Vec<RestorePlan>,
     restore_tool_name: &str,
     recovered_checkpoint_id: Option<&str>,
-    _file_change_guard: MutexGuard<'static, ()>,
+    _file_change_guard: FileChangeLockGuard,
 ) -> Result<Vec<super::FileChangeSummary>, CheckpointRestoreError> {
     let connection = storage
         .connect()

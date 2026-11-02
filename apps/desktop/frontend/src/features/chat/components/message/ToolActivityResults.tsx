@@ -17,10 +17,11 @@ export { formatToolPath, getRequestedToolPath } from './toolResultUtils';
 
 interface ToolActivityResultsProps {
   activity: ToolActivity;
-  onOpenFile?(path: string, content: string): void;
+  conversationId: string | null;
+  onOpenFile?: (path: string, content: string) => void;
 }
 
-export function ToolActivityResults({ activity, onOpenFile }: ToolActivityResultsProps) {
+export function ToolActivityResults({ activity, conversationId, onOpenFile }: ToolActivityResultsProps) {
   const { i18n, t } = useTranslation();
   const output = asRecord(activity.output);
   const requestedPath = getRequestedToolPath(activity);
@@ -38,7 +39,13 @@ export function ToolActivityResults({ activity, onOpenFile }: ToolActivityResult
   }
   if (activity.status === 'failed' || errorMessage) {
     if (isTerminalTool(activity.name) && output !== null) {
-      return <TerminalResult activity={activity} output={output} />;
+      return (
+        <TerminalResult
+          activity={activity}
+          compact={activity.name === 'execute_command' || activity.name === 'bash'}
+          output={output}
+        />
+      );
     }
     return <ToolResultNotice isError message={errorMessage ?? t('toolOperationFailed')} path={requestedPath} />;
   }
@@ -59,15 +66,16 @@ export function ToolActivityResults({ activity, onOpenFile }: ToolActivityResult
       return <FileListingResult activity={activity} output={output} requestedPath={requestedPath} />;
     case 'execute_command':
     case 'bash':
+      return <TerminalResult activity={activity} compact output={output} />;
     case 'run_project_task':
     case 'send_terminal_input':
       return <TerminalResult activity={activity} output={output} />;
     case 'search_files':
     case 'grep':
-      return <SearchResult activity={activity} output={output} />;
+      return <SearchResult activity={activity} onOpenFile={onOpenFile} output={output} />;
     case 'read_file':
     case 'read':
-      return <ReadResult onOpenFile={onOpenFile} output={output} />;
+      return <ReadResult output={output} />;
     case 'get_file_info':
       return <FileInfoResult output={output} locale={i18n.language} />;
     case 'write_file':
@@ -75,16 +83,16 @@ export function ToolActivityResults({ activity, onOpenFile }: ToolActivityResult
       return <WriteResult activity={activity} output={output} locale={i18n.language} />;
     case 'edit_file':
     case 'edit':
-      return <EditResult activity={activity} output={output} />;
+      return <EditResult activity={activity} conversationId={conversationId} />;
     case 'web_search':
-      return <WebSearchResult activity={activity} output={output} />;
+      return <WebSearchResult output={output} />;
     case 'git_status':
     case 'git_diff':
     case 'git_history':
       return <GitResult activity={activity} output={output} locale={i18n.language} />;
     case 'read_url_content':
     case 'read_url':
-      return <ReadUrlResult activity={activity} output={output} locale={i18n.language} />;
+      return <ReadUrlResult activity={activity} output={output} />;
     default:
       return null;
   }

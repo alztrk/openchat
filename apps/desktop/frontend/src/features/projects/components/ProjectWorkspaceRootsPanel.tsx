@@ -93,34 +93,39 @@ export function ProjectWorkspaceRootsPanel({ project }: ProjectWorkspaceRootsPan
         <p className="mt-1 text-xs text-secondary-text">{t('projectWorkspaceRootsDescription')}</p>
       </div>
       <ul className="grid gap-2">
-        {roots.map((rootPath, index) => (
-          <li
-            className="flex min-w-0 items-center gap-2 rounded-control border border-border bg-surface px-3 py-2"
-            key={rootPath}
-          >
-            <Folder aria-hidden="true" className="shrink-0 text-secondary-icon" size={15} />
-            <span className="min-w-0 flex-1 truncate font-code text-xs text-text" title={rootPath}>
-              {rootPath}
-            </span>
-            {index === 0 ? (
-              <span className="shrink-0 text-xs text-secondary-text">{t('projectWorkspaceRootPrimary')}</span>
-            ) : (
-              <Button
-                aria-label={t('projectWorkspaceRootRemove')}
-                disabled={removingPath !== null || isAdding}
-                onClick={() => void removeRoot(rootPath)}
-                size="small"
-                variant="ghost"
-              >
-                {removingPath === rootPath ? (
-                  <LoaderCircle aria-hidden="true" className="animate-spin motion-reduce:animate-none" size={14} />
-                ) : (
-                  <Trash2 aria-hidden="true" size={14} />
-                )}
-              </Button>
-            )}
-          </li>
-        ))}
+        {roots.map((rootPath, index) => {
+          const displayPath = displayProjectPath(rootPath);
+          return (
+            <li
+              className="flex min-w-0 items-center gap-2 rounded-control border border-border bg-surface px-3 py-2"
+              key={rootPath}
+            >
+              <Folder aria-hidden="true" className="shrink-0 text-secondary-icon" size={15} />
+              <span className="min-w-0 flex-1 truncate font-code text-xs text-text" title={displayPath}>
+                {displayPath}
+              </span>
+              {index === 0 ? (
+                <span className="shrink-0 rounded-control border border-border bg-raised px-2 py-1 text-xs text-secondary-text">
+                  {t('projectWorkspaceRootPrimary')}
+                </span>
+              ) : (
+                <Button
+                  aria-label={`${t('projectWorkspaceRootRemove')}: ${displayPath}`}
+                  disabled={removingPath !== null || isAdding}
+                  onClick={() => void removeRoot(rootPath)}
+                  size="small"
+                  variant="ghost"
+                >
+                  {removingPath === rootPath ? (
+                    <LoaderCircle aria-hidden="true" className="animate-spin motion-reduce:animate-none" size={14} />
+                  ) : (
+                    <Trash2 aria-hidden="true" size={14} />
+                  )}
+                </Button>
+              )}
+            </li>
+          );
+        })}
       </ul>
       {error ? (
         <p className="text-sm text-destructive" role="alert">
@@ -143,4 +148,8 @@ export function ProjectWorkspaceRootsPanel({ project }: ProjectWorkspaceRootsPan
       </Button>
     </section>
   );
+}
+
+function displayProjectPath(path: string): string {
+  return path.replace(/^\\\\\?\\UNC\\/i, '\\\\').replace(/^\\\\\?\\/, '');
 }

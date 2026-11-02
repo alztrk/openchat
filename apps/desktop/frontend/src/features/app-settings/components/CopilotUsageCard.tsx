@@ -1,4 +1,3 @@
-import type { TFunction } from 'i18next';
 import { CircleAlert, LoaderCircle, RefreshCw } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -33,7 +32,6 @@ export function CopilotUsageCard({
   const [refreshing, setRefreshing] = useState(false);
   const [failed, setFailed] = useState(false);
   const [needsSignIn, setNeedsSignIn] = useState(false);
-  const [loadedAt, setLoadedAt] = useState<number | null>(null);
   const latestRequest = useRef(0);
   const snapshotRef = useRef<CopilotUsageSnapshot | null>(null);
   const connectionRef = useRef<CopilotOAuthConnection | null>(null);
@@ -54,7 +52,6 @@ export function CopilotUsageCard({
         setConnection(null);
         setSnapshot(null);
         snapshotRef.current = null;
-        setLoadedAt(null);
         return;
       }
       connectionRef.current = status.connection;
@@ -63,7 +60,6 @@ export function CopilotUsageCard({
         setSnapshot(null);
         snapshotRef.current = null;
         setNeedsSignIn(true);
-        setLoadedAt(null);
         return;
       }
 
@@ -71,7 +67,6 @@ export function CopilotUsageCard({
       if (!isCurrent()) return;
       setSnapshot(usage);
       snapshotRef.current = usage;
-      setLoadedAt(Date.now());
     } catch (error) {
       if (!isCurrent()) return;
       setFailed(true);
@@ -108,9 +103,10 @@ export function CopilotUsageCard({
 
   const locale = i18n.resolvedLanguage ?? i18n.language;
   const accountName = connection?.name?.trim() || connection?.login || t('providerNameCopilot');
+  const premiumQuotas = snapshot?.quotas.filter((quota) => quota.kind === 'premiumInteractions') ?? [];
 
   return (
-    <Card className="grid gap-4" padding="comfortable">
+    <Card className="grid gap-2" padding="compact">
       <header className="flex min-w-0 items-start gap-3">
         <ProviderIcon className="mt-1" providerId="copilot" size={22} />
         <div className="min-w-0 flex-1">
@@ -156,24 +152,12 @@ export function CopilotUsageCard({
           </Button>
         </div>
       ) : snapshot !== null ? (
-        <div className="grid gap-4 border-t border-border pt-4">
-          <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
-            <div className="grid gap-1">
-              <span className="text-secondary-text">
-                {t('copilotUsageAccessType', { type: snapshot.accessType ?? t('unavailableValue') })}
-              </span>
-              {loadedAt !== null ? (
-                <span className="text-xs text-secondary-text">
-                  {t('usageUpdatedAt', { time: formatTimestamp(loadedAt, locale) })}
-                </span>
-              ) : null}
-            </div>
-          </div>
-          {snapshot.quotas.length === 0 ? (
+        <div className="grid gap-3">
+          {premiumQuotas.length === 0 ? (
             <p className="text-sm text-secondary-text">{t('copilotQuotaUnavailable')}</p>
           ) : (
             <div className="grid gap-4">
-              {snapshot.quotas.map((quota) => (
+              {premiumQuotas.map((quota) => (
                 <CopilotQuotaView
                   key={quota.id}
                   locale={locale}
@@ -211,9 +195,10 @@ function CopilotQuotaView({
   warningAtPercent: number;
 }) {
   const { t } = useTranslation();
-  const label = quotaLabel(quota, t);
+  const label = t('copilotQuotaPremiumInteractions');
   const remainingPercent = quota.unlimited === true ? null : quota.percentRemaining;
-  const meterValue = remainingPercent === null ? null : Math.min(100, Math.max(0, remainingPercent));
+  const usedPercent = remainingPercent === null ? null : 100 - remainingPercent;
+  const meterValue = usedPercent === null ? null : Math.min(100, Math.max(0, usedPercent));
   const entitlement = quota.entitlement !== null && quota.entitlement >= 0 ? quota.entitlement : null;
   const numberFormat = new Intl.NumberFormat(locale, { maximumFractionDigits: 2 });
 
@@ -232,7 +217,7 @@ function CopilotQuotaView({
       {meterValue !== null || entitlement !== null ? (
         <div className="flex items-center justify-between text-xs text-secondary-text">
           {meterValue !== null ? (
-            <span>{t('copilotQuotaRemainingPercent', { percent: Math.round(meterValue) })}</span>
+            <span>{t('usageUsedPercent', { percent: Math.round(meterValue) })}</span>
           ) : null}
           {entitlement !== null ? (
             <span>{t('copilotQuotaEntitlement', { count: numberFormat.format(entitlement) })}</span>
@@ -247,7 +232,7 @@ function CopilotQuotaView({
             aria-valuemax={100}
             aria-valuemin={0}
             aria-valuenow={meterValue}
-            aria-valuetext={t('copilotQuotaRemainingPercent', { percent: Math.round(meterValue) })}
+            aria-valuetext={t('usageUsedPercent', { percent: Math.round(meterValue) })}
             className="h-1.5 overflow-hidden rounded-full bg-selected"
             role="meter"
           >
@@ -255,15 +240,15 @@ function CopilotQuotaView({
           </div>
         </>
       ) : null}
-      {quota.resetAtUnixMs !== null ? (
+      {quota.kind === 'premiumInteractions' ? (
         <span className="text-xs text-secondary-text">
-          {t('copilotQuotaResetsAt', { time: formatTimestamp(quota.resetAtUnixMs, locale) })}
+          {t('copilotQuotaResetsAt', { time: formatTimestamp(nextMonthlyResetAt(), locale) })}
         </span>
       ) : null}
-      {remainingPercent !== null && 100 - remainingPercent >= warningAtPercent ? (
+      {usedPercent !== null && usedPercent >= warningAtPercent ? (
         <span className="text-xs text-warning" role="status">
           {t('quotaWarningReached', {
-            percent: Math.round(100 - remainingPercent),
+            percent: Math.round(usedPercent),
             threshold: warningAtPercent,
           })}
         </span>
@@ -272,17 +257,8 @@ function CopilotQuotaView({
   );
 }
 
-function quotaLabel(quota: CopilotQuotaSnapshot, t: TFunction): string {
-  switch (quota.kind) {
-    case 'chat':
-      return t('copilotQuotaChat');
-    case 'completions':
-      return t('copilotQuotaCompletions');
-    case 'premiumInteractions':
-      return t('copilotQuotaPremiumInteractions');
-    case 'other':
-      return t('copilotQuotaOther');
-  }
+function nextMonthlyResetAt(now = new Date()): number {
+  return new Date(now.getFullYear(), now.getMonth() + 1, 1).getTime();
 }
 
 function formatTimestamp(value: number, locale: string): string {

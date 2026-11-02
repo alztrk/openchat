@@ -55,10 +55,16 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
   },
   ref,
 ) {
-  const renderInput = (controlProps: InputControlProps) => (
+  const renderInput = ({
+    id: controlId,
+    'aria-describedby': controlDescription,
+    'aria-invalid': controlInvalid,
+  }: InputControlProps) => (
     <input
       {...props}
-      {...controlProps}
+      id={controlId}
+      aria-describedby={controlDescription}
+      aria-invalid={controlInvalid}
       className={cn(
         'w-full text-text outline-none placeholder:text-secondary-text focus-visible:ring-2 focus-visible:ring-focus disabled:cursor-not-allowed disabled:opacity-50',
         appearanceClasses[appearance],

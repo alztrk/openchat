@@ -257,7 +257,6 @@
   --spacing-dialog-search: min(58rem, calc(100vw - 2rem));
   --spacing-statistics-filter: min(32rem, calc(100vw - 2rem));
   --spacing-attachment-preview: 200px;
-  --spacing-usage-chart: 190px;
 
   --radius-control: 8px;
   --radius-tab: 6px;

@@ -3,23 +3,92 @@
 use std::{
     fs, io,
     path::{Path, PathBuf},
-    sync::{Mutex, OnceLock},
+    sync::{Mutex, MutexGuard, OnceLock},
+    thread,
+    time::{Duration, Instant},
 };
 
-use rusqlite::{TransactionBehavior, params};
+#[cfg(windows)]
+use windows_sys::Win32::{
+    Foundation::{CloseHandle, GetLastError, HANDLE, WAIT_ABANDONED, WAIT_OBJECT_0, WAIT_TIMEOUT},
+    System::Threading::{CreateMutexW, ReleaseMutex, WaitForSingleObject},
+};
+
+use rusqlite::{TransactionBehavior, params, params_from_iter, types::Value};
 
 use super::types::*;
 use super::workspace::{atomic_write, ensure_child_directory, read_bounded_file};
 use crate::storage::AppStorage;
 
 static FILE_CHANGE_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+const FILE_CHANGE_READ_LOCK_TIMEOUT: Duration = Duration::from_secs(4);
+#[cfg(windows)]
+const FILE_CHANGE_READ_LOCK_POLL_INTERVAL: Duration = Duration::from_millis(50);
+const SNAPSHOT_CLEANUP_BATCH_SIZE: i64 = 32;
+pub(crate) const SNAPSHOT_BLOB_BATCH_MAX_BYTES: usize = 16 * 1024 * 1024;
+pub(crate) const SNAPSHOT_BLOB_BATCH_MAX_COUNT: usize = 32;
+#[cfg(windows)]
+const FILE_CHANGE_MUTEX_NAME: &str = "Local\\OpenChat.FileChanges.Operation.v1";
 #[cfg(test)]
 static FILE_CHANGE_LOCK_WAIT_HOOK: OnceLock<
     Mutex<Option<(std::thread::ThreadId, std::sync::mpsc::SyncSender<()>)>>,
 > = OnceLock::new();
 
+pub(crate) struct FileChangeLockGuard {
+    #[cfg(windows)]
+    _shared_guard: SharedFileChangeLock,
+    _process_guard: MutexGuard<'static, ()>,
+}
+
+#[cfg(windows)]
+struct SharedFileChangeLock(HANDLE);
+
+#[cfg(windows)]
+impl SharedFileChangeLock {
+    fn acquire(timeout_ms: u32) -> Result<Option<Self>, TrackingError> {
+        let mut name = FILE_CHANGE_MUTEX_NAME.encode_utf16().collect::<Vec<_>>();
+        name.push(0);
+        // SAFETY: `name` is NUL-terminated UTF-16 and null attributes request the default DACL.
+        let handle = unsafe { CreateMutexW(std::ptr::null(), 0, name.as_ptr()) };
+        if handle.is_null() {
+            eprintln!(
+                "openchat-file-change-lock-diagnostic: create_failed win32_error={}",
+                unsafe { GetLastError() }
+            );
+            return Err(TrackingError::StorageUnavailable);
+        }
+
+        // SAFETY: `handle` is a live mutex handle owned by this acquisition attempt.
+        match unsafe { WaitForSingleObject(handle, timeout_ms) } {
+            WAIT_OBJECT_0 | WAIT_ABANDONED => Ok(Some(Self(handle))),
+            WAIT_TIMEOUT => {
+                // SAFETY: The mutex was not acquired, so only its owned handle is closed.
+                unsafe { CloseHandle(handle) };
+                Ok(None)
+            }
+            _ => {
+                let error = unsafe { GetLastError() };
+                // SAFETY: The mutex was not acquired, so only its owned handle is closed.
+                unsafe { CloseHandle(handle) };
+                eprintln!("openchat-file-change-lock-diagnostic: wait_failed win32_error={error}");
+                Err(TrackingError::StorageUnavailable)
+            }
+        }
+    }
+}
+
+#[cfg(windows)]
+impl Drop for SharedFileChangeLock {
+    fn drop(&mut self) {
+        // SAFETY: Callers acquire and release this mutex on the same service thread.
+        unsafe { ReleaseMutex(self.0) };
+        // SAFETY: This guard owns the live handle returned by CreateMutexW.
+        unsafe { CloseHandle(self.0) };
+    }
+}
+
 /// Serializes file-change operations with synchronous built-in file mutations.
-pub(crate) fn lock_file_changes() -> Result<std::sync::MutexGuard<'static, ()>, TrackingError> {
+pub(crate) fn lock_file_changes() -> Result<FileChangeLockGuard, TrackingError> {
     let lock = FILE_CHANGE_LOCK.get_or_init(|| Mutex::new(()));
     #[cfg(test)]
     let guard = match lock.try_lock() {
@@ -32,7 +101,75 @@ pub(crate) fn lock_file_changes() -> Result<std::sync::MutexGuard<'static, ()>, 
     };
     #[cfg(not(test))]
     let guard = lock.lock();
-    guard.map_err(|_| TrackingError::StorageUnavailable)
+    let process_guard = guard.map_err(|_| TrackingError::StorageUnavailable)?;
+    #[cfg(windows)]
+    {
+        let shared_guard =
+            SharedFileChangeLock::acquire(u32::MAX)?.ok_or(TrackingError::StorageUnavailable)?;
+        Ok(FileChangeLockGuard {
+            _shared_guard: shared_guard,
+            _process_guard: process_guard,
+        })
+    }
+    #[cfg(not(windows))]
+    {
+        Ok(FileChangeLockGuard {
+            _process_guard: process_guard,
+        })
+    }
+}
+
+/// Waits briefly for a read-only file-change operation, then returns a retryable busy state.
+pub(crate) fn try_lock_file_changes_for_read(
+    cancellation: &tokio::sync::watch::Receiver<bool>,
+) -> Result<FileChangeLockGuard, TrackingError> {
+    let lock = FILE_CHANGE_LOCK.get_or_init(|| Mutex::new(()));
+    let started = Instant::now();
+    loop {
+        if *cancellation.borrow() {
+            return Err(TrackingError::Cancelled);
+        }
+        match lock.try_lock() {
+            Ok(process_guard) => {
+                #[cfg(windows)]
+                {
+                    let remaining = FILE_CHANGE_READ_LOCK_TIMEOUT
+                        .checked_sub(started.elapsed())
+                        .unwrap_or_default();
+                    let wait_interval = remaining.min(FILE_CHANGE_READ_LOCK_POLL_INTERVAL);
+                    let timeout_ms = u32::try_from(wait_interval.as_millis())
+                        .map_err(|_| TrackingError::StorageUnavailable)?;
+                    let Some(shared_guard) = SharedFileChangeLock::acquire(timeout_ms)? else {
+                        if started.elapsed() < FILE_CHANGE_READ_LOCK_TIMEOUT {
+                            continue;
+                        }
+                        return Err(TrackingError::StorageBusy("file_change_lock_busy"));
+                    };
+                    return Ok(FileChangeLockGuard {
+                        _shared_guard: shared_guard,
+                        _process_guard: process_guard,
+                    });
+                }
+                #[cfg(not(windows))]
+                {
+                    return Ok(FileChangeLockGuard {
+                        _process_guard: process_guard,
+                    });
+                }
+            }
+            Err(std::sync::TryLockError::WouldBlock)
+                if started.elapsed() < FILE_CHANGE_READ_LOCK_TIMEOUT =>
+            {
+                thread::sleep(Duration::from_millis(10));
+            }
+            Err(std::sync::TryLockError::WouldBlock) => {
+                return Err(TrackingError::StorageBusy("file_change_lock_busy"));
+            }
+            Err(std::sync::TryLockError::Poisoned(_)) => {
+                return Err(TrackingError::StorageUnavailable);
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -69,42 +206,105 @@ pub(crate) fn ensure_snapshot_blob(
     storage: &AppStorage,
     content: &[u8],
 ) -> Result<String, TrackingError> {
-    if content.len() > MAX_SNAPSHOT_FILE_BYTES as usize {
-        return Err(TrackingError::SnapshotUnavailable);
+    ensure_snapshot_blobs(storage, &[content])?
+        .into_iter()
+        .next()
+        .ok_or(TrackingError::StorageUnavailable)
+}
+
+/// Registers and writes a bounded group of content-addressed snapshots with one database lease.
+pub(crate) fn ensure_snapshot_blobs(
+    storage: &AppStorage,
+    contents: &[&[u8]],
+) -> Result<Vec<String>, TrackingError> {
+    if contents.is_empty() {
+        return Ok(Vec::new());
     }
-    let hash = sha256(content);
-    let path = snapshot_blob_path(storage.root(), &hash, true)?
-        .ok_or(TrackingError::StorageUnavailable)?;
-    let connection = storage
-        .connect()
-        .map_err(|_| TrackingError::StorageUnavailable)?;
-    connection
-        .execute(
-            "INSERT INTO file_change_blobs (hash, size_bytes, state, created_at_unix_ms)
-             VALUES (?1, ?2, 'writing', ?3)
-             ON CONFLICT(hash) DO UPDATE SET
-                state = CASE WHEN file_change_blobs.state = 'pending'
-                             THEN 'writing' ELSE file_change_blobs.state END,
-                created_at_unix_ms = CASE WHEN file_change_blobs.state = 'pending'
-                                          THEN excluded.created_at_unix_ms
-                                          ELSE file_change_blobs.created_at_unix_ms END",
-            params![
-                hash,
-                i64::try_from(content.len()).map_err(|_| TrackingError::StorageUnavailable)?,
-                unix_time_millis()?,
-            ],
-        )
-        .map_err(|_| TrackingError::StorageUnavailable)?;
-    let stored_size = connection
-        .query_row(
-            "SELECT size_bytes FROM file_change_blobs WHERE hash = ?1",
-            [&hash],
-            |row| row.get::<_, i64>(0),
-        )
-        .map_err(|_| TrackingError::StorageUnavailable)?;
-    if usize::try_from(stored_size).ok() != Some(content.len()) {
-        return Err(TrackingError::StorageUnavailable);
+
+    let mut total_bytes = 0usize;
+    let mut hashes = Vec::with_capacity(contents.len());
+    let mut paths = Vec::with_capacity(contents.len());
+    for content in contents {
+        if content.len() > MAX_SNAPSHOT_FILE_BYTES as usize {
+            return Err(TrackingError::SnapshotUnavailable);
+        }
+        total_bytes = total_bytes
+            .checked_add(content.len())
+            .ok_or(TrackingError::SnapshotUnavailable)?;
+        if total_bytes > SNAPSHOT_BLOB_BATCH_MAX_BYTES
+            || contents.len() > SNAPSHOT_BLOB_BATCH_MAX_COUNT
+        {
+            return Err(TrackingError::SnapshotUnavailable);
+        }
+        let hash = sha256(content);
+        let path = snapshot_blob_path(storage.root(), &hash, true)?
+            .ok_or(TrackingError::StorageUnavailable)?;
+        hashes.push(hash);
+        paths.push(path);
     }
+
+    let placeholders = (0..contents.len())
+        .map(|index| {
+            let first = index * 3 + 1;
+            format!("(?{first}, ?{}, 'writing', ?{})", first + 1, first + 2)
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    let sql = format!(
+        "INSERT INTO file_change_blobs (hash, size_bytes, state, created_at_unix_ms)
+         VALUES {placeholders}
+         ON CONFLICT(hash) DO UPDATE SET
+            state = CASE WHEN file_change_blobs.state = 'pending'
+                         THEN 'writing' ELSE file_change_blobs.state END,
+            created_at_unix_ms = CASE WHEN file_change_blobs.state = 'pending'
+                                      THEN excluded.created_at_unix_ms
+                                      ELSE file_change_blobs.created_at_unix_ms END
+         RETURNING hash, size_bytes"
+    );
+    let created_at = unix_time_millis()?;
+    let mut values = Vec::with_capacity(contents.len() * 3);
+    for (hash, content) in hashes.iter().zip(contents) {
+        values.push(Value::Text(hash.clone()));
+        values.push(Value::Integer(
+            i64::try_from(content.len()).map_err(|_| TrackingError::StorageUnavailable)?,
+        ));
+        values.push(Value::Integer(created_at));
+    }
+
+    let mut connection = storage.connect().map_err(map_storage_error)?;
+    let transaction = connection
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(map_storage_error)?;
+    let mut rows = transaction
+        .query(&sql, params_from_iter(values.iter()))
+        .map_err(map_storage_error)?;
+    let mut stored_sizes = std::collections::HashMap::with_capacity(contents.len());
+    while let Some(row) = rows.next().map_err(map_storage_error)? {
+        stored_sizes.insert(
+            row.get::<_, String>(0).map_err(map_storage_error)?,
+            row.get::<_, i64>(1).map_err(map_storage_error)?,
+        );
+    }
+    drop(rows);
+    for (hash, content) in hashes.iter().zip(contents) {
+        let stored_size = stored_sizes
+            .get(hash)
+            .copied()
+            .ok_or(TrackingError::StorageUnavailable)?;
+        if usize::try_from(stored_size).ok() != Some(content.len()) {
+            return Err(TrackingError::StorageUnavailable);
+        }
+    }
+    transaction.commit().map_err(map_storage_error)?;
+    drop(connection);
+
+    for ((content, hash), path) in contents.iter().zip(&hashes).zip(&paths) {
+        write_snapshot_blob(path, content, hash)?;
+    }
+    Ok(hashes)
+}
+
+fn write_snapshot_blob(path: &Path, content: &[u8], hash: &str) -> Result<(), TrackingError> {
     match fs::symlink_metadata(&path) {
         Ok(metadata) if metadata.file_type().is_symlink() || !metadata.is_file() => {
             return Err(TrackingError::StorageUnavailable);
@@ -132,7 +332,7 @@ pub(crate) fn ensure_snapshot_blob(
         }
         Err(_) => return Err(TrackingError::StorageUnavailable),
     }
-    Ok(hash)
+    Ok(())
 }
 
 pub(crate) fn read_snapshot_blob(data_root: &Path, hash: &str) -> Result<Vec<u8>, TrackingError> {
@@ -186,15 +386,12 @@ pub(crate) fn snapshot_blob_path(
 }
 
 pub(crate) fn cleanup_pending_snapshot_blobs(storage: &AppStorage) -> Result<(), TrackingError> {
-    let mut connection = storage
+    let connection = storage
         .connect()
-        .map_err(|_| TrackingError::StorageUnavailable)?;
-    let transaction = connection
-        .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(|_| TrackingError::StorageUnavailable)?;
     let stale_writing_before = unix_time_millis()?.saturating_sub(5 * 60 * 1000);
     let hashes = {
-        let mut statement = transaction
+        let mut statement = connection
             .prepare(
                 "SELECT hash FROM file_change_blobs AS blobs
                  WHERE (state = 'pending' OR (state = 'writing' AND created_at_unix_ms < ?1))
@@ -205,15 +402,23 @@ pub(crate) fn cleanup_pending_snapshot_blobs(storage: &AppStorage) -> Result<(),
                    AND NOT EXISTS (
                     SELECT 1 FROM conversation_file_checkpoint_files AS files
                     WHERE files.before_blob_hash = blobs.hash OR files.after_blob_hash = blobs.hash
-                 )",
+                  )
+                 ORDER BY created_at_unix_ms, hash
+                 LIMIT ?2",
             )
             .map_err(|_| TrackingError::StorageUnavailable)?;
         statement
-            .query_map([stale_writing_before], |row| row.get::<_, String>(0))
+            .query_map(
+                params![stale_writing_before, SNAPSHOT_CLEANUP_BATCH_SIZE],
+                |row| row.get::<_, String>(0),
+            )
             .map_err(|_| TrackingError::StorageUnavailable)?
             .collect::<Result<Vec<_>, _>>()
             .map_err(|_| TrackingError::StorageUnavailable)?
     };
+    drop(connection);
+
+    let mut deleted_hashes = Vec::with_capacity(hashes.len());
     for hash in hashes {
         if let Some(path) = snapshot_blob_path(storage.root(), &hash, false)? {
             match fs::symlink_metadata(&path) {
@@ -225,6 +430,19 @@ pub(crate) fn cleanup_pending_snapshot_blobs(storage: &AppStorage) -> Result<(),
                 Err(_) => return Err(TrackingError::StorageUnavailable),
             }
         }
+        deleted_hashes.push(hash);
+    }
+    if deleted_hashes.is_empty() {
+        return Ok(());
+    }
+
+    let mut connection = storage
+        .connect()
+        .map_err(|_| TrackingError::StorageUnavailable)?;
+    let transaction = connection
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(|_| TrackingError::StorageUnavailable)?;
+    for hash in deleted_hashes {
         transaction
             .execute(
                 "DELETE FROM file_change_blobs WHERE hash = ?1

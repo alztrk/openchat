@@ -451,6 +451,8 @@ export function ConversationSidebarRow({
   return (
     <li
       className={`conversation-sidebar-virtual-row group relative flex w-full min-w-0 max-w-full items-center rounded-button transition-colors duration-quick select-none cursor-pointer hover:z-10 focus-within:z-10 ${
+        currentProjectId !== null ? 'conversation-sidebar-project-thread-row' : ''
+      } ${
         viewMode === 'detailed' ? 'min-h-12' : 'min-h-9'
       } ${isReorderDropTarget ? 'ring-1 ring-accent/70 bg-accent/5' : ''} ${
         active
@@ -525,23 +527,16 @@ export function ConversationSidebarRow({
           {/* biome-ignore lint/a11y/useSemanticElements: The row contains nested action buttons, so it cannot be a native button. */}
           <div
             aria-current={active ? 'page' : undefined}
-            className={`min-w-0 flex-1 flex items-center justify-start gap-2 rounded-button bg-transparent px-3 text-left text-settings-description transition-all duration-quick hover:bg-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus ${
+            className={`conversation-sidebar-row-title min-w-0 flex-1 flex items-center justify-start gap-2 rounded-button bg-transparent px-3 text-left text-settings-description transition-all duration-quick hover:bg-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus ${
               canDrag ? 'cursor-grab active:cursor-grabbing' : ''
             } ${viewMode === 'detailed' ? 'min-h-12 py-1.5' : 'min-h-9 py-1.5'} ${
               active
                 ? 'font-medium text-text'
                 : 'font-normal text-text/80 group-hover:text-text group-focus-within:text-text'
-            } ${
-              menuOpen
-                ? archived
-                  ? 'pr-16'
-                  : 'pr-22'
-                : archived
-                  ? 'group-hover:pr-16 group-focus-within:pr-16'
-                  : 'group-hover:pr-22 group-focus-within:pr-22'
             }`}
             data-sidebar-nav-item="true"
             draggable={canDrag}
+            style={{ width: 'calc(100% - 4.5rem)', maxWidth: 'calc(100% - 4.5rem)' }}
             onClick={onSelect}
             onDoubleClick={(event) => {
               event.preventDefault();
@@ -578,12 +573,13 @@ export function ConversationSidebarRow({
             </span>
           </div>
           <div
-            className={`conversation-sidebar-row-actions absolute right-1.5 inset-y-0 flex items-center gap-0.5 transition-opacity duration-quick ${
+            className={`conversation-sidebar-row-actions pointer-events-none flex items-center gap-0.5 opacity-0 transition-opacity duration-quick ${
               menuOpen
                 ? 'pointer-events-auto opacity-100'
-                : 'pointer-events-none opacity-0 group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100'
+                : 'group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100'
             }`}
             draggable={false}
+            aria-label={t('moreOptions')}
             role="toolbar"
             onDragStart={(event) => {
               event.preventDefault();
@@ -592,43 +588,23 @@ export function ConversationSidebarRow({
             onMouseDown={(event) => event.stopPropagation()}
             onPointerDown={(event) => event.stopPropagation()}
           >
-            {!archived ? (
-              <Button
-                aria-label={conversation.isPinned ? t('unpinConversation') : t('pinConversation')}
-                className="conversation-sidebar-pin-action size-7 shrink-0 rounded-control text-secondary-icon hover:bg-surface/80 hover:text-text"
-                disabled={disabled}
-                onClick={onTogglePinned}
-                size="icon"
-                title={conversation.isPinned ? t('unpinConversationButtonTitle') : t('pinConversationButtonTitle')}
-                variant="ghost"
-              >
-                {conversation.isPinned ? (
-                  <Pin aria-hidden="true" size={13.5} />
-                ) : (
-                  <PinOff aria-hidden="true" size={13.5} />
-                )}
-              </Button>
-            ) : null}
             <Button
-              aria-label={archived ? t('restoreConversation') : t('archiveConversation')}
-              className="size-7 shrink-0 rounded-control text-secondary-icon hover:bg-surface/80 hover:text-text"
+              aria-label={t('deleteConversation')}
+              className="size-7 shrink-0 rounded-control border border-border bg-surface text-secondary-icon hover:bg-destructive/10 hover:text-destructive"
               disabled={disabled}
-              onClick={onArchive}
+              onClick={() => runAction(onDelete)}
               size="icon"
-              title={archived ? t('restoreConversation') : t('archiveConversation')}
+              title={t('deleteConversation')}
+              type="button"
               variant="ghost"
             >
-              {archived ? (
-                <ArchiveRestore aria-hidden="true" size={13.5} />
-              ) : (
-                <Archive aria-hidden="true" size={13.5} />
-              )}
+              <Trash2 aria-hidden="true" size={13.5} />
             </Button>
             <Button
               aria-expanded={menuOpen}
               aria-haspopup="menu"
               aria-label={t('moreOptions')}
-              className={`conversation-sidebar-overflow-action size-7 shrink-0 rounded-control hover:bg-surface/80 hover:text-text ${
+              className={`conversation-sidebar-overflow-action size-7 shrink-0 rounded-control border border-border bg-surface hover:bg-surface/80 hover:text-text ${
                 menuOpen ? 'bg-surface/90 text-text' : 'text-secondary-icon'
               }`}
               data-conversation-menu-trigger="true"
@@ -832,13 +808,6 @@ export function ConversationSidebarRow({
                 label={archived ? t('restoreConversation') : t('archiveConversation')}
                 onClick={() => runAction(onArchive)}
               />
-              <MenuAction
-                destructive
-                disabled={disabled}
-                icon={Trash2}
-                label={t('deleteConversation')}
-                onClick={() => runAction(onDelete)}
-              />
             </div>,
             document.body,
           )
@@ -851,14 +820,13 @@ interface MenuActionProps {
   icon: LucideIcon;
   label: string;
   disabled: boolean;
-  destructive?: boolean;
   onClick(): void;
 }
 
-function MenuAction({ icon: Icon, label, disabled, destructive = false, onClick }: MenuActionProps) {
+function MenuAction({ icon: Icon, label, disabled, onClick }: MenuActionProps) {
   return (
     <Button
-      className={`min-h-8 w-full justify-start gap-2 rounded-control px-2.5 text-left text-xs font-medium transition-colors hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus disabled:opacity-45 ${destructive ? 'text-destructive' : 'text-secondary-text hover:text-text'}`}
+      className="min-h-8 w-full justify-start gap-2 rounded-control px-2.5 text-left text-xs font-medium text-secondary-text transition-colors hover:bg-hover hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus disabled:opacity-45"
       disabled={disabled}
       onClick={onClick}
       role="menuitem"

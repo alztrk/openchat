@@ -201,25 +201,20 @@ pub fn conversation_messages(
     storage: &AppStorage,
     conversation_id: &str,
 ) -> rusqlite::Result<Vec<StoredMessage>> {
-    let database = storage.connect()?;
-    conversation_messages_on_connection(&database, storage.root(), conversation_id)
-}
-
-pub fn conversation_messages_on_connection(
-    database: &StorageConnection<'_>,
-    storage_root: &std::path::Path,
-    conversation_id: &str,
-) -> rusqlite::Result<Vec<StoredMessage>> {
-    let mut statement = database.prepare(
-        "SELECT id, role, content, status, output_tokens, tool_activities FROM messages
-         WHERE conversation_id = ?1 AND role IN ('user', 'assistant')
-         ORDER BY created_at ASC, id ASC",
-    )?;
-    let storage_root = storage_root.to_path_buf();
-    let rows = statement.query_map([conversation_id], |row| {
-        stored_message_from_row(row, &storage_root, conversation_id)
-    })?;
-    rows.collect()
+    let rows = {
+        let database = storage.connect()?;
+        let mut statement = database.prepare(
+            "SELECT id, role, content, status, output_tokens, tool_activities FROM messages
+             WHERE conversation_id = ?1 AND role IN ('user', 'assistant')
+             ORDER BY created_at ASC, id ASC",
+        )?;
+        statement
+            .query_map([conversation_id], stored_message_row_from_sql)?
+            .collect::<rusqlite::Result<Vec<_>>>()?
+    };
+    rows.into_iter()
+        .map(|row| stored_message_from_values(row, storage.root(), conversation_id))
+        .collect()
 }
 
 pub fn conversation_messages_from_boundary(
@@ -227,70 +222,88 @@ pub fn conversation_messages_from_boundary(
     conversation_id: &str,
     boundary_message_id: &str,
 ) -> rusqlite::Result<Option<Vec<StoredMessage>>> {
-    let database = storage.connect()?;
-    let Some(boundary_created_at) = database
-        .query_row(
-            "SELECT COALESCE(created_at, 0) FROM messages
-             WHERE conversation_id = ?1 AND id = ?2",
-            params![conversation_id, boundary_message_id],
-            |row| row.get::<_, i64>(0),
-        )
-        .optional()?
-    else {
-        return Ok(None);
-    };
-    let previous_message = database
-        .query_row(
-            "SELECT COALESCE(created_at, 0), id FROM messages
-             WHERE conversation_id = ?1 AND role IN ('user', 'assistant')
-               AND (COALESCE(created_at, 0) < ?2
-                    OR (COALESCE(created_at, 0) = ?2 AND id < ?3))
-             ORDER BY COALESCE(created_at, 0) DESC, id DESC
-             LIMIT 1",
-            params![conversation_id, boundary_created_at, boundary_message_id],
-            |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)),
-        )
-        .optional()?;
-    let (start_created_at, start_message_id) =
-        previous_message.unwrap_or_else(|| (boundary_created_at, boundary_message_id.to_owned()));
+    let rows = {
+        let database = storage.connect()?;
+        let Some(boundary_created_at) = database
+            .query_row(
+                "SELECT COALESCE(created_at, 0) FROM messages
+                 WHERE conversation_id = ?1 AND id = ?2",
+                params![conversation_id, boundary_message_id],
+                |row| row.get::<_, i64>(0),
+            )
+            .optional()?
+        else {
+            return Ok(None);
+        };
+        let previous_message = database
+            .query_row(
+                "SELECT COALESCE(created_at, 0), id FROM messages
+                 WHERE conversation_id = ?1 AND role IN ('user', 'assistant')
+                   AND (COALESCE(created_at, 0) < ?2
+                        OR (COALESCE(created_at, 0) = ?2 AND id < ?3))
+                 ORDER BY COALESCE(created_at, 0) DESC, id DESC
+                 LIMIT 1",
+                params![conversation_id, boundary_created_at, boundary_message_id],
+                |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)),
+            )
+            .optional()?;
+        let (start_created_at, start_message_id) = previous_message
+            .unwrap_or_else(|| (boundary_created_at, boundary_message_id.to_owned()));
 
-    let mut statement = database.prepare(
-        "SELECT id, role, content, status, output_tokens, tool_activities FROM messages
-         WHERE conversation_id = ?1 AND role IN ('user', 'assistant')
-           AND (COALESCE(created_at, 0) > ?2
-                OR (COALESCE(created_at, 0) = ?2 AND id >= ?3))
-         ORDER BY COALESCE(created_at, 0) ASC, id ASC",
-    )?;
-    let storage_root = storage.root().to_path_buf();
-    let rows = statement.query_map(
-        params![conversation_id, start_created_at, start_message_id],
-        |row| stored_message_from_row(row, &storage_root, conversation_id),
-    )?;
-    rows.collect::<rusqlite::Result<Vec<_>>>().map(Some)
+        let mut statement = database.prepare(
+            "SELECT id, role, content, status, output_tokens, tool_activities FROM messages
+             WHERE conversation_id = ?1 AND role IN ('user', 'assistant')
+               AND (COALESCE(created_at, 0) > ?2
+                    OR (COALESCE(created_at, 0) = ?2 AND id >= ?3))
+             ORDER BY COALESCE(created_at, 0) ASC, id ASC",
+        )?;
+        statement
+            .query_map(
+                params![conversation_id, start_created_at, start_message_id],
+                stored_message_row_from_sql,
+            )?
+            .collect::<rusqlite::Result<Vec<_>>>()?
+    };
+    rows.into_iter()
+        .map(|row| stored_message_from_values(row, storage.root(), conversation_id))
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .map(Some)
 }
 
-fn stored_message_from_row(
-    row: &StorageRow,
+type StoredMessageRow = (String, String, String, String, Option<i64>, String);
+
+fn stored_message_row_from_sql(row: &StorageRow) -> rusqlite::Result<StoredMessageRow> {
+    Ok((
+        row.get(0)?,
+        row.get(1)?,
+        row.get(2)?,
+        row.get(3)?,
+        row.get(4)?,
+        row.get(5)?,
+    ))
+}
+
+fn stored_message_from_values(
+    row: StoredMessageRow,
     storage_root: &std::path::Path,
     conversation_id: &str,
 ) -> rusqlite::Result<StoredMessage> {
-    let tool_activities_json: String = row.get(5)?;
+    let (id, role, stored_content, status, output_tokens, tool_activities_json) = row;
     let tool_activities = serde_json::from_str(&tool_activities_json).map_err(|error| {
         rusqlite::Error::FromSqlConversionFailure(5, Type::Text, Box::new(error))
     })?;
-    let id: String = row.get(0)?;
     let (content, attachments) = crate::attachments::decode_message_content(
-        row.get(2)?,
+        stored_content,
         storage_root,
         conversation_id,
         &id,
     )?;
     Ok(StoredMessage {
         id,
-        role: row.get(1)?,
+        role,
         content,
-        status: row.get(3)?,
-        output_tokens: row.get(4)?,
+        status,
+        output_tokens,
         tool_activities,
         attachments,
     })
@@ -328,6 +341,9 @@ pub fn save_assistant_message_on_connection(
     database: &mut StorageConnection<'_>,
     message: AssistantMessageWrite<'_>,
 ) -> rusqlite::Result<()> {
+    if message.content.len() > crate::conversation_limits::MAXIMUM_CHAT_MESSAGE_CONTENT_BYTES {
+        return Err(message_size_limit_error("chat message content limit exceeded"));
+    }
     let elapsed_microseconds = message
         .elapsed
         .and_then(|elapsed| i64::try_from(elapsed.as_micros()).ok());
@@ -393,10 +409,23 @@ pub fn save_assistant_tool_checkpoint(
     snapshot: &ChatStreamSnapshot,
     activities: &[ToolActivity],
 ) -> rusqlite::Result<()> {
-    let activities_json = serde_json::to_string(activities)
-        .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
-    let database = storage.connect()?;
-    let existing_content = database
+    let content_limit = crate::conversation_limits::MAXIMUM_CHAT_MESSAGE_CONTENT_BYTES;
+    let metadata_limit = crate::conversation_limits::MAXIMUM_CHAT_MESSAGE_METADATA_BYTES;
+    let (activities_json, persisted_activity_count) =
+        serialize_bounded_tool_activities(activities, metadata_limit)?;
+    if snapshot.content.len() > content_limit {
+        log_rejected_tool_checkpoint(
+            storage,
+            "content_limit",
+            snapshot.content.len(),
+            activities_json.len(),
+            persisted_activity_count,
+        );
+        return Err(message_size_limit_error("chat message content limit exceeded"));
+    }
+    let mut database = storage.connect()?;
+    let transaction = database.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+    let existing_content = transaction
         .query_row(
             "SELECT content FROM messages
              WHERE conversation_id = ?1 AND id = ?2 AND role = 'assistant'",
@@ -409,7 +438,17 @@ pub fn save_assistant_tool_checkpoint(
         &snapshot.content,
     )
     .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
-    database.execute(
+    if content.len() > content_limit {
+        log_rejected_tool_checkpoint(
+            storage,
+            "content_limit",
+            content.len(),
+            activities_json.len(),
+            persisted_activity_count,
+        );
+        return Err(message_size_limit_error("chat message content limit exceeded"));
+    }
+    transaction.execute(
         "INSERT INTO messages (
             id, conversation_id, role, content, created_at, tool_activities, status
          ) VALUES (?1, ?2, 'assistant', ?3, ?4, ?5, 'streaming')
@@ -426,7 +465,86 @@ pub fn save_assistant_tool_checkpoint(
             activities_json,
         ],
     )?;
-    Ok(())
+    transaction.commit()
+}
+
+fn serialize_bounded_tool_activities(
+    activities: &[ToolActivity],
+    maximum_bytes: usize,
+) -> rusqlite::Result<(String, usize)> {
+    let mut encoded_activities = Vec::new();
+    let mut encoded_bytes = 2usize;
+
+    for activity in activities.iter().rev() {
+        let mut encoded = serde_json::to_string(activity)
+            .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
+        let separator_bytes = usize::from(!encoded_activities.is_empty());
+        if encoded_bytes
+            .saturating_add(separator_bytes)
+            .saturating_add(encoded.len())
+            > maximum_bytes
+        {
+            let mut compacted = activity.clone();
+            compacted.output = None;
+            compacted.file_changes.clear();
+            compacted.file_changes_error = None;
+            encoded = serde_json::to_string(&compacted)
+                .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
+            if encoded_bytes
+                .saturating_add(separator_bytes)
+                .saturating_add(encoded.len())
+                > maximum_bytes
+            {
+                compacted.arguments = serde_json::Value::Object(Default::default());
+                compacted.target_path = None;
+                encoded = serde_json::to_string(&compacted)
+                    .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
+            }
+        }
+
+        let next_bytes = encoded_bytes
+            .saturating_add(separator_bytes)
+            .saturating_add(encoded.len());
+        if next_bytes > maximum_bytes {
+            break;
+        }
+        encoded_bytes = next_bytes;
+        encoded_activities.push(encoded);
+    }
+
+    encoded_activities.reverse();
+    let mut output = String::with_capacity(encoded_bytes);
+    output.push('[');
+    for (index, activity) in encoded_activities.iter().enumerate() {
+        if index > 0 {
+            output.push(',');
+        }
+        output.push_str(activity);
+    }
+    output.push(']');
+    Ok((output, encoded_activities.len()))
+}
+
+fn message_size_limit_error(message: &'static str) -> rusqlite::Error {
+    rusqlite::Error::SqliteFailure(
+        rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_TOOBIG),
+        Some(message.to_owned()),
+    )
+}
+
+fn log_rejected_tool_checkpoint(
+    storage: &AppStorage,
+    reason: &'static str,
+    content_bytes: usize,
+    metadata_bytes: usize,
+    activity_count: usize,
+) {
+    if storage
+        .log_rejected_assistant_checkpoint(reason, content_bytes, metadata_bytes, activity_count)
+        .is_err()
+    {
+        eprintln!("assistant_checkpoint_diagnostic_write_failed");
+    }
 }
 
 pub fn create_title_job(storage: &AppStorage, job: NewTitleJob<'_>) -> rusqlite::Result<()> {

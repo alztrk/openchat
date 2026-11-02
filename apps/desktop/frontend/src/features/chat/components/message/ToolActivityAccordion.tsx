@@ -2,6 +2,7 @@ import type { TFunction } from 'i18next';
 import {
   Ban,
   Brain,
+  ChevronDown,
   CircleAlert,
   CircleCheck,
   CircleX,
@@ -31,11 +32,20 @@ import { Button } from '@shared/components';
 import {
   getConversationFileCheckpointRecoveryStatus,
   revertConversationFileCheckpointOperation,
+  type ChatFileChange,
 } from '@features/chat/data/chatFileChanges';
 import { LocalServiceError } from '@shared/lib/platform/local-service';
 import { formatJsonValue, type ToolActivity, type ToolActivityStatus } from './messageData';
 import { formatToolPath, getRequestedToolPath, ToolActivityResults } from './ToolActivityResults';
-import { isTerminalTool } from './toolResultUtils';
+import { getReadFileContent } from './ToolFileResults';
+import {
+  asRecord,
+  getReadFileLineRange,
+  getRequestedSearchQuery,
+  getSearchMatchCount,
+  isTerminalTool,
+  stringValue,
+} from './toolResultUtils';
 
 type TranslationKey = keyof typeof import('@shared/lib/i18n/locales/en.json');
 
@@ -79,6 +89,16 @@ const statusKeys: Record<ToolActivityStatus, TranslationKey> = {
   cancelled: 'toolCancelled',
 };
 
+const fileEditStatusKeys: Record<ToolActivityStatus, TranslationKey> = {
+  awaitingApproval: 'toolEditFileAwaitingApproval',
+  waitingForUser: 'toolEditFileWaitingForUser',
+  running: 'toolEditFileRunning',
+  completed: 'toolEditFileCompleted',
+  failed: 'toolEditFileFailed',
+  denied: 'toolEditFileDenied',
+  cancelled: 'toolEditFileCancelled',
+};
+
 interface ToolActivityAccordionProps {
   activity: ToolActivity;
   conversationId: string | null;
@@ -86,6 +106,7 @@ interface ToolActivityAccordionProps {
   onCheckpointRestored?: () => void;
   onOpenFileChanges?: () => void;
   onOpenFile?(path: string, content: string): void;
+  onOpenEditedFile?(change: ChatFileChange): void;
 }
 
 export function ToolActivityAccordion({
@@ -95,6 +116,7 @@ export function ToolActivityAccordion({
   onCheckpointRestored,
   onOpenFileChanges,
   onOpenFile,
+  onOpenEditedFile,
 }: ToolActivityAccordionProps) {
   const { t } = useTranslation();
   const recoveryCheckpointId = activity.recoveryCheckpointId;
@@ -118,8 +140,55 @@ export function ToolActivityAccordion({
     expandedRecovery.checkpointId === recoveryCheckpointId;
   const statusLabel = t(statusKeys[activity.status]);
   const toolLabel = toolName(activity.name, t);
+  const isFileEditTool = activity.name === 'edit_file' || activity.name === 'edit';
+  const isFileReadTool = activity.name === 'read_file' || activity.name === 'read';
+  const isFileSearchTool = activity.name === 'search_files' || activity.name === 'grep';
+  const isCommandExecutionTool = activity.name === 'execute_command' || activity.name === 'bash';
+  const isWebSearchTool = activity.name === 'web_search';
+  const isReadUrlTool = activity.name === 'read_url_content' || activity.name === 'read_url';
+  const isWebTool = isWebSearchTool || isReadUrlTool;
+  const showWebStatus = isWebTool && activity.status !== 'completed';
+  const webArgs = asRecord(activity.arguments);
+  const webOutput = asRecord(activity.output);
+  const webSearchQuery = isWebSearchTool
+    ? getRequestedSearchQuery(activity)
+    : null;
+  const webPageUrl = isReadUrlTool
+    ? stringValue(webOutput?.url) ?? stringValue(webArgs?.url) ?? activity.targetPath
+    : null;
+  const webSearchResultCount = isWebSearchTool && Array.isArray(webOutput?.results) ? webOutput.results.length : null;
+  const readUrlLength =
+    isReadUrlTool && typeof webOutput?.length === 'number' && Number.isSafeInteger(webOutput.length)
+      ? webOutput.length
+      : null;
+  const headingLabel = isFileEditTool
+    ? t(fileEditStatusKeys[activity.status])
+    : isFileReadTool && activity.status === 'completed'
+      ? t('toolReadFileCompleted')
+      : isFileSearchTool && activity.status === 'completed'
+        ? t('toolSearchFilesCompleted')
+        : isCommandExecutionTool &&
+            (activity.status === 'completed' || activity.status === 'failed' || activity.status === 'cancelled')
+          ? t('toolExecuteCommandCompleted')
+          : isWebSearchTool && activity.status === 'completed'
+            ? t('toolSearchFilesCompleted')
+            : isReadUrlTool && activity.status === 'completed'
+              ? t('toolReadFileCompleted')
+              : toolLabel;
   const requestedPath =
-    isTerminalTool(activity.name) || activity.name === 'computer_use' ? null : getRequestedToolPath(activity);
+    isTerminalTool(activity.name) || activity.name === 'computer_use' || isWebTool
+      ? null
+      : getRequestedToolPath(activity);
+  const requestedSearchQuery = isFileSearchTool ? getRequestedSearchQuery(activity) : null;
+  const searchMatchCount = isFileSearchTool ? getSearchMatchCount(activity) : null;
+  const commandArgs = asRecord(activity.arguments);
+  const requestedCommand = isCommandExecutionTool
+    ? stringValue(commandArgs?.command) ?? stringValue(asRecord(activity.output)?.command)
+    : null;
+  const readFileLineRange = isFileReadTool ? getReadFileLineRange(activity) : null;
+  const editedFile = isFileEditTool && requestedPath ? findEditedFile(activity, requestedPath) : null;
+  const toolFileName = requestedPath?.replaceAll('\\', '/').split('/').filter(Boolean).at(-1) ?? null;
+  const readFileContent = isFileReadTool ? getReadFileContent(activity.output) : null;
   const StatusIcon = statusIcon(activity.status);
   const ToolIcon = toolIcon(activity.name);
   const isOpen =
@@ -167,28 +236,159 @@ export function ToolActivityAccordion({
   };
 
   return (
-    <details className="openchat-native-disclosure rounded-card border border-border bg-surface" open={isOpen}>
+    <details className="group openchat-tool-accordion openchat-native-disclosure rounded-card border border-border bg-surface" open={isOpen}>
       <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-sm text-text [&::-webkit-details-marker]:hidden">
         <span className="flex size-7 shrink-0 items-center justify-center rounded-control bg-composer text-accent-icon">
           <ToolIcon aria-hidden="true" size={15} />
         </span>
-        <span className="min-w-0 flex-1 truncate font-semibold">{toolLabel}</span>
         <span
-          className="inline-flex shrink-0 items-center gap-1 rounded-full bg-composer px-2 py-1 text-xs text-secondary-text"
           aria-live="polite"
+          className={
+            isFileEditTool || isFileReadTool || isFileSearchTool || isCommandExecutionTool || isWebTool
+              ? 'shrink-0 font-semibold'
+              : 'min-w-0 flex-1 truncate font-semibold'
+          }
         >
-          <StatusIcon
-            aria-hidden="true"
-            className={activity.status === 'running' ? 'animate-spin' : undefined}
-            size={13}
-          />
-          {statusLabel}
+          {headingLabel}
         </span>
+        {isCommandExecutionTool && requestedCommand ? (
+          <span className="min-w-0 flex-1 break-words whitespace-pre-wrap text-xs text-secondary-text" title={requestedCommand}>
+            {requestedCommand}
+          </span>
+        ) : null}
+        {isFileEditTool && toolFileName ? (
+          editedFile && onOpenEditedFile ? (
+            <Button
+              aria-label={`${t('fileChangesView')}: ${editedFile.path}`}
+              className="h-6 min-h-0 min-w-0 flex-1 justify-start truncate bg-transparent px-0 text-xs text-secondary-text hover:bg-transparent hover:text-accent"
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                onOpenEditedFile(editedFile);
+              }}
+              size="small"
+              title={editedFile.path}
+              type="button"
+              variant="ghost"
+            >
+              {toolFileName}
+            </Button>
+          ) : (
+            <span className="min-w-0 flex-1 truncate text-xs text-secondary-text" title={requestedPath ?? undefined}>
+              {toolFileName}
+            </span>
+          )
+        ) : null}
+        {isFileReadTool && toolFileName && requestedPath ? (
+          onOpenFile && readFileContent !== null ? (
+            <Button
+              aria-label={t('workspaceFileContent', { name: requestedPath })}
+              className="h-6 min-h-0 min-w-0 flex-1 justify-start truncate bg-transparent px-0 text-xs text-secondary-text hover:bg-transparent hover:text-accent"
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                onOpenFile(requestedPath, readFileContent);
+              }}
+              size="small"
+              title={requestedPath}
+              type="button"
+              variant="ghost"
+            >
+              {toolFileName}
+            </Button>
+          ) : (
+            <span className="min-w-0 flex-1 truncate text-xs text-secondary-text" title={requestedPath}>
+              {toolFileName}
+            </span>
+          )
+        ) : null}
+        {isFileSearchTool && requestedSearchQuery ? (
+          <span className="min-w-0 flex-1 truncate text-xs text-secondary-text" title={requestedSearchQuery}>
+            {requestedSearchQuery}
+          </span>
+        ) : null}
+        {isFileSearchTool && searchMatchCount !== null ? (
+          <span className="shrink-0 text-xs text-secondary-text">
+            {t('toolSearchMatchCount', { count: searchMatchCount })}
+          </span>
+        ) : null}
+        {isWebSearchTool && webSearchQuery ? (
+          <span className="min-w-0 flex-1 truncate text-xs text-secondary-text" title={webSearchQuery}>
+            {webSearchQuery}
+          </span>
+        ) : null}
+        {isReadUrlTool && webPageUrl ? (
+          <span className="min-w-0 flex-1 truncate font-code text-xs text-secondary-text" title={webPageUrl}>
+            {webPageUrl}
+          </span>
+        ) : null}
+        {isWebSearchTool && webSearchResultCount !== null ? (
+          <span className="shrink-0 text-xs text-secondary-text">
+            {t('toolWebSearchResultCount', { count: webSearchResultCount })}
+          </span>
+        ) : null}
+        {isReadUrlTool && readUrlLength !== null ? (
+          <span className="shrink-0 text-xs text-secondary-text">{t('toolReadUrlLength', { count: readUrlLength })}</span>
+        ) : null}
+        {isFileReadTool && readFileLineRange !== null ? (
+          <span className="shrink-0 text-xs text-secondary-text">
+            {t('toolReadLineRange', readFileLineRange)}
+          </span>
+        ) : null}
+        {isFileEditTool ? (
+          <span
+            aria-label={
+              editedFile && editedFile.addedLines !== null && editedFile.removedLines !== null
+                ? t('fileChangesLineCounts', { added: editedFile.addedLines, removed: editedFile.removedLines })
+                : t('fileChangesSomeCountsUnavailable')
+            }
+            className="inline-flex shrink-0 gap-1 font-mono text-xs"
+            role="img"
+          >
+            {editedFile && editedFile.addedLines !== null && editedFile.removedLines !== null ? (
+              <>
+                <span className="text-success">+{editedFile.addedLines}</span>
+                <span className="text-destructive">−{editedFile.removedLines}</span>
+              </>
+            ) : (
+              <span className="text-secondary-text">{t('fileChangesSomeCountsUnavailable')}</span>
+            )}
+          </span>
+        ) : null}
+        {(!isFileEditTool && !isFileReadTool && !isFileSearchTool && !isCommandExecutionTool && !isWebTool) ||
+        showWebStatus ? (
+          <span
+            className="inline-flex shrink-0 items-center gap-1 rounded-full bg-composer px-2 py-1 text-xs text-secondary-text"
+            aria-live="polite"
+          >
+            <StatusIcon
+              aria-hidden="true"
+              className={activity.status === 'running' ? 'animate-spin' : undefined}
+              size={13}
+            />
+            {statusLabel}
+          </span>
+        ) : null}
+        <ChevronDown
+          aria-hidden="true"
+          className="ml-auto shrink-0 text-secondary-icon transition-transform group-open:rotate-180 motion-reduce:transition-none"
+          size={15}
+        />
       </summary>
-      <div className="grid gap-3 border-t border-border px-3 pb-3 pt-2">
-        {requestedPath ? <ToolValue label={t('toolPermissionTarget')} value={formatToolPath(requestedPath)} /> : null}
-        <ToolActivityResults activity={activity} onOpenFile={onOpenFile} />
-        {activity.fileChangesError ? (
+      <div
+        className={
+          isFileEditTool || isFileReadTool || isFileSearchTool || isCommandExecutionTool || isWebTool
+            ? isCommandExecutionTool
+              ? 'border-t border-border p-2'
+              : 'border-t border-border'
+            : 'grid gap-3 border-t border-border px-3 pb-3 pt-2'
+        }
+      >
+        {requestedPath && !isFileEditTool && !isFileReadTool && !isFileSearchTool ? (
+          <ToolValue label={t('toolPermissionTarget')} value={formatToolPath(requestedPath)} />
+        ) : null}
+        <ToolActivityResults activity={activity} conversationId={conversationId} onOpenFile={onOpenFile} />
+        {activity.fileChangesError && !isFileEditTool ? (
           <p className="text-sm text-destructive" role="alert">
             {t(
               activity.fileChangesError === 'recovery_unavailable'
@@ -324,6 +524,18 @@ function ToolValue({ label, value }: ToolValueProps) {
       </pre>
     </div>
   );
+}
+
+function findEditedFile(activity: ToolActivity, requestedPath: string) {
+  const normalizePath = (path: string) => path.replaceAll('\\', '/').toLowerCase();
+  const normalizedRequestedPath = normalizePath(requestedPath);
+  const exactMatch = activity.fileChanges.find((change) => normalizePath(change.path) === normalizedRequestedPath);
+  if (exactMatch) return exactMatch;
+
+  const fileName = normalizedRequestedPath.split('/').at(-1);
+  if (!fileName) return null;
+  const sameNameMatches = activity.fileChanges.filter((change) => normalizePath(change.path).split('/').at(-1) === fileName);
+  return sameNameMatches.length === 1 ? sameNameMatches[0] : null;
 }
 
 function statusIcon(status: ToolActivityStatus) {

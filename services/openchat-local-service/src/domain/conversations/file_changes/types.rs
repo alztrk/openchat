@@ -145,6 +145,45 @@ pub(crate) enum TrackingError {
     SnapshotUnavailable,
     /// The local tracking database could not be read or updated.
     StorageUnavailable,
+    /// The local tracking database failed with a classified SQLite or broker error.
+    StorageFailure(&'static str),
+    /// A bounded wait for a shared storage resource expired.
+    StorageBusy(&'static str),
+    /// The caller cancelled the read-only file-change operation.
+    Cancelled,
+}
+
+impl TrackingError {
+    pub(crate) fn diagnostic_code(&self) -> &'static str {
+        match self {
+            Self::WorkspaceUnavailable => "workspace_unavailable",
+            Self::WorkspaceTooLarge => "workspace_too_large",
+            Self::SnapshotUnavailable => "snapshot_unavailable",
+            Self::StorageUnavailable => "storage_unavailable",
+            Self::StorageFailure(code) => code,
+            Self::StorageBusy(code) => code,
+            Self::Cancelled => "operation_cancelled",
+        }
+    }
+}
+
+pub(crate) fn map_storage_error(error: rusqlite::Error) -> TrackingError {
+    let code = crate::storage::sqlite_error_code(&error);
+    if matches!(
+        code,
+        "sqlite_busy"
+            | "sqlite_busy_snapshot"
+            | "sqlite_busy_timeout"
+            | "sqlite_locked"
+            | "database_queue_full"
+            | "database_queue_wait_timeout"
+            | "storage_broker_timeout"
+            | "sqlite_io_error"
+    ) {
+        TrackingError::StorageBusy(code)
+    } else {
+        TrackingError::StorageFailure(code)
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -199,11 +238,19 @@ pub(crate) fn summary_for_entry(
     entry: &ManifestEntry,
     validate_current: bool,
 ) -> FileChangeSummary {
-    let mut status = entry.status.clone();
-    let approved = is_entry_approved(entry);
     let expected_matches =
         !validate_current || super::workspace::is_current_version(entry).unwrap_or(false);
-    if validate_current && !expected_matches && status != "reverted" {
+    summary_for_entry_with_expected_match(data_root, entry, expected_matches)
+}
+
+fn summary_for_entry_with_expected_match(
+    data_root: &Path,
+    entry: &ManifestEntry,
+    expected_matches: bool,
+) -> FileChangeSummary {
+    let mut status = entry.status.clone();
+    let approved = is_entry_approved(entry);
+    if !expected_matches && status != "reverted" {
         status = "conflict".to_owned();
     }
     let backup_available = !entry.baseline_exists

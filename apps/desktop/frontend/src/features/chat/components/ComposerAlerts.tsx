@@ -3,6 +3,7 @@ import { Button } from '@shared/components';
 import type { ChatAttachmentErrorCode } from '@features/chat/data/chatAttachments';
 import type { ChatErrorCode } from '@features/chat/state/chatStore';
 import type { ChatCommandFeedbackKey } from './composerUtils';
+import { formatServiceErrorMessage } from '../state/chatStoreErrorDetails';
 
 export interface ComposerModelBannerProps {
   hasModels: boolean;
@@ -38,6 +39,7 @@ export interface ComposerFeedbackListProps {
   commandFeedbackKey: ChatCommandFeedbackKey | null;
   successFeedback: boolean;
   chatErrorCode: ChatErrorCode | null;
+  chatErrorMessage: string | null;
   opencodeRetryAtUnixMs: number | null;
 }
 
@@ -46,6 +48,7 @@ export function ComposerFeedbackList({
   commandFeedbackKey,
   successFeedback,
   chatErrorCode,
+  chatErrorMessage,
   opencodeRetryAtUnixMs,
 }: ComposerFeedbackListProps) {
   const { t, i18n } = useTranslation();
@@ -68,6 +71,9 @@ export function ComposerFeedbackList({
       {chatErrorCode && chatErrorCode !== 'searchMessageUnavailable' && chatErrorCode !== 'messageHistoryLoadFailed' ? (
         <div className="mt-2 text-sm text-destructive" role="alert">
           <p>{t(chatErrorCode)}</p>
+          {chatErrorMessage ? (
+            <p className="mt-1 break-words text-xs">{formatServiceErrorMessage(chatErrorMessage, t)}</p>
+          ) : null}
           {chatErrorCode === 'chatRequestFailed' && opencodeRetryAtUnixMs !== null ? (
             <p className="mt-1 text-xs">
               {t('openCodeRetryAfterAt', {

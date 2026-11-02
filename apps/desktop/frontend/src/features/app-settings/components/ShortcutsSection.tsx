@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button, Card } from '@shared/components';
+import { Button } from '@shared/components';
 import type { ComposerSubmissionMode } from '@features/chat/data/composerPreferences';
 import {
   composerShortcutPreset,
@@ -15,6 +15,7 @@ import {
 } from '@features/app-settings/stores/keyboardShortcutsStore';
 import { SettingsPreferenceRow } from './SettingsPreferenceRow';
 import { SettingsLoadError, SettingsSaveFeedback } from './SettingsState';
+import { SettingsSectionSkeleton } from './SettingsSectionSkeleton';
 
 const actionLabels = {
   sendMessage: { group: 'composer', title: 'keyboardSendMessage', description: 'keyboardSendMessageDescription' },
@@ -271,11 +272,7 @@ export function ShortcutsSection() {
   };
 
   if (loadState === 'idle' || loadState === 'loading') {
-    return (
-      <p aria-live="polite" className="py-4 text-sm text-secondary-text">
-        {t('modelsLoading')}
-      </p>
-    );
+    return <SettingsSectionSkeleton label={t('settingsSectionLoading')} />;
   }
 
   if (loadState === 'error') {
@@ -295,9 +292,11 @@ export function ShortcutsSection() {
   );
 
   return (
-    <section aria-labelledby="settings-page-heading" className="grid gap-5">
+    <section aria-labelledby="settings-page-heading" className="settings-section grid content-start gap-6">
       <SettingsSaveFeedback errorMessage={errorCode ? t(errorCode) : undefined} state={saveState} />
-      <Card className="divide-y divide-border">
+      <div className="settings-section-group grid">
+        <h2 className="px-1 text-sm font-semibold text-secondary-text">{t('keyboardShortcutComposerGroup')}</h2>
+        <div className="settings-surface-card divide-y divide-border overflow-hidden rounded-card border border-border bg-raised">
         <SettingsPreferenceRow description={t('keyboardComposerPresetDescription')} label={t('composerSendKeyBinding')}>
           {(descriptionId) => (
             <fieldset
@@ -339,14 +338,16 @@ export function ShortcutsSection() {
             preset
           />
         ) : null}
-        <PreferenceGroupTitle>{t('keyboardShortcutComposerGroup')}</PreferenceGroupTitle>
         {composerActions.map(renderAction)}
-      </Card>
+        </div>
+      </div>
 
-      <Card className="divide-y divide-border">
-        <PreferenceGroupTitle>{t('keyboardShortcutNavigationGroup')}</PreferenceGroupTitle>
-        {navigationActions.map(renderAction)}
-      </Card>
+      <div className="settings-section-group grid">
+        <h2 className="px-1 text-sm font-semibold text-secondary-text">{t('keyboardShortcutNavigationGroup')}</h2>
+        <div className="settings-surface-card divide-y divide-border overflow-hidden rounded-card border border-border bg-raised">
+          {navigationActions.map(renderAction)}
+        </div>
+      </div>
 
       <div className="flex flex-wrap items-center justify-end gap-2">
         <Button
@@ -364,10 +365,6 @@ export function ShortcutsSection() {
       </div>
     </section>
   );
-}
-
-function PreferenceGroupTitle({ children }: { children: string }) {
-  return <h2 className="px-4 pt-4 font-semibold text-text">{children}</h2>;
 }
 
 function ShortcutConflictResolution({

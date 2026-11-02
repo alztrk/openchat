@@ -1,21 +1,20 @@
 import type { TFunction } from 'i18next';
 import {
-  Activity,
   ChartNoAxesCombined,
   ChevronRight,
   CircleAlert,
-  Coins,
   Download,
   ListFilter,
   LoaderCircle,
-  MessagesSquare,
   RefreshCw,
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { ProviderIcon } from '@features/provider-settings/components/ProviderIcon';
 import { Button, Card, DatePicker, SegmentedControl, Select } from '@shared/components';
 import { LocalServiceError, localServiceClient } from '@shared/lib/platform/local-service';
 import { BreakdownCard, MetricCard, TrendChart } from './StatisticsCharts';
+import { SettingsSectionSkeleton } from './SettingsSectionSkeleton';
 import type { LoadState, StatisticsQuotaSnapshot, StatisticsRequest, StatisticsSnapshot } from './statisticsData';
 import {
   createStatisticsCsv,
@@ -35,7 +34,7 @@ export interface StatisticsSettingsSectionProps {
 
 export function StatisticsSettingsSection({ onOpenConversation }: StatisticsSettingsSectionProps) {
   const { i18n, t } = useTranslation();
-  const today = useMemo(() => dateInputValue(new Date()), []);
+  const today = dateInputValue(new Date());
   const monthAgo = useMemo(() => {
     const date = new Date();
     date.setDate(date.getDate() - 29);
@@ -175,7 +174,21 @@ export function StatisticsSettingsSection({ onOpenConversation }: StatisticsSett
   const activeFilterCount = Number(providerId !== '') + Number(modelId !== '');
   const parsedFromDate = parseDateInput(fromDate);
   const parsedToDate = parseDateInput(toDate);
-  const dateRangeInvalid = !parsedFromDate || !parsedToDate || fromDate > toDate;
+  const parsedToday = parseDateInput(today);
+  const dateRangeInvalid = !parsedFromDate || !parsedToDate || fromDate > toDate || toDate > today;
+  const shiftStatisticsRange = (direction: -1 | 1) => {
+    if (!parsedFromDate || !parsedToDate) return;
+    const rangeDays = Math.round((parsedToDate.getTime() - parsedFromDate.getTime()) / 86_400_000) + 1;
+    const shiftedTo = new Date(parsedToDate);
+    shiftedTo.setDate(shiftedTo.getDate() + direction * rangeDays);
+    if (direction > 0 && parsedToday && shiftedTo > parsedToday) {
+      shiftedTo.setTime(parsedToday.getTime());
+    }
+    const shiftedFrom = new Date(shiftedTo);
+    shiftedFrom.setDate(shiftedFrom.getDate() - rangeDays + 1);
+    setFromDate(dateInputValue(shiftedFrom));
+    setToDate(dateInputValue(shiftedTo));
+  };
   const aggregationWindow =
     dateRangeInvalid || !parsedFromDate || !parsedToDate
       ? null
@@ -191,8 +204,8 @@ export function StatisticsSettingsSection({ onOpenConversation }: StatisticsSett
     providerId === 'chatgpt_api' || snapshot?.quotaHistory.some((item) => item.source === 'provider_response') === true;
 
   return (
-    <section aria-labelledby="settings-page-heading" className="grid gap-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+    <section aria-labelledby="settings-page-heading" className="app-window-settings-section settings-data-page">
+      <div className="settings-data-toolbar">
         {aggregationWindow ? <p className="text-xs text-secondary-text">{aggregationWindow}</p> : null}
         <div className="flex flex-wrap items-center gap-2">
           <details className="statistics-filter-menu relative">
@@ -312,14 +325,7 @@ export function StatisticsSettingsSection({ onOpenConversation }: StatisticsSett
         </Card>
       ) : null}
       {loadState === 'loading' && snapshot === null ? (
-        <div
-          aria-label={t('historyLoading')}
-          aria-live="polite"
-          className="flex min-h-24 items-center justify-center"
-          role="status"
-        >
-          <LoaderCircle aria-hidden="true" className="animate-spin text-secondary-icon" size={22} />
-        </div>
+        <SettingsSectionSkeleton label={t('historyLoading')} />
       ) : null}
       {snapshot ? (
         <>
@@ -347,62 +353,65 @@ export function StatisticsSettingsSection({ onOpenConversation }: StatisticsSett
               </Button>
             </div>
           ) : null}
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <section aria-label={t('statisticsOverviewSectionTitle')} className="settings-data-group">
+            <h2 className="settings-data-group-title">{t('statisticsOverviewSectionTitle')}</h2>
+            <div className="app-window-settings-card grid grid-cols-1 gap-px overflow-hidden rounded-card border border-border bg-border sm:grid-cols-2 xl:grid-cols-4">
             <MetricCard
-              icon={ChartNoAxesCombined}
               label={t('statisticsTotalTokens')}
               value={formatNumber(snapshot.summary.totalTokens, i18n.language)}
               detail={`${t('statisticsInputTokens')}: ${formatNumber(snapshot.summary.inputTokens, i18n.language)} · ${t('statisticsOutputTokens')}: ${formatNumber(snapshot.summary.outputTokens, i18n.language)}`}
             />
             <MetricCard
-              icon={Coins}
               label={t('statisticsEstimatedCost')}
               value={
                 snapshot.summary.estimatedCostRequests === 0
                   ? t('unavailableValue')
                   : formatCost(snapshot.summary.estimatedCostUsd, i18n.language)
               }
-              detail={t('statisticsEstimatedCostCoverage', {
-                priced: formatNumber(snapshot.summary.estimatedCostRequests, i18n.language),
-                total: formatNumber(snapshot.summary.totalRequests, i18n.language),
-              })}
             />
             <MetricCard
-              icon={Activity}
               label={t('statisticsRequests')}
               value={formatNumber(snapshot.summary.totalRequests, i18n.language)}
               detail={`${t('statisticsSuccessfulRequests')}: ${formatNumber(snapshot.summary.successfulRequests, i18n.language)}`}
             />
             <MetricCard
-              icon={MessagesSquare}
               label={t('statisticsConversations')}
               value={formatNumber(snapshot.summary.conversationCount, i18n.language)}
             />
-          </div>
+            </div>
+          </section>
 
-          <Card className="grid gap-4" padding="default">
+          <Card className="app-window-settings-card statistics-trend-card grid gap-3 rounded-card border border-border bg-raised p-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <h3 className="font-semibold">{t('statisticsUsageTrend')}</h3>
-              <SegmentedControl
-                label={t('statisticsUsageTrend')}
-                onValueChange={(value) => setTrendPeriod(value === 'monthly' ? 'monthly' : 'daily')}
-                options={[
-                  { value: 'daily', label: t('statisticsDaily') },
-                  { value: 'monthly', label: t('statisticsMonthly') },
-                ]}
-                value={trendPeriod}
-              />
+              <div className="flex flex-wrap items-center gap-2">
+                <SegmentedControl
+                  label={t('statisticsUsageTrend')}
+                  onValueChange={(value) => setTrendPeriod(value === 'monthly' ? 'monthly' : 'daily')}
+                  options={[
+                    { value: 'daily', label: t('statisticsDaily') },
+                    { value: 'monthly', label: t('statisticsMonthly') },
+                  ]}
+                  value={trendPeriod}
+                />
+              </div>
             </div>
-            <TrendChart
-              language={i18n.language}
-              monthly={trendPeriod === 'monthly'}
-              points={trendPeriod === 'monthly' ? snapshot.monthlyTrend : snapshot.dailyTrend}
-              t={t}
-            />
+            {parsedFromDate && parsedToDate ? (
+              <TrendChart
+                fromDate={parsedFromDate}
+                language={i18n.language}
+                monthly={trendPeriod === 'monthly'}
+                onShiftRange={shiftStatisticsRange}
+                points={trendPeriod === 'monthly' ? snapshot.monthlyTrend : snapshot.dailyTrend}
+                toDate={parsedToDate}
+                canShiftForward={parsedToday !== null && parsedToDate < parsedToday}
+                t={t}
+              />
+            ) : null}
           </Card>
 
           {showLocalMeasurements ? (
-            <Card className="grid gap-3" padding="default">
+            <Card className="app-window-settings-card grid gap-3 rounded-card border border-border bg-raised p-4">
               <h3 className="font-semibold">{t('statisticsLocalMeasurementsTitle')}</h3>
               {localMeasurements?.outputTokensPerSecond === null || localMeasurements === undefined ? (
                 <p className="text-sm text-secondary-text">{t('statisticsLocalMeasurementsUnavailable')}</p>
@@ -438,16 +447,34 @@ export function StatisticsSettingsSection({ onOpenConversation }: StatisticsSett
           <div className="grid gap-4 xl:grid-cols-2">
             <BreakdownCard
               items={snapshot.providers}
+              iconFor={(providerId) => <ProviderIcon className="shrink-0" providerId={providerId} size={18} />}
               labelFor={(id) => providerLabel(id, t)}
               title={t('statisticsProviders')}
               language={i18n.language}
               t={t}
             />
-            <BreakdownCard items={snapshot.models} title={t('statisticsModels')} language={i18n.language} t={t} />
+            <BreakdownCard
+              items={snapshot.models}
+              iconFor={(modelId) => {
+                const providerIds = new Set(
+                  snapshot.requests.flatMap((request) =>
+                    request.modelId === modelId && request.providerId !== null ? [request.providerId] : [],
+                  ),
+                );
+                if (providerIds.size !== 1) return null;
+                const [providerId] = providerIds;
+                return providerId ? (
+                  <ProviderIcon className="shrink-0" providerId={providerId} size={18} />
+                ) : null;
+              }}
+              title={t('statisticsModels')}
+              language={i18n.language}
+              t={t}
+            />
           </div>
 
-          <Card className="overflow-hidden">
-            <div className="border-b border-border px-4 py-3">
+          <Card className="app-window-settings-card overflow-hidden rounded-card border border-border bg-raised">
+            <div className="border-b border-border bg-surface/50 px-4 py-3">
               <h3 className="font-semibold">{t('statisticsConversations')}</h3>
             </div>
             {snapshot.conversations.length === 0 ? (
@@ -527,7 +554,7 @@ function StatisticsQuotaHistory({
 }) {
   if (snapshots.length === 0) {
     return (
-      <Card className="grid gap-2" padding="default">
+      <Card className="app-window-settings-card grid gap-2 rounded-card border border-border bg-raised p-4">
         <h3 className="font-semibold">{t('statisticsQuotaHistory')}</h3>
         <p className="text-xs text-secondary-text">{t('statisticsQuotaHistoryLimit')}</p>
         <p className="text-sm text-secondary-text">{t('statisticsNoQuotaHistory')}</p>
@@ -536,7 +563,7 @@ function StatisticsQuotaHistory({
   }
 
   return (
-    <Card className="grid gap-3" padding="default">
+    <Card className="app-window-settings-card grid gap-3 rounded-card border border-border bg-raised p-4">
       <h3 className="font-semibold">{t('statisticsQuotaHistory')}</h3>
       <p className="text-xs text-secondary-text">{t('statisticsQuotaHistoryLimit')}</p>
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">

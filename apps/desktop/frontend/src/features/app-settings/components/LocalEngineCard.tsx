@@ -102,36 +102,28 @@ export function EngineCard({
       <Button
         aria-controls={`local-engine-panel-${engine.engineId}`}
         aria-expanded={expanded}
-        className="min-h-0 w-full flex-wrap items-start justify-between gap-3 rounded-none px-5 py-4 text-left transition-colors hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-focus"
+        className="min-h-0 w-full flex-wrap items-center justify-between gap-2 rounded-none px-4 py-3 text-left transition-colors hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-focus"
         onClick={onToggle}
         size="small"
         type="button"
         variant="ghost"
       >
-        <div className="flex min-w-0 items-start gap-3">
-          <LocalEngineIcon className="mt-1" engineId={engine.engineId} size={24} tone="accent" />
+        <div className="flex min-w-0 items-center gap-3">
+          <LocalEngineIcon className="shrink-0" engineId={engine.engineId} size={22} tone="accent" />
           <div className="min-w-0">
-            <h3 className="font-semibold text-text">{engine.displayName}</h3>
-            <p className="mt-1 font-mono text-xs text-secondary-text">
-              {t('localEngineRelease', { tag: engine.releaseTag })}
-            </p>
-            <div className="mt-2 flex flex-wrap gap-2 text-xs text-secondary-text">
-              <span className="rounded-control border border-border px-2 py-1">
-                {channelKey ? t(channelKey) : engine.channel}
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="font-semibold text-text">{engine.displayName}</h3>
+              <span className="rounded-control border border-border px-2 py-0.5 text-xs text-secondary-text">
+                {runtimeLabel}
               </span>
-              {engine.catalogStatus === 'deprecated' ? (
-                <span className="rounded-control border border-border px-2 py-1">
-                  {t(catalogStatusKey(engine.catalogStatus))}
-                </span>
-              ) : null}
             </div>
+            <p className="mt-1 text-xs text-secondary-text">
+              <span className="font-mono">{engine.releaseTag}</span>
+              <span aria-hidden="true"> · </span>
+              {channelKey ? t(channelKey) : engine.channel}
+              {engine.catalogStatus === 'deprecated' ? ` · ${t(catalogStatusKey(engine.catalogStatus))}` : null}
+            </p>
           </div>
-        </div>
-        <div className="grid justify-items-end gap-1">
-          <span className="text-xs font-semibold text-secondary-text">{t('localEngineHealth')}</span>
-          <span className="rounded-control border border-border px-2 py-1 text-xs text-secondary-text">
-            {runtimeLabel}
-          </span>
         </div>
         <ChevronDown
           aria-hidden="true"
@@ -142,7 +134,7 @@ export function EngineCard({
       </Button>
       {expanded ? (
         <div
-          className="openchat-disclosure-enter grid gap-4 border-t border-border p-5"
+          className="openchat-disclosure-enter grid gap-3 border-t border-border bg-raised p-3 sm:p-4"
           id={`local-engine-panel-${engine.engineId}`}
         >
           {engine.engineId === 'llama_cpp' ? (
@@ -182,12 +174,12 @@ export function EngineCard({
           {engine.variants.length > 0 ? (
             <>
               <h4 className="text-sm font-semibold text-text">{t('localEngineVariants')}</h4>
-              <ul className="grid gap-2">
+              <ul className="grid gap-1.5">
                 {engine.variants.map((variant) => {
                   const busy = activeAction === 'install';
                   return (
                     <li
-                      className="grid gap-3 rounded-control border border-border bg-composer px-3 py-3"
+                      className="grid gap-2 rounded-control border border-border bg-surface p-2.5"
                       key={variant.variantId}
                     >
                       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -207,14 +199,21 @@ export function EngineCard({
                                 {t('localEngineRecommended')}
                               </span>
                             ) : null}
+                            <span className="rounded-control border border-border bg-raised px-2 py-0.5 text-xs text-secondary-text">
+                              {t(variantStatusKey(variant.status))}
+                            </span>
                           </div>
-                          <p className="mt-2 text-xs text-secondary-text">{t(variantStatusKey(variant.status))}</p>
                           {variant.runtimeRequirements.length > 0 ? (
-                            <p className="mt-1 text-xs text-secondary-text">
-                              {t('localEngineRuntimeRequirements', {
-                                requirements: variant.runtimeRequirements.join(' · '),
-                              })}
-                            </p>
+                            <details className="mt-2 text-xs text-secondary-text">
+                              <summary className="w-fit cursor-pointer rounded-control py-1 font-medium text-secondary-text hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus">
+                                {t('localEngineRequirements')}
+                              </summary>
+                              <p className="mt-1 break-words leading-5">
+                                {t('localEngineRuntimeRequirements', {
+                                  requirements: variant.runtimeRequirements.join(' · '),
+                                })}
+                              </p>
+                            </details>
                           ) : null}
                         </div>
                         {variant.canInstall ? (
@@ -222,7 +221,7 @@ export function EngineCard({
                             disabled={busy || activeAction !== null}
                             onClick={() => onInstall(variant)}
                             size="small"
-                            variant="secondary"
+                            variant={variant.recommended ? 'primary' : 'secondary'}
                           >
                             {busy ? <LoaderCircle aria-hidden="true" className="animate-spin" size={16} /> : null}
                             {t(variant.installed ? 'localEngineUpdate' : 'localEngineInstall')}

@@ -14,12 +14,19 @@ import {
   Plug,
   Settings,
   SlidersHorizontal,
+  FolderKanban,
 } from 'lucide-react';
-import type { ReactNode } from 'react';
+import type {
+  CSSProperties,
+  KeyboardEvent as ReactKeyboardEvent,
+  PointerEvent as ReactPointerEvent,
+  ReactNode,
+} from 'react';
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Button, Input } from '@shared/components';
+import { SettingsSectionSkeleton } from './SettingsSectionSkeleton';
 import type { ThemePreference } from './GeneralSettingsSection';
 
 const loadAppWindowSettings = () =>
@@ -56,6 +63,8 @@ const loadAssistantExecution = () =>
   }));
 const loadDesignSettings = () =>
   import('./DesignSettingsSection').then((module) => ({ default: module.DesignSettingsSection }));
+const loadProjectSettings = () =>
+  import('./ProjectSettingsSection').then((module) => ({ default: module.ProjectSettingsSection }));
 
 const GeneralSettingsSection = lazy(loadGeneralSettings);
 const AppWindowSettingsSection = lazy(loadAppWindowSettings);
@@ -73,8 +82,16 @@ const ShortcutsSection = lazy(loadShortcuts);
 const ChatBehaviorSettingsSection = lazy(loadChatBehavior);
 const AssistantExecutionSettingsSection = lazy(loadAssistantExecution);
 const DesignSettingsSection = lazy(loadDesignSettings);
-
+const ProjectSettingsSection = lazy(loadProjectSettings);
 import type { AppearancePreferences } from '@features/app-settings/data/appearancePreferences';
+import {
+  clampSettingsSidebarWidth,
+  readSettingsSidebarWidth,
+  SETTINGS_SIDEBAR_DEFAULT_WIDTH,
+  SETTINGS_SIDEBAR_MAX_WIDTH,
+  SETTINGS_SIDEBAR_MIN_WIDTH,
+  writeSettingsSidebarWidth,
+} from '@features/app-settings/data/settingsSidebarPreferences';
 import '@features/app-settings/settings.css';
 
 export type SettingsSection =
@@ -90,10 +107,11 @@ export type SettingsSection =
   | 'designGeneration'
   | 'usageQuotas'
   | 'statistics'
-  | 'connectors'
+  | 'mcpServers'
   | 'localData'
   | 'personalMemory'
-  | 'notifications';
+  | 'notifications'
+  | 'projects';
 
 export interface SettingsSectionRequest {
   section: SettingsSection;
@@ -114,10 +132,11 @@ const sectionTitleKeys: Record<SettingsSection, TranslationKey> = {
   designGeneration: 'designSettingsTitle',
   usageQuotas: 'usageQuotas',
   statistics: 'statistics',
-  connectors: 'settingsConnectors',
+  mcpServers: 'settingsConnectors',
   localData: 'localData',
   personalMemory: 'personalMemoryTitle',
   notifications: 'settingsNotifications',
+  projects: 'settingsProjectsTitle',
 };
 
 const sectionDescriptionKeys: Record<SettingsSection, TranslationKey> = {
@@ -133,10 +152,11 @@ const sectionDescriptionKeys: Record<SettingsSection, TranslationKey> = {
   designGeneration: 'designSettingsDescription',
   usageQuotas: 'usageQuotasDescription',
   statistics: 'statisticsDescription',
-  connectors: 'settingsConnectorsDescription',
+  mcpServers: 'settingsConnectorsDescription',
   localData: 'settingsLocalDataDescription',
   personalMemory: 'personalMemoryDescription',
   notifications: 'settingsNotificationsDescription',
+  projects: 'settingsProjectsDescription',
 };
 
 const settingsNavigationGroups: ReadonlyArray<{
@@ -145,24 +165,18 @@ const settingsNavigationGroups: ReadonlyArray<{
 }> = [
   {
     label: 'settingsAppWindowGroup',
-    items: [{ section: 'appWindow', icon: <Settings aria-hidden="true" size={18} /> }],
-  },
-  {
-    label: 'settingsAppearanceAccessibilityGroup',
-    items: [{ section: 'appearance', icon: <Palette aria-hidden="true" size={18} /> }],
-  },
-  {
-    label: 'settingsDesignGroup',
-    items: [{ section: 'designGeneration', icon: <Image aria-hidden="true" size={18} /> }],
-  },
-  {
-    label: 'settingsAssistantExecutionGroup',
-    items: [{ section: 'assistantExecution', icon: <Bot aria-hidden="true" size={18} /> }],
+    items: [
+      { section: 'appWindow', icon: <Settings aria-hidden="true" size={18} /> },
+      { section: 'appearance', icon: <Palette aria-hidden="true" size={18} /> },
+      { section: 'designGeneration', icon: <Image aria-hidden="true" size={18} /> },
+      { section: 'notifications', icon: <Bell aria-hidden="true" size={18} /> },
+    ],
   },
   {
     label: 'settingsChatBehaviorGroup',
     items: [
       { section: 'chatBehavior', icon: <SlidersHorizontal aria-hidden="true" size={18} /> },
+      { section: 'assistantExecution', icon: <Bot aria-hidden="true" size={18} /> },
       { section: 'sharedInstructions', icon: <NotebookPen aria-hidden="true" size={18} /> },
       { section: 'shortcuts', icon: <Keyboard aria-hidden="true" size={18} /> },
     ],
@@ -171,19 +185,16 @@ const settingsNavigationGroups: ReadonlyArray<{
     label: 'settingsProvidersModelsGroup',
     items: [
       { section: 'connections', icon: <Link aria-hidden="true" size={18} /> },
+      { section: 'mcpServers', icon: <Plug aria-hidden="true" size={18} /> },
+      { section: 'localEngines', icon: <Cpu aria-hidden="true" size={18} /> },
+      { section: 'models', icon: <SlidersHorizontal aria-hidden="true" size={18} /> },
       { section: 'usageQuotas', icon: <ChartNoAxesCombined aria-hidden="true" size={18} /> },
       { section: 'statistics', icon: <ChartBarIncreasing aria-hidden="true" size={18} /> },
-      { section: 'models', icon: <SlidersHorizontal aria-hidden="true" size={18} /> },
-      { section: 'localEngines', icon: <Cpu aria-hidden="true" size={18} /> },
     ],
   },
   {
-    label: 'settingsToolsPermissionsGroup',
-    items: [{ section: 'connectors', icon: <Plug aria-hidden="true" size={18} /> }],
-  },
-  {
-    label: 'settingsNotificationsGroup',
-    items: [{ section: 'notifications', icon: <Bell aria-hidden="true" size={18} /> }],
+    label: 'settingsProjectsGroup',
+    items: [{ section: 'projects', icon: <FolderKanban aria-hidden="true" size={18} /> }],
   },
   {
     label: 'settingsDataPrivacyGroup',
@@ -384,6 +395,8 @@ export interface SettingsPageProps {
   sectionRequest?: SettingsSectionRequest;
 }
 
+type SettingsSidebarStyle = CSSProperties & { '--settings-sidebar-width': string };
+
 export function SettingsPage({
   appearance,
   onAppearanceChange,
@@ -393,13 +406,17 @@ export function SettingsPage({
   theme,
 }: SettingsPageProps) {
   const { i18n, t } = useTranslation();
-  const [section, setSection] = useState<SettingsSection>(() => sectionRequest?.section ?? 'connections');
+  const [section, setSection] = useState<SettingsSection>(() => sectionRequest?.section ?? 'appWindow');
   const [visitedSections, setVisitedSections] = useState<ReadonlySet<SettingsSection>>(
-    () => new Set([sectionRequest?.section ?? 'connections']),
+    () => new Set([sectionRequest?.section ?? 'appWindow']),
   );
   const appliedSectionRequestId = useRef(sectionRequest?.requestId ?? 0);
   const [search, setSearch] = useState('');
   const [pendingFieldId, setPendingFieldId] = useState<string | null>(null);
+  const [settingsSidebarWidth, setSettingsSidebarWidth] = useState(readSettingsSidebarWidth);
+  const [settingsPageWidth, setSettingsPageWidth] = useState(0);
+  const [isResizingSidebar, setIsResizingSidebar] = useState(false);
+  const settingsPageRef = useRef<HTMLDivElement>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
   const shouldFocusHeading = useRef(false);
 
@@ -427,6 +444,16 @@ export function SettingsPage({
     navigateToSection(sectionRequest.section);
   }, [navigateToSection, sectionRequest]);
 
+  useEffect(() => {
+    const settingsPage = settingsPageRef.current;
+    if (!settingsPage) return;
+    const resizeObserver = new ResizeObserver(([entry]) => {
+      if (entry) setSettingsPageWidth(entry.contentRect.width);
+    });
+    resizeObserver.observe(settingsPage);
+    return () => resizeObserver.disconnect();
+  }, []);
+
   const searchLocale = i18n.resolvedLanguage ?? i18n.language;
   const normalizedSearch = search.trim().toLocaleLowerCase(searchLocale);
   const visibleSearchFields = normalizedSearch
@@ -447,15 +474,76 @@ export function SettingsPage({
     }))
     .filter((group) => group.items.length > 0);
 
+  const maxSidebarWidth =
+    settingsPageWidth > 0
+      ? Math.max(SETTINGS_SIDEBAR_MIN_WIDTH, Math.min(SETTINGS_SIDEBAR_MAX_WIDTH, Math.floor(settingsPageWidth * 0.34)))
+      : SETTINGS_SIDEBAR_MAX_WIDTH;
+  const visibleSidebarWidth = Math.min(settingsSidebarWidth, maxSidebarWidth);
+
+  const settingsSidebarStyle: SettingsSidebarStyle = {
+    '--settings-sidebar-width': `${visibleSidebarWidth}px`,
+  };
+
+  const handleSidebarResizePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = visibleSidebarWidth;
+    setIsResizingSidebar(true);
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      setSettingsSidebarWidth(
+        Math.min(maxSidebarWidth, clampSettingsSidebarWidth(startWidth + moveEvent.clientX - startX)),
+      );
+    };
+
+    const handlePointerUp = (upEvent: PointerEvent) => {
+      const finalWidth = Math.min(maxSidebarWidth, clampSettingsSidebarWidth(startWidth + upEvent.clientX - startX));
+      setSettingsSidebarWidth(finalWidth);
+      setIsResizingSidebar(false);
+      writeSettingsSidebarWidth(finalWidth);
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+      window.removeEventListener('pointercancel', handlePointerUp);
+    };
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+    window.addEventListener('pointercancel', handlePointerUp);
+  };
+
+  const handleSidebarResizeKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    let nextWidth: number | null = null;
+    if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+      nextWidth = settingsSidebarWidth + (event.key === 'ArrowRight' ? 12 : -12);
+    } else if (event.key === 'Home') {
+      nextWidth = SETTINGS_SIDEBAR_MIN_WIDTH;
+    } else if (event.key === 'End') {
+      nextWidth = maxSidebarWidth;
+    }
+    if (nextWidth === null) return;
+    event.preventDefault();
+    const width = Math.min(maxSidebarWidth, clampSettingsSidebarWidth(nextWidth));
+    setSettingsSidebarWidth(width);
+    writeSettingsSidebarWidth(width);
+  };
+
   return (
-    <div className="settings-page-container">
+    <div className="settings-page-container" ref={settingsPageRef}>
       <div className="settings-page-layout">
-        <aside className="settings-sidebar border-r border-border bg-navigation">
-          <div className="settings-sidebar-title px-3 pb-3 text-xl font-semibold leading-7">{t('settings')}</div>
-          <div aria-hidden="true" className="settings-sidebar-compact-icon">
-            <Settings size={20} />
-          </div>
-          <nav aria-label={t('settings')} className="settings-sidebar-nav grid content-start">
+        <div
+          className="settings-sidebar-shell"
+          data-resizing={isResizingSidebar ? 'true' : 'false'}
+          style={settingsSidebarStyle}
+        >
+          <aside className="settings-sidebar border-r border-border bg-navigation">
+            <div className="settings-sidebar-heading">
+              <span className="settings-sidebar-title text-xl font-semibold leading-7">{t('settings')}</span>
+              <div aria-hidden="true" className="settings-sidebar-compact-icon">
+                <Settings size={20} />
+              </div>
+            </div>
+            <nav aria-label={t('settings')} className="settings-sidebar-nav grid content-start">
             <div className="px-2 pb-2">
               <Input
                 aria-label={t('settingsSearchPlaceholder')}
@@ -487,7 +575,7 @@ export function SettingsPage({
                 </h2>
                 {visibleSearchFields.map((field) => (
                   <Button
-                    className="settings-navigation-button min-h-11 w-full items-center justify-start gap-3 px-3 text-left text-secondary-text"
+                    className="settings-navigation-button min-h-9 w-full items-center justify-start gap-3 px-3 text-left text-secondary-text"
                     key={field.id}
                     onClick={() => {
                       setSearch('');
@@ -512,13 +600,27 @@ export function SettingsPage({
                 {t('settingsSearchEmpty')}
               </p>
             ) : null}
-          </nav>
-        </aside>
+            </nav>
+          </aside>
+          <SettingsSidebarResizer
+            label={t('resizeSidebar')}
+            onDoubleClick={() => {
+              const width = Math.min(maxSidebarWidth, SETTINGS_SIDEBAR_DEFAULT_WIDTH);
+              setSettingsSidebarWidth(width);
+              writeSettingsSidebarWidth(width);
+            }}
+            onKeyDown={handleSidebarResizeKeyDown}
+            onPointerDown={handleSidebarResizePointerDown}
+            maxWidth={maxSidebarWidth}
+            minWidth={SETTINGS_SIDEBAR_MIN_WIDTH}
+            width={visibleSidebarWidth}
+          />
+        </div>
         <main
           aria-label={t(sectionTitleKeys[section])}
           className="settings-main settings-main-surface flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
         >
-          <header className="settings-page-header shrink-0 pb-3 pt-4 sm:pb-4 sm:pt-5">
+          <header className="settings-page-header shrink-0">
             <div className="w-full">
               <div className="settings-page-header-content">
                 <h1
@@ -544,6 +646,14 @@ export function SettingsPage({
               focusId={null}
             >
               <ProviderSettingsSection />
+            </SettingsSectionPage>
+            <SettingsSectionPage
+              active={section === 'mcpServers'}
+              fallback={t('settingsSectionLoading')}
+              visited={visitedSections.has('mcpServers')}
+              focusId={null}
+            >
+              <ConnectorCatalogSettingsSection />
             </SettingsSectionPage>
             <SettingsSectionPage
               active={section === 'localEngines'}
@@ -645,14 +755,6 @@ export function SettingsPage({
               <StatisticsSettingsSection onOpenConversation={onOpenConversation} />
             </SettingsSectionPage>
             <SettingsSectionPage
-              active={section === 'connectors'}
-              fallback={t('settingsSectionLoading')}
-              visited={visitedSections.has('connectors')}
-              focusId={pendingFieldId}
-            >
-              <ConnectorCatalogSettingsSection />
-            </SettingsSectionPage>
-            <SettingsSectionPage
               active={section === 'localData'}
               fallback={t('settingsSectionLoading')}
               visited={visitedSections.has('localData')}
@@ -676,6 +778,14 @@ export function SettingsPage({
             >
               <NotificationSettingsSection />
             </SettingsSectionPage>
+            <SettingsSectionPage
+              active={section === 'projects'}
+              fallback={t('settingsSectionLoading')}
+              visited={visitedSections.has('projects')}
+              focusId={null}
+            >
+              <ProjectSettingsSection />
+            </SettingsSectionPage>
           </div>
         </main>
       </div>
@@ -688,6 +798,46 @@ interface SettingsNavigationButtonProps {
   icon: ReactNode;
   label: string;
   onClick(): void;
+}
+
+interface SettingsSidebarResizerProps {
+  maxWidth: number;
+  minWidth: number;
+  label: string;
+  onDoubleClick(): void;
+  onKeyDown(event: ReactKeyboardEvent<HTMLDivElement>): void;
+  onPointerDown(event: ReactPointerEvent<HTMLDivElement>): void;
+  width: number;
+}
+
+function SettingsSidebarResizer({
+  label,
+  maxWidth,
+  minWidth,
+  onDoubleClick,
+  onKeyDown,
+  onPointerDown,
+  width,
+}: SettingsSidebarResizerProps) {
+  return (
+    // biome-ignore lint/a11y/useSemanticElements: Custom interactive resize separator for the settings sidebar width.
+    <div
+      aria-label={label}
+      aria-orientation="vertical"
+      aria-valuemax={maxWidth}
+      aria-valuemin={minWidth}
+      aria-valuenow={width}
+      className="settings-sidebar-resizer group/settings-resizer"
+      onDoubleClick={onDoubleClick}
+      onKeyDown={onKeyDown}
+      onPointerDown={onPointerDown}
+      role="separator"
+      tabIndex={0}
+      title={label}
+    >
+      <span className="settings-sidebar-resizer-line" />
+    </div>
+  );
 }
 
 interface SettingsSectionPageProps {
@@ -712,11 +862,7 @@ function SettingsSectionPage({
   return (
     <div className="settings-section-page" hidden={!active}>
       <Suspense
-        fallback={
-          <p aria-live="polite" className="py-6 text-sm text-secondary-text">
-            {fallback}
-          </p>
-        }
+        fallback={<SettingsSectionSkeleton label={fallback} />}
       >
         <div className="settings-section-scroll">
           {children}
@@ -753,7 +899,7 @@ function SettingsNavigationButton({ active, icon, label, onClick }: SettingsNavi
     <Button
       aria-current={active ? 'page' : undefined}
       aria-label={label}
-      className={`settings-navigation-button min-h-11 w-full justify-start gap-3 px-3 text-left ${active ? 'font-semibold text-text' : 'text-secondary-text'}`}
+      className={`settings-navigation-button min-h-9 w-full justify-start gap-3 px-3 text-left ${active ? 'settings-navigation-button--active font-semibold text-text' : 'text-secondary-text'}`}
       onClick={onClick}
       size="small"
       title={label}

@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Button, Card, Dialog, Switch } from '@shared/components';
+import { SettingsSectionSkeleton } from './SettingsSectionSkeleton';
 import {
   clearPersonalMemory,
   deletePersonalMemoryFact,
@@ -85,90 +86,92 @@ export function PersonalMemorySettingsSection() {
     }
   };
 
+  if (loadState === 'loading') return <SettingsSectionSkeleton label={t('settingsSectionLoading')} />;
+
   return (
-    <Card className="grid gap-4 sm:p-5" padding="default">
-      <div className="flex items-start gap-3">
-        <Brain aria-hidden="true" className="mt-0.5 shrink-0 text-accent" size={19} />
-        <div className="grid gap-1">
-          <p className="text-sm text-secondary-text">{t('personalMemoryPrivacyNotice')}</p>
+    <div className="grid gap-3">
+      <Card className="flex flex-wrap items-center justify-between gap-4 rounded-control border border-border bg-raised p-4">
+        <div className="grid min-w-0 gap-1">
+          <span className="font-medium">{t('personalMemoryEnabled')}</span>
+          <span className="max-w-3xl text-sm leading-relaxed text-secondary-text">
+            {t('personalMemoryEnabledDescription')}
+          </span>
         </div>
-      </div>
+        {loadState === 'loaded' ? (
+          <Switch
+            aria-label={t('personalMemoryEnabled')}
+            checked={preferences.enabled}
+            disabled={isSaving}
+            onCheckedChange={setEnabled}
+          />
+        ) : null}
+      </Card>
 
-      {loadState === 'loading' ? (
-        <p aria-live="polite" className="text-sm text-secondary-text">
-          {t('settingsSectionLoading')}
-        </p>
-      ) : loadState === 'failed' ? (
-        <div className="grid justify-items-start gap-3">
-          <p className="text-sm text-destructive" role="alert">
-            {t('personalMemoryLoadFailed')}
+      <Card className="overflow-hidden rounded-control border border-border bg-raised">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-surface/50 px-4 py-3">
+          <h4 className="font-medium">{t('personalMemoryFactsTitle')}</h4>
+          {loadState === 'loaded' ? (
+            <div className="flex items-center gap-3">
+              <span className="text-xs tabular-nums text-secondary-text">
+                {preferences.facts.length} / {maxPersonalMemoryFacts}
+              </span>
+              {preferences.facts.length > 0 ? (
+                <Button disabled={isSaving} onClick={() => setConfirmClear(true)} size="small" variant="ghost">
+                  <Trash2 aria-hidden="true" size={15} />
+                  {t('personalMemoryClearAction')}
+                </Button>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+
+        {loadState === 'failed' ? (
+          <div className="grid justify-items-start gap-3 p-4">
+            <p className="text-sm text-destructive" role="alert">
+              {t('personalMemoryLoadFailed')}
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <Button onClick={load} size="small">
+                <RefreshCw aria-hidden="true" size={15} />
+                {t('retry')}
+              </Button>
+              <Button onClick={() => setConfirmClear(true)} size="small" variant="destructive">
+                <Trash2 aria-hidden="true" size={15} />
+                {t('personalMemoryClearAction')}
+              </Button>
+            </div>
+          </div>
+        ) : preferences.facts.length === 0 ? (
+          <div className="grid justify-items-center gap-2 px-4 py-8 text-center">
+            <span className="grid size-10 place-items-center rounded-full bg-surface text-secondary-icon">
+              <Brain aria-hidden="true" size={19} />
+            </span>
+            <p className="max-w-md text-sm text-secondary-text">{t('personalMemoryEmpty')}</p>
+          </div>
+        ) : (
+          <ul className="divide-y divide-border px-4">
+            {preferences.facts.map((fact) => (
+              <li className="flex min-w-0 items-start gap-3 py-3" key={fact.id}>
+                <p className="min-w-0 flex-1 whitespace-pre-wrap break-words text-sm leading-relaxed">{fact.content}</p>
+                <Button
+                  aria-label={t('personalMemoryDelete')}
+                  disabled={isSaving}
+                  onClick={() => setPendingDelete(fact)}
+                  size="icon"
+                  variant="ghost"
+                >
+                  <Trash2 aria-hidden="true" size={16} />
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
+        {loadState === 'loaded' && preferences.facts.length >= maxPersonalMemoryFacts ? (
+          <p className="border-t border-border px-4 py-3 text-sm text-secondary-text">
+            {t('personalMemoryLimitReached')}
           </p>
-          <div className="flex flex-wrap gap-2">
-            <Button onClick={load} size="small">
-              <RefreshCw aria-hidden="true" size={15} />
-              {t('retry')}
-            </Button>
-            <Button onClick={() => setConfirmClear(true)} size="small" variant="destructive">
-              <Trash2 aria-hidden="true" size={15} />
-              {t('personalMemoryClearAction')}
-            </Button>
-          </div>
-        </div>
-      ) : (
-        <>
-          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
-            <div className="grid gap-1">
-              <span className="font-medium">{t('personalMemoryEnabled')}</span>
-              <span className="text-sm text-secondary-text">{t('personalMemoryEnabledDescription')}</span>
-            </div>
-            <Switch
-              aria-label={t('personalMemoryEnabled')}
-              checked={preferences.enabled}
-              disabled={isSaving}
-              onCheckedChange={setEnabled}
-            />
-          </div>
-
-          <div className="grid gap-2 border-t border-border pt-4">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <h4 className="font-medium">{t('personalMemoryFactsTitle')}</h4>
-              <div className="flex flex-wrap items-center gap-2">
-                {preferences.facts.length > 0 ? (
-                  <Button disabled={isSaving} onClick={() => setConfirmClear(true)} size="small" variant="ghost">
-                    <Trash2 aria-hidden="true" size={15} />
-                    {t('personalMemoryClearAction')}
-                  </Button>
-                ) : null}
-              </div>
-            </div>
-            {preferences.facts.length === 0 ? (
-              <p className="py-2 text-sm text-secondary-text">{t('personalMemoryEmpty')}</p>
-            ) : (
-              <ul className="grid divide-y divide-border">
-                {preferences.facts.map((fact) => (
-                  <li className="flex min-w-0 items-start gap-3 py-3" key={fact.id}>
-                    <p className="min-w-0 flex-1 whitespace-pre-wrap break-words text-sm">{fact.content}</p>
-                    <div className="flex shrink-0 gap-1">
-                      <Button
-                        aria-label={t('personalMemoryDelete')}
-                        disabled={isSaving}
-                        onClick={() => setPendingDelete(fact)}
-                        size="icon"
-                        variant="ghost"
-                      >
-                        <Trash2 aria-hidden="true" size={16} />
-                      </Button>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-            {preferences.facts.length >= maxPersonalMemoryFacts ? (
-              <p className="text-sm text-secondary-text">{t('personalMemoryLimitReached')}</p>
-            ) : null}
-          </div>
-        </>
-      )}
+        ) : null}
+      </Card>
 
       {saveFailed ? (
         <p className="text-sm text-destructive" role="alert">
@@ -225,6 +228,6 @@ export function PersonalMemorySettingsSection() {
           </div>
         </div>
       </Dialog>
-    </Card>
+    </div>
   );
 }

@@ -38,6 +38,7 @@ import {
   shouldRefreshOAuthPlansOnFocus,
 } from '@features/provider-settings/data/oauthPlanMonitor';
 import { initializeActiveSecurityScans } from '@features/security-scans/data/securityScanRuntime';
+import { preloadHighlighting } from '@features/chat/components/message/FileSyntaxHighlight';
 import type { ThemePreference } from '@features/app-settings/components/GeneralSettingsSection';
 import type { SettingsSection } from '@features/app-settings/components/SettingsPage';
 import {
@@ -144,12 +145,9 @@ function readThemePreference(): ThemePreference {
 
 export function App() {
   const { t } = useTranslation();
-  // Preload Shiki for syntax highlighting (async, non-blocking)
+  // Load the lightweight syntax highlighter without blocking the initial render.
   useEffect(() => {
-    import('@features/chat/components/message/FileSyntaxHighlight').then(
-      ({ preloadHighlighting }) => preloadHighlighting(),
-      // Silently ignore — plain text is fine if loading fails
-    );
+    preloadHighlighting();
   }, []);
 
   const [surfaceHistory, setSurfaceHistory] = useState<SurfaceHistory>({

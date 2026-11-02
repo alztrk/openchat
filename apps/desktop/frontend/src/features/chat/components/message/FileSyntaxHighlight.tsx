@@ -14,6 +14,7 @@
  */
 import type { ReactNode } from 'react';
 import { useSyncExternalStore } from 'react';
+import type { Highlighter, HighlightToken } from '@tanstack/highlight/core';
 
 import { detectFileLanguage } from './detectFileLanguage';
 
@@ -23,8 +24,7 @@ import { detectFileLanguage } from './detectFileLanguage';
 
 const subscribers = new Set<() => void>();
 let highlighterState: 'loading' | 'ready' | 'error' = 'loading';
-// biome-ignore lint/suspicious/noExplicitAny: highlighter types are complex
-let loadedHighlighter: any = null;
+let loadedHighlighter: Highlighter | null = null;
 
 /**
  * Subscribe to highlighting state changes.
@@ -99,55 +99,35 @@ export { detectFileLanguage };
 export function highlightFileLines(
   language: string | null,
   lines: string[],
-  // biome-ignore lint/suspicious/noExplicitAny: typed as any for flexibility
-): any {
+): ReactNode[][] {
   if (!language || !loadedHighlighter) return plainLines(lines);
 
   try {
     const code = lines.join('\n');
     const result = loadedHighlighter.highlight(code, { lang: language });
-    const tokens = result?.tokens ?? [];
+    const lineGroups = lines.map((): ReactNode[] => []);
+    const keyOccurrences = new Map<string, number>();
+    let lineIndex = 0;
 
-    // TanStack Highlight gives us flat tokens; we reconstruct line groups
-    // by walking through the original code and splitting on newlines.
-    let tokenIdx = 0;
-    const lineGroups: ReactNode[][] = [];
-
-    let currentLineEnd = code.indexOf('\n');
-
-    for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
-      const lineEnd = currentLineEnd === -1 ? code.length : currentLineEnd + 1;
-      const lineTokens: Array<{ value: string; className?: string }> = [];
-      let offsetInCode = 0;
-
-      while (tokenIdx < tokens.length && offsetInCode < lineEnd) {
-        const token = tokens[tokenIdx];
-        if (offsetInCode >= lineEnd) break;
-        if (offsetInCode + token.value.length <= lineEnd) {
-          lineTokens.push(token);
-          offsetInCode += token.value.length;
-          tokenIdx += 1;
-        } else {
-          break;
+    result.tokens.forEach((token: HighlightToken) => {
+      token.value.split('\n').forEach((piece, pieceIndex, pieces) => {
+        const currentLine = lineGroups[lineIndex];
+        if (piece.length > 0 && currentLine) {
+          const className = token.className ? `th-token th-${token.className}` : 'th-token';
+          const tokenKey = `${lineIndex}:${token.className ?? 'plain'}:${piece}`;
+          const occurrence = keyOccurrences.get(tokenKey) ?? 0;
+          keyOccurrences.set(tokenKey, occurrence + 1);
+          currentLine.push(
+            <span className={className} key={`${tokenKey}:${occurrence}`}>
+              {piece}
+            </span>,
+          );
         }
-      }
+        if (pieceIndex < pieces.length - 1) lineIndex += 1;
+      });
+    });
 
-      if (lineTokens.length === 0) {
-        lineGroups.push(plainLines([lines[lineIdx] || ' ']));
-      } else {
-        lineGroups.push(
-          lineTokens.map((t) => (
-            <span key={t.value} className="shiki-token">
-              {t.value}
-            </span>
-          )),
-        );
-      }
-
-      currentLineEnd = code.indexOf('\n', lineEnd);
-    }
-
-    return lineGroups;
+    return lineGroups.map((line, index) => (line.length > 0 ? line : [lines[index] || ' ']));
   } catch {
     return plainLines(lines);
   }

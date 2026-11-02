@@ -28,3 +28,21 @@ pub(crate) fn model_encoding(model_id: &str) -> &'static tiktoken::CoreBpe {
 pub(crate) fn count_tokens(model_id: &str, text: &str) -> i64 {
     model_encoding(model_id).count(text) as i64
 }
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn token_count_initializes_on_a_small_thread_stack() {
+        let worker = std::thread::Builder::new()
+            .stack_size(512 * 1024)
+            .spawn(|| super::count_tokens("gpt-4", "small stack tokenization"))
+            .expect("spawn small-stack worker");
+
+        assert!(
+            worker
+                .join()
+                .expect("tokenizer should not overflow the stack")
+                > 0
+        );
+    }
+}

@@ -790,9 +790,13 @@ pub(crate) fn claim_run_resume(
     connection: &mut StorageConnection,
     conversation_id: &str,
     run_id: &str,
+    goal_checkpoint: Option<(&Value, i64)>,
 ) -> Result<AgentRun, UserQuestionError> {
     validate_identifier(conversation_id, "conversation id")?;
     validate_identifier(run_id, "run id")?;
+    let checkpoint_json = goal_checkpoint
+        .map(|(checkpoint, _)| validate_checkpoint(checkpoint))
+        .transpose()?;
     let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
     let run = load_run(&transaction, run_id)?;
     ensure_run_conversation(&run, conversation_id)?;
@@ -815,12 +819,33 @@ pub(crate) fn claim_run_resume(
             "the run still has unanswered questions".to_owned(),
         ));
     }
+    if let Some((_, expected_revision)) = goal_checkpoint {
+        if run.checkpoint_revision != expected_revision {
+            return Err(UserQuestionError::StaleRevision {
+                expected: expected_revision,
+                actual: run.checkpoint_revision,
+            });
+        }
+    }
     let now = unix_time_millis()?;
-    let changed = transaction.execute(
-        "UPDATE agent_runs SET status = 'running', updated_at_unix_ms = ?1
-         WHERE id = ?2 AND conversation_id = ?3 AND status IN ('paused', 'interrupted')",
-        params![now, run_id, conversation_id],
-    )?;
+    let changed = if let Some(checkpoint_json) = checkpoint_json {
+        transaction.execute(
+            "UPDATE agent_runs
+             SET status = 'running',
+                 checkpoint_json = ?1,
+                 checkpoint_revision = checkpoint_revision + 1,
+                 checkpoint_updated_at_unix_ms = ?2,
+                 updated_at_unix_ms = ?2
+             WHERE id = ?3 AND conversation_id = ?4 AND status IN ('paused', 'interrupted')",
+            params![checkpoint_json, now, run_id, conversation_id],
+        )?
+    } else {
+        transaction.execute(
+            "UPDATE agent_runs SET status = 'running', updated_at_unix_ms = ?1
+             WHERE id = ?2 AND conversation_id = ?3 AND status IN ('paused', 'interrupted')",
+            params![now, run_id, conversation_id],
+        )?
+    };
     if changed != 1 {
         return Err(UserQuestionError::Conflict(
             "the run was already resumed".to_owned(),

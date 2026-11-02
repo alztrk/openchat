@@ -118,13 +118,20 @@ export function useComposerState({
   const selectReasoningEffort = useChatStore((state) => state.selectReasoningEffort);
   const startNewChat = useChatStore((state) => state.startNewChat);
   const refreshConversations = useChatStore((state) => state.refreshConversations);
+  const activeGoal = useChatStore((state) => state.activeGoal);
+  const interruptedRun = useChatStore((state) => state.interruptedRun);
+  const isChangingGoal = useChatStore((state) => state.isChangingGoal);
   const { isSending: isAnyConversationSending, sendMessage, stopResponse } = useChatStreaming();
+  const sendingConversationIds = useChatStore((state) => state.sendingConversationIds);
   const sendingConversationId = useChatStore((state) => state.sendingConversationId);
   const isSending =
-    isAnyConversationSending &&
+    (targetConversationId === undefined
+      ? sendingConversationIds.includes(storeActiveConversationId ?? temporaryChat?.id ?? '')
+      : targetConversationId !== null && sendingConversationIds.includes(targetConversationId)) ||
+    (isAnyConversationSending &&
     (targetConversationId === undefined
       ? sendingConversationId === storeActiveConversationId || sendingConversationId === temporaryChat?.id
-      : targetConversationId !== null && sendingConversationId === targetConversationId);
+      : targetConversationId !== null && sendingConversationId === targetConversationId));
   const modelContextLimits = useChatStore((state) => state.modelContextLimits);
 
   const selectableModels = useMemo(
@@ -176,6 +183,24 @@ export function useComposerState({
     droppedFiles,
     selectedModel,
   });
+  const resumableRunId =
+    activeGoal?.conversationId === activeConversationId &&
+    (activeGoal.status === 'interrupted' ||
+      (activeGoal.status === 'paused' && ['request_failed', 'quota'].includes(activeGoal.pauseReason ?? '')))
+      ? activeGoal.runId
+      : interruptedRun?.conversationId === activeConversationId
+        ? interruptedRun.runId
+        : null;
+  const canResumeInterruptedRun =
+    resumableRunId !== null &&
+    !isChangingGoal &&
+    messageDraft.trim().length === 0 &&
+    pendingAttachments.length === 0;
+  const resumeInterruptedRun = () => {
+    if (canResumeInterruptedRun && resumableRunId && activeConversationId) {
+      void sendMessage('', [], resumableRunId, undefined, { conversationId: activeConversationId });
+    }
+  };
 
   const { ghostTextSuggestion, setGhostTextDismissed } = useComposerGhostText({
     activeConversationId,
@@ -205,6 +230,7 @@ export function useComposerState({
   useEffect(() => {
     if (previousConversationIdRef.current === activeConversationId) return;
     previousConversationIdRef.current = activeConversationId;
+    clearPendingAttachments();
     setComposerMode('normal');
     temporaryDisclosureProviderIdRef.current = null;
   }, [activeConversationId]);
@@ -244,11 +270,11 @@ export function useComposerState({
       if (!(target instanceof HTMLElement) || !formRef.current?.contains(target)) return;
       if (!keyboardShortcutMatches(event, keyboardShortcuts.stopResponse)) return;
       event.preventDefault();
-      void stopResponse();
+      void stopResponse(activeConversationId ?? temporaryChat?.id);
     };
     window.addEventListener('keydown', stopWithShortcut);
     return () => window.removeEventListener('keydown', stopWithShortcut);
-  }, [isSending, keyboardShortcuts.stopResponse, stopResponse, formRef]);
+  }, [isSending, keyboardShortcuts.stopResponse, stopResponse, formRef, activeConversationId, temporaryChat?.id]);
 
   useEffect(() => {
     setSlashCommandIndex((current) => Math.min(current, Math.max(0, slashCommands.length - 1)));
@@ -410,7 +436,7 @@ export function useComposerState({
           setCommandFeedbackKey('slashCommandModelNameRequired');
           return;
         }
-        if (isAnyConversationSending || isUpdatingConversationModel || modelStatus === 'loading') {
+        if (isSending || isUpdatingConversationModel || modelStatus === 'loading') {
           setCommandFeedbackKey('slashCommandModelUnavailable');
           return;
         }
@@ -564,7 +590,7 @@ export function useComposerState({
   };
 
   const selectSlashModel = async (model: ChatModel) => {
-    if (isAnyConversationSending || isUpdatingConversationModel) return;
+    if (isSending || isUpdatingConversationModel) return;
     setSlashModelMenuOpen(false);
     const changed = await selectModelForCurrentConversation(model.key);
     if (!changed) {
@@ -578,15 +604,14 @@ export function useComposerState({
     event.preventDefault();
     if (!inputRef.current || isReadingAttachments || isUpdatingConversationModel) return;
 
-    if (isAnyConversationSending && !isSending) return;
     if (isSending) {
       if (!messageDraft.trim() && pendingAttachments.length === 0) {
-        void stopResponse();
+        void stopResponse(activeConversationId ?? temporaryChat?.id);
         return;
       }
       void (async () => {
         try {
-          await stopResponse();
+          await stopResponse(activeConversationId ?? temporaryChat?.id);
           await new Promise((resolve) => setTimeout(resolve, 60));
         } catch {
           // Proceed with steer send
@@ -830,6 +855,8 @@ export function useComposerState({
     isSendBlocked,
     isSending,
     isAnyConversationSending,
+    canResumeInterruptedRun,
+    resumeInterruptedRun,
     ghostTextSuggestion,
   };
 }

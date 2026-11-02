@@ -36,6 +36,7 @@ const sidebarViewModeKey = 'chat.sidebar_view_mode';
 const sidebarManualOrderKey = 'chat.sidebar_manual_order';
 const customFoldersKey = 'chat.custom_sidebar_folders';
 const legacyTrashedConversationsKey = 'chat.trashed_conversations';
+const skipConversationDeleteConfirmationKey = 'chat.skip_delete_confirmation';
 const openConversationTabsKey = 'chat.open_conversation_tabs';
 // Keep the stored key so the former split-view width preference carries over to the panel layout.
 const workspacePanelRatioKey = 'chat.split_view_ratio';
@@ -169,6 +170,14 @@ export function readCustomSidebarFolders(): CustomSidebarFolder[] {
 
 export function writeCustomSidebarFolders(folders: readonly CustomSidebarFolder[]): void {
   unifiedStorage.setItem(customFoldersKey, JSON.stringify(folders));
+}
+
+export function readSkipConversationDeleteConfirmation(): boolean {
+  return unifiedStorage.getItem(skipConversationDeleteConfirmationKey) === '1';
+}
+
+export function writeSkipConversationDeleteConfirmation(): Promise<void> {
+  return unifiedStorage.setPersistedItem(skipConversationDeleteConfirmationKey, '1');
 }
 
 export function readLegacyHiddenConversationIds(): ReadonlySet<string> {

@@ -12,6 +12,7 @@ type StartupErrorCopy = Pick<
   typeof english,
   | 'startupErrorTitle'
   | 'startupErrorDescription'
+  | 'startupErrorLocalServiceConflictDescription'
   | 'startupErrorLegacyProfileDescription'
   | 'startupErrorLegacyProfileWarning'
   | 'startupErrorDetails'
@@ -99,6 +100,7 @@ export function StartupErrorPage({ error, onRetry, onStartWithEmptyProfile }: St
   const legacyProfileConflict =
     errorDetails?.includes('legacy_profile_conflict:') === true ||
     errorDetails?.includes('legacy_profile_check_failed:') === true;
+  const localServiceConflict = errorDetails?.toLowerCase().includes('request identifier is already in use') === true;
   const [confirmingEmptyProfile, setConfirmingEmptyProfile] = useState(false);
   const [maximized, setMaximized] = useState(false);
   const [systemIsDark, setSystemIsDark] = useState(() => window.matchMedia('(prefers-color-scheme: dark)').matches);
@@ -242,23 +244,30 @@ export function StartupErrorPage({ error, onRetry, onStartWithEmptyProfile }: St
 
       <main className="startup-error-content" role="alert">
         <section aria-labelledby="startup-error-title" className="startup-error-card">
-          <div aria-hidden="true" className="startup-error-card__icon">
-            <AlertTriangle size={24} />
-          </div>
           <div className="startup-error-card__copy">
-            <h1 className="startup-error-card__title" id="startup-error-title">
-              {copy.startupErrorTitle}
-            </h1>
-            <p>{legacyProfileConflict ? copy.startupErrorLegacyProfileDescription : copy.startupErrorDescription}</p>
+            <div className="startup-error-card__heading">
+              <AlertTriangle aria-hidden="true" className="startup-error-card__icon" size={18} />
+              <h1 className="startup-error-card__title" id="startup-error-title">
+                {copy.startupErrorTitle}
+              </h1>
+            </div>
+            <p>
+              {legacyProfileConflict
+                ? copy.startupErrorLegacyProfileDescription
+                : localServiceConflict
+                  ? copy.startupErrorLocalServiceConflictDescription
+                  : copy.startupErrorDescription}
+            </p>
             {confirmingEmptyProfile && legacyProfileConflict ? (
               <p className="startup-error-card__diagnostic" role="status">
                 {copy.startupErrorLegacyProfileWarning}
               </p>
             ) : null}
             {errorDetails && !legacyProfileConflict ? (
-              <p className="startup-error-card__diagnostic">
-                <strong>{copy.startupErrorDetails}:</strong> {errorDetails}
-              </p>
+              <details className="startup-error-details">
+                <summary>{copy.startupErrorDetails}</summary>
+                <pre>{errorDetails}</pre>
+              </details>
             ) : null}
           </div>
 

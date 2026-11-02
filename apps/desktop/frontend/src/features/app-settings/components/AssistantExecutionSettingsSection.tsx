@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button, Card, Select, Switch } from '@shared/components';
+import { Button, Select, Switch } from '@shared/components';
 import { providerNameForModel } from '@features/chat/components/composerUtils';
 import { useChatStore } from '@features/chat/state/chatStore';
 import { modelRouteKey } from '@features/provider-settings/data/modelPreferences';
@@ -8,6 +8,7 @@ import { useAssistantExecutionPreferencesStore } from '@features/app-settings/da
 import { useAssistantProfilesStore } from '@features/app-settings/stores/assistantProfilesStore';
 import { SettingsPreferenceRow } from './SettingsPreferenceRow';
 import { SettingsLoadError, SettingsSaveFeedback } from './SettingsState';
+import { AssistantWritingSettingsSection } from './AssistantWritingSettingsSection';
 
 const goalRuntimeChoices = [0, 30, 60, 120, 240] as const;
 
@@ -34,13 +35,16 @@ export function AssistantExecutionSettingsSection() {
 
   if (preferenceLoadState === 'error') {
     return (
-      <SettingsLoadError
-        message={t('assistantPreferencesLoadFailed')}
-        onRetry={retryPreferences}
-        onReset={() => void resetPreferences()}
-        resetLabel={t('assistantPreferencesReset')}
-        resetLoading={preferenceSaveState === 'saving'}
-      />
+      <section aria-labelledby="settings-page-heading" className="settings-section grid content-start gap-6">
+        <SettingsLoadError
+          message={t('assistantPreferencesLoadFailed')}
+          onRetry={retryPreferences}
+          onReset={() => void resetPreferences()}
+          resetLabel={t('assistantPreferencesReset')}
+          resetLoading={preferenceSaveState === 'saving'}
+        />
+        <AssistantWritingSettingsSection />
+      </section>
     );
   }
 
@@ -67,7 +71,7 @@ export function AssistantExecutionSettingsSection() {
   }
 
   return (
-    <section aria-labelledby="settings-page-heading" className="grid gap-5">
+    <section aria-labelledby="settings-page-heading" className="settings-section grid content-start gap-6">
       {profilesLoadState === 'error' ? (
         <div
           className="flex flex-wrap items-center justify-between gap-3 rounded-control border border-destructive p-3"
@@ -79,7 +83,7 @@ export function AssistantExecutionSettingsSection() {
           </Button>
         </div>
       ) : null}
-      <Card className="divide-y divide-border">
+      <div className="settings-surface-card overflow-hidden rounded-card border border-border bg-raised">
         <SettingsPreferenceRow
           description={t('defaultAssistantProfileDescription')}
           id="setting-default-assistant-profile"
@@ -154,8 +158,9 @@ export function AssistantExecutionSettingsSection() {
             />
           )}
         </SettingsPreferenceRow>
-      </Card>
+      </div>
       <SettingsSaveFeedback errorMessage={t('assistantPreferencesSaveFailed')} state={preferenceSaveState} />
+      <AssistantWritingSettingsSection />
     </section>
   );
 }

@@ -168,24 +168,24 @@ class UnifiedStorage {
   setItem(key: string, value: string, persist = true): void {
     this.cache.set(key, value);
     if (isTauri() && persist) {
-      void localServiceClient
-        .call('storage.settings.set', { key, valueJson: value })
-        .then((response) => assertServiceFlag(response, 'saved', `setting '${key}' persistence`))
-        .catch((error) => {
-          globalThis.reportError(new Error(`Failed to persist setting '${key}' to local storage.`, { cause: error }));
-        });
+      void this.serializePersistedWrite(key, async () => {
+        const response = await localServiceClient.call('storage.settings.set', { key, valueJson: value });
+        assertServiceFlag(response, 'saved', `setting '${key}' persistence`);
+      }).catch((error) => {
+        globalThis.reportError(new Error(`Failed to persist setting '${key}' to local storage.`, { cause: error }));
+      });
     }
   }
 
   removeItem(key: string, persist = true): void {
     this.cache.delete(key);
     if (isTauri() && persist) {
-      void localServiceClient
-        .call('storage.settings.delete', { key })
-        .then((response) => assertServiceBoolean(response, 'deleted', `setting '${key}' deletion`))
-        .catch((error) => {
-          globalThis.reportError(new Error(`Failed to delete setting '${key}' from local storage.`, { cause: error }));
-        });
+      void this.serializePersistedWrite(key, async () => {
+        const response = await localServiceClient.call('storage.settings.delete', { key });
+        assertServiceBoolean(response, 'deleted', `setting '${key}' deletion`);
+      }).catch((error) => {
+        globalThis.reportError(new Error(`Failed to delete setting '${key}' from local storage.`, { cause: error }));
+      });
     }
   }
 

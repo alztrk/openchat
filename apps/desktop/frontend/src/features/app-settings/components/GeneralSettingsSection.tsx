@@ -111,8 +111,8 @@ export function GeneralSettingsSection({
   ];
 
   return (
-    <section aria-labelledby="settings-page-heading" className="grid gap-5">
-      <div className="grid gap-0 rounded-card border border-border bg-raised">
+    <section aria-labelledby="settings-page-heading" className="settings-section grid content-start gap-6">
+      <div className="settings-surface-card overflow-hidden rounded-card border border-border bg-raised">
         <SettingsPreferenceRow description={t('themeSettingDescription')} id="setting-theme" label={t('theme')}>
           {(descriptionId) => (
             <SegmentedControl
@@ -153,6 +153,8 @@ export function GeneralSettingsSection({
             />
           )}
         </SettingsPreferenceRow>
+      </div>
+      <div className="settings-surface-card overflow-hidden rounded-card border border-border bg-raised">
         <SettingsPreferenceRow
           description={t('conversationWidthDescription')}
           id="setting-conversation-width"

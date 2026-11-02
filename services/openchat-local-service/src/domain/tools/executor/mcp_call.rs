@@ -261,15 +261,17 @@ impl ToolExecutor {
         let activity = self.prepare_activity(activity, snapshot);
         let activities = self.record_activity(&activity).await;
         crate::chatgpt_store::save_assistant_tool_checkpoint(storage, snapshot, &activities)
-            .map_err(|_| tool_activity_storage_error())?;
+            .map_err(|error| tool_activity_storage_error(&error))?;
         self.emit_prepared_activity(activity, request_id, snapshot, events)
             .await
     }
 }
-fn tool_activity_storage_error() -> ServiceError {
+fn tool_activity_storage_error(error: &rusqlite::Error) -> ServiceError {
+    let detail_code = crate::storage::sqlite_error_code(error);
     ServiceError::new(
         "tool_activity_storage_failed",
         "The tool result could not be saved to this conversation.",
-        true,
+        !matches!(detail_code, "message_content_too_large" | "message_metadata_too_large"),
     )
+    .with_details(detail_code)
 }

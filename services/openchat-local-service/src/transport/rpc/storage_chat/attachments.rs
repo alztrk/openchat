@@ -103,6 +103,7 @@ pub(super) fn list_conversation_attachments(
 
     let connection = storage.connect().map_err(storage_error)?;
     let index_enabled = attachment_text_index_enabled(&connection)?;
+    drop(connection);
     let mut cursor = offset;
     let mut scanned = 0_u64;
     let mut items = Vec::new();
@@ -112,6 +113,7 @@ pub(super) fn list_conversation_attachments(
     while items.len() <= limit && scanned < MAX_ATTACHMENT_SCAN as u64 {
         let batch_limit =
             ATTACHMENT_LIBRARY_BATCH_SIZE.min((MAX_ATTACHMENT_SCAN as u64).saturating_sub(scanned));
+        let connection = storage.connect().map_err(storage_error)?;
         let batch = query_attachment_library_batch(
             &connection,
             cursor,
@@ -119,6 +121,7 @@ pub(super) fn list_conversation_attachments(
             index_enabled,
             &filters,
         )?;
+        drop(connection);
         if batch.is_empty() {
             reached_end = true;
             break;
@@ -442,6 +445,11 @@ pub(super) struct AttachmentEnvelope {
     pub(super) attachments: Vec<AttachmentMetadata>,
 }
 
+pub(super) struct StagedAttachments {
+    pub(super) staging: Option<PathBuf>,
+    pub(super) destination: PathBuf,
+}
+
 pub(super) fn parse_attachment_inputs(
     value: Option<&Value>,
 ) -> Result<Vec<AttachmentInput>, ServiceError> {
@@ -657,14 +665,28 @@ pub(super) fn stage_attachments(
     conversation_id: &str,
     message_id: &str,
     attachments: &[AttachmentInput],
-) -> Result<(PathBuf, PathBuf), ServiceError> {
+) -> Result<StagedAttachments, ServiceError> {
     let root = checked_directory(storage_root, "attachments", true)?;
     let conversation = checked_child_directory(&root, conversation_id, true)?;
-    let destination = conversation.join(message_id);
-    if destination.exists() {
-        return Err(storage_unavailable());
+    let destination_path = conversation.join(message_id);
+    match fs::symlink_metadata(&destination_path) {
+        Ok(metadata) => {
+            if metadata.file_type().is_symlink() || !metadata.is_dir() {
+                return Err(storage_unavailable());
+            }
+            let destination = checked_child_directory(&conversation, message_id, false)?;
+            if !attachment_directory_matches(&destination, attachments)? {
+                return Err(storage_unavailable());
+            }
+            return Ok(StagedAttachments {
+                staging: None,
+                destination,
+            });
+        }
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        Err(_) => return Err(storage_unavailable()),
     }
-    let staging = conversation.join(format!(".stage-{message_id}-{}", unix_time_millis()?));
+    let staging = conversation.join(format!(".stage-{message_id}-{}", uuid::Uuid::new_v4()));
     fs::create_dir(&staging).map_err(|_| storage_unavailable())?;
     for attachment in attachments {
         let path = staging.join(format!("{}.data", attachment.id));
@@ -678,7 +700,61 @@ pub(super) fn stage_attachments(
             return Err(storage_unavailable());
         }
     }
-    Ok((staging, destination))
+    Ok(StagedAttachments {
+        staging: Some(staging),
+        destination: destination_path,
+    })
+}
+
+pub(super) fn attachment_directory_matches(
+    directory: &Path,
+    attachments: &[AttachmentInput],
+) -> Result<bool, ServiceError> {
+    let metadata = match fs::symlink_metadata(directory) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
+        Err(_) => return Err(storage_unavailable()),
+    };
+    if metadata.file_type().is_symlink() || !metadata.is_dir() {
+        return Err(storage_unavailable());
+    }
+    let canonical_directory = fs::canonicalize(directory).map_err(|_| storage_unavailable())?;
+    if canonical_directory != directory {
+        return Err(storage_unavailable());
+    }
+
+    let mut expected = attachments
+        .iter()
+        .map(|attachment| format!("{}.data", attachment.id))
+        .collect::<HashSet<_>>();
+    for entry in fs::read_dir(&canonical_directory).map_err(|_| storage_unavailable())? {
+        let entry = entry.map_err(|_| storage_unavailable())?;
+        let Some(file_name) = entry.file_name().to_str().map(str::to_owned) else {
+            return Ok(false);
+        };
+        if !expected.remove(&file_name) {
+            return Ok(false);
+        }
+        let path = entry.path();
+        let metadata = fs::symlink_metadata(&path).map_err(|_| storage_unavailable())?;
+        if metadata.file_type().is_symlink() || !metadata.is_file() {
+            return Err(storage_unavailable());
+        }
+        let Some(attachment) = attachments
+            .iter()
+            .find(|attachment| file_name == format!("{}.data", attachment.id))
+        else {
+            return Ok(false);
+        };
+        if metadata.len() != attachment.bytes.len() as u64 {
+            return Ok(false);
+        }
+        let content = fs::read(path).map_err(|_| storage_unavailable())?;
+        if content != attachment.bytes {
+            return Ok(false);
+        }
+    }
+    Ok(expected.is_empty())
 }
 
 pub(super) fn attachment_path(

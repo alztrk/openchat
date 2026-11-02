@@ -24,7 +24,7 @@ export function handleToolPermissionEvent(
       set({ toolPermissionError: 'toolPermissionResponseFailed' });
     }
     void get()
-      .stopResponse()
+      .stopResponse(conversationId)
       .catch(() => {
         if (get().activeConversationId === conversationId) {
           set({ toolPermissionError: 'toolPermissionResponseFailed' });
@@ -34,26 +34,13 @@ export function handleToolPermissionEvent(
   }
   const request = { ...parsedRequest, conversationId };
 
-  const pending = get().pendingToolPermissionRequest;
-  if (pending && pending.id !== request.id && !get().isRespondingToToolPermission) {
-    if (get().activeConversationId === conversationId) {
-      set({ toolPermissionError: 'toolPermissionResponseFailed' });
-    }
-    void get()
-      .stopResponse()
-      .catch(() => {
-        if (get().activeConversationId === conversationId) {
-          set({ toolPermissionError: 'toolPermissionResponseFailed' });
-        }
-      });
-    return;
-  }
-  if (pending?.id === request.id) return;
-  set({
+  if (get().pendingToolPermissionRequests.some((pending) => pending.id === request.id)) return;
+  set((current) => ({
+    pendingToolPermissionRequests: [...current.pendingToolPermissionRequests, request],
     pendingToolPermissionRequest: request,
-    isRespondingToToolPermission: false,
+    isRespondingToToolPermission: current.respondingToolPermissionIds.length > 0,
     toolPermissionError: null,
-  });
+  }));
 }
 
 export function createRespondToToolPermissionAction(
@@ -61,32 +48,54 @@ export function createRespondToToolPermissionAction(
   get: GetState,
   localServiceClient: LocalServiceClient,
 ): ChatState['respondToToolPermission'] {
-  return async (approved) => {
+  return async (approved, conversationId) => {
     const current = get();
-    const request = current.pendingToolPermissionRequest;
-    if (!request || request.conversationId !== current.activeConversationId || current.isRespondingToToolPermission)
-      return;
-    set({ isRespondingToToolPermission: true, toolPermissionError: null });
+    const targetConversationId = conversationId ?? current.activeConversationId;
+    const request = current.pendingToolPermissionRequests.find(
+      (pending) => pending.conversationId === targetConversationId,
+    );
+    if (!request || current.respondingToolPermissionIds.includes(request.id)) return;
+    set((state) => ({
+      isRespondingToToolPermission: true,
+      respondingToolPermissionIds: [...state.respondingToolPermissionIds, request.id],
+      toolPermissionError: null,
+    }));
     try {
       await localServiceClient.respondToPermission(request.id, approved);
-      if (get().pendingToolPermissionRequest?.id === request.id) {
-        set({
-          pendingToolPermissionRequest: null,
-          isRespondingToToolPermission: false,
+      set((state) => {
+        const pendingToolPermissionRequests = state.pendingToolPermissionRequests.filter(
+          (pending) => pending.id !== request.id,
+        );
+        return {
+          pendingToolPermissionRequests,
+          pendingToolPermissionRequest: pendingToolPermissionRequests[0] ?? null,
+          isRespondingToToolPermission: state.respondingToolPermissionIds.some((id) => id !== request.id),
+          respondingToolPermissionIds: state.respondingToolPermissionIds.filter((id) => id !== request.id),
           toolPermissionError: null,
-        });
-      }
+        };
+      });
     } catch (error) {
-      if (get().pendingToolPermissionRequest?.id !== request.id) return;
+      if (!get().pendingToolPermissionRequests.some((pending) => pending.id === request.id)) return;
       if (error instanceof LocalServiceError && error.code === 'tool_permission_request_unavailable') {
-        set({
-          pendingToolPermissionRequest: null,
-          isRespondingToToolPermission: false,
-          toolPermissionError: 'toolPermissionRequestExpired',
+        set((state) => {
+          const pendingToolPermissionRequests = state.pendingToolPermissionRequests.filter(
+            (pending) => pending.id !== request.id,
+          );
+          return {
+            pendingToolPermissionRequests,
+            pendingToolPermissionRequest: pendingToolPermissionRequests[0] ?? null,
+            isRespondingToToolPermission: state.respondingToolPermissionIds.some((id) => id !== request.id),
+            respondingToolPermissionIds: state.respondingToolPermissionIds.filter((id) => id !== request.id),
+            toolPermissionError: 'toolPermissionRequestExpired',
+          };
         });
         return;
       }
-      set({ isRespondingToToolPermission: false, toolPermissionError: 'toolPermissionResponseFailed' });
+      set((state) => ({
+        isRespondingToToolPermission: state.respondingToolPermissionIds.some((id) => id !== request.id),
+        respondingToolPermissionIds: state.respondingToolPermissionIds.filter((id) => id !== request.id),
+        toolPermissionError: 'toolPermissionResponseFailed',
+      }));
     }
   };
 }

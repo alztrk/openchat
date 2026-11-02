@@ -57,6 +57,7 @@ pub(crate) fn read_diff(
         .map_err(|_| TrackingError::StorageUnavailable)?;
     let entry =
         load_change(&connection, conversation_id, id)?.ok_or(TrackingError::SnapshotUnavailable)?;
+    drop(connection);
     if !entry.diff_available || entry.root_identity.is_none() {
         return Ok(serde_json::json!({
             "path": entry.path,

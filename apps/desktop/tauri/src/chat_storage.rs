@@ -23,7 +23,21 @@ pub const MAXIMUM_MARKDOWN_EXPORT_TITLE_BYTES: usize = 128;
 pub const MAXIMUM_MARKDOWN_EXPORT_CONTENT_BYTES: usize = 20 * 1024 * 1024;
 
 const MAX_CHAT_STORAGE_DIAGNOSTIC_BYTES: u64 = 512 * 1024;
+const MAX_CHAT_PERSISTENCE_DIAGNOSTIC_VALUE: u64 = 64 * 1024 * 1024;
 static CHAT_STORAGE_DIAGNOSTIC_LOCK: Mutex<()> = Mutex::new(());
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ChatMessagePersistenceMetrics {
+    content_bytes: u64,
+    citation_source_bytes: u64,
+    personal_memory_fact_id_bytes: u64,
+    reasoning_summary_bytes: u64,
+    tool_activity_bytes: u64,
+    tool_activity_count: Option<u64>,
+    attachment_count: u64,
+    attachment_bytes: u64,
+}
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -67,7 +81,84 @@ pub fn record_chat_request_failure(stage: String, code: String) -> Result<(), Ch
     if code.is_empty() || !valid_diagnostic_code(&code) {
         return Err(ChatStorageError::invalid_input());
     }
-    append_diagnostic("app", "chat_request_failed", "stage", stage, &code)
+    append_diagnostic("app", "chat_request_failed", "stage", stage, &code, None)
+}
+
+/// Records bounded chat-message persistence failures without message content or IDs.
+#[tauri::command]
+pub fn record_chat_message_persistence_failure(
+    stage: String,
+    code: String,
+    detail_code: Option<String>,
+    metrics: ChatMessagePersistenceMetrics,
+) -> Result<(), ChatStorageError> {
+    let stage = match stage.as_str() {
+        "userMessage" => "user_message",
+        "assistantCheckpoint" => "assistant_checkpoint",
+        "assistantFinal" => "assistant_final",
+        "assistantRecovery" => "assistant_recovery",
+        _ => return Err(ChatStorageError::invalid_input()),
+    };
+    if !valid_diagnostic_code(&code)
+        || detail_code
+            .as_deref()
+            .is_some_and(|detail| !valid_diagnostic_code(detail))
+    {
+        return Err(ChatStorageError::invalid_input());
+    }
+    if [
+        metrics.content_bytes,
+        metrics.citation_source_bytes,
+        metrics.personal_memory_fact_id_bytes,
+        metrics.reasoning_summary_bytes,
+        metrics.tool_activity_bytes,
+        metrics.attachment_bytes,
+    ]
+    .into_iter()
+    .any(|value| value > MAX_CHAT_PERSISTENCE_DIAGNOSTIC_VALUE)
+        || metrics.tool_activity_count.is_some_and(|count| count > 100_000)
+        || metrics.attachment_count > 10
+    {
+        return Err(ChatStorageError::invalid_input());
+    }
+    append_diagnostic_with_message_metrics(
+        "chat_persistence",
+        "message_save_failed",
+        "stage",
+        stage,
+        &code,
+        detail_code.as_deref(),
+        &metrics,
+    )
+}
+
+/// Records file-change loading failures without conversation IDs, paths, or file contents.
+#[tauri::command]
+pub fn record_file_changes_load_failure(
+    stage: String,
+    code: String,
+    detail_code: Option<String>,
+) -> Result<(), ChatStorageError> {
+    let stage = match stage.as_str() {
+        "inline" => "inline",
+        "panel" => "panel",
+        _ => return Err(ChatStorageError::invalid_input()),
+    };
+    if !valid_diagnostic_code(&code)
+        || detail_code
+            .as_deref()
+            .is_some_and(|detail| !valid_diagnostic_code(detail))
+    {
+        return Err(ChatStorageError::invalid_input());
+    }
+    append_diagnostic(
+        "file_changes",
+        "load_failed",
+        "stage",
+        stage,
+        &code,
+        detail_code.as_deref(),
+    )
 }
 
 /// Records a ChatGPT connection-removal stage using fixed labels and a stable error code.
@@ -93,7 +184,7 @@ pub fn record_connection_removal_diagnostic(
     if !valid_diagnostic_code(&code) {
         return Err(ChatStorageError::invalid_input());
     }
-    append_diagnostic("app", "connection_removal", "stage", stage, &code)
+    append_diagnostic("app", "connection_removal", "stage", stage, &code, None)
 }
 
 /// Records context-usage failures using a fixed operation label and stable error code.
@@ -116,6 +207,7 @@ pub fn record_context_usage_failure(
         "operation",
         operation,
         &code,
+        None,
     )
 }
 
@@ -133,6 +225,7 @@ fn append_diagnostic(
     field_name: &str,
     operation: &str,
     code: &str,
+    detail_code: Option<&str>,
 ) -> Result<(), ChatStorageError> {
     let local_app_data = env::var_os("LOCALAPPDATA").ok_or_else(ChatStorageError::unavailable)?;
     let logs_directory = PathBuf::from(local_app_data).join("OpenChat").join("logs");
@@ -148,6 +241,35 @@ fn append_diagnostic(
         field_name,
         operation,
         code,
+        detail_code,
+    )
+}
+
+fn append_diagnostic_with_message_metrics(
+    component: &str,
+    event: &str,
+    field_name: &str,
+    operation: &str,
+    code: &str,
+    detail_code: Option<&str>,
+    metrics: &ChatMessagePersistenceMetrics,
+) -> Result<(), ChatStorageError> {
+    let local_app_data = env::var_os("LOCALAPPDATA").ok_or_else(ChatStorageError::unavailable)?;
+    let logs_directory = PathBuf::from(local_app_data).join("OpenChat").join("logs");
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|_| ChatStorageError::unavailable())?
+        .as_millis();
+    append_diagnostic_at_with_message_metrics(
+        &logs_directory,
+        timestamp,
+        component,
+        event,
+        field_name,
+        operation,
+        code,
+        detail_code,
+        Some(metrics),
     )
 }
 
@@ -159,6 +281,31 @@ fn append_diagnostic_at(
     field_name: &str,
     operation: &str,
     code: &str,
+    detail_code: Option<&str>,
+) -> Result<(), ChatStorageError> {
+    append_diagnostic_at_with_message_metrics(
+        logs_directory,
+        timestamp,
+        component,
+        event,
+        field_name,
+        operation,
+        code,
+        detail_code,
+        None,
+    )
+}
+
+fn append_diagnostic_at_with_message_metrics(
+    logs_directory: &Path,
+    timestamp: u128,
+    component: &str,
+    event: &str,
+    field_name: &str,
+    operation: &str,
+    code: &str,
+    detail_code: Option<&str>,
+    metrics: Option<&ChatMessagePersistenceMetrics>,
 ) -> Result<(), ChatStorageError> {
     let _guard = CHAT_STORAGE_DIAGNOSTIC_LOCK
         .lock()
@@ -175,8 +322,23 @@ fn append_diagnostic_at(
     } else {
         format!(" code={code}")
     };
+    let detail_code_field =
+        detail_code.map_or_else(String::new, |value| format!(" detail_code={value}"));
+    let metrics_fields = metrics.map_or_else(String::new, |metrics| {
+        format!(
+            " content_bytes={} citation_source_bytes={} personal_memory_fact_id_bytes={} reasoning_summary_bytes={} tool_activity_bytes={} tool_activity_count={} attachment_count={} attachment_bytes={}",
+            metrics.content_bytes,
+            metrics.citation_source_bytes,
+            metrics.personal_memory_fact_id_bytes,
+            metrics.reasoning_summary_bytes,
+            metrics.tool_activity_bytes,
+            metrics.tool_activity_count.map_or_else(|| "unknown".to_owned(), |count| count.to_string()),
+            metrics.attachment_count,
+            metrics.attachment_bytes,
+        )
+    });
     let line = format!(
-        "timestamp_unix_ms={timestamp} component={component} event={event} {field_name}={operation}{code_field}\n"
+        "timestamp_unix_ms={timestamp} component={component} event={event} {field_name}={operation}{code_field}{detail_code_field}{metrics_fields}\n"
     );
     if file
         .metadata()
@@ -247,6 +409,7 @@ mod tests {
             "stage",
             "request_execution",
             "provider_error",
+            None,
         )
         .expect("append diagnostic");
 

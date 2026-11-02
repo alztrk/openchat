@@ -51,6 +51,8 @@ export interface ContextUsageSnapshot {
   memoryTokens: number;
   draftTokens: number;
   providerInputTokens: number | null;
+  usageMode: 'estimated' | 'provider_reported_plus_estimate';
+  estimateSource: 'model_tokenizer' | 'heuristic';
 }
 
 const opaqueCheckpointEstimate = 4096;
@@ -127,9 +129,10 @@ async function recordContextUsageFailure(operation: 'contextConfiguration' | 'me
 }
 
 /**
- * Fetch a full context usage snapshot from the backend (tiktoken-based).
- * The backend calculates all token counts: messages, tool activities,
- * attachments, draft, and compaction summary.
+ * Fetches a backend context usage snapshot. Supported model identifiers use
+ * their registered tokenizer; unknown models use an explicitly approximate
+ * fallback. The backend accounts for messages, tool activity, attachments,
+ * draft text, and compaction summary.
  */
 export async function loadFullContextUsage(
   model: ChatModel,
@@ -142,6 +145,9 @@ export async function loadFullContextUsage(
   try {
     const result = await localServiceClient.call('chat.context.usage.full_estimate', {
       modelId: model.modelId,
+      providerId: model.providerId,
+      connectionId: model.connectionId ?? null,
+      workspaceId: model.workspaceId ?? null,
       conversationId,
       draft: draft || null,
       attachments: pendingAttachments.map((a) => ({
@@ -168,19 +174,37 @@ function parseFullContextUsageSnapshot(
     : 0;
   const draftTokens = isFiniteNonNegativeInteger(raw.draftTokens) ? raw.draftTokens : 0;
   const memoryTokens = isFiniteNonNegativeInteger(raw.memoryTokens) ? raw.memoryTokens : 0;
-  const totalTokens = isFiniteNonNegativeInteger(raw.totalTokens) ? raw.totalTokens : 0;
+  const providerInputTokens = isFiniteNonNegativeInteger(raw.providerInputTokens) ? raw.providerInputTokens : null;
+  const usageMode =
+    raw.usageMode === 'provider_reported_plus_estimate'
+      ? 'provider_reported_plus_estimate'
+      : raw.usageMode === 'estimated'
+        ? 'estimated'
+        : null;
+  const estimateSource =
+    raw.estimateSource === 'model_tokenizer'
+      ? 'model_tokenizer'
+      : raw.estimateSource === 'heuristic'
+        ? 'heuristic'
+        : null;
+  if (usageMode === null || estimateSource === null) {
+    throw new Error('The context usage estimate metadata is invalid.');
+  }
 
-  // Attachments from backend
   const backendAttachments: ContextUsageAttachment[] = [];
   if (Array.isArray(raw.attachments)) {
     for (const item of raw.attachments) {
-      if (isObject(item) && typeof item.name === 'string' && isFiniteNonNegativeInteger(item.tokens)) {
-        backendAttachments.push({ name: item.name, tokens: item.tokens, isDraft: false });
+      if (
+        isObject(item) &&
+        typeof item.name === 'string' &&
+        isFiniteNonNegativeInteger(item.tokens) &&
+        typeof item.isDraft === 'boolean'
+      ) {
+        backendAttachments.push({ name: item.name, tokens: item.tokens, isDraft: item.isDraft });
       }
     }
   }
 
-  // Tool usage from backend
   const toolUsage: { name: string; tokens: number }[] = [];
   if (Array.isArray(raw.toolUsage)) {
     for (const item of raw.toolUsage) {
@@ -190,11 +214,11 @@ function parseFullContextUsageSnapshot(
     }
   }
 
-  // Instructions and tool definitions come from configuration (backend-sourced)
   const instructionsTokens = configuration?.instructionsTokens ?? 0;
   const toolDefinitionTokens = configuration?.toolDefinitions.reduce((sum, item) => sum + item.tokens, 0) ?? 0;
-
-  const providerInputTokens = isFiniteNonNegativeInteger(raw.providerInputTokens) ? raw.providerInputTokens : null;
+  const rawTotalTokens = isFiniteNonNegativeInteger(raw.totalTokens) ? raw.totalTokens : 0;
+  const totalTokens =
+    rawTotalTokens + (providerInputTokens === null ? instructionsTokens + toolDefinitionTokens : 0);
 
   return {
     totalTokens,
@@ -202,11 +226,13 @@ function parseFullContextUsageSnapshot(
     toolDefinitionTokens,
     userMessageTokens,
     assistantMessageTokens,
-    attachments: [...backendAttachments],
+    attachments: backendAttachments,
     toolUsage,
     memoryTokens,
     draftTokens,
     providerInputTokens,
+    usageMode,
+    estimateSource,
   };
 }
 
@@ -220,23 +246,23 @@ export function estimateContextUsage(
 ): ContextUsageSnapshot {
   const compactionMatchesRoute =
     memory !== null &&
-    memory.compactionKind !== null &&
-    memory.compactionProviderId === model.providerId &&
-    memory.compactionModelId === model.modelId &&
-    memory.compactionConnectionId === (model.connectionId ?? null) &&
-    memory.compactionWorkspaceId === (model.workspaceId ?? null);
+    (memory.compactionKind === 'summary' ||
+      (memory.compactionKind === 'responses_checkpoint' &&
+        memory.compactionProviderId === model.providerId &&
+        memory.compactionModelId === model.modelId &&
+        memory.compactionConnectionId === (model.connectionId ?? null) &&
+        memory.compactionWorkspaceId === (model.workspaceId ?? null)));
   const boundaryIndex =
     compactionMatchesRoute && memory.compactedThroughMessageId !== null
       ? messages.findIndex((message) => message.id === memory.compactedThroughMessageId)
       : -1;
   const contextMessages = messages.slice(boundaryIndex >= 0 ? boundaryIndex + 1 : 0);
   const messageEstimate = estimateMessages(contextMessages);
-  const attachments = [
-    ...messageEstimate.attachments,
-    ...pendingAttachments.map((attachment) =>
-      estimateAttachment(attachment.name, attachment.kind, attachment.sizeBytes, true),
-    ),
-  ];
+  const pendingAttachmentEstimates = pendingAttachments.map((attachment) =>
+    estimateAttachment(attachment.name, attachment.kind, attachment.sizeBytes, true),
+  );
+  const pendingAttachmentTokens = pendingAttachmentEstimates.reduce((sum, attachment) => sum + attachment.tokens, 0);
+  const attachments = [...messageEstimate.attachments, ...pendingAttachmentEstimates];
   const memoryTokens =
     compactionMatchesRoute && memory.compactionKind === 'summary'
       ? estimateText(memory.summary ?? '')
@@ -249,10 +275,8 @@ export function estimateContextUsage(
   const baseTotal =
     instructionsTokens +
     toolDefinitionTokens +
-    messageEstimate.userTokens +
-    messageEstimate.assistantTokens +
-    attachments.reduce((sum, item) => sum + item.tokens, 0) +
-    messageEstimate.toolUsage.reduce((sum, item) => sum + item.tokens, 0) +
+    messageEstimate.totalTokens +
+    pendingAttachmentTokens +
     memoryTokens +
     draftTokens;
 
@@ -265,9 +289,14 @@ export function estimateContextUsage(
     lastPrompt.workspaceId === (model.workspaceId ?? null);
   const promptMessageIndex =
     matchingPrompt && lastPrompt !== null ? messages.findIndex((message) => message.id === lastPrompt.messageId) : -1;
-  const providerInputTokens = matchingPrompt && lastPrompt !== null ? lastPrompt.inputTokens : null;
-  const providerAdditions =
-    promptMessageIndex >= 0 ? estimateMessages(messages.slice(promptMessageIndex + 1)).totalTokens : 0;
+  const promptIsAfterCompactionBoundary =
+    promptMessageIndex >= 0 && (boundaryIndex < 0 || promptMessageIndex > boundaryIndex);
+  const providerInputTokens =
+    matchingPrompt && lastPrompt !== null && promptIsAfterCompactionBoundary ? lastPrompt.inputTokens : null;
+  const postPromptEstimate = estimateMessages(messages.slice(promptMessageIndex + 1));
+  const providerAdditions = providerInputTokens === null
+    ? 0
+    : postPromptEstimate.totalTokens + pendingAttachmentTokens;
   return {
     totalTokens: providerInputTokens === null ? baseTotal : providerInputTokens + providerAdditions + draftTokens,
     instructionsTokens,
@@ -279,6 +308,8 @@ export function estimateContextUsage(
     memoryTokens,
     draftTokens,
     providerInputTokens,
+    usageMode: providerInputTokens === null ? 'estimated' : 'provider_reported_plus_estimate',
+    estimateSource: 'heuristic',
   };
 }
 
@@ -303,11 +334,7 @@ function estimateMessages(messages: readonly ChatMessage[]): {
       userTokens += estimateText(message.content);
       continue;
     }
-    const assistantMessageTokens =
-      typeof message.outputTokens === 'number' && Number.isFinite(message.outputTokens) && message.outputTokens >= 0
-        ? message.outputTokens
-        : estimateText(message.content);
-    assistantTokens += assistantMessageTokens;
+    assistantTokens += estimateText(message.content);
     for (const activity of parseToolActivities(message.toolActivities)) {
       if (activity.status !== 'completed') continue;
       let activityTokens = estimateText(
@@ -360,7 +387,25 @@ function estimateAttachment(
 }
 
 function estimateText(value: string): number {
-  return new TextEncoder().encode(value).byteLength;
+  let asciiCharacters = 0;
+  let punctuationCharacters = 0;
+  let nonAsciiCharacters = 0;
+  for (const character of value) {
+    const codePoint = character.codePointAt(0) ?? 0;
+    if (codePoint <= 0x7f) {
+      asciiCharacters += 1;
+      const isAsciiAlphanumeric =
+        (codePoint >= 0x30 && codePoint <= 0x39) ||
+        (codePoint >= 0x41 && codePoint <= 0x5a) ||
+        (codePoint >= 0x61 && codePoint <= 0x7a);
+      const isAsciiWhitespace = codePoint === 0x20 || (codePoint >= 0x09 && codePoint <= 0x0d);
+      if (!isAsciiAlphanumeric && !isAsciiWhitespace) punctuationCharacters += 1;
+    } else {
+      nonAsciiCharacters += 1;
+    }
+  }
+  const ordinaryAscii = asciiCharacters - punctuationCharacters;
+  return Math.ceil(ordinaryAscii / 3) + punctuationCharacters + nonAsciiCharacters * 2;
 }
 
 function stringifyJson(value: unknown): string {

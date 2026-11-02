@@ -192,18 +192,16 @@ impl SandboxedProcess {
         options: SandboxOptions<'_>,
     ) -> io::Result<Self> {
         validate_win32_string(OsStr::new(command))?;
+        let workdir = if workdir.as_os_str().encode_wide().count() < 260 {
+            super::types::shell_path(workdir)
+        } else {
+            workdir.to_path_buf()
+        };
         let (application, arguments) = options
             .working_directory_state_file
-            .map(|state_file| shell_invocation_with_state(command, workdir, Some(state_file)))
-            .unwrap_or_else(|| shell_invocation(command, workdir));
-        Self::spawn_process(
-            None,
-            application,
-            arguments,
-            workdir.to_path_buf(),
-            &[],
-            options,
-        )
+            .map(|state_file| shell_invocation_with_state(command, &workdir, Some(state_file)))
+            .unwrap_or_else(|| shell_invocation(command, &workdir));
+        Self::spawn_process(None, application, arguments, workdir, &[], options)
     }
 
     /// Starts a program with workspace-only write access and no network capability.
@@ -760,8 +758,10 @@ fn find_shell_binary(name: &str) -> Option<PathBuf> {
     which::which(name).ok().or_else(|| {
         // Fallback: known Windows system locations
         let sysroot = std::env::var("SystemRoot").ok()?;
-        if name == "cmd.exe" || name == "powershell.exe" {
+        if name == "cmd.exe" {
             Some(PathBuf::from(sysroot).join("System32").join(name))
+        } else if name == "powershell" {
+            Some(PathBuf::from(sysroot).join("System32\\WindowsPowerShell\\v1.0\\powershell.exe"))
         } else {
             // PowerShell 7+ default location
             let program_files =

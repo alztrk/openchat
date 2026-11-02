@@ -9,7 +9,17 @@ const projectRoot = resolve(frontendRoot, '..');
 
 export default defineConfig({
   root: frontendRoot,
-  plugins: [react(), tailwindcss()],
+  plugins: [
+    {
+      name: 'openchat-development-favicon',
+      apply: 'serve',
+      transformIndexHtml(html) {
+        return html.replace('href="/favicon.svg"', 'href="/favicon-dev.svg"');
+      },
+    },
+    react(),
+    tailwindcss(),
+  ],
   resolve: {
     alias: {
       '@': resolve(frontendRoot, 'src'),

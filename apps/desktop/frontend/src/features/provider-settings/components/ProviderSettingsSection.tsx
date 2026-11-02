@@ -28,22 +28,12 @@ import {
   waitForConnectionRemoval,
 } from '@features/provider-settings/data/connectionRemoval';
 import { formatModelRouteKey, modelRouteKey } from '@features/provider-settings/data/modelPreferences';
-import { refreshOAuthPlans, subscribeToOAuthPlanUpdates } from '@features/provider-settings/data/oauthPlanMonitor';
 import {
-  type ProviderRequestOutcomeRecord,
-  readProviderRequestOutcomeRecord,
-} from '@features/provider-settings/data/providerRequestOutcome';
-import {
-  type ProviderVerificationRecord,
-  readProviderVerificationRecord,
-} from '@features/provider-settings/data/providerVerification';
-import {
-  readTitleGenerationPreference,
   type TitleGenerationMode,
   type TitleGenerationPreference,
   titlePreferenceForModel,
-  writeTitleGenerationPreference,
 } from '@features/provider-settings/data/titleGenerationPreferences';
+import { refreshOAuthPlans, subscribeToOAuthPlanUpdates } from '@features/provider-settings/data/oauthPlanMonitor';
 import {
   LocalServiceError,
   localServiceClient,
@@ -54,24 +44,12 @@ import { invoke } from '@shared/lib/platform/tauri';
 import { ApiKeyProvidersSection } from './ApiKeyProvidersSection';
 import { CopilotOAuthCard } from './CopilotOAuthCard';
 import { ProviderIcon } from './ProviderIcon';
-import { ProviderVerificationStatus, providerVerificationStateForOutcome } from './ProviderVerificationStatus';
 
 type ConnectionRequest = 'idle' | 'loading' | 'signingIn' | 'error';
-type VerificationState =
-  | 'notChecked'
-  | 'checking'
-  | 'verified'
-  | 'empty'
-  | 'stale'
-  | 'authenticationFailed'
-  | 'rateLimited'
-  | 'networkFailed'
-  | 'failed';
 type ConnectionErrorCode =
   | 'oauthConnectionsLoadFailed'
   | 'oauthSignInFailed'
   | 'connectionSelectionFailed'
-  | 'workspaceSelectionFailed'
   | 'connectionRemoveFailed'
   | 'connectionRemoveStatusUnknown';
 
@@ -80,17 +58,11 @@ const CONNECTION_REMOVE_FAILURE_RECONCILIATION_MS = 10_000;
 
 interface ProviderSettingsSectionProps {
   serviceStatus: 'idle' | 'loading' | 'ready' | 'error';
-  modelStatus: 'idle' | 'loading' | 'ready' | 'error';
-  modelError: boolean;
-  models: ChatModel[];
   refreshModels(forceRefresh?: boolean): Promise<void>;
 }
 
 export function ProviderSettingsSection({
   serviceStatus,
-  modelStatus,
-  modelError,
-  models,
   refreshModels,
 }: ProviderSettingsSectionProps) {
   const { t } = useTranslation();
@@ -105,20 +77,7 @@ export function ProviderSettingsSection({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [removeTarget, setRemoveTarget] = useState<ChatGptConnectionPlanState | null>(null);
   const [removingId, setRemovingId] = useState<string | null>(null);
-  const [verificationState, setVerificationState] = useState<VerificationState>('notChecked');
-  const [verificationCheckedAt, setVerificationCheckedAt] = useState<number | null>(null);
-  const [verificationRecordReadFailed, setVerificationRecordReadFailed] = useState(false);
-  const [verificationSaveFailed, setVerificationSaveFailed] = useState(false);
-  const [lastRequestOutcome, setLastRequestOutcome] = useState<ProviderRequestOutcomeRecord | null>(null);
-  const [lastRequestReadFailed, setLastRequestReadFailed] = useState(false);
   const [notice, setNotice] = useState<'connectionRemoveSucceeded' | null>(null);
-  const [titlePreference, setTitlePreference] = useState<TitleGenerationPreference>({
-    mode: 'conversation',
-    model: null,
-  });
-  const [titlePreferenceLoadFailed, setTitlePreferenceLoadFailed] = useState(false);
-  const [titleError, setTitleError] = useState<'titlePreferenceSaveFailed' | null>(null);
-  const [titleSaving, setTitleSaving] = useState(false);
   const [chatGptApiKeyFormOpen, setChatGptApiKeyFormOpen] = useState(false);
 
   useEffect(() => {
@@ -139,38 +98,8 @@ export function ProviderSettingsSection({
       const items = parseConnectionList(response.connections);
       if (!isMountedRef.current) return null;
       const selectedConnection = items.find((connection) => connection.isSelected);
-      const selectedWorkspace = selectedConnection?.workspaces.find((workspace) => workspace.isSelected);
-      let verificationRecord: ProviderVerificationRecord | null = null;
-      let verificationReadFailed = false;
-      let requestRecord: ProviderRequestOutcomeRecord | null = null;
-      let requestReadFailed = false;
-      if (selectedConnection && selectedWorkspace) {
-        const route = {
-          providerId: 'chatgpt_oauth',
-          connectionId: selectedConnection.id,
-          workspaceId: selectedWorkspace.id,
-        };
-        try {
-          verificationRecord = readProviderVerificationRecord(route);
-        } catch {
-          verificationReadFailed = true;
-        }
-        try {
-          requestRecord = readProviderRequestOutcomeRecord(route);
-        } catch {
-          requestReadFailed = true;
-        }
-      }
       setConnections(items);
       setSelectedId(selectedConnection?.id ?? null);
-      setVerificationState(
-        verificationRecord ? providerVerificationStateForOutcome(verificationRecord.outcome) : 'notChecked',
-      );
-      setVerificationCheckedAt(verificationRecord?.checkedAtUnixMs ?? null);
-      setVerificationRecordReadFailed(verificationReadFailed);
-      setVerificationSaveFailed(false);
-      setLastRequestOutcome(requestRecord);
-      setLastRequestReadFailed(requestReadFailed);
       setErrorCode(null);
       setErrorDetails(null);
       setRequest('idle');
@@ -207,19 +136,6 @@ export function ProviderSettingsSection({
       setRequest('error');
     }
   }, [loadConnections, serviceStatus]);
-
-  const loadTitlePreference = useCallback(() => {
-    try {
-      setTitlePreference(readTitleGenerationPreference());
-      setTitlePreferenceLoadFailed(false);
-    } catch {
-      setTitlePreferenceLoadFailed(true);
-    }
-  }, []);
-
-  useEffect(() => {
-    loadTitlePreference();
-  }, [loadTitlePreference]);
 
   const signIn = async () => {
     if (request === 'signingIn') return;
@@ -273,12 +189,6 @@ export function ProviderSettingsSection({
   };
 
   const selectConnection = async (connectionId: string) => {
-    setVerificationState('notChecked');
-    setVerificationCheckedAt(null);
-    setVerificationRecordReadFailed(false);
-    setVerificationSaveFailed(false);
-    setLastRequestOutcome(null);
-    setLastRequestReadFailed(false);
     setErrorCode(null);
     setErrorDetails(null);
     setNotice(null);
@@ -288,26 +198,6 @@ export function ProviderSettingsSection({
       await refreshModels();
     } catch (error) {
       setErrorCode('connectionSelectionFailed');
-      setErrorDetails(localServiceErrorDetails(error));
-    }
-  };
-
-  const selectWorkspace = async (connectionId: string, workspaceId: string) => {
-    setVerificationState('notChecked');
-    setVerificationCheckedAt(null);
-    setVerificationRecordReadFailed(false);
-    setVerificationSaveFailed(false);
-    setLastRequestOutcome(null);
-    setLastRequestReadFailed(false);
-    setErrorCode(null);
-    setErrorDetails(null);
-    setNotice(null);
-    try {
-      await localServiceClient.call('chatgpt.workspaces.select', { connectionId, workspaceId });
-      await loadConnections();
-      await refreshModels();
-    } catch (error) {
-      setErrorCode('workspaceSelectionFailed');
       setErrorDetails(localServiceErrorDetails(error));
     }
   };
@@ -414,55 +304,21 @@ export function ProviderSettingsSection({
     }
   };
 
-  const saveTitlePreference = (preference: TitleGenerationPreference) => {
-    setTitleSaving(true);
-    try {
-      writeTitleGenerationPreference(preference);
-      setTitlePreference(preference);
-      setTitlePreferenceLoadFailed(false);
-      setTitleError(null);
-    } catch {
-      setTitleError('titlePreferenceSaveFailed');
-    } finally {
-      setTitleSaving(false);
-    }
-  };
-
-  useEffect(() => {
-    if (titlePreference.mode !== 'lightweight') return;
-    const lightweightModel = findLightweightModel(models);
-    const nextModel = lightweightModel ? titlePreferenceForModel(lightweightModel) : null;
-    const currentRoute = titlePreference.model ? formatModelRouteKey(titlePreference.model) : null;
-    const nextRoute = nextModel ? formatModelRouteKey(nextModel) : null;
-    if (currentRoute === nextRoute) return;
-    const nextPreference: TitleGenerationPreference = { mode: 'lightweight', model: nextModel };
-    try {
-      writeTitleGenerationPreference(nextPreference);
-      setTitlePreference(nextPreference);
-      setTitlePreferenceLoadFailed(false);
-      setTitleError(null);
-    } catch {
-      setTitleError('titlePreferenceSaveFailed');
-    }
-  }, [models, titlePreference.mode, titlePreference.model]);
-
-  const selectedConnection = connections.find((connection) => connection.id === selectedId);
-  const selectedWorkspace = selectedConnection?.workspaces.find((workspace) => workspace.isSelected);
-
   return (
-    <section aria-labelledby="settings-connections-heading" className="grid w-full max-w-6xl gap-6">
-      <h2 className="sr-only" id="settings-connections-heading">
-        {t('settingsAccountConnectionsHeading')}
-      </h2>
+    <section aria-labelledby="settings-connections-heading" className="settings-data-page">
+      <div className="settings-data-group">
+        <h2 className="settings-data-group-title" id="settings-connections-heading">
+          {t('settingsAccountConnectionsHeading')}
+        </h2>
 
-      <CopilotOAuthCard onChanged={refreshModels} serviceReady={serviceStatus === 'ready'} />
+        <CopilotOAuthCard onChanged={refreshModels} serviceReady={serviceStatus === 'ready'} />
 
-      <Card className="overflow-hidden">
-        <div className="flex flex-wrap items-start justify-between gap-4 p-5">
+        <Card className="overflow-hidden bg-raised">
+        <div className="flex flex-wrap items-center justify-between gap-4 p-4">
           <div className="flex min-w-0 items-start gap-3">
-            <ProviderIcon className="mt-0.5" providerId="chatgpt" size={28} />
+            <ProviderIcon className="mt-0.5" providerId="chatgpt" size={24} />
             <div className="min-w-0">
-              <h3 className="font-semibold">{t('chatGptProvider')}</h3>
+              <h3 className="text-sm font-medium">{t('chatGptProvider')}</h3>
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -520,7 +376,7 @@ export function ProviderSettingsSection({
             </Button>
           </div>
         ) : connections.length > 0 ? (
-          <ul className="grid gap-3 border-t border-border px-5 py-3">
+          <ul className="grid gap-2 border-t border-border p-3">
             {connections.map((connection) => (
               <ConnectionRow
                 connection={connection}
@@ -529,7 +385,6 @@ export function ProviderSettingsSection({
                 key={connection.id}
                 onRemove={() => setRemoveTarget(connection)}
                 onSelect={() => void selectConnection(connection.id)}
-                onWorkspaceChanged={(workspaceId) => void selectWorkspace(connection.id, workspaceId)}
                 selected={connection.id === selectedId}
               />
             ))}
@@ -537,25 +392,6 @@ export function ProviderSettingsSection({
         ) : (
           <p className="border-t border-border px-5 py-5 text-sm text-secondary-text">{t('noChatGptConnections')}</p>
         )}
-
-        {request !== 'loading' && request !== 'error' && selectedConnection && selectedWorkspace ? (
-          <div className="border-t border-border px-5 py-3">
-            <ProviderVerificationStatus
-              requestOutcome={{
-                record: lastRequestOutcome,
-                readFailed: lastRequestReadFailed,
-                saveFailed: false,
-              }}
-              showQuotaUnavailable={false}
-              value={{
-                checkedAtUnixMs: verificationCheckedAt,
-                recordReadFailed: verificationRecordReadFailed,
-                saveFailed: verificationSaveFailed,
-                state: verificationState,
-              }}
-            />
-          </div>
-        ) : null}
 
         {errorCode === 'connectionRemoveStatusUnknown' && request !== 'error' ? (
           <div className="flex flex-wrap items-center justify-between gap-3 px-5 pb-4 pt-1">
@@ -594,31 +430,11 @@ export function ProviderSettingsSection({
           onChanged={refreshModels}
           onChatGptApiKeyFormToggle={() => setChatGptApiKeyFormOpen((current) => !current)}
         />
-      </Card>
+        </Card>
+      </div>
 
-      <section aria-labelledby="title-generation-heading" className="grid gap-3">
-        <div>
-          <h3 className="text-base font-semibold" id="title-generation-heading">
-            {t('titleGenerationTarget')}
-          </h3>
-          <p className="mt-1 text-sm text-secondary-text">{t('titleGenerationTargetDescription')}</p>
-        </div>
-        <TitleGenerationSettings
-          modelStatus={modelStatus}
-          modelError={modelError}
-          models={models}
-          onChange={saveTitlePreference}
-          onPreferenceRetry={loadTitlePreference}
-          onRetry={() => void refreshModels(true)}
-          error={titleError}
-          preferenceLoadFailed={titlePreferenceLoadFailed}
-          preference={titlePreference}
-          saving={titleSaving}
-        />
-      </section>
-
-      <section aria-labelledby="settings-model-providers-heading" className="grid gap-4">
-        <h3 className="text-base font-semibold" id="settings-model-providers-heading">
+      <section aria-labelledby="settings-model-providers-heading" className="settings-data-group">
+        <h3 className="settings-data-group-title" id="settings-model-providers-heading">
           {t('settingsModelProvidersHeading')}
         </h3>
         <ApiKeyProvidersSection mode="modelProviders" onChanged={refreshModels} />
@@ -664,7 +480,6 @@ interface ConnectionRowProps {
   isSigningIn: boolean;
   onRemove(): void;
   onSelect(): void;
-  onWorkspaceChanged(workspaceId: string): void;
   selected: boolean;
 }
 
@@ -674,7 +489,6 @@ function ConnectionRow({
   isSigningIn,
   onRemove,
   onSelect,
-  onWorkspaceChanged,
   selected,
 }: ConnectionRowProps) {
   const { t } = useTranslation();
@@ -682,8 +496,8 @@ function ConnectionRow({
   const selectedWorkspace = connection.workspaces.find((workspace) => workspace.isSelected);
 
   return (
-    <li className={`rounded-card border p-3 ${selected ? 'border-border bg-raised' : 'border-transparent bg-surface'}`}>
-      <div className="flex flex-wrap items-start justify-between gap-3">
+    <li className="rounded-control border border-border bg-surface p-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex min-w-0 items-start gap-3">
           <CircleUserRound aria-hidden="true" className="mt-0.5 shrink-0 text-secondary-icon" size={20} />
           <div className="min-w-0">
@@ -721,28 +535,11 @@ function ConnectionRow({
           </Button>
         </div>
       </div>
-      {selected && connection.workspaces.length > 1 ? (
-        <div className="ml-7 mt-3 max-w-sm">
-          <Select
-            label={t('selectWorkspace')}
-            onChange={(event) => onWorkspaceChanged(event.target.value)}
-            options={connection.workspaces.map((workspace) => ({
-              value: workspace.id,
-              label: workspace.displayName ?? t('workspaceWithoutName'),
-            }))}
-            placeholder={selectedWorkspace ? undefined : t('selectWorkspace')}
-            visuallyHiddenLabel
-            value={selectedWorkspace?.id ?? ''}
-          />
-        </div>
-      ) : selected && connection.workspaces.length === 0 ? (
-        <p className="ml-7 mt-2 text-sm text-secondary-text">{t('workspaceUnavailable')}</p>
-      ) : null}
     </li>
   );
 }
 
-interface TitleGenerationSettingsProps {
+export interface TitleGenerationSettingsProps {
   error: 'titlePreferenceSaveFailed' | null;
   modelError: boolean;
   modelStatus: string;
@@ -755,7 +552,7 @@ interface TitleGenerationSettingsProps {
   saving: boolean;
 }
 
-function TitleGenerationSettings({
+export function TitleGenerationSettings({
   error,
   modelError,
   modelStatus,
@@ -999,7 +796,7 @@ function TitleModeButton({ description, disabled, icon, onClick, selected, title
   );
 }
 
-function findLightweightModel(models: readonly ChatModel[]): ChatModel | null {
+export function findLightweightModel(models: readonly ChatModel[]): ChatModel | null {
   const candidates = models
     .map((model) => ({ model, parameterCount: parameterCountBillions(model) }))
     .filter((candidate): candidate is { model: ChatModel; parameterCount: number } => candidate.parameterCount !== null)

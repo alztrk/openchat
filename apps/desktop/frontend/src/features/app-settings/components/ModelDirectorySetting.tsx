@@ -1,7 +1,7 @@
 import { FolderOpen, Save } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button, Card, Input } from '@shared/components';
+import { Button, Card, Input, Skeleton } from '@shared/components';
 import { useModelDirectoryStore } from '@features/app-settings/stores/modelDirectoryStore';
 import { localServiceClient } from '@shared/lib/platform/local-service';
 import { open } from '@shared/lib/platform/tauri';
@@ -112,9 +112,10 @@ export function ModelDirectorySetting() {
         ) : null}
       </div>
       {loadState === 'loading' ? (
-        <p aria-live="polite" className="text-sm text-secondary-text">
-          {t('localModelsLoading')}
-        </p>
+        <div aria-label={t('localModelsLoading')} aria-live="polite" className="grid gap-2" role="status">
+          <Skeleton className="h-4 w-40" />
+          <Skeleton className="h-10 w-full" />
+        </div>
       ) : null}
       {errorKey ? (
         <p className="text-sm text-destructive" role="alert">

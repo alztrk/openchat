@@ -177,7 +177,7 @@ pub(crate) fn handle_request(
 
 pub(crate) fn storage_error_response(error: Error) -> StorageResponse {
     let code = error
-        .sqlite_error_code()
+        .sqlite_extended_error_code()
         .map_or(ffi::SQLITE_ERROR, |code| code as i32);
     StorageResponse::Error {
         code,
@@ -376,7 +376,7 @@ fn sql_keywords(sql: &str) -> Vec<String> {
 }
 
 fn safe_error_message(code: i32) -> &'static str {
-    match code {
+    match code & 0xff {
         ffi::SQLITE_BUSY | ffi::SQLITE_LOCKED => "The database is busy.",
         ffi::SQLITE_CORRUPT | ffi::SQLITE_NOTADB => "The database failed an integrity check.",
         ffi::SQLITE_CANTOPEN | ffi::SQLITE_PERM | ffi::SQLITE_IOERR => {

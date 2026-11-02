@@ -12,6 +12,166 @@
   font-weight: 500;
 }
 
+.settings-section,
+.app-window-settings-section {
+  width: 100%;
+}
+
+.settings-data-page {
+  display: grid;
+  align-content: start;
+  gap: 24px;
+  min-width: 0;
+  width: 100%;
+}
+
+.settings-data-group {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.settings-data-group-title {
+  padding-inline: 4px;
+  color: rgb(var(--secondary-text));
+  font-size: calc(14px * var(--app-text-scale, 1));
+  font-weight: 600;
+  line-height: 20px;
+}
+
+.settings-data-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  border-bottom: 1px solid rgb(var(--border) / var(--border-alpha, 0.1));
+  padding-bottom: 12px;
+}
+
+.model-catalog-group {
+  gap: 10px;
+}
+
+.model-catalog-toolbar {
+  display: flex;
+  align-items: end;
+  gap: 12px;
+  min-width: 0;
+  border: 1px solid rgb(var(--border) / var(--border-alpha, 0.1));
+  border-radius: var(--radius-card);
+  background: rgb(var(--surface));
+  padding: 12px;
+}
+
+.model-catalog-toolbar > :first-child {
+  flex: 1 1 18rem;
+}
+
+.model-catalog-refresh {
+  flex: 0 0 auto;
+}
+
+.model-provider-card {
+  border-color: rgb(var(--border) / var(--border-alpha, 0.14));
+}
+
+.model-provider-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid rgb(var(--border) / var(--border-alpha, 0.1));
+  background: rgb(var(--surface) / 0.55);
+  padding: 12px 16px;
+}
+
+.model-catalog-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+  padding: 16px;
+}
+
+.model-catalog-details {
+  min-width: 0;
+}
+
+.model-catalog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+}
+
+@media (max-width: 640px) {
+  .model-catalog-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .model-catalog-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  .model-catalog-actions {
+    justify-content: flex-start;
+  }
+}
+
+.shared-instructions-editor {
+  min-height: min(24rem, 42vh);
+  max-height: min(68vh, 48rem);
+}
+
+.settings-section-group,
+.app-window-settings-group {
+  gap: 8px;
+}
+
+.statistics-trend-card {
+  max-width: 50rem;
+}
+
+.statistics-trend-chart-wrap {
+  max-width: 48rem;
+}
+
+.statistics-trend-chart {
+  display: block;
+  width: 100%;
+  height: 13rem;
+  overflow: visible;
+}
+
+.statistics-trend-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  max-width: 48rem;
+}
+
+.statistics-trend-summary-item {
+  display: flex;
+  min-width: 0;
+  gap: 8px;
+}
+
+.statistics-trend-summary-marker {
+  width: 3px;
+  flex: 0 0 3px;
+  border-radius: 999px;
+}
+
+.settings-surface-card > [id] + [id],
+.app-window-settings-card > [id] + [id] {
+  border-top: 1px solid rgb(var(--border) / var(--border-alpha, 0.1));
+}
+
 .connector-source-card {
   grid-template-columns: minmax(0, 1fr);
 }
@@ -19,5 +179,53 @@
 @media (min-width: 640px) {
   .connector-source-card {
     grid-template-columns: minmax(0, 1fr) auto;
+  }
+}
+
+.connector-catalog-surface {
+  display: grid;
+  align-content: start;
+  gap: 16px;
+  min-width: 0;
+}
+
+.connector-catalog-surface--editing {
+  grid-template-columns: minmax(0, 1.65fr) minmax(18rem, 1fr);
+  align-items: start;
+}
+
+.connector-catalog-list {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  min-width: 0;
+}
+
+.connector-program-control-row {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@media (min-width: 640px) {
+  .connector-program-control-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+}
+
+.connector-catalog-list--editing .connector-catalog-entries {
+  max-height: min(64vh, 42rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-inline-end: 4px;
+}
+
+@media (max-width: 1100px) {
+  .connector-catalog-surface--editing {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .connector-catalog-list--editing .connector-catalog-entries {
+    max-height: none;
+    overflow: visible;
+    padding-inline-end: 0;
   }
 }

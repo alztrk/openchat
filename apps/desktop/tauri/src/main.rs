@@ -128,6 +128,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             chat_storage::save_conversation_markdown,
             chat_storage::save_conversation_export,
             chat_storage::record_chat_request_failure,
+            chat_storage::record_chat_message_persistence_failure,
+            chat_storage::record_file_changes_load_failure,
             chat_storage::record_connection_removal_diagnostic,
             chat_storage::record_context_usage_failure,
             mcp_storage::load_global_mcp_servers,
@@ -271,9 +273,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             })?;
             if setup_profile_root.is_none() {
-                window_state::restore_window_state(&main_window);
+                main_window.unminimize()?;
+                window_state::restore_window_state(&main_window)?;
+                main_window.show()?;
+                main_window.set_focus()?;
                 notifications::initialize(app.handle()).map_err(std::io::Error::other)?;
-                main_window.hide()?;
             }
             Ok(())
         })

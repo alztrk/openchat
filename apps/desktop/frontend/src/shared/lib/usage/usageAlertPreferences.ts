@@ -1,6 +1,7 @@
 import { unifiedStorage } from '@shared/lib/platform/storage/unifiedStorage';
 
 const storageKey = 'usage.alert_preferences';
+const changedEvent = 'openchat:usage-alert-preferences-changed';
 
 export interface UsageAlertPreferences {
   quotaWarningAtPercent: number;
@@ -27,14 +28,8 @@ export function readUsageAlertPreferences(): UsageAlertPreferences {
   const monthlyEstimatedCostLimitUsd =
     value.monthlyEstimatedCostLimitUsd ?? defaultUsageAlertPreferences.monthlyEstimatedCostLimitUsd;
   if (
-    typeof quotaWarningAtPercent !== 'number' ||
-    !Number.isInteger(quotaWarningAtPercent) ||
-    quotaWarningAtPercent < 1 ||
-    quotaWarningAtPercent > 100 ||
-    typeof monthlyCostWarningAtPercent !== 'number' ||
-    !Number.isInteger(monthlyCostWarningAtPercent) ||
-    monthlyCostWarningAtPercent < 1 ||
-    monthlyCostWarningAtPercent > 100 ||
+    !isValidPercent(quotaWarningAtPercent) ||
+    !isValidPercent(monthlyCostWarningAtPercent) ||
     !(
       monthlyEstimatedCostLimitUsd === null ||
       (typeof monthlyEstimatedCostLimitUsd === 'number' &&
@@ -48,24 +43,30 @@ export function readUsageAlertPreferences(): UsageAlertPreferences {
   return { quotaWarningAtPercent, monthlyCostWarningAtPercent, monthlyEstimatedCostLimitUsd };
 }
 
-export function writeUsageAlertPreferences(preferences: UsageAlertPreferences): Promise<void> {
+export async function writeUsageAlertPreferences(preferences: UsageAlertPreferences): Promise<void> {
   if (
-    !Number.isInteger(preferences.quotaWarningAtPercent) ||
-    preferences.quotaWarningAtPercent < 1 ||
-    preferences.quotaWarningAtPercent > 100 ||
-    !Number.isInteger(preferences.monthlyCostWarningAtPercent) ||
-    preferences.monthlyCostWarningAtPercent < 1 ||
-    preferences.monthlyCostWarningAtPercent > 100 ||
-    !(
-      preferences.monthlyEstimatedCostLimitUsd === null ||
-      (Number.isFinite(preferences.monthlyEstimatedCostLimitUsd) &&
-        preferences.monthlyEstimatedCostLimitUsd > 0 &&
-        preferences.monthlyEstimatedCostLimitUsd <= 100_000)
-    )
+    !isValidPercent(preferences.quotaWarningAtPercent) ||
+    !isValidPercent(preferences.monthlyCostWarningAtPercent) ||
+    !(preferences.monthlyEstimatedCostLimitUsd === null || isValidCostLimit(preferences.monthlyEstimatedCostLimitUsd))
   ) {
     throw new Error('Usage alert preferences are invalid.');
   }
-  return unifiedStorage.setPersistedItem(storageKey, JSON.stringify(preferences));
+  await unifiedStorage.setPersistedItem(storageKey, JSON.stringify(preferences));
+  if (typeof window !== 'undefined') window.dispatchEvent(new Event(changedEvent));
+}
+
+export function subscribeToUsageAlertPreferences(onChange: () => void): () => void {
+  if (typeof window === 'undefined') return () => undefined;
+  window.addEventListener(changedEvent, onChange);
+  return () => window.removeEventListener(changedEvent, onChange);
+}
+
+function isValidPercent(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= 100;
+}
+
+function isValidCostLimit(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 && value <= 100_000;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

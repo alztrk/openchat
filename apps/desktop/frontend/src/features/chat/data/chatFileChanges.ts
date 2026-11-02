@@ -1,5 +1,10 @@
 import { type JsonObject, LocalServiceError, localServiceClient } from '@shared/lib/platform/local-service';
 
+import {
+  isRetryableChatStorageErrorDetail,
+  recordFileChangesLoadFailure as recordNativeFileChangesLoadFailure,
+} from './chatStorage';
+
 export type ChatFileChangeKind = 'added' | 'modified' | 'deleted';
 export type ChatFileChangeStatus = 'active' | 'reverted' | 'conflict';
 export type ChatFileCheckpointRecoveryStatus = 'available' | 'alreadyRestored' | 'conflict';
@@ -24,6 +29,10 @@ export interface ChatFileChangeDiff {
   diff: string;
   truncated: boolean;
 }
+
+const pendingFileChangeLists = new Map<string, Promise<ChatFileChange[]>>();
+const FILE_CHANGE_LIST_RETRY_DELAYS_MS = [250, 750] as const;
+const FILE_CHANGE_LIST_BROKER_RETRY_DELAYS_MS = [250, 750, 1500] as const;
 
 export function parseChatFileChange(value: unknown): ChatFileChange | null {
   if (!isRecord(value)) return null;
@@ -66,8 +75,61 @@ export function parseChatFileChanges(value: unknown): ChatFileChange[] {
 }
 
 export async function listConversationFileChanges(conversationId: string): Promise<ChatFileChange[]> {
-  const response = await localServiceClient.call('chat.file_changes.list', { conversationId });
-  return parseChatFileChanges(response);
+  const pending = pendingFileChangeLists.get(conversationId);
+  if (pending) return pending;
+
+  const request = (async () => {
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        const response = await localServiceClient.call('chat.file_changes.list', { conversationId });
+        return parseChatFileChanges(response);
+      } catch (error) {
+        const isBrokerFailure =
+          error instanceof LocalServiceError &&
+          (error.details === 'sqlite_io_error' || error.details === 'storage_broker_timeout');
+        const retryDelay = isBrokerFailure
+          ? FILE_CHANGE_LIST_BROKER_RETRY_DELAYS_MS[attempt]
+          : FILE_CHANGE_LIST_RETRY_DELAYS_MS[attempt];
+        if (
+          !(error instanceof LocalServiceError) ||
+          error.code !== 'file_changes_temporarily_busy' ||
+          !error.retryable ||
+          !error.details ||
+          (error.details !== 'file_change_lock_busy' && !isRetryableChatStorageErrorDetail(error.details)) ||
+          retryDelay === undefined
+        ) {
+          throw error;
+        }
+        await new Promise<void>((resolve) => globalThis.setTimeout(resolve, retryDelay));
+      }
+    }
+  })();
+  pendingFileChangeLists.set(conversationId, request);
+  void request.then(
+    () => {
+      if (pendingFileChangeLists.get(conversationId) === request) {
+        pendingFileChangeLists.delete(conversationId);
+      }
+    },
+    () => {
+      if (pendingFileChangeLists.get(conversationId) === request) {
+        pendingFileChangeLists.delete(conversationId);
+      }
+    },
+  );
+  return request;
+}
+
+export async function recordFileChangesLoadFailure(stage: 'inline' | 'panel', error: unknown): Promise<void> {
+  const code = error instanceof LocalServiceError && isDiagnosticCode(error.code) ? error.code : 'unexpected_error';
+  const detailCode =
+    error instanceof LocalServiceError && error.details && isDiagnosticCode(error.details) ? error.details : null;
+
+  try {
+    await recordNativeFileChangesLoadFailure(stage, code, detailCode);
+  } catch {
+    globalThis.reportError(new Error('File-change loading failure could not be written to the application log.'));
+  }
 }
 
 export async function readConversationFileChangeDiff(
@@ -170,6 +232,10 @@ export async function revertConversationFileChangeHunk(
 
 function invalidFileChangeResponse(): LocalServiceError {
   return new LocalServiceError('invalid_service_response', 'The local service returned invalid file-change data.');
+}
+
+function isDiagnosticCode(value: string): boolean {
+  return /^[a-z0-9_]{1,96}$/.test(value);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

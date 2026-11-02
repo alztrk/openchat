@@ -27,11 +27,13 @@ export function useConversationSidebarActions() {
   const activeConversationId = useChatStore((state) => state.activeConversationId);
   const isSending = useChatStore((state) => state.isSending);
   const sendingConversationId = useChatStore((state) => state.sendingConversationId);
+  const sendingConversationIds = useChatStore((state) => state.sendingConversationIds);
   const compactingConversationId = useChatStore((state) => state.compactingConversationId);
   const refreshConversations = useChatStore((state) => state.refreshConversations);
   const refreshProjects = useChatStore((state) => state.refreshProjects);
 
   const isConversationBusy = (conversationId: string) =>
+    sendingConversationIds.includes(conversationId) ||
     sendingConversationId === conversationId ||
     compactingConversationId === conversationId ||
     (isSending && activeConversationId === conversationId);
@@ -166,11 +168,8 @@ export function useConversationSidebarActions() {
       return;
     }
 
-    if (actionGenerationRef.current === actionGeneration) {
-      showFeedback(
-        cleanupFailed ? 'conversationDeletedFileChangesCleanupFailed' : 'conversationDeleted',
-        !cleanupFailed,
-      );
+    if (cleanupFailed && actionGenerationRef.current === actionGeneration) {
+      showFeedback('conversationDeletedFileChangesCleanupFailed');
     }
     void localServiceClient.call('chat.file_changes.delete', { conversationId }).catch(() => {
       if (actionGenerationRef.current === actionGeneration) {

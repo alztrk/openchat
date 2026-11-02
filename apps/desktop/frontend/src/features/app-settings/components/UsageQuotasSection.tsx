@@ -2,23 +2,24 @@ import type { TFunction } from 'i18next';
 import { ChartNoAxesCombined, CircleAlert, LoaderCircle, RefreshCw, RotateCcw } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button, Card, Dialog, Input, Select } from '@shared/components';
+import { Button, Card, Dialog } from '@shared/components';
 import { ProviderIcon } from '@features/provider-settings/components/ProviderIcon';
 import { subscribeToOAuthPlanUpdates } from '@features/provider-settings/data/oauthPlanMonitor';
 import {
   defaultUsageAlertPreferences,
   readUsageAlertPreferences,
   type UsageAlertPreferences,
-  writeUsageAlertPreferences,
-} from '@features/app-settings/data/usageAlertPreferences';
+  subscribeToUsageAlertPreferences,
+} from '@shared/lib/usage/usageAlertPreferences';
 import { LocalServiceError, localServiceClient } from '@shared/lib/platform/local-service';
 import { CopilotUsageCard } from './CopilotUsageCard';
-import { SettingsPreferenceRow } from './SettingsPreferenceRow';
+import { SettingsSectionSkeleton } from './SettingsSectionSkeleton';
 import { parseStatistics, type StatisticsSnapshot, statisticsQuery } from './statisticsData';
 
 interface UsageWorkspace {
   id: string;
   displayName: string | null;
+  isSelected: boolean;
 }
 
 interface UsageConnection {
@@ -93,9 +94,6 @@ export function UsageQuotasSection({ onNavigateToConnections }: UsageQuotasSecti
   const [alertPreferences, setAlertPreferences] = useState<UsageAlertPreferences>(defaultUsageAlertPreferences);
   const [alertPreferencesLoaded, setAlertPreferencesLoaded] = useState(false);
   const [alertPreferencesLoadFailed, setAlertPreferencesLoadFailed] = useState(false);
-  const [alertPreferencesSaveFailed, setAlertPreferencesSaveFailed] = useState(false);
-  const [alertPreferencesSaving, setAlertPreferencesSaving] = useState(false);
-  const [costLimitDraft, setCostLimitDraft] = useState('');
   const [monthlyCostSnapshot, setMonthlyCostSnapshot] = useState<StatisticsSnapshot | null>(null);
   const [monthlyCostLoadState, setMonthlyCostLoadState] = useState<'idle' | 'loading' | 'loaded' | 'failed'>('idle');
   const isMounted = useRef(false);
@@ -181,11 +179,12 @@ export function UsageQuotasSection({ onNavigateToConnections }: UsageQuotasSecti
         setConnections(loadedConnections);
         setLoadState('loaded');
         await Promise.all(
-          loadedConnections.flatMap((connection) =>
-            connection.authStatus === 'active'
-              ? connection.workspaces.map((workspace) => loadWorkspaceUsage(connection, workspace, forceRefresh))
-              : [],
-          ),
+          loadedConnections.flatMap((connection) => {
+            const primaryWorkspace = connection.workspaces.find((workspace) => workspace.isSelected);
+            return connection.authStatus === 'active' && primaryWorkspace
+              ? [loadWorkspaceUsage(connection, primaryWorkspace, forceRefresh)]
+              : [];
+          }),
         );
       } catch {
         if (isMounted.current && connectionLoadVersion.current === version) {
@@ -206,7 +205,16 @@ export function UsageQuotasSection({ onNavigateToConnections }: UsageQuotasSecti
     const unsubscribe = subscribeToOAuthPlanUpdates((summary) => {
       if (!isMounted.current || summary.chatGptConnections.length === 0) return;
       try {
-        setConnections(parseConnections(summary.chatGptConnections));
+        const updatedConnections = parseConnections(summary.chatGptConnections);
+        setConnections(updatedConnections);
+        void Promise.all(
+          updatedConnections.flatMap((connection) => {
+            const primaryWorkspace = connection.workspaces.find((workspace) => workspace.isSelected);
+            return connection.authStatus === 'active' && primaryWorkspace
+              ? [loadWorkspaceUsage(connection, primaryWorkspace)]
+              : [];
+          }),
+        );
       } catch {
         // Ignore unparseable background updates.
       }
@@ -217,19 +225,22 @@ export function UsageQuotasSection({ onNavigateToConnections }: UsageQuotasSecti
       connectionLoadVersion.current += 1;
       workspaceLoadVersions.current.clear();
     };
-  }, [loadAll]);
+  }, [loadAll, loadWorkspaceUsage]);
 
-  useEffect(() => {
+  const loadAlertPreferences = useCallback(() => {
     try {
-      const preferences = readUsageAlertPreferences();
-      setAlertPreferences(preferences);
-      setCostLimitDraft(preferences.monthlyEstimatedCostLimitUsd?.toString() ?? '');
+      setAlertPreferences(readUsageAlertPreferences());
       setAlertPreferencesLoaded(true);
       setAlertPreferencesLoadFailed(false);
     } catch {
       setAlertPreferencesLoadFailed(true);
     }
   }, []);
+
+  useEffect(() => {
+    loadAlertPreferences();
+    return subscribeToUsageAlertPreferences(loadAlertPreferences);
+  }, [loadAlertPreferences]);
 
   useEffect(() => {
     const limit = alertPreferences.monthlyEstimatedCostLimitUsd;
@@ -330,34 +341,8 @@ export function UsageQuotasSection({ onNavigateToConnections }: UsageQuotasSecti
 
   const locale = i18n.resolvedLanguage ?? i18n.language;
   const refreshWorkspace = (connection: UsageConnection) => {
-    void Promise.all(connection.workspaces.map((workspace) => loadWorkspaceUsage(connection, workspace, true)));
-  };
-  const saveAlertPreferences = async (next: UsageAlertPreferences) => {
-    if (alertPreferencesSaving) return;
-    setAlertPreferencesSaving(true);
-    setAlertPreferencesSaveFailed(false);
-    try {
-      await writeUsageAlertPreferences(next);
-      setAlertPreferences(next);
-      setAlertPreferencesLoaded(true);
-      setAlertPreferencesLoadFailed(false);
-      setAlertPreferencesSaveFailed(false);
-    } catch {
-      setAlertPreferencesSaveFailed(true);
-    } finally {
-      setAlertPreferencesSaving(false);
-    }
-  };
-  const saveCostLimit = async () => {
-    const value = costLimitDraft.trim();
-    if (value.length > 0 && (!/^\d+(\.\d{1,2})?$/.test(value) || Number(value) <= 0 || Number(value) > 100_000)) {
-      setAlertPreferencesSaveFailed(true);
-      return;
-    }
-    await saveAlertPreferences({
-      ...alertPreferences,
-      monthlyEstimatedCostLimitUsd: value.length === 0 ? null : Number(value),
-    });
+    const workspace = connection.workspaces.find((item) => item.isSelected);
+    if (workspace) void loadWorkspaceUsage(connection, workspace, true);
   };
   const costWarningReached =
     alertPreferences.monthlyEstimatedCostLimitUsd !== null &&
@@ -367,111 +352,13 @@ export function UsageQuotasSection({ onNavigateToConnections }: UsageQuotasSecti
       alertPreferences.monthlyEstimatedCostLimitUsd * (alertPreferences.monthlyCostWarningAtPercent / 100);
 
   return (
-    <section aria-labelledby="settings-page-heading" className="grid gap-6">
-      <Card className="grid gap-4" padding="default">
-        <div className="grid gap-1">
-          <h2 className="font-semibold">{t('usageAlertSettings')}</h2>
-          <p className="text-sm text-secondary-text">{t('usageAlertSettingsDescription')}</p>
-        </div>
-        {alertPreferencesLoadFailed ? (
-          <div className="flex flex-wrap items-center justify-between gap-3" role="alert">
-            <p className="text-sm text-destructive">{t('usageAlertPreferencesLoadFailed')}</p>
-            <Button
-              disabled={alertPreferencesSaving}
-              loading={alertPreferencesSaving}
-              onClick={() => void saveAlertPreferences(defaultUsageAlertPreferences)}
-              size="small"
-              variant="secondary"
-            >
-              {t('usageAlertPreferencesReset')}
-            </Button>
-          </div>
-        ) : null}
-        <div className="grid gap-3 @container">
-          <SettingsPreferenceRow
-            description={t('monthlyCostWarningThresholdDescription')}
-            id="setting-monthly-cost-warning-threshold"
-            label={t('monthlyCostWarningThreshold')}
-          >
-            {(descriptionId) => (
-              <Select
-                aria-describedby={descriptionId}
-                disabled={!alertPreferencesLoaded || alertPreferencesSaving}
-                label={t('monthlyCostWarningThreshold')}
-                onChange={(event) => {
-                  const value = Number(event.target.value);
-                  if ([50, 75, 80, 90, 95].includes(value)) {
-                    void saveAlertPreferences({ ...alertPreferences, monthlyCostWarningAtPercent: value });
-                  }
-                }}
-                options={[50, 75, 80, 90, 95].map((percent) => ({
-                  value: String(percent),
-                  label: t('usageUsedPercent', { percent }),
-                }))}
-                value={String(alertPreferences.monthlyCostWarningAtPercent)}
-                visuallyHiddenLabel
-              />
-            )}
-          </SettingsPreferenceRow>
-          <SettingsPreferenceRow
-            description={t('quotaWarningThresholdDescription')}
-            id="setting-quota-warning-threshold"
-            label={t('quotaWarningThreshold')}
-          >
-            {(descriptionId) => (
-              <Select
-                aria-describedby={descriptionId}
-                disabled={!alertPreferencesLoaded || alertPreferencesSaving}
-                label={t('quotaWarningThreshold')}
-                onChange={(event) => {
-                  const value = Number(event.target.value);
-                  if ([50, 75, 80, 90, 95].includes(value)) {
-                    void saveAlertPreferences({ ...alertPreferences, quotaWarningAtPercent: value });
-                  }
-                }}
-                options={[50, 75, 80, 90, 95].map((percent) => ({
-                  value: String(percent),
-                  label: t('usageUsedPercent', { percent }),
-                }))}
-                value={String(alertPreferences.quotaWarningAtPercent)}
-                visuallyHiddenLabel
-              />
-            )}
-          </SettingsPreferenceRow>
-          <SettingsPreferenceRow
-            description={t('monthlyEstimatedCostLimitDescription')}
-            id="setting-monthly-estimated-cost-limit"
-            label={t('monthlyEstimatedCostLimit')}
-          >
-            {(descriptionId) => (
-              <div className="flex flex-wrap items-end gap-2">
-                <Input
-                  aria-describedby={descriptionId}
-                  disabled={!alertPreferencesLoaded || alertPreferencesSaving}
-                  label={t('monthlyEstimatedCostLimit')}
-                  min={0.01}
-                  max={100_000}
-                  onChange={(event) => setCostLimitDraft(event.target.value)}
-                  placeholder={t('usageCostAlertDisabled')}
-                  step={0.01}
-                  type="number"
-                  value={costLimitDraft}
-                />
-                <Button
-                  disabled={!alertPreferencesLoaded || alertPreferencesSaving}
-                  loading={alertPreferencesSaving}
-                  onClick={() => void saveCostLimit()}
-                  size="small"
-                  variant="secondary"
-                  aria-describedby={descriptionId}
-                >
-                  {t('save')}
-                </Button>
-              </div>
-            )}
-          </SettingsPreferenceRow>
-        </div>
-        {alertPreferences.monthlyEstimatedCostLimitUsd !== null ? (
+    <section aria-labelledby="settings-page-heading" className="settings-data-page">
+      {alertPreferencesLoadFailed ? (
+        <p className="text-sm text-destructive" role="status">
+          {t('usageAlertPreferencesLoadFailed')}
+        </p>
+      ) : null}
+      {alertPreferences.monthlyEstimatedCostLimitUsd !== null ? (
           monthlyCostLoadState === 'failed' ||
           (monthlyCostLoadState === 'loaded' &&
             (monthlyCostSnapshot === null || monthlyCostSnapshot.summary.estimatedCostRequests === 0)) ? (
@@ -479,13 +366,7 @@ export function UsageQuotasSection({ onNavigateToConnections }: UsageQuotasSecti
               {t('usageCostAlertUnavailable')}
             </p>
           ) : null
-        ) : null}
-        {alertPreferencesSaveFailed ? (
-          <p className="text-sm text-destructive" role="alert">
-            {t('usageAlertPreferencesSaveFailed')}
-          </p>
-        ) : null}
-      </Card>
+      ) : null}
       {costWarningReached ? (
         <Card className="border-warning bg-warning/10" padding="default" role="status">
           {t('monthlyCostWarningReached', {
@@ -495,67 +376,63 @@ export function UsageQuotasSection({ onNavigateToConnections }: UsageQuotasSecti
           })}
         </Card>
       ) : null}
-      <div className="flex justify-end">
-        <Button
-          disabled={isRefreshingAll || loadState === 'loading'}
-          onClick={() => {
-            void loadAll(true);
-            setCopilotRefreshSequence((current) => current + 1);
-          }}
-          variant="secondary"
-        >
-          {isRefreshingAll ? (
-            <LoaderCircle aria-hidden="true" className="animate-spin" size={16} />
-          ) : (
-            <RefreshCw aria-hidden="true" size={16} />
-          )}
-          {t('refreshAll')}
-        </Button>
-      </div>
-
-      {loadState === 'loading' && connections.length === 0 ? (
-        <div aria-live="polite" className="flex min-h-24 items-center justify-center">
-          <LoaderCircle aria-hidden="true" className="animate-spin text-secondary-icon" size={22} />
+      <div className="settings-data-group">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 className="settings-data-group-title">{t('usageAccountsSectionTitle')}</h2>
+          <Button
+            disabled={isRefreshingAll || loadState === 'loading'}
+            onClick={() => {
+              void loadAll(true);
+              setCopilotRefreshSequence((current) => current + 1);
+            }}
+            variant="secondary"
+          >
+            {isRefreshingAll ? (
+              <LoaderCircle aria-hidden="true" className="animate-spin" size={16} />
+            ) : (
+              <RefreshCw aria-hidden="true" size={16} />
+            )}
+            {t('refreshAll')}
+          </Button>
         </div>
-      ) : loadState === 'failed' ? (
-        <Card className="flex flex-wrap items-center justify-between gap-3" padding="comfortable" role="alert">
-          <CircleAlert aria-hidden="true" className="shrink-0 text-destructive" size={22} />
-          <p className="text-sm text-destructive">{t('usageQuotasLoadFailed')}</p>
-          <Button onClick={() => void loadAll(true)} size="small" variant="secondary">
-            {t('retry')}
-          </Button>
-        </Card>
-      ) : connections.length === 0 ? (
-        <Card className="grid justify-items-center gap-3 text-center" padding="spacious">
-          <ChartNoAxesCombined aria-hidden="true" className="text-secondary-icon" size={36} />
-          <div className="grid gap-1">
-            <h3 className="font-semibold">{t('noChatGptAccountsForQuota')}</h3>
-            <p className="max-w-md text-sm text-secondary-text">{t('noChatGptAccountsForQuotaDescription')}</p>
-          </div>
-          <Button onClick={onNavigateToConnections} size="small" variant="secondary">
-            {t('goToConnections')}
-          </Button>
-        </Card>
-      ) : (
-        <div className="grid gap-4">
-          {connections.map((connection) => {
+
+        <div className="grid gap-3 xl:grid-cols-2">
+          {loadState === 'loading' && connections.length === 0 ? (
+            <SettingsSectionSkeleton label={t('usageLoading')} />
+          ) : loadState === 'failed' ? (
+            <Card className="flex flex-wrap items-center justify-between gap-3" padding="comfortable" role="alert">
+              <CircleAlert aria-hidden="true" className="shrink-0 text-destructive" size={22} />
+              <p className="text-sm text-destructive">{t('usageQuotasLoadFailed')}</p>
+              <Button onClick={() => void loadAll(true)} size="small" variant="secondary">
+                {t('retry')}
+              </Button>
+            </Card>
+          ) : connections.length === 0 ? (
+            <Card className="grid justify-items-center gap-3 text-center" padding="spacious">
+              <ChartNoAxesCombined aria-hidden="true" className="text-secondary-icon" size={36} />
+              <div className="grid gap-1">
+                <h3 className="font-semibold">{t('noChatGptAccountsForQuota')}</h3>
+                <p className="max-w-md text-sm text-secondary-text">{t('noChatGptAccountsForQuotaDescription')}</p>
+              </div>
+              <Button onClick={onNavigateToConnections} size="small" variant="secondary">
+                {t('goToConnections')}
+              </Button>
+            </Card>
+          ) : (
+          connections.map((connection) => {
             const accountName = connection.email ?? connection.displayName ?? connection.id;
+            const primaryWorkspace = connection.workspaces.find((workspace) => workspace.isSelected) ?? null;
             return (
               <Card
-                className={connection.isSelected ? 'grid gap-4 border-accent' : 'grid gap-4'}
+                className="grid gap-2"
                 key={connection.id}
-                padding="comfortable"
+                padding="compact"
               >
                 <header className="flex min-w-0 items-start gap-3">
                   <ProviderIcon className="mt-1" providerId="chatgpt" size={22} />
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
                       <h3 className="truncate font-semibold">{accountName}</h3>
-                      {connection.isSelected ? (
-                        <span className="rounded-xs bg-selected px-2 py-0.5 text-xs font-semibold text-accent">
-                          {t('activeAccountBadge')}
-                        </span>
-                      ) : null}
                     </div>
                     <p className="mt-1 text-sm text-secondary-text">
                       {connection.authStatus === 'active'
@@ -566,9 +443,10 @@ export function UsageQuotasSection({ onNavigateToConnections }: UsageQuotasSecti
                   {connection.authStatus === 'active' ? (
                     <Button
                       aria-label={t('refreshUsage')}
-                      disabled={connection.workspaces.some((workspace) =>
-                        loadingKeys.has(workspaceKey(connection.id, workspace.id)),
-                      )}
+                      disabled={
+                        primaryWorkspace === null ||
+                        loadingKeys.has(workspaceKey(connection.id, primaryWorkspace.id))
+                      }
                       onClick={() => refreshWorkspace(connection)}
                       size="icon"
                       variant="ghost"
@@ -579,25 +457,31 @@ export function UsageQuotasSection({ onNavigateToConnections }: UsageQuotasSecti
                 </header>
 
                 {connection.authStatus === 'active' ? (
-                  <div className="grid gap-4 border-t border-border pt-4">
-                    {connection.workspaces.map((workspace, index) => (
+                  <div className="grid gap-2">
+                    {primaryWorkspace ? (
                       <WorkspaceUsage
                         connection={connection}
                         errors={errors}
-                        index={index}
-                        key={workspace.id}
+                        key={primaryWorkspace.id}
                         locale={locale}
                         loadingKeys={loadingKeys}
                         onOpenCredit={setPendingCredit}
-                        onRetry={() => void loadWorkspaceUsage(connection, workspace, true)}
+                        onRetry={() => void loadWorkspaceUsage(connection, primaryWorkspace, true)}
                         outcomes={outcomes}
                         refreshRequiredKeys={refreshRequiredKeys}
-                        snapshot={snapshots[workspaceKey(connection.id, workspace.id)] ?? null}
+                        snapshot={snapshots[workspaceKey(connection.id, primaryWorkspace.id)] ?? null}
                         quotaWarningAtPercent={alertPreferences.quotaWarningAtPercent}
                         t={t}
-                        workspace={workspace}
+                        workspace={primaryWorkspace}
                       />
-                    ))}
+                    ) : (
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="text-sm text-secondary-text">{t('primaryWorkspaceUnavailable')}</p>
+                        <Button onClick={onNavigateToConnections} size="small" variant="ghost">
+                          {t('goToConnections')}
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div className="flex justify-end border-t border-border pt-4">
@@ -608,15 +492,15 @@ export function UsageQuotasSection({ onNavigateToConnections }: UsageQuotasSecti
                 )}
               </Card>
             );
-          })}
+          })
+          )}
+          <CopilotUsageCard
+            onNavigateToConnections={onNavigateToConnections}
+            quotaWarningAtPercent={alertPreferences.quotaWarningAtPercent}
+            refreshSequence={copilotRefreshSequence}
+          />
         </div>
-      )}
-
-      <CopilotUsageCard
-        onNavigateToConnections={onNavigateToConnections}
-        quotaWarningAtPercent={alertPreferences.quotaWarningAtPercent}
-        refreshSequence={copilotRefreshSequence}
-      />
+      </div>
 
       <Dialog
         onOpenChange={(open) => {
@@ -649,7 +533,6 @@ export function UsageQuotasSection({ onNavigateToConnections }: UsageQuotasSecti
 interface WorkspaceUsageProps {
   connection: UsageConnection;
   errors: Record<string, 'usageLoadFailed'>;
-  index: number;
   locale: string;
   loadingKeys: Set<string>;
   onOpenCredit(credit: PendingCredit): void;
@@ -665,7 +548,6 @@ interface WorkspaceUsageProps {
 function WorkspaceUsage({
   connection,
   errors,
-  index,
   locale,
   loadingKeys,
   onOpenCredit,
@@ -682,21 +564,7 @@ function WorkspaceUsage({
   const error = errors[key];
 
   return (
-    <section
-      aria-label={
-        connection.workspaces.length > 1
-          ? workspace.displayName?.trim() || t('workspaceNumbered', { number: index + 1 })
-          : t('workspace')
-      }
-    >
-      {connection.workspaces.length > 1 ? (
-        <h4 className="mb-2 text-sm font-medium text-secondary-text">
-          {workspace.displayName?.trim()
-            ? t('workspaceQuotaLabel', { name: workspace.displayName.trim() })
-            : t('workspaceNumbered', { number: index + 1 })}
-        </h4>
-      ) : null}
-
+    <section aria-label={workspace.displayName?.trim() || t('primaryWorkspaceLabel')}>
       {isLoading && snapshot === null ? (
         <div aria-live="polite" className="flex items-center justify-center py-4">
           <LoaderCircle aria-hidden="true" className="animate-spin text-secondary-icon" size={20} />
@@ -715,12 +583,6 @@ function WorkspaceUsage({
           {isLoading ? (
             <div aria-label={t('usageLoading')} className="h-0.5 animate-pulse rounded-full bg-accent" role="status" />
           ) : null}
-          <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
-            <UsagePermissionStatus value={snapshot.ordinaryUsageAllowed} t={t} />
-            <span className="text-xs text-secondary-text">
-              {t('usageUpdatedAt', { time: formatTimestamp(snapshot.fetchedAtUnixMs, locale) })}
-            </span>
-          </div>
           {snapshot.buckets.map((bucket) => (
             <UsageBucketView
               bucket={bucket}
@@ -751,17 +613,6 @@ function WorkspaceUsage({
       )}
     </section>
   );
-}
-
-function UsagePermissionStatus({ value, t }: { value: boolean | null; t: WorkspaceUsageProps['t'] }) {
-  const label =
-    value === true
-      ? t('ordinaryUsageAvailable')
-      : value === false
-        ? t('ordinaryUsageUnavailable')
-        : t('ordinaryUsageUnknown');
-  const color = value === true ? 'text-success' : value === false ? 'text-destructive' : 'text-secondary-text';
-  return <span className={`font-medium ${color}`}>{label}</span>;
 }
 
 function UsageBucketView({
@@ -945,7 +796,11 @@ function parseConnections(value: unknown): UsageConnection[] {
         if (!isObject(workspace) || !isNonEmptyString(workspace.id)) {
           throw new Error('A ChatGPT workspace was invalid.');
         }
-        return { id: workspace.id, displayName: optionalString(workspace.displayName) };
+        return {
+          id: workspace.id,
+          displayName: optionalString(workspace.displayName),
+          isSelected: workspace.isSelected === true,
+        };
       }),
     };
   });

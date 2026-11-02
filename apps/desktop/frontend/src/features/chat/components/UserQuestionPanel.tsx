@@ -220,7 +220,7 @@ export function UserQuestionPanel({ conversationId, questionFocusTarget, onFocus
           <p className="text-sm text-destructive">{errorMessage}</p>
           <div className="flex flex-wrap gap-2">
             {loadState === 'error' && isSending ? (
-              <Button onClick={() => void stopResponse()} size="small" variant="secondary">
+              <Button onClick={() => void stopResponse(conversationId)} size="small" variant="secondary">
                 {t('userQuestionStopWaiting')}
               </Button>
             ) : null}

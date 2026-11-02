@@ -142,7 +142,7 @@ export function MessageItem({
         {assistantTimeline.map((segment) => {
           if (segment.kind === 'reasoning') {
             return (
-              <div className="mt-2 grid gap-2" key={segment.key}>
+              <div className="mt-2 grid max-w-assistant-message gap-2" key={segment.key}>
                 {segment.summaries.map((summary) => (
                   <ReasoningSummary key={summary.id} summary={summary} />
                 ))}
@@ -151,7 +151,7 @@ export function MessageItem({
           }
           if (segment.kind === 'tools') {
             return (
-              <div className="mt-2 grid gap-2" key={segment.key}>
+              <div className="mt-2 grid w-full gap-2" key={segment.key}>
                 {segment.activities.map((activity) => (
                   <ToolActivityAccordion
                     activity={activity}
@@ -161,13 +161,16 @@ export function MessageItem({
                     onCheckpointRestored={onCheckpointRestored}
                     onOpenFileChanges={onOpenFileChanges}
                     onOpenFile={(path, content) => onOpenWorkspaceFile?.({ path, content })}
+                    onOpenEditedFile={(change) =>
+                      onOpenWorkspaceFile?.({ path: change.path, changeId: change.id })
+                    }
                   />
                 ))}
               </div>
             );
           }
           return (
-            <div className="mt-2" key={segment.key}>
+            <div className="mt-2 max-w-assistant-message" key={segment.key}>
               <MessageMarkdown citationSources={citationSources} content={segment.content} />
             </div>
           );
@@ -229,28 +232,41 @@ export function MessageItem({
     <article
       aria-current={isSearchMatch ? 'location' : undefined}
       aria-label={isUser ? t('userMessage') : undefined}
-      className={`group flex w-full ${isUser ? 'justify-end' : 'justify-start'}`}
+      className={`group flex w-full flex-col ${isUser ? 'items-end' : 'items-start'}`}
       id={`openchat-message-${message.id}`}
     >
+      {isUser && message.attachments.length > 0 ? (
+        <div className="mb-2 max-w-user-message">
+          <MessageAttachments
+            attachments={message.attachments}
+            conversationId={message.conversationId}
+            messageId={message.id}
+          />
+        </div>
+      ) : null}
       <div
         className={
           isUser
             ? 'max-w-user-message rounded-2xl rounded-br-md bg-selected px-4 py-3'
-            : 'w-full max-w-assistant-message px-1 py-2'
+            : 'w-full px-1 py-2'
         }
       >
         {!isUser ? (
-          <AssistantHeader
-            modelId={message.modelId ?? assistantModelFallback}
-            providerId={message.providerId ?? assistantProviderFallback}
-          />
+          <div className="max-w-assistant-message">
+            <AssistantHeader
+              modelId={message.modelId ?? assistantModelFallback}
+              providerId={message.providerId ?? assistantProviderFallback}
+            />
+          </div>
         ) : null}
         {hasResponseVersions ? (
-          <ResponseVersionSelector
-            count={responseVersionCount ?? 0}
-            index={responseVersionIndex ?? 0}
-            onSelect={(index) => onSelectResponseVersion?.(message, index)}
-          />
+          <div className="max-w-assistant-message">
+            <ResponseVersionSelector
+              count={responseVersionCount ?? 0}
+              index={responseVersionIndex ?? 0}
+              onSelect={(index) => onSelectResponseVersion?.(message, index)}
+            />
+          </div>
         ) : null}
         {isUser ? (
           inBandReasoning.visibleContent ? (
@@ -268,21 +284,27 @@ export function MessageItem({
             role="status"
           />
         ) : null}
-        {message.attachments.length > 0 ? (
-          <MessageAttachments
-            attachments={message.attachments}
-            conversationId={message.conversationId}
-            messageId={message.id}
-          />
+        {message.attachments.length > 0 && !isUser ? (
+          <div className="max-w-assistant-message">
+            <MessageAttachments
+              attachments={message.attachments}
+              conversationId={message.conversationId}
+              messageId={message.id}
+            />
+          </div>
         ) : null}
         {!isUser && message.status === 'failed' ? (
-          <FailureCard
-            failureCode={message.failureCode}
-            onOpenConnections={needsConnectionRecovery(message.failureCode) ? onOpenConnections : undefined}
-            onRetry={canRetry ? () => onRetryMessage?.(message) : undefined}
-          />
+          <div className="max-w-assistant-message">
+            <FailureCard
+              failureCode={message.failureCode}
+              onOpenConnections={needsConnectionRecovery(message.failureCode) ? onOpenConnections : undefined}
+              onRetry={canRetry ? () => onRetryMessage?.(message) : undefined}
+            />
+          </div>
         ) : null}
-        <div className={`mt-2 flex flex-wrap items-center gap-1 ${isUser ? 'justify-end' : 'justify-start'}`}>
+        <div
+          className={`${isUser ? 'mt-2 flex flex-wrap items-center gap-1 justify-end' : 'mt-2 flex max-w-assistant-message flex-wrap items-center gap-1 justify-start'}`}
+        >
           {message.createdAt !== null ? (
             <time className="px-1 text-xs text-secondary-text" dateTime={new Date(message.createdAt).toISOString()}>
               {formatTime(message.createdAt, locale)}

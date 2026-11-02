@@ -136,7 +136,7 @@ const settingsSections: Array<{
     icon: <ChartBarIncreasing aria-hidden="true" size={17} />,
   },
   {
-    section: 'connectors',
+    section: 'mcpServers',
     translationKey: 'settingsConnectors',
     searchTerms: ['tools', 'mcp'],
     icon: <Plug aria-hidden="true" size={17} />,

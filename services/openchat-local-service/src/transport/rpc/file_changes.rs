@@ -1,6 +1,7 @@
 //! Routes file-change history, comparison, revert, and cleanup requests.
 
 use serde_json::{Value, json};
+use tokio::sync::watch;
 
 use crate::{file_changes, protocol::ServiceError, storage::AppStorage};
 
@@ -12,11 +13,26 @@ pub(super) fn dispatch(
     params: &Value,
     storage: &AppStorage,
 ) -> Result<Value, ServiceError> {
+    let (_cancellation_sender, cancellation) = watch::channel(false);
+    dispatch_with_cancellation(method, params, storage, &cancellation)
+}
+
+/// Dispatches file-change requests while allowing a list scan to stop after RPC cancellation.
+pub(super) fn dispatch_with_cancellation(
+    method: &str,
+    params: &Value,
+    storage: &AppStorage,
+    cancellation: &watch::Receiver<bool>,
+) -> Result<Value, ServiceError> {
     match method {
         "chat.file_changes.list" => {
             let conversation_id = required_string(params, "conversationId")?;
-            let changes = file_changes::list_changes(storage, conversation_id)
-                .map_err(file_changes_unavailable)?;
+            let changes = file_changes::list_changes_with_cancellation(
+                storage,
+                conversation_id,
+                cancellation,
+            )
+                .map_err(map_file_change_list_error)?;
             Ok(json!({"changes": changes}))
         }
         "chat.file_changes.checkpoints.list" => {
@@ -192,6 +208,49 @@ fn map_checkpoint_restore_error(
         file_changes::checkpoints::CheckpointRestoreError::Unavailable => {
             file_changes_unavailable(())
         }
+    }
+}
+
+fn map_file_change_list_error(error: file_changes::TrackingError) -> ServiceError {
+    match error {
+        file_changes::TrackingError::Cancelled => ServiceError::new(
+            "operation_cancelled",
+            "The file-change list request was cancelled.",
+            false,
+        ),
+        file_changes::TrackingError::StorageBusy(code) => ServiceError::new(
+            "file_changes_temporarily_busy",
+            "File changes are being updated. Try again after the current operation finishes.",
+            true,
+        )
+        .with_details(code),
+        file_changes::TrackingError::WorkspaceUnavailable => ServiceError::new(
+            "file_changes_workspace_unavailable",
+            "The workspace for one or more tracked files is unavailable.",
+            false,
+        ),
+        file_changes::TrackingError::WorkspaceTooLarge => ServiceError::new(
+            "file_changes_workspace_too_large",
+            "The workspace contains more tracked data than the file-change list can process.",
+            false,
+        ),
+        file_changes::TrackingError::SnapshotUnavailable => ServiceError::new(
+            "file_changes_snapshot_unavailable",
+            "A tracked file snapshot is unavailable.",
+            false,
+        ),
+        file_changes::TrackingError::StorageUnavailable => ServiceError::new(
+            "file_changes_storage_unavailable",
+            "The file-change history could not be read from local storage.",
+            false,
+        )
+        .with_details("storage_unavailable"),
+        file_changes::TrackingError::StorageFailure(code) => ServiceError::new(
+            "file_changes_storage_unavailable",
+            "The file-change history could not be read from local storage.",
+            false,
+        )
+        .with_details(code),
     }
 }
 

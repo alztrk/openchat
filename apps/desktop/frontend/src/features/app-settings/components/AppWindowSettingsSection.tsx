@@ -113,111 +113,119 @@ export function AppWindowSettingsSection() {
   const appControlsDisabled = appSaveState === 'saving';
 
   return (
-    <section aria-labelledby="settings-page-heading" className="grid gap-5">
-      <div className="grid gap-0 rounded-card border border-border bg-raised">
-        <SettingsPreferenceRow
-          description={t('defaultWorkspaceDescription')}
-          id="setting-default-workspace"
-          label={t('defaultWorkspace')}
-        >
-          {(descriptionId) => (
-            <div className="grid min-w-0 gap-2">
-              <Button
-                aria-describedby={descriptionId}
-                className="min-w-0 w-full justify-start gap-3 rounded-control border-control-border bg-surface px-3 text-left"
-                loading={choosingFolder}
-                loadingContent={t('defaultWorkspaceChooseFolder')}
-                onClick={() => void chooseDefaultWorkspace()}
-                title={defaultWorkspacePath || undefined}
-                variant="secondary"
-              >
-                <FolderOpen aria-hidden="true" className="shrink-0 text-secondary-text" size={16} />
-                <span
-                  className={
-                    defaultWorkspacePath
-                      ? 'min-w-0 flex-1 truncate font-mono text-xs text-text'
-                      : 'min-w-0 flex-1 truncate text-sm text-secondary-text'
-                  }
-                >
-                  {defaultWorkspacePath || t('defaultWorkspacePlaceholder')}
-                </span>
-                <span className="shrink-0 text-xs font-medium text-accent">{t('defaultWorkspaceChooseFolder')}</span>
-              </Button>
-              {defaultWorkspacePath ? (
+    <section aria-labelledby="settings-page-heading" className="settings-section grid content-start gap-6">
+      <div className="settings-section-group grid">
+        <h2 className="px-1 text-sm font-semibold text-secondary-text">{t('settingsWorkspaceGroup')}</h2>
+        <div className="settings-surface-card overflow-hidden rounded-card border border-border bg-raised">
+          <SettingsPreferenceRow
+            description={t('defaultWorkspaceDescription')}
+            id="setting-default-workspace"
+            label={t('defaultWorkspace')}
+          >
+            {(descriptionId) => (
+              <div className="grid min-w-0 gap-2">
                 <Button
-                  disabled={workspaceSaveState === 'saving' || choosingFolder}
-                  loading={workspaceSaveState === 'saving'}
-                  loadingContent={t('settingsSaving')}
-                  onClick={() => void saveDefaultWorkspace('')}
-                  size="small"
-                  variant="ghost"
+                  aria-describedby={descriptionId}
+                  className="min-w-0 w-full justify-start gap-3 rounded-control border-control-border bg-surface px-3 text-left"
+                  loading={choosingFolder}
+                  loadingContent={t('defaultWorkspaceChooseFolder')}
+                  onClick={() => void chooseDefaultWorkspace()}
+                  title={defaultWorkspacePath || undefined}
+                  variant="secondary"
                 >
-                  {t('defaultWorkspaceClear')}
+                  <FolderOpen aria-hidden="true" className="shrink-0 text-secondary-text" size={16} />
+                  <span
+                    className={
+                      defaultWorkspacePath
+                        ? 'min-w-0 flex-1 truncate font-mono text-xs text-text'
+                        : 'min-w-0 flex-1 truncate text-sm text-secondary-text'
+                    }
+                  >
+                    {defaultWorkspacePath || t('defaultWorkspacePlaceholder')}
+                  </span>
+                  <span className="shrink-0 text-xs font-medium text-accent">{t('defaultWorkspaceChooseFolder')}</span>
                 </Button>
-              ) : null}
-              <SettingsSaveFeedback errorMessage={workspaceError ?? undefined} state={workspaceSaveState} />
-            </div>
-          )}
-        </SettingsPreferenceRow>
-        <SettingsPreferenceRow
-          description={t('startupSurfaceDescription')}
-          id="setting-startup-surface"
-          label={t('startupSurface')}
-        >
-          {(descriptionId) => (
-            <Select
-              aria-describedby={descriptionId}
-              disabled={appControlsDisabled}
-              label={t('startupSurface')}
-              onChange={(event) => void changeStartupSurface(event.target.value)}
-              options={[
-                { value: 'last', label: t('startupSurfaceLast') },
-                { value: 'chats', label: t('chats') },
-                { value: 'models', label: t('modelLibrary') },
-                { value: 'design', label: t('design') },
-                { value: 'security', label: t('securityScansTitle') },
-                { value: 'settings', label: t('settings') },
-              ]}
-              value={startupSurface}
-              visuallyHiddenLabel
-            />
-          )}
-        </SettingsPreferenceRow>
-        <SettingsPreferenceRow
-          description={t('windowCloseBehaviorDescription')}
-          id="setting-window-close-behavior"
-          label={t('windowCloseBehavior')}
-        >
-          {(descriptionId) => (
-            <Select
-              aria-describedby={descriptionId}
-              disabled={appControlsDisabled}
-              label={t('windowCloseBehavior')}
-              onChange={(event) => void changeCloseBehavior(event.target.value)}
-              options={[
-                { value: 'exit', label: t('windowCloseExit') },
-                { value: 'minimize', label: t('windowCloseMinimize') },
-              ]}
-              value={closeBehavior}
-              visuallyHiddenLabel
-            />
-          )}
-        </SettingsPreferenceRow>
-        <SettingsPreferenceRow
-          description={t('launchOnStartupDescription')}
-          id="setting-launch-on-startup"
-          label={t('launchOnStartup')}
-        >
-          {(descriptionId) => (
-            <Switch
-              aria-label={t('launchOnStartup')}
-              aria-describedby={descriptionId}
-              checked={launchOnStartup}
-              disabled={!isTauri() || appControlsDisabled}
-              onCheckedChange={(enabled) => void changeLaunchOnStartup(enabled)}
-            />
-          )}
-        </SettingsPreferenceRow>
+                {defaultWorkspacePath ? (
+                  <Button
+                    disabled={workspaceSaveState === 'saving' || choosingFolder}
+                    loading={workspaceSaveState === 'saving'}
+                    loadingContent={t('settingsSaving')}
+                    onClick={() => void saveDefaultWorkspace('')}
+                    size="small"
+                    variant="ghost"
+                  >
+                    {t('defaultWorkspaceClear')}
+                  </Button>
+                ) : null}
+                <SettingsSaveFeedback errorMessage={workspaceError ?? undefined} state={workspaceSaveState} />
+              </div>
+            )}
+          </SettingsPreferenceRow>
+        </div>
+      </div>
+      <div className="settings-section-group grid">
+        <h2 className="px-1 text-sm font-semibold text-secondary-text">{t('settingsAppWindowGroup')}</h2>
+        <div className="settings-surface-card overflow-hidden rounded-card border border-border bg-raised">
+          <SettingsPreferenceRow
+            description={t('startupSurfaceDescription')}
+            id="setting-startup-surface"
+            label={t('startupSurface')}
+          >
+            {(descriptionId) => (
+              <Select
+                aria-describedby={descriptionId}
+                disabled={appControlsDisabled}
+                label={t('startupSurface')}
+                onChange={(event) => void changeStartupSurface(event.target.value)}
+                options={[
+                  { value: 'last', label: t('startupSurfaceLast') },
+                  { value: 'chats', label: t('chats') },
+                  { value: 'models', label: t('modelLibrary') },
+                  { value: 'design', label: t('design') },
+                  { value: 'security', label: t('securityScansTitle') },
+                  { value: 'settings', label: t('settings') },
+                ]}
+                value={startupSurface}
+                visuallyHiddenLabel
+              />
+            )}
+          </SettingsPreferenceRow>
+          <SettingsPreferenceRow
+            description={t('windowCloseBehaviorDescription')}
+            id="setting-window-close-behavior"
+            label={t('windowCloseBehavior')}
+          >
+            {(descriptionId) => (
+              <Select
+                aria-describedby={descriptionId}
+                disabled={appControlsDisabled}
+                label={t('windowCloseBehavior')}
+                onChange={(event) => void changeCloseBehavior(event.target.value)}
+                options={[
+                  { value: 'exit', label: t('windowCloseExit') },
+                  { value: 'minimize', label: t('windowCloseMinimize') },
+                ]}
+                value={closeBehavior}
+                visuallyHiddenLabel
+              />
+            )}
+          </SettingsPreferenceRow>
+          <SettingsPreferenceRow
+            description={t('launchOnStartupDescription')}
+            id="setting-launch-on-startup"
+            label={t('launchOnStartup')}
+          >
+            {(descriptionId) => (
+              <Switch
+                aria-label={t('launchOnStartup')}
+                aria-describedby={descriptionId}
+                checked={launchOnStartup}
+                disabled={!isTauri() || appControlsDisabled}
+                onCheckedChange={(enabled) => void changeLaunchOnStartup(enabled)}
+              />
+            )}
+          </SettingsPreferenceRow>
+        </div>
       </div>
       <SettingsSaveFeedback state={appSaveState} />
     </section>

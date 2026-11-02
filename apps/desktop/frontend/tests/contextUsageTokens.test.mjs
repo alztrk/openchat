@@ -1,76 +1,125 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import test from 'node:test';
+import ts from 'typescript';
 
-function estimateText(value) {
-  return new TextEncoder().encode(value).byteLength;
+function compileTsModule(source) {
+  const output = ts.transpileModule(source, {
+    compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+  return import(`data:text/javascript;base64,${Buffer.from(output).toString('base64')}`);
 }
 
-function estimateMessages(messages) {
-  let userTokens = 0;
-  let assistantTokens = 0;
-  for (const message of messages) {
-    if (message.role === 'user') {
-      userTokens += estimateText(message.content);
-      continue;
-    }
-    const assistantMessageTokens =
-      typeof message.outputTokens === 'number' && Number.isFinite(message.outputTokens) && message.outputTokens >= 0
-        ? message.outputTokens
-        : estimateText(message.content);
-    assistantTokens += assistantMessageTokens;
-  }
-  return {
-    userTokens,
-    assistantTokens,
-    totalTokens: userTokens + assistantTokens,
-  };
+function extractFunction(source, name) {
+  const marker = `function ${name}(`;
+  const start = source.indexOf(marker);
+  if (start < 0) throw new Error(`Could not find ${name} in production source`);
+  const nextFunction = source.indexOf('\nfunction ', start + marker.length);
+  return source.slice(start, nextFunction < 0 ? source.length : nextFunction);
 }
 
-test('assistant message uses ground-truth outputTokens when reported by model', () => {
-  const messages = [
+const contextUsageSource = fs.readFileSync(
+  new URL('../src/features/chat/data/contextUsage.ts', import.meta.url),
+  'utf8',
+);
+const productionEstimators = await compileTsModule(
+  [
+    extractFunction(contextUsageSource, 'estimateContextUsage'),
+    extractFunction(contextUsageSource, 'estimateMessages'),
+    extractFunction(contextUsageSource, 'estimateAttachment'),
+    extractFunction(contextUsageSource, 'estimateText'),
+    extractFunction(contextUsageSource, 'stringifyJson'),
+    'const opaqueCheckpointEstimate = 4096;',
+    'function parseToolActivities(value) { return Array.isArray(value) ? value : []; }',
+    'export { estimateContextUsage, estimateMessages, estimateText };',
+  ].join('\n\n'),
+);
+const { estimateContextUsage, estimateMessages, estimateText } = productionEstimators;
+
+test('assistant context estimate uses visible content, not provider completion usage', () => {
+  const estimate = estimateMessages([
     {
-      id: 'msg-1',
-      role: 'user',
-      content: 'Merhaba',
-      attachments: [],
-      toolActivities: '',
-      outputTokens: null,
-    },
-    {
-      id: 'msg-2',
+      id: 'assistant-1',
       role: 'assistant',
-      content: 'Harika', // 6 UTF-8 bytes
+      content: 'Harika',
       attachments: [],
       toolActivities: '',
-      outputTokens: 4, // Model reported exactly 4 tokens
+      outputTokens: 900,
     },
-  ];
+  ]);
 
-  const estimate = estimateMessages(messages);
-  assert.equal(
-    estimate.assistantTokens,
-    4,
-    'Assistant tokens should match message.outputTokens (4), not byte count (6)',
-  );
-  assert.equal(estimate.userTokens, 7, 'User tokens should use estimateText ("Merhaba" -> 7 bytes)');
+  assert.equal(estimate.assistantTokens, estimateText('Harika'));
+  assert.notEqual(estimate.assistantTokens, 900);
 });
 
-test('assistant message falls back to text byte estimation when outputTokens is null', () => {
-  const messages = [
-    {
-      id: 'msg-1',
-      role: 'assistant',
-      content: 'Harika', // 6 UTF-8 bytes
-      attachments: [],
-      toolActivities: '',
-      outputTokens: null,
-    },
-  ];
+test('dense punctuation and non-ASCII text are not treated as UTF-8 byte counts', () => {
+  const text = 'hello {"key": 1} 世界';
+  assert.notEqual(estimateText(text), new TextEncoder().encode(text).byteLength);
+  assert.ok(estimateText(text) > 0);
+});
 
-  const estimate = estimateMessages(messages);
-  assert.equal(
-    estimate.assistantTokens,
-    6,
-    'Assistant tokens should fall back to byte count when outputTokens is null',
+test('provider input baseline adds each post-prompt component exactly once', () => {
+  const model = {
+    providerId: 'provider',
+    modelId: 'model',
+    connectionId: null,
+    workspaceId: null,
+  };
+  const promptMessage = {
+    id: 'prompt',
+    role: 'user',
+    content: 'Already counted by provider',
+    attachments: [],
+    toolActivities: '',
+  };
+  const postPromptMessage = {
+    id: 'new-message',
+    role: 'assistant',
+    content: 'New response',
+    attachments: [{ name: 'notes.txt', kind: 'text', sizeBytes: 16 }],
+    toolActivities: [
+      {
+        status: 'completed',
+        callId: 'call-1',
+        name: 'read_file',
+        arguments: { path: 'notes.txt' },
+        output: 'new tool output',
+      },
+    ],
+  };
+  const pendingAttachments = [{ name: 'pending.png', kind: 'image', sizeBytes: 0 }];
+  const memory = {
+    compactionKind: null,
+    compactionProviderId: null,
+    compactionModelId: null,
+    compactionConnectionId: null,
+    compactionWorkspaceId: null,
+    compactedThroughMessageId: null,
+    lastPrompt: {
+      providerId: 'provider',
+      modelId: 'model',
+      connectionId: null,
+      workspaceId: null,
+      messageId: 'prompt',
+      inputTokens: 100,
+    },
+  };
+
+  const estimate = estimateContextUsage(
+    [promptMessage, postPromptMessage],
+    'draft',
+    pendingAttachments,
+    model,
+    null,
+    memory,
   );
+  const postPromptTokens = estimateMessages([postPromptMessage]).totalTokens;
+  const pendingImageTokens = 2048;
+
+  assert.equal(estimate.providerInputTokens, 100);
+  assert.equal(
+    estimate.totalTokens,
+    100 + postPromptTokens + pendingImageTokens + estimateText('draft'),
+  );
+  assert.equal(estimate.attachments.filter((attachment) => attachment.isDraft).length, 1);
 });

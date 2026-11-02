@@ -33,9 +33,11 @@ use super::database_key::{DatabaseKey, read_stored_database_key, store_database_
 use super::ipc_protocol::{
     MAX_STORAGE_FRAME_BYTES, STORAGE_PROTOCOL_VERSION, StorageRequest, StorageResponse,
 };
+use super::{STORAGE_BROKER_RESPONSE_TIMEOUT, STORAGE_BROKER_STARTUP_TIMEOUT};
 
 static STORAGE_BROKER_RUNTIME: OnceLock<Mutex<Option<StorageBrokerRuntime>>> = OnceLock::new();
-const BROKER_RESPONSE_TIMEOUT: Duration = Duration::from_secs(8);
+const BROKER_RESPONSE_TIMEOUT: Duration = STORAGE_BROKER_RESPONSE_TIMEOUT;
+const BROKER_STARTUP_TIMEOUT: Duration = STORAGE_BROKER_STARTUP_TIMEOUT;
 const BROKER_PIPE_POLL_INTERVAL: Duration = Duration::from_millis(10);
 
 /// A transport or protocol failure that is safe to expose to callers.
@@ -139,6 +141,15 @@ impl RemoteStorageConnection {
         request: StorageRequest,
         invalidate_on_failure: bool,
     ) -> Result<StorageResponse, RemoteStorageError> {
+        self.request_with_timeout(request, invalidate_on_failure, BROKER_RESPONSE_TIMEOUT)
+    }
+
+    fn request_with_timeout(
+        &self,
+        request: StorageRequest,
+        invalidate_on_failure: bool,
+        response_timeout: Duration,
+    ) -> Result<StorageResponse, RemoteStorageError> {
         let mut request_written = false;
         let result = (|| {
             if self.poisoned.load(Ordering::Acquire) {
@@ -151,7 +162,7 @@ impl RemoteStorageConnection {
             write_frame(&mut pipe.writer, &request)?;
             request_written = true;
             let frame = Zeroizing::new(
-                read_frame(&mut pipe.reader, BROKER_RESPONSE_TIMEOUT)?
+                read_frame(&mut pipe.reader, response_timeout)?
                     .ok_or(RemoteStorageError::UnexpectedEndOfStream)?,
             );
             let response = serde_json::from_slice::<StorageResponse>(&frame)
@@ -199,11 +210,12 @@ impl RemoteStorageConnection {
     }
 
     fn handshake(&self) -> Result<(), RemoteStorageError> {
-        let response = self.request_with_recovery(
+        let response = self.request_with_timeout(
             StorageRequest::Hello {
                 version: STORAGE_PROTOCOL_VERSION,
             },
             false,
+            BROKER_STARTUP_TIMEOUT,
         )?;
         match response {
             StorageResponse::Ready { version } if version == STORAGE_PROTOCOL_VERSION => Ok(()),
@@ -420,7 +432,7 @@ fn expect_key_bootstrap_status(
     expected_status: u8,
 ) -> Result<(), RemoteStorageError> {
     let mut response = [0; 5];
-    read_exact_pipe(reader, &mut response, BROKER_RESPONSE_TIMEOUT)?;
+    read_exact_pipe(reader, &mut response, BROKER_STARTUP_TIMEOUT)?;
     if &response[..4] != DATABASE_KEY_BOOTSTRAP_MAGIC || response[4] != expected_status {
         return Err(RemoteStorageError::InvalidResponse);
     }
@@ -573,7 +585,8 @@ mod tests {
 
     use windows_sys::Win32::{Foundation::HANDLE, System::Pipes::CreatePipe};
 
-    use super::{RemoteStorageError, read_frame};
+    use super::{BROKER_RESPONSE_TIMEOUT, RemoteStorageError, read_frame};
+    use super::super::{SQLITE_BUSY_TIMEOUT, STORAGE_DATABASE_LOCK_TIMEOUT};
 
     fn anonymous_pipe() -> (File, File) {
         let mut read = null_mut();
@@ -601,6 +614,14 @@ mod tests {
             Err(RemoteStorageError::TimedOut)
         );
         assert!(started.elapsed() < Duration::from_secs(1));
+    }
+
+    #[test]
+    fn broker_response_deadline_covers_database_lock_and_sqlite_busy_waits() {
+        let maximum_database_wait = STORAGE_DATABASE_LOCK_TIMEOUT + SQLITE_BUSY_TIMEOUT;
+        let transport_headroom = BROKER_RESPONSE_TIMEOUT.saturating_sub(maximum_database_wait);
+
+        assert!(transport_headroom >= Duration::from_secs(4));
     }
 
     #[test]

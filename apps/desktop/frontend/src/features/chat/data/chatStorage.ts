@@ -21,6 +21,34 @@ import type {
   ChatModelFavorite,
 } from '@entities/conversation';
 
+// Four storage-broker round trips can each wait up to 16 seconds before returning.
+const MESSAGE_SAVE_TIMEOUT_MS = 75_000;
+const RETRYABLE_CHAT_STORAGE_ERROR_DETAILS = new Set([
+  'sqlite_busy',
+  'sqlite_busy_snapshot',
+  'sqlite_busy_timeout',
+  'sqlite_locked',
+  'sqlite_io_error',
+  'database_queue_full',
+  'database_queue_wait_timeout',
+  'storage_broker_timeout',
+]);
+
+export function isRetryableChatStorageErrorDetail(detail: string): boolean {
+  return RETRYABLE_CHAT_STORAGE_ERROR_DETAILS.has(detail);
+}
+
+export interface ChatMessagePersistenceMetrics {
+  contentBytes: number;
+  citationSourceBytes: number;
+  personalMemoryFactIdBytes: number;
+  reasoningSummaryBytes: number;
+  toolActivityBytes: number;
+  toolActivityCount: number | null;
+  attachmentCount: number;
+  attachmentBytes: number;
+}
+
 export type {
   ChatRole,
   ChatMessageStatus,
@@ -186,6 +214,23 @@ export async function recordChatRequestFailure(
   code: string,
 ): Promise<void> {
   await invoke('record_chat_request_failure', { stage, code });
+}
+
+export async function recordChatMessagePersistenceFailure(
+  stage: 'userMessage' | 'assistantCheckpoint' | 'assistantFinal' | 'assistantRecovery',
+  code: string,
+  detailCode: string | null,
+  metrics: ChatMessagePersistenceMetrics,
+): Promise<void> {
+  await invoke('record_chat_message_persistence_failure', { stage, code, detailCode, metrics });
+}
+
+export async function recordFileChangesLoadFailure(
+  stage: 'inline' | 'panel',
+  code: string,
+  detailCode: string | null,
+): Promise<void> {
+  await invoke('record_file_changes_load_failure', { stage, code, detailCode });
 }
 
 export type ExportFormat = 'md' | 'html' | 'json';
@@ -510,7 +555,10 @@ export async function duplicateConversation(
 export async function saveMessage(
   message: ChatMessage,
   attachments: readonly PendingChatAttachment[] = [],
+  options: { preserveToolActivities?: boolean } = {},
 ): Promise<void> {
+  const { toolActivities: persistedToolActivities, ...messageWithoutToolActivities } = message;
+  const persistedMessage = options.preserveToolActivities ? messageWithoutToolActivities : message;
   const metadata = attachments.map(({ id, name, mimeType, sizeBytes, kind }) => ({
     id,
     name,
@@ -527,14 +575,19 @@ export async function saveMessage(
     dataBase64: encodeBase64(attachment.bytes),
   }));
   expectSaved(
-    await localServiceClient.call('storage.chat.messages.save', {
-      input: {
-        ...message,
-        content: encodeStoredMessageContent(message.content, metadata),
-        attachments: payload,
-        createdAt: message.createdAt ?? Date.now(),
+    await localServiceClient.call(
+      'storage.chat.messages.save',
+      {
+        input: {
+          ...persistedMessage,
+          ...(options.preserveToolActivities ? {} : { toolActivities: persistedToolActivities }),
+          content: encodeStoredMessageContent(message.content, metadata),
+          attachments: payload,
+          createdAt: message.createdAt ?? Date.now(),
+        },
       },
-    }),
+      MESSAGE_SAVE_TIMEOUT_MS,
+    ),
   );
 }
 
