@@ -191,10 +191,16 @@ pub fn parse_duckduckgo_html(html: &str, limit: usize) -> Vec<SearchResultItem> 
 
         cursor = a_end + 4;
 
-        let snippet_search_window = 1500.min(html.len().saturating_sub(cursor));
-        let snippet = if let Some(snip_idx) =
-            html[cursor..cursor + snippet_search_window].find("result__snippet")
-        {
+        let Some(remaining_html) = html.get(cursor..) else {
+            break;
+        };
+        let snippet_search_window = 1500.min(remaining_html.len());
+        let snippet_search_end = (0..=snippet_search_window)
+            .rev()
+            .find(|&end| remaining_html.is_char_boundary(end))
+            .unwrap_or(0);
+        let snippet_search = &remaining_html[..snippet_search_end];
+        let snippet = if let Some(snip_idx) = snippet_search.find("result__snippet") {
             let snip_abs = cursor + snip_idx;
             if let Some(snip_close) = html[snip_abs..].find('>') {
                 let text_start = snip_abs + snip_close + 1;
@@ -986,8 +992,8 @@ mod tests {
     use super::{
         MAX_SEARCH_RESPONSE_BYTES, SearchResultItem, append_bounded_search_chunk,
         extract_ddg_target_url, format_search_response, github_repository_segments,
-        matches_site_restriction, parse_exa_mcp_response, parse_exa_search_text,
-        site_restriction_from_query,
+        matches_site_restriction, parse_duckduckgo_html, parse_exa_mcp_response,
+        parse_exa_search_text, site_restriction_from_query,
     };
 
     #[test]
@@ -1027,6 +1033,28 @@ mod tests {
             extract_ddg_target_url(url),
             "https://example.org/articles?q=rust"
         );
+    }
+
+    #[test]
+    fn duckduckgo_parser_handles_utf8_at_snippet_window_edge() {
+        let snippet_element = r#"<a class="result__snippet">Matched snippet</a>"#;
+        let unicode_byte_offset = 1499;
+        let filler_length = unicode_byte_offset - 1200 - snippet_element.len();
+        let after_title = format!(
+            "{}{}{}é",
+            " ".repeat(1200),
+            snippet_element,
+            "x".repeat(filler_length)
+        );
+        assert_eq!(after_title.len(), 1501);
+        assert!(!after_title.is_char_boundary(1500));
+
+        let html =
+            format!(r#"<a class="result__a" href="https://example.org/">Example</a>{after_title}"#);
+        let results = parse_duckduckgo_html(&html, 1);
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].snippet, "Matched snippet");
     }
 
     #[test]
