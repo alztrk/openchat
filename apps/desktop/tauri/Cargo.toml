@@ -15,7 +15,7 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 base64 = "0.22"
-zeroize = "=1.8.1"
+zeroize = "=1.9.1"
 openchat_local_service = { package = "openchat-local-service", path = "../../../services/openchat-local-service" }
 tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
