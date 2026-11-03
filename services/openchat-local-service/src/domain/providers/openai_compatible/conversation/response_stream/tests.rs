@@ -489,7 +489,7 @@ async fn anthropic_compaction_block_emits_status_and_saves_full_content() {
     response.extend(sse_event(
         json!({
             "type": "message_start",
-            "message": {"type": "message", "role": "assistant", "usage": {"input_tokens": 60_000}},
+            "message": {"type": "message", "role": "assistant", "usage": {"input_tokens": 55_000}},
         }),
         true,
     ));
@@ -539,6 +539,7 @@ async fn anthropic_compaction_block_emits_status_and_saves_full_content() {
     .await;
 
     let turn = outcome.result.expect("Messages stream should complete");
+    assert_eq!(outcome.input_tokens, Some(60_000));
     assert_eq!(
         turn.compaction_item,
         Some(json!({"type": "compaction", "content": "opaque Anthropic checkpoint"}))
@@ -551,6 +552,72 @@ async fn anthropic_compaction_block_emits_status_and_saves_full_content() {
     );
     let request = String::from_utf8(outcome.request).expect("fixture request is UTF-8");
     assert!(request.contains("anthropic-beta: compact-2026-01-12"));
+}
+
+#[tokio::test]
+async fn anthropic_context_input_includes_cache_read_and_write_tokens() {
+    let mut response = Vec::new();
+    response.extend(sse_event(
+        json!({
+            "type": "message_start",
+            "message": {
+                "type": "message",
+                "role": "assistant",
+                "usage": {
+                    "input_tokens": 300,
+                    "cache_read_input_tokens": 100,
+                    "cache_creation_input_tokens": 20,
+                    "output_tokens": 0,
+                },
+            },
+        }),
+        true,
+    ));
+    response.extend(sse_event(
+        json!({
+            "type": "content_block_start",
+            "index": 0,
+            "content_block": {"type": "text", "text": ""},
+        }),
+        true,
+    ));
+    response.extend(sse_event(
+        json!({
+            "type": "content_block_delta",
+            "index": 0,
+            "delta": {"type": "text_delta", "text": "Done"},
+        }),
+        true,
+    ));
+    response.extend(sse_event(
+        json!({"type": "content_block_stop", "index": 0}),
+        true,
+    ));
+    response.extend(sse_event(
+        json!({
+            "type": "message_delta",
+            "delta": {"stop_reason": "end_turn"},
+            "usage": {"output_tokens": 1},
+        }),
+        true,
+    ));
+    response.extend(sse_event(json!({"type": "message_stop"}), true));
+
+    let outcome = run_fixture_for_provider(
+        "anthropic",
+        200,
+        response,
+        false,
+        Some(NativeCompaction::AnthropicMessagesThreshold),
+    )
+    .await;
+
+    assert!(
+        outcome.result.is_ok(),
+        "provider error: {:?}",
+        outcome.result.as_ref().err().map(|error| error.code)
+    );
+    assert_eq!(outcome.input_tokens, Some(420));
 }
 
 async fn receive_for_test(

@@ -593,6 +593,17 @@ fn trigger_tokens(context_window: i64) -> i64 {
     context_window.saturating_mul(COMPACTION_TRIGGER_PERCENT) / 100
 }
 
+/// Uses an exact provider input count with the same safety margin as request validation.
+pub(crate) fn should_compact_at_provider_count(
+    context_window: Option<i64>,
+    input_tokens: i64,
+) -> bool {
+    let Some(context_window) = context_window.filter(|window| *window >= MIN_CONTEXT_WINDOW) else {
+        return false;
+    };
+    input_tokens.saturating_add(1024) >= trigger_tokens(context_window)
+}
+
 #[cfg(test)]
 mod tests {
     use std::{hint::black_box, time::Instant};
@@ -604,7 +615,7 @@ mod tests {
         CompactionCheck, compaction_payload_matches_route, compaction_prefix_end,
         local_extractive_summary, local_summary_byte_limit, message_token_estimate,
         request_context_token_estimate, request_text_token_estimate, should_compact,
-        text_token_estimate, validate_request_context,
+        should_compact_at_provider_count, text_token_estimate, validate_request_context,
     };
 
     const TEST_MODEL: &str = "gpt-4";
@@ -1011,6 +1022,14 @@ mod tests {
             instructions: "",
             active_compaction_matches: false,
         }));
+    }
+
+    #[test]
+    fn provider_count_uses_the_compaction_threshold_and_safety_margin() {
+        assert!(should_compact_at_provider_count(Some(10_000), 6_976));
+        assert!(!should_compact_at_provider_count(Some(10_000), 6_975));
+        assert!(!should_compact_at_provider_count(Some(1_024), 100_000));
+        assert!(!should_compact_at_provider_count(None, 100_000));
     }
 
     #[test]

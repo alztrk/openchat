@@ -568,17 +568,49 @@ pub async fn send_message(
     })?;
     let message_id = Uuid::new_v4().simple().to_string();
 
-    let should_compact = context_compaction::should_compact(context_compaction::CompactionCheck {
-        context_window: route.request_context_limit(),
-        state: context_state.as_ref(),
-        provider_id,
-        model_id: &route.model_id,
-        connection_id: route.connection_id.as_deref(),
-        workspace_id: None,
-        messages: &included_messages,
-        instructions: &provider_request.instructions,
-        active_compaction_matches,
-    });
+    let estimated_should_compact =
+        context_compaction::should_compact(context_compaction::CompactionCheck {
+            context_window: route.request_context_limit(),
+            state: context_state.as_ref(),
+            provider_id,
+            model_id: &route.model_id,
+            connection_id: route.connection_id.as_deref(),
+            workspace_id: None,
+            messages: &included_messages,
+            instructions: &provider_request.instructions,
+            active_compaction_matches,
+        });
+    let should_compact =
+        if !active_compaction_matches && super::provider_token_count::supports_route(&route) {
+            let preflight_messages = request::completion_messages(&provider_request, provider_id);
+            let preflight_body = build_loop_request_body(
+                &route,
+                &provider_request,
+                &preflight_messages,
+                provider_id,
+                fast_mode,
+                opencode_free_workspace.as_deref(),
+                conversation_id,
+                None,
+                context_state.as_ref(),
+            )?;
+            match super::provider_token_count::count_near_context_limit(
+                &route,
+                api_key,
+                &preflight_body,
+                cancellation,
+            )
+            .await?
+            {
+                Some(input_tokens) => context_compaction::should_compact_at_provider_count(
+                    route.request_context_limit(),
+                    input_tokens,
+                ),
+                None => estimated_should_compact,
+            }
+        } else {
+            estimated_should_compact
+        };
     if should_compact
         && let Some(context_window) = route.request_context_limit()
         && let Some(compacted_through_index) = context_compaction::compaction_prefix_end(

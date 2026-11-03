@@ -807,33 +807,23 @@ async fn receive_with_client(
                 {
                     "message_start" => {
                         let usage = value.pointer("/message/usage");
-                        if let Some(tokens) = value
-                            .pointer("/message/usage/input_tokens")
-                            .and_then(Value::as_i64)
-                            .filter(|tokens| *tokens >= 0)
+                        let message_usage = value
+                            .get("message")
+                            .map(|message| UsageData::from_messages_event(message, "anthropic"));
+                        if let Some(tokens) =
+                            message_usage.as_ref().and_then(|usage| usage.input_tokens)
                         {
                             *request.input_tokens = Some(tokens);
                             provider_request_usage
                                 .get_or_insert_with(ProviderRequestUsage::default)
                                 .prompt_tokens = Some(tokens);
                         }
-                        if let Some(usage) = usage {
+                        if usage.is_some() {
+                            let message_usage = message_usage.unwrap_or_default();
                             let request_usage = provider_request_usage
                                 .get_or_insert_with(ProviderRequestUsage::default);
-                            if let Some(tokens) = usage
-                                .get("cache_read_input_tokens")
-                                .and_then(Value::as_i64)
-                                .filter(|tokens| *tokens >= 0)
-                            {
-                                request_usage.cached_tokens = Some(tokens);
-                            }
-                            if let Some(tokens) = usage
-                                .get("cache_creation_input_tokens")
-                                .and_then(Value::as_i64)
-                                .filter(|tokens| *tokens >= 0)
-                            {
-                                request_usage.cache_write_tokens = Some(tokens);
-                            }
+                            request_usage.cached_tokens = message_usage.cached_input_tokens;
+                            request_usage.cache_write_tokens = message_usage.cache_write_tokens;
                         }
                     }
                     "content_block_start" => {
@@ -949,6 +939,9 @@ async fn receive_with_client(
                         let message_usage = UsageData::from_messages_event(&value, "anthropic");
                         let request_usage = provider_request_usage
                             .get_or_insert_with(ProviderRequestUsage::default);
+                        if let Some(tokens) = message_usage.input_tokens {
+                            *request.input_tokens = Some(tokens);
+                        }
                         request_usage.prompt_tokens =
                             message_usage.input_tokens.or(request_usage.prompt_tokens);
                         request_usage.completion_tokens = message_usage

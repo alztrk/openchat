@@ -27,6 +27,7 @@ mod models;
 mod native_compaction;
 mod opencode_free_transport;
 mod provider_models;
+mod provider_token_count;
 mod request;
 mod route;
 mod stream;
