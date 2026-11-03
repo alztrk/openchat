@@ -77,6 +77,7 @@ Tauri v2 wraps the React frontend and spawns the local service. It handles:
 | Boundary | Mechanism |
 |----------|-----------|
 | **Process isolation** | Windows AppContainer / Linux bubblewrap for tool processes |
+| **WebView2 GPU process** | GPU sandbox is disabled on Windows build families 26200 and 26300 to work around a reproducible GPU-process crash; renderer and AudioService sandboxes remain enabled |
 | **Storage encryption** | SQLCipher AES-256, broker-owned in AppContainer private folder |
 | **Secrets** | DPAPI-protected vault, zeroized on read, cross-session file-lock |
 | **Network** | Outbound URL policy rejects private/reserved/cloud-metadata; DNS rebinding protection |

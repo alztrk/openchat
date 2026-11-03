@@ -6,9 +6,19 @@
 #[cfg(all(feature = "desktop-profile-test-support", not(debug_assertions)))]
 compile_error!("desktop profile test support is unavailable in optimized builds");
 
+#[cfg(windows)]
+use std::sync::atomic::{AtomicU8, Ordering as AtomicOrdering};
 use tauri::Manager;
 #[cfg(windows)]
-use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Settings3;
+use webview2_com::{
+    CoTaskMemPWSTR,
+    Microsoft::Web::WebView2::Win32::{
+        ICoreWebView2Settings3, COREWEBVIEW2_PROCESS_FAILED_KIND,
+        COREWEBVIEW2_PROCESS_FAILED_KIND_FRAME_RENDER_PROCESS_EXITED,
+        COREWEBVIEW2_PROCESS_FAILED_KIND_RENDER_PROCESS_EXITED,
+    },
+    ProcessFailedEventHandler,
+};
 #[cfg(windows)]
 use windows_core::Interface;
 
@@ -169,7 +179,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .ok_or_else(|| std::io::Error::other("Main window configuration is unavailable"))?;
             let mut main_window_builder =
                 tauri::WebviewWindowBuilder::from_config(app.handle(), main_window_config)?
-                    .visible(false);
+                    .visible(true);
+            #[cfg(windows)]
+            if is_webview2_gpu_sandbox_affected_windows_build() {
+                main_window_builder = main_window_builder.additional_browser_args(
+                    "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --disable-gpu-sandbox",
+                );
+            }
             #[cfg(feature = "desktop-profile-test-support")]
             if desktop_test_profile_root.is_some() {
                 main_window_builder = main_window_builder.visible(true);
@@ -259,10 +275,54 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     webview
                         .controller()
                         .CoreWebView2()
-                        .and_then(|core| core.Settings())
-                        .and_then(|settings| settings.cast::<ICoreWebView2Settings3>())
-                        .and_then(|settings| {
-                            settings.SetAreBrowserAcceleratorKeysEnabled(false)
+                        .and_then(|core| {
+                            let settings = core
+                                .Settings()?
+                                .cast::<ICoreWebView2Settings3>()?;
+                            settings.SetAreBrowserAcceleratorKeysEnabled(false)?;
+
+                            let renderer_failures = std::sync::Arc::new(AtomicU8::new(0));
+                            let failures_for_callback = renderer_failures.clone();
+                            let handler = ProcessFailedEventHandler::create(Box::new(
+                                move |sender, args| {
+                                    let Some(core) = sender else {
+                                        return Ok(());
+                                    };
+                                    let Some(args) = args else {
+                                        return Ok(());
+                                    };
+                                    let mut kind = COREWEBVIEW2_PROCESS_FAILED_KIND(0);
+                                    if let Err(error) = args.ProcessFailedKind(&mut kind) {
+                                        eprintln!("OpenChat could not read the WebView2 process failure kind: {error}");
+                                        return Ok(());
+                                    }
+                                    if kind != COREWEBVIEW2_PROCESS_FAILED_KIND_RENDER_PROCESS_EXITED
+                                        && kind != COREWEBVIEW2_PROCESS_FAILED_KIND_FRAME_RENDER_PROCESS_EXITED
+                                    {
+                                        return Ok(());
+                                    }
+
+                                    let failure_count = failures_for_callback
+                                        .fetch_add(1, AtomicOrdering::Relaxed);
+                                    if failure_count < 2 {
+                                        eprintln!("OpenChat WebView2 renderer exited; reloading the application view (attempt {}).", failure_count + 1);
+                                        if let Err(error) = core.Reload() {
+                                            eprintln!("OpenChat could not reload the WebView2 renderer: {error}");
+                                        }
+                                    } else {
+                                        eprintln!("OpenChat WebView2 renderer exited repeatedly; showing recovery screen.");
+                                        let recovery_page = "<!doctype html><html lang=\"tr\"><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>OpenChat başlatılamadı</title><style>body{font:16px system-ui,sans-serif;background:#111;color:#eee;display:grid;min-height:100vh;place-items:center;margin:0}main{max-width:34rem;padding:2rem}button{font:inherit;padding:.65rem 1rem;cursor:pointer}</style><main><h1>OpenChat başlatılamadı</h1><p>Uygulama görünümü beklenmedik şekilde durdu. Yeniden yüklemeyi deneyin. Sorun sürerse OpenChat'i yeniden başlatın.</p><button onclick=\"location.reload()\">Yeniden dene</button></main></html>";
+                                        let recovery_page = CoTaskMemPWSTR::from(recovery_page);
+                                        if let Err(error) = core.NavigateToString(*recovery_page.as_ref().as_pcwstr()) {
+                                            eprintln!("OpenChat could not show the WebView2 recovery screen: {error}");
+                                        }
+                                    }
+                                    Ok(())
+                                },
+                            ));
+                            let mut token = 0;
+                            core.add_ProcessFailed(&handler, &mut token)?;
+                            Ok(())
                         })
                 };
                 if let Err(error) = result {
@@ -275,8 +335,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             if setup_profile_root.is_none() {
                 main_window.unminimize()?;
                 window_state::restore_window_state(&main_window)?;
-                main_window.show()?;
-                main_window.set_focus()?;
                 notifications::initialize(app.handle()).map_err(std::io::Error::other)?;
             }
             Ok(())
@@ -418,6 +476,90 @@ fn is_reparse_point(metadata: &std::fs::Metadata) -> bool {
     #[cfg(not(windows))]
     {
         metadata.file_type().is_symlink()
+    }
+}
+
+#[cfg(windows)]
+fn is_webview2_gpu_sandbox_affected_windows_build() -> bool {
+    use windows_sys::Win32::Foundation::ERROR_SUCCESS;
+    use windows_sys::Win32::System::Registry::{RegGetValueW, HKEY_LOCAL_MACHINE, RRF_RT_REG_SZ};
+
+    const WINDOWS_VERSION_KEY: &str = "SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion";
+    const CURRENT_BUILD_VALUE: &str = "CurrentBuildNumber";
+
+    let key = WINDOWS_VERSION_KEY
+        .encode_utf16()
+        .chain(std::iter::once(0))
+        .collect::<Vec<_>>();
+    let value_name = CURRENT_BUILD_VALUE
+        .encode_utf16()
+        .chain(std::iter::once(0))
+        .collect::<Vec<_>>();
+    let mut build_buffer = [0u16; 16];
+    let mut buffer_size = std::mem::size_of_val(&build_buffer) as u32;
+    // SAFETY: The key/value names are NUL-terminated, and the output buffer and size are valid.
+    let result = unsafe {
+        RegGetValueW(
+            HKEY_LOCAL_MACHINE,
+            key.as_ptr(),
+            value_name.as_ptr(),
+            RRF_RT_REG_SZ,
+            std::ptr::null_mut(),
+            build_buffer.as_mut_ptr().cast(),
+            &mut buffer_size,
+        )
+    };
+    if result != ERROR_SUCCESS {
+        eprintln!(
+            "OpenChat could not read the Windows build number; leaving the WebView2 GPU sandbox enabled: {}",
+            std::io::Error::from_raw_os_error(result as i32)
+        );
+        return false;
+    }
+
+    let byte_length = buffer_size as usize;
+    if byte_length % std::mem::size_of::<u16>() != 0
+        || byte_length > std::mem::size_of_val(&build_buffer)
+    {
+        eprintln!(
+            "OpenChat received an invalid Windows build number; leaving the WebView2 GPU sandbox enabled."
+        );
+        return false;
+    }
+    let character_count = byte_length / std::mem::size_of::<u16>();
+    let build_number = build_buffer[..character_count]
+        .split(|character| *character == 0)
+        .next()
+        .unwrap_or_default();
+    let build_number = match String::from_utf16(build_number) {
+        Ok(build_number) => build_number,
+        Err(error) => {
+            eprintln!(
+                "OpenChat could not decode the Windows build number; leaving the WebView2 GPU sandbox enabled: {error}"
+            );
+            return false;
+        }
+    };
+
+    is_webview2_gpu_sandbox_affected_build_number(&build_number)
+}
+
+#[cfg(any(windows, test))]
+fn is_webview2_gpu_sandbox_affected_build_number(build_number: &str) -> bool {
+    matches!(build_number, "26200" | "26300")
+}
+
+#[cfg(test)]
+mod webview2_gpu_sandbox_tests {
+    use super::is_webview2_gpu_sandbox_affected_build_number;
+
+    #[test]
+    fn workaround_is_limited_to_affected_windows_build_families() {
+        assert!(is_webview2_gpu_sandbox_affected_build_number("26200"));
+        assert!(is_webview2_gpu_sandbox_affected_build_number("26300"));
+        assert!(!is_webview2_gpu_sandbox_affected_build_number("26100"));
+        assert!(!is_webview2_gpu_sandbox_affected_build_number("26340"));
+        assert!(!is_webview2_gpu_sandbox_affected_build_number(""));
     }
 }
 
