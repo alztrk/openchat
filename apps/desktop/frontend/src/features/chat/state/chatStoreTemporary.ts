@@ -273,6 +273,10 @@ export function createTemporarySendMessageAction(
         new CustomEvent('openchat-chat-request-started', { detail: { conversationId: session.id } }),
       );
       const activeOperation = await localServiceClient.startOperation('chat.temporary.send', parameters, (event) => {
+        if (event.name === 'chat.compaction.started') {
+          if (event.data.conversationId === session.id) get().setProviderCompaction(session.id, true);
+          return;
+        }
         const message = applyStreamEvent(event, assistantMessage, {
           conversationId: session.id,
           providerId: selectedModel.providerId,
@@ -373,6 +377,7 @@ export function createTemporarySendMessageAction(
       }
       return false;
     } finally {
+      get().setProviderCompaction(session.id, false);
       window.dispatchEvent(
         new CustomEvent('openchat-chat-request-finished', { detail: { conversationId: session.id } }),
       );

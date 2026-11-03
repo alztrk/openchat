@@ -48,6 +48,7 @@
   "temporaryChatStopBeforeLeaving": "Stop the response before leaving this temporary chat.",
   "temporaryChatMessageLimitReached": "This temporary chat reached its message or size limit. Save it or start another chat.",
   "temporaryChatResponseFailed": "No response was received. You can send another message or try again.",
+  "chatCompacting": "Compacting…",
   "chats": "Chats",
   "workspaces": "Workspaces",
   "workspacesDescription": "Group conversations by topic. Files and tools stay in code projects.",

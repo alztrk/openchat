@@ -14,6 +14,11 @@ impl ChatStreamEvent {
     /// Converts an internal stream event into its stable RPC event envelope.
     pub fn into_rpc(self, request_id: Value) -> Response {
         match self {
+            Self::CompactionStarted { conversation_id } => Response::event(
+                request_id,
+                "chat.compaction.started",
+                json!({ "conversationId": conversation_id }),
+            ),
             Self::Started(snapshot) => Response::event(
                 request_id,
                 "chat.started",
@@ -97,6 +102,20 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+
+    #[test]
+    fn compaction_started_rpc_contains_only_the_conversation_id() {
+        let response = ChatStreamEvent::CompactionStarted {
+            conversation_id: "conversation-id".to_owned(),
+        }
+        .into_rpc(json!(1));
+
+        assert_eq!(response.event.as_deref(), Some("chat.compaction.started"));
+        assert_eq!(
+            response.data.as_ref().expect("compaction event has data")["conversationId"],
+            "conversation-id"
+        );
+    }
 
     #[test]
     fn appended_text_rpc_contains_only_the_new_fragment() {

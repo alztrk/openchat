@@ -48,6 +48,7 @@
   "temporaryChatStopBeforeLeaving": "Beende die Antwort, bevor du diesen temporären Chat verlässt.",
   "temporaryChatMessageLimitReached": "Dieser temporäre Chat hat sein Nachrichten- oder Größenlimit erreicht. Speichere ihn oder starte einen neuen Chat.",
   "temporaryChatResponseFailed": "Es wurde keine Antwort empfangen. Du kannst eine neue Nachricht senden oder es erneut versuchen.",
+  "chatCompacting": "Kontext wird komprimiert …",
   "chats": "Unterhaltungen",
   "workspaces": "Arbeitsbereiche",
   "workspacesDescription": "Unterhaltungen nach Thema gruppieren. Dateien und Tools bleiben in Codeprojekten.",

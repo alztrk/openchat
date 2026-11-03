@@ -48,6 +48,7 @@
   "temporaryChatStopBeforeLeaving": "Bu geçici sohbetten çıkmadan önce yanıtı durdurun.",
   "temporaryChatMessageLimitReached": "Bu geçici sohbetin mesaj veya boyut sınırına ulaşıldı. Sohbeti kaydedin ya da yeni bir sohbet başlatın.",
   "temporaryChatResponseFailed": "Yanıt alınamadı. Yeni bir mesaj gönderebilir veya yeniden deneyebilirsiniz.",
+  "chatCompacting": "Bağlam sıkıştırılıyor…",
   "chats": "Sohbetler",
   "workspaces": "Çalışma alanları",
   "workspacesDescription": "Sohbetleri konularına göre gruplayın. Dosyalar ve araçlar kod projelerinde kalır.",

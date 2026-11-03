@@ -58,6 +58,8 @@ export function MessageList({
   const storeSearchHighlightQuery = useChatStore((state) => state.searchHighlightQuery);
   const clearSearchTarget = useChatStore((state) => state.clearSearchTarget);
   const storeActiveConversationId = useChatStore((state) => state.activeConversationId);
+  const temporaryChatId = useChatStore((state) => state.temporaryChat?.id ?? null);
+  const providerCompactionConversationIds = useChatStore((state) => state.providerCompactionConversationIds);
   const isOverridden = messagesOverride !== undefined;
   const searchTargetMessageId = isOverridden ? null : storeSearchTargetMessageId;
   const searchHighlightMessageId = isOverridden ? null : storeSearchHighlightMessageId;
@@ -65,7 +67,9 @@ export function MessageList({
   const messages = messagesOverride ?? storeMessages;
   const isLoadingMessages = isLoadingMessagesOverride ?? storeIsLoadingMessages;
   const activeConversationId =
-    conversationIdOverride !== undefined ? conversationIdOverride : storeActiveConversationId;
+    conversationIdOverride !== undefined
+      ? conversationIdOverride
+      : (storeActiveConversationId ?? (isOverridden ? null : temporaryChatId));
   const skipBottomScroll = useRef(false);
   const skippedCompletedResponseScroll = useRef(false);
   const responseGroups = useMemo(() => groupResponses(messages), [messages]);
@@ -107,7 +111,14 @@ export function MessageList({
   const isWaitingForUserAnswer = latestToolActivities.some(
     (activity) => activity.name === 'ask_user' && activity.status === 'waitingForUser',
   );
-  const shouldShowAssistantLoading = showAssistantLoading && !hasStreamingAssistant && !isWaitingForUserAnswer;
+  const isCompactingConversation =
+    activeConversationId !== null && providerCompactionConversationIds.includes(activeConversationId);
+  const compactionInsertionIndex = hasStreamingAssistant
+    ? Math.max(visibleMessages.length - 1, 0)
+    : visibleMessages.length;
+  const compactionStatus = isCompactingConversation ? <CompactionStatusDivider label={t('chatCompacting')} /> : null;
+  const shouldShowAssistantLoading =
+    showAssistantLoading && !hasStreamingAssistant && !isWaitingForUserAnswer && !isCompactingConversation;
   const virtualList = useVirtualMessageList(visibleMessages, activeConversationId);
   const autoFollowResponses = useChatDisplayPreferencesStore((state) => state.preferences.autoFollowResponses);
 
@@ -221,6 +232,7 @@ export function MessageList({
   }, [
     activeConversationId,
     autoFollowResponses,
+    isCompactingConversation,
     hasStreamingAssistant,
     inChatTargetMessageId,
     isLoadingMessages,
@@ -273,44 +285,66 @@ export function MessageList({
             visibleMessages[index - 1]?.role === 'user' &&
             row?.responseVersionCount === 1;
           return (
-            <article
-              className="min-w-0"
-              key={message.id}
-              ref={virtualList.rowRef(message.id)}
-              style={{ paddingBottom: messageGap(previousMessage, message) }}
-            >
-              {startsNewDay(previousMessage?.createdAt ?? null, message.createdAt) ? (
-                <p className="mb-3 mt-1 text-center text-xs text-secondary-text">
-                  {formatDate(message.createdAt, locale, t('today'))}
-                </p>
-              ) : null}
-              <MessageItem
-                assistantModelFallback={assistantModelFallback}
-                assistantProviderFallback={assistantProviderFallback}
-                isSearchMatch={
-                  message.id === (inChatTargetMessageId ?? searchHighlightMessageId ?? searchTargetMessageId)
-                }
-                message={message}
-                latestFileChanges={latestFileChanges}
-                onOpenConnections={onOpenConnections}
-                onCheckpointRestored={onCheckpointRestored}
-                onOpenFileChanges={onOpenFileChanges}
-                onOpenWorkspaceFile={onOpenWorkspaceFile}
-                onEditMessage={onEditMessage}
-                onRetryMessage={canRetry ? onRetryMessage : undefined}
-                onSelectResponseVersion={selectResponseVersion}
-                responseVersionCount={row?.responseVersionCount}
-                responseVersionIndex={row?.responseVersionIndex}
-              />
-            </article>
+            <div className="min-w-0" key={message.id}>
+              {isCompactingConversation && index === compactionInsertionIndex ? compactionStatus : null}
+              <article
+                className="min-w-0"
+                ref={virtualList.rowRef(message.id)}
+                style={{ paddingBottom: messageGap(previousMessage, message) }}
+              >
+                {startsNewDay(previousMessage?.createdAt ?? null, message.createdAt) ? (
+                  <p className="mb-3 mt-1 text-center text-xs text-secondary-text">
+                    {formatDate(message.createdAt, locale, t('today'))}
+                  </p>
+                ) : null}
+                <MessageItem
+                  assistantModelFallback={assistantModelFallback}
+                  assistantProviderFallback={assistantProviderFallback}
+                  isSearchMatch={
+                    message.id === (inChatTargetMessageId ?? searchHighlightMessageId ?? searchTargetMessageId)
+                  }
+                  message={message}
+                  latestFileChanges={latestFileChanges}
+                  onOpenConnections={onOpenConnections}
+                  onCheckpointRestored={onCheckpointRestored}
+                  onOpenFileChanges={onOpenFileChanges}
+                  onOpenWorkspaceFile={onOpenWorkspaceFile}
+                  onEditMessage={onEditMessage}
+                  onRetryMessage={canRetry ? onRetryMessage : undefined}
+                  onSelectResponseVersion={selectResponseVersion}
+                  responseVersionCount={row?.responseVersionCount}
+                  responseVersionIndex={row?.responseVersionIndex}
+                />
+              </article>
+            </div>
           );
         })}
+        {isCompactingConversation && compactionInsertionIndex === visibleMessages.length
+          ? compactionStatus
+          : null}
         {shouldShowAssistantLoading ? (
           <div className="min-w-0" style={{ paddingTop: loadingMessageGap(visibleMessages.at(-1) ?? null) }}>
             <AssistantLoadingSkeleton modelLabel={assistantModelFallback} providerId={assistantProviderFallback} />
           </div>
         ) : null}
       </div>
+    </div>
+  );
+}
+
+function CompactionStatusDivider({ label }: { label: string }) {
+  return (
+    <div aria-live="polite" className="my-5 flex min-h-6 items-center gap-3 text-xs text-secondary-text" role="status">
+      <span aria-hidden="true" className="h-px flex-1 bg-border" />
+      <span className="inline-flex shrink-0 items-center gap-2">
+        <LoaderCircle
+          aria-hidden="true"
+          className="animate-spin text-secondary-icon motion-reduce:animate-none"
+          size={16}
+        />
+        {label}
+      </span>
+      <span aria-hidden="true" className="h-px flex-1 bg-border" />
     </div>
   );
 }

@@ -24,6 +24,7 @@ use crate::{
     usage_statistics::{ProviderRateLimitObservation, UsageData},
 };
 
+use super::super::route::NativeCompaction;
 use super::super::{
     MAX_EVENT_BYTES, MAX_PROVIDER_ERROR_BYTES, apply_opencode_headers, cancelled_error,
     chat_request_http_error_with_retry_after, client, copilot, invalid_response_error,
@@ -48,6 +49,7 @@ pub(super) struct StreamedTurn {
     pub(super) round_content: String,
     pub(super) tool_calls: Vec<ToolCall>,
     pub(super) provider_request_usage: Option<ProviderRequestUsage>,
+    pub(super) compaction_item: Option<Value>,
     #[cfg(test)]
     pub(super) first_output_latency: Option<Duration>,
 }
@@ -146,6 +148,38 @@ async fn send_reasoning_summaries(
         )
         .await
         .map_err(|_| protocol_error())
+}
+
+async fn send_compaction_started(
+    request: &ResponseStreamRequest<'_>,
+    emitted: &mut bool,
+) -> Result<(), ServiceError> {
+    if *emitted {
+        return Ok(());
+    }
+    request
+        .events
+        .send(
+            &ChatStreamEvent::CompactionStarted {
+                conversation_id: request.conversation_id.to_owned(),
+            }
+            .into_rpc(request.request_id.clone()),
+        )
+        .await
+        .map_err(|_| protocol_error())?;
+    *emitted = true;
+    Ok(())
+}
+
+fn valid_responses_compaction_item(item: &Value) -> bool {
+    item.get("type").and_then(Value::as_str) == Some("compaction")
+        && item.get("id").and_then(Value::as_str).is_some_and(|id| {
+            !id.is_empty() && id.len() <= 256 && !id.chars().any(char::is_control)
+        })
+        && item
+            .get("encrypted_content")
+            .and_then(Value::as_str)
+            .is_some_and(|content| !content.is_empty() && content.len() <= 1024 * 1024)
 }
 
 async fn update_reasoning_summary(
@@ -633,6 +667,10 @@ async fn receive_with_client(
                     })?,
                 )
                 .header("anthropic-version", "2023-06-01");
+            if request.route.native_compaction == Some(NativeCompaction::AnthropicMessagesThreshold)
+            {
+                provider_request = provider_request.header("anthropic-beta", "compact-2026-01-12");
+            }
         } else if let Some(api_key) = request.route.local_api_key.as_deref() {
             provider_request = provider_request.bearer_auth(api_key.as_str());
         } else if !request.route.is_free
@@ -720,6 +758,8 @@ async fn receive_with_client(
     let mut saw_finish_reason = false;
     let mut stream_ended = false;
     let mut provider_request_usage: Option<ProviderRequestUsage> = None;
+    let mut compaction_item: Option<Value> = None;
+    let mut compaction_started = false;
     let mut first_output_latency = None;
 
     while !stream_ended {
@@ -798,6 +838,13 @@ async fn receive_with_client(
                     }
                     "content_block_start" => {
                         let block = value.get("content_block");
+                        if block
+                            .and_then(|block| block.get("type"))
+                            .and_then(Value::as_str)
+                            == Some("compaction")
+                        {
+                            send_compaction_started(&request, &mut compaction_started).await?;
+                        }
                         if block
                             .and_then(|block| block.get("type"))
                             .and_then(Value::as_str)
@@ -881,10 +928,38 @@ async fn receive_with_client(
                                     call.arguments.push_str(partial_json);
                                 }
                             }
+                            Some("compaction_delta") => {
+                                let content = delta
+                                    .and_then(|delta| delta.get("content"))
+                                    .and_then(Value::as_str)
+                                    .filter(|content| !content.is_empty())
+                                    .ok_or_else(invalid_response_error)?;
+                                if content.len() > 1024 * 1024 {
+                                    return Err(invalid_response_error());
+                                }
+                                compaction_item = Some(serde_json::json!({
+                                    "type": "compaction",
+                                    "content": content,
+                                }));
+                            }
                             _ => {}
                         }
                     }
                     "message_delta" => {
+                        let message_usage = UsageData::from_messages_event(&value, "anthropic");
+                        let request_usage = provider_request_usage
+                            .get_or_insert_with(ProviderRequestUsage::default);
+                        request_usage.prompt_tokens =
+                            message_usage.input_tokens.or(request_usage.prompt_tokens);
+                        request_usage.completion_tokens = message_usage
+                            .output_tokens
+                            .or(request_usage.completion_tokens);
+                        request_usage.cached_tokens = message_usage
+                            .cached_input_tokens
+                            .or(request_usage.cached_tokens);
+                        request_usage.cache_write_tokens = message_usage
+                            .cache_write_tokens
+                            .or(request_usage.cache_write_tokens);
                         if let Some(tokens) = value
                             .pointer("/usage/output_tokens")
                             .and_then(Value::as_i64)
@@ -930,6 +1005,42 @@ async fn receive_with_client(
             }
 
             if request.route.uses_responses_api {
+                match value.get("type").and_then(Value::as_str) {
+                    Some("response.output_item.added")
+                        if value.pointer("/item/type").and_then(Value::as_str)
+                            == Some("compaction") =>
+                    {
+                        send_compaction_started(&request, &mut compaction_started).await?;
+                    }
+                    Some("response.output_item.done") => {
+                        if let Some(item) = value.get("item")
+                            && item.get("type").and_then(Value::as_str) == Some("compaction")
+                        {
+                            if !valid_responses_compaction_item(item) {
+                                return Err(invalid_response_error());
+                            }
+                            compaction_item = Some(item.clone());
+                        }
+                    }
+                    Some("response.completed") => {
+                        if let Some(items) =
+                            value.pointer("/response/output").and_then(Value::as_array)
+                            && let Some(item) = items
+                                .iter()
+                                .filter(|item| {
+                                    item.get("type").and_then(Value::as_str) == Some("compaction")
+                                })
+                                .last()
+                        {
+                            if !valid_responses_compaction_item(item) {
+                                return Err(invalid_response_error());
+                            }
+                            send_compaction_started(&request, &mut compaction_started).await?;
+                            compaction_item = Some(item.clone());
+                        }
+                    }
+                    _ => {}
+                }
                 if first_output_latency.is_none() && responses_event_has_output(&value) {
                     let elapsed = provider_request_started.elapsed();
                     first_output_latency = Some(elapsed);
@@ -1176,6 +1287,7 @@ async fn receive_with_client(
         round_content,
         tool_calls: parse_streamed_tool_calls(tool_calls, request.route.is_opencode)?,
         provider_request_usage,
+        compaction_item,
         #[cfg(test)]
         first_output_latency,
     })

@@ -136,6 +136,7 @@ export interface ChatState {
   temporaryChat: TemporaryChatSession | null;
   isUpdatingConversationModel: boolean;
   compactingConversationId: string | null;
+  providerCompactionConversationIds: string[];
   isCreatingMessageBranch: boolean;
   pendingQuestionSendBlock: { conversationId: string; blocked: boolean } | null;
   selectedReasoningEffort: string | null;
@@ -205,6 +206,7 @@ export interface ChatState {
   setPendingQuestionSendBlock(conversationId: string | null, blocked: boolean): void;
   beginConversationCompaction(conversationId: string): boolean;
   finishConversationCompaction(conversationId: string): void;
+  setProviderCompaction(conversationId: string, isActive: boolean): void;
   toggleFavoriteModel(model: ChatModel): Promise<boolean>;
   removeModelFavorite(favorite: ChatModelFavorite): Promise<boolean>;
   respondToToolPermission(approved: boolean, conversationId?: string | null): Promise<void>;
@@ -257,6 +259,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   temporaryChat: null,
   isUpdatingConversationModel: false,
   compactingConversationId: null,
+  providerCompactionConversationIds: [],
   isCreatingMessageBranch: false,
   pendingQuestionSendBlock: null,
   selectedReasoningEffort: null,

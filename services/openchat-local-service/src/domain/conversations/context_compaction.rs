@@ -334,7 +334,12 @@ pub(crate) fn compaction_payload_matches_route(
 ) -> bool {
     match state.compaction_kind.as_deref() {
         Some("summary") => true,
-        Some("responses_checkpoint") => {
+        Some(
+            "responses_checkpoint"
+            | "openai_responses_item"
+            | "anthropic_compaction_block"
+            | "xai_responses_item",
+        ) => {
             state.compaction_provider_id.as_deref() == Some(provider_id)
                 && state.compaction_connection_id.as_deref() == connection_id
                 && state.compaction_workspace_id.as_deref() == workspace_id
@@ -571,7 +576,15 @@ fn compaction_payload_token_estimate(model_id: &str, state: &ConversationContext
         state.compaction_payload.as_deref(),
     ) {
         (Some("summary"), Some(payload)) => text_token_estimate(model_id, payload),
-        (Some("responses_checkpoint"), Some(_)) => OPAQUE_CHECKPOINT_TOKEN_ESTIMATE,
+        (
+            Some(
+                "responses_checkpoint"
+                | "openai_responses_item"
+                | "anthropic_compaction_block"
+                | "xai_responses_item",
+            ),
+            Some(_),
+        ) => OPAQUE_CHECKPOINT_TOKEN_ESTIMATE,
         _ => 0,
     }
 }

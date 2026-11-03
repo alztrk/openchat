@@ -334,9 +334,10 @@ pub async fn models(
     }
 }
 
-fn default_provider_context_window(provider_id: &str) -> Option<i64> {
+fn default_provider_context_window(provider_id: &str, model_id: &str) -> Option<i64> {
     match provider_id {
         "deepseek" => Some(64_000),
+        "xai" if model_id == "grok-4.7" => Some(500_000),
         "xai" => Some(131_072),
         "perplexity" => Some(128_000),
         "sambanova" => Some(131_072),
@@ -422,7 +423,7 @@ fn parse_models(
                                 .and_then(Value::as_i64)
                         })
                         .or(input_token_limit)
-                        .or_else(|| default_provider_context_window(provider_id))
+                        .or_else(|| default_provider_context_window(provider_id, id))
                         .filter(|value| *value > 0);
                     let input_token_limit = input_token_limit.or(context_window);
                     let max_output_tokens = [
@@ -486,8 +487,14 @@ fn parse_models(
                         "defaultReasoningLevel": null,
                         "reasoningLevels": reasoning_levels,
                         "isAvailable": true,
-                        "capabilityMetadataVersion": 2,
+                        "capabilityMetadataVersion": 3,
                     });
+                    if provider_id == "anthropic" {
+                        model["supportsThresholdCompaction"] = item
+                            .pointer("/capabilities/context_management/compact_20260112/supported")
+                            .cloned()
+                            .unwrap_or(Value::Null);
+                    }
                     if let Some(supports_reasoning) = supports_reasoning {
                         model["supportsReasoning"] = json!(supports_reasoning);
                     }
@@ -525,7 +532,7 @@ fn has_current_limit_metadata(models: &[Value]) -> bool {
             && model
                 .get("capabilityMetadataVersion")
                 .and_then(Value::as_u64)
-                == Some(2)
+                == Some(3)
     })
 }
 
@@ -589,6 +596,7 @@ pub(super) struct RouteModelMetadata {
     pub(super) context_limits: super::ModelContextLimits,
     pub(super) supports_images: bool,
     pub(super) supports_tool_calls: Option<bool>,
+    pub(super) supports_threshold_compaction: Option<bool>,
 }
 
 pub(super) fn route_model_metadata(
@@ -603,6 +611,7 @@ pub(super) fn route_model_metadata(
             context_limits: super::ModelContextLimits::default(),
             supports_images: false,
             supports_tool_calls: None,
+            supports_threshold_compaction: None,
         });
     };
     let model = models
@@ -634,6 +643,9 @@ pub(super) fn route_model_metadata(
             == Some(true),
         supports_tool_calls: model
             .and_then(|model| model.get("supportsTools"))
+            .and_then(Value::as_bool),
+        supports_threshold_compaction: model
+            .and_then(|model| model.get("supportsThresholdCompaction"))
             .and_then(Value::as_bool),
     })
 }
@@ -1069,13 +1081,54 @@ mod tests {
             "supportsImages": false,
             "supportsTools": null
         })]));
-        assert!(has_current_limit_metadata(&[json!({
+        assert!(!has_current_limit_metadata(&[json!({
             "id": "model",
             "inputTokenLimit": 8192,
             "supportsImages": false,
             "supportsTools": null,
             "capabilityMetadataVersion": 2
         })]));
+        assert!(has_current_limit_metadata(&[json!({
+            "id": "model",
+            "inputTokenLimit": 8192,
+            "supportsImages": false,
+            "supportsTools": null,
+            "capabilityMetadataVersion": 3
+        })]));
+    }
+
+    #[test]
+    fn anthropic_catalog_preserves_threshold_compaction_capability() {
+        let catalog = parse_models(
+            "anthropic",
+            &json!({
+                "data": [
+                    {
+                        "id": "claude-opus-5-5",
+                        "capabilities": {
+                            "context_management": {
+                                "compact_20260112": {"supported": true}
+                            }
+                        }
+                    },
+                    {
+                        "id": "claude-sonnet-5-5",
+                        "capabilities": {
+                            "context_management": {
+                                "compact_20260112": {"supported": false}
+                            }
+                        }
+                    },
+                    {"id": "claude-haiku-5-5"}
+                ]
+            }),
+            None,
+        )
+        .expect("parse Anthropic model capabilities");
+
+        assert_eq!(catalog[0]["supportsThresholdCompaction"], true);
+        assert_eq!(catalog[1]["supportsThresholdCompaction"], false);
+        assert!(catalog[2]["supportsThresholdCompaction"].is_null());
     }
 
     #[test]

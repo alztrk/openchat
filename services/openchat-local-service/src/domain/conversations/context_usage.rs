@@ -269,7 +269,12 @@ fn estimate_memory(model_id: &str, state: Option<&ConversationContextState>) -> 
             .as_deref()
             .map(|summary| text_token_estimate(model_id, summary))
             .unwrap_or(0),
-        Some("responses_checkpoint") => OPAQUE_CHECKPOINT_TOKEN_ESTIMATE,
+        Some(
+            "responses_checkpoint"
+            | "openai_responses_item"
+            | "anthropic_compaction_block"
+            | "xai_responses_item",
+        ) => OPAQUE_CHECKPOINT_TOKEN_ESTIMATE,
         _ => 0,
     }
 }

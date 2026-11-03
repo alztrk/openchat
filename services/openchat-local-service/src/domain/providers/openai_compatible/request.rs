@@ -7,14 +7,17 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
 use crate::{
-    chatgpt_store, goals, history, instructions,
+    chatgpt_store,
+    chatgpt_store::ConversationContextState,
+    goals, history, instructions,
     protocol::ServiceError,
     provider_schema::ProviderChatRequest,
     storage::AppStorage,
     tools::{self, ToolPermissionMode},
 };
 
-use super::{chat_completion_tool, invalid_retry_target_error};
+use super::route::{ChatRoute, NativeCompaction};
+use super::{chat_completion_tool, invalid_response_error, invalid_retry_target_error};
 
 pub(super) struct ProviderRequestOptions<'a> {
     pub(super) model_id: String,
@@ -405,6 +408,7 @@ pub(super) fn anthropic_messages_body(
                                 blocks.push(json!({"type": "text", "text": text}));
                             }
                         }
+                        Some("compaction") => blocks.push(part.clone()),
                         Some("image_url") => {
                             let image_url = part
                                 .pointer("/image_url/url")
@@ -597,6 +601,10 @@ pub(super) fn apply_prompt_cache_affinity(
 pub(super) fn responses_input_items(messages: &[Value]) -> Vec<Value> {
     let mut items = Vec::new();
     for msg in messages {
+        if msg.get("type").and_then(Value::as_str) == Some("compaction") {
+            items.push(msg.clone());
+            continue;
+        }
         let role = msg.get("role").and_then(Value::as_str).unwrap_or("");
         match role {
             "system" => {
@@ -735,6 +743,96 @@ pub(super) fn responses_api_body(
     body
 }
 
+pub(super) fn apply_native_compaction(body: &mut Value, route: &ChatRoute) {
+    match (route.native_compaction, route.native_compaction_threshold) {
+        (Some(NativeCompaction::OpenAiResponsesThreshold), Some(threshold)) => {
+            body["store"] = json!(false);
+            body["context_management"] = json!([{
+                "type": "compaction",
+                "compact_threshold": threshold,
+            }]);
+        }
+        (Some(NativeCompaction::AnthropicMessagesThreshold), Some(threshold)) => {
+            body["context_management"] = json!({
+                "edits": [{
+                    "type": "compact_20260112",
+                    "trigger": {"type": "input_tokens", "value": threshold},
+                }],
+            });
+        }
+        _ => {}
+    }
+}
+
+pub(super) fn apply_compaction_checkpoint(
+    body: &mut Value,
+    route: &ChatRoute,
+    state: Option<&ConversationContextState>,
+) -> Result<(), ServiceError> {
+    let Some(state) = state.filter(|state| {
+        crate::context_compaction::compaction_payload_matches_route(
+            state,
+            route.provider_id.as_deref().unwrap_or_default(),
+            route.connection_id.as_deref(),
+            None,
+            &route.model_id,
+        )
+    }) else {
+        return Ok(());
+    };
+    let checkpoint_kind = match route.native_compaction {
+        Some(NativeCompaction::OpenAiResponsesThreshold) => "openai_responses_item",
+        Some(NativeCompaction::AnthropicMessagesThreshold) => "anthropic_compaction_block",
+        Some(NativeCompaction::XaiResponsesExplicit) => "xai_responses_item",
+        None => return Ok(()),
+    };
+    if state.compaction_kind.as_deref() != Some(checkpoint_kind) {
+        return Ok(());
+    }
+    let checkpoint = state
+        .compaction_payload
+        .as_deref()
+        .and_then(|payload| serde_json::from_str::<Value>(payload).ok())
+        .filter(|payload| payload.get("type").and_then(Value::as_str) == Some("compaction"))
+        .ok_or_else(invalid_response_error)?;
+
+    if route.is_anthropic() {
+        if checkpoint
+            .get("content")
+            .and_then(Value::as_str)
+            .is_none_or(str::is_empty)
+        {
+            return Err(invalid_response_error());
+        }
+        let messages = body
+            .get_mut("messages")
+            .and_then(Value::as_array_mut)
+            .ok_or_else(invalid_response_error)?;
+        messages.insert(
+            0,
+            json!({
+                "role": "assistant",
+                "content": [checkpoint],
+            }),
+        );
+    } else {
+        let encrypted_content = checkpoint
+            .get("encrypted_content")
+            .and_then(Value::as_str)
+            .filter(|content| !content.is_empty())
+            .ok_or_else(invalid_response_error)?;
+        if encrypted_content.len() > 1024 * 1024 {
+            return Err(invalid_response_error());
+        }
+        let input = body
+            .get_mut("input")
+            .and_then(Value::as_array_mut)
+            .ok_or_else(invalid_response_error)?;
+        input.insert(0, checkpoint);
+    }
+    Ok(())
+}
+
 fn supports_openai_reasoning_summary(model_id: &str) -> bool {
     model_id.starts_with("gpt-5") || model_id.starts_with("gpt-6")
 }
@@ -742,6 +840,7 @@ fn supports_openai_reasoning_summary(model_id: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::openai_compatible::route::NativeCompaction;
 
     fn request() -> ProviderChatRequest {
         ProviderChatRequest {
@@ -752,6 +851,156 @@ mod tests {
             tools: Vec::new(),
             reasoning_effort: None,
         }
+    }
+
+    fn route(provider_id: &str, endpoint: &str, native_compaction: NativeCompaction) -> ChatRoute {
+        ChatRoute {
+            model_id: "test-model".to_owned(),
+            provider_model_id: "test-model".to_owned(),
+            provider_id: Some(provider_id.to_owned()),
+            chat_url: endpoint.to_owned(),
+            is_free: false,
+            is_opencode: false,
+            is_copilot: false,
+            uses_responses_api: native_compaction != NativeCompaction::AnthropicMessagesThreshold,
+            native_compaction: Some(native_compaction),
+            native_compaction_threshold: Some(80_000),
+            reasoning_levels: Vec::new(),
+            custom_enable_thinking: false,
+            context_window: Some(100_000),
+            input_token_limit: None,
+            max_output_tokens: None,
+            context_limit_override: None,
+            supports_images: false,
+            supports_tool_calls: None,
+            connection_id: Some(provider_id.to_owned()),
+            local_api_key: None,
+            project_id: None,
+        }
+    }
+
+    fn compaction_state(
+        provider_id: &str,
+        kind: &str,
+        checkpoint: &Value,
+    ) -> ConversationContextState {
+        ConversationContextState {
+            compaction_kind: Some(kind.to_owned()),
+            compaction_payload: Some(checkpoint.to_string()),
+            compaction_provider_id: Some(provider_id.to_owned()),
+            compaction_connection_id: Some(provider_id.to_owned()),
+            compaction_workspace_id: None,
+            compaction_model_id: Some("test-model".to_owned()),
+            compacted_through_message_id: Some("boundary".to_owned()),
+            last_prompt_tokens: None,
+            last_prompt_message_id: None,
+            last_prompt_provider_id: None,
+            last_prompt_model_id: None,
+            last_prompt_connection_id: None,
+            last_prompt_workspace_id: None,
+        }
+    }
+
+    #[test]
+    fn adds_native_compaction_settings_only_for_supported_routes() {
+        let mut responses = json!({"input": []});
+        apply_native_compaction(
+            &mut responses,
+            &route(
+                "chatgpt_api",
+                "https://api.openai.com/v1/responses",
+                NativeCompaction::OpenAiResponsesThreshold,
+            ),
+        );
+        assert_eq!(responses["store"], false);
+        assert_eq!(responses["context_management"][0]["type"], "compaction");
+        assert_eq!(
+            responses["context_management"][0]["compact_threshold"],
+            80_000
+        );
+
+        let mut messages = json!({"messages": []});
+        apply_native_compaction(
+            &mut messages,
+            &route(
+                "anthropic",
+                "https://api.anthropic.com/v1/messages",
+                NativeCompaction::AnthropicMessagesThreshold,
+            ),
+        );
+        assert_eq!(
+            messages["context_management"]["edits"][0]["type"],
+            "compact_20260112"
+        );
+        assert_eq!(
+            messages["context_management"]["edits"][0]["trigger"]["value"],
+            80_000
+        );
+
+        let mut xai = json!({"input": []});
+        apply_native_compaction(
+            &mut xai,
+            &route(
+                "xai",
+                "https://api.x.ai/v1/responses",
+                NativeCompaction::XaiResponsesExplicit,
+            ),
+        );
+        assert!(xai.get("context_management").is_none());
+    }
+
+    #[test]
+    fn inserts_native_checkpoints_in_provider_specific_request_shape() {
+        let xai_checkpoint = json!({
+            "type": "compaction",
+            "id": "cmp_xai",
+            "encrypted_content": "opaque-xai",
+        });
+        let state = compaction_state("xai", "xai_responses_item", &xai_checkpoint);
+        let xai_route = route(
+            "xai",
+            "https://api.x.ai/v1/responses",
+            NativeCompaction::XaiResponsesExplicit,
+        );
+        let mut responses = json!({"input": [{"role": "user", "content": "Continue"}]});
+        apply_compaction_checkpoint(&mut responses, &xai_route, Some(&state))
+            .expect("insert matching Responses checkpoint");
+        assert_eq!(responses["input"][0], xai_checkpoint);
+        assert_eq!(responses["input"][1]["role"], "user");
+        let input = responses["input"]
+            .as_array()
+            .expect("Responses input array");
+        assert_eq!(responses_input_items(input)[0], xai_checkpoint);
+
+        let anthropic_checkpoint = json!({"type": "compaction", "content": "opaque-summary"});
+        let anthropic_state = compaction_state(
+            "anthropic",
+            "anthropic_compaction_block",
+            &anthropic_checkpoint,
+        );
+        let anthropic_route = route(
+            "anthropic",
+            "https://api.anthropic.com/v1/messages",
+            NativeCompaction::AnthropicMessagesThreshold,
+        );
+        let mut messages = json!({"messages": [{"role": "user", "content": "Continue"}]});
+        apply_compaction_checkpoint(&mut messages, &anthropic_route, Some(&anthropic_state))
+            .expect("insert matching Messages checkpoint");
+        assert_eq!(messages["messages"][0]["role"], "assistant");
+        assert_eq!(messages["messages"][0]["content"][0], anthropic_checkpoint);
+
+        let mut mismatched = json!({"input": [{"role": "user", "content": "Continue"}]});
+        apply_compaction_checkpoint(
+            &mut mismatched,
+            &xai_route,
+            Some(&compaction_state(
+                "other-provider",
+                "xai_responses_item",
+                &json!({"type":"compaction","id":"cmp_wrong","encrypted_content":"opaque"}),
+            )),
+        )
+        .expect("ignore checkpoint from another provider");
+        assert_eq!(mismatched["input"].as_array().map(Vec::len), Some(1));
     }
 
     #[test]

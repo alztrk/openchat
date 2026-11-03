@@ -9,7 +9,7 @@ use super::{
 };
 use crate::usage_statistics::FirstOutputLatencyRecorder;
 use crate::{
-    openai_compatible::route::ChatRoute,
+    openai_compatible::route::{ChatRoute, NativeCompaction},
     protocol::{EventSink, ServiceError},
     response_budget::ProviderResponseBudget,
 };
@@ -241,6 +241,7 @@ async fn run_fixture_with_budget(
         response_body,
         uses_responses_api,
         response_budget,
+        None,
     )
     .await
 }
@@ -250,6 +251,7 @@ async fn run_fixture_for_provider(
     status: u16,
     response_body: Vec<u8>,
     uses_responses_api: bool,
+    native_compaction: Option<NativeCompaction>,
 ) -> FixtureOutcome {
     let mut response_budget = ProviderResponseBudget::default();
     run_fixture_with_provider_budget(
@@ -258,6 +260,7 @@ async fn run_fixture_for_provider(
         response_body,
         uses_responses_api,
         &mut response_budget,
+        native_compaction,
     )
     .await
 }
@@ -268,12 +271,19 @@ async fn run_fixture_with_provider_budget(
     response_body: Vec<u8>,
     uses_responses_api: bool,
     response_budget: &mut ProviderResponseBudget,
+    native_compaction: Option<NativeCompaction>,
 ) -> FixtureOutcome {
     let (url, server) = spawn_fixture_server(status, response_body).await;
     let mut route = route(provider_id);
-    route.chat_url = url;
+    route.chat_url = if native_compaction == Some(NativeCompaction::AnthropicMessagesThreshold) {
+        format!("{url}/messages")
+    } else {
+        url
+    };
     route.is_free = false;
     route.uses_responses_api = uses_responses_api;
+    route.native_compaction = native_compaction;
+    route.native_compaction_threshold = native_compaction.map(|_| 50_000);
     let body = if uses_responses_api {
         json!({
             "model": "test-model",
@@ -407,7 +417,7 @@ async fn openai_api_surfaces_summary_groups_and_ignores_reasoning_text() {
         true,
     ));
 
-    let outcome = run_fixture_for_provider("chatgpt_api", 200, response, true).await;
+    let outcome = run_fixture_for_provider("chatgpt_api", 200, response, true, None).await;
 
     assert!(
         outcome.result.is_ok(),
@@ -425,6 +435,122 @@ async fn openai_api_surfaces_summary_groups_and_ignores_reasoning_text() {
             .iter()
             .all(|summary| summary.is_complete)
     );
+}
+
+#[tokio::test]
+async fn openai_responses_compaction_emits_status_and_keeps_the_checkpoint() {
+    let checkpoint = json!({
+        "type": "compaction",
+        "id": "cmp_fixture",
+        "encrypted_content": "opaque-fixture-checkpoint",
+    });
+    let mut response = Vec::new();
+    response.extend(sse_event(
+        json!({
+            "type": "response.output_item.added",
+            "item": {"type": "compaction", "id": "cmp_fixture"},
+        }),
+        true,
+    ));
+    response.extend(sse_event(
+        json!({"type": "response.output_item.done", "item": checkpoint.clone()}),
+        true,
+    ));
+    response.extend(sse_event(
+        json!({
+            "type": "response.completed",
+            "response": {"output": [checkpoint.clone()], "usage": {"input_tokens": 10}},
+        }),
+        true,
+    ));
+
+    let outcome = run_fixture_for_provider(
+        "chatgpt_api",
+        200,
+        response,
+        true,
+        Some(NativeCompaction::OpenAiResponsesThreshold),
+    )
+    .await;
+
+    let turn = outcome.result.expect("Responses stream should complete");
+    assert_eq!(turn.compaction_item.as_ref(), Some(&checkpoint));
+    assert!(
+        outcome
+            .events
+            .iter()
+            .any(|event| { event.event.as_deref() == Some("chat.compaction.started") })
+    );
+}
+
+#[tokio::test]
+async fn anthropic_compaction_block_emits_status_and_saves_full_content() {
+    let mut response = Vec::new();
+    response.extend(sse_event(
+        json!({
+            "type": "message_start",
+            "message": {"type": "message", "role": "assistant", "usage": {"input_tokens": 60_000}},
+        }),
+        true,
+    ));
+    response.extend(sse_event(
+        json!({
+            "type": "content_block_start",
+            "index": 0,
+            "content_block": {"type": "compaction"},
+        }),
+        true,
+    ));
+    response.extend(sse_event(
+        json!({
+            "type": "content_block_delta",
+            "index": 0,
+            "delta": {"type": "compaction_delta", "content": "opaque Anthropic checkpoint"},
+        }),
+        true,
+    ));
+    response.extend(sse_event(
+        json!({"type": "content_block_stop", "index": 0}),
+        true,
+    ));
+    response.extend(sse_event(
+        json!({
+            "type": "message_delta",
+            "delta": {"stop_reason": "end_turn"},
+            "usage": {
+                "output_tokens": 1,
+                "iterations": [
+                    {"type": "compaction", "input_tokens": 59_000, "output_tokens": 50},
+                    {"type": "message", "input_tokens": 1_000, "output_tokens": 1},
+                ],
+            },
+        }),
+        true,
+    ));
+    response.extend(sse_event(json!({"type": "message_stop"}), true));
+
+    let outcome = run_fixture_for_provider(
+        "anthropic",
+        200,
+        response,
+        false,
+        Some(NativeCompaction::AnthropicMessagesThreshold),
+    )
+    .await;
+
+    let turn = outcome.result.expect("Messages stream should complete");
+    assert_eq!(
+        turn.compaction_item,
+        Some(json!({"type": "compaction", "content": "opaque Anthropic checkpoint"}))
+    );
+    assert!(
+        outcome
+            .events
+            .iter()
+            .any(|event| { event.event.as_deref() == Some("chat.compaction.started") })
+    );
+    let request = String::from_utf8(outcome.request).expect("fixture request is UTF-8");
+    assert!(request.contains("anthropic-beta: compact-2026-01-12"));
 }
 
 async fn receive_for_test(
@@ -889,6 +1015,8 @@ fn route(provider_id: &str) -> ChatRoute {
         is_opencode: false,
         is_copilot: false,
         uses_responses_api: false,
+        native_compaction: None,
+        native_compaction_threshold: None,
         reasoning_levels: Vec::new(),
         context_window: None,
         input_token_limit: None,

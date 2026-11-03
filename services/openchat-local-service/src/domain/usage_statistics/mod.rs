@@ -160,16 +160,31 @@ impl UsageData {
     /// Extracts usage fields from an Anthropic Messages response.
     pub(crate) fn from_messages_event(value: &Value, provider_id: &str) -> Self {
         let usage = value.get("usage");
+        let iteration_usage = messages_iteration_usage(usage);
         Self {
-            input_tokens: messages_total_input_tokens(usage),
-            output_tokens: nonnegative_token(usage.and_then(|usage| usage.get("output_tokens"))),
+            input_tokens: iteration_usage
+                .as_ref()
+                .and_then(|(input, _, _, _)| *input)
+                .or_else(|| messages_total_input_tokens(usage)),
+            output_tokens: iteration_usage
+                .as_ref()
+                .and_then(|(_, output, _, _)| *output)
+                .or_else(|| nonnegative_token(usage.and_then(|usage| usage.get("output_tokens")))),
             reasoning_tokens: None,
-            cached_input_tokens: nonnegative_token(
-                usage.and_then(|usage| usage.get("cache_read_input_tokens")),
-            ),
-            cache_write_tokens: nonnegative_token(
-                usage.and_then(|usage| usage.get("cache_creation_input_tokens")),
-            ),
+            cached_input_tokens: iteration_usage
+                .as_ref()
+                .and_then(|(_, _, cached, _)| *cached)
+                .or_else(|| {
+                    nonnegative_token(usage.and_then(|usage| usage.get("cache_read_input_tokens")))
+                }),
+            cache_write_tokens: iteration_usage
+                .as_ref()
+                .and_then(|(_, _, _, cache_write)| *cache_write)
+                .or_else(|| {
+                    nonnegative_token(
+                        usage.and_then(|usage| usage.get("cache_creation_input_tokens")),
+                    )
+                }),
             reported_cost_usd: reported_cost(usage, provider_id),
             service_tier: None,
             completion_reason: provider_reason(
@@ -237,6 +252,63 @@ fn messages_total_input_tokens(usage: Option<&Value>) -> Option<i64> {
     input_tokens
         .checked_add(cache_read_tokens)?
         .checked_add(cache_write_tokens)
+}
+
+fn messages_iteration_usage(
+    usage: Option<&Value>,
+) -> Option<(Option<i64>, Option<i64>, Option<i64>, Option<i64>)> {
+    let iterations = usage?.get("iterations")?.as_array()?;
+    if iterations.is_empty() {
+        return None;
+    }
+
+    let mut input_tokens = Some(0_i64);
+    let mut output_tokens = Some(0_i64);
+    let mut cached_input_tokens = None;
+    let mut cache_write_tokens = None;
+    for iteration in iterations {
+        let input = nonnegative_token(iteration.get("input_tokens"));
+        let cached = iteration
+            .get("cache_read_input_tokens")
+            .filter(|value| !value.is_null())
+            .map(|value| nonnegative_token(Some(value)));
+        let cache_write = iteration
+            .get("cache_creation_input_tokens")
+            .filter(|value| !value.is_null())
+            .map(|value| nonnegative_token(Some(value)));
+        let output = nonnegative_token(iteration.get("output_tokens"));
+
+        input_tokens = input_tokens
+            .zip(input)
+            .and_then(|(total, value)| total.checked_add(value));
+        if let Some(cached) = cached {
+            let cached = cached?;
+            input_tokens = input_tokens
+                .zip(Some(cached))
+                .and_then(|(total, value)| total.checked_add(value));
+            cached_input_tokens = Some(cached_input_tokens.unwrap_or(0_i64).checked_add(cached)?);
+        }
+        if let Some(cache_write) = cache_write {
+            let cache_write = cache_write?;
+            input_tokens = input_tokens
+                .zip(Some(cache_write))
+                .and_then(|(total, value)| total.checked_add(value));
+            cache_write_tokens = Some(
+                cache_write_tokens
+                    .unwrap_or(0_i64)
+                    .checked_add(cache_write)?,
+            );
+        }
+        output_tokens = output_tokens
+            .zip(output)
+            .and_then(|(total, value)| total.checked_add(value));
+    }
+    Some((
+        input_tokens,
+        output_tokens,
+        cached_input_tokens,
+        cache_write_tokens,
+    ))
 }
 
 fn optional_nonnegative_token(value: Option<&Value>) -> Option<i64> {

@@ -256,6 +256,18 @@ export function createConversationsActions(set: StoreSet, get: StoreGet) {
       }
     },
 
+    setProviderCompaction(conversationId: string, isActive: boolean): void {
+      set((current) => {
+        const alreadyActive = current.providerCompactionConversationIds.includes(conversationId);
+        if (alreadyActive === isActive) return current;
+        return {
+          providerCompactionConversationIds: isActive
+            ? [...current.providerCompactionConversationIds, conversationId]
+            : current.providerCompactionConversationIds.filter((id) => id !== conversationId),
+        };
+      });
+    },
+
     async selectConversation(
       id: string,
       targetMessageId: string | null = null,

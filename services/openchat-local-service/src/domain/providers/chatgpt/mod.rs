@@ -443,6 +443,8 @@ impl ChatGptService {
                 service: self.as_ref(),
                 storage: &self.storage,
                 conversation_id,
+                request_id: &context.request_id,
+                events: &context.events,
                 run_id: &context.run_id,
                 route: &route,
                 external_workspace_id: &workspace.external_id,

@@ -399,6 +399,28 @@ mod usage_data_tests {
     }
 
     #[test]
+    fn messages_usage_sums_compaction_and_message_iterations_for_billing() {
+        let usage = UsageData::from_messages_event(
+            &json!({
+                "usage": {
+                    "input_tokens": 23_000,
+                    "output_tokens": 1_000,
+                    "iterations": [
+                        {"type": "compaction", "input_tokens": 180_000, "output_tokens": 3_500},
+                        {"type": "message", "input_tokens": 23_000, "output_tokens": 1_000}
+                    ]
+                }
+            }),
+            "anthropic",
+        );
+
+        assert_eq!(usage.input_tokens, Some(203_000));
+        assert_eq!(usage.output_tokens, Some(4_500));
+        assert_eq!(usage.cached_input_tokens, None);
+        assert_eq!(usage.cache_write_tokens, None);
+    }
+
+    #[test]
     fn messages_usage_requires_valid_complete_input_counts_for_total() {
         let missing_input = UsageData::from_messages_event(
             &json!({

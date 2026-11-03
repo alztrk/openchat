@@ -486,6 +486,8 @@ impl ChatStreamDelta {
 #[derive(Clone, Debug)]
 /// Event variants emitted while a provider response is processed.
 pub enum ChatStreamEvent {
+    /// Provider or local fallback compaction has started for this conversation.
+    CompactionStarted { conversation_id: String },
     /// Initial full message state.
     Started(ChatStreamSnapshot),
     /// Full message checkpoint after a provider update.

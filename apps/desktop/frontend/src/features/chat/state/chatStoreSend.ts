@@ -439,6 +439,12 @@ export function createSendMessageAction(
         },
         (event) => {
           handleToolPermissionEvent(event, targetConversationId, set, get);
+          if (event.name === 'chat.compaction.started') {
+            if (event.data.conversationId === targetConversationId) {
+              get().setProviderCompaction(targetConversationId, true);
+            }
+            return;
+          }
           if (event.name === 'chat.goal.updated') {
             try {
               const goal = parseChatGoal(event.data);
@@ -653,6 +659,7 @@ export function createSendMessageAction(
       }
       return userMessageSaved;
     } finally {
+      if (conversationId !== null) get().setProviderCompaction(conversationId, false);
       window.dispatchEvent(new CustomEvent('openchat-chat-request-finished', { detail: { conversationId } }));
       streamUi.dispose();
       if (requestOutcome !== null) {

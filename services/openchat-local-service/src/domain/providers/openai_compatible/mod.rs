@@ -24,6 +24,7 @@ use crate::{
 
 mod copilot;
 mod models;
+mod native_compaction;
 mod opencode_free_transport;
 mod provider_models;
 mod request;

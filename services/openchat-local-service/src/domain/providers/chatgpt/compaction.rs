@@ -14,14 +14,14 @@ use crate::{
     },
     context_compaction,
     protocol::ServiceError,
-    provider_schema::ToolDefinition,
+    provider_schema::{ChatStreamEvent, ToolDefinition},
     storage::AppStorage,
     usage_statistics::{UsageData, UsageRequestDetails},
 };
 
 use super::{
     CHATGPT_CODEX_BASE, ChatGptService, MAX_STREAM_EVENT_BYTES, StreamRequest, http_error,
-    invalid_response_error, network_error_with_details, request_cancelled,
+    invalid_response_error, network_error_with_details, protocol_error, request_cancelled,
 };
 
 const MAX_COMPACTION_OUTPUT_ITEMS: usize = 1;
@@ -34,6 +34,8 @@ pub(super) struct PrepareInputRequest<'a> {
     pub(super) service: &'a ChatGptService,
     pub(super) storage: &'a AppStorage,
     pub(super) conversation_id: &'a str,
+    pub(super) request_id: &'a Value,
+    pub(super) events: &'a crate::protocol::EventSink,
     pub(super) run_id: &'a str,
     pub(super) route: &'a ConversationRoute,
     pub(super) external_workspace_id: &'a str,
@@ -52,6 +54,8 @@ pub(super) async fn prepare_input(
         service,
         storage,
         conversation_id,
+        request_id,
+        events,
         run_id,
         route,
         external_workspace_id,
@@ -104,6 +108,16 @@ pub(super) async fn prepare_input(
         && let prune_level =
             context_compaction::PruneLevel::for_estimate(estimated_tokens, context_window)
     {
+        events
+            .send(
+                &ChatStreamEvent::CompactionStarted {
+                    conversation_id: conversation_id.to_owned(),
+                }
+                .into_rpc(request_id.clone()),
+            )
+            .await
+            .map_err(|_| protocol_error())?;
+
         let compact_input = compaction_input(
             state_ref,
             active_compaction_matches,
