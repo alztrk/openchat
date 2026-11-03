@@ -43,7 +43,7 @@ import {
 import { invoke } from '@shared/lib/platform/tauri';
 import { ApiKeyProvidersSection } from './ApiKeyProvidersSection';
 import { CopilotOAuthCard } from './CopilotOAuthCard';
-import { ProviderIcon } from './ProviderIcon';
+import { ProviderIcon } from '@shared/components';
 
 type ConnectionRequest = 'idle' | 'loading' | 'signingIn' | 'error';
 type ConnectionErrorCode =

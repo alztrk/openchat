@@ -8,7 +8,7 @@ import type {
   CustomProviderSummary,
 } from '@features/provider-settings/data/providerCredentials';
 import type { ProviderRequestOutcomeRecord } from '@features/provider-settings/data/providerRequestOutcome';
-import { ProviderIcon } from './ProviderIcon';
+import { ProviderIcon } from '@shared/components';
 import { ProviderVerificationStatus, type ProviderVerificationViewState } from './ProviderVerificationStatus';
 
 export interface CredentialFeedback {

@@ -20,7 +20,7 @@ import {
   subscribeToOAuthPlanUpdates,
 } from '@features/provider-settings/data/oauthPlanMonitor';
 import { LocalServiceError } from '@shared/lib/platform/local-service';
-import { ProviderIcon } from './ProviderIcon';
+import { ProviderIcon } from '@shared/components';
 
 interface CopilotOAuthCardProps {
   serviceReady: boolean;
