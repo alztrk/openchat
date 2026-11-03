@@ -11,7 +11,7 @@ import {
   readSharedInstructions,
   SharedInstructionsStorageError,
   writeSharedInstructions,
-} from '@features/app-settings/data/sharedInstructions';
+} from '@shared/lib/preferences/sharedInstructions';
 import { localServiceClient } from '@shared/lib/platform/local-service';
 
 type LoadState = 'loading' | 'ready' | 'error';

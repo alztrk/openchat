@@ -3,8 +3,8 @@ import { readProjectSkillIds, type ToolPermissionMode } from '@features/projects
 import type { ChatModel } from '@entities/model';
 import { modelRouteKey, readModelPreferences } from '@features/provider-settings/data/modelPreferences';
 import { readAssistantExecutionPreferences } from '@features/app-settings/data/assistantExecutionPreferences';
-import { personalMemoryContextForConversation } from '@features/app-settings/data/personalMemory';
-import { readSharedInstructions } from '@features/app-settings/data/sharedInstructions';
+import { personalMemoryContextForConversation } from '@shared/lib/preferences/personalMemory';
+import { readSharedInstructions } from '@shared/lib/preferences/sharedInstructions';
 import { LocalServiceError, localServiceClient } from '@shared/lib/platform/local-service';
 import { invoke } from '@shared/lib/platform/tauri';
 import type { PendingChatAttachment } from './chatAttachments';

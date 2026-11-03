@@ -18,6 +18,7 @@ export const check = {
       runCommand('cargo', ['check', '--workspace'], { cwd: getWorkspaceRoot() }),
       runCommand('cargo', ['test', '--workspace', '--features', 'openchat-local-service/desktop-profile-test-support'], {
         cwd: getWorkspaceRoot(),
+        env: { ...process.env, RUST_TEST_THREADS: '1' },
       }),
     ]);
 

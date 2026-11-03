@@ -8,7 +8,7 @@ import type { ChatMessage } from '@features/chat/data/chatStorage';
 import { cleanMarkdown, markdownToPlainText } from '@features/chat/data/messageCopyUtils';
 import { ProviderIcon } from '@shared/components';
 import { useChatDisplayPreferencesStore } from '@shared/lib/preferences/chatDisplayPreferences';
-import { parsePersonalMemoryFactIds, readPersonalMemoryFacts } from '@features/app-settings/data/personalMemory';
+import { parsePersonalMemoryFactIds, readPersonalMemoryFacts } from '@shared/lib/preferences/personalMemory';
 import type { WorkspaceFileSelection } from './ChatFileChangesPanel';
 import { MessageAttachments } from './MessageAttachments';
 import { CitationSources } from './message/CitationSources';

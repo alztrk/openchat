@@ -12,7 +12,7 @@ import {
   type PersonalMemoryPreferences,
   readPersonalMemoryPreferences,
   writePersonalMemoryEnabled,
-} from '@features/app-settings/data/personalMemory';
+} from '@shared/lib/preferences/personalMemory';
 
 type LoadState = 'loading' | 'loaded' | 'failed';
 

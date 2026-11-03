@@ -27,8 +27,8 @@ import { readAssistantExecutionPreferences } from '@features/app-settings/data/a
 import {
   personalMemoryContextForConversation,
   setPersonalMemoryExcludedForConversation,
-} from '@features/app-settings/data/personalMemory';
-import { readSharedInstructions } from '@features/app-settings/data/sharedInstructions';
+} from '@shared/lib/preferences/personalMemory';
+import { readSharedInstructions } from '@shared/lib/preferences/sharedInstructions';
 import { type LocalServiceClient, LocalServiceError } from '@shared/lib/platform/local-service';
 import { getAudioContext, playAssistantResponseAudio } from '@features/notifications/audioFeedback';
 import type { ChatState } from './chatStore';

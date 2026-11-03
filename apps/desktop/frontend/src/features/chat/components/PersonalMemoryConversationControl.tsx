@@ -7,7 +7,7 @@ import { useChatStore } from '@features/chat/state/chatStore';
 import {
   readPersonalMemoryExcludedConversationIds,
   setPersonalMemoryExcludedForConversation,
-} from '@features/app-settings/data/personalMemory';
+} from '@shared/lib/preferences/personalMemory';
 
 export function PersonalMemoryConversationControl() {
   const { t } = useTranslation();

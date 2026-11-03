@@ -8,9 +8,10 @@ const workspaceRoot = path.resolve(__dirname, '..', '..');
 const frontendDirectory = path.join(workspaceRoot, 'apps', 'desktop', 'frontend');
 const tauriDirectory = path.join(workspaceRoot, 'apps', 'desktop', 'tauri');
 
-export function runCommand(command, args, { cwd = workspaceRoot, captureOutput = false } = {}) {
+export function runCommand(command, args, { cwd = workspaceRoot, captureOutput = false, env = process.env } = {}) {
   const result = spawnSync(command, args, {
     cwd,
+    env,
     encoding: 'utf8',
     stdio: captureOutput ? 'pipe' : 'inherit',
     windowsHide: true,
