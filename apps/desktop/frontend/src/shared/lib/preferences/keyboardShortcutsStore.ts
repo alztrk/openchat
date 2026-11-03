@@ -3,7 +3,7 @@ import { create } from 'zustand';
 import {
   type ComposerSubmissionMode,
   readComposerSubmissionMode,
-} from '@features/chat/data/composerPreferences';
+} from '@shared/lib/preferences/composerPreferences';
 import { unifiedStorage } from '@shared/lib/platform/storage/unifiedStorage';
 
 const storageKey = 'openchat.keyboardShortcuts';

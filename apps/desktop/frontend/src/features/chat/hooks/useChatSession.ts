@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 
-import { useChatStore } from '@features/chat/state/chatStore';
-import type { ChatConversation } from '@features/chat/data/chatStorage';
+import { useChatStore } from '@app/runtime/chatStore';
+import type { ChatConversation } from '@app/runtime/chatStorage';
 
 export function useChatSession() {
   const conversations = useChatStore((state) => state.conversations);

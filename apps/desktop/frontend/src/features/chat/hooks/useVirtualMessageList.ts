@@ -7,7 +7,7 @@
 import type { RefCallback } from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import type { ChatMessage } from '@features/chat/data/chatStorage';
+import type { ChatMessage } from '@app/runtime/chatStorage';
 import { estimateWrappedLineCount } from '@features/chat/data/virtualMessageLayout';
 
 const verticalPadding = 24;

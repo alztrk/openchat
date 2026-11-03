@@ -9,13 +9,13 @@ import {
   type ProjectMcpTransport,
   parseProjectMcpCatalog,
   validateProjectMcpServer,
-} from '@features/projects/data/projectMcp';
+} from '@entities/project/projectMcp';
 import {
   loadProjectToolPermissionRules,
   saveProjectToolPermissionRules,
-} from '@features/projects/data/projectPermissionSettings';
-import type { ProjectToolPermissionRule } from '@features/projects/data/projectPreferences';
-import { type ConnectorToolComparison, compareConnectorToolNames } from '@features/app-settings/data/connectorManifest';
+} from '@entities/project/projectPermissionSettings';
+import type { ProjectToolPermissionRule } from '@entities/project';
+import { type ConnectorToolComparison, compareConnectorToolNames } from '@shared/lib/preferences/connectorManifest';
 import { localServiceClient, localServiceErrorDetails } from '@shared/lib/platform/local-service';
 import { ProjectMcpCredentialDialog } from './ProjectMcpCredentialDialog';
 

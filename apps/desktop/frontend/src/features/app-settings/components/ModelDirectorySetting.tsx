@@ -2,7 +2,7 @@ import { FolderOpen, Save } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button, Card, Input, Skeleton } from '@shared/components';
-import { useModelDirectoryStore } from '@features/app-settings/stores/modelDirectoryStore';
+import { useModelDirectoryStore } from '@app/runtime/modelDirectoryStore';
 import { localServiceClient } from '@shared/lib/platform/local-service';
 import { open } from '@shared/lib/platform/tauri';
 

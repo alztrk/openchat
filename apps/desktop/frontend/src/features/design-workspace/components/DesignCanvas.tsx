@@ -11,7 +11,7 @@ import {
 import { useTranslation } from 'react-i18next';
 
 import { Button, Dialog, Select, Textarea } from '@shared/components';
-import { useChatStore } from '@features/chat/state/chatStore';
+import { useChatStore } from '@app/runtime/chatStore';
 import { type CanvasColorTokenKey, CanvasInspector } from '@features/design-workspace/components/CanvasInspector';
 import { CanvasZoomControls } from '@features/design-workspace/components/CanvasZoomControls';
 import {
@@ -41,7 +41,7 @@ import {
   updateFrameTokens,
 } from '@features/design-workspace/data/designCanvas';
 import type { ChatModel } from '@entities/model';
-import { loadRouteParameters } from '@features/provider-settings/data/modelRouteParameters';
+import { loadRouteParameters } from '@entities/model/modelRouteParameters';
 import { type JsonObject, localServiceClient, type ServiceOperation } from '@shared/lib/platform/local-service';
 
 import './DesignCanvas.css';

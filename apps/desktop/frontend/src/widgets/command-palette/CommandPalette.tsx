@@ -37,13 +37,13 @@ import { Button, Input } from '@shared/components';
 
 import { Dialog } from '@shared/components/Dialog';
 import type en from '@shared/lib/i18n/locales/en.json';
-import { providerNameForModel } from '@features/chat/components/composerUtils';
-import { useChatStore } from '@features/chat/state/chatStore';
+import { providerNameForModel } from '@entities/model/composerUtils';
+import { useChatStore } from '@app/runtime/chatStore';
 import { modelRouteKey } from '@entities/model/modelPreferences';
 import type { SettingsSection } from '@features/app-settings/components/SettingsPage';
-import type { AssistantAgentSnapshot } from '@features/app-settings/data/assistantProfiles';
-import { snapshotAssistantProfile } from '@features/app-settings/data/assistantProfiles';
-import { useAssistantProfilesStore } from '@features/app-settings/stores/assistantProfilesStore';
+import type { AssistantAgentSnapshot } from '@shared/lib/preferences/assistantProfiles';
+import { snapshotAssistantProfile } from '@shared/lib/preferences/assistantProfiles';
+import { useAssistantProfilesStore } from '@shared/lib/preferences/assistantProfilesStore';
 import type { AppSurface } from '../navigation-rail';
 
 type PaletteCategory = 'actions' | 'navigation' | 'conversations' | 'projects' | 'models' | 'agents' | 'settings';

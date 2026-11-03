@@ -9,10 +9,10 @@ import {
   restoreStoredAttachment,
   validateAttachmentSelection,
 } from '@features/chat/data/chatAttachments';
-import { type ConversationAttachmentSummary, readMessageAttachment } from '@features/chat/data/chatStorage';
-import { useChatStore } from '@features/chat/state/chatStore';
+import { type ConversationAttachmentSummary, readMessageAttachment } from '@app/runtime/chatStorage';
+import { useChatStore } from '@app/runtime/chatStore';
 import type { ChatModel } from '@entities/model';
-import { isObject } from './composerUtils';
+import { isObject } from '@entities/model/composerUtils';
 
 export interface UseComposerAttachmentsOptions {
   droppedFiles?: { id: number; files: File[] } | null;

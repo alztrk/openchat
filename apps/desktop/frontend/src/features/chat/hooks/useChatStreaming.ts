@@ -1,4 +1,4 @@
-import { useChatStore } from '@features/chat/state/chatStore';
+import { useChatStore } from '@app/runtime/chatStore';
 
 export function useChatStreaming() {
   const isSending = useChatStore((state) => state.isSending);

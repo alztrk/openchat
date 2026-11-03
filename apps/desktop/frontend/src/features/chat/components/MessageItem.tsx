@@ -4,7 +4,7 @@ import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button, Dialog } from '@shared/components';
 import type { ChatFileChange } from '@features/chat/data/chatFileChanges';
-import type { ChatMessage } from '@features/chat/data/chatStorage';
+import type { ChatMessage } from '@app/runtime/chatStorage';
 import { cleanMarkdown, markdownToPlainText } from '@features/chat/data/messageCopyUtils';
 import { ProviderIcon } from '@shared/components';
 import { useChatDisplayPreferencesStore } from '@shared/lib/preferences/chatDisplayPreferences';

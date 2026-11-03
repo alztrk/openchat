@@ -26,8 +26,8 @@ import {
   DropdownMenuTrigger,
   Input,
 } from '@shared/components';
-import { reasoningLevelLabel } from '@features/chat/components/composerUtils';
-import { useChatStore } from '@features/chat/state/chatStore';
+import { reasoningLevelLabel } from '@entities/model/composerUtils';
+import { useChatStore } from '@app/runtime/chatStore';
 import { ProviderIcon } from '@shared/components';
 import { SettingsSectionSkeleton } from './SettingsSectionSkeleton';
 import type { ChatModel } from '@entities/model';

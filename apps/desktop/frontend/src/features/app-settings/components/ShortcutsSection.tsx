@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Button } from '@shared/components';
-import type { ComposerSubmissionMode } from '@features/chat/data/composerPreferences';
+import type { ComposerSubmissionMode } from '@shared/lib/preferences/composerPreferences';
 import {
   composerShortcutPreset,
   defaultKeyboardShortcuts,
@@ -12,7 +12,7 @@ import {
   keyboardShortcutActions,
   sameKeyboardShortcut,
   useKeyboardShortcutsStore,
-} from '@features/app-settings/stores/keyboardShortcutsStore';
+} from '@shared/lib/preferences/keyboardShortcutsStore';
 import { SettingsPreferenceRow } from './SettingsPreferenceRow';
 import { SettingsLoadError, SettingsSaveFeedback } from './SettingsState';
 import { SettingsSectionSkeleton } from './SettingsSectionSkeleton';

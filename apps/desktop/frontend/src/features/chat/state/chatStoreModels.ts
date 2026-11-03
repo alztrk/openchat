@@ -1,14 +1,14 @@
 import type { StoreApi } from 'zustand/vanilla';
-import { readProjectDefaultModelPreference } from '@features/projects/data/projectPreferences';
+import { readProjectDefaultModelPreference } from '@entities/project/projectPreferences';
 import type { ChatModelProvider } from '@entities/model';
-import { loadApiKeyModels, loadChatGptModels, loadLocalModels } from '@features/provider-settings/data/modelCatalogLoader';
+import { loadApiKeyModels, loadChatGptModels, loadLocalModels } from '@app/runtime/modelCatalogLoader';
 import {
   type DefaultModelPreference,
   formatModelRouteKey,
   modelRouteKey,
   readLastSelectedModelPreference,
 } from '@entities/model/modelPreferences';
-import { refreshOAuthRateLimits } from '@features/provider-settings/data/oauthRateLimits';
+import { refreshOAuthRateLimits } from '@app/runtime/oauthRateLimits';
 import type { LocalServiceClient } from '@shared/lib/platform/local-service';
 import type { ChatState } from './chatStore';
 import { isSameRoute } from './chatStoreUtils';

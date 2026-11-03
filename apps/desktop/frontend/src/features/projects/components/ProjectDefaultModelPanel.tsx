@@ -3,8 +3,8 @@ import { useTranslation } from 'react-i18next';
 
 import { Button } from '@shared/components';
 import type { ChatProject } from '@entities/project';
-import { useChatStore } from '@features/chat/state/chatStore';
-import { writeProjectDefaultModelPreference } from '@features/projects/data/projectPreferences';
+import { useChatStore } from '@app/runtime/chatStore';
+import { writeProjectDefaultModelPreference } from '@entities/project/projectPreferences';
 import { defaultPreferenceForModel } from '@entities/model/modelPreferences';
 
 interface ProjectDefaultModelPanelProps {

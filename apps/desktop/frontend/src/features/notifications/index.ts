@@ -1,1 +1,1 @@
-export * from './data/notificationRuntime';
+export * from '@app/runtime/notificationRuntime';

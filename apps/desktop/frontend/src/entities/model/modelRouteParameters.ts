@@ -1,5 +1,5 @@
 import { type JsonObject, LocalServiceError } from '@shared/lib/platform/local-service';
-import type { ChatModel } from './chatModels';
+import type { ChatModel } from './types';
 
 export function loadRouteParameters(model: ChatModel): JsonObject {
   if (model.providerId === 'copilot') {

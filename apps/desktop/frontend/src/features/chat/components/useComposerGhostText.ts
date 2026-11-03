@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ChatModel } from '@entities/model';
-import type { ChatMessage } from '@features/chat/data/chatStorage';
-import { useComposerPreferencesStore } from '@features/chat/data/composerPreferences';
-import { loadRouteParameters } from '@features/provider-settings/data/modelRouteParameters';
+import type { ChatMessage } from '@app/runtime/chatStorage';
+import { useComposerPreferencesStore } from '@shared/lib/preferences/composerPreferences';
+import { loadRouteParameters } from '@entities/model/modelRouteParameters';
 import { localServiceClient, type ServiceOperation } from '@shared/lib/platform/local-service';
 import type { ChatSlashCommand } from './ChatSlashCommandMenu';
-import type { ChatCommandFeedbackKey } from './composerUtils';
+import type { ChatCommandFeedbackKey } from '@entities/model/composerUtils';
 import { getGhostTextContext, parseGhostTextSuggestion } from './ghostTextSuggestions';
 
 export interface UseComposerGhostTextOptions {

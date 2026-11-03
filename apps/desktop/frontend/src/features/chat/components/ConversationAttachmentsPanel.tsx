@@ -3,8 +3,8 @@ import { FileText, LoaderCircle, Paperclip } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { getMessages, type ChatMessage } from '@features/chat/data/chatStorage';
-import { useChatStore } from '@features/chat/state/chatStore';
+import { getMessages, type ChatMessage } from '@app/runtime/chatStorage';
+import { useChatStore } from '@app/runtime/chatStore';
 import { MessageAttachments } from './MessageAttachments';
 
 export function ConversationAttachmentsPanel({ conversationId }: { conversationId: string | null }) {

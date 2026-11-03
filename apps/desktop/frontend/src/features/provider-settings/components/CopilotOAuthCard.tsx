@@ -13,12 +13,12 @@ import {
   pollCopilotOAuth,
   selectCopilotOAuthConnection,
   startCopilotOAuth,
-} from '@features/provider-settings/data/copilotOAuth';
+} from '@app/runtime/copilotOAuth';
 import {
   getCachedCopilotPlanType,
   refreshOAuthPlans,
   subscribeToOAuthPlanUpdates,
-} from '@features/provider-settings/data/oauthPlanMonitor';
+} from '@app/runtime/oauthPlanMonitor';
 import { LocalServiceError } from '@shared/lib/platform/local-service';
 import { ProviderIcon } from '@shared/components';
 

@@ -1,7 +1,7 @@
 import { createElement, type ReactNode } from 'react';
 
-import { MessageMarkdown } from '@features/chat/components/message/MessageMarkdown';
-import { isSafeHttpUrl } from '@features/chat/components/message/messageData';
+import { MessageMarkdown } from '@app/runtime/chatComponents';
+import { isSafeHttpUrl } from '@app/runtime/chatComponents';
 import { parseInertHtmlFragment } from '@shared/lib/utils/inertHtml';
 import { withStableKeys } from '@shared/lib/utils/reactKeys';
 

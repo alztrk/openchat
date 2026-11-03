@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Button } from '@shared/components';
-import { AssistantProfilesSettingsSection } from '@features/app-settings/components/AssistantProfilesSettingsSection';
+import { AssistantProfilesSettingsSection } from '@app/runtime/assistantProfilesSection';
 import { McpCatalogTab } from './McpCatalogTab';
 import { ModelCatalogTab } from './ModelCatalogTab';
 import { PromptTemplatesTab } from './PromptTemplatesTab';

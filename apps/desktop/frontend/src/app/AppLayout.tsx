@@ -11,7 +11,7 @@ import {
   TitleBar,
 } from '@widgets/index';
 import { useAppDragDrop } from '@/bootstrap/useAppDragDrop';
-import { useChatStore } from '@features/chat/state/chatStore';
+import { useChatStore } from '@app/runtime/chatStore';
 
 const ConversationPane = lazy(() => import('@features/chat/components/ConversationPane').then((m) => ({ default: m.ConversationPane })));
 const ConversationSidebar = lazy(() => import('@features/chat/components/ConversationSidebar').then((m) => ({ default: m.ConversationSidebar })));

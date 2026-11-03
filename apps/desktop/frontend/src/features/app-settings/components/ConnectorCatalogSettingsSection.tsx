@@ -4,12 +4,12 @@ import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Button, Card, Input } from '@shared/components';
-import { useChatStore } from '@features/chat/state/chatStore';
-import { type ProjectMcpServer, parseProjectMcpCatalog } from '@features/projects/data/projectMcp';
+import { useChatStore } from '@app/runtime/chatStore';
+import { type ProjectMcpServer, parseProjectMcpCatalog } from '@entities/project/projectMcp';
 import {
   loadProjectToolPermissionRules,
   saveProjectToolPermissionRules,
-} from '@features/projects/data/projectPermissionSettings';
+} from '@entities/project/projectPermissionSettings';
 import {
   type ConnectorCatalogEntry,
   type ConnectorCatalogTrust,
@@ -17,7 +17,7 @@ import {
   readConnectorCatalog,
   writeConnectorCatalog,
 } from '@features/app-settings/data/connectorCatalog';
-import type { ConnectorManifest } from '@features/app-settings/data/connectorManifest';
+import type { ConnectorManifest } from '@shared/lib/preferences/connectorManifest';
 import { localServiceClient } from '@shared/lib/platform/local-service';
 import { ConnectorCatalogSourcesPanel } from './ConnectorCatalogSourcesPanel';
 import { ConnectorTemplateForm } from './ConnectorTemplateForm';

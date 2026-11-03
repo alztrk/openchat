@@ -8,12 +8,12 @@ import {
   listConversationFileChanges,
   recordFileChangesLoadFailure,
 } from '@features/chat/data/chatFileChanges';
-import { type ChatConversation, type ChatMessage, getMessages } from '@features/chat/data/chatStorage';
+import { type ChatConversation, type ChatMessage, getMessages } from '@app/runtime/chatStorage';
 import { findInChatMatches, type InChatFilterType } from '@features/chat/data/inChatSearch';
-import { getSidebarDraggingConversationId } from '@features/chat/data/sidebarPreferences';
+import { getSidebarDraggingConversationId } from '@shared/lib/preferences/sidebarPreferences';
 import { useChatSession } from '@features/chat/hooks/useChatSession';
-import { useChatStore } from '@features/chat/state/chatStore';
-import { isSameRoute, upsertMessage } from '@features/chat/state/chatStoreUtils';
+import { useChatStore } from '@app/runtime/chatStore';
+import { isSameRoute, upsertMessage } from '@app/runtime/chatStoreUtils';
 import { modelRouteKey } from '@entities/model/modelPreferences';
 import type { ChatModel } from '@entities/model';
 import { isObject } from '@shared/lib/utils/json';

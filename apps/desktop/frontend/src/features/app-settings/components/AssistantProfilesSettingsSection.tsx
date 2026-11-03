@@ -3,15 +3,15 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Button, Card, Checkbox, Dialog, Input, Select, Skeleton, Switch, Textarea } from '@shared/components';
-import { useChatStore } from '@features/chat/state/chatStore';
-import { type ProjectMcpServer, parseProjectMcpCatalog } from '@features/projects/data/projectMcp';
+import { useChatStore } from '@app/runtime/chatStore';
+import { type ProjectMcpServer, parseProjectMcpCatalog } from '@entities/project/projectMcp';
 import type {
   AssistantProfile,
   AssistantProfileTemplateId,
   AssistantResponseStyle,
-} from '@features/app-settings/data/assistantProfiles';
-import { readyAssistantAgentTemplates } from '@features/app-settings/data/readyAssistantAgents';
-import { useAssistantProfilesStore } from '@features/app-settings/stores/assistantProfilesStore';
+} from '@shared/lib/preferences/assistantProfiles';
+import { readyAssistantAgentTemplates } from '@shared/lib/preferences/readyAssistantAgents';
+import { useAssistantProfilesStore } from '@shared/lib/preferences/assistantProfilesStore';
 import { localServiceClient, localServiceErrorDetails } from '@shared/lib/platform/local-service';
 import { SettingsSectionSkeleton } from './SettingsSectionSkeleton';
 

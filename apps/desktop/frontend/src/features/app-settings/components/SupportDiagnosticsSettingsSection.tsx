@@ -2,7 +2,7 @@ import { Download, FileDown, RefreshCw } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button, Dialog } from '@shared/components';
-import { useChatStore } from '@features/chat/state/chatStore';
+import { useChatStore } from '@app/runtime/chatStore';
 import { historyStorageStatusForInitialization } from '@features/app-settings/data/historyStorageStatus';
 import { LocalServiceError, localServiceClient } from '@shared/lib/platform/local-service';
 import { getVersion, invoke } from '@shared/lib/platform/tauri';

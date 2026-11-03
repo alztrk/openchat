@@ -3,8 +3,8 @@ import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Button } from '@shared/components';
-import { loadToolPermissionMode, saveToolPermissionMode } from '@features/projects/data/projectPermissionSettings';
-import type { ToolPermissionMode } from '@features/projects/data/projectPreferences';
+import { loadToolPermissionMode, saveToolPermissionMode } from '@entities/project/projectPermissionSettings';
+import type { ToolPermissionMode } from '@entities/project';
 import { useTransitionPresence } from '@shared/lib/hooks/useTransitionPresence';
 
 type TranslationKey = keyof typeof import('@shared/lib/i18n/locales/en.json');

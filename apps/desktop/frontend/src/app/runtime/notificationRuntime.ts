@@ -1,5 +1,5 @@
 import { i18n } from '@shared/lib/i18n/i18n';
-import { parseAgentQuestionGroup } from '@features/chat/data/agentQuestions';
+import { parseAgentQuestionGroup } from '@shared/lib/preferences/agentQuestions';
 import type { ChatConversation, ChatMessage } from '@entities/conversation';
 import { getConversation } from '@features/chat/data/chatStorage';
 import {
@@ -8,7 +8,7 @@ import {
   sendAssistantResponseNotification,
   sendUserQuestionNotification,
   shouldSuppressNotification,
-} from './notificationPreferences';
+} from '@shared/lib/preferences/notificationPreferences';
 
 type WindowFocusState = 'unknown' | 'focused' | 'backgrounded';
 

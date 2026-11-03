@@ -6,20 +6,20 @@ import {
   listConversations,
   listProjects,
   renameConversation as renameConversationStorage,
-} from '@features/chat/data/chatStorage';
-import { readProjectDefaultModelPreference } from '@features/projects/data/projectPreferences';
+} from '@app/runtime/chatStorage';
+import { readProjectDefaultModelPreference } from '@entities/project/projectPreferences';
 import {
   type DefaultModelPreference,
   formatModelRouteKey,
   modelRouteKey,
   readLastSelectedModelPreference,
 } from '@entities/model/modelPreferences';
-import { readAssistantExecutionPreferences } from '@features/app-settings/data/assistantExecutionPreferences';
+import { readAssistantExecutionPreferences } from '@shared/lib/preferences/assistantExecutionPreferences';
 import {
   type AssistantAgentSnapshot,
   readAssistantProfiles,
   snapshotAssistantProfile,
-} from '@features/app-settings/data/assistantProfiles';
+} from '@shared/lib/preferences/assistantProfiles';
 import { LocalServiceError, localServiceClient } from '@shared/lib/platform/local-service';
 import type { ChatState } from './chatStore';
 import { isSameRoute, upsertMessage } from './chatStoreUtils';

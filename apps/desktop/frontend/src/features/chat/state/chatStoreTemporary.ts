@@ -1,16 +1,16 @@
 import type { StoreApi } from 'zustand';
 import { i18n } from '@shared/lib/i18n/i18n';
 import { encodeBase64, type PendingChatAttachment } from '@features/chat/data/chatAttachments';
-import { getAudioContext, playAssistantResponseAudio } from '@features/notifications/audioFeedback';
+import { getAudioContext, playAssistantResponseAudio } from '@shared/lib/preferences/audioFeedback';
 import {
   type ChatMessage,
   createConversation,
   deleteConversation,
   listConversations,
   saveMessage,
-} from '@features/chat/data/chatStorage';
+} from '@app/runtime/chatStorage';
 import type { ChatModel } from '@entities/model';
-import { loadRouteParameters } from '@features/provider-settings/data/modelRouteParameters';
+import { loadRouteParameters } from '@entities/model/modelRouteParameters';
 import { type LocalServiceClient, LocalServiceError } from '@shared/lib/platform/local-service';
 import { applyStreamEvent, numberOrNull, titleFromMessage, upsertMessage } from './chatStoreUtils';
 import type { ChatState } from './chatStore';

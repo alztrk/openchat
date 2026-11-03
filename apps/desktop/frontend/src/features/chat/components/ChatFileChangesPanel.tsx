@@ -28,7 +28,7 @@ import {
   revertConversationFileChange,
   revertConversationFileChangeHunk,
 } from '@features/chat/data/chatFileChanges';
-import { readOpenConversationTabs, writeOpenConversationTabs } from '@features/chat/data/sidebarPreferences';
+import { readOpenConversationTabs, writeOpenConversationTabs } from '@shared/lib/preferences/sidebarPreferences';
 import { LocalServiceError } from '@shared/lib/platform/local-service';
 import { FileChangeRow, FileTypeIcon } from './ChatFileChangeRow';
 import { DiffContent } from './ChatFileChangesDiffViewer';

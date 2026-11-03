@@ -7,9 +7,9 @@ import {
   type AgentQuestionGroup,
   parseAgentQuestionAnswer,
   parseAgentQuestionGroup,
-} from '@features/chat/data/agentQuestions';
-import { type ChatMessage, getMessages, saveMessage } from '@features/chat/data/chatStorage';
-import { useChatStore } from '@features/chat/state/chatStore';
+} from '@shared/lib/preferences/agentQuestions';
+import { type ChatMessage, getMessages, saveMessage } from '@app/runtime/chatStorage';
+import { useChatStore } from '@app/runtime/chatStore';
 import { LocalServiceError, localServiceClient } from '@shared/lib/platform/local-service';
 
 interface UserQuestionPanelProps {

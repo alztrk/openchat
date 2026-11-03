@@ -1,4 +1,4 @@
-import type { ChatMessage } from '@features/chat/data/chatStorage';
+import type { ChatMessage } from '@app/runtime/chatStorage';
 
 const maximumUserContextCharacters = 4_000;
 const maximumAssistantContextCharacters = 8_000;

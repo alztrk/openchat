@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Button, Card, Dialog } from '@shared/components';
-import { useChatStore } from '@features/chat/state/chatStore';
+import { useChatStore } from '@app/runtime/chatStore';
 import { historyStorageStatusForInitialization } from '@features/app-settings/data/historyStorageStatus';
 import { ConversationArchiveSettingsSection } from './ConversationArchiveSettingsSection';
 import { ProfileArchiveSettingsSection } from './ProfileArchiveSettingsSection';

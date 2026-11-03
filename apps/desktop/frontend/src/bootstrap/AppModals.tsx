@@ -1,8 +1,8 @@
 import { type Dispatch, lazy, type SetStateAction, Suspense } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useChatStore } from '@features/chat/state/chatStore';
+import { useChatStore } from '@app/runtime/chatStore';
 import type { SettingsSection } from '@features/app-settings/components/SettingsPage';
-import type { AssistantAgentSnapshot } from '@features/app-settings/data/assistantProfiles';
+import type { AssistantAgentSnapshot } from '@shared/lib/preferences/assistantProfiles';
 import type { AppSurface } from '@widgets/navigation-rail';
 
 const TemporaryChatExitDialog = lazy(() =>

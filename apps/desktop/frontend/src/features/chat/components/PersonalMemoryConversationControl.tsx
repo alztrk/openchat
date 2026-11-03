@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Button, Tooltip } from '@shared/components';
-import { useChatStore } from '@features/chat/state/chatStore';
+import { useChatStore } from '@app/runtime/chatStore';
 import {
   readPersonalMemoryExcludedConversationIds,
   setPersonalMemoryExcludedForConversation,

@@ -1,6 +1,6 @@
-import type { ChatSlashCommand } from '@features/chat/components/ChatSlashCommandMenu';
-import type { ChatModel } from '@entities/model';
-import { modelRouteKey } from '@entities/model/modelPreferences';
+import type { ChatModel } from './types';
+import { modelRouteKey } from './modelPreferences';
+import type { ChatSlashCommand } from '@shared/lib/chat/slashCommands';
 
 export type ChatCommandFeedbackKey =
   | 'chatRequestFailed'

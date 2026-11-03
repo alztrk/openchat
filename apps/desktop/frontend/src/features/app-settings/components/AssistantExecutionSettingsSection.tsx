@@ -1,11 +1,11 @@
 import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button, Select, Switch } from '@shared/components';
-import { providerNameForModel } from '@features/chat/components/composerUtils';
-import { useChatStore } from '@features/chat/state/chatStore';
+import { providerNameForModel } from '@entities/model/composerUtils';
+import { useChatStore } from '@app/runtime/chatStore';
 import { modelRouteKey } from '@entities/model/modelPreferences';
-import { useAssistantExecutionPreferencesStore } from '@features/app-settings/data/assistantExecutionPreferences';
-import { useAssistantProfilesStore } from '@features/app-settings/stores/assistantProfilesStore';
+import { useAssistantExecutionPreferencesStore } from '@shared/lib/preferences/assistantExecutionPreferences';
+import { useAssistantProfilesStore } from '@shared/lib/preferences/assistantProfilesStore';
 import { SettingsPreferenceRow } from './SettingsPreferenceRow';
 import { SettingsLoadError, SettingsSaveFeedback } from './SettingsState';
 import { AssistantWritingSettingsSection } from './AssistantWritingSettingsSection';

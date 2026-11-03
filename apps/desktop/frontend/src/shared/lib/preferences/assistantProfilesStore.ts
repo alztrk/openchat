@@ -1,12 +1,12 @@
 import { create } from 'zustand';
-import { useAssistantExecutionPreferencesStore } from '@features/app-settings/data/assistantExecutionPreferences';
+import { useAssistantExecutionPreferencesStore } from '@shared/lib/preferences/assistantExecutionPreferences';
 import {
   type AssistantProfile,
   type AssistantProfilesSnapshot,
   parseAssistantProfiles,
   readAssistantProfiles,
   writeAssistantProfiles,
-} from '@features/app-settings/data/assistantProfiles';
+} from './assistantProfiles';
 
 type LoadState = 'idle' | 'loading' | 'ready' | 'error';
 type ErrorKey =

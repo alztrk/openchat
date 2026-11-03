@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react';
 import { LocalServiceError, localServiceClient } from '@shared/lib/platform/local-service';
-import type { ChatModel } from './chatModels';
+import type { ChatModel } from '@entities/model';
 import { loadCopilotUsage } from './copilotOAuth';
 import { modelRouteKey } from '@entities/model/modelPreferences';
 

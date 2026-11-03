@@ -4,7 +4,8 @@ import { useTranslation } from 'react-i18next';
 
 import { Button } from '@shared/components';
 
-export type ChatSlashCommand = 'new' | 'summarize' | 'rename' | 'model' | 'compact' | 'reasoning' | 'plan' | 'goal';
+import type { ChatSlashCommand } from '@shared/lib/chat/slashCommands';
+export type { ChatSlashCommand } from '@shared/lib/chat/slashCommands';
 
 type TranslationKey = keyof typeof import('@shared/lib/i18n/locales/en.json');
 

@@ -1,10 +1,10 @@
 import type { ChatModel } from '@entities/model';
 import { formatModelRouteKey, modelRouteKey } from '@entities/model/modelPreferences';
-import { loadRouteParameters } from '@features/provider-settings/data/modelRouteParameters';
+import { loadRouteParameters } from '@entities/model/modelRouteParameters';
 import {
   readTitleGenerationPreference,
   type TitleGenerationPreference,
-} from '@features/provider-settings/data/titleGenerationPreferences';
+} from '@entities/model/titleGenerationPreferences';
 import type { JsonObject } from '@shared/lib/platform/local-service';
 
 export async function loadTitleGenerationRequest(models: readonly ChatModel[]): Promise<JsonObject> {

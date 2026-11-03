@@ -1,4 +1,4 @@
-import type { ChatMessage } from '@features/chat/data/chatStorage';
+import type { ChatMessage } from '@app/runtime/chatStorage';
 
 export type InChatFilterType = 'all' | 'code' | 'error' | 'user';
 

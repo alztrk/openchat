@@ -1,6 +1,6 @@
 import type { StoreApi } from 'zustand';
 
-import { isTerminalChatGoalStatus, parseChatGoal } from '@features/chat/data/chatGoals';
+import { isTerminalChatGoalStatus, parseChatGoal } from '@shared/lib/preferences/chatGoals';
 import {
   type ChatConversation,
   type ChatMessage,
@@ -9,28 +9,28 @@ import {
   recordChatMessagePersistenceFailure,
   recordChatRequestFailure,
   saveMessage,
-} from '@features/chat/data/chatStorage';
-import { notifyAssistantResponse, notifyPendingQuestion } from '@features/notifications/data/notificationRuntime';
+} from '@app/runtime/chatStorage';
+import { notifyAssistantResponse, notifyPendingQuestion } from '@app/runtime/notificationRuntime';
 import {
   loadProjectToolPermissionRules,
   loadToolPermissionMode,
-} from '@features/projects/data/projectPermissionSettings';
-import { readProjectSkillIds } from '@features/projects/data/projectPreferences';
+} from '@entities/project/projectPermissionSettings';
+import { readProjectSkillIds } from '@entities/project/projectPreferences';
 import { modelRouteKey } from '@entities/model/modelPreferences';
-import { loadRouteParameters } from '@features/provider-settings/data/modelRouteParameters';
-import { recordOAuthRateLimit } from '@features/provider-settings/data/oauthRateLimits';
+import { loadRouteParameters } from '@entities/model/modelRouteParameters';
+import { recordOAuthRateLimit } from '@app/runtime/oauthRateLimits';
 import {
   type ProviderRequestOutcome,
   writeProviderRequestOutcomeRecord,
-} from '@features/provider-settings/data/providerRequestOutcome';
-import { readAssistantExecutionPreferences } from '@features/app-settings/data/assistantExecutionPreferences';
+} from '@app/runtime/providerRequestOutcome';
+import { readAssistantExecutionPreferences } from '@shared/lib/preferences/assistantExecutionPreferences';
 import {
   personalMemoryContextForConversation,
   setPersonalMemoryExcludedForConversation,
 } from '@shared/lib/preferences/personalMemory';
 import { readSharedInstructions } from '@shared/lib/preferences/sharedInstructions';
 import { type LocalServiceClient, LocalServiceError } from '@shared/lib/platform/local-service';
-import { getAudioContext, playAssistantResponseAudio } from '@features/notifications/audioFeedback';
+import { getAudioContext, playAssistantResponseAudio } from '@shared/lib/preferences/audioFeedback';
 import type { ChatState } from './chatStore';
 import { getOpenCodeRetryAtUnixMs, serviceErrorCategoryMessageKey } from './chatStoreErrorDetails';
 import { chatStorageRetryDelay } from '../data/chatStorageRetry';

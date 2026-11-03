@@ -29,7 +29,7 @@ import {
 import { useTranslation } from 'react-i18next';
 
 import { Button, Checkbox, ColorPicker, DatePicker, Dialog, Input, Select, Slider, Textarea, TitleTooltip } from '@shared/components';
-import { listConversationAttachments } from '@features/chat/data/chatStorage';
+import { listConversationAttachments } from '@app/runtime/chatStorage';
 import { DesignCanvas } from '@features/design-workspace/components/DesignCanvas';
 import { DesignImageGallery } from '@features/design-workspace/components/DesignImageGallery';
 import {
@@ -83,7 +83,7 @@ import {
   resolveDesignGenerationSettings,
   useDesignPreferencesStore,
   writeDesignPanelWidth,
-} from '@features/design-workspace/data/designPreferences';
+} from '@app/runtime/designPreferences';
 import {
   clearImageLibrary,
   type DesignImageTarget,
@@ -110,8 +110,8 @@ import {
   saveImageCollection,
   saveImagePromptTemplate,
   setImageCollectionItem,
-} from '@features/design-workspace/data/imageGeneration';
-import { type ChatGptAccountQuotaStatus, refreshChatGptAccountQuota } from '@features/provider-settings/data/oauthRateLimits';
+} from '@app/runtime/imageGeneration';
+import { type ChatGptAccountQuotaStatus, refreshChatGptAccountQuota } from '@app/runtime/oauthRateLimits';
 import {
   LocalServiceError,
   serviceErrorCategoryTranslationKey,

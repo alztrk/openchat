@@ -27,7 +27,7 @@ import {
 import { useTranslation } from 'react-i18next';
 
 import { Button, Checkbox, Dialog, Input, TitleTooltip } from '@shared/components';
-import type { ChatConversation } from '@features/chat/data/chatStorage';
+import type { ChatConversation } from '@app/runtime/chatStorage';
 import {
   type CustomSidebarFolder,
   clampSidebarWidth,
@@ -53,16 +53,16 @@ import {
   writeSidebarViewMode,
   writeSidebarWidth,
   writeSkipConversationDeleteConfirmation,
-} from '@features/chat/data/sidebarPreferences';
+} from '@shared/lib/preferences/sidebarPreferences';
 import { useConversationSidebarActions } from '@features/chat/hooks/useConversationSidebarActions';
-import { useChatStore } from '@features/chat/state/chatStore';
+import { useChatStore } from '@app/runtime/chatStore';
 import {
   formatServiceErrorMessage,
   isRedundantHistoryError,
-} from '@features/chat/state/chatStoreErrorDetails';
-import { ProjectSidebarSection } from '@features/projects/components/ProjectSidebarSection';
-import { type AssistantAgentSnapshot, snapshotAssistantProfile } from '@features/app-settings/data/assistantProfiles';
-import { useAssistantProfilesStore } from '@features/app-settings/stores/assistantProfilesStore';
+} from '@app/runtime/chatStoreErrorDetails';
+import { ProjectSidebarSection } from '@app/runtime/projectTools';
+import { type AssistantAgentSnapshot, snapshotAssistantProfile } from '@shared/lib/preferences/assistantProfiles';
+import { useAssistantProfilesStore } from '@shared/lib/preferences/assistantProfilesStore';
 import { ConversationSidebarEditDialog } from './ConversationSidebarEditDialog';
 import { ConversationSidebarRow } from './ConversationSidebarRow';
 import { ConversationSidebarSection } from './ConversationSidebarSection';
@@ -78,7 +78,7 @@ import {
 export { groupConversationsByRecency, normalizeProjectPath, type RecencyBucket, type RecencyBucketKey };
 
 const CreateProjectDialog = lazy(() =>
-  import('@features/projects/components/CreateProjectDialog').then((module) => ({
+  import('@app/runtime/projectTools').then((module) => ({
     default: module.CreateProjectDialog,
   })),
 );

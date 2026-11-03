@@ -3,14 +3,14 @@ import { useCallback, useRef, useState } from 'react';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button, Select, Textarea } from '@shared/components';
-import type { ChatMessage } from '@features/chat/data/chatStorage';
-import { getSidebarDraggingConversationId } from '@features/chat/data/sidebarPreferences';
+import type { ChatMessage } from '@app/runtime/chatStorage';
+import { getSidebarDraggingConversationId } from '@shared/lib/preferences/sidebarPreferences';
 import { useChatStreaming } from '@features/chat/hooks/useChatStreaming';
-import { useChatStore } from '@features/chat/state/chatStore';
-import { ToolPermissionModeSelector } from '@features/projects/components/ToolPermissionModeSelector';
+import { useChatStore } from '@app/runtime/chatStore';
+import { ToolPermissionModeSelector } from '@app/runtime/projectTools';
 import { modelRouteKey } from '@entities/model/modelPreferences';
-import { rateLimitForModel, useOAuthRateLimits } from '@features/provider-settings/data/oauthRateLimits';
-import { formatKeyboardShortcut, useKeyboardShortcutsStore } from '@features/app-settings/stores/keyboardShortcutsStore';
+import { rateLimitForModel, useOAuthRateLimits } from '@app/runtime/oauthRateLimits';
+import { formatKeyboardShortcut, useKeyboardShortcutsStore } from '@shared/lib/preferences/keyboardShortcutsStore';
 import { AttachmentLibraryDialog } from './AttachmentLibraryDialog';
 import { ChatSlashCommandMenu } from './ChatSlashCommandMenu';
 import { ChatSlashModelMenu } from './ChatSlashModelMenu';
@@ -23,7 +23,7 @@ import {
   providerNameForModel,
   reasoningLevelLabel,
   textAttachmentExtensions,
-} from './composerUtils';
+} from '@entities/model/composerUtils';
 import { ModelPicker } from './ModelPicker';
 import { PendingAttachmentGallery } from './PendingAttachmentGallery';
 import { UserQuestionPanel } from './UserQuestionPanel';

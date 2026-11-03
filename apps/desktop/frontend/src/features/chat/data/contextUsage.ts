@@ -1,8 +1,8 @@
-import { parseToolActivities } from '@features/chat/components/message/messageData';
-import { readProjectSkillIds, type ToolPermissionMode } from '@features/projects/data/projectPreferences';
+import { parseToolActivities } from '@app/runtime/chatComponents';
+import { readProjectSkillIds, type ToolPermissionMode } from '@entities/project/projectPreferences';
 import type { ChatModel } from '@entities/model';
 import { modelRouteKey, readModelPreferences } from '@entities/model/modelPreferences';
-import { readAssistantExecutionPreferences } from '@features/app-settings/data/assistantExecutionPreferences';
+import { readAssistantExecutionPreferences } from '@shared/lib/preferences/assistantExecutionPreferences';
 import { personalMemoryContextForConversation } from '@shared/lib/preferences/personalMemory';
 import { readSharedInstructions } from '@shared/lib/preferences/sharedInstructions';
 import { LocalServiceError, localServiceClient } from '@shared/lib/platform/local-service';

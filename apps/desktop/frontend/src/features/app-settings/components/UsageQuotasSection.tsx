@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button, Card, Dialog } from '@shared/components';
 import { ProviderIcon } from '@shared/components';
-import { subscribeToOAuthPlanUpdates } from '@features/provider-settings/data/oauthPlanMonitor';
+import { subscribeToOAuthPlanUpdates } from '@app/runtime/oauthPlanMonitor';
 import {
   defaultUsageAlertPreferences,
   readUsageAlertPreferences,

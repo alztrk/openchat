@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button, Checkbox } from '@shared/components';
 import type { ChatProject } from '@entities/project';
-import { readProjectSkillIds, writeProjectSkillIds } from '@features/projects/data/projectPreferences';
+import { readProjectSkillIds, writeProjectSkillIds } from '@entities/project/projectPreferences';
 import { localServiceClient } from '@shared/lib/platform/local-service';
 
 interface ProjectSkill {

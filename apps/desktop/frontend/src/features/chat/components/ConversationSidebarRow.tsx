@@ -34,9 +34,9 @@ import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 
 import { Button, Input, TitleTooltip } from '@shared/components';
-import type { ChatConversation, ChatProject, ExportFormat } from '@features/chat/data/chatStorage';
-import type { CustomSidebarFolder, SidebarViewMode } from '@features/chat/data/sidebarPreferences';
-import { setSidebarDraggingConversationId } from '@features/chat/data/sidebarPreferences';
+import type { ChatConversation, ChatProject, ExportFormat } from '@app/runtime/chatStorage';
+import type { CustomSidebarFolder, SidebarViewMode } from '@shared/lib/preferences/sidebarPreferences';
+import { setSidebarDraggingConversationId } from '@shared/lib/preferences/sidebarPreferences';
 import { useTransitionPresence } from '@shared/lib/hooks/useTransitionPresence';
 
 type MenuAnchor = { kind: 'trigger' } | { kind: 'point'; x: number; y: number };

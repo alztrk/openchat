@@ -1,17 +1,17 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useChatStore } from '@features/chat/state/chatStore';
+import { useChatStore } from '@app/runtime/chatStore';
 import {
   findLightweightModel,
   TitleGenerationSettings,
-} from '@features/provider-settings/components/ProviderSettingsSection';
+} from '@app/runtime/providerSettings';
 import { formatModelRouteKey } from '@entities/model/modelPreferences';
 import {
   readTitleGenerationPreference,
   type TitleGenerationPreference,
   titlePreferenceForModel,
   writeTitleGenerationPreference,
-} from '@features/provider-settings/data/titleGenerationPreferences';
+} from '@entities/model/titleGenerationPreferences';
 
 export function TitleGenerationSettingsSection() {
   const { t } = useTranslation();

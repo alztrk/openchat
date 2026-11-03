@@ -1,10 +1,10 @@
 import { unifiedStorage } from '@shared/lib/platform/storage/unifiedStorage';
-import type { ChatModel } from './chatModels';
+import type { ChatModel } from './types';
 import {
   type DefaultModelPreference,
   defaultPreferenceForModel,
   parseDefaultModelPreference,
-} from '@entities/model/modelPreferences';
+} from './modelPreferences';
 
 export type TitleGenerationMode = 'conversation' | 'selectedModel' | 'lightweight';
 

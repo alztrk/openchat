@@ -118,19 +118,16 @@
 - [x] Locale check — **PASSES** (5 locales consistent)
 - [x] TypeScript check — **PASSES**
 - [x] Biome lint — **PASSES**
-- [x] FSD Import check — **129 cross-feature warnings** (architectural debt)
+- [x] FSD Import check — **0 errors, 0 warnings**
 
-### 8.3 Pre-existing Test Failures (Environment/Infrastructure Issues)
+### 8.3 Test Stabilization Status
 
-| Category | Failures | Root Cause | Fix Difficulty |
-|----------|----------|------------|----------------|
-| File changes tests | 5 tests | Test isolation/state leakage in full suite | Medium |
-| File ops tests | 2 tests | Test isolation in full suite | Medium |
-| Executor policy tests | 2 tests | Test isolation in full suite | Medium |
-| Terminal test | 1 test | Test isolation in full suite | Medium |
-| RPC Project tests | 5 tests | **Missing `git` in PATH** | **Easy** (install git) |
-| Stack overflow | 1 test | Recursion depth in `kilo_context_usage_estimate` | Hard |
-| Compaction logic | 1 test | Token estimation logic vs test expectations | Medium |
+| Category | Status | Verification |
+|----------|--------|--------------|
+| File changes/file ops/executor/terminal tests | ✅ Stable | Full suite passes with serialized Rust tests |
+| RPC project tests | ✅ Fixed | Windows Git executable resolution |
+| Context usage estimate | ✅ Fixed | Targeted test passes |
+| Compaction logic | ✅ Fixed | Targeted test passes |
 
 **Key Finding:** All "pre-existing" test failures pass when run individually (`cargo test -p openchat-local-service --lib -- <test_name>`). They fail only in the full test suite due to test isolation/state issues.
 
@@ -141,19 +138,14 @@
 - [x] Full suite test isolation verified after Git executable resolution (`926 passed, 0 failed`)
 
 #### Medium Priority
-- [ ] Fix stack overflow in `rpc::conversations::tests::kilo_context_usage_estimate_does_not_require_provider_credentials` — increase stack size or refactor recursion
-- [ ] Fix compaction test: `domain::openai_compatible::conversation::in_loop_compaction_tests::compacts_older_tool_outputs_while_preserving_latest_tool_round_and_call_pairs` — token estimation logic
-- [ ] Investigate and fix test isolation for file_changes/file_ops/executor/terminal tests
+- [x] Context usage estimate targeted test passes without provider credentials
+- [x] Compaction preservation targeted test passes
+- [x] Full-suite isolation verified for file changes/file ops/executor/terminal tests
 
 #### Low Priority (Architectural Debt)
-- [ ] **FSD Architecture Violations** — 102 cross-feature import warnings requiring significant refactoring
-  - `features/app-settings` → imports from `chat`, `provider-settings`, `projects`, `notifications`, `design-workspace`
-  - `features/chat` → imports from `projects`, `provider-settings`, `app-settings`, `notifications`
-  - `features/design-workspace` → imports from `chat`, `provider-settings`
-  - `features/model-catalog` → imports from `app-settings`, `provider-settings`, `chat`
-  - `features/notifications` → imports from `chat`
-  - `features/projects` → imports from `chat`, `provider-settings`, `app-settings`
-  - `features/security-scans` → imports from `chat`, `provider-settings`
+- [x] **FSD Architecture Violations** — cross-feature imports reduced to **0 warnings**
+  - Pure domain, preference, model, project, notification and provider helpers moved to `@shared`, `@entities` or `@app/runtime`.
+  - Remaining feature composition is routed through explicit app-layer runtime bridges.
 
 #### Optional Cleanup
 - [ ] Remove `#[allow(dead_code)]` on `summary_text` in `history.rs` once it's actually used, or remove the function if not needed

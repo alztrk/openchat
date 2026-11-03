@@ -6,7 +6,7 @@ import { Button, Card, Dialog, Input } from '@shared/components';
 import {
   type ConversationAttachmentSummary,
   listConversationAttachments,
-} from '@features/chat/data/chatStorage';
+} from '@app/runtime/chatStorage';
 
 const pageSize = 30;
 

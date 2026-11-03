@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button, Dialog, Input } from '@shared/components';
-import type { ProjectMcpServer } from '@features/projects/data/projectMcp';
+import type { ProjectMcpServer } from '@entities/project/projectMcp';
 import { LocalServiceError, localServiceClient } from '@shared/lib/platform/local-service';
 
 interface ProjectMcpCredentialDialogProps {

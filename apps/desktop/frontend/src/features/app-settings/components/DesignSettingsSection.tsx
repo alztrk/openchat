@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button, Input, Select, Switch } from '@shared/components';
-import { useDesignPreferencesStore } from '@features/design-workspace/data/designPreferences';
-import { type ImageCollection, listImageCollections } from '@features/design-workspace/data/imageGeneration';
+import { useDesignPreferencesStore } from '@app/runtime/designPreferences';
+import { type ImageCollection, listImageCollections } from '@app/runtime/imageGeneration';
 import { SettingsPreferenceRow } from './SettingsPreferenceRow';
 import { SettingsLoadError, SettingsSaveFeedback } from './SettingsState';
 

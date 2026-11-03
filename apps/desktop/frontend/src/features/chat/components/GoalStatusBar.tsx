@@ -13,8 +13,8 @@ import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Button, TitleTooltip } from '@shared/components';
-import type { ChatGoal, ChatGoalStatus } from '@features/chat/data/chatGoals';
-import { useChatStore } from '@features/chat/state/chatStore';
+import type { ChatGoal, ChatGoalStatus } from '@shared/lib/preferences/chatGoals';
+import { useChatStore } from '@app/runtime/chatStore';
 
 // Time constants
 const MS_PER_SECOND = 1_000;

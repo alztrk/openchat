@@ -1,9 +1,9 @@
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Card, Select, Switch } from '@shared/components';
-import { providerNameForModel } from '@features/chat/components/composerUtils';
-import { useComposerPreferencesStore } from '@features/chat/data/composerPreferences';
-import { useChatStore } from '@features/chat/state/chatStore';
+import { providerNameForModel } from '@entities/model/composerUtils';
+import { useComposerPreferencesStore } from '@shared/lib/preferences/composerPreferences';
+import { useChatStore } from '@app/runtime/chatStore';
 import { SettingsPreferenceRow } from './SettingsPreferenceRow';
 import { TitleGenerationSettingsSection } from './TitleGenerationSettingsSection';
 

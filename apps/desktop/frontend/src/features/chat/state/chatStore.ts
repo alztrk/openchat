@@ -12,13 +12,13 @@ import {
   setConversationRoute,
   setConversationReasoningEffort,
   setModelFavorite,
-} from '@features/chat/data/chatStorage';
+} from '@app/runtime/chatStorage';
 import type { ChatModel, ChatModelProvider } from '@entities/model';
 
 export type { ChatModel } from '@entities/model';
 
 import type { PendingChatAttachment } from '@features/chat/data/chatAttachments';
-import type { ChatGoal } from '@features/chat/data/chatGoals';
+import type { ChatGoal } from '@shared/lib/preferences/chatGoals';
 import {
   clearHiddenModelKeys,
   clearModelContextLimits,
@@ -34,7 +34,7 @@ import {
   writeModelContextLimit,
   writeModelReasoningEffort,
 } from '@entities/model/modelPreferences';
-import type { AssistantAgentSnapshot } from '@features/app-settings/data/assistantProfiles';
+import type { AssistantAgentSnapshot } from '@shared/lib/preferences/assistantProfiles';
 import { LocalServiceError, localServiceClient, type ServiceOperation } from '@shared/lib/platform/local-service';
 import { createBranchesActions } from './chatStoreBranches';
 import { createConversationsActions } from './chatStoreConversations';

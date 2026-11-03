@@ -3,11 +3,11 @@ import { type DragEvent, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Button, TitleTooltip } from '@shared/components';
-import { ConversationSidebarRow } from '@features/chat/components/ConversationSidebarRow';
-import { ConversationSidebarSection } from '@features/chat/components/ConversationSidebarSection';
+import { ConversationSidebarRow } from '@app/runtime/chatComponents';
+import { ConversationSidebarSection } from '@app/runtime/chatComponents';
 import type { ChatConversation, ExportFormat } from '@entities/conversation';
 import type { ChatProject } from '@entities/project';
-import type { CustomSidebarFolder, SidebarViewMode } from '@features/chat/data/sidebarPreferences';
+import type { CustomSidebarFolder, SidebarViewMode } from '@shared/lib/preferences/sidebarPreferences';
 interface ProjectSidebarSectionProps {
   projects: readonly ChatProject[];
   customFolders?: readonly CustomSidebarFolder[];

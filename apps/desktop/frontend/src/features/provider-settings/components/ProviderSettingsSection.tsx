@@ -32,8 +32,8 @@ import {
   type TitleGenerationMode,
   type TitleGenerationPreference,
   titlePreferenceForModel,
-} from '@features/provider-settings/data/titleGenerationPreferences';
-import { refreshOAuthPlans, subscribeToOAuthPlanUpdates } from '@features/provider-settings/data/oauthPlanMonitor';
+} from '@entities/model/titleGenerationPreferences';
+import { refreshOAuthPlans, subscribeToOAuthPlanUpdates } from '@app/runtime/oauthPlanMonitor';
 import {
   LocalServiceError,
   localServiceClient,

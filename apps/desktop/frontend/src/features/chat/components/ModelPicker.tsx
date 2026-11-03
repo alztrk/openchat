@@ -4,8 +4,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Button, Input, Tooltip, TitleTooltip } from '@shared/components';
-import type { ChatModelFavorite } from '@features/chat/data/chatStorage';
-import { favoriteSourceConnection } from '@features/chat/state/chatStoreUtils';
+import type { ChatModelFavorite } from '@app/runtime/chatStorage';
+import { favoriteSourceConnection } from '@app/runtime/chatStoreUtils';
 import { ProviderIcon } from '@shared/components';
 import type { ChatModel, ChatModelProvider } from '@entities/model';
 import { modelRouteKey } from '@entities/model/modelPreferences';
@@ -17,14 +17,14 @@ import {
   modelPricingKey,
   readModelPricingCache,
   writeModelPricingCache,
-} from '@features/provider-settings/data/modelPricing';
+} from '@entities/model/modelPricing';
 import {
   clearOAuthRateLimit,
   type OAuthRateLimitState,
   rateLimitForModel,
   refreshOAuthRateLimits,
   useOAuthRateLimits,
-} from '@features/provider-settings/data/oauthRateLimits';
+} from '@app/runtime/oauthRateLimits';
 import { localServiceClient } from '@shared/lib/platform/local-service';
 import { useTransitionPresence } from '@shared/lib/hooks/useTransitionPresence';
 import { FastModeControl } from './FastModeControl';

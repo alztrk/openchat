@@ -1,4 +1,4 @@
-import { isTerminalChatGoalStatus, parseChatGoal } from '@features/chat/data/chatGoals';
+import { isTerminalChatGoalStatus, parseChatGoal } from '@shared/lib/preferences/chatGoals';
 import { localServiceClient } from '@shared/lib/platform/local-service';
 import { isObject } from './chatStoreUtils';
 import type { ChatState } from './chatStore';

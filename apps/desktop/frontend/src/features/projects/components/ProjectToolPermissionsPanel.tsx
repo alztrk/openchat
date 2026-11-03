@@ -7,8 +7,8 @@ import {
   loadProjectToolPermissionRules,
   loadToolPermissionMode,
   saveProjectToolPermissionRules,
-} from '@features/projects/data/projectPermissionSettings';
-import type { ProjectToolPermissionRule, ToolPermissionMode } from '@features/projects/data/projectPreferences';
+} from '@entities/project/projectPermissionSettings';
+import type { ProjectToolPermissionRule, ToolPermissionMode } from '@entities/project';
 import { localServiceClient } from '@shared/lib/platform/local-service';
 
 const standardTools = [

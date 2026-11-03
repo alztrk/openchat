@@ -10,10 +10,10 @@ import {
   renameConversation as renameConversationStorage,
   setConversationPinned,
   setConversationsArchived,
-} from '@features/chat/data/chatStorage';
+} from '@app/runtime/chatStorage';
 import type { ExportFormat } from '@features/chat/data/conversationExport';
 import { conversationMarkdownLabels } from '@features/chat/data/conversationMarkdownLabels';
-import { useChatStore } from '@features/chat/state/chatStore';
+import { useChatStore } from '@app/runtime/chatStore';
 import { localServiceClient } from '@shared/lib/platform/local-service';
 
 type TranslationKey = keyof typeof import('@shared/lib/i18n/locales/en.json');

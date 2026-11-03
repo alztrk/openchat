@@ -1,5 +1,5 @@
-import type { ChatRoute } from '@features/provider-settings/data/routes';
-import { type AssistantAgentSnapshot, isAssistantAgentSnapshot } from '@features/app-settings/data/assistantProfiles';
+import type { ChatRoute } from '@entities/model';
+import { type AssistantAgentSnapshot, isAssistantAgentSnapshot } from '@shared/lib/preferences/assistantProfiles';
 import { localServiceClient } from '@shared/lib/platform/local-service';
 import { invoke } from '@shared/lib/platform/tauri';
 

@@ -4,7 +4,7 @@ import type {
   ImageModeration,
   ImageOutputFormat,
   ImageQuality,
-} from '@features/design-workspace/data/imageGeneration';
+} from '@app/runtime/imageGeneration';
 import { unifiedStorage } from '@shared/lib/platform/storage/unifiedStorage';
 
 export const DESIGN_PANEL_DEFAULT_WIDTH = 320;

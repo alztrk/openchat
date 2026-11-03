@@ -21,27 +21,27 @@ import {
   writeCloseWindowBehavior,
   writeLastSurface,
 } from '@features/app-settings/data/appPreferences';
-import { useAssistantExecutionPreferencesStore } from '@features/app-settings/data/assistantExecutionPreferences';
+import { useAssistantExecutionPreferencesStore } from '@shared/lib/preferences/assistantExecutionPreferences';
 import { useChatDisplayPreferencesStore } from '@shared/lib/preferences/chatDisplayPreferences';
-import { useKeyboardShortcutsStore } from '@features/app-settings/stores/keyboardShortcutsStore';
-import { useDesignPreferencesStore } from '@features/design-workspace/data/designPreferences';
+import { useKeyboardShortcutsStore } from '@shared/lib/preferences/keyboardShortcutsStore';
+import { useDesignPreferencesStore } from '@app/runtime/designPreferences';
 import {
   OAUTH_PLAN_CHECK_INTERVAL_MS,
   refreshOAuthPlans,
   shouldRefreshOAuthPlansOnFocus,
-} from '@features/provider-settings/data/oauthPlanMonitor';
+} from '@app/runtime/oauthPlanMonitor';
 import { initializeActiveSecurityScans } from '@features/security-scans/data/securityScanRuntime';
 import {
   resetNotificationWindowFocus,
   setNotificationWindowFocus,
-} from '@features/notifications/data/notificationRuntime';
+} from '@app/runtime/notificationRuntime';
 import { localServiceClient } from '@shared/lib/platform/local-service';
 import { unifiedStorage } from '@shared/lib/platform/storage/unifiedStorage';
 import { getCurrentWindow, getVersion, invoke, isTauri, listen } from '@shared/lib/platform/tauri';
-import { useChatStore } from '@features/chat/state/chatStore';
-import { getMessages } from '@features/chat/data/chatStorage';
-import { parseAgentQuestionGroup } from '@features/chat/data/agentQuestions';
-import { clampWorkspacePanelRatio, readWorkspacePanelRatio, writeWorkspacePanelRatio } from '@features/chat/data/sidebarPreferences';
+import { useChatStore } from '@app/runtime/chatStore';
+import { getMessages } from '@app/runtime/chatStorage';
+import { parseAgentQuestionGroup } from '@shared/lib/preferences/agentQuestions';
+import { clampWorkspacePanelRatio, readWorkspacePanelRatio, writeWorkspacePanelRatio } from '@shared/lib/preferences/sidebarPreferences';
 
 import type { AppSurface } from '@widgets/navigation-rail';
 

@@ -1,6 +1,6 @@
 import { LocalServiceError, localServiceClient } from '@shared/lib/platform/local-service';
 import { unifiedStorage } from '@shared/lib/platform/storage/unifiedStorage';
-import { type ConnectorManifest, parseConnectorManifest } from './connectorManifest';
+import { type ConnectorManifest, parseConnectorManifest } from '@shared/lib/preferences/connectorManifest';
 
 const storageKey = 'connectors.local_catalog';
 const sourcesStorageKey = 'connectors.pinned_sources';

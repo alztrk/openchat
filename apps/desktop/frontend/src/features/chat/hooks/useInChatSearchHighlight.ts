@@ -1,7 +1,7 @@
 import { type RefObject, useEffect, useRef } from 'react';
 
-import { normalizeSearchText } from '@features/chat/data/chatStorage';
-import { useChatStore } from '@features/chat/state/chatStore';
+import { normalizeSearchText } from '@app/runtime/chatStorage';
+import { useChatStore } from '@app/runtime/chatStore';
 
 const HIGHLIGHT_STYLE_ID = 'openchat-search-highlight-style';
 

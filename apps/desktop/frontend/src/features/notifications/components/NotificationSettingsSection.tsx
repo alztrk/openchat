@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { Button, Input, Skeleton, Slider, Switch } from '@shared/components';
 import type en from '@shared/lib/i18n/locales/en.json';
 import type { ChatProject } from '@entities/project';
-import { listProjects } from '@features/chat/data/chatStorage';
+import { listProjects } from '@app/runtime/chatStorage';
 import {
   type NotificationPreferences,
   openWindowsNotificationSettings,
@@ -14,8 +14,8 @@ import {
   sendTestNotification,
   type WindowsNotificationStatus,
   writeNotificationPreference,
-} from '@features/notifications/data/notificationPreferences';
-import { playTestChime } from '@features/notifications/audioFeedback';
+} from '@shared/lib/preferences/notificationPreferences';
+import { playTestChime } from '@shared/lib/preferences/audioFeedback';
 import { UsageAlertPreferencesPanel } from './UsageAlertPreferencesPanel';
 
 type LoadState = 'loading' | 'loaded' | 'failed';

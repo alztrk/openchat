@@ -1,11 +1,11 @@
-import type { ProjectToolPermissionRule, ToolPermissionMode } from '@features/projects/data/projectPreferences';
+import type { ProjectToolPermissionRule, ToolPermissionMode } from './types';
 import {
   clearSavedProjectToolPermissionRules,
   clearSavedToolPermissionMode,
   parseProjectToolPermissionRules,
   readSavedProjectToolPermissionRules,
   readSavedToolPermissionMode,
-} from '@features/projects/data/projectPreferences';
+} from './projectPreferences';
 import { localServiceClient } from '@shared/lib/platform/local-service';
 
 let cachedToolPermissionMode: ToolPermissionMode | undefined;

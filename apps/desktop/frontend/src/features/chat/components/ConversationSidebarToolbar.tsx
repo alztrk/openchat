@@ -25,8 +25,8 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@shared/components';
-import type { SidebarSortMode, SidebarViewMode } from '@features/chat/data/sidebarPreferences';
-import type { AssistantProfile } from '@features/app-settings/data/assistantProfiles';
+import type { SidebarSortMode, SidebarViewMode } from '@shared/lib/preferences/sidebarPreferences';
+import type { AssistantProfile } from '@shared/lib/preferences/assistantProfiles';
 
 export interface ConversationSidebarToolbarProps {
   isBusy: boolean;
