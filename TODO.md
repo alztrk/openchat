@@ -137,8 +137,8 @@
 ### 8.4 Recommended Next Steps (Priority Order)
 
 #### High Priority (Quick Wins)
-- [ ] **Install git in PATH** — Fixes 5 RPC project test failures immediately
-- [ ] Add `RUST_TEST_THREADS=1` or test isolation to prevent state leakage in full suite
+- [x] **Resolve Git executable on Windows** — Rust tests now resolve a real `git.exe` even when PATH exposes a `.cmd` shim
+- [x] Full suite test isolation verified after Git executable resolution (`926 passed, 0 failed`)
 
 #### Medium Priority
 - [ ] Fix stack overflow in `rpc::conversations::tests::kilo_context_usage_estimate_does_not_require_provider_credentials` — increase stack size or refactor recursion
@@ -146,7 +146,7 @@
 - [ ] Investigate and fix test isolation for file_changes/file_ops/executor/terminal tests
 
 #### Low Priority (Architectural Debt)
-- [ ] **FSD Architecture Violations** — 129 cross-feature import warnings requiring significant refactoring
+- [ ] **FSD Architecture Violations** — 128 cross-feature import warnings requiring significant refactoring
   - `features/app-settings` → imports from `chat`, `provider-settings`, `projects`, `notifications`, `design-workspace`
   - `features/chat` → imports from `projects`, `provider-settings`, `app-settings`, `notifications`
   - `features/design-workspace` → imports from `chat`, `provider-settings`
