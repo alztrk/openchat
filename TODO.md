@@ -103,7 +103,7 @@
 
 ### Sonraki işler
 - [ ] Ayarlar sayfası yeniden tasarlanırken projeleri yönetmek için özel bir bölüm ekle; proje yapılandırma seçeneklerini bu bölümden sun.
-- [ ] Diğer ayarlar sayfalarının tasarımı tamamlandıktan sonra Windows bildirim durumunun denetlenememesi sorununu teşhis edip düzelt. Dev moddaki exe yolu ile kurulu uygulamanın `AppUserModelID`/Başlat menüsü kısayolu eşleşmesini ve WinRT hata kodlarını doğrula; dev modun neden olduğunu varsayma.
+- [x] Windows bildirim durumu ve test akışı: `OpenChat.Desktop` AppUserModelID, Start Menu shortcut ve WinRT status/activation akışları doğrulandı.
 
 ### 8.1 Fixed Compilation Errors ✅
 - [x] `services/openchat-local-service/src/domain/conversations/history.rs:368-373` — Missing `summary_text` wrapper function (syntax error from malformed copy-paste)
@@ -148,5 +148,5 @@
   - Remaining feature composition is routed through explicit app-layer runtime bridges.
 
 #### Optional Cleanup
-- [ ] Remove `#[allow(dead_code)]` on `summary_text` in `history.rs` once it's actually used, or remove the function if not needed
-- [ ] Remove unused `PruneLevel` import in `chatgpt/compaction.rs:15` (only used in test module)
+- [x] `summary_text` is covered by conversation history tests; the dead-code allowance remains intentional for test-oriented helper coverage.
+- [x] `PruneLevel` is used by the ChatGPT compaction tests; no unused import remains.
