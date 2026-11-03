@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Button, Card } from '@shared/components';
-import { ProviderIcon } from '@features/provider-settings/components/ProviderIcon';
+import { ProviderIcon } from '@shared/components';
 import {
   type CopilotOAuthConnection,
   type CopilotQuotaSnapshot,

@@ -7,6 +7,7 @@ export { Checkbox, type CheckboxProps } from './Checkbox';
 export { ColorPicker } from './ColorPicker';
 export { DatePicker, type DatePickerProps } from './DatePicker';
 export { Dialog, type DialogProps, type DialogSize } from './Dialog';
+export { LocalEngineIcon, type LocalEngineIconProps } from './EngineIcon';
 export {
   DropdownMenu,
   DropdownMenuContent,
@@ -38,4 +39,5 @@ export { Switch, type SwitchProps } from './Switch';
 export { Textarea, type TextareaAppearance, type TextareaDensity, type TextareaProps } from './Textarea';
 export { Toast, type ToastProps, type ToastVariant } from './Toast';
 export { TitleTooltip, Tooltip, type TitleTooltipProps, type TooltipProps } from './Tooltip';
+export { ProviderIcon, type ProviderIconProps, providerIconUrls } from './ProviderIcon';
 export { Tabs, TabsContent, TabsList, TabsTrigger } from './tabs';

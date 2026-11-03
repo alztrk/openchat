@@ -6,7 +6,7 @@ import type { ChatMessage } from '@features/chat/data/chatStorage';
 import { useInChatSearchHighlight } from '@features/chat/hooks/useInChatSearchHighlight';
 import { useVirtualMessageList } from '@features/chat/hooks/useVirtualMessageList';
 import { useChatStore } from '@features/chat/state/chatStore';
-import { ProviderIcon } from '@features/provider-settings/components/ProviderIcon';
+import { ProviderIcon } from '@shared/components';
 import { useChatDisplayPreferencesStore } from '@features/app-settings/data/chatDisplayPreferences';
 import type { WorkspaceFileSelection } from './ChatFileChangesPanel';
 import { MessageItem } from './MessageItem';

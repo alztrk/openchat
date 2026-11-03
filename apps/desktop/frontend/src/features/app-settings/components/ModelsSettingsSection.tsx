@@ -28,7 +28,7 @@ import {
 } from '@shared/components';
 import { reasoningLevelLabel } from '@features/chat/components/composerUtils';
 import { useChatStore } from '@features/chat/state/chatStore';
-import { ProviderIcon } from '@features/provider-settings/components/ProviderIcon';
+import { ProviderIcon } from '@shared/components';
 import { SettingsSectionSkeleton } from './SettingsSectionSkeleton';
 import type { ChatModel } from '@entities/model';
 import { formatModelRouteKey, modelRouteKey } from '@features/provider-settings/data/modelPreferences';

@@ -6,7 +6,7 @@ import { Button, Dialog } from '@shared/components';
 import type { ChatFileChange } from '@features/chat/data/chatFileChanges';
 import type { ChatMessage } from '@features/chat/data/chatStorage';
 import { cleanMarkdown, markdownToPlainText } from '@features/chat/data/messageCopyUtils';
-import { ProviderIcon } from '@features/provider-settings/components/ProviderIcon';
+import { ProviderIcon } from '@shared/components';
 import { useChatDisplayPreferencesStore } from '@features/app-settings/data/chatDisplayPreferences';
 import { parsePersonalMemoryFactIds, readPersonalMemoryFacts } from '@features/app-settings/data/personalMemory';
 import type { WorkspaceFileSelection } from './ChatFileChangesPanel';

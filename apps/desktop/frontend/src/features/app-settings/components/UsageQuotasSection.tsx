@@ -3,7 +3,7 @@ import { ChartNoAxesCombined, CircleAlert, LoaderCircle, RefreshCw, RotateCcw } 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button, Card, Dialog } from '@shared/components';
-import { ProviderIcon } from '@features/provider-settings/components/ProviderIcon';
+import { ProviderIcon } from '@shared/components';
 import { subscribeToOAuthPlanUpdates } from '@features/provider-settings/data/oauthPlanMonitor';
 import {
   defaultUsageAlertPreferences,

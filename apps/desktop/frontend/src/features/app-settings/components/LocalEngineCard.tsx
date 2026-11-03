@@ -1,7 +1,7 @@
 import { ChevronDown, LoaderCircle } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Button, Card } from '@shared/components';
-import { LocalEngineIcon } from '@features/provider-settings/components/EngineIcon';
+import { LocalEngineIcon } from '@shared/components';
 import type {
   BusyAction,
   EngineVariant,

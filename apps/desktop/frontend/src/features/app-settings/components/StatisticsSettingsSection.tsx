@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ProviderIcon } from '@features/provider-settings/components/ProviderIcon';
+import { ProviderIcon } from '@shared/components';
 import { Button, Card, DatePicker, SegmentedControl, Select, TitleTooltip } from '@shared/components';
 import { LocalServiceError, localServiceClient } from '@shared/lib/platform/local-service';
 import { BreakdownCard, MetricCard, TrendChart } from './StatisticsCharts';

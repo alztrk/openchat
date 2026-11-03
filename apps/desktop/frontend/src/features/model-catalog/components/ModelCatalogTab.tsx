@@ -48,7 +48,7 @@ import {
   sortLabelKey,
 } from '@features/model-catalog/data/modelCatalogData';
 import { useModelDownloadStore } from '@features/model-catalog/stores/modelDownloadStore';
-import { LocalEngineIcon } from '@features/provider-settings/components/EngineIcon';
+import { LocalEngineIcon } from '@shared/components';
 import { useModelDirectoryStore } from '@features/app-settings/stores/modelDirectoryStore';
 import { localServiceClient, localServiceErrorDetails } from '@shared/lib/platform/local-service';
 import { ModelReadmeMarkdown } from './ModelReadmeMarkdown';

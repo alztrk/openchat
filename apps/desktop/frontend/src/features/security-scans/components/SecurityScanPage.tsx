@@ -52,7 +52,7 @@ import { MessageList } from '@features/chat/components/MessageList';
 import type { ChatProject } from '@entities/project';
 import { useChatStore } from '@features/chat/state/chatStore';
 import { formatFailureCodeMessage } from '@features/chat/state/chatStoreErrorDetails';
-import { ProviderIcon } from '@features/provider-settings/components/ProviderIcon';
+import { ProviderIcon } from '@shared/components';
 import type { ChatModel } from '@entities/model';
 import { unifiedStorage } from '@shared/lib/platform/storage/unifiedStorage';
 import {
