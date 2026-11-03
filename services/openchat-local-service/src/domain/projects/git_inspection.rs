@@ -98,12 +98,47 @@ pub(crate) fn git_program() -> &'static str {
     #[cfg(windows)]
     {
         use std::sync::OnceLock;
-        static GIT_PATH: OnceLock<&'static str> = OnceLock::new();
-        GIT_PATH.get_or_init(|| {
-            // Prefer plain "git" on PATH (supports Scoop, winget, custom installs)
-            // Windows resolves "git" via PATH automatically
-            "git"
-        })
+        use std::{env, path::PathBuf, process::Command};
+        static GIT_PATH: OnceLock<String> = OnceLock::new();
+        GIT_PATH
+            .get_or_init(|| {
+                let mut candidates = Vec::new();
+                if let Some(program_files) = env::var_os("ProgramFiles") {
+                    let program_files = PathBuf::from(program_files);
+                    candidates.push(program_files.join("Git").join("cmd").join("git.exe"));
+                    candidates.push(program_files.join("Git").join("bin").join("git.exe"));
+                }
+                if let Some(local_app_data) = env::var_os("LOCALAPPDATA") {
+                    candidates.push(
+                        PathBuf::from(local_app_data)
+                            .join("Programs")
+                            .join("Git")
+                            .join("cmd")
+                            .join("git.exe"),
+                    );
+                }
+                candidates
+                    .into_iter()
+                    .find(|candidate| candidate.is_file())
+                    .or_else(|| {
+                        Command::new("where.exe")
+                            .arg("git.exe")
+                            .output()
+                            .ok()
+                            .filter(|output| output.status.success())
+                            .and_then(|output| {
+                                String::from_utf8(output.stdout).ok().and_then(|stdout| {
+                                    stdout
+                                        .lines()
+                                        .map(PathBuf::from)
+                                        .find(|path| path.is_file())
+                                })
+                            })
+                    })
+                    .map(|path| path.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| "git".to_owned())
+            })
+            .as_str()
     }
     #[cfg(not(windows))]
     {
