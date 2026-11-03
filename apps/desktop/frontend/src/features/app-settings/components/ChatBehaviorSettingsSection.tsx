@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Select, Switch } from '@shared/components';
-import { useChatDisplayPreferencesStore } from '@features/app-settings/data/chatDisplayPreferences';
+import { useChatDisplayPreferencesStore } from '@shared/lib/preferences/chatDisplayPreferences';
 import { SettingsPreferenceRow } from './SettingsPreferenceRow';
 import { SettingsLoadError, SettingsSaveFeedback } from './SettingsState';
 

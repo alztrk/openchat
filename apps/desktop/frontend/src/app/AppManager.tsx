@@ -22,7 +22,7 @@ import {
   writeLastSurface,
 } from '@features/app-settings/data/appPreferences';
 import { useAssistantExecutionPreferencesStore } from '@features/app-settings/data/assistantExecutionPreferences';
-import { useChatDisplayPreferencesStore } from '@features/app-settings/data/chatDisplayPreferences';
+import { useChatDisplayPreferencesStore } from '@shared/lib/preferences/chatDisplayPreferences';
 import { useKeyboardShortcutsStore } from '@features/app-settings/stores/keyboardShortcutsStore';
 import { useDesignPreferencesStore } from '@features/design-workspace/data/designPreferences';
 import {

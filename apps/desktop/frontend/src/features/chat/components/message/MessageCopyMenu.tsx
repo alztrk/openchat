@@ -11,7 +11,7 @@ import {
   hasCodeBlocks,
   markdownToPlainText,
 } from '@features/chat/data/messageCopyUtils';
-import { useChatDisplayPreferencesStore } from '@features/app-settings/data/chatDisplayPreferences';
+import { useChatDisplayPreferencesStore } from '@shared/lib/preferences/chatDisplayPreferences';
 
 export interface MessageCopyMenuProps {
   content: string;

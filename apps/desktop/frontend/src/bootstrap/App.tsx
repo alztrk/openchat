@@ -55,7 +55,7 @@ import {
 } from '@features/app-settings/data/appPreferences';
 import { useAssistantExecutionPreferencesStore } from '@features/app-settings/data/assistantExecutionPreferences';
 import type { AssistantAgentSnapshot } from '@features/app-settings/data/assistantProfiles';
-import { useChatDisplayPreferencesStore } from '@features/app-settings/data/chatDisplayPreferences';
+import { useChatDisplayPreferencesStore } from '@shared/lib/preferences/chatDisplayPreferences';
 import { useKeyboardShortcutsStore } from '@features/app-settings/stores/keyboardShortcutsStore';
 import { localServiceClient } from '@shared/lib/platform/local-service';
 import { unifiedStorage } from '@shared/lib/platform/storage/unifiedStorage';

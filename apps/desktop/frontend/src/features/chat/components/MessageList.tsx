@@ -7,7 +7,7 @@ import { useInChatSearchHighlight } from '@features/chat/hooks/useInChatSearchHi
 import { useVirtualMessageList } from '@features/chat/hooks/useVirtualMessageList';
 import { useChatStore } from '@features/chat/state/chatStore';
 import { ProviderIcon } from '@shared/components';
-import { useChatDisplayPreferencesStore } from '@features/app-settings/data/chatDisplayPreferences';
+import { useChatDisplayPreferencesStore } from '@shared/lib/preferences/chatDisplayPreferences';
 import type { WorkspaceFileSelection } from './ChatFileChangesPanel';
 import { MessageItem } from './MessageItem';
 import { parseToolActivities } from './message/messageData';

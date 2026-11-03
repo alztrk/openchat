@@ -7,7 +7,7 @@ const COPY_NOTIFICATION_DELAY_MS = 2_000;
 
 import { Button, TitleTooltip } from '@shared/components';
 import { isWithinRichMarkdownBudget } from '@features/chat/data/messageMarkdownBudget';
-import { useChatDisplayPreferencesStore } from '@features/app-settings/data/chatDisplayPreferences';
+import { useChatDisplayPreferencesStore } from '@shared/lib/preferences/chatDisplayPreferences';
 import { withStableKeys } from '@shared/lib/utils/reactKeys';
 import { CitationSourceDialog } from './CitationSourceDialog';
 import { CitationSources } from './CitationSources';
