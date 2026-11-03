@@ -8,7 +8,7 @@ import type { ChatModelFavorite } from '@features/chat/data/chatStorage';
 import { favoriteSourceConnection } from '@features/chat/state/chatStoreUtils';
 import { ProviderIcon } from '@shared/components';
 import type { ChatModel, ChatModelProvider } from '@entities/model';
-import { modelRouteKey } from '@features/provider-settings/data/modelPreferences';
+import { modelRouteKey } from '@entities/model/modelPreferences';
 import {
   type CachedModelPricing,
   isModelPricingCacheFresh,

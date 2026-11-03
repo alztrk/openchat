@@ -1,5 +1,5 @@
 import type { ChatModel } from '@entities/model';
-import { formatModelRouteKey, modelRouteKey } from '@features/provider-settings/data/modelPreferences';
+import { formatModelRouteKey, modelRouteKey } from '@entities/model/modelPreferences';
 import { loadRouteParameters } from '@features/provider-settings/data/modelRouteParameters';
 import {
   readTitleGenerationPreference,

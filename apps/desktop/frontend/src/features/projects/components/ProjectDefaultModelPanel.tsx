@@ -5,7 +5,7 @@ import { Button } from '@shared/components';
 import type { ChatProject } from '@entities/project';
 import { useChatStore } from '@features/chat/state/chatStore';
 import { writeProjectDefaultModelPreference } from '@features/projects/data/projectPreferences';
-import { defaultPreferenceForModel } from '@features/provider-settings/data/modelPreferences';
+import { defaultPreferenceForModel } from '@entities/model/modelPreferences';
 
 interface ProjectDefaultModelPanelProps {
   project: ChatProject;

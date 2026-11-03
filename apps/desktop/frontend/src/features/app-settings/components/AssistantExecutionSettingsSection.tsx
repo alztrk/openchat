@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Button, Select, Switch } from '@shared/components';
 import { providerNameForModel } from '@features/chat/components/composerUtils';
 import { useChatStore } from '@features/chat/state/chatStore';
-import { modelRouteKey } from '@features/provider-settings/data/modelPreferences';
+import { modelRouteKey } from '@entities/model/modelPreferences';
 import { useAssistantExecutionPreferencesStore } from '@features/app-settings/data/assistantExecutionPreferences';
 import { useAssistantProfilesStore } from '@features/app-settings/stores/assistantProfilesStore';
 import { SettingsPreferenceRow } from './SettingsPreferenceRow';

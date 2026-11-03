@@ -31,7 +31,7 @@ import { useChatStore } from '@features/chat/state/chatStore';
 import { ProviderIcon } from '@shared/components';
 import { SettingsSectionSkeleton } from './SettingsSectionSkeleton';
 import type { ChatModel } from '@entities/model';
-import { formatModelRouteKey, modelRouteKey } from '@features/provider-settings/data/modelPreferences';
+import { formatModelRouteKey, modelRouteKey } from '@entities/model/modelPreferences';
 
 type FeedbackKey =
   | 'defaultModelUpdated'

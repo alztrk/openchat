@@ -5,7 +5,7 @@ import {
   findLightweightModel,
   TitleGenerationSettings,
 } from '@features/provider-settings/components/ProviderSettingsSection';
-import { formatModelRouteKey } from '@features/provider-settings/data/modelPreferences';
+import { formatModelRouteKey } from '@entities/model/modelPreferences';
 import {
   readTitleGenerationPreference,
   type TitleGenerationPreference,

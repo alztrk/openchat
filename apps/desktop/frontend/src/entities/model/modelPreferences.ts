@@ -1,7 +1,7 @@
 import { unifiedStorage } from '@shared/lib/platform/storage/unifiedStorage';
 import { containsAsciiControlCharacters } from '@shared/lib/utils/textValidation';
 
-import type { ChatModel } from './chatModels';
+import type { ChatModel } from './types';
 
 const defaultModelKey = 'models.default_model';
 const lastSelectedModelKey = 'models.last_selected_model';

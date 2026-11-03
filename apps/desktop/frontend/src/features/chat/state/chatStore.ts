@@ -33,7 +33,7 @@ import {
   writeLastSelectedModelPreference,
   writeModelContextLimit,
   writeModelReasoningEffort,
-} from '@features/provider-settings/data/modelPreferences';
+} from '@entities/model/modelPreferences';
 import type { AssistantAgentSnapshot } from '@features/app-settings/data/assistantProfiles';
 import { LocalServiceError, localServiceClient, type ServiceOperation } from '@shared/lib/platform/local-service';
 import { createBranchesActions } from './chatStoreBranches';

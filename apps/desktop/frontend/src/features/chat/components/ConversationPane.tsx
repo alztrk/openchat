@@ -14,7 +14,7 @@ import { getSidebarDraggingConversationId } from '@features/chat/data/sidebarPre
 import { useChatSession } from '@features/chat/hooks/useChatSession';
 import { useChatStore } from '@features/chat/state/chatStore';
 import { isSameRoute, upsertMessage } from '@features/chat/state/chatStoreUtils';
-import { modelRouteKey } from '@features/provider-settings/data/modelPreferences';
+import { modelRouteKey } from '@entities/model/modelPreferences';
 import type { ChatModel } from '@entities/model';
 import { isObject } from '@shared/lib/utils/json';
 import { ChatComposer } from './ChatComposer';

@@ -39,7 +39,7 @@ import { Dialog } from '@shared/components/Dialog';
 import type en from '@shared/lib/i18n/locales/en.json';
 import { providerNameForModel } from '@features/chat/components/composerUtils';
 import { useChatStore } from '@features/chat/state/chatStore';
-import { modelRouteKey } from '@features/provider-settings/data/modelPreferences';
+import { modelRouteKey } from '@entities/model/modelPreferences';
 import type { SettingsSection } from '@features/app-settings/components/SettingsPage';
 import type { AssistantAgentSnapshot } from '@features/app-settings/data/assistantProfiles';
 import { snapshotAssistantProfile } from '@features/app-settings/data/assistantProfiles';

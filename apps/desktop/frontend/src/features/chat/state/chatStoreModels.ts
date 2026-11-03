@@ -7,7 +7,7 @@ import {
   formatModelRouteKey,
   modelRouteKey,
   readLastSelectedModelPreference,
-} from '@features/provider-settings/data/modelPreferences';
+} from '@entities/model/modelPreferences';
 import { refreshOAuthRateLimits } from '@features/provider-settings/data/oauthRateLimits';
 import type { LocalServiceClient } from '@shared/lib/platform/local-service';
 import type { ChatState } from './chatStore';

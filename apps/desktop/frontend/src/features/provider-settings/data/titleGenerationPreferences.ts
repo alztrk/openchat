@@ -4,7 +4,7 @@ import {
   type DefaultModelPreference,
   defaultPreferenceForModel,
   parseDefaultModelPreference,
-} from './modelPreferences';
+} from '@entities/model/modelPreferences';
 
 export type TitleGenerationMode = 'conversation' | 'selectedModel' | 'lightweight';
 

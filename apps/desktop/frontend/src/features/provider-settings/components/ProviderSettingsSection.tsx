@@ -27,7 +27,7 @@ import {
   isRetryableConnectionRemovalFailure,
   waitForConnectionRemoval,
 } from '@features/provider-settings/data/connectionRemoval';
-import { formatModelRouteKey, modelRouteKey } from '@features/provider-settings/data/modelPreferences';
+import { formatModelRouteKey, modelRouteKey } from '@entities/model/modelPreferences';
 import {
   type TitleGenerationMode,
   type TitleGenerationPreference,

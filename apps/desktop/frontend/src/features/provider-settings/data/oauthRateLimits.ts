@@ -2,7 +2,7 @@ import { useSyncExternalStore } from 'react';
 import { LocalServiceError, localServiceClient } from '@shared/lib/platform/local-service';
 import type { ChatModel } from './chatModels';
 import { loadCopilotUsage } from './copilotOAuth';
-import { modelRouteKey } from './modelPreferences';
+import { modelRouteKey } from '@entities/model/modelPreferences';
 
 export type OAuthRateLimitReason = 'quotaExceeded' | 'temporarilyRateLimited';
 

@@ -13,7 +13,7 @@ import {
   formatModelRouteKey,
   modelRouteKey,
   readLastSelectedModelPreference,
-} from '@features/provider-settings/data/modelPreferences';
+} from '@entities/model/modelPreferences';
 import { readAssistantExecutionPreferences } from '@features/app-settings/data/assistantExecutionPreferences';
 import {
   type AssistantAgentSnapshot,

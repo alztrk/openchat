@@ -16,7 +16,7 @@ import {
   loadToolPermissionMode,
 } from '@features/projects/data/projectPermissionSettings';
 import { readProjectSkillIds } from '@features/projects/data/projectPreferences';
-import { modelRouteKey } from '@features/provider-settings/data/modelPreferences';
+import { modelRouteKey } from '@entities/model/modelPreferences';
 import { loadRouteParameters } from '@features/provider-settings/data/modelRouteParameters';
 import { recordOAuthRateLimit } from '@features/provider-settings/data/oauthRateLimits';
 import {

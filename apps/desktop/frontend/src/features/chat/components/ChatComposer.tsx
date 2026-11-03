@@ -8,7 +8,7 @@ import { getSidebarDraggingConversationId } from '@features/chat/data/sidebarPre
 import { useChatStreaming } from '@features/chat/hooks/useChatStreaming';
 import { useChatStore } from '@features/chat/state/chatStore';
 import { ToolPermissionModeSelector } from '@features/projects/components/ToolPermissionModeSelector';
-import { modelRouteKey } from '@features/provider-settings/data/modelPreferences';
+import { modelRouteKey } from '@entities/model/modelPreferences';
 import { rateLimitForModel, useOAuthRateLimits } from '@features/provider-settings/data/oauthRateLimits';
 import { formatKeyboardShortcut, useKeyboardShortcutsStore } from '@features/app-settings/stores/keyboardShortcutsStore';
 import { AttachmentLibraryDialog } from './AttachmentLibraryDialog';

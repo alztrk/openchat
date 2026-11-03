@@ -146,7 +146,7 @@
 - [ ] Investigate and fix test isolation for file_changes/file_ops/executor/terminal tests
 
 #### Low Priority (Architectural Debt)
-- [ ] **FSD Architecture Violations** — 128 cross-feature import warnings requiring significant refactoring
+- [ ] **FSD Architecture Violations** — 102 cross-feature import warnings requiring significant refactoring
   - `features/app-settings` → imports from `chat`, `provider-settings`, `projects`, `notifications`, `design-workspace`
   - `features/chat` → imports from `projects`, `provider-settings`, `app-settings`, `notifications`
   - `features/design-workspace` → imports from `chat`, `provider-settings`

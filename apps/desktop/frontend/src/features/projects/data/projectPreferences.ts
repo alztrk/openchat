@@ -1,4 +1,4 @@
-import { type DefaultModelPreference, parseDefaultModelPreference } from '@features/provider-settings/data/modelPreferences';
+import { type DefaultModelPreference, parseDefaultModelPreference } from '@entities/model/modelPreferences';
 import { unifiedStorage } from '@shared/lib/platform/storage/unifiedStorage';
 
 import type { ProjectToolPermissionRule, ToolPermissionMode } from '@entities/project';
