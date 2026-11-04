@@ -78,6 +78,44 @@ fn invalid_initial_checkpoint_does_not_create_a_run() {
 }
 
 #[test]
+fn run_creation_reports_a_missing_conversation_separately_from_run_conflicts() {
+    let mut connection = connection();
+    let missing_conversation = create_run_with_checkpoint(
+        &mut connection,
+        &NewAgentRun {
+            run_id: "missing-conversation-run".to_owned(),
+            conversation_id: "deleted-conversation".to_owned(),
+        },
+        &json!({"version": 1}),
+    )
+    .expect_err("a run cannot be created for a deleted conversation");
+    assert!(matches!(
+        missing_conversation,
+        UserQuestionError::NotFound("conversation")
+    ));
+
+    create_run_with_checkpoint(
+        &mut connection,
+        &NewAgentRun {
+            run_id: "existing-run".to_owned(),
+            conversation_id: "conversation".to_owned(),
+        },
+        &json!({"version": 1}),
+    )
+    .expect("create the original run");
+    let duplicate_run = create_run_with_checkpoint(
+        &mut connection,
+        &NewAgentRun {
+            run_id: "existing-run".to_owned(),
+            conversation_id: "conversation".to_owned(),
+        },
+        &json!({"version": 1}),
+    )
+    .expect_err("duplicate run IDs remain conflicts");
+    assert!(matches!(duplicate_run, UserQuestionError::Conflict(_)));
+}
+
+#[test]
 fn run_summaries_include_only_recoverable_runs_and_safe_route_metadata() {
     let mut connection = connection();
     run(&mut connection, "active");

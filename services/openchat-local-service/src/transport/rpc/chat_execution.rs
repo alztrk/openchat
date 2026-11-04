@@ -106,7 +106,7 @@ pub(super) fn load_saved_route(
             log_chat_storage_failure(storage, "chat.send.route_read", &error);
             storage_unavailable()
         })?
-        .unwrap_or((None, None, None, None, None, None, None, None));
+        .ok_or_else(super::conversation_not_found_error)?;
 
     let (
         provider_id,
@@ -1134,7 +1134,7 @@ mod tests {
 
     use super::{
         ChatRunFinalization, SavedChatRoute, classify_run_outcome, finish_run,
-        load_project_context, restore_run,
+        load_project_context, load_saved_route, restore_run,
     };
 
     struct TestDirectory(PathBuf);
@@ -1178,6 +1178,20 @@ mod tests {
             )
             .expect("insert test conversation");
         (directory, storage, conversation_id)
+    }
+
+    #[test]
+    fn load_saved_route_returns_conversation_not_found_for_a_missing_id() {
+        let (_directory, storage, _) = initialized_chat_storage();
+
+        let error = match load_saved_route(&storage, "deleted-conversation") {
+            Ok(_) => panic!("missing conversations must not produce an empty route"),
+            Err(error) => error,
+        };
+
+        assert_eq!(error.code, "conversation_not_found");
+        assert_eq!(error.message, "The requested conversation was not found.");
+        assert!(!error.retryable);
     }
 
     fn create_running_chat_run(storage: &AppStorage, conversation_id: &str, run_id: &str) {

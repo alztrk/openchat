@@ -863,6 +863,7 @@ fn map_question_storage_error(
     use crate::storage::user_questions::UserQuestionError;
     match error {
         UserQuestionError::InvalidInput(_) => invalid_question_request("question data"),
+        UserQuestionError::NotFound("conversation") => conversation_not_found_error(),
         UserQuestionError::NotFound(_) => ServiceError::new(
             "question_run_not_found",
             "The pending AI response could not be found.",
@@ -883,6 +884,14 @@ fn map_question_storage_error(
             )
         }
     }
+}
+
+fn conversation_not_found_error() -> ServiceError {
+    ServiceError::new(
+        "conversation_not_found",
+        "The requested conversation was not found.",
+        false,
+    )
 }
 
 fn invalid_question_request(field: &str) -> ServiceError {
@@ -945,14 +954,27 @@ mod tests {
         permissions::ToolPermissionBroker,
         protocol::{EventSink, Request},
         service::OperationGate,
-        storage::{AppStorage, user_questions},
+        storage::{
+            AppStorage,
+            user_questions::{self, UserQuestionError},
+        },
         user_question_broker::UserQuestionBroker,
     };
 
     use super::chat_request::{parse_project_skill_ids, parse_title_generation};
     use super::{
-        RpcDispatchContext, database_initialization_error, dispatch, take_optional_api_key,
+        RpcDispatchContext, conversation_not_found_error, database_initialization_error, dispatch,
+        map_question_storage_error, take_optional_api_key,
     };
+
+    #[test]
+    fn missing_conversation_question_error_uses_conversation_contract() {
+        let error = map_question_storage_error(UserQuestionError::NotFound("conversation"));
+
+        assert_eq!(error.code, "conversation_not_found");
+        assert_eq!(error.message, conversation_not_found_error().message);
+        assert!(!error.retryable);
+    }
 
     #[test]
     fn database_startup_errors_expose_stable_codes_and_retry_only_transient_failures() {

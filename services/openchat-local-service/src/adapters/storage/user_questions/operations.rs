@@ -63,9 +63,15 @@ pub(crate) fn create_run(
     );
     match result {
         Ok(_) => load_run(connection, &new_run.run_id),
-        Err(error) if is_constraint_error(&error) => Err(UserQuestionError::Conflict(
-            "the run id is already in use or the conversation does not exist".to_owned(),
-        )),
+        Err(error) if is_constraint_error(&error) => {
+            if conversation_exists(connection, &new_run.conversation_id)? {
+                Err(UserQuestionError::Conflict(
+                    "the run id is already in use".to_owned(),
+                ))
+            } else {
+                Err(UserQuestionError::NotFound("conversation"))
+            }
+        }
         Err(error) => Err(error.into()),
     }
 }
@@ -101,9 +107,13 @@ pub(crate) fn create_run_with_checkpoint(
     match result {
         Ok(_) => {}
         Err(error) if is_constraint_error(&error) => {
-            return Err(UserQuestionError::Conflict(
-                "the run id is already in use or the conversation does not exist".to_owned(),
-            ));
+            return if conversation_exists(&transaction, &new_run.conversation_id)? {
+                Err(UserQuestionError::Conflict(
+                    "the run id is already in use".to_owned(),
+                ))
+            } else {
+                Err(UserQuestionError::NotFound("conversation"))
+            };
         }
         Err(error) => return Err(error.into()),
     }
@@ -1734,6 +1744,19 @@ fn is_constraint_error(error: &rusqlite::Error) -> bool {
             _
         )
     )
+}
+
+fn conversation_exists<T: StorageRead>(
+    connection: &T,
+    conversation_id: &str,
+) -> Result<bool, UserQuestionError> {
+    connection
+        .query_row(
+            "SELECT EXISTS (SELECT 1 FROM conversations WHERE id = ?1)",
+            [conversation_id],
+            |row| row.get(0),
+        )
+        .map_err(UserQuestionError::from)
 }
 
 fn unix_time_millis() -> Result<i64, UserQuestionError> {
