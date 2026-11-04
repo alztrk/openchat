@@ -185,7 +185,7 @@
 - [ ] QA-09: FSD kuralını checker allowlist'iyle eşleştir; mevcut `features → app` bağımlılıklarını alt katmana taşı.
 - [ ] `dev-test-profile --cleanup-profile` interrupt/child-process shutdown yolunu doğrula; bu araştırmanın Ctrl+C ile kesilen oturumunda cleanup gerçekleşmedi ve doğrulanmış helper'la temizlendi. İkinci oturum pencere normal kapatılınca geçici profil bırakmadı, fakat npm sarmalayıcısı `4294967295` koduyla sonlandı; kapanış/exit davranışını ayrıştır.
 - [x] `maintain-target --apply` ve `clean` için aktif build koruması, güvenli target seçimi ve görünür önizleme davranışı Faz 10.1'de uygulandı; bu araştırma sırasında gerçek cleanup komutları çalıştırılmadı.
-- [x] Tek npm workspace/install otoritesi olarak kök workspace ve `package-lock.json` seçildi; eski iç lockfile kaldırıldı, CI cache yolu ve bootstrap köke hizalandı. Gerçek temiz kurulum doğrulaması Faz 10.2'de bekliyor; runtime'daki eksik modülü temiz dependency doğrulaması olmadan uygulama kodu kusuru sayma.
+- [x] Tek npm workspace/install otoritesi olarak kök workspace ve `package-lock.json` seçildi; eski iç lockfile kaldırıldı, CI cache yolu ve bootstrap köke hizalandı. Temiz `npm ci` izole sandbox'ta başarılı oldu; ilk dev başlangıcı henüz doğrulanmadı ve runtime'daki eksik modül hatası hâlâ uygulama koduna atfedilmiyor.
 - [ ] `recent searches` renderer `localStorage` saklama/retention kararını privacy sözleşmesiyle karşılaştır; hassas sorgu içerme olasılığını ve uzunluk sınırını değerlendir.
 - [x] `src/app/AppManager.tsx` consumer/import graph'ını tarama; kaynakta aktif consumer bulunmadı, çalışan giriş `bootstrap/main.tsx` üzerinden `bootstrap/App.tsx` yükleyip render ediyor.
 - [ ] `AppManager` gerçekten dead ise sonraki kod değişikliği sırasında kaldır; tutacaksan aktif entry point ile rolünü belgeleyip tekilleştir.
@@ -226,13 +226,14 @@
 ### 10.2 Bağımlılık kurulumu ve doğrulama harness'i
 
 - [x] `CROSS-01/QA-08` uygulaması: kök npm workspace ve kök `package-lock.json` otorite seçildi; eski iç lockfile kaldırıldı; CI cache ve bootstrap bu köke bağlandı. Bootstrap, tüm workspace ağacını `npm ls` ile doğrular ve eksikse `npm ci` çalıştırır. Davranışlar gerçek install yapmayan testlerle doğrulandı.
-- [ ] `QA-08` kurulum doğrulaması: güvenli artifact cleanup hazır olduğunda gerçek boş/bozuk dependency ağacında `npm ci` ve ilk dev başlatmayı doğrula; mevcut install klasörünü temizleyen adım öncesinde hedefi ve geri dönüş yolunu raporla.
+- [x] `QA-08` temiz kurulum: mevcut `node_modules` ağaçlarına dokunmadan izole boş npm workspace'te `npm ci` ile 159 paket kuruldu ve tüm frontend workspace dependency ağacı `npm ls` ile doğrulandı.
+- [ ] `QA-08` ilk dev başlangıcı: temiz dependency ağacından uygulama/Vite startup'ını doğrula; runtime'daki optimize-deps hatasının temiz install sonrasında sürüp sürmediğini ayır.
 - [x] `QA-02/03/06`: Merkezi `check` frontend test/locale/import/build ve locked Rust format/check/test adımlarını çalıştıracak şekilde genişletildi; hata veren adımdan sonra kalan adımların da denenip özetlenmesi için test eklendi. CI ortak doğrulama adımları için merkezi CLI'ı çağırıyor. Odaklı doğrulama geçti; tam Cargo çalışması hedef alanı sınırı nedeniyle bu turda çalıştırılmadı.
 - [x] `QA-01`: Mesaj gruplama ve gün ayırma testleri üretimde kullanılan saf fonksiyonlara bağlandı. 10.000 mesaj benchmark'ı sentetik fixture için tanı ölçümü verir; React render/scroll ve gerçek kullanıcı workload'u ölçmediği açıkça yazılır. Donanıma bağlı sert süre eşiği kaldırıldı.
 - [ ] `QA-09`: Repo mimari kuralıyla çelişen `features → app` izinlerini kaldırmak için mevcut bağımlılıkları doğru katmana taşı ve checker kuralını sıkılaştır.
 - [x] `QA-13`: Import checker re-export'ları tarıyor, dosya/ağaç okuma hatalarını hata sonucu yapıyor; statik import, type-only re-export, okuma ve enumerasyon hataları için test eklendi.
 - [x] Kısmi kabul: check adımları ayrı isimlerle raporlanır ve runner hatasında diğerleri de denenir; local/CI ortak komutları hizalı; frontend build, test, locale/import kontrolleri ve checker testleri geçti.
-- [ ] Kalan kabul: gerçek temiz npm install ve ilk dev başlangıcı; desteklenen Windows CI çalışması; Cargo check/test'in 20 GiB hedef sınırına uyarak tamamlanması.
+- [ ] Kalan kabul: temiz dependency ağacından ilk dev başlangıcı; desteklenen Windows CI çalışması; Cargo check/test'in 20 GiB hedef sınırına uyarak tamamlanması.
 
 ### 10.3 CLI, Tauri ve sidecar yaşam döngüsü
 
