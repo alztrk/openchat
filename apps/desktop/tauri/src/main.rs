@@ -364,6 +364,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             })?;
             if setup_profile_root.is_none() {
+                match window_state::WindowStateWriter::start(app.handle()) {
+                    Ok(writer) => {
+                        if !app.manage(writer) {
+                            eprintln!("OpenChat could not register the window geometry writer.");
+                        }
+                    }
+                    Err(error) => {
+                        eprintln!("OpenChat could not start the window geometry writer: {error}");
+                    }
+                }
                 main_window.unminimize()?;
                 window_state::restore_window_state(&main_window)?;
                 notifications::initialize(app.handle()).map_err(std::io::Error::other)?;
@@ -399,12 +409,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         return;
                     }
                 }
-                window_state::save_window_state(window);
+                window_state::flush_window_state_save(window);
             } else if matches!(
                 event,
                 tauri::WindowEvent::Resized(_) | tauri::WindowEvent::Moved(_)
             ) {
-                window_state::save_window_state(window);
+                window_state::schedule_window_state_save(window);
             }
             }
         })
@@ -418,6 +428,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         if matches!(&event, tauri::RunEvent::Exit) {
+            window_state::shutdown_window_state_writer(handle);
             let shutdown_result = handle.state::<local_service::LocalServiceState>().stop();
             if let Err(error) = &shutdown_result {
                 eprintln!("OpenChat local service shutdown failed: {error}");

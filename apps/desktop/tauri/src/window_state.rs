@@ -3,10 +3,15 @@
 //! Replaces `tauri-plugin-window-state` without opening the primary application database.
 
 use serde::{Deserialize, Serialize};
+#[cfg(test)]
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::{
     fs::{self, OpenOptions},
     io::Write,
-    path::PathBuf,
+    path::{Path, PathBuf},
+    sync::{mpsc, Arc, Condvar, Mutex, MutexGuard},
+    thread,
+    time::{Duration, Instant},
 };
 use tauri::{AppHandle, Manager, Monitor, PhysicalPosition, PhysicalSize, WebviewWindow, Window};
 
@@ -19,6 +24,8 @@ const DEFAULT_WINDOW_X: i32 = 100;
 const DEFAULT_WINDOW_Y: i32 = 100;
 const MIN_WINDOW_WIDTH: u32 = 400;
 const MIN_WINDOW_HEIGHT: u32 = 300;
+const WINDOW_STATE_SAVE_DEBOUNCE: Duration = Duration::from_millis(300);
+const WINDOW_STATE_FLUSH_TIMEOUT: Duration = Duration::from_secs(2);
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
 /// Persisted window geometry and state.
@@ -44,6 +51,234 @@ impl Default for WindowStateRecord {
             y: DEFAULT_WINDOW_Y,
             maximized: false,
         }
+    }
+}
+
+/// Coalesces window geometry events and persists their latest state off the event thread.
+pub struct WindowStateWriter {
+    shared: Arc<WindowStateWriterShared>,
+    debounce: Duration,
+}
+
+struct WindowStateWriterShared {
+    state: Mutex<WindowStateWriterState>,
+    changed: Condvar,
+    #[cfg(test)]
+    writes_completed: AtomicUsize,
+}
+
+struct WindowStateWriterState {
+    current: WindowStateRecord,
+    revision: u64,
+    persisted_revision: u64,
+    debounce_deadline: Option<Instant>,
+    flush_requested: bool,
+    flush_replies: Vec<mpsc::Sender<()>>,
+    shutdown: bool,
+}
+
+impl WindowStateWriter {
+    /// Starts the background writer using the app's current persisted geometry.
+    pub fn start(app: &AppHandle) -> std::io::Result<Self> {
+        let path = app
+            .path()
+            .app_data_dir()
+            .map_err(std::io::Error::other)?
+            .join(WINDOW_STATE_FILE_NAME);
+        let initial = load_window_state(app).unwrap_or_default();
+        Self::start_for_path(path, initial, WINDOW_STATE_SAVE_DEBOUNCE)
+    }
+
+    fn start_for_path(
+        path: PathBuf,
+        initial: WindowStateRecord,
+        debounce: Duration,
+    ) -> std::io::Result<Self> {
+        let shared = Arc::new(WindowStateWriterShared {
+            state: Mutex::new(WindowStateWriterState {
+                current: initial,
+                revision: 0,
+                persisted_revision: 0,
+                debounce_deadline: None,
+                flush_requested: false,
+                flush_replies: Vec::new(),
+                shutdown: false,
+            }),
+            changed: Condvar::new(),
+            #[cfg(test)]
+            writes_completed: AtomicUsize::new(0),
+        });
+        let worker_shared = Arc::clone(&shared);
+        thread::Builder::new()
+            .name("openchat-window-state".to_owned())
+            .spawn(move || run_window_state_writer(path, worker_shared, debounce))?;
+
+        Ok(Self { shared, debounce })
+    }
+
+    /// Captures the latest non-minimized geometry and schedules a trailing-edge write.
+    pub fn schedule_from_window(&self, window: &Window) {
+        let previous = lock_writer_state(&self.shared).current;
+        if let Some(current) = capture_window_state(window, previous) {
+            self.schedule(current);
+        }
+    }
+
+    /// Captures and writes the current geometry before allowing the window to close.
+    pub fn flush_from_window(&self, window: &Window) {
+        let previous = lock_writer_state(&self.shared).current;
+        self.flush(capture_window_state(window, previous));
+    }
+
+    fn schedule(&self, record: WindowStateRecord) {
+        let mut state = lock_writer_state(&self.shared);
+        state.current = record;
+        state.revision = state.revision.saturating_add(1);
+        state.debounce_deadline = Some(Instant::now() + self.debounce);
+        self.shared.changed.notify_one();
+    }
+
+    fn flush(&self, record: Option<WindowStateRecord>) {
+        self.request_flush(record, false);
+    }
+
+    fn shutdown_and_flush(&self) {
+        self.request_flush(None, true);
+    }
+
+    fn request_flush(&self, record: Option<WindowStateRecord>, shutdown: bool) {
+        let (reply, response) = mpsc::channel();
+        {
+            let mut state = lock_writer_state(&self.shared);
+            if let Some(record) = record {
+                state.current = record;
+                state.revision = state.revision.saturating_add(1);
+            }
+            state.flush_requested = true;
+            state.shutdown |= shutdown;
+            state.flush_replies.push(reply);
+            self.shared.changed.notify_one();
+        }
+
+        if response.recv_timeout(WINDOW_STATE_FLUSH_TIMEOUT).is_err() {
+            eprintln!("OpenChat window geometry save did not finish before the close deadline.");
+        }
+    }
+}
+
+impl Drop for WindowStateWriter {
+    fn drop(&mut self) {
+        let mut state = lock_writer_state(&self.shared);
+        state.shutdown = true;
+        state.flush_requested = true;
+        self.shared.changed.notify_one();
+    }
+}
+
+fn lock_writer_state(shared: &WindowStateWriterShared) -> MutexGuard<'_, WindowStateWriterState> {
+    shared
+        .state
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+fn run_window_state_writer(
+    path: PathBuf,
+    shared: Arc<WindowStateWriterShared>,
+    debounce: Duration,
+) {
+    loop {
+        let (record, revision) = {
+            let mut state = lock_writer_state(&shared);
+            loop {
+                if state.revision == state.persisted_revision {
+                    if state.flush_requested || state.shutdown {
+                        state.flush_requested = false;
+                        let replies = std::mem::take(&mut state.flush_replies);
+                        let should_exit = state.shutdown;
+                        drop(state);
+                        for reply in replies {
+                            let _ = reply.send(());
+                        }
+                        if should_exit {
+                            return;
+                        }
+                        state = lock_writer_state(&shared);
+                        continue;
+                    }
+                    state = shared
+                        .changed
+                        .wait(state)
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
+                    continue;
+                }
+
+                if !state.flush_requested && !state.shutdown {
+                    let deadline = state
+                        .debounce_deadline
+                        .unwrap_or_else(|| Instant::now() + debounce);
+                    let wait = deadline.saturating_duration_since(Instant::now());
+                    if !wait.is_zero() {
+                        let (next_state, _) = shared
+                            .changed
+                            .wait_timeout(state, wait)
+                            .unwrap_or_else(std::sync::PoisonError::into_inner);
+                        state = next_state;
+                        continue;
+                    }
+                }
+
+                break (state.current, state.revision);
+            }
+        };
+
+        save_window_state_path(&path, &record);
+        #[cfg(test)]
+        shared.writes_completed.fetch_add(1, Ordering::Relaxed);
+
+        let mut state = lock_writer_state(&shared);
+        state.persisted_revision = state.persisted_revision.max(revision);
+        if state.revision == state.persisted_revision {
+            state.debounce_deadline = None;
+            if state.flush_requested {
+                state.flush_requested = false;
+                let replies = std::mem::take(&mut state.flush_replies);
+                let should_exit = state.shutdown;
+                drop(state);
+                for reply in replies {
+                    let _ = reply.send(());
+                }
+                if should_exit {
+                    return;
+                }
+            }
+        }
+    }
+}
+
+/// Schedules a coalesced geometry save, falling back to the original direct write if startup
+/// could not create the background writer.
+pub fn schedule_window_state_save(window: &Window) {
+    if let Some(writer) = window.app_handle().try_state::<WindowStateWriter>() {
+        writer.schedule_from_window(window);
+    } else {
+        save_window_state(window);
+    }
+}
+
+/// Flushes the current geometry before a normal window close.
+pub fn flush_window_state_save(window: &Window) {
+    if let Some(writer) = window.app_handle().try_state::<WindowStateWriter>() {
+        writer.flush_from_window(window);
+    } else {
+        save_window_state(window);
+    }
+}
+
+/// Stops the background writer after flushing its latest accepted geometry.
+pub fn shutdown_window_state_writer(app: &AppHandle) {
+    if let Some(writer) = app.try_state::<WindowStateWriter>() {
+        writer.shutdown_and_flush();
     }
 }
 
@@ -173,17 +408,20 @@ fn intersection_area(state: WindowStateRecord, area: MonitorWorkArea) -> u64 {
 
 /// Persists the current window state to the window-state file.
 pub fn save_window_state(window: &Window) {
-    let Ok(is_maximized) = window.is_maximized() else {
-        return;
-    };
-    let Ok(is_minimized) = window.is_minimized() else {
-        return;
-    };
-    if is_minimized {
-        return;
+    let previous = load_window_state(window.app_handle()).unwrap_or_default();
+    if let Some(current) = capture_window_state(window, previous) {
+        save_window_state_file(window.app_handle(), &current);
     }
+}
 
-    let mut state = load_window_state(window.app_handle()).unwrap_or_default();
+fn capture_window_state(
+    window: &Window,
+    mut state: WindowStateRecord,
+) -> Option<WindowStateRecord> {
+    let is_maximized = window.is_maximized().ok()?;
+    if window.is_minimized().ok()? {
+        return None;
+    }
     state.maximized = is_maximized;
 
     if !is_maximized {
@@ -193,24 +431,28 @@ pub fn save_window_state(window: &Window) {
                 state.height = size.height;
             }
         }
-        if let Ok(pos) = window.outer_position() {
-            state.x = pos.x;
-            state.y = pos.y;
+        if let Ok(position) = window.outer_position() {
+            state.x = position.x;
+            state.y = position.y;
         }
     }
 
-    save_window_state_file(window.app_handle(), &state);
+    Some(state)
 }
 
 fn load_window_state(app: &AppHandle) -> Option<WindowStateRecord> {
-    let path = app.path().app_data_dir().ok()?.join(WINDOW_STATE_FILE_NAME);
+    let path = window_state_file_path(app)?;
     let legacy_path = legacy_window_state_paths()
         .into_iter()
         .find(|legacy_path| legacy_path.is_file());
     read_window_state(&path).or_else(|| legacy_path.and_then(|path| read_window_state(&path)))
 }
 
-fn read_window_state(path: &PathBuf) -> Option<WindowStateRecord> {
+fn window_state_file_path(app: &AppHandle) -> Option<PathBuf> {
+    Some(app.path().app_data_dir().ok()?.join(WINDOW_STATE_FILE_NAME))
+}
+
+fn read_window_state(path: &Path) -> Option<WindowStateRecord> {
     let bytes = fs::read(path).ok()?;
     let value = serde_json::from_slice::<serde_json::Value>(&bytes).ok()?;
     let target = value.get("main").unwrap_or(&value);
@@ -224,13 +466,19 @@ fn read_window_state(path: &PathBuf) -> Option<WindowStateRecord> {
 }
 
 fn save_window_state_file(app: &AppHandle, state: &WindowStateRecord) {
-    let Ok(directory) = app.path().app_data_dir() else {
+    let Some(path) = window_state_file_path(app) else {
         return;
     };
-    if fs::create_dir_all(&directory).is_err() {
+    save_window_state_path(&path, state);
+}
+
+fn save_window_state_path(path: &Path, state: &WindowStateRecord) {
+    let Some(directory) = path.parent() else {
+        return;
+    };
+    if fs::create_dir_all(directory).is_err() {
         return;
     }
-    let path = directory.join(WINDOW_STATE_FILE_NAME);
     let temporary_path = path.with_extension("json.tmp");
     let Ok(bytes) = serde_json::to_vec(state) else {
         return;
@@ -270,7 +518,31 @@ fn legacy_window_state_paths() -> Vec<PathBuf> {
 
 #[cfg(test)]
 mod tests {
-    use super::{resolve_window_state, MonitorWorkArea, WindowStateRecord};
+    use std::{fs, path::PathBuf, thread, time::Duration};
+
+    use super::{
+        read_window_state, resolve_window_state, MonitorWorkArea, WindowStateRecord,
+        WindowStateWriter,
+    };
+
+    struct TestDirectory(PathBuf);
+
+    impl TestDirectory {
+        fn create() -> Self {
+            let path = std::env::temp_dir().join(format!(
+                "openchat-window-state-test-{}",
+                uuid::Uuid::new_v4()
+            ));
+            fs::create_dir(&path).expect("create isolated window-state directory");
+            Self(path)
+        }
+    }
+
+    impl Drop for TestDirectory {
+        fn drop(&mut self) {
+            fs::remove_dir_all(&self.0).expect("remove isolated window-state directory");
+        }
+    }
 
     fn state(width: u32, height: u32, x: i32, y: i32, maximized: bool) -> WindowStateRecord {
         WindowStateRecord {
@@ -358,6 +630,59 @@ mod tests {
         assert_eq!(
             resolve_window_state(state(1200, 800, 100, 100, false), &[], None),
             None
+        );
+    }
+
+    #[test]
+    fn writer_coalesces_geometry_bursts_and_flushes_latest_state() {
+        let directory = TestDirectory::create();
+        let path = directory.0.join("window-state.json");
+        let writer = WindowStateWriter::start_for_path(
+            path.clone(),
+            WindowStateRecord::default(),
+            Duration::from_millis(250),
+        )
+        .expect("start window-state writer");
+
+        writer.schedule(state(1280, 840, 140, 120, false));
+        writer.schedule(state(1360, 900, 180, 150, false));
+
+        let deadline = std::time::Instant::now() + Duration::from_secs(2);
+        while writer
+            .shared
+            .writes_completed
+            .load(std::sync::atomic::Ordering::Relaxed)
+            == 0
+            && std::time::Instant::now() < deadline
+        {
+            thread::sleep(Duration::from_millis(10));
+        }
+
+        assert_eq!(
+            writer
+                .shared
+                .writes_completed
+                .load(std::sync::atomic::Ordering::Relaxed),
+            1
+        );
+        assert_eq!(
+            read_window_state(&path),
+            Some(state(1360, 900, 180, 150, false))
+        );
+
+        writer.schedule(state(1440, 960, 220, 180, false));
+        writer.shutdown_and_flush();
+
+        assert_eq!(
+            writer
+                .shared
+                .writes_completed
+                .load(std::sync::atomic::Ordering::Relaxed),
+            2
+        );
+        assert_eq!(
+            read_window_state(&path),
+            Some(state(1440, 960, 220, 180, false))
         );
     }
 }
