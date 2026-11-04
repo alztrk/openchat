@@ -7,7 +7,7 @@ import type { ChatMessage } from '@features/chat/data';
 import { useInChatSearchHighlight } from '@features/chat/hooks/useInChatSearchHighlight';
 import { useVirtualMessageList } from '@features/chat/hooks/useVirtualMessageList';
 import { useChatStore } from '@features/chat/state';
-import { ProviderIcon } from '@shared/components';
+import { Button, ProviderIcon } from '@shared/components';
 import { useChatDisplayPreferencesStore } from '@shared/lib/preferences/chatDisplayPreferences';
 import type { WorkspaceFileSelection } from './ChatFileChangesPanel';
 import { MessageItem } from './MessageItem';
@@ -54,6 +54,10 @@ export function MessageList({
   const locale = i18n.resolvedLanguage ?? i18n.language;
   const storeMessages = useChatStore((state) => state.messages);
   const storeIsLoadingMessages = useChatStore((state) => state.isLoadingMessages);
+  const olderMessagesCursor = useChatStore((state) => state.olderMessagesCursor);
+  const isLoadingOlderMessages = useChatStore((state) => state.isLoadingOlderMessages);
+  const olderMessagesLoadError = useChatStore((state) => state.olderMessagesLoadError);
+  const loadOlderMessages = useChatStore((state) => state.loadOlderMessages);
   const storeSearchTargetMessageId = useChatStore((state) => state.searchTargetMessageId);
   const storeSearchHighlightMessageId = useChatStore((state) => state.searchHighlightMessageId);
   const storeSearchHighlightQuery = useChatStore((state) => state.searchHighlightQuery);
@@ -71,6 +75,8 @@ export function MessageList({
     conversationIdOverride !== undefined
       ? conversationIdOverride
       : (storeActiveConversationId ?? (isOverridden ? null : temporaryChatId));
+  const canLoadOlderMessages =
+    !isOverridden && activeConversationId === storeActiveConversationId && olderMessagesCursor !== null;
   const skipBottomScroll = useRef(false);
   const skippedCompletedResponseScroll = useRef(false);
   const responseGroups = useMemo(() => groupResponses(messages), [messages]);
@@ -272,6 +278,24 @@ export function MessageList({
       role="log"
       aria-relevant="additions text"
     >
+      {canLoadOlderMessages ? (
+        <div className="mx-auto flex w-full max-w-conversation flex-col items-center gap-2 py-3">
+          {olderMessagesLoadError ? (
+            <p className="text-sm text-destructive" role="alert">
+              {t('messageHistoryOlderLoadFailed')}
+            </p>
+          ) : null}
+          <Button
+            loading={isLoadingOlderMessages}
+            loadingContent={t('messageHistoryLoadingOlder')}
+            onClick={() => void loadOlderMessages()}
+            size="small"
+            variant="secondary"
+          >
+            {olderMessagesLoadError ? t('messageHistoryRetryOlder') : t('messageHistoryLoadOlder')}
+          </Button>
+        </div>
+      ) : null}
       <div
         className="mx-auto grid w-full max-w-conversation"
         style={{ paddingBottom: virtualList.bottomPadding, paddingTop: virtualList.topPadding }}

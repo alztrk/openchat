@@ -23,6 +23,7 @@ import type {
 
 // Four storage-broker round trips can each wait up to 16 seconds before returning.
 const MESSAGE_SAVE_TIMEOUT_MS = 75_000;
+const MESSAGE_HISTORY_PAGE_SIZE = 100;
 export interface ChatMessagePersistenceMetrics {
   contentBytes: number;
   citationSourceBytes: number;
@@ -332,12 +333,26 @@ export async function getConversation(conversationId: string): Promise<ChatConve
   return response.conversation;
 }
 
-export async function getMessages(conversationId: string): Promise<ChatMessage[]> {
+export interface ChatMessagePage {
+  messages: ChatMessage[];
+  hasMore: boolean;
+  nextBeforeMessageId: string | null;
+}
+
+export async function getMessagePage(
+  conversationId: string,
+  beforeMessageId: string | null = null,
+  limit = MESSAGE_HISTORY_PAGE_SIZE,
+): Promise<ChatMessagePage> {
   let timeoutId: number | undefined;
   let value: unknown;
   try {
     value = await Promise.race([
-      localServiceClient.call('storage.chat.messages.list', { conversationId }, 30_000),
+      localServiceClient.call(
+        'storage.chat.messages.list',
+        { conversationId, limit, ...(beforeMessageId ? { beforeMessageId } : {}) },
+        30_000,
+      ),
       new Promise<never>((_, reject) => {
         timeoutId = window.setTimeout(() => reject(new Error('Loading conversation messages timed out.')), 30_000);
       }),
@@ -345,13 +360,40 @@ export async function getMessages(conversationId: string): Promise<ChatMessage[]
   } finally {
     if (timeoutId !== undefined) window.clearTimeout(timeoutId);
   }
-  if (!isObject(value) || !Array.isArray(value.messages) || !value.messages.every(isMessage)) {
-    throw new Error('The stored message list is invalid.');
+  if (!isObject(value)) {
+    throw new Error('The stored message page is invalid.');
   }
-  return value.messages.map((message) => ({
-    ...message,
-    ...decodeStoredMessageContent(message.content),
-  }));
+  const hasMore = value.hasMore;
+  const nextBeforeMessageId = value.nextBeforeMessageId;
+  if (
+    !Array.isArray(value.messages) ||
+    !value.messages.every(isMessage) ||
+    typeof hasMore !== 'boolean' ||
+    (hasMore
+      ? typeof nextBeforeMessageId !== 'string' || nextBeforeMessageId.length === 0
+      : nextBeforeMessageId !== null)
+  ) {
+    throw new Error('The stored message page is invalid.');
+  }
+  return {
+    messages: value.messages.map((message) => ({
+      ...message,
+      ...decodeStoredMessageContent(message.content),
+    })),
+    hasMore,
+    nextBeforeMessageId: typeof nextBeforeMessageId === 'string' ? nextBeforeMessageId : null,
+  };
+}
+
+export async function getMessages(conversationId: string): Promise<ChatMessage[]> {
+  const pages: ChatMessage[][] = [];
+  let beforeMessageId: string | null = null;
+  for (;;) {
+    const page = await getMessagePage(conversationId, beforeMessageId, MESSAGE_HISTORY_PAGE_SIZE);
+    pages.push(page.messages);
+    if (!page.hasMore) return pages.reverse().flat();
+    beforeMessageId = page.nextBeforeMessageId;
+  }
 }
 
 export interface StoredSearchMessageResult {

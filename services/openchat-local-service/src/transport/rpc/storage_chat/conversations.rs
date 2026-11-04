@@ -411,32 +411,102 @@ pub(super) fn clear_conversation_history(storage: &AppStorage) -> Result<Value, 
 pub(super) fn list_messages(params: &Value, storage: &AppStorage) -> Result<Value, ServiceError> {
     let input = input_object(params)?;
     let conversation_id = required_safe_id(input, "conversationId")?;
+    let limit = input
+        .get("limit")
+        .map(|value| {
+            value
+                .as_u64()
+                .and_then(|limit| usize::try_from(limit).ok())
+                .filter(|limit| (1..=MAX_MESSAGE_PAGE).contains(limit))
+                .ok_or_else(invalid_request_params)
+        })
+        .transpose()?
+        .unwrap_or(MAX_MESSAGE_PAGE);
+    let before_message_id = optional_safe_id(input, "beforeMessageId")?;
     let connection = storage.connect().map_err(storage_error)?;
-    let mut statement = connection
-        .prepare(
-            "SELECT id, conversation_id, role, content, created_at, output_tokens,
-                    tokens_per_second, elapsed_microseconds, provider_id, model_id,
-                    citation_sources, personal_memory_fact_ids, reasoning_summaries,
-                    tool_activities, status, failure_code
-             FROM messages WHERE conversation_id = ?1
-             ORDER BY created_at ASC, id ASC LIMIT 10000",
-        )
-        .map_err(storage_error)?;
-    let rows = statement
-        .query_map([conversation_id], stored_message_row_from_storage)
-        .map_err(storage_error)?;
-    let rows = rows
-        .collect::<rusqlite::Result<Vec<_>>>()
-        .map_err(storage_error)?;
-    drop(statement);
+    let before_created_at = before_message_id
+        .map(|message_id| {
+            connection
+                .query_row(
+                    "SELECT COALESCE(created_at, 0) FROM messages
+                     WHERE conversation_id = ?1 AND id = ?2",
+                    params![conversation_id, message_id],
+                    |row| row.get::<_, i64>(0),
+                )
+                .optional()
+                .map_err(storage_error)?
+                .ok_or_else(invalid_request_params)
+        })
+        .transpose()?;
+    let limit_with_lookahead = i64::try_from(limit + 1).map_err(|_| invalid_request_params())?;
+    let rows = if let Some(before_created_at) = before_created_at {
+        let mut statement = connection
+            .prepare(
+                "SELECT id, conversation_id, role, content, created_at, output_tokens,
+                        tokens_per_second, elapsed_microseconds, provider_id, model_id,
+                        citation_sources, personal_memory_fact_ids, reasoning_summaries,
+                        tool_activities, status, failure_code
+                 FROM messages
+                 WHERE conversation_id = ?1
+                   AND (COALESCE(created_at, 0) < ?2
+                        OR (COALESCE(created_at, 0) = ?2 AND id < ?3))
+                 ORDER BY COALESCE(created_at, 0) DESC, id DESC LIMIT ?4",
+            )
+            .map_err(storage_error)?;
+        statement
+            .query_map(
+                params![
+                    conversation_id,
+                    before_created_at,
+                    before_message_id,
+                    limit_with_lookahead
+                ],
+                stored_message_row_from_storage,
+            )
+            .map_err(storage_error)?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(storage_error)?
+    } else {
+        let mut statement = connection
+            .prepare(
+                "SELECT id, conversation_id, role, content, created_at, output_tokens,
+                        tokens_per_second, elapsed_microseconds, provider_id, model_id,
+                        citation_sources, personal_memory_fact_ids, reasoning_summaries,
+                        tool_activities, status, failure_code
+                 FROM messages WHERE conversation_id = ?1
+                 ORDER BY COALESCE(created_at, 0) DESC, id DESC LIMIT ?2",
+            )
+            .map_err(storage_error)?;
+        statement
+            .query_map(
+                params![conversation_id, limit_with_lookahead],
+                stored_message_row_from_storage,
+            )
+            .map_err(storage_error)?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(storage_error)?
+    };
     drop(connection);
 
+    let has_more = rows.len() > limit;
+    let mut rows = rows;
+    rows.truncate(limit);
+    rows.reverse();
+    let next_before_message_id = if has_more {
+        rows.first().map(|row| row.id.clone())
+    } else {
+        None
+    };
     let mut remaining_nodes = MAX_REQUEST_PARAMETER_NODES;
     let mut messages = Vec::new();
     for row in rows {
         messages.push(message_from_stored_row(row, &mut remaining_nodes).map_err(storage_error)?);
     }
-    Ok(json!({"messages": messages}))
+    Ok(json!({
+        "messages": messages,
+        "hasMore": has_more,
+        "nextBeforeMessageId": next_before_message_id,
+    }))
 }
 
 pub(super) fn save_message(

@@ -2,6 +2,7 @@ import {
   type ChatMessage,
   clearConversationHistory as clearConversationHistoryStorage,
   getConversation,
+  getMessagePage,
   getMessages,
   listConversations,
   listProjects,
@@ -103,6 +104,9 @@ export function createConversationsActions(set: StoreSet, get: StoreGet) {
       pendingProjectId: projectId,
       pendingAgentSnapshot: selectedAgent,
       messages: [],
+      olderMessagesCursor: null,
+      isLoadingOlderMessages: false,
+      olderMessagesLoadError: false,
       personalMemoryExcludedForNewConversation: false,
       searchTargetMessageId: null,
       searchHighlightMessageId: null,
@@ -133,6 +137,9 @@ export function createConversationsActions(set: StoreSet, get: StoreGet) {
           goalStatus: 'ready',
           isChangingGoal: false,
           messages: [],
+          olderMessagesCursor: null,
+          isLoadingOlderMessages: false,
+          olderMessagesLoadError: false,
           searchTargetMessageId: null,
           searchHighlightMessageId: null,
           searchHighlightQuery: null,
@@ -213,6 +220,9 @@ export function createConversationsActions(set: StoreSet, get: StoreGet) {
         pendingProjectId: null,
         pendingAgentSnapshot: null,
         messages: [],
+        olderMessagesCursor: null,
+        isLoadingOlderMessages: false,
+        olderMessagesLoadError: false,
         personalMemoryExcludedForNewConversation: false,
         searchTargetMessageId: null,
         searchHighlightMessageId: null,
@@ -289,6 +299,9 @@ export function createConversationsActions(set: StoreSet, get: StoreGet) {
         pendingProjectId: null,
         pendingAgentSnapshot: null,
         messages: [],
+        olderMessagesCursor: null,
+        isLoadingOlderMessages: false,
+        olderMessagesLoadError: false,
         isLoadingMessages: true,
         errorCode: null,
         errorMessage: null,
@@ -347,11 +360,17 @@ export function createConversationsActions(set: StoreSet, get: StoreGet) {
             : null,
       });
       try {
-        const messages = await getMessages(id);
+        const history = targetMessageId === null
+          ? await getMessagePage(id)
+          : { messages: await getMessages(id), hasMore: false, nextBeforeMessageId: null };
         if (generation !== messageLoadGeneration) return;
-        const targetWasFound = targetMessageId === null || messages.some((message) => message.id === targetMessageId);
+        const targetWasFound = targetMessageId === null || history.messages.some((message) => message.id === targetMessageId);
         set({
-          messages,
+          messages: history.messages,
+          olderMessagesCursor:
+            targetMessageId === null && history.hasMore ? history.nextBeforeMessageId : null,
+          isLoadingOlderMessages: false,
+          olderMessagesLoadError: false,
           isLoadingMessages: false,
           searchTargetMessageId: targetWasFound ? targetMessageId : null,
           errorCode: targetWasFound ? null : 'searchMessageUnavailable',
@@ -370,6 +389,45 @@ export function createConversationsActions(set: StoreSet, get: StoreGet) {
           errorMessage: null,
           opencodeRetryAtUnixMs: null,
         });
+      }
+    },
+
+    async loadOlderMessages(): Promise<void> {
+      const initial = get();
+      const conversationId = initial.activeConversationId;
+      const beforeMessageId = initial.olderMessagesCursor;
+      if (!conversationId || !beforeMessageId || initial.isLoadingOlderMessages) return;
+
+      set({ isLoadingOlderMessages: true, olderMessagesLoadError: false });
+      try {
+        const page = await getMessagePage(conversationId, beforeMessageId);
+        const current = get();
+        if (
+          current.activeConversationId !== conversationId ||
+          current.olderMessagesCursor !== beforeMessageId
+        ) {
+          return;
+        }
+        set((state) => {
+          const existingIds = new Set(state.messages.map((message) => message.id));
+          const olderMessages = page.messages.filter((message) => !existingIds.has(message.id));
+          return {
+            messages: [...olderMessages, ...state.messages],
+            olderMessagesCursor: page.hasMore ? page.nextBeforeMessageId : null,
+            isLoadingOlderMessages: false,
+            olderMessagesLoadError: false,
+          };
+        });
+      } catch (cause) {
+        const current = get();
+        if (
+          current.activeConversationId !== conversationId ||
+          current.olderMessagesCursor !== beforeMessageId
+        ) {
+          return;
+        }
+        set({ isLoadingOlderMessages: false, olderMessagesLoadError: true });
+        globalThis.reportError(new Error('Earlier conversation messages could not be loaded.', { cause }));
       }
     },
 

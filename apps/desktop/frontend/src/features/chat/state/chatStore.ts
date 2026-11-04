@@ -147,6 +147,9 @@ export interface ChatState {
   pendingProjectId: string | null;
   pendingAgentSnapshot: AssistantAgentSnapshot | null;
   messages: ChatMessage[];
+  olderMessagesCursor: string | null;
+  isLoadingOlderMessages: boolean;
+  olderMessagesLoadError: boolean;
   searchTargetMessageId: string | null;
   searchHighlightMessageId: string | null;
   searchHighlightQuery: string | null;
@@ -219,6 +222,7 @@ export interface ChatState {
   selectConversationModel(key: string, conversationId?: string): Promise<boolean>;
   selectReasoningEffort(effort: string | null): Promise<void>;
   selectConversation(id: string, targetMessageId?: string | null, targetQuery?: string | null): Promise<void>;
+  loadOlderMessages(): Promise<void>;
   refreshActiveGoal(conversationId: string): Promise<void>;
   refreshInterruptedRun(conversationId: string): Promise<void>;
   resumeInterruptedGoalsAfterRestart(): Promise<void>;
@@ -270,6 +274,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
   pendingProjectId: null,
   pendingAgentSnapshot: null,
   messages: [],
+  olderMessagesCursor: null,
+  isLoadingOlderMessages: false,
+  olderMessagesLoadError: false,
   searchTargetMessageId: null,
   searchHighlightMessageId: null,
   searchHighlightQuery: null,

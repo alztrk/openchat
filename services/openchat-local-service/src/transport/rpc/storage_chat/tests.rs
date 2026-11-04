@@ -582,6 +582,76 @@ fn initialized_chat_storage(directory: &TestDirectory) -> AppStorage {
 }
 
 #[tokio::test]
+async fn message_history_pages_cover_all_rows_in_stable_chronological_order() {
+    let directory = TestDirectory::new();
+    let storage = initialized_chat_storage(&directory);
+    let conversation_id = create_attachment_test_conversation(&storage).await;
+    let connection = storage.connect().expect("connect test storage");
+    for index in 0..205 {
+        connection
+            .execute(
+                "INSERT INTO messages (id, conversation_id, role, content, created_at, status)
+                 VALUES (?1, ?2, 'user', ?3, 1, 'completed')",
+                rusqlite::params![
+                    format!("message-{index:04}"),
+                    conversation_id,
+                    format!("Message {index}")
+                ],
+            )
+            .expect("insert paged message");
+    }
+    drop(connection);
+
+    let mut before_message_id: Option<String> = None;
+    let mut message_pages = Vec::new();
+    loop {
+        let mut input = json!({"conversationId": conversation_id, "limit": 100});
+        if let Some(cursor) = before_message_id.as_deref() {
+            input["beforeMessageId"] = json!(cursor);
+        }
+        let page = dispatch("storage.chat.messages.list", &input, &storage)
+            .await
+            .expect("read message page");
+        message_pages.push(
+            page["messages"]
+                .as_array()
+                .expect("messages array")
+                .iter()
+                .map(|message| message["id"].as_str().expect("message ID").to_owned())
+                .collect::<Vec<_>>(),
+        );
+
+        if page["hasMore"] == false {
+            assert_eq!(page["nextBeforeMessageId"], Value::Null);
+            break;
+        }
+        before_message_id = Some(
+            page["nextBeforeMessageId"]
+                .as_str()
+                .expect("cursor for the next older page")
+                .to_owned(),
+        );
+    }
+
+    assert_eq!(
+        message_pages.iter().map(Vec::len).collect::<Vec<_>>(),
+        vec![100, 100, 5]
+    );
+    let message_ids = message_pages
+        .into_iter()
+        .rev()
+        .flatten()
+        .collect::<Vec<_>>();
+    assert_eq!(message_ids.len(), 205);
+    assert_eq!(
+        message_ids,
+        (0..205)
+            .map(|index| format!("message-{index:04}"))
+            .collect::<Vec<_>>()
+    );
+}
+
+#[tokio::test]
 async fn message_and_attachment_are_persisted_together_on_success() {
     let directory = TestDirectory::new();
     let storage = initialized_chat_storage(&directory);

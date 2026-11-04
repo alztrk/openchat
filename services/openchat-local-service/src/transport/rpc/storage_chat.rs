@@ -60,6 +60,7 @@ const MAX_SEARCH_QUERY_BYTES: usize = 512;
 const MAX_SEARCH_RESULTS: usize = 100;
 const MAX_ATTACHMENT_SCAN: usize = 10_000;
 const MAX_ATTACHMENT_PAGE: usize = 100;
+const MAX_MESSAGE_PAGE: usize = 100;
 const ATTACHMENT_TEXT_INDEX_SETTING: &str = "attachment_text_index.enabled";
 const MAX_ATTACHMENT_QUERY_CHARS: usize = 512;
 const MAX_ATTACHMENT_OFFSET: u64 = 1_000_000;
