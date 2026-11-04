@@ -1,10 +1,12 @@
 use std::{fs, path::PathBuf};
 
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
 use uuid::Uuid;
 
 use crate::{protocol::MAX_REQUEST_PARAMETER_NODES, storage::AppStorage};
 
+use super::attachments::StagedAttachments;
 use super::{
     MAX_AGENT_METADATA_BYTES, MAX_STRUCTURED_METADATA_JSON_NESTING, dispatch, optional_json_array,
     parse_stored_agent_json, sanitize_stored_metadata, sanitize_tool_activity_metadata,
@@ -521,6 +523,208 @@ async fn added_workspace_root_returns_canonical_path_and_can_be_removed() {
     assert_eq!(
         projects["projects"][0]["workspaceRoots"],
         json!([primary_path])
+    );
+}
+
+async fn create_attachment_test_conversation(storage: &AppStorage) -> String {
+    let conversation_id = format!("attachment-conversation-{}", Uuid::new_v4().simple());
+    dispatch(
+        "storage.chat.conversations.create",
+        &json!({
+            "input": {
+                "id": conversation_id,
+                "title": "Attachment save",
+                "providerId": "test-provider",
+                "modelId": "test-model"
+            }
+        }),
+        storage,
+    )
+    .await
+    .expect("create attachment test conversation");
+    conversation_id
+}
+
+fn attachment_message_input(
+    conversation_id: &str,
+    message_id: &str,
+    attachment_id: &str,
+    bytes: &[u8],
+) -> Value {
+    json!({
+        "input": {
+            "id": message_id,
+            "conversationId": conversation_id,
+            "role": "user",
+            "content": "Attached text file",
+            "status": "completed",
+            "attachments": [{
+                "id": attachment_id,
+                "name": "notes.txt",
+                "mimeType": "text/plain",
+                "kind": "text",
+                "sizeBytes": bytes.len(),
+                "dataBase64": STANDARD.encode(bytes)
+            }]
+        }
+    })
+}
+
+fn initialized_chat_storage(directory: &TestDirectory) -> AppStorage {
+    let storage = AppStorage::open_at(directory.0.join("data")).expect("open test storage");
+    storage
+        .prepare_chat_schema_migration(crate::CHAT_SCHEMA_VERSION)
+        .expect("prepare current chat schema");
+    storage
+        .initialize_backend_schema()
+        .expect("initialize current backend schema");
+    storage
+}
+
+#[tokio::test]
+async fn message_and_attachment_are_persisted_together_on_success() {
+    let directory = TestDirectory::new();
+    let storage = initialized_chat_storage(&directory);
+    let conversation_id = create_attachment_test_conversation(&storage).await;
+    let message_id = format!("attachment-message-{}", Uuid::new_v4().simple());
+    let attachment_id = format!("attachment-{}", Uuid::new_v4().simple());
+    let bytes = b"attachment content";
+
+    dispatch(
+        "storage.chat.messages.save",
+        &attachment_message_input(&conversation_id, &message_id, &attachment_id, bytes),
+        &storage,
+    )
+    .await
+    .expect("save message with attachment");
+
+    let attachment_path = storage
+        .root()
+        .join("attachments")
+        .join(&conversation_id)
+        .join(&message_id)
+        .join(format!("{attachment_id}.data"));
+    assert_eq!(
+        fs::read(attachment_path).expect("read saved attachment"),
+        bytes
+    );
+    let messages = dispatch(
+        "storage.chat.messages.list",
+        &json!({"conversationId": conversation_id}),
+        &storage,
+    )
+    .await
+    .expect("list saved message");
+    assert_eq!(messages["messages"].as_array().map(Vec::len), Some(1));
+}
+
+#[tokio::test]
+async fn message_commit_failure_removes_the_newly_published_attachment_directory() {
+    let directory = TestDirectory::new();
+    let storage = initialized_chat_storage(&directory);
+    let conversation_id = create_attachment_test_conversation(&storage).await;
+    let message_id = format!("attachment-message-{}", Uuid::new_v4().simple());
+    let attachment_id = format!("attachment-{}", Uuid::new_v4().simple());
+    let bytes = b"attachment content";
+    storage
+        .connect()
+        .expect("connect before installing deferred commit failure")
+        .execute_batch(
+            "CREATE TABLE attachment_commit_parent (id INTEGER PRIMARY KEY);
+             CREATE TABLE attachment_commit_child (
+                 parent_id INTEGER REFERENCES attachment_commit_parent(id)
+                     DEFERRABLE INITIALLY DEFERRED
+             );
+             CREATE TRIGGER reject_attachment_message_commit
+             AFTER INSERT ON messages
+             BEGIN
+                 INSERT INTO attachment_commit_child (parent_id) VALUES (1);
+             END;",
+        )
+        .expect("install deferred commit failure");
+
+    let error = dispatch(
+        "storage.chat.messages.save",
+        &attachment_message_input(&conversation_id, &message_id, &attachment_id, bytes),
+        &storage,
+    )
+    .await
+    .expect_err("deferred foreign key must fail the message commit");
+
+    assert_eq!(error.code, "storage_chat_unavailable");
+    let attachment_directory = storage
+        .root()
+        .join("attachments")
+        .join(&conversation_id)
+        .join(&message_id);
+    assert!(!attachment_directory.exists());
+    let conversation_attachment_directory = attachment_directory
+        .parent()
+        .expect("conversation attachment directory");
+    let remaining_entries = fs::read_dir(conversation_attachment_directory)
+        .expect("read attachment staging parent")
+        .collect::<Result<Vec<_>, _>>()
+        .expect("read attachment staging entries");
+    assert!(remaining_entries.is_empty());
+
+    let messages = dispatch(
+        "storage.chat.messages.list",
+        &json!({"conversationId": conversation_id}),
+        &storage,
+    )
+    .await
+    .expect("list messages after rollback");
+    assert_eq!(messages["messages"].as_array().map(Vec::len), Some(0));
+}
+
+#[tokio::test]
+async fn rollback_cleanup_preserves_published_attachments_when_message_exists() {
+    let directory = TestDirectory::new();
+    let storage = initialized_chat_storage(&directory);
+    let conversation_id = create_attachment_test_conversation(&storage).await;
+    let message_id = format!("attachment-message-{}", Uuid::new_v4().simple());
+    dispatch(
+        "storage.chat.messages.save",
+        &json!({
+            "input": {
+                "id": message_id,
+                "conversationId": conversation_id,
+                "role": "user",
+                "content": "Previously persisted message",
+                "status": "completed"
+            }
+        }),
+        &storage,
+    )
+    .await
+    .expect("save existing message");
+
+    let destination = storage
+        .root()
+        .join("attachments")
+        .join(&conversation_id)
+        .join(&message_id);
+    fs::create_dir_all(&destination).expect("create published attachment directory");
+    let attachment_path = destination.join("attachment.data");
+    fs::write(&attachment_path, b"preserve committed attachment")
+        .expect("write published attachment");
+    let staged = StagedAttachments {
+        staging: None,
+        destination,
+    };
+    let mut connection = storage.connect().expect("connect for cleanup");
+
+    super::conversations::rollback_published_attachment_directory(
+        &storage,
+        &mut connection,
+        &staged,
+        &conversation_id,
+        &message_id,
+    );
+
+    assert_eq!(
+        fs::read(attachment_path).expect("read preserved attachment"),
+        b"preserve committed attachment"
     );
 }
 

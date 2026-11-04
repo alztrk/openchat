@@ -262,7 +262,9 @@
 ### 10.4 Yerel servis ve veri bütünlüğü
 
 - [x] `SVC-01`: Normal chat, provider yanıtını ancak run sonucu kalıcılaştırıldıktan sonra başarılı döndürüyor; run okunamaz veya yazılamazsa `storage_unavailable` dönüyor ve güvenli diagnostic kaydediliyor. Başarı, missing-run ve SQLite write-failure yolları test edildi.
-- [ ] `SVC-02..11`: Conversation-not-found sözleşmesi, attachment dosyası/DB atomikliği ve temizliği, MIME/GIF tutarlılığı, upsert, envelope limiti/prefix'i ve uzun transcript pagination'ını konu bazında düzelt.
+- [x] `SVC-02` hata yolu: Yeni yayımlanan attachment dizini, SQLite commit hatasında yalnızca DB transaction'ı sonrasında aynı mesaj satırı yoksa temizleniyor; kalıcı satır varsa eşzamanlı kayıt verisini koruyor. Hedef dizin staging sırasında mevcutken eşzamanlı silinmişse DB transaction'ı açıldıktan sonra attachment tekrar stage ediliyor. Başarılı kayıt, ertelenmiş foreign-key commit hatası ve mevcut mesaj satırını koruma testleri geçti.
+- [ ] `SVC-02` crash recovery: Dosya rename'i ile SQLite commit'i arasındaki süreç kapanması/güç kaybı penceresi hâlâ orphan dosya bırakabilir; kalıcı journal ve açılış reconciliation tasarla.
+- [ ] `SVC-03..11`: Conversation-not-found sözleşmesi, silme sonrası attachment temizliği, MIME/GIF tutarlılığı, upsert, envelope limiti/prefix'i ve uzun transcript pagination'ını konu bazında düzelt.
 - [ ] `SVC-12/13`: Archive restore ve security scan silme için crash-safe cleanup/reconciliation sözleşmesi belirle; DB ile dosya sistemi sonuçlarını tekrar denenebilir hale getir.
 - [ ] `SVC-14..17/20`: Operation cancel, timeout, progress/status ve yeniden deneme davranışını security scan, worktree listeleme, attachment index ve archive işlemlerinde hizala.
 - [ ] `SVC-16`: Worktree limitini backend'de deterministik sırayla uygula; gizli kalan kayıtları kullanıcıya bildir veya yönetilebilir kıl.

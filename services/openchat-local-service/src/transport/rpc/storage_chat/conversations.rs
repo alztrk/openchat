@@ -496,7 +496,7 @@ pub(super) fn save_message(
     if content.len() > MAX_MESSAGE_CONTENT_BYTES {
         return Err(invalid_request_params());
     }
-    let staged = if attachments.is_empty() {
+    let mut staged = if attachments.is_empty() {
         None
     } else {
         match stage_attachments(storage.root(), conversation_id, id, &attachments) {
@@ -519,10 +519,26 @@ pub(super) fn save_message(
         }
     };
     let mut failure_stage = "transaction_begin";
+    let mut published_attachment_directory = false;
     let write_result = (|| -> Result<(), ServiceError> {
         let transaction = connection
             .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
             .map_err(storage_error)?;
+        if let Some(staged) = staged.as_mut()
+            && staged.staging.is_none()
+        {
+            failure_stage = "attachment_revalidate";
+            match fs::symlink_metadata(&staged.destination) {
+                Ok(metadata) if metadata.file_type().is_symlink() || !metadata.is_dir() => {
+                    return Err(storage_unavailable());
+                }
+                Ok(_) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                    *staged = stage_attachments(storage.root(), conversation_id, id, &attachments)?;
+                }
+                Err(_) => return Err(storage_unavailable()),
+            }
+        }
         failure_stage = "message_insert";
         transaction
             .execute(
@@ -588,7 +604,7 @@ pub(super) fn save_message(
             && let Some(staging) = staged.staging.as_ref()
         {
             match fs::rename(staging, &staged.destination) {
-                Ok(()) => {}
+                Ok(()) => published_attachment_directory = true,
                 Err(_) if attachment_directory_matches(&staged.destination, &attachments)? => {
                     let _ = remove_directory_if_present(staging);
                 }
@@ -604,12 +620,51 @@ pub(super) fn save_message(
         }
     }
     if write_result.is_err() {
+        if published_attachment_directory && let Some(staged) = staged.as_ref() {
+            rollback_published_attachment_directory(
+                storage,
+                &mut connection,
+                staged,
+                conversation_id,
+                id,
+            );
+        }
         if let Some(staging) = staged.as_ref().and_then(|staged| staged.staging.as_ref()) {
             let _ = remove_directory_if_present(staging);
         }
         return write_result.map(|_| json!({"saved": true}));
     }
     Ok(json!({"saved": true}))
+}
+
+pub(super) fn rollback_published_attachment_directory(
+    storage: &AppStorage,
+    connection: &mut StorageConnection<'_>,
+    staged: &StagedAttachments,
+    conversation_id: &str,
+    message_id: &str,
+) {
+    let cleanup_result = (|| -> Result<(), ServiceError> {
+        let transaction = connection
+            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+            .map_err(storage_error)?;
+        let persisted_message = transaction
+            .query_row(
+                "SELECT 1 FROM messages WHERE conversation_id = ?1 AND id = ?2 LIMIT 1",
+                params![conversation_id, message_id],
+                |row| row.get::<_, i64>(0),
+            )
+            .optional()
+            .map_err(storage_error)?;
+        if persisted_message.is_none() {
+            remove_directory_if_present(&staged.destination).map_err(|_| storage_unavailable())?;
+        }
+        transaction.commit().map_err(storage_error)
+    })();
+
+    if let Err(error) = cleanup_result {
+        log_message_save_failure(storage, "attachment_commit_cleanup", &error);
+    }
 }
 
 fn log_message_save_failure(storage: &AppStorage, stage: &'static str, error: &ServiceError) {
