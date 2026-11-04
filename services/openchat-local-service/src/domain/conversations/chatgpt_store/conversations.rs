@@ -341,11 +341,7 @@ pub fn save_assistant_message_on_connection(
     database: &mut StorageConnection<'_>,
     message: AssistantMessageWrite<'_>,
 ) -> rusqlite::Result<()> {
-    if message.content.len() > crate::conversation_limits::MAXIMUM_CHAT_MESSAGE_CONTENT_BYTES {
-        return Err(message_size_limit_error(
-            "chat message content limit exceeded",
-        ));
-    }
+    validate_assistant_message_content(message.content)?;
     let elapsed_microseconds = message
         .elapsed
         .and_then(|elapsed| i64::try_from(elapsed.as_micros()).ok());
@@ -368,6 +364,7 @@ pub fn save_assistant_message_on_connection(
         message.content,
     )
     .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
+    validate_assistant_message_content(&content)?;
     transaction.execute(
         "INSERT INTO messages (
             id, conversation_id, role, content, created_at, output_tokens,
@@ -411,11 +408,10 @@ pub fn save_assistant_tool_checkpoint(
     snapshot: &ChatStreamSnapshot,
     activities: &[ToolActivity],
 ) -> rusqlite::Result<()> {
-    let content_limit = crate::conversation_limits::MAXIMUM_CHAT_MESSAGE_CONTENT_BYTES;
     let metadata_limit = crate::conversation_limits::MAXIMUM_CHAT_MESSAGE_METADATA_BYTES;
     let (activities_json, persisted_activity_count) =
         serialize_bounded_tool_activities(activities, metadata_limit)?;
-    if snapshot.content.len() > content_limit {
+    if let Err(error) = validate_assistant_message_content(&snapshot.content) {
         log_rejected_tool_checkpoint(
             storage,
             "content_limit",
@@ -423,9 +419,7 @@ pub fn save_assistant_tool_checkpoint(
             activities_json.len(),
             persisted_activity_count,
         );
-        return Err(message_size_limit_error(
-            "chat message content limit exceeded",
-        ));
+        return Err(error);
     }
     let mut database = storage.connect()?;
     let transaction =
@@ -443,7 +437,7 @@ pub fn save_assistant_tool_checkpoint(
         &snapshot.content,
     )
     .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
-    if content.len() > content_limit {
+    if let Err(error) = validate_assistant_message_content(&content) {
         log_rejected_tool_checkpoint(
             storage,
             "content_limit",
@@ -451,9 +445,7 @@ pub fn save_assistant_tool_checkpoint(
             activities_json.len(),
             persisted_activity_count,
         );
-        return Err(message_size_limit_error(
-            "chat message content limit exceeded",
-        ));
+        return Err(error);
     }
     transaction.execute(
         "INSERT INTO messages (
@@ -539,6 +531,15 @@ fn message_size_limit_error(message: &'static str) -> rusqlite::Error {
     )
 }
 
+fn validate_assistant_message_content(content: &str) -> rusqlite::Result<()> {
+    if content.len() > crate::conversation_limits::MAXIMUM_CHAT_MESSAGE_CONTENT_BYTES {
+        return Err(message_size_limit_error(
+            "chat message content limit exceeded",
+        ));
+    }
+    Ok(())
+}
+
 fn log_rejected_tool_checkpoint(
     storage: &AppStorage,
     reason: &'static str,
@@ -619,6 +620,151 @@ mod tests {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.0);
         }
+    }
+
+    fn storage_with_assistant_attachment(name: &str) -> (TestDirectory, AppStorage, String) {
+        let directory = TestDirectory::new(name);
+        let storage = AppStorage::open_at(directory.0.clone()).expect("open test storage");
+        let existing_content = format!(
+            "{}{}",
+            crate::conversation_limits::MESSAGE_CONTENT_PREFIX,
+            serde_json::json!({
+                "content": "",
+                "attachments": [{
+                    "id": "attachment-1",
+                    "name": "note.txt",
+                    "mimeType": "text/plain",
+                    "sizeBytes": 1,
+                    "kind": "text"
+                }]
+            })
+        );
+        let connection = storage.connect().expect("connect test storage");
+        connection
+            .execute_batch(
+                "CREATE TABLE conversations (
+                    id TEXT PRIMARY KEY NOT NULL,
+                    title TEXT NOT NULL,
+                    created_at INTEGER NOT NULL,
+                    updated_at INTEGER NOT NULL
+                );
+                CREATE TABLE messages (
+                    id TEXT NOT NULL,
+                    conversation_id TEXT NOT NULL,
+                    role TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    created_at INTEGER,
+                    output_tokens INTEGER,
+                    tokens_per_second REAL,
+                    elapsed_microseconds INTEGER,
+                    tool_activities TEXT NOT NULL DEFAULT '[]',
+                    status TEXT NOT NULL,
+                    PRIMARY KEY (conversation_id, id)
+                );",
+            )
+            .expect("create assistant message test schema");
+        connection
+            .execute(
+                "INSERT INTO conversations (id, title, created_at, updated_at)
+                 VALUES ('conversation-1', 'Test', 1, 1)",
+                [],
+            )
+            .expect("insert test conversation");
+        connection
+            .execute(
+                "INSERT INTO messages (id, conversation_id, role, content, created_at, status)
+                 VALUES ('assistant-1', 'conversation-1', 'assistant', ?1, 1, 'streaming')",
+                [&existing_content],
+            )
+            .expect("insert assistant attachment message");
+        drop(connection);
+        (directory, storage, existing_content)
+    }
+
+    fn over_limit_merged_content(existing_content: &str) -> String {
+        let empty_merge =
+            crate::attachments::merge_content_preserving_attachments(Some(existing_content), "")
+                .expect("merge empty content with attachment envelope");
+        let content_length =
+            crate::conversation_limits::MAXIMUM_CHAT_MESSAGE_CONTENT_BYTES - empty_merge.len() + 1;
+        "x".repeat(content_length)
+    }
+
+    fn assert_content_size_limit_error(error: rusqlite::Error) {
+        assert!(matches!(
+            error,
+            rusqlite::Error::SqliteFailure(code, _)
+                if code.code == rusqlite::ErrorCode::TooBig
+        ));
+    }
+
+    #[test]
+    fn assistant_message_save_rejects_oversized_merged_attachment_content() {
+        let (_directory, storage, existing_content) =
+            storage_with_assistant_attachment("assistant-message-limit");
+        let content = over_limit_merged_content(&existing_content);
+        assert!(content.len() < crate::conversation_limits::MAXIMUM_CHAT_MESSAGE_CONTENT_BYTES);
+
+        let error = save_assistant_message(
+            &storage,
+            AssistantMessageWrite {
+                conversation_id: "conversation-1",
+                message_id: "assistant-1",
+                content: &content,
+                status: "completed",
+                created_at_unix_ms: 2,
+                output_tokens: None,
+                elapsed: None,
+            },
+        )
+        .expect_err("the merged assistant content must exceed the limit");
+        assert_content_size_limit_error(error);
+
+        let persisted_content: String = storage
+            .connect()
+            .expect("connect after rejected message")
+            .query_row(
+                "SELECT content FROM messages WHERE conversation_id = 'conversation-1' AND id = 'assistant-1'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("read unchanged assistant content");
+        assert_eq!(persisted_content, existing_content);
+    }
+
+    #[test]
+    fn assistant_checkpoint_rejects_oversized_merged_attachment_content() {
+        let (_directory, storage, existing_content) =
+            storage_with_assistant_attachment("assistant-checkpoint-limit");
+        let content = over_limit_merged_content(&existing_content);
+        assert!(content.len() < crate::conversation_limits::MAXIMUM_CHAT_MESSAGE_CONTENT_BYTES);
+        let snapshot = ChatStreamSnapshot::new("conversation-1", "assistant-1", &content, 2);
+
+        let error = save_assistant_tool_checkpoint(&storage, &snapshot, &[])
+            .expect_err("the merged checkpoint content must exceed the limit");
+        assert_content_size_limit_error(error);
+
+        let persisted_content: String = storage
+            .connect()
+            .expect("connect after rejected checkpoint")
+            .query_row(
+                "SELECT content FROM messages WHERE conversation_id = 'conversation-1' AND id = 'assistant-1'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("read unchanged assistant content");
+        assert_eq!(persisted_content, existing_content);
+    }
+
+    #[test]
+    fn assistant_message_content_limit_is_inclusive_at_the_byte_boundary() {
+        let content = "x".repeat(crate::conversation_limits::MAXIMUM_CHAT_MESSAGE_CONTENT_BYTES);
+        assert!(validate_assistant_message_content(&content).is_ok());
+        let over_limit = format!("{content}x");
+        assert_content_size_limit_error(
+            validate_assistant_message_content(&over_limit)
+                .expect_err("one byte over the limit must fail"),
+        );
     }
 
     #[test]

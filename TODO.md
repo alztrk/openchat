@@ -268,7 +268,8 @@
 - [x] `SVC-04`: Mesaj kaydı, mevcut uzantı/MIME metadata doğrulayıcısını dosya yazımından önce çalıştırıyor; uyuşmayan MIME ve desteklenmeyen uzantı `invalid_request_params` ile reddediliyor. DB ve dosya sisteminde kayıt oluşmadığını doğrulayan RPC testi eklendi.
 - [x] `SVC-05`: Persisted history decoder, GIF MIME'ını mevcut imza doğrulamasıyla birlikte kabul ediyor; RPC ile kaydedilip SQLite'tan okunan GIF'in history decode round-trip testi eklendi.
 - [x] `SVC-06`: Attachment envelope'ı plain içerikle değiştiren message upsert, DB commit'i sonrası güvenli ve yarışa dayanıklı mesaj klasörü temizliği yapıyor; temizlik bekliyorsa kayıt başarılı ve `attachmentCleanupPending` açıkça dönüyor. Açılış kurtarması orphan mesaj klasörlerini tekrar deniyor.
-- [ ] `SVC-07..11`: Assistant merge sonrası envelope limiti, uzun transcript pagination, reserved prefix, envelope ile yeni attachment array'inin çakışması ve conversation-not-found kusurlarını konu bazında düzelt.
+- [x] `SVC-07`: Normal assistant save ve tool checkpoint, attachment envelope merge'ünden sonraki son içerik byte boyutunu aynı 4 MB validator ile denetliyor; sınırı aşan kayıt `SQLITE_TOOBIG` ile reddediliyor ve önceki içerik korunuyor.
+- [ ] `SVC-08..11`: Uzun transcript pagination, reserved prefix, envelope ile yeni attachment array'inin çakışması ve conversation-not-found kusurlarını konu bazında düzelt.
 - [ ] `SVC-12/13`: Archive restore ve security scan silme için crash-safe cleanup/reconciliation sözleşmesi belirle; DB ile dosya sistemi sonuçlarını tekrar denenebilir hale getir.
 - [ ] `SVC-14..17/20`: Operation cancel, timeout, progress/status ve yeniden deneme davranışını security scan, worktree listeleme, attachment index ve archive işlemlerinde hizala.
 - [ ] `SVC-16`: Worktree limitini backend'de deterministik sırayla uygula; gizli kalan kayıtları kullanıcıya bildir veya yönetilebilir kıl.
