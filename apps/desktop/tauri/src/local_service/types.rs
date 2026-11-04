@@ -19,6 +19,11 @@ use serde::{
 use serde_json::Value;
 use tauri_plugin_shell::process::CommandChild;
 
+use super::{
+    process_interrupt::ProcessInterrupt,
+    writer::{ServiceWriter, ServiceWriterTask},
+};
+
 pub(crate) const LOCAL_SERVICE_EVENT: &str = "openchat:local-service";
 pub(crate) const LOCAL_SERVICE_ERROR_PREFIX: &str = "openchat-local-service-error: ";
 pub(crate) const MAX_LOCAL_SERVICE_STARTUP_FAILURE_BYTES: usize = 2048;
@@ -49,7 +54,7 @@ pub(crate) struct NativeResponseWaiter {
     pub(crate) sender: SyncSender<Value>,
 }
 
-/// Serializes process creation, writes, replacement, and shutdown.
+/// Serializes process creation, replacement, and shutdown.
 #[derive(Default)]
 pub(crate) struct ProcessState {
     /// Monotonic identifier used to discard events from an earlier process.
@@ -58,10 +63,13 @@ pub(crate) struct ProcessState {
     pub(crate) current: Option<RunningProcess>,
 }
 
-/// Associates the owned child with the generation assigned at startup.
+/// Associates one process and its bounded writer with the generation assigned at startup.
 pub(crate) struct RunningProcess {
     pub(crate) generation: u64,
-    pub(crate) child: CommandChild,
+    pub(crate) child: Arc<Mutex<Option<CommandChild>>>,
+    pub(crate) interrupt: Arc<ProcessInterrupt>,
+    pub(crate) writer: ServiceWriter,
+    pub(crate) writer_task: ServiceWriterTask,
 }
 
 /// Holds only bounded permission details captured from the owned service's output.
@@ -303,23 +311,56 @@ impl LocalServiceState {
 
     /// Stops the owned process during application shutdown.
     pub(crate) fn stop(&self) -> Result<(), String> {
-        let child = self
-            .process
-            .lock()
-            .map_err(|_| "Local service state is unavailable.")?
-            .current
-            .take()
-            .map(|process| process.child);
-        if let Some(child) = child {
-            child
-                .kill()
-                .map_err(|_| "The local service did not stop cleanly.")?;
+        let running = {
+            let mut process = self
+                .process
+                .lock()
+                .map_err(|_| "Local service state is unavailable.")?;
+            if let Some(running) = process.current.as_ref() {
+                running.writer.close();
+                running.interrupt.interrupt()?;
+            }
+            process.current.take()
+        };
+        if let Some(running) = running {
+            running.terminate_after_interrupt()?;
         }
         self.permissions
             .lock()
             .map_err(|_| "Local permission state is unavailable.")?
             .requests
             .clear();
+        self.native_responses
+            .lock()
+            .map_err(|_| "Local service response state is unavailable.")?
+            .clear();
         Ok(())
+    }
+}
+
+impl RunningProcess {
+    pub(crate) fn terminate(self) -> Result<(), String> {
+        self.writer.close();
+        self.interrupt.interrupt()?;
+        self.terminate_after_interrupt()
+    }
+
+    pub(crate) fn terminate_after_interrupt(self) -> Result<(), String> {
+        self.writer.close();
+        let child = self
+            .child
+            .lock()
+            .map_err(|_| "Local service process state is unavailable.")?
+            .take();
+        let kill_result: Result<(), String> = child.map_or(Ok(()), |child| {
+            child
+                .kill()
+                .map_err(|_| "The local service did not stop cleanly.".to_owned())
+        });
+        let writer_result = self.writer_task.wait();
+        match (kill_result, writer_result) {
+            (Err(error), _) | (Ok(()), Err(error)) => Err(error),
+            (Ok(()), Ok(())) => Ok(()),
+        }
     }
 }

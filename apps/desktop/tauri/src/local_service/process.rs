@@ -7,7 +7,12 @@ use tauri::AppHandle;
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
 
 use super::dialogs::PermissionDialogCopy;
-use super::types::*;
+use super::{
+    commands::report_local_service_host_error,
+    types::*,
+    writer::{EnqueueError, ServiceWriter, WriteError},
+};
+use zeroize::Zeroizing;
 
 pub(crate) fn observe_service_output(
     state: &Arc<Mutex<PendingPermissionState>>,
@@ -175,43 +180,40 @@ pub(crate) fn release_permission_response(
 }
 
 /// Delivers one host-authorized response and consumes its single-use approval ID.
-pub(crate) fn deliver_permission_response(
+pub(crate) async fn deliver_permission_response(
     process: &Arc<Mutex<ProcessState>>,
     permissions: &Arc<Mutex<PendingPermissionState>>,
     generation: u64,
     approval_id: &str,
     approved: bool,
 ) -> Result<(), String> {
-    let mut permissions = permissions
-        .lock()
-        .map_err(|_| "Local permission state is unavailable.")?;
-    let Some(request) = permissions.requests.get(approval_id) else {
-        return Err("The tool permission request is no longer active.".to_owned());
-    };
-    if request.generation != generation || !request.responding {
-        permissions.requests.remove(approval_id);
-        return Err("The tool permission request is no longer active.".to_owned());
-    }
-
-    let mut process = match process.lock() {
-        Ok(process) => process,
-        Err(_) => {
-            if let Some(request) = permissions.requests.get_mut(approval_id) {
-                request.responding = false;
-            }
-            return Err("Local service state is unavailable.".to_owned());
+    {
+        let mut permissions = permissions
+            .lock()
+            .map_err(|_| "Local permission state is unavailable.")?;
+        let Some(request) = permissions.requests.get(approval_id) else {
+            return Err("The tool permission request is no longer active.".to_owned());
+        };
+        if request.generation != generation || !request.responding {
+            permissions.requests.remove(approval_id);
+            return Err("The tool permission request is no longer active.".to_owned());
         }
-    };
-    let Some(current) = process.current.as_mut() else {
-        permissions.requests.remove(approval_id);
-        return Err("The local service is not running.".to_owned());
-    };
-    if current.generation != generation {
-        permissions.requests.remove(approval_id);
-        return Err("The local service connection is no longer current.".to_owned());
     }
 
-    let mut line = serde_json::to_string(&json!({
+    let writer = {
+        let process = process
+            .lock()
+            .map_err(|_| "Local service state is unavailable.")?;
+        let Some(current) = process.current.as_ref() else {
+            return Err("The local service is not running.".to_owned());
+        };
+        if current.generation != generation {
+            return Err("The local service connection is no longer current.".to_owned());
+        }
+        current.writer.clone()
+    };
+
+    let mut line = serde_json::to_vec(&json!({
         "id": -1,
         "method": "chat.tool.permission.respond",
         "params": {
@@ -220,17 +222,69 @@ pub(crate) fn deliver_permission_response(
         },
     }))
     .map_err(|_| "The tool permission response could not be encoded.")?;
-    line.push('\n');
-    if let Err(error) = current.child.write(line.as_bytes()) {
-        if let Some(request) = permissions.requests.get_mut(approval_id) {
-            request.responding = false;
-        }
-        return Err(format!(
-            "The local service connection was interrupted: {error}"
-        ));
+    line.push(b'\n');
+    write_service_frame(process, generation, &writer, Zeroizing::new(line)).await?;
+
+    let mut permissions = permissions
+        .lock()
+        .map_err(|_| "Local permission state is unavailable.")?;
+    if permissions
+        .requests
+        .get(approval_id)
+        .is_some_and(|request| request.generation == generation)
+    {
+        permissions.requests.remove(approval_id);
     }
-    permissions.requests.remove(approval_id);
     Ok(())
+}
+
+/// Enqueues one frame and waits for its bounded writer acknowledgment without holding state locks.
+pub(crate) async fn write_service_frame(
+    process: &Arc<Mutex<ProcessState>>,
+    generation: u64,
+    writer: &ServiceWriter,
+    frame: Zeroizing<Vec<u8>>,
+) -> Result<(), String> {
+    if frame.len() > MAX_RPC_FRAME_BYTES {
+        return Err("The local service request frame is too large.".to_owned());
+    }
+    let ticket = writer.enqueue(frame).map_err(|error| match error {
+        EnqueueError::Closed => "The local service connection is no longer current.".to_owned(),
+        EnqueueError::Backpressure => {
+            "The local service is busy; its outbound write queue is full.".to_owned()
+        }
+    })?;
+    match ticket.wait().await {
+        Ok(()) => Ok(()),
+        Err(WriteError::TimedOut) => {
+            if interrupt_service_generation(process, generation).is_err() {
+                report_local_service_host_error(
+                    "process",
+                    "service_write_timeout_interrupt_failed",
+                );
+            }
+            Err("The local service did not accept the request in time.".to_owned())
+        }
+        Err(WriteError::Failed) => Err("The local service connection was interrupted.".to_owned()),
+    }
+}
+
+fn interrupt_service_generation(
+    process: &Arc<Mutex<ProcessState>>,
+    generation: u64,
+) -> Result<(), String> {
+    let process = process
+        .lock()
+        .map_err(|_| "Local service state is unavailable.")?;
+    let Some(current) = process
+        .current
+        .as_ref()
+        .filter(|current| current.generation == generation)
+    else {
+        return Ok(());
+    };
+    current.writer.close();
+    current.interrupt.interrupt()
 }
 
 /// Shows an OS-owned confirmation for a tool call or persistent permission-policy change.

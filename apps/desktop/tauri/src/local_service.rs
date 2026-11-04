@@ -3,8 +3,10 @@
 pub mod commands;
 pub mod dialogs;
 pub mod process;
+pub mod process_interrupt;
 pub mod rpc_frame;
 pub mod types;
+pub mod writer;
 
 #[cfg(test)]
 mod tests;

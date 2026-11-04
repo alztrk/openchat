@@ -54,3 +54,6 @@ windows = { version = "=0.62.2", features = [
 ] }
 windows-core = "=0.62.2"
 webview2-com = "=0.39.1"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

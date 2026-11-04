@@ -4,7 +4,7 @@ use std::{
     fs::{self, OpenOptions},
     io::Write,
     path::{Path, PathBuf},
-    sync::{mpsc, Arc},
+    sync::{mpsc, Arc, Mutex},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
@@ -16,8 +16,10 @@ use zeroize::{Zeroize, Zeroizing};
 
 use super::dialogs::{NativeDialogLocale, PermissionDialogCopy};
 use super::process::*;
+use super::process_interrupt::ProcessInterrupt;
 use super::rpc_frame::*;
 use super::types::*;
+use super::writer::ServiceWriter;
 
 const MAX_STARTUP_DIAGNOSTIC_LOG_BYTES: u64 = 1024 * 1024;
 
@@ -123,14 +125,59 @@ fn start_local_service_process(
             ));
         }
     };
+    let process_id = child.pid();
+    let child = Arc::new(Mutex::new(Some(child)));
+    let interrupt = match ProcessInterrupt::new(process_id) {
+        Ok(interrupt) => Arc::new(interrupt),
+        Err(_) => {
+            if let Ok(mut child) = child.lock() {
+                if let Some(child) = child.take() {
+                    let _ = child.kill();
+                }
+            }
+            return Err(startup_failure_response(
+                diagnostic_storage_root.as_deref(),
+                "service_process_control_failed",
+                "process",
+                "The local service could not be managed safely.",
+                "service_process_control_failed",
+                true,
+            ));
+        }
+    };
+    let (writer, writer_task) =
+        match ServiceWriter::start(Arc::clone(&child), Arc::clone(&interrupt)) {
+            Ok(writer) => writer,
+            Err(_) => {
+                let _ = interrupt.interrupt();
+                if let Ok(mut child) = child.lock() {
+                    if let Some(child) = child.take() {
+                        let _ = child.kill();
+                    }
+                }
+                return Err(startup_failure_response(
+                    diagnostic_storage_root.as_deref(),
+                    "service_writer_start_failed",
+                    "process",
+                    "The local service could not be managed safely.",
+                    "service_writer_start_failed",
+                    true,
+                ));
+            }
+        };
     process.next_generation = generation;
-    process.current = Some(RunningProcess { generation, child });
+    process.current = Some(RunningProcess {
+        generation,
+        child,
+        interrupt,
+        writer,
+        writer_task,
+    });
 
     let shared_process = Arc::clone(&state.process);
     let shared_permissions = Arc::clone(&state.permissions);
     let shared_native_responses = Arc::clone(&state.native_responses);
     tauri::async_runtime::spawn(async move {
-        let mut terminate_child = true;
         let mut stderr_line = Vec::new();
         while let Some(event) = events.recv().await {
             match event {
@@ -155,10 +202,7 @@ fn start_local_service_process(
                     }
                 },
                 CommandEvent::Error(_) => break,
-                CommandEvent::Terminated(_) => {
-                    terminate_child = false;
-                    break;
-                }
+                CommandEvent::Terminated(_) => break,
                 CommandEvent::Stderr(bytes) => {
                     for byte in bytes {
                         if byte == b'\n' {
@@ -193,14 +237,14 @@ fn start_local_service_process(
             }
         }
 
-        let child = match shared_process.lock() {
+        let running = match shared_process.lock() {
             Ok(mut process)
                 if process
                     .current
                     .as_ref()
                     .is_some_and(|item| item.generation == generation) =>
             {
-                process.current.take().map(|item| item.child)
+                process.current.take()
             }
             Ok(_) => None,
             Err(_) => {
@@ -208,11 +252,10 @@ fn start_local_service_process(
                 None
             }
         };
-        if terminate_child {
-            if let Some(child) = child {
-                if child.kill().is_err() {
-                    report_local_service_host_error("process", "service_termination_failed");
-                }
+        if let Some(running) = running {
+            let cleanup = tauri::async_runtime::spawn_blocking(move || running.terminate()).await;
+            if !matches!(cleanup, Ok(Ok(()))) {
+                report_local_service_host_error("process", "service_termination_failed");
             }
         }
         clear_generation_permissions(&shared_permissions, generation);
@@ -264,15 +307,17 @@ pub(crate) async fn request_local_service(
         return Err("The native local-service request is too large.".to_owned());
     }
 
-    {
-        let mut process = state
+    let (generation, writer) = {
+        let process = state
             .process
             .lock()
             .map_err(|_| "Local service state is unavailable.".to_owned())?;
-        let Some(current) = process.current.as_mut() else {
+        let Some(current) = process.current.as_ref() else {
             return Err("The local service is not running.".to_owned());
         };
-        let generation = current.generation;
+        (current.generation, current.writer.clone())
+    };
+    {
         let mut pending = state
             .native_responses
             .lock()
@@ -284,15 +329,12 @@ pub(crate) async fn request_local_service(
             request_id.clone(),
             NativeResponseWaiter { generation, sender },
         );
-        if current.child.write(&frame).is_err() {
-            pending.remove(&request_id);
-            return Err("The local service connection was interrupted.".to_owned());
-        }
     }
     let _response_guard = NativeResponseGuard {
         pending: Arc::clone(&state.native_responses),
         request_id: request_id.clone(),
     };
+    write_service_frame(&state.process, generation, &writer, frame).await?;
 
     let mut response = match tauri::async_runtime::spawn_blocking(move || {
         receiver.recv_timeout(Duration::from_secs(15))
@@ -565,7 +607,7 @@ fn serialize_startup_failure(failure: &StartupFailure) -> Result<String, serde_j
     serde_json::to_string(failure)
 }
 
-fn report_local_service_host_error(category: &str, code: &str) {
+pub(crate) fn report_local_service_host_error(category: &str, code: &str) {
     let correlation_id = uuid::Uuid::new_v4().simple();
     eprintln!(
         "component=local_service category={category} code={code} correlation_id={correlation_id}"
@@ -647,20 +689,26 @@ pub(crate) async fn write_local_service(
         }
     }
 
-    let mut process = state
-        .process
-        .lock()
-        .map_err(|_| "Local service state is unavailable.")?;
-    let Some(current) = process.current.as_mut() else {
-        return Err("The local service is not running.".to_owned());
+    let writer = {
+        let process = state
+            .process
+            .lock()
+            .map_err(|_| "Local service state is unavailable.")?;
+        let Some(current) = process.current.as_ref() else {
+            return Err("The local service is not running.".to_owned());
+        };
+        if current.generation != generation {
+            return Err("The local service connection is no longer current.".to_owned());
+        }
+        current.writer.clone()
     };
-    if current.generation != generation {
-        return Err("The local service connection is no longer current.".to_owned());
-    }
-    current
-        .child
-        .write(forwarded_line.as_bytes())
-        .map_err(|_| "The local service connection was interrupted.".to_owned())
+    write_service_frame(
+        &state.process,
+        generation,
+        &writer,
+        Zeroizing::new(forwarded_line.into_bytes()),
+    )
+    .await
 }
 
 enum LegacyGlobalPolicyConfirmation {
@@ -811,7 +859,9 @@ pub(crate) async fn respond_local_service_permission(
         generation,
         &approval_request_id,
         approved,
-    ) {
+    )
+    .await
+    {
         release_permission_response(&permissions, generation, &approval_request_id);
         return Err(error);
     }

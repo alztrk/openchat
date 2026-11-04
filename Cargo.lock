@@ -3792,6 +3792,7 @@ name = "openchat-desktop"
 version = "0.1.11"
 dependencies = [
  "base64 0.23.1",
+ "libc",
  "openchat-local-service",
  "serde",
  "serde_json",
