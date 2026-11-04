@@ -619,6 +619,52 @@ async fn message_and_attachment_are_persisted_together_on_success() {
 }
 
 #[tokio::test]
+async fn message_save_rejects_attachment_metadata_that_cannot_be_read_later() {
+    let directory = TestDirectory::new();
+    let storage = initialized_chat_storage(&directory);
+    let conversation_id = create_attachment_test_conversation(&storage).await;
+
+    for (name, mime_type) in [
+        ("notes.txt", "application/octet-stream"),
+        ("notes.bin", "text/plain"),
+    ] {
+        let message_id = format!("attachment-message-{}", Uuid::new_v4().simple());
+        let attachment_id = format!("attachment-{}", Uuid::new_v4().simple());
+        let mut input = attachment_message_input(
+            &conversation_id,
+            &message_id,
+            &attachment_id,
+            b"attachment content",
+        );
+        input["input"]["attachments"][0]["name"] = json!(name);
+        input["input"]["attachments"][0]["mimeType"] = json!(mime_type);
+
+        let error = dispatch("storage.chat.messages.save", &input, &storage)
+            .await
+            .expect_err("unsupported attachment metadata must be rejected");
+
+        assert_eq!(error.code, "invalid_request_params");
+        assert!(
+            !storage
+                .root()
+                .join("attachments")
+                .join(&conversation_id)
+                .join(message_id)
+                .exists()
+        );
+    }
+
+    let messages = dispatch(
+        "storage.chat.messages.list",
+        &json!({"conversationId": conversation_id}),
+        &storage,
+    )
+    .await
+    .expect("list messages after rejected attachment saves");
+    assert_eq!(messages["messages"].as_array().map(Vec::len), Some(0));
+}
+
+#[tokio::test]
 async fn message_commit_failure_removes_the_newly_published_attachment_directory() {
     let directory = TestDirectory::new();
     let storage = initialized_chat_storage(&directory);

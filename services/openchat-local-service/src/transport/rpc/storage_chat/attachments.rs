@@ -470,19 +470,27 @@ pub(super) fn parse_attachment_inputs(
         if !ids.insert(id.clone()) {
             return Err(invalid_request_params());
         }
-        let name = required_bounded_string(object, "name", MAX_ATTACHMENT_NAME_BYTES, true)?;
-        let mime_type =
-            required_bounded_string(object, "mimeType", MAX_ATTACHMENT_MIME_BYTES, true)?;
-        let kind = required_bounded_string(object, "kind", MAX_ATTACHMENT_KIND_BYTES, true)?;
-        if kind != "image" && kind != "text" {
-            return Err(invalid_request_params());
-        }
-        let size_bytes = object
-            .get("sizeBytes")
-            .and_then(Value::as_u64)
-            .and_then(|size| usize::try_from(size).ok())
-            .filter(|size| *size > 0)
-            .ok_or_else(invalid_request_params)?;
+        let metadata = AttachmentMetadata {
+            id,
+            name: required_bounded_string(object, "name", MAX_ATTACHMENT_NAME_BYTES, true)?
+                .to_owned(),
+            mime_type: required_bounded_string(
+                object,
+                "mimeType",
+                MAX_ATTACHMENT_MIME_BYTES,
+                true,
+            )?
+            .to_owned(),
+            kind: required_bounded_string(object, "kind", MAX_ATTACHMENT_KIND_BYTES, true)?
+                .to_owned(),
+            size_bytes: object
+                .get("sizeBytes")
+                .and_then(Value::as_u64)
+                .and_then(|size| usize::try_from(size).ok())
+                .filter(|size| *size > 0)
+                .ok_or_else(invalid_request_params)?,
+        };
+        validate_attachment_metadata(&metadata).map_err(|_| invalid_request_params())?;
         let encoded = object
             .get("dataBase64")
             .and_then(Value::as_str)
@@ -490,39 +498,32 @@ pub(super) fn parse_attachment_inputs(
         let bytes = STANDARD
             .decode(encoded)
             .map_err(|_| invalid_request_params())?;
-        if bytes.len() != size_bytes
-            || size_bytes
-                > if kind == "image" {
-                    MAX_IMAGE_BYTES
-                } else {
-                    MAX_TEXT_BYTES
-                }
-        {
+        if bytes.len() != metadata.size_bytes {
             return Err(invalid_request_params());
         }
         total = total
-            .checked_add(size_bytes)
+            .checked_add(metadata.size_bytes)
             .ok_or_else(invalid_request_params)?;
         if total > MAX_ATTACHMENT_BYTES {
             return Err(invalid_request_params());
         }
-        if kind == "image" {
+        if metadata.kind == "image" {
             images += 1;
             if images > MAX_IMAGE_COUNT {
                 return Err(invalid_request_params());
             }
-            if !valid_image_signature(mime_type, &bytes) {
+            if !valid_image_signature(&metadata.mime_type, &bytes) {
                 return Err(invalid_request_params());
             }
         } else if std::str::from_utf8(&bytes).is_err() {
             return Err(invalid_request_params());
         }
         result.push(AttachmentInput {
-            id,
-            name: name.to_owned(),
-            mime_type: mime_type.to_owned(),
-            size_bytes,
-            kind: kind.to_owned(),
+            id: metadata.id,
+            name: metadata.name,
+            mime_type: metadata.mime_type,
+            size_bytes: metadata.size_bytes,
+            kind: metadata.kind,
             bytes,
         });
     }
