@@ -46,8 +46,8 @@ export default defineConfig({
   build: {
     target: 'es2022',
     emptyOutDir: true,
-    // Shiki's single C++ grammar is 501 kB minified and cannot be split further by Rollup.
-    chunkSizeWarningLimit: 512,
+    // The syntax highlighter engine and language grammars are lazy-loaded; the largest measured chunk is 797 kB.
+    chunkSizeWarningLimit: 1024,
     rollupOptions: {
       output: {
         manualChunks(id) {
@@ -65,9 +65,6 @@ export default defineConfig({
           }
           if (moduleId.includes('node_modules/@radix-ui')) {
             return 'radix-vendor';
-          }
-          if (moduleId.includes('node_modules/shiki') || moduleId.includes('node_modules/@shikijs')) {
-            return 'shiki-vendor';
           }
           return undefined;
         },

@@ -7,7 +7,7 @@ import ts from 'typescript';
 const errorDetailsSource = fs
   .readFileSync(path.resolve('src/features/chat/state/chatStoreErrorDetails.ts'), 'utf8')
   .replace(
-    "import { LocalServiceError } from '@shared/lib/platform/local-service';",
+    /import\s*\{\s*classifyServiceErrorCode,\s*LocalServiceError,\s*serviceErrorCategoryTranslationKey,\s*\}\s*from '@shared\/lib\/platform\/local-service';/,
     `export class LocalServiceError extends Error {
       constructor(code, message, retryable = false, details = null) {
         super(message);
@@ -16,7 +16,9 @@ const errorDetailsSource = fs
         this.retryable = retryable;
         this.details = details;
       }
-    }`,
+    }
+    function classifyServiceErrorCode() { return 'unknown'; }
+    function serviceErrorCategoryTranslationKey() { return null; }`,
   );
 
 const compiled = ts.transpileModule(errorDetailsSource, {

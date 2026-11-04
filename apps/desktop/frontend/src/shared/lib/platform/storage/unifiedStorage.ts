@@ -21,6 +21,10 @@ class UnifiedStorage {
   private persistedWrites = new Map<string, Promise<void>>();
   private initialized = false;
 
+  get isInitialized(): boolean {
+    return this.initialized;
+  }
+
   /**
    * Initializes the in-memory cache from the SQLite database.
    * If legacy localStorage entries exist, migrates them to SQLite and clears localStorage.

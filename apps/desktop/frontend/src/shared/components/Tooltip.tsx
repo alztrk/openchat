@@ -1,6 +1,16 @@
 import { autoUpdate, flip, offset, shift, size, useFloating } from '@floating-ui/react-dom';
 import { createPortal } from 'react-dom';
-import { cloneElement, createContext, useContext, useEffect, useId, useRef, useState, type ReactElement } from 'react';
+import {
+  cloneElement,
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type ReactElement,
+} from 'react';
 
 /** Content and anchor for a tooltip shown on pointer hover or keyboard focus. */
 export interface TooltipProps {
@@ -92,6 +102,33 @@ export function Tooltip({
       }),
     ],
   });
+  const setAnchorReference = useCallback(
+    (anchor: HTMLDivElement | HTMLSpanElement | null) => {
+      if (!anchor) {
+        floating.refs.setReference(null);
+        return;
+      }
+
+      const getRange = () => {
+        const range = document.createRange();
+        range.selectNodeContents(anchor);
+        return range;
+      };
+      const rangeRect = getRange().getBoundingClientRect();
+      if (rangeRect.width > 0 || rangeRect.height > 0) {
+        floating.refs.setReference({
+          contextElement: anchor,
+          getBoundingClientRect: () => getRange().getBoundingClientRect(),
+          getClientRects: () => getRange().getClientRects(),
+        });
+        return;
+      }
+
+      const triggerElement = anchor.firstElementChild;
+      floating.refs.setReference(triggerElement instanceof HTMLElement ? triggerElement : null);
+    },
+    [floating.refs.setReference],
+  );
 
   useEffect(
     () => () => {
@@ -147,30 +184,7 @@ export function Tooltip({
           }
           closeIfInactive();
         }}
-        ref={(anchor) => {
-          if (!anchor) {
-            floating.refs.setReference(null);
-            return;
-          }
-
-          const getRange = () => {
-            const range = document.createRange();
-            range.selectNodeContents(anchor);
-            return range;
-          };
-          const rangeRect = getRange().getBoundingClientRect();
-          if (rangeRect.width > 0 || rangeRect.height > 0) {
-            floating.refs.setReference({
-              contextElement: anchor,
-              getBoundingClientRect: () => getRange().getBoundingClientRect(),
-              getClientRects: () => getRange().getClientRects(),
-            });
-            return;
-          }
-
-          const triggerElement = anchor.firstElementChild;
-          floating.refs.setReference(triggerElement instanceof HTMLElement ? triggerElement : null);
-        }}
+        ref={setAnchorReference}
       >
         {trigger}
         {isOpen

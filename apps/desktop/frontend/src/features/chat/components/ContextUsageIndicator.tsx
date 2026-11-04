@@ -4,7 +4,7 @@ import { type KeyboardEvent, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next';
 
 import type { PendingChatAttachment } from '@features/chat/data/chatAttachments';
-import type { ChatMessage } from '@features/chat/data/chatStorage';
+import type { ChatMessage } from '@app/runtime/chatStorage';
 import {
   type ContextUsageConfiguration,
   type ContextUsageMemory,
@@ -13,7 +13,7 @@ import {
   loadContextUsageConfiguration,
   loadFullContextUsage,
 } from '@features/chat/data/contextUsage';
-import type { ToolPermissionMode } from '@features/projects/data/projectPreferences';
+import type { ToolPermissionMode } from '@entities/project';
 import type { ChatModel } from '@entities/model';
 import { withStableKeys } from '@shared/lib/utils/reactKeys';
 

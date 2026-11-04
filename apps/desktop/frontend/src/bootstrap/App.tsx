@@ -19,27 +19,26 @@ import type {
   WorkspaceFileSelection,
   WorkspacePanelRequest,
 } from '@features/chat/components/ChatFileChangesPanel';
-import { parseAgentQuestionGroup } from '@features/chat/data/agentQuestions';
-import { getMessages } from '@features/chat/data/chatStorage';
+import { parseAgentQuestionGroup } from '@shared/lib/preferences/agentQuestions';
+import { getMessages } from '@app/runtime/chatStorage';
 import { setPendingComposerDraft } from '@features/chat/data/pendingComposerDraft';
 import {
   clampWorkspacePanelRatio,
   readWorkspacePanelRatio,
   writeWorkspacePanelRatio,
-} from '@features/chat/data/sidebarPreferences';
-import { useChatStore } from '@features/chat/state/chatStore';
-import { useDesignPreferencesStore } from '@features/design-workspace/data/designPreferences';
+} from '@shared/lib/preferences/sidebarPreferences';
+import { useChatStore } from '@app/runtime/chatStore';
+import { useDesignPreferencesStore } from '@app/runtime/designPreferences';
 import {
   resetNotificationWindowFocus,
   setNotificationWindowFocus,
-} from '@features/notifications/data/notificationRuntime';
+} from '@app/runtime/notificationRuntime';
 import {
   OAUTH_PLAN_CHECK_INTERVAL_MS,
   refreshOAuthPlans,
   shouldRefreshOAuthPlansOnFocus,
-} from '@features/provider-settings/data/oauthPlanMonitor';
+} from '@app/runtime/oauthPlanMonitor';
 import { initializeActiveSecurityScans } from '@features/security-scans/data/securityScanRuntime';
-import { preloadHighlighting } from '@features/chat/components/message/FileSyntaxHighlight';
 import type { ThemePreference } from '@features/app-settings/components/GeneralSettingsSection';
 import type { SettingsSection } from '@features/app-settings/components/SettingsPage';
 import {
@@ -53,10 +52,10 @@ import {
   writeCloseWindowBehavior,
   writeLastSurface,
 } from '@features/app-settings/data/appPreferences';
-import { useAssistantExecutionPreferencesStore } from '@features/app-settings/data/assistantExecutionPreferences';
-import type { AssistantAgentSnapshot } from '@features/app-settings/data/assistantProfiles';
+import { useAssistantExecutionPreferencesStore } from '@shared/lib/preferences/assistantExecutionPreferences';
+import type { AssistantAgentSnapshot } from '@shared/lib/preferences/assistantProfiles';
 import { useChatDisplayPreferencesStore } from '@shared/lib/preferences/chatDisplayPreferences';
-import { useKeyboardShortcutsStore } from '@features/app-settings/stores/keyboardShortcutsStore';
+import { useKeyboardShortcutsStore } from '@shared/lib/preferences/keyboardShortcutsStore';
 import { localServiceClient } from '@shared/lib/platform/local-service';
 import { unifiedStorage } from '@shared/lib/platform/storage/unifiedStorage';
 import { getCurrentWindow, getVersion, invoke, isTauri, listen } from '@shared/lib/platform/tauri';
@@ -146,11 +145,6 @@ function readThemePreference(): ThemePreference {
 
 export function App() {
   const { t } = useTranslation();
-  // Load the lightweight syntax highlighter without blocking the initial render.
-  useEffect(() => {
-    preloadHighlighting();
-  }, []);
-
   const [surfaceHistory, setSurfaceHistory] = useState<SurfaceHistory>({
     surfaces: [readInitialSurface()],
     index: 0,
@@ -294,10 +288,34 @@ export function App() {
   }, [isDark]);
 
   useEffect(() => {
-    initializeKeyboardShortcuts();
-    useChatDisplayPreferencesStore.getState().initialize();
-    initializeAssistantExecutionPreferences();
-    useDesignPreferencesStore.getState().initialize();
+    let disposed = false;
+    const initializePreferences = () => {
+      if (disposed) return;
+      setSurfaceHistory({ surfaces: [readInitialSurface()], index: 0 });
+      setTheme(readThemePreference());
+      setAppearance(readAppearancePreferences());
+      setWorkspaceRatio(readWorkspacePanelRatio());
+      initializeKeyboardShortcuts();
+      useChatDisplayPreferencesStore.getState().initialize();
+      initializeAssistantExecutionPreferences();
+      useDesignPreferencesStore.getState().initialize();
+      void writeCloseWindowBehavior(readCloseWindowBehavior()).catch((cause: unknown) => {
+        globalThis.reportError(new Error('The window close behavior could not be applied.', { cause }));
+      });
+    };
+
+    if (unifiedStorage.isInitialized) {
+      initializePreferences();
+      return () => {
+        disposed = true;
+      };
+    }
+
+    window.addEventListener('openchat-storage-ready', initializePreferences, { once: true });
+    return () => {
+      disposed = true;
+      window.removeEventListener('openchat-storage-ready', initializePreferences);
+    };
   }, [initializeAssistantExecutionPreferences, initializeKeyboardShortcuts]);
 
   useEffect(() => {
@@ -326,12 +344,6 @@ export function App() {
     );
     return () => window.clearTimeout(timer);
   }, [activeGoal, isChangingGoal, maxGoalRuntimeMinutes]);
-
-  useEffect(() => {
-    void writeCloseWindowBehavior(readCloseWindowBehavior()).catch((cause: unknown) => {
-      globalThis.reportError(new Error('The window close behavior could not be applied.', { cause }));
-    });
-  }, []);
 
   useLayoutEffect(() => {
     const root = document.documentElement;

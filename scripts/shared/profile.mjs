@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -17,4 +17,12 @@ export function reserveTemporaryTestProfileRoot({ temporaryDirectory = tmpdir(),
     }
   }
   throw new Error(`Could not reserve a unique temporary desktop test profile after ${MAX_PROFILE_RESERVATION_ATTEMPTS} attempts.`);
+}
+
+export function temporaryTestProfilePath({ temporaryDirectory = tmpdir(), createId = randomUUID } = {}) {
+  for (let attempt = 0; attempt < MAX_PROFILE_RESERVATION_ATTEMPTS; attempt += 1) {
+    const profileRoot = path.join(temporaryDirectory, `openchat-desktop-test-${createId()}`);
+    if (!existsSync(profileRoot)) return profileRoot;
+  }
+  throw new Error(`Could not find an unused temporary desktop test profile path after ${MAX_PROFILE_RESERVATION_ATTEMPTS} attempts.`);
 }

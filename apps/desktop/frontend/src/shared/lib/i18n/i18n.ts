@@ -33,7 +33,7 @@ function getSystemLocale(): SupportedLocale {
   return supportedLocales.find((locale) => locale === language) ?? 'en';
 }
 
-function getInitialLocale(): SupportedLocale {
+export function getInitialLocale(): SupportedLocale {
   const preference = getLocalePreference();
   return preference === 'system' ? getSystemLocale() : preference;
 }

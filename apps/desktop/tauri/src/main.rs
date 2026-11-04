@@ -62,6 +62,13 @@ mod request_bounds;
 mod save_dialog;
 #[cfg_attr(test, allow(dead_code))]
 mod window_broadcast;
+#[cfg_attr(
+    any(
+        feature = "startup-benchmark",
+        feature = "desktop-profile-test-support"
+    ),
+    allow(dead_code)
+)]
 mod window_state;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -180,12 +187,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let mut main_window_builder =
                 tauri::WebviewWindowBuilder::from_config(app.handle(), main_window_config)?
                     .visible(true);
-            #[cfg(windows)]
-            if is_webview2_gpu_sandbox_affected_windows_build() {
-                main_window_builder = main_window_builder.additional_browser_args(
-                    "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --disable-gpu-sandbox",
-                );
-            }
             #[cfg(feature = "desktop-profile-test-support")]
             if desktop_test_profile_root.is_some() {
                 main_window_builder = main_window_builder.visible(true);
@@ -476,90 +477,6 @@ fn is_reparse_point(metadata: &std::fs::Metadata) -> bool {
     #[cfg(not(windows))]
     {
         metadata.file_type().is_symlink()
-    }
-}
-
-#[cfg(windows)]
-fn is_webview2_gpu_sandbox_affected_windows_build() -> bool {
-    use windows_sys::Win32::Foundation::ERROR_SUCCESS;
-    use windows_sys::Win32::System::Registry::{RegGetValueW, HKEY_LOCAL_MACHINE, RRF_RT_REG_SZ};
-
-    const WINDOWS_VERSION_KEY: &str = "SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion";
-    const CURRENT_BUILD_VALUE: &str = "CurrentBuildNumber";
-
-    let key = WINDOWS_VERSION_KEY
-        .encode_utf16()
-        .chain(std::iter::once(0))
-        .collect::<Vec<_>>();
-    let value_name = CURRENT_BUILD_VALUE
-        .encode_utf16()
-        .chain(std::iter::once(0))
-        .collect::<Vec<_>>();
-    let mut build_buffer = [0u16; 16];
-    let mut buffer_size = std::mem::size_of_val(&build_buffer) as u32;
-    // SAFETY: The key/value names are NUL-terminated, and the output buffer and size are valid.
-    let result = unsafe {
-        RegGetValueW(
-            HKEY_LOCAL_MACHINE,
-            key.as_ptr(),
-            value_name.as_ptr(),
-            RRF_RT_REG_SZ,
-            std::ptr::null_mut(),
-            build_buffer.as_mut_ptr().cast(),
-            &mut buffer_size,
-        )
-    };
-    if result != ERROR_SUCCESS {
-        eprintln!(
-            "OpenChat could not read the Windows build number; leaving the WebView2 GPU sandbox enabled: {}",
-            std::io::Error::from_raw_os_error(result as i32)
-        );
-        return false;
-    }
-
-    let byte_length = buffer_size as usize;
-    if byte_length % std::mem::size_of::<u16>() != 0
-        || byte_length > std::mem::size_of_val(&build_buffer)
-    {
-        eprintln!(
-            "OpenChat received an invalid Windows build number; leaving the WebView2 GPU sandbox enabled."
-        );
-        return false;
-    }
-    let character_count = byte_length / std::mem::size_of::<u16>();
-    let build_number = build_buffer[..character_count]
-        .split(|character| *character == 0)
-        .next()
-        .unwrap_or_default();
-    let build_number = match String::from_utf16(build_number) {
-        Ok(build_number) => build_number,
-        Err(error) => {
-            eprintln!(
-                "OpenChat could not decode the Windows build number; leaving the WebView2 GPU sandbox enabled: {error}"
-            );
-            return false;
-        }
-    };
-
-    is_webview2_gpu_sandbox_affected_build_number(&build_number)
-}
-
-#[cfg(any(windows, test))]
-fn is_webview2_gpu_sandbox_affected_build_number(build_number: &str) -> bool {
-    matches!(build_number, "26200" | "26300")
-}
-
-#[cfg(test)]
-mod webview2_gpu_sandbox_tests {
-    use super::is_webview2_gpu_sandbox_affected_build_number;
-
-    #[test]
-    fn workaround_is_limited_to_affected_windows_build_families() {
-        assert!(is_webview2_gpu_sandbox_affected_build_number("26200"));
-        assert!(is_webview2_gpu_sandbox_affected_build_number("26300"));
-        assert!(!is_webview2_gpu_sandbox_affected_build_number("26100"));
-        assert!(!is_webview2_gpu_sandbox_affected_build_number("26340"));
-        assert!(!is_webview2_gpu_sandbox_affected_build_number(""));
     }
 }
 

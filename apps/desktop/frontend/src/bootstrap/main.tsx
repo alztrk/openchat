@@ -50,19 +50,20 @@ async function startApplication(options: { startWithEmptyStorage?: boolean } = {
   const i18nModulePromise = import('@shared/lib/i18n/i18n');
   const reactRootPromise = getReactRoot();
   const { unifiedStorage } = await storageModulePromise;
-  await unifiedStorage.initialize(options);
+  const storageInitialization = unifiedStorage.initialize(options);
+  void storageInitialization.catch(() => undefined);
   const appImportPromise = import('./App');
   await appStylesPromise;
-  const [{ App }, { ApplicationErrorBoundary }, { i18n, i18nReady }, [React, root]] = await Promise.all([
+  const [{ App }, { ApplicationErrorBoundary }, i18nModule, [React, root]] = await Promise.all([
     appImportPromise,
     import('@widgets/application-error'),
     i18nModulePromise,
     reactRootPromise,
   ]);
-  await i18nReady;
+  await i18nModule.i18nReady;
 
-  document.documentElement.lang = i18n.language;
-  i18n.on('languageChanged', (language) => {
+  document.documentElement.lang = i18nModule.i18n.language;
+  i18nModule.i18n.on('languageChanged', (language) => {
     document.documentElement.lang = language;
   });
 
@@ -75,6 +76,10 @@ async function startApplication(options: { startWithEmptyStorage?: boolean } = {
       ),
     ),
   );
+
+  await storageInitialization;
+  await i18nModule.changeSupportedLocale(i18nModule.getInitialLocale());
+  window.dispatchEvent(new Event('openchat-storage-ready'));
 }
 
 void startApplication().catch(async (error: unknown) => {

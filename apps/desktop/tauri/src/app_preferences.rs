@@ -27,6 +27,13 @@ pub fn set_close_window_behavior(
     );
 }
 
+#[cfg_attr(
+    any(
+        feature = "startup-benchmark",
+        feature = "desktop-profile-test-support"
+    ),
+    allow(dead_code)
+)]
 pub fn should_minimize_on_close(state: &AppPreferencesState) -> bool {
     state.minimize_on_close.load(Ordering::Acquire)
 }

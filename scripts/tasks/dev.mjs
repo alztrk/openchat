@@ -3,7 +3,7 @@ import { buildLocalService } from '../shared/rust.mjs';
 import { ensureFrontendDependencies } from '../shared/rust.mjs';
 import { buildLocalServiceInterruptibly, ensureFrontendDependenciesInterruptibly } from '../shared/rust.mjs';
 import { runInterruptibleCommand } from '../shared/session.mjs';
-import { reserveTemporaryTestProfileRoot } from '../shared/profile.mjs';
+import { reserveTemporaryTestProfileRoot, temporaryTestProfilePath } from '../shared/profile.mjs';
 import { removeTemporaryTestProfile } from '../shared/profile-clean.mjs';
 import { getFrontendDirectory } from '../shared/runner.mjs';
 import { ensureNoArguments } from '../help.mjs';
@@ -118,7 +118,7 @@ export const startupBenchmark = {
     let profileRoot;
     const { interruptedSignal } = await runTemporaryProfileSession({
       run: async (interruptController) => {
-        profileRoot = reserveTemporaryTestProfileRoot();
+        profileRoot = temporaryTestProfilePath();
         const resultPath = pathMod.join(profileRoot, 'result.json');
         await buildLocalServiceInterruptibly('debug', false, ['desktop-profile-test-support'], interruptController);
         interruptController.throwIfInterrupted();

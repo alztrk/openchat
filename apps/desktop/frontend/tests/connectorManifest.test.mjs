@@ -4,7 +4,7 @@ import path from 'node:path';
 import test from 'node:test';
 import ts from 'typescript';
 
-const sourcePath = path.resolve('src/features/app-settings/data/connectorManifest.ts');
+const sourcePath = path.resolve('src/shared/lib/preferences/connectorManifest.ts');
 const source = fs.readFileSync(sourcePath, 'utf8');
 const compiled = ts.transpileModule(source, {
   compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
@@ -12,7 +12,7 @@ const compiled = ts.transpileModule(source, {
 const { compareConnectorToolNames, parseConnectorManifest } = await import(
   `data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`
 );
-const projectMcpSourcePath = path.resolve('src/features/projects/data/projectMcp.ts');
+const projectMcpSourcePath = path.resolve('src/entities/project/projectMcp.ts');
 const projectMcpSource = fs.readFileSync(projectMcpSourcePath, 'utf8');
 const compiledProjectMcp = ts.transpileModule(projectMcpSource, {
   compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },

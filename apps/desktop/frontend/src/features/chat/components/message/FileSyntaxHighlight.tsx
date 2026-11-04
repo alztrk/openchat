@@ -8,12 +8,12 @@
  * This reduces the initial bundle by ~400 KB compared to Shiki since the
  * full language registry is not required at sync module evaluation.
  *
- * TanStack Highlight is imported dynamically after app mount (via
- * `preloadHighlighting`). Before it loads, plain text is shown. Once loaded,
- * components re-render with syntax highlighting.
+ * TanStack Highlight is loaded when a view containing code first mounts.
+ * Before it loads, plain text is shown. Once loaded, components re-render
+ * with syntax highlighting.
  */
 import type { ReactNode } from 'react';
-import { useSyncExternalStore } from 'react';
+import { useEffect, useSyncExternalStore } from 'react';
 import type { Highlighter, HighlightToken } from '@tanstack/highlight/core';
 
 import { detectFileLanguage } from './detectFileLanguage';
@@ -25,6 +25,7 @@ import { detectFileLanguage } from './detectFileLanguage';
 const subscribers = new Set<() => void>();
 let highlighterState: 'loading' | 'ready' | 'error' = 'loading';
 let loadedHighlighter: Highlighter | null = null;
+let highlighterPromise: Promise<void> | undefined;
 
 /**
  * Subscribe to highlighting state changes.
@@ -42,47 +43,23 @@ function notify() {
 
 /**
  * Lazy-load TanStack Highlight. Returns immediately if already loaded or failed.
- * Called once during app initialization.
+ * Called when a code or file view first needs highlighting.
  */
-export function preloadHighlighting(): void {
-  if (highlighterState !== 'loading') return;
+function preloadHighlighting(): void {
+  if (highlighterState !== 'loading' || highlighterPromise) return;
 
-  highlighterState = 'loading';
-
-  // Import only the languages OpenChat actually uses
-  Promise.all([
-    import('@tanstack/highlight/core').then((m) => m.createHighlighter),
-    import('@tanstack/highlight/languages/shell').then((m) => m.shell),
-    import('@tanstack/highlight/languages/c').then((m) => m.c),
-    import('@tanstack/highlight/languages/cpp').then((m) => m.cpp),
-    import('@tanstack/highlight/languages/css').then((m) => m.css),
-    import('@tanstack/highlight/languages/dockerfile').then((m) => m.dockerfile),
-    import('@tanstack/highlight/languages/go').then((m) => m.go),
-    import('@tanstack/highlight/languages/html').then((m) => m.html),
-    import('@tanstack/highlight/languages/java').then((m) => m.java),
-    import('@tanstack/highlight/languages/js').then((m) => m.js),
-    import('@tanstack/highlight/languages/json').then((m) => m.json),
-    import('@tanstack/highlight/languages/jsx').then((m) => m.jsx),
-    import('@tanstack/highlight/languages/markdown').then((m) => m.markdown),
-    import('@tanstack/highlight/languages/powershell').then((m) => m.powershell),
-    import('@tanstack/highlight/languages/python').then((m) => m.python),
-    import('@tanstack/highlight/languages/rust').then((m) => m.rust),
-    import('@tanstack/highlight/languages/sql').then((m) => m.sql),
-    import('@tanstack/highlight/languages/toml').then((m) => m.toml),
-    import('@tanstack/highlight/languages/tsx').then((m) => m.tsx),
-    import('@tanstack/highlight/languages/ts').then((m) => m.ts),
-    import('@tanstack/highlight/languages/yaml').then((m) => m.yaml),
-  ])
-    .then(([createHighlighter, ...langs]) => {
-      const hl = createHighlighter({ languages: langs });
-      loadedHighlighter = hl;
-      highlighterState = 'ready';
-      notify();
-    })
-    .catch(() => {
-      highlighterState = 'error';
-      notify();
-    });
+  highlighterPromise = import('./fileHighlightingRuntime')
+    .then(({ loadFileHighlighter }) => loadFileHighlighter())
+    .then(
+      (highlighter) => {
+        loadedHighlighter = highlighter;
+        highlighterState = 'ready';
+      },
+      () => {
+        highlighterState = 'error';
+      },
+    )
+    .then(notify);
 }
 
 // ---------------------------------------------------------------------------
@@ -138,6 +115,7 @@ export function highlightFileLines(
  * Returns `'loading' | 'ready' | 'error'`.
  */
 export function useHighlightingState(): 'loading' | 'ready' | 'error' {
+  useEffect(preloadHighlighting, []);
   return useSyncExternalStore(subscribe, () => highlighterState, () => 'loading');
 }
 

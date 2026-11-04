@@ -41,7 +41,7 @@ test('kilo icon exists and is registered in ProviderIcon', () => {
   const iconPath = path.resolve('../assets/icons/providers/kilo.svg');
   assert.ok(fs.existsSync(iconPath), 'kilo.svg must exist');
 
-  const iconCompPath = path.resolve('src/features/provider-settings/components/ProviderIcon.tsx');
+  const iconCompPath = path.resolve('src/shared/components/ProviderIcon.tsx');
   const iconCompContent = fs.readFileSync(iconCompPath, 'utf8');
   assert.match(iconCompContent, /kilo:\s*kiloIconUrl/);
 });
