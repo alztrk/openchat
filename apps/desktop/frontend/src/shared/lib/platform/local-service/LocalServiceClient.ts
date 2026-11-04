@@ -319,7 +319,6 @@ export class LocalServiceClient {
   private dispatchBroadcast(event: ServiceEvent): void {
     if (event.name === 'app.setting.changed') {
       void invoke('broadcast_window_sync_event', {
-        event: 'openchat://app-setting-changed',
         payload: event.data,
       }).catch((cause: unknown) => {
         globalThis.reportError(
