@@ -11,10 +11,19 @@ function requireRootElement(): HTMLElement {
 const rootElement = requireRootElement();
 let reactRoot: Root | undefined;
 let appStylesPromise: Promise<unknown> | undefined;
+let languageChangeListenerRegistered = false;
 
 function loadAppStyles(): Promise<unknown> {
   appStylesPromise ??= import('../index.css');
   return appStylesPromise;
+}
+
+async function reportRendererReady(language: string): Promise<void> {
+  try {
+    await invoke('report_webview_renderer_ready', { language, appUrl: window.location.href });
+  } catch (cause: unknown) {
+    globalThis.reportError(new Error('The desktop host could not update renderer recovery state.', { cause }));
+  }
 }
 
 async function getReactRoot(): Promise<[typeof import('react'), Root]> {
@@ -32,11 +41,7 @@ function renderAndRevealWindow(render: () => void): void {
   flushSync(render);
   void getCurrentWindow()
     .show()
-    .then(() =>
-      invoke('report_webview_renderer_ready').catch((cause: unknown) => {
-        globalThis.reportError(new Error('The desktop host could not reset renderer recovery state.', { cause }));
-      }),
-    )
+    .then(() => reportRendererReady(document.documentElement.lang))
     .then(() => window.dispatchEvent(new Event('openchat-startup-window-visible')))
     .catch((cause: unknown) => {
       globalThis.reportError(new Error('The application window could not be shown.', { cause }));
@@ -68,9 +73,13 @@ async function startApplication(options: { startWithEmptyStorage?: boolean } = {
   await i18nModule.i18nReady;
 
   document.documentElement.lang = i18nModule.i18n.language;
-  i18nModule.i18n.on('languageChanged', (language) => {
-    document.documentElement.lang = language;
-  });
+  if (!languageChangeListenerRegistered) {
+    i18nModule.i18n.on('languageChanged', (language) => {
+      document.documentElement.lang = language;
+      if (isTauri()) void reportRendererReady(language);
+    });
+    languageChangeListenerRegistered = true;
+  }
 
   renderAndRevealWindow(() =>
     root.render(

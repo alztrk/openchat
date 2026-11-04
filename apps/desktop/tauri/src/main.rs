@@ -18,7 +18,7 @@ use webview2_com::{
     ProcessFailedEventHandler,
 };
 #[cfg(windows)]
-use windows_core::Interface;
+use windows_core::{Interface, PWSTR};
 
 #[cfg(feature = "startup-benchmark")]
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -277,6 +277,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .inner()
                 .clone();
             #[cfg(windows)]
+            let recovery_window = main_window.clone();
+            #[cfg(windows)]
             main_window.with_webview(move |webview| {
                 // SAFETY: Tauri keeps the WebView2 controller alive for this UI-thread callback.
                 // The COM interfaces are obtained from that controller and used on the UI thread.
@@ -291,6 +293,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             settings.SetAreBrowserAcceleratorKeysEnabled(false)?;
 
                             let recovery_for_callback = renderer_recovery.clone();
+                            let recovery_window_for_callback = recovery_window.clone();
                             let handler = ProcessFailedEventHandler::create(Box::new(
                                 move |sender, args| {
                                     let Some(core) = sender else {
@@ -319,10 +322,29 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         }
                                         renderer_recovery::RendererRecoveryAction::ShowRecovery => {
                                             eprintln!("OpenChat WebView2 renderer exited repeatedly; showing recovery screen.");
-                                            let recovery_page = "<!doctype html><html lang=\"tr\"><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>OpenChat başlatılamadı</title><style>body{font:16px system-ui,sans-serif;background:#111;color:#eee;display:grid;min-height:100vh;place-items:center;margin:0}main{max-width:34rem;padding:2rem}button{font:inherit;padding:.65rem 1rem;cursor:pointer}</style><main><h1>OpenChat başlatılamadı</h1><p>Uygulama görünümü beklenmedik şekilde durdu. Yeniden yüklemeyi deneyin. Sorun sürerse OpenChat'i yeniden başlatın.</p><button onclick=\"location.reload()\">Yeniden dene</button></main></html>";
-                                            let recovery_page = CoTaskMemPWSTR::from(recovery_page);
+                                            if let Err(error) = recovery_window_for_callback.set_decorations(true) {
+                                                eprintln!("OpenChat could not enable the recovery window title bar: {error}");
+                                            }
+                                            let current_source = if recovery_for_callback.has_app_url() {
+                                                None
+                                            } else {
+                                                let mut source = PWSTR::null();
+                                                match core.Source(&mut source) {
+                                                    Ok(()) => Some(CoTaskMemPWSTR::from(source).to_string()),
+                                                    Err(error) => {
+                                                        eprintln!("OpenChat could not read the failed renderer URL: {error}");
+                                                        None
+                                                    }
+                                                }
+                                            };
+                                            let recovery_page = recovery_for_callback
+                                                .recovery_page(current_source.as_deref());
+                                            let recovery_page = CoTaskMemPWSTR::from(recovery_page.as_str());
                                             if let Err(error) = core.NavigateToString(*recovery_page.as_ref().as_pcwstr()) {
                                                 eprintln!("OpenChat could not show the WebView2 recovery screen: {error}");
+                                            }
+                                            if let Err(error) = recovery_window_for_callback.show() {
+                                                eprintln!("OpenChat could not show the renderer recovery window: {error}");
                                             }
                                         }
                                     }
@@ -733,11 +755,22 @@ mod desktop_test_profile_tests {
 fn report_webview_renderer_ready(
     window: tauri::WebviewWindow,
     renderer_recovery: tauri::State<'_, renderer_recovery::RendererRecoveryTracker>,
+    language: request_bounds::BoundedText<32>,
+    app_url: request_bounds::BoundedText<4096>,
 ) -> Result<(), &'static str> {
     if window.label() != "main" {
         return Err("Renderer readiness can only be reported by the main window.");
     }
-    renderer_recovery.renderer_ready();
+    let decorations_result = window.set_decorations(false);
+    let app_url = match url::Url::parse(&app_url.into_inner()) {
+        Ok(url) => Some(url),
+        Err(_) => {
+            eprintln!("OpenChat ignored an invalid renderer recovery URL.");
+            None
+        }
+    };
+    renderer_recovery.renderer_ready(app_url, &language.into_inner());
+    decorations_result.map_err(|_| "The custom application title bar could not be restored.")?;
     Ok(())
 }
 

@@ -245,7 +245,9 @@
 - [ ] `T-HOST-02` runtime kabulü: Gerçek Windows penceresinde soğuk/yavaş başlangıç ve startup hata ekranında boş/unstyled frame olmadığını gözle doğrula.
 - [x] `T-HOST-03` kod dilimi: WebView2 hata sayacı iki ardışık otomatik reload'dan sonra recovery gösteriyor; yalnız ana pencerenin React görünümü render edilip pencere gösterildikten sonra gelen readiness bildirimi sayacı sıfırlıyor. Sayaç doyumlu artıyor; seri, reset ve taşma için Rust testleri eklendi.
 - [ ] `T-HOST-03` runtime kabulü: Gerçek Windows WebView2 renderer çökmesini en az üç kez ve araya başarılı renderer hazır olma durumu koyarak tetikle; iki reload, recovery ve sayacın sıfırlanmasını gözle doğrula.
-- [ ] `T-HOST-04..09`: Recovery retry hedefi, pipe yazımı ve mutex süresi, dialog callback timeout'u, resize disk yazımı, event payload sınırı ve kayıt hatası davranışlarını tek tek kapat.
+- [x] `T-HOST-04` kod dilimi: Recovery ekranı en son doğrulanmış OpenChat URL'sine klavyeyle kullanılabilen bağlantı sunuyor; yalnız Tauri/loopback adresleri kabul ediliyor ve HTML escape ediliyor. URL yoksa güvenli yeniden başlatma yönergesi gösteriliyor. Recovery sayfası ana pencereyi ve standart başlık/kapatma kontrollerini açıyor; React hazır olunca özel başlık çubuğu geri geliyor. Metinler beş desteklenen dilde.
+- [ ] `T-HOST-04` runtime kabulü: Üçüncü gerçek WebView2 renderer çökmesinde recovery penceresinin görünmesini, bağlantının app URL'sine dönmesini, frontend açılışını ve local-service handshake'ini doğrula.
+- [ ] `T-HOST-05..09`: Pipe yazımı ve mutex süresi, dialog callback timeout'u, resize disk yazımı, event payload sınırı ve kayıt hatası davranışlarını tek tek kapat.
 - [ ] Kabul: doğrulanmış normal kapanış başarıyla raporlanır; interrupt ve child kapanışı bounded olur; süreç ağacı kapandığı doğrulanınca geçici profil temizlenir, kapanış doğrulanamazsa çalışan süreçten veri silmemek için profil korunur ve yolu raporlanır; dialog ve IPC arızaları kullanıcıya görünür, güvenli hata verir.
 
 ### 10.4 Yerel servis ve veri bütünlüğü
