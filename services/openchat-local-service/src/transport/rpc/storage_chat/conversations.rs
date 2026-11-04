@@ -532,10 +532,23 @@ pub(super) fn save_message(
     };
     let mut failure_stage = "transaction_begin";
     let mut published_attachment_directory = false;
+    let mut attachment_cleanup_required = false;
     let write_result = (|| -> Result<(), ServiceError> {
         let transaction = connection
             .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
             .map_err(storage_error)?;
+        let previous_content = transaction
+            .query_row(
+                "SELECT content FROM messages WHERE conversation_id = ?1 AND id = ?2",
+                params![conversation_id, id],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()
+            .map_err(storage_error)?;
+        attachment_cleanup_required = previous_content.as_deref().is_some_and(|previous| {
+            previous.starts_with(MESSAGE_CONTENT_PREFIX)
+                && !content.starts_with(MESSAGE_CONTENT_PREFIX)
+        });
         if let Some(staged) = staged.as_mut()
             && staged.staging.is_none()
         {
@@ -646,7 +659,24 @@ pub(super) fn save_message(
         }
         return write_result.map(|_| json!({"saved": true}));
     }
-    Ok(json!({"saved": true}))
+    let attachment_cleanup_pending = if attachment_cleanup_required
+        && remove_message_attachment_directory_if_unreferenced(
+            storage.root(),
+            &mut connection,
+            conversation_id,
+            id,
+        )
+        .is_err()
+    {
+        eprintln!("message_attachment_cleanup_pending");
+        true
+    } else {
+        false
+    };
+    Ok(json!({
+        "saved": true,
+        "attachmentCleanupPending": attachment_cleanup_pending,
+    }))
 }
 
 pub(super) fn rollback_published_attachment_directory(

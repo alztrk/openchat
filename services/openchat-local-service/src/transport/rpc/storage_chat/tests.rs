@@ -706,6 +706,127 @@ async fn saved_gif_attachment_round_trips_through_history_decoder() {
 }
 
 #[tokio::test]
+async fn message_upsert_to_plain_content_removes_old_attachment_directory() {
+    let directory = TestDirectory::new();
+    let storage = initialized_chat_storage(&directory);
+    let conversation_id = create_attachment_test_conversation(&storage).await;
+    let message_id = format!("attachment-message-{}", Uuid::new_v4().simple());
+    let attachment_id = format!("attachment-{}", Uuid::new_v4().simple());
+    let message_directory = storage
+        .root()
+        .join("attachments")
+        .join(&conversation_id)
+        .join(&message_id);
+
+    dispatch(
+        "storage.chat.messages.save",
+        &attachment_message_input(
+            &conversation_id,
+            &message_id,
+            &attachment_id,
+            b"old attachment",
+        ),
+        &storage,
+    )
+    .await
+    .expect("save the original attachment message");
+    assert!(message_directory.exists());
+
+    let result = dispatch(
+        "storage.chat.messages.save",
+        &json!({
+            "input": {
+                "id": message_id,
+                "conversationId": conversation_id,
+                "role": "user",
+                "content": "Replaced without attachment",
+                "status": "completed"
+            }
+        }),
+        &storage,
+    )
+    .await
+    .expect("replace the message with plain content");
+
+    assert_eq!(result["saved"], true);
+    assert_eq!(result["attachmentCleanupPending"], false);
+    assert!(!message_directory.exists());
+    let messages = dispatch(
+        "storage.chat.messages.list",
+        &json!({"conversationId": conversation_id}),
+        &storage,
+    )
+    .await
+    .expect("list the replaced message");
+    assert_eq!(
+        messages["messages"][0]["content"],
+        "Replaced without attachment"
+    );
+}
+
+#[tokio::test]
+async fn failed_plain_message_upsert_preserves_the_old_attachment_directory() {
+    let directory = TestDirectory::new();
+    let storage = initialized_chat_storage(&directory);
+    let conversation_id = create_attachment_test_conversation(&storage).await;
+    let message_id = format!("attachment-message-{}", Uuid::new_v4().simple());
+    let attachment_id = format!("attachment-{}", Uuid::new_v4().simple());
+    let bytes = b"old attachment";
+    dispatch(
+        "storage.chat.messages.save",
+        &attachment_message_input(&conversation_id, &message_id, &attachment_id, bytes),
+        &storage,
+    )
+    .await
+    .expect("save the original attachment message");
+
+    storage
+        .connect()
+        .expect("connect before installing deferred commit failure")
+        .execute_batch(
+            "CREATE TABLE attachment_upsert_commit_parent (id INTEGER PRIMARY KEY);
+             CREATE TABLE attachment_upsert_commit_child (
+                 parent_id INTEGER REFERENCES attachment_upsert_commit_parent(id)
+                     DEFERRABLE INITIALLY DEFERRED
+             );
+             CREATE TRIGGER reject_attachment_upsert_commit
+             AFTER UPDATE ON messages
+             BEGIN
+                 INSERT INTO attachment_upsert_commit_child (parent_id) VALUES (1);
+             END;",
+        )
+        .expect("install deferred update failure");
+
+    let error = dispatch(
+        "storage.chat.messages.save",
+        &json!({
+            "input": {
+                "id": message_id,
+                "conversationId": conversation_id,
+                "role": "user",
+                "content": "Rejected replacement",
+                "status": "completed"
+            }
+        }),
+        &storage,
+    )
+    .await
+    .expect_err("deferred foreign key must fail the upsert commit");
+
+    assert_eq!(error.code, "storage_chat_unavailable");
+    let attachment_path = storage
+        .root()
+        .join("attachments")
+        .join(&conversation_id)
+        .join(&message_id)
+        .join(format!("{attachment_id}.data"));
+    assert_eq!(
+        fs::read(attachment_path).expect("read original attachment"),
+        bytes
+    );
+}
+
+#[tokio::test]
 async fn message_commit_failure_removes_the_newly_published_attachment_directory() {
     let directory = TestDirectory::new();
     let storage = initialized_chat_storage(&directory);
@@ -894,24 +1015,46 @@ async fn conversation_delete_without_attachment_root_has_no_pending_cleanup() {
 }
 
 #[tokio::test]
-async fn startup_attachment_cleanup_removes_orphans_and_preserves_live_conversation_files() {
+async fn startup_attachment_cleanup_removes_orphans_and_preserves_live_message_attachments() {
     let directory = TestDirectory::new();
     let storage = initialized_chat_storage(&directory);
     let live_conversation_id = create_attachment_test_conversation(&storage).await;
     let attachments_root = storage.root().join("attachments");
     let live_directory = attachments_root.join(&live_conversation_id);
+    let live_message_id = format!("attachment-message-{}", Uuid::new_v4().simple());
+    let live_attachment_id = format!("attachment-{}", Uuid::new_v4().simple());
+    let live_message_directory = live_directory.join(&live_message_id);
+    let live_attachment = live_message_directory.join(format!("{live_attachment_id}.data"));
+    dispatch(
+        "storage.chat.messages.save",
+        &attachment_message_input(
+            &live_conversation_id,
+            &live_message_id,
+            &live_attachment_id,
+            b"live attachment",
+        ),
+        &storage,
+    )
+    .await
+    .expect("save a live attachment message");
+
+    let orphan_message_directory = live_directory.join("orphaned-message");
+    fs::create_dir_all(&orphan_message_directory).expect("create orphan message directory");
+    fs::write(
+        orphan_message_directory.join("orphan.data"),
+        b"orphan message attachment",
+    )
+    .expect("write orphan message attachment");
     let orphan_directory = attachments_root.join("orphaned-conversation");
-    fs::create_dir_all(&live_directory).expect("create live attachment directory");
     fs::create_dir_all(&orphan_directory).expect("create orphan attachment directory");
-    let live_attachment = live_directory.join("message.data");
     let orphan_attachment = orphan_directory.join("message.data");
-    fs::write(&live_attachment, b"live attachment").expect("write live attachment");
     fs::write(&orphan_attachment, b"orphan attachment").expect("write orphan attachment");
 
     super::cleanup_orphaned_attachment_directories(&storage)
         .expect("recover orphaned attachment directories");
 
     assert!(live_attachment.exists());
+    assert!(!orphan_message_directory.exists());
     assert!(!orphan_directory.exists());
 }
 

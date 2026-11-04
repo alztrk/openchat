@@ -904,6 +904,45 @@ pub(crate) fn remove_attachment_directory(
     }
 }
 
+pub(super) fn remove_message_attachment_directory_if_unreferenced(
+    storage_root: &Path,
+    connection: &mut StorageConnection<'_>,
+    conversation_id: &str,
+    message_id: &str,
+) -> Result<(), ServiceError> {
+    if !is_safe_identifier(conversation_id) || !is_safe_identifier(message_id) {
+        return Err(invalid_request_params());
+    }
+    let transaction = connection
+        .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+        .map_err(storage_error)?;
+    let content = transaction
+        .query_row(
+            "SELECT content FROM messages WHERE conversation_id = ?1 AND id = ?2",
+            params![conversation_id, message_id],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(storage_error)?;
+    let content_may_reference_attachments = content
+        .as_deref()
+        .is_some_and(|content| content.starts_with(MESSAGE_CONTENT_PREFIX));
+
+    if !content_may_reference_attachments
+        && let Some(attachments) = optional_checked_directory(storage_root, "attachments")?
+        && let Some(conversation) = optional_checked_directory(&attachments, conversation_id)?
+        && let Some(message) = optional_checked_directory(&conversation, message_id)?
+    {
+        match fs::remove_dir_all(message) {
+            Ok(()) => {}
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Err(_) => return Err(storage_unavailable()),
+        }
+    }
+
+    transaction.commit().map_err(storage_error)
+}
+
 pub(super) fn remove_all_attachment_directories(storage_root: &Path) -> Result<(), ServiceError> {
     let Some(attachments) = optional_checked_directory(storage_root, "attachments")? else {
         return Ok(());
@@ -933,6 +972,9 @@ pub(crate) fn cleanup_orphaned_attachment_directories(
     let mut statement = transaction
         .prepare("SELECT EXISTS (SELECT 1 FROM conversations WHERE id = ?1)")
         .map_err(storage_error)?;
+    let mut message_statement = transaction
+        .prepare("SELECT content FROM messages WHERE conversation_id = ?1 AND id = ?2")
+        .map_err(storage_error)?;
     let mut cleanup_failed = false;
 
     for entry in fs::read_dir(&attachments).map_err(|_| storage_unavailable())? {
@@ -955,6 +997,62 @@ pub(crate) fn cleanup_orphaned_attachment_directories(
             .query_row([name.as_str()], |row| row.get::<_, bool>(0))
             .map_err(storage_error)?;
         if conversation_exists {
+            for message_entry in fs::read_dir(&directory).map_err(|_| storage_unavailable())? {
+                let message_entry = message_entry.map_err(|_| storage_unavailable())?;
+                let message_name = match message_entry.file_name().into_string() {
+                    Ok(name) if name.starts_with(".stage-") => continue,
+                    Ok(name) if is_safe_identifier(&name) => name,
+                    _ => {
+                        cleanup_failed = true;
+                        continue;
+                    }
+                };
+                let message_path = message_entry.path();
+                match fs::symlink_metadata(&message_path) {
+                    Ok(metadata) if metadata.file_type().is_symlink() => {
+                        cleanup_failed = true;
+                        continue;
+                    }
+                    Ok(metadata) if metadata.is_file() => continue,
+                    Ok(metadata) if metadata.is_dir() => {}
+                    _ => {
+                        cleanup_failed = true;
+                        continue;
+                    }
+                }
+                let message_directory =
+                    match checked_child_directory(&directory, &message_name, false) {
+                        Ok(directory) => directory,
+                        Err(_) => {
+                            cleanup_failed = true;
+                            continue;
+                        }
+                    };
+                let content = message_statement
+                    .query_row(params![name.as_str(), message_name.as_str()], |row| {
+                        row.get::<_, String>(0)
+                    })
+                    .optional()
+                    .map_err(storage_error)?;
+                let remove_orphan = match content.as_deref() {
+                    None => true,
+                    Some(content) if !content.starts_with(MESSAGE_CONTENT_PREFIX) => true,
+                    Some(content) => match parse_attachment_envelope(content) {
+                        Ok(_) => false,
+                        Err(_) => {
+                            cleanup_failed = true;
+                            false
+                        }
+                    },
+                };
+                if remove_orphan {
+                    match fs::remove_dir_all(message_directory) {
+                        Ok(()) => {}
+                        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+                        Err(_) => cleanup_failed = true,
+                    }
+                }
+            }
             continue;
         }
         match fs::remove_dir_all(directory) {
@@ -964,6 +1062,7 @@ pub(crate) fn cleanup_orphaned_attachment_directories(
         }
     }
 
+    drop(message_statement);
     drop(statement);
     transaction.commit().map_err(storage_error)?;
     if cleanup_failed {
