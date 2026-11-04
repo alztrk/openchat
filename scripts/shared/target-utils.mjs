@@ -27,8 +27,7 @@ export function directoryBytes(root) {
   return total;
 }
 
-export function discoverTargets() {
-  const workspaceRoot = getWorkspaceRoot();
+export function discoverTargets(workspaceRoot = getWorkspaceRoot()) {
   const targetDirectories = [
     'target',
     'services/openchat-local-service/target',
@@ -72,23 +71,23 @@ export function formatGiB(bytes) {
   return (Number(bytes) / Number(gibibyte)).toFixed(2);
 }
 
-export function pruneStaleArtifacts(targetPath, apply = false) {
+export function pruneStaleArtifacts(targetPath, apply = false, beforeRemove = () => undefined, expectedPaths) {
   let prunedBytes = 0n;
-  let prunedCount = 0;
+  const prunedPaths = [];
+  const targetMetadata = lstatSync(targetPath);
+  if (!targetMetadata.isDirectory() || targetMetadata.isSymbolicLink()) {
+    throw new Error('Refusing to prune a non-directory or symbolic-link Cargo target.');
+  }
+  const canonicalTarget = realpathSync(targetPath);
 
   const candidateDirs = [
-    path.join(targetPath, 'debug', 'deps'),
-    path.join(targetPath, 'deps'),
+    resolveTargetDirectory(targetPath, canonicalTarget, path.join('debug', 'deps')),
+    resolveTargetDirectory(targetPath, canonicalTarget, 'deps'),
   ];
 
   for (const depsDir of candidateDirs) {
-    if (!existsSync(depsDir)) continue;
-    let entries = [];
-    try {
-      entries = readdirSync(depsDir);
-    } catch {
-      continue;
-    }
+    if (depsDir === null) continue;
+    const entries = readdirSync(depsDir);
 
     const groups = new Map();
     for (const entry of entries) {
@@ -96,42 +95,32 @@ export function pruneStaleArtifacts(targetPath, apply = false) {
       if (!match) continue;
       const key = `${match[1]}.${match[3]}`;
       const filePath = path.join(depsDir, entry);
-      try {
-        const stats = statSync(filePath);
-        if (!groups.has(key)) groups.set(key, []);
-        groups.get(key).push({ path: filePath, mtimeMs: stats.mtimeMs, size: BigInt(stats.size) });
-      } catch {
-        // Skip inaccessible entries
-      }
+      const stats = lstatSync(filePath);
+      if (!stats.isFile() || stats.isSymbolicLink()) continue;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push({ path: filePath, mtimeMs: stats.mtimeMs, size: BigInt(stats.size) });
     }
 
     for (const [, items] of groups) {
       if (items.length > 1) {
-        items.sort((a, b) => b.mtimeMs - a.mtimeMs);
+        items.sort((a, b) => b.mtimeMs - a.mtimeMs || a.path.localeCompare(b.path));
         for (let i = 1; i < items.length; i += 1) {
-          prunedBytes += items[i].size;
-          prunedCount += 1;
-          if (apply) {
-            try { rmSync(items[i].path, { force: true }); } catch { /* Ignore */ }
-          }
+          const item = items[i];
+          prunedPaths.push(item.path);
+          prunedBytes += item.size;
         }
       }
     }
   }
 
   const buildDirs = [
-    path.join(targetPath, 'debug', 'build'),
-    path.join(targetPath, 'build'),
+    resolveTargetDirectory(targetPath, canonicalTarget, path.join('debug', 'build')),
+    resolveTargetDirectory(targetPath, canonicalTarget, 'build'),
   ];
 
   for (const buildDir of buildDirs) {
-    if (!existsSync(buildDir)) continue;
-    let entries = [];
-    try {
-      entries = readdirSync(buildDir);
-    } catch {
-      continue;
-    }
+    if (buildDir === null) continue;
+    const entries = readdirSync(buildDir);
     const groups = new Map();
     for (const entry of entries) {
       const match = /^(.+)-([0-9a-fA-F]{16})$/u.exec(entry);
@@ -139,54 +128,75 @@ export function pruneStaleArtifacts(targetPath, apply = false) {
       const key = match[1];
       if (key === 'openssl-sys') continue;
       const dirPath = path.join(buildDir, entry);
-      try {
-        const stats = statSync(dirPath);
-        if (stats.isDirectory()) {
-          if (!groups.has(key)) groups.set(key, []);
-          groups.get(key).push({ path: dirPath, mtimeMs: stats.mtimeMs });
-        }
-      } catch {
-        // Skip
-      }
+      const stats = lstatSync(dirPath);
+      if (!stats.isDirectory() || stats.isSymbolicLink()) continue;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push({ path: dirPath, mtimeMs: stats.mtimeMs });
     }
     for (const [, items] of groups) {
       if (items.length > 1) {
-        items.sort((a, b) => b.mtimeMs - a.mtimeMs);
+        items.sort((a, b) => b.mtimeMs - a.mtimeMs || a.path.localeCompare(b.path));
         for (let i = 1; i < items.length; i += 1) {
-          if (apply) {
-            try { rmSync(items[i].path, { recursive: true, force: true }); } catch { /* Ignore */ }
-          }
+          const item = items[i];
+          prunedPaths.push(item.path);
+          prunedBytes += directoryBytes(item.path);
         }
       }
     }
   }
 
-  if (path.basename(targetPath) === 'target') {
-    try {
-      const entries = readdirSync(targetPath);
-      const allowed = new Set(['debug', 'CACHEDIR.TAG', '.rustc_info.json', '.rustdoc_fingerprint.json', 'cxxbridge', 'tmp', 'doc', 'flycheck0']);
-      for (const entry of entries) {
-        if (allowed.has(entry)) continue;
-        const candidate = path.join(targetPath, entry);
-        try {
-          const stats = statSync(candidate);
-          if (stats.isDirectory()) {
-            prunedBytes += directoryBytes(candidate);
-            prunedCount += 1;
-            if (apply) {
-              rmSync(candidate, { recursive: true, force: true });
-            }
-          }
-        } catch {
-          // Ignore
-        }
+  if (apply) {
+    if (expectedPaths) {
+      const expected = [...expectedPaths].sort();
+      const discovered = [...prunedPaths].sort();
+      if (expected.length !== discovered.length || expected.some((candidate, index) => candidate !== discovered[index])) {
+        throw new Error('Stale Cargo artifacts changed after preview. Run maintain-target again to review the current artifacts.');
       }
-    } catch {
-      // Ignore
+    }
+    for (const candidatePath of prunedPaths) {
+      beforeRemove();
+      const relativePath = path.relative(canonicalTarget, candidatePath);
+      if (
+        relativePath === '' ||
+        relativePath === '..' ||
+        relativePath.startsWith('..' + path.sep) ||
+        path.isAbsolute(relativePath)
+      ) {
+        throw new Error('Refusing to prune a path outside the Cargo target directory.');
+      }
+      const canonicalParent = realpathSync(path.dirname(candidatePath));
+      if (!isWithinDirectory(canonicalTarget, canonicalParent)) {
+        throw new Error('Refusing to prune a path outside the Cargo target directory.');
+      }
+      const currentMetadata = lstatSync(candidatePath);
+      if (currentMetadata.isSymbolicLink() || (!currentMetadata.isFile() && !currentMetadata.isDirectory())) {
+        throw new Error('Refusing to prune a changed Cargo target artifact.');
+      }
+      rmSync(candidatePath, { recursive: currentMetadata.isDirectory() });
     }
   }
 
-  return { prunedBytes, prunedCount };
+  return { prunedBytes, prunedCount: prunedPaths.length, prunedPaths };
+}
+
+function resolveTargetDirectory(targetPath, canonicalTarget, relativePath) {
+  let candidatePath = targetPath;
+  for (const segment of relativePath.split(path.sep)) {
+    candidatePath = path.join(candidatePath, segment);
+    if (!existsSync(candidatePath)) return null;
+
+    const metadata = lstatSync(candidatePath);
+    if (metadata.isSymbolicLink()) {
+      throw new Error(`Refusing to prune artifacts through symbolic-link directory '${relativePath}'.`);
+    }
+    if (!metadata.isDirectory()) return null;
+  }
+
+  const canonicalPath = realpathSync(candidatePath);
+  if (!isWithinDirectory(canonicalTarget, canonicalPath)) {
+    throw new Error('Refusing to prune a path outside the Cargo target directory.');
+  }
+  return canonicalPath;
 }
 
 export function activeBuildIsRunning() {

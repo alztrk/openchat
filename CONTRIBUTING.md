@@ -39,9 +39,13 @@ npm run openchat -- check
 |---------|-------------|
 | `npm run openchat -- dev` | Start dev server with sidecar |
 | `npm run openchat -- build` | Build release |
-| `npm run openchat -- check` | Full check (lint + types + Rust + tests) |
-| `npm run openchat -- check-types` | Type check + lint (no tests) |
+| `npm run openchat -- check` | Biome, TypeScript, and Rust formatting/checks/tests |
+| `npm run openchat -- check-types` | Biome, TypeScript, and Rust formatting/checks (no tests) |
+| `npm run openchat -- clean` | Preview generated build and bundle output cleanup |
+| `npm run openchat -- clean --apply` | Remove the listed generated output directories |
 | `npm run openchat -- maintain-target` | Inspect Cargo target directory usage |
+
+The local check commands do not run frontend `npm test`, locale consistency, FSD import checks, or the Vite asset build. CI runs these as separate steps.
 
 ## Code quality
 
@@ -101,6 +105,12 @@ npm run openchat -- maintain-target
 
 # Clean if exceeded
 npm run openchat -- maintain-target --apply
+
+# Preview generated build and bundle cleanup
+npm run openchat -- clean
+
+# Remove the listed generated output directories
+npm run openchat -- clean --apply
 ```
 
 ## Validation

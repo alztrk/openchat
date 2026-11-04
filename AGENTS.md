@@ -29,7 +29,8 @@ npm run openchat -- dev            # Start dev server with sidecar
 npm run openchat -- build          # Build release
 npm run openchat -- check          # Full check (lint + test + cargo)
 npm run openchat -- check-types    # Type check only (no tests)
-npm run openchat -- clean          # Clean build artifacts
+npm run openchat -- clean          # Preview build artifact cleanup
+npm run openchat -- clean --apply  # Remove the listed build artifacts
 npm run openchat -- maintain-target # Manage Cargo target directory
 ```
 

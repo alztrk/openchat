@@ -1,5 +1,6 @@
 import { runTask } from './shared/task.mjs';
 import { loadLocalEnv, ensureOpenSSLEnvironment } from './shared/env.mjs';
+import { withWorkspaceArtifactLock } from './shared/artifact-task-lock.mjs';
 
 // Load all task modules
 const devModule = await import('./tasks/dev.mjs');
@@ -19,6 +20,7 @@ const tasks = {
   clean: cleanModule.clean,
   'maintain-target': maintainModule.maintainTarget,
 };
+const artifactProducingTasks = new Set(['build', 'check', 'check-types', 'dev', 'dev-test-profile', 'startup-benchmark']);
 
 async function main() {
   loadLocalEnv();
@@ -37,6 +39,11 @@ async function main() {
   // Check --help flag
   const { tryHelp, printHelp: printTaskHelp } = await import('./help.mjs');
   if (tryHelp(task.name, task.description, task.args || [], args)) {
+    return;
+  }
+
+  if (artifactProducingTasks.has(taskName)) {
+    await withWorkspaceArtifactLock(taskName, () => task.run(args));
     return;
   }
 

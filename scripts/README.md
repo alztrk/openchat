@@ -1,6 +1,6 @@
 # Developer tasks
 
-All developer tasks use the single cross-platform CLI in `scripts/openchat-cli.mjs`. Run
+All developer tasks use the single cross-platform CLI in `scripts/run.mjs`. Run
 it through the frontend npm script from `apps/desktop/frontend`:
 
 ```bash
@@ -12,13 +12,16 @@ npm run openchat -- startup-benchmark
 npm run openchat -- build
 npm run openchat -- check
 npm run openchat -- clean
+npm run openchat -- clean --apply
 npm run openchat -- maintain-target --max-gib 20
 ```
 
 `dev` builds the debug local-service sidecar and starts Tauri. `build` builds the
-locked release sidecar and Tauri bundle. `check` runs frontend lint and build plus
-Rust formatting, checking, and tests. `clean` removes generated build and bundle
-output directories.
+locked release sidecar and Tauri bundle. `check` runs Biome, TypeScript, Rust
+formatting, workspace checking, and Rust tests. It does not run frontend `npm test`,
+locale checks, FSD import checks, or a Vite asset build; CI runs those as separate
+steps. `clean` previews generated build and bundle output directories by default.
+Pass `--apply` to remove the listed directories.
 
 `dev-test-profile` builds both the Tauri host and local-service sidecar with the
 debug-only `desktop-profile-test-support` feature, then starts the app with an
@@ -45,6 +48,11 @@ not a release-package result.
 
 `maintain-target` reports Cargo target sizes and previews cleanup by default. Add
 `--apply` only when you want to clean those Cargo target directories.
+
+Build, check, dev, and cleanup tasks share a workspace artifact lock. A second
+task that could change or remove Cargo/Tauri outputs exits with the active task
+name and process ID. `clean` and `maintain-target --apply` also check for an
+external Cargo or rustc process before deleting artifacts.
 
 Cargo target selection and sidecar naming use the Rust host target triple, so the
 same task commands can prepare a sidecar on Windows or Linux. Linux packaging still
