@@ -1,8 +1,8 @@
 # TODO — Architecture Migration
 
-> **Durum:** Tüm fazlar tamamlandı ✅  
-> **Oluşturulma:** 2026-10-31  
-> **Son güncelleme:** 2026-10-31  
+> **Durum:** Mimari geçiş fazları tamamlandı ✅; hata ve kullanılabilirlik araştırması devam ediyor.
+> **Oluşturulma:** 2026-10-31
+> **Son güncelleme:** 2026-11-04
 > **Amaç:** OpenChat frontend ve Rust sidecar'ın endüstri standardına (FSD + Modular Monolith) incremental geçiş  
 
 ---
@@ -150,3 +150,136 @@
 #### Optional Cleanup
 - [x] `summary_text` is covered by conversation history tests; the dead-code allowance remains intentional for test-oriented helper coverage.
 - [x] `PruneLevel` is used by the ChatGPT compaction tests; no unused import remains.
+
+---
+
+## Faz 9 — Hata ve Kullanılabilirlik Araştırması (2026-11-04)
+
+> **Kapsam:** Yalnızca araştırma. Bu fazda uygulama kodu, testler veya yapılandırma değiştirilmez. Tam check/test paketi veya installer build çalıştırılmaz; normal kullanıcı akışını gözlemek için izole `dev-test-profile` başlatılmıştır. İlk başlangıç denemesi kullanıcı tarafından kesilmiş, sonraki izole profil açılmıştır. Bulgular kanıt, etki, yeniden üretme koşulu ve mevcut test kapsamıyla gitignored raporda tutulur.
+
+### İnceleme başlıkları
+
+- [x] **Doğrulama döngüsü:** Merkezi `check` görevinin frontend testlerini, locale tutarlılığını, FSD import kurallarını ve Rust kontrollerini kapsayıp kapsamadığını; CI farklarını incele.
+- [x] **React kullanıcı akışları:** Sohbet gönderme, yanıt akışı, durdurma, yeniden deneme, sohbet değiştirme, ayarlar/sağlayıcı-model seçimi ve hata/boş/yükleniyor durumlarını statik incele.
+- [x] **Tauri host ve IPC:** Uygulama/yan servis başlatma-kapatma, RPC çerçeveleme, komut/olay köprüsü, dialog ve pencere yaşam döngülerindeki başarısızlıkları statik incele.
+- [x] **Depolama ve veri bütünlüğü:** Veritabanı başlatma, migration, mesaj/ek kaydı, arşiv/dışa aktarma, bozulma ve yeniden başlatma senaryolarını statik incele.
+- [x] **Araçlar ve dosya işlemleri:** İzin, yürütme, kısmi değişiklik, fark gösterimi, checkpoint ve geri alma akışlarını statik incele.
+- [x] **Kullanılabilirlik:** Hata mesajlarının çözüm yolu sunmasını; klavye erişimini, pencere boyutu değişimini ve uzun/eksik verili durumları statik incele.
+- [x] **Normal kullanıcı ilk kullanım walkthrough'u:** Sohbet, Ayarlar, Kütüphane modeller/MCP/prompt şablonları, Güvenlik taramaları ve Görsel stüdyosu yüzeylerini izole geçici profilde açıp boş, loading, hata ve erişilebilirlik ağacı durumlarını gözle.
+- [x] **Kapsam dışı kalan yüzeylerin statik taraması:** Vite loopback bind, browser/Origin/Host/HMR varsayılanları, OAuth callback, yerel model portu ve geliştirme/dağıtım ayrımını incele. Loopback yapılandırmasını dış ağ erişimiyle eş tutma.
+- [x] **OpenChat ile OpenChat geliştirme (dogfooding) kaynak taraması:** Proje bağlamı, dosya okuma/yazma, terminal ve değişiklik inceleme/geri alma araçlarını; projeye özel talimatların nasıl yüklendiğini statik incele.
+- [x] OpenChat deposunda `.openchat/instructions.md`, `.openchat/rules/`, `.openchat/tasks.json` ve `.openchat/tools.json` bulunup bulunmadığını kontrol et; repo şu an bu OpenChat'e özgü proje ayarlarını içermiyor.
+- [x] Kod düzenleme akışının sağlayıcı/model tool-calling desteğine bağlı olduğunu statik incele; her sohbet modelinin kod geliştirme aracı sağlayabildiği varsayılmamalı.
+
+### Bulgular ve takip işleri
+
+- [x] Üç ayrı uzman incelemesi, çapraz kaynak taraması, ilk kullanım arayüz gözlemi, aynı makineden Vite adresini browser'da açma ve CORS yanıt başlığı probu tamamlandı; bulgular gitignored rapora kaydedildi. Normal browser uygulama kabuğunu açtı; Tauri RPC gerektiren alanlar loading/error durumunda kaldı. Görsel stüdyosu geliştirme runtime'ında hata sınırına düştü; eksik yerel dependency dosyası nedeniyle release kusuru olarak genellenmedi.
+- [ ] MCP kategori filtrelerindeki `webSearch`, `devOpsCloud`, `memoryReasoning` anahtar uyumsuzluğunu düzelt ve filtre sonuçlarını doğrula.
+- [ ] Yüzey geçişinde odak yönetimini; kısayol kaydı sırasındaki global kısayol yan etkisini; başlık çubuğu kısayol etiketini ve arama combobox erişilebilirliğini düzelt.
+- [ ] Provider API key ve proje MCP editörlerine klavye ile submit davranışı ekle; doğrulama hatalarını ilgili alanlara bağla.
+- [ ] Yanlış loading metinlerini domain'e göre düzelt; prompt template load hatasına güvenli retry/recovery ekle.
+- [ ] Design canvas bozulma kurtarması, security scan delete/cleanup reconciliation ve cancel timeout davranışı için ürün sözleşmesi belirle.
+- [ ] Archive restore crash recovery/journal ve archive cancellation/status; attachment index cancellation/progress; worktree list cancellation ve backend limiti konularını tasarla.
+- [ ] Eşzamanlı tercih güncellemelerinde patch merge/invariant davranışını test et; notification saat girişini Windows WebView2'de doğrula.
+- [x] Merkezi CLI `check` hata toplama, local/CI Cargo feature ve lock eşleşmesi, task orchestration testleri ve FSD checker'ın tarama hatasında başarısız olması tamamlandı; uygulama ve odaklı test doğrulamaları Faz 10.2.2'de kaydedildi.
+- [ ] QA-09: FSD kuralını checker allowlist'iyle eşleştir; mevcut `features → app` bağımlılıklarını alt katmana taşı.
+- [ ] `dev-test-profile --cleanup-profile` interrupt/child-process shutdown yolunu doğrula; bu araştırmanın Ctrl+C ile kesilen oturumunda cleanup gerçekleşmedi ve doğrulanmış helper'la temizlendi. İkinci oturum pencere normal kapatılınca geçici profil bırakmadı, fakat npm sarmalayıcısı `4294967295` koduyla sonlandı; kapanış/exit davranışını ayrıştır.
+- [x] `maintain-target --apply` ve `clean` için aktif build koruması, güvenli target seçimi ve görünür önizleme davranışı Faz 10.1'de uygulandı; bu araştırma sırasında gerçek cleanup komutları çalıştırılmadı.
+- [x] Tek npm workspace/install otoritesi olarak kök workspace ve `package-lock.json` seçildi; eski iç lockfile kaldırıldı, CI cache yolu ve bootstrap köke hizalandı. Gerçek temiz kurulum doğrulaması Faz 10.2'de bekliyor; runtime'daki eksik modülü temiz dependency doğrulaması olmadan uygulama kodu kusuru sayma.
+- [ ] `recent searches` renderer `localStorage` saklama/retention kararını privacy sözleşmesiyle karşılaştır; hassas sorgu içerme olasılığını ve uzunluk sınırını değerlendir.
+- [x] `src/app/AppManager.tsx` consumer/import graph'ını tarama; kaynakta aktif consumer bulunmadı, çalışan giriş `bootstrap/main.tsx` üzerinden `bootstrap/App.tsx` yükleyip render ediyor.
+- [ ] `AppManager` gerçekten dead ise sonraki kod değişikliği sırasında kaldır; tutacaksan aktif entry point ile rolünü belgeleyip tekilleştir.
+- [x] Aynı makinedeki browser'dan Vite loopback URL'sini aç; uygulama kabuğu geliyor, Tauri RPC kullanan alanlar loading/error durumunda kalıyor.
+- [x] Vite HTTP yanıtında dış `Origin` için CORS izin başlığının olmadığını, `localhost` loopback origininin ise izinli olduğunu doğrula; bu yalnız header probe'dur, browser enforcement testi değildir.
+- [ ] Gerçek browser'da farklı HTTPS Origin/PNA, DNS rebinding, HMR ve LAN erişimini ölç; paketlenmiş uygulamanın dinleyen port envanterini çıkar.
+- [x] Yerel llama.cpp başlatma argümanlarını ve sabitlenmiş upstream `b11349` CORS/auth varsayılanlarını kaynak koddan incele; statik riski raporla.
+- [ ] Farklı browser Origin'den aktif model portuna istek, port keşfi, tarayıcının local-network policy davranışı ve boş port seçimi/child başlatma yarışını kontrollü runtime incele.
+- [x] Yerel check kapsamını CI'deki ortak frontend/Rust doğrulama adımlarıyla hizala; Windows CI çalışması henüz gözlenmedi.
+- [ ] Kalan doğrulanmış kullanıcı akışı ve servis kusurlarını ilgili düzeltme dilimlerinde regression senaryolarına bağla.
+- [ ] NSIS installerı eksik/eski WebView2 runtime ve offline koşullarında kurup aç; sidecar ile ilk profil başlangıcını doğrula.
+- [ ] Vite dev profile startup sonrasında Görsel stüdyosu dinamik import hatasını dependency install/cache kaynaklı mı diye kontrollü biçimde ayır; paketlenmiş build ile ayrıca karşılaştır.
+- [ ] OpenChat'i OpenChat deposuna proje olarak ekleyip bir geliştirme görevini uygulamanın kendi sohbet, dosya araçları, terminal ve diff/revert akışıyla baştan sona yürüt; proje kökünün, izin kararlarının, komut çıktılarının ve oturum yeniden açma davranışının yeterli olduğunu doğrula.
+- [ ] `AGENTS.md` içeriğinin OpenChat oturumuna otomatik aktarılmadığı kaynak bulgusunu gerçek kullanımda doğrula; proje talimatı ve `.openchat/rules/**/*.mdc` ile gerekli repo kurallarının eksiksiz uygulanıp uygulanmadığını belirle.
+- [ ] OpenChat deposu için proje talimatı ve `npm run openchat -- check` gibi doğrulama komutlarını OpenChat'in proje ayarlarına tanımlamanın geliştirici akışını iyileştirip iyileştirmediğini kontrollü dogfooding denemesiyle değerlendir; bu araştırmada proje ayarı oluşturma.
+- [ ] Dogfooding denemesinde seçilen sağlayıcı/modelin tool-calling desteğini, destek kapalıyken dosya ve terminal araçlarının davranışını ve kullanıcıya verilen açıklamayı doğrula.
+
+- [x] Her bulguda önem ve güven düzeyini, etkilenen akışı, dosya/satır kanıtını, tetikleme koşulunu, beklenen ve mevcut davranışı, test kapsamını ve takip önerisini kaydet.
+- [x] Doğrulanmış kusurları olası risklerden ve kullanılabilirlik gözlemlerinden ayrı tut.
+- [x] Araştırma notlarını yalnızca gitignore kapsamındaki `.reports/openchat-deep-review-2026-11-04.md` dosyasında tut.
+- [x] Kaynakta incelenebilir TODO maddelerini rapordaki FE/QA/T-HOST/SVC/CROSS/DOGFOOD bulgularıyla çapraz eşle; kod düzeltmesi ve ayrıca izin gerektiren runtime/kurulum doğrulamaları açık takip işi olarak bırak.
+- [x] Bu turda kaynakta incelenebilen başlıkları ve yeni QA-09/QA-13 import-checker bulgularını rapora ekle; uygulama kodu, test, build, installer ve proje ayarlarına dokunma.
+- [ ] **Runtime doğrulaması bekliyor:** Son salt-okunur kontrolde 5173, 1455, 1457 portlarında listener ve OpenChat/llama süreci görülmedi. Farklı-Origin/PNA/DNS rebinding/HMR/LAN ve aktif llama.cpp portu testleri için uygulama/model süreci gerekir.
+- [ ] **Kurulum doğrulaması bekliyor:** WebView2 eksik/eski/offline senaryoları ile paketlenmiş uygulama ve sidecar ilk açılışı bu araştırmada kurulmadı/çalıştırılmadı; yalnızca installer yapılandırması ve CI akışı kaynakta incelendi.
+- [ ] **Uçtan uca dogfooding bekliyor:** OpenChat sohbetiyle bu depoda dosya/terminal değişikliği yapıp kontrol ve diff/revert döngüsü yürütülmedi; sağlayıcı/model çağrısı ve yazma akışı gerektiriyor.
+
+---
+
+## Faz 10 — Bulguların sıralı entegrasyon planı
+
+> **Amaç:** Araştırmadaki bulguları küçük, geri alınabilir ve ölçülebilir değişiklik dilimleriyle kapatmak. Her dilim kendi davranış testi ve kanıtıyla tamamlanır; test/build/installer doğrulaması ilgili kod değişikliği başladığında yapılır. Faz 9 araştırma kapsamı kapandı; bu faz uygulama planıdır.
+
+### 10.1 Build ve cleanup güvenliği
+
+- [x] `QA-04/05`: `maintain-target` ve `clean` için workspace görev kilidi, aktif Cargo/rustc koruması, sabit cleanup hedefleri ve silme öncesi görünür önizleme eklendi. `maintain-target` artık eşik altındayken pruning yapmıyor; tam Cargo temizliğinde tüm hedefler önce `cargo clean --dry-run` ile doğrulanıyor.
+- [x] Kabul: aktif build koruması, eşik altı no-op, hedeflerin önceden listelenmesi ve path sınırları davranış testleriyle doğrulandı. Odaklı 17 test ve frontend toplam 143 test geçti; gerçek `--apply` çalıştırılmadı.
+
+### 10.2 Bağımlılık kurulumu ve doğrulama harness'i
+
+- [x] `CROSS-01/QA-08` uygulaması: kök npm workspace ve kök `package-lock.json` otorite seçildi; eski iç lockfile kaldırıldı; CI cache ve bootstrap bu köke bağlandı. Bootstrap, tüm workspace ağacını `npm ls` ile doğrular ve eksikse `npm ci` çalıştırır. Davranışlar gerçek install yapmayan testlerle doğrulandı.
+- [ ] `QA-08` kurulum doğrulaması: güvenli artifact cleanup hazır olduğunda gerçek boş/bozuk dependency ağacında `npm ci` ve ilk dev başlatmayı doğrula; mevcut install klasörünü temizleyen adım öncesinde hedefi ve geri dönüş yolunu raporla.
+- [x] `QA-02/03/06`: Merkezi `check` frontend test/locale/import/build ve locked Rust format/check/test adımlarını çalıştıracak şekilde genişletildi; hata veren adımdan sonra kalan adımların da denenip özetlenmesi için test eklendi. CI ortak doğrulama adımları için merkezi CLI'ı çağırıyor. Odaklı doğrulama geçti; tam Cargo çalışması hedef alanı sınırı nedeniyle bu turda çalıştırılmadı.
+- [ ] `QA-01`: Performans testinin ölçtüğü davranışı üretim kodu ve gerçek kullanıcı iş yüküyle eşleştir; sentetik ölçümün neyi kanıtladığını açıkça belirt.
+- [ ] `QA-09`: Repo mimari kuralıyla çelişen `features → app` izinlerini kaldırmak için mevcut bağımlılıkları doğru katmana taşı ve checker kuralını sıkılaştır.
+- [x] `QA-13`: Import checker re-export'ları tarıyor, dosya/ağaç okuma hatalarını hata sonucu yapıyor; statik import, type-only re-export, okuma ve enumerasyon hataları için test eklendi.
+- [x] Kısmi kabul: check adımları ayrı isimlerle raporlanır ve runner hatasında diğerleri de denenir; local/CI ortak komutları hizalı; frontend build, test, locale/import kontrolleri ve checker testleri geçti.
+- [ ] Kalan kabul: gerçek temiz npm install ve ilk dev başlangıcı; desteklenen Windows CI çalışması; Cargo check/test'in 20 GiB hedef sınırına uyarak tamamlanması.
+
+### 10.3 CLI, Tauri ve sidecar yaşam döngüsü
+
+- [ ] `QA-07/11`: Ctrl+C, normal pencere kapatma, çökme ve başlatma hatasını ayır; child process sonlandırma ve geçici profil temizliğini sınırlı sürede tamamla; normal kapanış için doğru exit kodunu belirle.
+- [ ] `T-HOST-01..09`: Pencere başlangıç/geometry/recovery, pipe yazımı ve mutex süresi, dialog callback timeout'u, resize disk yazımı, event payload sınırı ve kayıt hatası davranışlarını tek tek kapat.
+- [ ] Kabul: normal kapanış başarıyla raporlanır; interrupt ve child kapanışı bounded olur; geçici profil her sonuçta temizlenir; dialog ve IPC arızaları kullanıcıya görünür, güvenli hata verir.
+
+### 10.4 Yerel servis ve veri bütünlüğü
+
+- [ ] `SVC-01..11`: Run durumunun persist edilmesi, conversation bulunamadı sözleşmesi, attachment dosyası/DB atomikliği ve temizliği, MIME/GIF tutarlılığı, upsert, envelope limiti/prefix'i ve uzun transcript pagination'ını konu bazında düzelt.
+- [ ] `SVC-12/13`: Archive restore ve security scan silme için crash-safe cleanup/reconciliation sözleşmesi belirle; DB ile dosya sistemi sonuçlarını tekrar denenebilir hale getir.
+- [ ] `SVC-14..17/20`: Operation cancel, timeout, progress/status ve yeniden deneme davranışını security scan, worktree listeleme, attachment index ve archive işlemlerinde hizala.
+- [ ] `SVC-16`: Worktree limitini backend'de deterministik sırayla uygula; gizli kalan kayıtları kullanıcıya bildir veya yönetilebilir kıl.
+- [ ] Kabul: dosya/DB tutarlılığı her hata noktasında korunur veya kalıcı reconciliation kaydı kalır; timeout sonrası işin sürüp sürmediği ve iptal sonucu gözlenebilir; uzun listelerde kesilme açıkça bildirilir.
+
+### 10.5 Dış erişim ve yerel model sınırı
+
+- [ ] `CROSS-02/03/06`: Farklı Origin, CORS preflight, PNA, DNS rebinding, HMR ve LAN davranışlarını kontrollü ortamda ölç; aktif llama.cpp port keşfini, boş port seçimi/child başlatma yarışını ve paketlenmiş dinleyici envanterini doğrula.
+- [ ] Ölçüm sonucuna göre Vite dev server ve yerel model API'si için en dar gerekli erişim sınırını seç; gerekiyorsa auth, origin kısıtı veya Tauri üzerinden kontrollü proxy tasarımını uygula.
+- [ ] Kabul: hangi yerel/dış originin hangi endpoint'e erişebildiği kanıtla kayıtlıdır; aynı makine testi LAN güvenliği kanıtı olarak kullanılmaz; paketlenmiş sürümde beklenmeyen listener kalmaz.
+
+### 10.6 Kullanıcı akışları, erişilebilirlik ve kurtarma
+
+- [ ] `FE-01..19`: Sohbet, MCP filtreleri, provider/proje formları, kısayollar, odak/combobox, loading metinleri, prompt retry, recent-search retention ve indirme progress etiketlerini tek kullanıcı akışı başına ele al.
+- [ ] `SVC-18/19/21/22`, `QA-12`, `T-HOST-01..04/07`: Canvas kurtarma, tercih patch merge, saat girişi, kullanılmayan history helper ve `AppManager` rolü için ürün kararı ver; gerekli olan davranışı regresyon testleriyle doğrula.
+- [ ] Kabul: klavye ve ekran okuyucu akışları; loading/empty/error/retry/cancel; hatalı ve uzun girdiler; pencere boyutu ve yeniden açılış durumları ilgili yüzeylerde gözlenebilir testlerle kapsanır.
+
+### 10.7 Paketlenmiş ilk açılış ve release doğrulaması
+
+- [ ] `CROSS-05/QA-10`: NSIS kurulumunu WebView2 güncel, eksik, eski ve çevrimdışı koşullarında; uygulama, sidecar ve ilk profil başlangıcıyla doğrula. Release host Cargo lock davranışını kanıtla.
+- [ ] Kabul: kurulum gereksinimleri/çevrimdışı davranış açıkça gösterilir; ilk açılış, servis readiness ve hata kurtarma paketten çalıştırılarak doğrulanır; CI installer üretmenin yanında desteklenen smoke doğrulamasını da yapar.
+
+### 10.8 OpenChat ile OpenChat dogfooding
+
+- [ ] `DOGFOOD-01/02`: Repo talimatlarının OpenChat'e aktarım yolunu ve `.openchat/instructions.md`, kurallar ve adlandırılmış doğrulama görevlerinin katkısını değerlendir; seçilen modeli tool-calling desteğiyle doğrula.
+- [ ] İzole bir geliştirme görevinde repo kökünü seçme, talimatı anlama, izinli dosya düzenleme, terminal doğrulaması, diff inceleme/geri alma ve oturumu yeniden açıp devam etme adımlarını OpenChat içinde yürüt.
+- [ ] Kabul: kullanıcı doğru proje kökünü ve değişiklikleri görebilir; araç desteği olmayan model açıkça anlaşılır; izinler işlem bazında uygulanır; check sonucu ve diff aynı oturumdan incelenebilir; yarıda kesilen görev güvenle devam ettirilebilir.
+
+### Uygulama sırası ve entegrasyon kapısı
+
+1. `10.1` cleanup güvenliği
+2. `10.2` temiz kurulum ve merkezi doğrulama
+3. `10.3` process/window yaşam döngüsü
+4. `10.4` storage ve servis tutarlılığı
+5. `10.5` yerel ağ/model sınırı
+6. `10.6` kullanıcı akışları ve erişilebilirlik
+7. `10.7` paketlenmiş ilk açılış
+8. `10.8` gerçek OpenChat dogfooding
+
+Her aşamada değişikliği küçük bir dikey dilim halinde uygula; ilgili regresyon testini ekle, hedefli kontrolleri çalıştır, ardından merkezi `check`/CI kapsamını doğrula. Aşama ancak kabul maddeleri kanıtlandığında kapanır. Kurulum, WebView2, ağ ve dogfooding kanıtı olmadan statik bulguları runtime çözümü olarak işaretleme.

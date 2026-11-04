@@ -39,13 +39,13 @@ npm run openchat -- check
 |---------|-------------|
 | `npm run openchat -- dev` | Start dev server with sidecar |
 | `npm run openchat -- build` | Build release |
-| `npm run openchat -- check` | Biome, TypeScript, and Rust formatting/checks/tests |
-| `npm run openchat -- check-types` | Biome, TypeScript, and Rust formatting/checks (no tests) |
+| `npm run openchat -- check` | Biome, frontend tests/locales/imports/build, and locked Rust checks/tests |
+| `npm run openchat -- check-types` | Biome, TypeScript, and locked Rust formatting/checks (no tests) |
 | `npm run openchat -- clean` | Preview generated build and bundle output cleanup |
 | `npm run openchat -- clean --apply` | Remove the listed generated output directories |
 | `npm run openchat -- maintain-target` | Inspect Cargo target directory usage |
 
-The local check commands do not run frontend `npm test`, locale consistency, FSD import checks, or the Vite asset build. CI runs these as separate steps.
+`check` reports every validation step, even when an earlier command cannot start. CI uses this same task for the shared frontend and Rust validation set.
 
 ## Code quality
 

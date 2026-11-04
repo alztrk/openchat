@@ -14,61 +14,117 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const __dirname = fileURLToPath(new URL('.', import.meta.url));
-const SRC_ROOT = resolve(__dirname, '../apps/desktop/frontend/src');
+const scriptDirectory = fileURLToPath(new URL('.', import.meta.url));
+const sourceRoot = resolve(scriptDirectory, '../apps/desktop/frontend/src');
 
-const LAYERS = /** @type {const} */ ({
-  shared:  { level: 0, allowed: ['shared'] },
+const layers = {
+  shared: { level: 0, allowed: ['shared'] },
   entities: { level: 1, allowed: ['shared'] },
   features: { level: 2, allowed: ['app', 'entities', 'shared'], crossFeature: true },
   widgets: { level: 3, allowed: ['shared', 'features', 'entities'] },
-  app:     { level: 4, allowed: ['app', 'features', 'entities', 'widgets', 'shared', 'modules', 'platform', 'shell'] },
-});
+  app: { level: 4, allowed: ['app', 'features', 'entities', 'widgets', 'shared', 'modules', 'platform', 'shell'] },
+};
 
-const APP_UNIVERSE = new Set(['app', 'platform', 'shell', 'bootstrap', 'design-system', 'localization']);
+const appUniverse = new Set(['app', 'platform', 'shell', 'bootstrap', 'design-system', 'localization']);
+const importAliases = new Map([
+  ['@app', 'app'],
+  ['@features', 'features'],
+  ['@entities', 'entities'],
+  ['@widgets', 'widgets'],
+  ['@shared', 'shared'],
+  ['@modules', 'modules'],
+  ['@platform', 'platform'],
+  ['@shell', 'shell'],
+  ['@bootstrap', 'bootstrap'],
+  ['@design-system', 'design-system'],
+  ['@localization', 'localization'],
+]);
 
-function getLayerKey(relPath) {
-  let p = relPath;
-  if (p.startsWith('.' + sep)) p = p.slice(2);
-  if (p.startsWith('./')) p = p.slice(2);
-  const first = p.split(sep)[0];
+export function scanImports({
+  sourceRoot: root = sourceRoot,
+  collectFilesFn = collectFiles,
+  readFileFn = readFileSync,
+} = {}) {
+  const errors = [];
+  const warnings = [];
+  const infos = [];
+  let files;
+
+  try {
+    files = collectFilesFn(root);
+  } catch (error) {
+    errors.push({
+      severity: 'error',
+      source: '.',
+      importPath: '<source-tree>',
+      message: `could not enumerate source files: ${errorMessage(error)}`,
+    });
+    return { errors, warnings, infos };
+  }
+
+  for (const file of files) {
+    const sourcePath = relative(root, file);
+    let source;
+    try {
+      source = readFileFn(file, 'utf-8');
+    } catch (error) {
+      errors.push({
+        severity: 'error',
+        source: sourcePath,
+        importPath: '<unreadable>',
+        message: `could not read source file: ${errorMessage(error)}`,
+      });
+      continue;
+    }
+
+    for (const importPath of extractImportPaths(source)) {
+      const result = checkImport(sourcePath, importPath);
+      if (!result) continue;
+      if (result.severity === 'error') errors.push(result);
+      else if (result.severity === 'warning') warnings.push(result);
+      else infos.push(result);
+    }
+  }
+
+  return { errors, warnings, infos };
+}
+
+function getLayerKey(relativePath) {
+  let normalizedPath = relativePath;
+  if (normalizedPath.startsWith('.' + sep)) normalizedPath = normalizedPath.slice(2);
+  if (normalizedPath.startsWith('./')) normalizedPath = normalizedPath.slice(2);
+  const first = normalizedPath.split(sep)[0];
   return first || null;
 }
 
-function getLayerDef(key) {
-  if (APP_UNIVERSE.has(key)) return LAYERS.app;
-  return LAYERS[key] || null;
+function getLayerDefinition(key) {
+  if (appUniverse.has(key)) return layers.app;
+  return layers[key] || null;
 }
 
 function getImportLayerKey(importPath) {
   if (importPath.startsWith('@/')) {
-    const afterSlash = importPath.slice(2);
-    const first = afterSlash.split('/')[0];
+    const first = importPath.slice(2).split('/')[0];
     if (first) return first;
   }
-  if (importPath.startsWith('@app')) return 'app';
-  if (importPath.startsWith('@features')) return 'features';
-  if (importPath.startsWith('@entities')) return 'entities';
-  if (importPath.startsWith('@widgets')) return 'widgets';
-  if (importPath.startsWith('@shared')) return 'shared';
-  if (importPath.startsWith('@modules')) return 'modules';
-  if (importPath.startsWith('@platform')) return 'platform';
-  if (importPath.startsWith('@shell')) return 'shell';
-  if (importPath.startsWith('@bootstrap')) return 'bootstrap';
-  if (importPath.startsWith('@design-system')) return 'design-system';
-  if (importPath.startsWith('@localization')) return 'localization';
+
+  for (const [prefix, layer] of importAliases) {
+    if (importPath === prefix || importPath.startsWith(`${prefix}/`)) return layer;
+  }
   return null;
 }
 
-function isAppUmbrella(layer) { return APP_UNIVERSE.has(layer); }
+function isAppUmbrella(layer) {
+  return appUniverse.has(layer);
+}
 
-function collectFiles(dir) {
-  const entries = readdirSync(dir, { withFileTypes: true });
+function collectFiles(directory) {
+  const entries = readdirSync(directory, { withFileTypes: true });
   const files = [];
   for (const entry of entries) {
-    const full = resolve(dir, entry.name);
-    if (entry.isDirectory()) files.push(...collectFiles(full));
-    else if (entry.isFile() && (entry.name.endsWith('.ts') || entry.name.endsWith('.tsx'))) files.push(full);
+    const fullPath = resolve(directory, entry.name);
+    if (entry.isDirectory()) files.push(...collectFiles(fullPath));
+    else if (entry.isFile() && (entry.name.endsWith('.ts') || entry.name.endsWith('.tsx'))) files.push(fullPath);
   }
   return files;
 }
@@ -76,84 +132,92 @@ function collectFiles(dir) {
 function extractImportPaths(source) {
   const seen = new Set();
   const specifiers = [];
-  const staticRe = /import\s+(?:type\s+)?(?:[\w{}\s*,\n\r]+\s+from\s+)?['"](@[^'"]+)['"]/g;
-  let m;
-  while ((m = staticRe.exec(source)) !== null) { const path = m[1]; if (!seen.has(path)) { seen.add(path); specifiers.push(path); } }
-  const dynamicRe = /import\(\s*['"](@[^'"]+)['"]/g;
-  while ((m = dynamicRe.exec(source)) !== null) { const path = m[1]; if (!seen.has(path)) { seen.add(path); specifiers.push(path); } }
+  const patterns = [
+    /import\s+(?:type\s+)?(?:[\w{}\s*,\n\r]+\s+from\s+)?['"](@[^'"]+)['"]/gu,
+    /export\s+(?:type\s+)?(?:\*\s*(?:as\s+[\w$]+\s*)?|\{[^}]*\})\s+from\s*['"](@[^'"]+)['"]/gu,
+    /import\(\s*['"](@[^'"]+)['"]/gu,
+  ];
+
+  for (const pattern of patterns) {
+    let match;
+    while ((match = pattern.exec(source)) !== null) {
+      const specifier = match[1];
+      if (!seen.has(specifier)) {
+        seen.add(specifier);
+        specifiers.push(specifier);
+      }
+    }
+  }
+
   return specifiers;
 }
 
-function checkImport(sourcePath, importPath) {
-  const relSource = relative(SRC_ROOT, sourcePath);
-  const sourceLayerKey = getLayerKey(relSource);
+function checkImport(relativeSource, importPath) {
+  const sourceLayerKey = getLayerKey(relativeSource);
   if (!sourceLayerKey) return null;
-  const sourceDef = getLayerDef(sourceLayerKey);
-  if (!sourceDef) return null;
+  const sourceDefinition = getLayerDefinition(sourceLayerKey);
+  if (!sourceDefinition) return null;
   const targetLayerKey = getImportLayerKey(importPath);
   if (!targetLayerKey) return null;
-  const importDisplay = importPath.replace(/\.tsx?$/, '');
+  const importDisplay = importPath.replace(/\.tsx?$/u, '');
 
   if (targetLayerKey === 'modules') {
-    return { severity: 'info', source: relSource, importPath: importDisplay, message: 'migrate to @features/*' };
+    return { severity: 'info', source: relativeSource, importPath: importDisplay, message: 'migrate to @features/*' };
   }
   if (sourceLayerKey === 'shared') {
-    if (!LAYERS.shared.allowed.includes(targetLayerKey) && !isAppUmbrella(targetLayerKey)) {
-      return { severity: 'error', source: relSource, importPath: importDisplay, message: `layer violation (@shared → @${targetLayerKey})` };
+    if (!layers.shared.allowed.includes(targetLayerKey) && !isAppUmbrella(targetLayerKey)) {
+      return { severity: 'error', source: relativeSource, importPath: importDisplay, message: `layer violation (@shared → @${targetLayerKey})` };
     }
     return null;
   }
   if (sourceLayerKey === 'entities') {
-    if (!LAYERS.entities.allowed.includes(targetLayerKey) && !isAppUmbrella(targetLayerKey)) {
-      return { severity: 'error', source: relSource, importPath: importDisplay, message: `layer violation (@entities → @${targetLayerKey})` };
+    if (!layers.entities.allowed.includes(targetLayerKey) && !isAppUmbrella(targetLayerKey)) {
+      return { severity: 'error', source: relativeSource, importPath: importDisplay, message: `layer violation (@entities → @${targetLayerKey})` };
     }
     return null;
   }
   if (sourceLayerKey === 'features') {
     if (targetLayerKey === 'features') {
-      const sourceParts = relSource.split(sep);
+      const sourceParts = relativeSource.split(sep);
       const sourceFeature = sourceParts[0] === 'features' ? sourceParts[1] : null;
       const targetFeature = importPath.startsWith('@features/') ? importPath.split('/')[1] : null;
       if (sourceFeature && targetFeature && sourceFeature !== targetFeature) {
-        return { severity: 'warning', source: relSource, importPath: importDisplay, message: `cross-feature import (${sourceFeature} → ${targetFeature})` };
+        return {
+          severity: 'warning',
+          source: relativeSource,
+          importPath: importDisplay,
+          message: `cross-feature import (${sourceFeature} → ${targetFeature})`,
+        };
       }
       return null;
     }
-    if (!LAYERS.features.allowed.includes(targetLayerKey) && !isAppUmbrella(targetLayerKey)) {
-      return { severity: 'error', source: relSource, importPath: importDisplay, message: `layer violation (@features → @${targetLayerKey})` };
+    if (!layers.features.allowed.includes(targetLayerKey) && !isAppUmbrella(targetLayerKey)) {
+      return { severity: 'error', source: relativeSource, importPath: importDisplay, message: `layer violation (@features → @${targetLayerKey})` };
     }
     return null;
   }
   if (sourceLayerKey === 'widgets') {
-    if (!LAYERS.widgets.allowed.includes(targetLayerKey) && !isAppUmbrella(targetLayerKey)) {
-      return { severity: 'error', source: relSource, importPath: importDisplay, message: `layer violation (@widgets → @${targetLayerKey})` };
+    if (!layers.widgets.allowed.includes(targetLayerKey) && !isAppUmbrella(targetLayerKey)) {
+      return { severity: 'error', source: relativeSource, importPath: importDisplay, message: `layer violation (@widgets → @${targetLayerKey})` };
     }
-    return null;
   }
   return null;
 }
 
-function main() {
-  const files = collectFiles(SRC_ROOT);
-  const errors = [], warnings = [], infos = [];
-  for (const file of files) {
-    let source;
-    try { source = readFileSync(file, 'utf-8'); } catch { continue; }
-    const importPaths = extractImportPaths(source);
-    for (const imp of importPaths) {
-      const result = checkImport(file, imp);
-      if (!result) continue;
-      if (result.severity === 'error') errors.push(result);
-      else if (result.severity === 'warning') warnings.push(result);
-      else infos.push(result);
-    }
-  }
-  console.log(`\nChecking imports in src/...\n`);
-  if (errors.length > 0) { for (const e of errors) console.log(`\ud83d\udd34 ${e.source} \u2192 ${e.importPath} (${e.message})`); console.log(); }
-  if (warnings.length > 0) { for (const w of warnings) console.log(`\ud83d\udfe1 ${w.source} \u2192 ${w.importPath} (${w.message})`); console.log(); }
-  if (infos.length > 0) { for (const i of infos) console.log(`\u2139\ufe0f  ${i.source} \u2192 ${i.importPath} (${i.message})`); console.log(); }
-  console.log(`Summary: ${errors.length} error${errors.length === 1 ? '' : 's'}, ${warnings.length} warning${warnings.length === 1 ? '' : 's'}, ${infos.length} info ${infos.length === 1 ? 'message' : 'messages'}\n`);
-  if (errors.length > 0) process.exit(1);
+function errorMessage(error) {
+  return error instanceof Error ? error.message : String(error);
 }
 
-main();
+function main() {
+  const { errors, warnings, infos } = scanImports();
+  console.log('\nChecking imports in src/...\n');
+  for (const error of errors) console.log(`🔴 ${error.source} → ${error.importPath} (${error.message})`);
+  for (const warning of warnings) console.log(`🟡 ${warning.source} → ${warning.importPath} (${warning.message})`);
+  for (const info of infos) console.log(`ℹ️  ${info.source} → ${info.importPath} (${info.message})`);
+  console.log();
+  console.log(`Summary: ${errors.length} error${errors.length === 1 ? '' : 's'}, ${warnings.length} warning${warnings.length === 1 ? '' : 's'}, ${infos.length} info ${infos.length === 1 ? 'message' : 'messages'}\n`);
+  if (errors.length > 0) process.exitCode = 1;
+}
+
+const invocationPath = process.argv[1] ? resolve(process.argv[1]) : null;
+if (invocationPath === fileURLToPath(import.meta.url)) main();

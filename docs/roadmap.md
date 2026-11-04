@@ -53,7 +53,7 @@ A static source review identified the following open work. Cleanup safety and np
 
 #### Priority 1 — Reproducible install and validation
 - The root `package-lock.json` matches the frontend workspace manifest and is the npm workspace authority. The stale nested `apps/desktop/frontend/package-lock.json` was removed, and CI now keys its npm cache to the root lockfile. A real clean install remains to be validated; only an offline `npm ci --dry-run` has run so far.
-- The local `check` task omits frontend unit tests, locale consistency, and FSD import checks that CI runs separately. Its README also describes a frontend build that the task does not run. Align the local command and its documentation with the checks expected from CI.
+- The local `check` task now includes frontend unit tests, locale consistency, FSD import checks, and the TypeScript/Vite asset build. CI uses the central task for this shared validation set; dedicated CI security, Rust lint, documentation, and installer steps remain additional checks.
 
 #### Priority 2 — Frontend workflow feedback
 - Correct the new-chat welcome state when no model is selected.

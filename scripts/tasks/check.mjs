@@ -1,68 +1,103 @@
 import { runNpm, runCommand, getFrontendDirectory, getWorkspaceRoot } from '../shared/runner.mjs';
 import { ensureNoArguments } from '../help.mjs';
 
-function runNpmAsync(args, cwd = getFrontendDirectory()) {
-  return Promise.resolve(runNpm(args, cwd));
-}
+const profileTestFeature = 'openchat-local-service/desktop-profile-test-support';
 
 export const check = {
   name: 'check',
-  description: 'Runs frontend lint, TypeScript check, Rust formatting, checking, and tests.',
+  description: 'Runs frontend lint, tests, locale and import checks, asset build, and locked Rust checks.',
   args: [],
-  async run() {
-    ensureNoArguments('check', []);
-    const results = await Promise.allSettled([
-      runNpmAsync(['exec', '--', 'biome', 'check']),
-      runNpmAsync(['exec', '--', 'tsc', '--noEmit']),
-      runCommand('cargo', ['fmt', '--all', '--', '--check'], { cwd: getWorkspaceRoot() }),
-      runCommand('cargo', ['check', '--workspace'], { cwd: getWorkspaceRoot() }),
-      runCommand('cargo', ['test', '--workspace', '--features', 'openchat-local-service/desktop-profile-test-support'], {
-        cwd: getWorkspaceRoot(),
-        env: { ...process.env, RUST_TEST_THREADS: '1' },
-      }),
-    ]);
-
-    const tasks = ['Biome lint', 'TypeScript type-check', 'Rust formatting', 'Rust compilation check', 'Rust tests'];
-    let failed = false;
-
-    for (let i = 0; i < results.length; i += 1) {
-      if (results[i].status === 'rejected') {
-        failed = true;
-        process.stderr.write(tasks[i] + ' failed.\n');
-      }
-    }
-
-    if (failed) {
-      throw new Error('check: one or more tasks failed.');
-    }
+  async run(args) {
+    ensureNoArguments('check', args);
+    await runCheck();
   },
 };
 
 export const checkTypes = {
   name: 'check-types',
-  description: 'Runs frontend lint, TypeScript check, Rust formatting, and compilation check (no tests).',
+  description: 'Runs frontend lint and type checks plus locked Rust formatting and compilation checks (no tests).',
   args: [],
-  async run() {
-    ensureNoArguments('check-types', []);
-    const results = await Promise.allSettled([
-      runNpmAsync(['exec', '--', 'biome', 'check']),
-      runNpmAsync(['exec', '--', 'tsc', '--noEmit']),
-      runCommand('cargo', ['fmt', '--all', '--', '--check'], { cwd: getWorkspaceRoot() }),
-      runCommand('cargo', ['check', '--workspace'], { cwd: getWorkspaceRoot() }),
-    ]);
-
-    const tasks = ['Biome lint', 'TypeScript type-check', 'Rust formatting', 'Rust compilation check'];
-    let failed = false;
-
-    for (let i = 0; i < results.length; i += 1) {
-      if (results[i].status === 'rejected') {
-        failed = true;
-        process.stderr.write(tasks[i] + ' failed.\n');
-      }
-    }
-
-    if (failed) {
-      throw new Error('check-types: one or more tasks failed.');
-    }
+  async run(args) {
+    ensureNoArguments('check-types', args);
+    await runCheckTypes();
   },
 };
+
+export async function runCheck({
+  runNpmFn = runNpm,
+  runCommandFn = runCommand,
+  frontendDirectory = getFrontendDirectory(),
+  workspaceRoot = getWorkspaceRoot(),
+  write = (message) => process.stdout.write(message),
+} = {}) {
+  await runValidationTasks('check', [
+    {
+      name: 'Biome lint',
+      run: () =>
+        runNpmFn(
+          ['exec', '--', 'biome', 'check', '.', '../../../scripts/tasks/check.mjs', '../../../scripts/check-imports.mjs'],
+          frontendDirectory,
+        ),
+    },
+    { name: 'Frontend unit tests', run: () => runNpmFn(['test'], frontendDirectory) },
+    { name: 'Locale consistency', run: () => runNpmFn(['run', 'check:locales'], frontendDirectory) },
+    { name: 'FSD import compliance', run: () => runNpmFn(['run', 'check:imports'], frontendDirectory) },
+    { name: 'Frontend type and asset build', run: () => runNpmFn(['run', 'build'], frontendDirectory) },
+    { name: 'Rust formatting', run: () => runCommandFn('cargo', ['fmt', '--all', '--', '--check'], { cwd: workspaceRoot }) },
+    { name: 'Rust compilation check', run: () => runCommandFn('cargo', ['check', '--workspace', '--locked'], { cwd: workspaceRoot }) },
+    {
+      name: 'Rust tests',
+      run: () =>
+        runCommandFn(
+          'cargo',
+          ['test', '--workspace', '--features', profileTestFeature, '--locked', '--', '--test-threads=1'],
+          { cwd: workspaceRoot, env: { ...process.env, RUST_TEST_THREADS: '1' } },
+        ),
+    },
+  ], write);
+}
+
+export async function runCheckTypes({
+  runNpmFn = runNpm,
+  runCommandFn = runCommand,
+  frontendDirectory = getFrontendDirectory(),
+  workspaceRoot = getWorkspaceRoot(),
+  write = (message) => process.stdout.write(message),
+} = {}) {
+  await runValidationTasks('check-types', [
+    {
+      name: 'Biome lint',
+      run: () =>
+        runNpmFn(
+          ['exec', '--', 'biome', 'check', '.', '../../../scripts/tasks/check.mjs', '../../../scripts/check-imports.mjs'],
+          frontendDirectory,
+        ),
+    },
+    { name: 'TypeScript type-check', run: () => runNpmFn(['exec', '--', 'tsc', '--noEmit'], frontendDirectory) },
+    { name: 'Rust formatting', run: () => runCommandFn('cargo', ['fmt', '--all', '--', '--check'], { cwd: workspaceRoot }) },
+    { name: 'Rust compilation check', run: () => runCommandFn('cargo', ['check', '--workspace', '--locked'], { cwd: workspaceRoot }) },
+  ], write);
+}
+
+export async function runValidationTasks(taskName, tasks, write = (message) => process.stdout.write(message)) {
+  const results = await Promise.allSettled(tasks.map(async (task) => task.run()));
+  const failedTasks = [];
+
+  for (let index = 0; index < results.length; index += 1) {
+    const result = results[index];
+    const task = tasks[index];
+
+    if (result.status === 'fulfilled') {
+      write(`${task.name} passed.\n`);
+      continue;
+    }
+
+    failedTasks.push(task.name);
+    const reason = result.reason instanceof Error ? result.reason.message : String(result.reason);
+    write(`${task.name} failed: ${reason}\n`);
+  }
+
+  if (failedTasks.length > 0) {
+    throw new Error(`${taskName}: ${failedTasks.length} task(s) failed: ${failedTasks.join(', ')}.`);
+  }
+}

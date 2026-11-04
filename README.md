@@ -72,7 +72,7 @@ Run development tasks safely through configurable permission boundaries:
    npm run openchat -- check
    ```
 
-This local check runs Biome, TypeScript, Rust formatting/checking, and Rust tests. Frontend unit tests, locale/import checks, and the Vite asset build run as separate CI steps.
+This check runs Biome, frontend unit tests, locale and import checks, the TypeScript/Vite asset build, Rust formatting, and locked Rust checks/tests. CI uses the same validation task for these checks.
 
 ### Packaging
 

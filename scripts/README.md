@@ -22,11 +22,11 @@ startup dependency check validates the full frontend workspace and, if needed,
 runs `npm ci` from that root.
 
 `dev` builds the debug local-service sidecar and starts Tauri. `build` builds the
-locked release sidecar and Tauri bundle. `check` runs Biome, TypeScript, Rust
-formatting, workspace checking, and Rust tests. It does not run frontend `npm test`,
-locale checks, FSD import checks, or a Vite asset build; CI runs those as separate
-steps. `clean` previews generated build and bundle output directories by default.
-Pass `--apply` to remove the listed directories.
+locked release sidecar and Tauri bundle. `check` runs Biome, frontend unit tests,
+locale and FSD import checks, the TypeScript/Vite asset build, Rust formatting,
+locked workspace checking, and locked Rust tests. It reports all task failures
+after attempting every check. `clean` previews generated build and bundle output
+directories by default. Pass `--apply` to remove the listed directories.
 
 `dev-test-profile` builds both the Tauri host and local-service sidecar with the
 debug-only `desktop-profile-test-support` feature, then starts the app with an

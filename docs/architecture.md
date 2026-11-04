@@ -104,8 +104,10 @@ The workspace compiles as `cargo check --workspace` from `services/openchat-loca
 
 | Task | Command |
 |------|---------|
-| Full check (lint, types, Rust, tests) | `npm run openchat -- check` |
+| Local check | `npm run openchat -- check` |
 | Type check only | `npm run openchat -- check-types` |
 | Start dev server | `npm run openchat -- dev` |
 | Build release | `npm run openchat -- build` |
 | Validate import layers | `npm run check:imports` |
+
+`check` runs Biome, frontend unit tests, locale consistency, FSD import checks, the TypeScript/Vite asset build, Rust formatting, and locked Rust checking/tests. `check-types` runs Biome, TypeScript, Rust formatting, and locked Rust checking without tests. CI uses the same `check` task for this shared validation set.
