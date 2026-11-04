@@ -185,7 +185,7 @@
 - [x] QA-09: Feature ve widget kaynaklarındaki `@app` bağımlılıkları kaldırıldı; OAuth/bildirim runtime'ları sahibi feature'lara taşındı. Checker alt→üst katman importlarını reddediyor, yalnız tanımlı feature-slice API'lerini kabul ediyor.
 - [ ] `dev-test-profile --cleanup-profile` interrupt/child-process shutdown yolunu doğrula; bu araştırmanın Ctrl+C ile kesilen oturumunda cleanup gerçekleşmedi ve doğrulanmış helper'la temizlendi. İkinci oturum pencere normal kapatılınca geçici profil bırakmadı, fakat npm sarmalayıcısı `4294967295` koduyla sonlandı; kapanış/exit davranışını ayrıştır.
 - [x] `maintain-target --apply` ve `clean` için aktif build koruması, güvenli target seçimi ve görünür önizleme davranışı Faz 10.1'de uygulandı; bu araştırma sırasında gerçek cleanup komutları çalıştırılmadı.
-- [x] Tek npm workspace/install otoritesi olarak kök workspace ve `package-lock.json` seçildi; eski iç lockfile kaldırıldı, CI cache yolu ve bootstrap köke hizalandı. Temiz `npm ci` izole sandbox'ta başarılı oldu; ilk dev başlangıcı henüz doğrulanmadı ve runtime'daki eksik modül hatası hâlâ uygulama koduna atfedilmiyor.
+- [x] Tek npm workspace/install otoritesi olarak kök workspace ve `package-lock.json` seçildi; eski iç lockfile kaldırıldı, CI cache yolu ve bootstrap köke hizalandı. Temiz `npm ci` ve izole dependency ağacındaki ilk Vite başlangıcı başarılı; gerçek UI rota yürütmesi ve paketlenmiş uygulama karşılaştırması ayrı takipte.
 - [ ] `recent searches` renderer `localStorage` saklama/retention kararını privacy sözleşmesiyle karşılaştır; hassas sorgu içerme olasılığını ve uzunluk sınırını değerlendir.
 - [x] `src/app/AppManager.tsx` consumer/import graph'ını tarama; kaynakta aktif consumer bulunmadı, çalışan giriş `bootstrap/main.tsx` üzerinden `bootstrap/App.tsx` yükleyip render ediyor.
 - [ ] `AppManager` gerçekten dead ise sonraki kod değişikliği sırasında kaldır; tutacaksan aktif entry point ile rolünü belgeleyip tekilleştir.
@@ -197,7 +197,7 @@
 - [x] Yerel check kapsamını CI'deki ortak frontend/Rust doğrulama adımlarıyla hizala; Windows CI çalışması henüz gözlenmedi.
 - [ ] Kalan doğrulanmış kullanıcı akışı ve servis kusurlarını ilgili düzeltme dilimlerinde regression senaryolarına bağla.
 - [ ] NSIS installerı eksik/eski WebView2 runtime ve offline koşullarında kurup aç; sidecar ile ilk profil başlangıcını doğrula.
-- [ ] Vite dev profile startup sonrasında Görsel stüdyosu dinamik import hatasını dependency install/cache kaynaklı mı diye kontrollü biçimde ayır; paketlenmiş build ile ayrıca karşılaştır.
+- [ ] Temiz dependency ağacında Vite, Görsel stüdyosu entry modülünü HTTP 200 ile dönüştürdü; browser'da lazy route'u gerçekten yürütüp önceki dinamik import hatasını ve paketlenmiş build'i karşılaştır.
 - [ ] OpenChat'i OpenChat deposuna proje olarak ekleyip bir geliştirme görevini uygulamanın kendi sohbet, dosya araçları, terminal ve diff/revert akışıyla baştan sona yürüt; proje kökünün, izin kararlarının, komut çıktılarının ve oturum yeniden açma davranışının yeterli olduğunu doğrula.
 - [ ] `AGENTS.md` içeriğinin OpenChat oturumuna otomatik aktarılmadığı kaynak bulgusunu gerçek kullanımda doğrula; proje talimatı ve `.openchat/rules/**/*.mdc` ile gerekli repo kurallarının eksiksiz uygulanıp uygulanmadığını belirle.
 - [ ] OpenChat deposu için proje talimatı ve `npm run openchat -- check` gibi doğrulama komutlarını OpenChat'in proje ayarlarına tanımlamanın geliştirici akışını iyileştirip iyileştirmediğini kontrollü dogfooding denemesiyle değerlendir; bu araştırmada proje ayarı oluşturma.
@@ -227,13 +227,13 @@
 
 - [x] `CROSS-01/QA-08` uygulaması: kök npm workspace ve kök `package-lock.json` otorite seçildi; eski iç lockfile kaldırıldı; CI cache ve bootstrap bu köke bağlandı. Bootstrap, tüm workspace ağacını `npm ls` ile doğrular ve eksikse `npm ci` çalıştırır. Davranışlar gerçek install yapmayan testlerle doğrulandı.
 - [x] `QA-08` temiz kurulum: mevcut `node_modules` ağaçlarına dokunmadan izole boş npm workspace'te `npm ci` ile 159 paket kuruldu ve tüm frontend workspace dependency ağacı `npm ls` ile doğrulandı.
-- [ ] `QA-08` ilk dev başlangıcı: temiz dependency ağacından uygulama/Vite startup'ını doğrula; runtime'daki optimize-deps hatasının temiz install sonrasında sürüp sürmediğini ayır.
+- [x] `QA-08` ilk dev başlangıcı: izole temiz dependency ağacında `npm run dev -- --force` ile Vite 8.3.5 başladı; root, app bootstrap ve Görsel stüdyosu modülleri HTTP 200 ile dönüştü; optimizer önbelleği oluştu. Browser/Tauri uçtan uca yürütmesi ayrıca bekliyor.
 - [x] `QA-02/03/06`: Merkezi `check` frontend test/locale/import/build ve locked Rust format/check/test adımlarını çalıştıracak şekilde genişletildi; hata veren adımdan sonra kalan adımların da denenip özetlenmesi için test eklendi. CI ortak doğrulama adımları için merkezi CLI'ı çağırıyor. Odaklı doğrulama geçti; tam Cargo çalışması hedef alanı sınırı nedeniyle bu turda çalıştırılmadı.
 - [x] `QA-01`: Mesaj gruplama ve gün ayırma testleri üretimde kullanılan saf fonksiyonlara bağlandı. 10.000 mesaj benchmark'ı sentetik fixture için tanı ölçümü verir; React render/scroll ve gerçek kullanıcı workload'u ölçmediği açıkça yazılır. Donanıma bağlı sert süre eşiği kaldırıldı.
 - [x] `QA-09`: Repo mimari kuralıyla çelişen feature/widget → app izinleri kaldırıldı; app-runtime facade'ları alt feature API'lerine yönlendirildi; çapraz feature sınırları public slice entrypoint'lerine alındı.
 - [x] `QA-13`: Import checker re-export'ları tarıyor, dosya/ağaç okuma hatalarını hata sonucu yapıyor; statik import, type-only re-export, okuma ve enumerasyon hataları için test eklendi.
 - [x] Kısmi kabul: check adımları ayrı isimlerle raporlanır ve runner hatasında diğerleri de denenir; local/CI ortak komutları hizalı; frontend build, test, locale/import kontrolleri ve checker testleri geçti.
-- [ ] Kalan kabul: temiz dependency ağacından ilk dev başlangıcı; desteklenen Windows CI çalışması; Cargo check/test'in 20 GiB hedef sınırına uyarak tamamlanması.
+- [ ] Kalan kabul: desteklenen Windows CI çalışması; Cargo check/test'in 20 GiB hedef sınırına uyarak tamamlanması; browser'da Görsel stüdyosu lazy route ve paketlenmiş build karşılaştırması.
 
 ### 10.3 CLI, Tauri ve sidecar yaşam döngüsü
 
