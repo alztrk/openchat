@@ -15,13 +15,16 @@ use serde_json::{Value, json};
 use tokio::{
     io::{AsyncRead, AsyncReadExt},
     process::Command,
-    time::timeout,
+    sync::watch,
+    task::JoinHandle,
+    time::{Instant, sleep_until, timeout},
 };
 use uuid::Uuid;
 
 use crate::{git_inspection, storage::AppStorage};
 
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(45);
+const LIST_TIMEOUT: Duration = Duration::from_secs(25);
 const MAX_OUTPUT_BYTES: usize = 8 * 1024;
 const MAX_WORKTREES: usize = 20;
 
@@ -33,8 +36,26 @@ pub(crate) enum GitWorktreeError {
     NotRepository,
     UnsafePath,
     GitFailed,
+    Cancelled,
     TimedOut,
     Unavailable,
+}
+
+struct ListControl<'a> {
+    cancellation: &'a mut watch::Receiver<bool>,
+    deadline: Instant,
+}
+
+impl ListControl<'_> {
+    fn check(&self) -> Result<(), GitWorktreeError> {
+        if *self.cancellation.borrow() {
+            return Err(GitWorktreeError::Cancelled);
+        }
+        if Instant::now() >= self.deadline {
+            return Err(GitWorktreeError::TimedOut);
+        }
+        Ok(())
+    }
 }
 
 struct ProjectLocation {
@@ -48,23 +69,41 @@ pub(crate) async fn list(
     storage: &AppStorage,
     project_id: &str,
     project_root: &str,
+    cancellation: &mut watch::Receiver<bool>,
 ) -> Result<Value, GitWorktreeError> {
-    let project = project_location(storage, project_id, project_root).await?;
+    let mut control = ListControl {
+        cancellation,
+        deadline: Instant::now() + LIST_TIMEOUT,
+    };
+    control.check()?;
+    let project = project_location(storage, project_id, project_root, Some(&mut control)).await?;
+    control.check()?;
     let base_exists = ensure_worktree_base(&project, false)?;
     let mut worktrees = Vec::new();
     let mut truncated = false;
     if !base_exists {
+        control.check()?;
         return Ok(json!({"worktrees": [], "truncated": false}));
     }
     let entries = match fs::read_dir(&project.worktree_base) {
         Ok(entries) => entries,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            control.check()?;
             return Ok(json!({"worktrees": [], "truncated": false}));
         }
-        Err(_) => return Err(GitWorktreeError::Unavailable),
+        Err(_) => {
+            control.check()?;
+            return Err(GitWorktreeError::Unavailable);
+        }
     };
 
+    let mut scanned_entries = 0usize;
     for entry in entries {
+        scanned_entries = scanned_entries.saturating_add(1);
+        if scanned_entries % 64 == 0 {
+            tokio::task::yield_now().await;
+        }
+        control.check()?;
         let entry = entry.map_err(|_| GitWorktreeError::Unavailable)?;
         let file_type = entry
             .file_type()
@@ -76,11 +115,15 @@ pub(crate) async fn list(
         if canonical_worktree_id(&id).is_none() {
             continue;
         }
-        let worktree = checked_worktree(&project, &id).await?;
-        let branch = git_text(&worktree, &["branch", "--show-current"]).await?;
-        let status = git_inspection::status(&project_subdirectory(&worktree, &project)?)
-            .await
-            .map_err(|_| GitWorktreeError::Unavailable)?;
+        let worktree = checked_worktree(&project, &id, Some(&mut control)).await?;
+        let branch = git_text(&worktree, &["branch", "--show-current"], Some(&mut control)).await?;
+        let status = git_inspection::status_with_cancellation(
+            &project_subdirectory(&worktree, &project)?,
+            control.cancellation,
+            control.deadline,
+        )
+        .await
+        .map_err(map_git_inspection_error)?;
         if worktrees.len() == MAX_WORKTREES {
             truncated = true;
             break;
@@ -98,6 +141,7 @@ pub(crate) async fn list(
             .and_then(Value::as_str)
             .cmp(&right.get("branch").and_then(Value::as_str))
     });
+    control.check()?;
     Ok(json!({"worktrees": worktrees, "truncated": truncated}))
 }
 
@@ -107,7 +151,7 @@ pub(crate) async fn create(
     project_id: &str,
     project_root: &str,
 ) -> Result<Value, GitWorktreeError> {
-    let project = project_location(storage, project_id, project_root).await?;
+    let project = project_location(storage, project_id, project_root, None).await?;
     ensure_worktree_base(&project, true)?;
     let id = Uuid::new_v4().simple().to_string();
     let branch = format!("openchat/{id}");
@@ -128,6 +172,7 @@ pub(crate) async fn create(
             &checkout_text,
             "HEAD",
         ],
+        None,
     )
     .await;
     let _ = fs::remove_dir(&hooks_directory);
@@ -151,8 +196,8 @@ pub(crate) async fn review(
     project_root: &str,
     worktree_id: &str,
 ) -> Result<Value, GitWorktreeError> {
-    let project = project_location(storage, project_id, project_root).await?;
-    let worktree = checked_worktree(&project, worktree_id).await?;
+    let project = project_location(storage, project_id, project_root, None).await?;
+    let worktree = checked_worktree(&project, worktree_id, None).await?;
     let project_path = project_subdirectory(&worktree, &project)?;
     let status = git_inspection::status(&project_path)
         .await
@@ -170,8 +215,8 @@ pub(crate) async fn project_root_for_worktree(
     project_root: &str,
     worktree_id: &str,
 ) -> Result<PathBuf, GitWorktreeError> {
-    let project = project_location(storage, project_id, project_root).await?;
-    let worktree = checked_worktree(&project, worktree_id).await?;
+    let project = project_location(storage, project_id, project_root, None).await?;
+    let worktree = checked_worktree(&project, worktree_id, None).await?;
     project_subdirectory(&worktree, &project)
 }
 
@@ -182,8 +227,8 @@ pub(crate) async fn remove(
     project_root: &str,
     worktree_id: &str,
 ) -> Result<Value, GitWorktreeError> {
-    let project = project_location(storage, project_id, project_root).await?;
-    let worktree = checked_worktree(&project, worktree_id).await?;
+    let project = project_location(storage, project_id, project_root, None).await?;
+    let worktree = checked_worktree(&project, worktree_id, None).await?;
     let hooks_directory = storage.root().join(format!(
         "git-hooks-disabled-{}",
         canonical_worktree_id(worktree_id).ok_or(GitWorktreeError::InvalidInput)?
@@ -194,6 +239,7 @@ pub(crate) async fn remove(
         &project.repository_root,
         &hooks_directory,
         &["worktree", "remove", "--force", &worktree_text],
+        None,
     )
     .await;
     let _ = fs::remove_dir(&hooks_directory);
@@ -209,6 +255,7 @@ async fn project_location(
     storage: &AppStorage,
     project_id: &str,
     project_path: &str,
+    mut control: Option<&mut ListControl<'_>>,
 ) -> Result<ProjectLocation, GitWorktreeError> {
     if !valid_identifier(project_id) || project_path.len() > 4096 {
         return Err(GitWorktreeError::InvalidInput);
@@ -218,7 +265,12 @@ async fn project_location(
     if !project_root.is_dir() {
         return Err(GitWorktreeError::ProjectUnavailable);
     }
-    let output = git_text(&project_root, &["rev-parse", "--show-toplevel"]).await?;
+    let output = git_text(
+        &project_root,
+        &["rev-parse", "--show-toplevel"],
+        control.as_deref_mut(),
+    )
+    .await?;
     let repository_root = fs::canonicalize(output).map_err(|_| GitWorktreeError::NotRepository)?;
     let project_subdirectory = project_root
         .strip_prefix(&repository_root)
@@ -253,6 +305,7 @@ fn project_subdirectory(
 async fn checked_worktree(
     project: &ProjectLocation,
     id: &str,
+    mut control: Option<&mut ListControl<'_>>,
 ) -> Result<PathBuf, GitWorktreeError> {
     let id = canonical_worktree_id(id).ok_or(GitWorktreeError::InvalidInput)?;
     if !ensure_worktree_base(project, false)? {
@@ -269,12 +322,21 @@ async fn checked_worktree(
     if canonical_path.parent() != Some(canonical_base.as_path()) {
         return Err(GitWorktreeError::UnsafePath);
     }
-    let common_dir = git_text(&canonical_path, &["rev-parse", "--git-common-dir"]).await?;
+    let common_dir = git_text(
+        &canonical_path,
+        &["rev-parse", "--git-common-dir"],
+        control.as_deref_mut(),
+    )
+    .await?;
     let worktree_common_dir = canonical_path.join(common_dir);
     let worktree_common_dir =
         fs::canonicalize(worktree_common_dir).map_err(|_| GitWorktreeError::UnsafePath)?;
-    let project_common_dir =
-        git_text(&project.repository_root, &["rev-parse", "--git-common-dir"]).await?;
+    let project_common_dir = git_text(
+        &project.repository_root,
+        &["rev-parse", "--git-common-dir"],
+        control.as_deref_mut(),
+    )
+    .await?;
     let project_common_dir = fs::canonicalize(project.repository_root.join(project_common_dir))
         .map_err(|_| GitWorktreeError::UnsafePath)?;
     if worktree_common_dir != project_common_dir {
@@ -358,8 +420,12 @@ fn valid_identifier(value: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
 }
 
-async fn git_text(root: &Path, arguments: &[&str]) -> Result<String, GitWorktreeError> {
-    let output = run_git(root, root, arguments).await?;
+async fn git_text(
+    root: &Path,
+    arguments: &[&str],
+    control: Option<&mut ListControl<'_>>,
+) -> Result<String, GitWorktreeError> {
+    let output = run_git(root, root, arguments, control).await?;
     String::from_utf8(output)
         .map(|value| value.trim().to_owned())
         .map_err(|_| GitWorktreeError::Unavailable)
@@ -369,7 +435,11 @@ async fn run_git(
     root: &Path,
     hooks_directory: &Path,
     arguments: &[&str],
+    mut control: Option<&mut ListControl<'_>>,
 ) -> Result<Vec<u8>, GitWorktreeError> {
+    if let Some(control) = control.as_deref_mut() {
+        control.check()?;
+    }
     let mut child = Command::new(git_inspection::git_program())
         .args(["-c", "core.fsmonitor=false", "-c"])
         .arg(format!(
@@ -387,29 +457,68 @@ async fn run_git(
         .map_err(|_| GitWorktreeError::Unavailable)?;
     let stdout = child.stdout.take().ok_or(GitWorktreeError::Unavailable)?;
     let stderr = child.stderr.take().ok_or(GitWorktreeError::Unavailable)?;
-    let stdout_task = tokio::spawn(read_bounded(stdout));
-    let stderr_task = tokio::spawn(read_bounded(stderr));
-    let status = match timeout(COMMAND_TIMEOUT, child.wait()).await {
-        Ok(Ok(status)) => status,
-        Ok(Err(_)) => return Err(GitWorktreeError::Unavailable),
-        Err(_) => {
-            let _ = child.kill().await;
-            let _ = child.wait().await;
+    let mut stdout_task = tokio::spawn(read_bounded(stdout));
+    let mut stderr_task = tokio::spawn(read_bounded(stderr));
+    let status_result = match control.as_deref_mut() {
+        Some(control) => git_inspection::wait_for_git_process_with_cancellation(
+            &mut child,
+            control.cancellation,
+            control.deadline.min(Instant::now() + COMMAND_TIMEOUT),
+        )
+        .await
+        .map_err(map_git_inspection_error),
+        None => match timeout(COMMAND_TIMEOUT, child.wait()).await {
+            Ok(Ok(status)) => Ok(status),
+            Ok(Err(_)) => Err(GitWorktreeError::Unavailable),
+            Err(_) => {
+                let _ = child.kill().await;
+                let _ = child.wait().await;
+                Err(GitWorktreeError::TimedOut)
+            }
+        },
+    };
+    let status = match status_result {
+        Ok(status) => status,
+        Err(error) => {
             stdout_task.abort();
             stderr_task.abort();
             let _ = stdout_task.await;
             let _ = stderr_task.await;
-            return Err(GitWorktreeError::TimedOut);
+            return Err(error);
         }
     };
-    let (stdout, stdout_truncated) = stdout_task
-        .await
-        .map_err(|_| GitWorktreeError::Unavailable)?
-        .map_err(|_| GitWorktreeError::Unavailable)?;
-    let (_stderr, stderr_truncated) = stderr_task
-        .await
-        .map_err(|_| GitWorktreeError::Unavailable)?
-        .map_err(|_| GitWorktreeError::Unavailable)?;
+    let stdout_result = match control.as_deref_mut() {
+        Some(control) => wait_for_list_reader(&mut stdout_task, control).await,
+        None => (&mut stdout_task)
+            .await
+            .map_err(|_| GitWorktreeError::Unavailable)?
+            .map_err(|_| GitWorktreeError::Unavailable),
+    };
+    let (stdout, stdout_truncated) = match stdout_result {
+        Ok(output) => output,
+        Err(error) => {
+            stdout_task.abort();
+            stderr_task.abort();
+            let _ = stdout_task.await;
+            let _ = stderr_task.await;
+            return Err(error);
+        }
+    };
+    let stderr_result = match control.as_deref_mut() {
+        Some(control) => wait_for_list_reader(&mut stderr_task, control).await,
+        None => (&mut stderr_task)
+            .await
+            .map_err(|_| GitWorktreeError::Unavailable)?
+            .map_err(|_| GitWorktreeError::Unavailable),
+    };
+    let (_stderr, stderr_truncated) = match stderr_result {
+        Ok(output) => output,
+        Err(error) => {
+            stderr_task.abort();
+            let _ = stderr_task.await;
+            return Err(error);
+        }
+    };
     if stdout_truncated || stderr_truncated {
         return Err(GitWorktreeError::Unavailable);
     }
@@ -417,6 +526,38 @@ async fn run_git(
         return Err(GitWorktreeError::GitFailed);
     }
     Ok(stdout)
+}
+
+async fn wait_for_list_reader<T>(
+    task: &mut JoinHandle<std::io::Result<T>>,
+    control: &mut ListControl<'_>,
+) -> Result<T, GitWorktreeError> {
+    loop {
+        control.check()?;
+        tokio::select! {
+            biased;
+            changed = control.cancellation.changed() => {
+                if changed.is_err() || *control.cancellation.borrow() {
+                    return Err(GitWorktreeError::Cancelled);
+                }
+            }
+            _ = sleep_until(control.deadline) => return Err(GitWorktreeError::TimedOut),
+            result = &mut *task => {
+                return result
+                    .map_err(|_| GitWorktreeError::Unavailable)?
+                    .map_err(|_| GitWorktreeError::Unavailable);
+            }
+        }
+    }
+}
+
+fn map_git_inspection_error(error: git_inspection::GitInspectionError) -> GitWorktreeError {
+    match error {
+        git_inspection::GitInspectionError::Cancelled => GitWorktreeError::Cancelled,
+        git_inspection::GitInspectionError::TimedOut => GitWorktreeError::TimedOut,
+        git_inspection::GitInspectionError::NotRepository
+        | git_inspection::GitInspectionError::Unavailable => GitWorktreeError::Unavailable,
+    }
 }
 
 async fn read_bounded<R: AsyncRead + Unpin>(mut reader: R) -> std::io::Result<(Vec<u8>, bool)> {
@@ -442,6 +583,7 @@ mod tests {
 
     use super::{create, list, project_root_for_worktree, remove, review};
     use crate::{git_inspection, storage::AppStorage};
+    use tokio::sync::watch;
 
     struct Fixture {
         root: std::path::PathBuf,
@@ -517,6 +659,7 @@ mod tests {
     #[tokio::test]
     async fn creates_reviews_lists_and_removes_an_isolated_worktree() {
         let fixture = Fixture::new();
+        let (_cancellation_sender, mut cancellation) = watch::channel(false);
         let project_path = fixture.repository.to_string_lossy();
         let created = create(&fixture.storage, "project-1", &project_path)
             .await
@@ -528,9 +671,14 @@ mod tests {
                 .is_some_and(|branch| branch.starts_with("openchat/"))
         );
 
-        let listed = list(&fixture.storage, "project-1", &project_path)
-            .await
-            .expect("list worktrees");
+        let listed = list(
+            &fixture.storage,
+            "project-1",
+            &project_path,
+            &mut cancellation,
+        )
+        .await
+        .expect("list worktrees");
         assert_eq!(listed["worktrees"].as_array().map(Vec::len), Some(1));
         assert_eq!(listed["worktrees"][0]["id"], id);
 
@@ -544,9 +692,14 @@ mod tests {
         assert_eq!(tasks[0].command, "echo verify");
         fs::write(PathBuf::from(worktree_path).join("README.md"), "after\n")
             .expect("edit worktree file");
-        let listed = list(&fixture.storage, "project-1", &project_path)
-            .await
-            .expect("list worktree changes");
+        let listed = list(
+            &fixture.storage,
+            "project-1",
+            &project_path,
+            &mut cancellation,
+        )
+        .await
+        .expect("list worktree changes");
         assert_eq!(
             listed["worktrees"][0]["status"]["files"]
                 .as_array()
@@ -570,9 +723,32 @@ mod tests {
         remove(&fixture.storage, "project-1", &project_path, id)
             .await
             .expect("remove worktree");
-        let listed = list(&fixture.storage, "project-1", &project_path)
-            .await
-            .expect("list after removal");
+        let listed = list(
+            &fixture.storage,
+            "project-1",
+            &project_path,
+            &mut cancellation,
+        )
+        .await
+        .expect("list after removal");
         assert_eq!(listed["worktrees"].as_array().map(Vec::len), Some(0));
+    }
+
+    #[tokio::test]
+    async fn list_stops_before_starting_when_the_request_is_already_cancelled() {
+        let fixture = Fixture::new();
+        let (_cancellation_sender, mut cancellation) = watch::channel(true);
+        let project_path = fixture.repository.to_string_lossy();
+
+        let error = list(
+            &fixture.storage,
+            "project-1",
+            &project_path,
+            &mut cancellation,
+        )
+        .await
+        .expect_err("an already cancelled request must not start list work");
+
+        assert!(matches!(error, super::GitWorktreeError::Cancelled));
     }
 }

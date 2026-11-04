@@ -1234,6 +1234,7 @@
   "projectWorktreeCreate": "Crear worktree",
   "projectWorktreeCreateFailed": "No se pudo crear el worktree. Comprueba que esta carpeta sea un repositorio de Git.",
   "projectWorktreeLoadFailed": "No se pudieron cargar los worktrees del proyecto.",
+  "projectWorktreeTimedOut": "La lista de worktrees tardó demasiado. Revisa el repositorio y vuelve a actualizar.",
   "projectWorktreeOperationFailed": "La operación de Git falló. Comprueba el estado del repositorio e inténtalo de nuevo.",
   "projectWorktreeNotRepository": "Esta carpeta del proyecto no está dentro de un repositorio de Git.",
   "projectWorktreeBranch": "Rama: {branch}",

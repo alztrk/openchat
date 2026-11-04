@@ -647,31 +647,21 @@ fn log_connection_delete_event(
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        fs,
-        path::PathBuf,
-        sync::{
-            Arc,
-            atomic::{AtomicU64, Ordering},
-        },
-    };
+    use std::{fs, path::PathBuf, sync::Arc};
 
     use super::{ChatGptService, OperationGate};
     use crate::storage::AppStorage;
     use tokio::sync::watch;
 
-    static NEXT_DIRECTORY: AtomicU64 = AtomicU64::new(0);
-
     struct TestDirectory(PathBuf);
 
     impl TestDirectory {
         fn new() -> Self {
-            let id = NEXT_DIRECTORY.fetch_add(1, Ordering::Relaxed);
             let path = std::env::temp_dir().join(format!(
-                "openchat-chatgpt-account-delete-test-{}-{id}",
-                std::process::id()
+                "openchat-chatgpt-account-delete-test-{}",
+                uuid::Uuid::new_v4().simple()
             ));
-            fs::create_dir_all(&path).expect("create test directory");
+            fs::create_dir(&path).expect("create test directory");
             Self(path)
         }
     }

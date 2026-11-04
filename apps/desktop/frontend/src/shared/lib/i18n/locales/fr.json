@@ -1234,6 +1234,7 @@
   "projectWorktreeCreate": "Créer un worktree",
   "projectWorktreeCreateFailed": "Impossible de créer le worktree. Vérifiez que ce dossier est un dépôt Git.",
   "projectWorktreeLoadFailed": "Impossible de charger les worktrees du projet.",
+  "projectWorktreeTimedOut": "La liste des worktrees a pris trop de temps. Vérifiez le dépôt, puis actualisez à nouveau.",
   "projectWorktreeOperationFailed": "L’opération Git a échoué. Vérifiez l’état du dépôt et réessayez.",
   "projectWorktreeNotRepository": "Ce dossier de projet ne se trouve pas dans un dépôt Git.",
   "projectWorktreeBranch": "Branche : {branch}",

@@ -1234,6 +1234,7 @@
   "projectWorktreeCreate": "Worktree erstellen",
   "projectWorktreeCreateFailed": "Der Worktree konnte nicht erstellt werden. Prüfen Sie, ob der Ordner ein Git-Repository ist.",
   "projectWorktreeLoadFailed": "Die Projekt-Worktrees konnten nicht geladen werden.",
+  "projectWorktreeTimedOut": "Das Auflisten der Worktrees hat zu lange gedauert. Prüfe das Repository und aktualisiere erneut.",
   "projectWorktreeOperationFailed": "Der Git-Vorgang ist fehlgeschlagen. Prüfen Sie den Repository-Status und versuchen Sie es erneut.",
   "projectWorktreeNotRepository": "Dieser Projektordner liegt nicht in einem Git-Repository.",
   "projectWorktreeBranch": "Branch: {branch}",

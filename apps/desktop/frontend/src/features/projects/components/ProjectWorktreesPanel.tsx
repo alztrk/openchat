@@ -48,6 +48,7 @@ type DetailDialog =
   | { kind: 'result'; task: ProjectTask; status: string; output: string; truncated: boolean };
 type WorktreeErrorKey =
   | 'projectWorktreeLoadFailed'
+  | 'projectWorktreeTimedOut'
   | 'projectWorktreeCreateFailed'
   | 'projectWorktreeOperationFailed'
   | 'projectWorktreeNotRepository'
@@ -653,7 +654,14 @@ function worktreeErrorKey(
   fallback: WorktreeErrorKey = 'projectWorktreeOperationFailed',
 ): WorktreeErrorKey {
   if (!(error instanceof LocalServiceError)) return fallback;
-  return error.code === 'project_not_git_repository' ? 'projectWorktreeNotRepository' : fallback;
+  if (error.code === 'project_not_git_repository') return 'projectWorktreeNotRepository';
+  if (
+    error.code === 'project_worktree_timed_out' ||
+    (error.code === 'service_timeout' && fallback === 'projectWorktreeLoadFailed')
+  ) {
+    return 'projectWorktreeTimedOut';
+  }
+  return fallback;
 }
 
 function taskErrorKey(error: unknown, cancelling: boolean): WorktreeErrorKey {

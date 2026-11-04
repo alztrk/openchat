@@ -9,7 +9,9 @@ use serde_json::{Value, json};
 use tokio::{
     io::{AsyncRead, AsyncReadExt},
     process::Command,
-    time::timeout,
+    sync::watch,
+    task::JoinHandle,
+    time::{Instant, sleep_until, timeout, timeout_at},
 };
 
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(5);
@@ -20,6 +22,7 @@ const MAX_CHANGED_FILES: usize = 200;
 #[derive(Debug)]
 /// Failure categories returned by bounded Git inspection.
 pub(crate) enum GitInspectionError {
+    Cancelled,
     NotRepository,
     Unavailable,
     TimedOut,
@@ -39,6 +42,33 @@ pub(crate) async fn status(root: &Path) -> Result<Value, GitInspectionError> {
         MAX_STATUS_BYTES,
     )
     .await?;
+    Ok(status_value(output))
+}
+
+/// Returns status data while honoring a request cancellation and an absolute operation deadline.
+pub(crate) async fn status_with_cancellation(
+    root: &Path,
+    cancellation: &mut watch::Receiver<bool>,
+    deadline: Instant,
+) -> Result<Value, GitInspectionError> {
+    let output = run_git_with_cancellation(
+        root,
+        &[
+            "status",
+            "--porcelain=v2",
+            "-z",
+            "--branch",
+            "--untracked-files=all",
+        ],
+        MAX_STATUS_BYTES,
+        cancellation,
+        deadline,
+    )
+    .await?;
+    Ok(status_value(output))
+}
+
+fn status_value(output: GitOutput) -> Value {
     let complete_output = if output.truncated {
         output
             .stdout
@@ -50,14 +80,14 @@ pub(crate) async fn status(root: &Path) -> Result<Value, GitInspectionError> {
         &output.stdout
     };
     let status = parse_status(complete_output);
-    Ok(json!({
+    json!({
         "branch": status.branch,
         "upstream": status.upstream,
         "ahead": status.ahead,
         "behind": status.behind,
         "files": status.files,
         "truncated": status.truncated || output.truncated,
-    }))
+    })
 }
 
 /// Returns bounded staged and unstaged diffs without external diff helpers.
@@ -151,6 +181,42 @@ async fn run_git(
     arguments: &[&str],
     output_limit: usize,
 ) -> Result<GitOutput, GitInspectionError> {
+    run_git_inner(root, arguments, output_limit, None).await
+}
+
+async fn run_git_with_cancellation(
+    root: &Path,
+    arguments: &[&str],
+    output_limit: usize,
+    cancellation: &mut watch::Receiver<bool>,
+    deadline: Instant,
+) -> Result<GitOutput, GitInspectionError> {
+    let mut control = GitProcessControl {
+        cancellation,
+        deadline,
+    };
+    run_git_inner(root, arguments, output_limit, Some(&mut control)).await
+}
+
+struct GitProcessControl<'a> {
+    cancellation: &'a mut watch::Receiver<bool>,
+    deadline: Instant,
+}
+
+async fn run_git_inner(
+    root: &Path,
+    arguments: &[&str],
+    output_limit: usize,
+    mut control: Option<&mut GitProcessControl<'_>>,
+) -> Result<GitOutput, GitInspectionError> {
+    if let Some(control) = control.as_deref_mut() {
+        if *control.cancellation.borrow() {
+            return Err(GitInspectionError::Cancelled);
+        }
+        if Instant::now() >= control.deadline {
+            return Err(GitInspectionError::TimedOut);
+        }
+    }
     let mut child = Command::new(git_program())
         .args(["-c", "core.fsmonitor=false"])
         .args(["--no-pager"])
@@ -165,9 +231,20 @@ async fn run_git(
 
     let stdout = child.stdout.take().ok_or(GitInspectionError::Unavailable)?;
     let stderr = child.stderr.take().ok_or(GitInspectionError::Unavailable)?;
-    let stdout_task = tokio::spawn(read_bounded(stdout, output_limit));
-    let stderr_task = tokio::spawn(read_bounded(stderr, 16 * 1024));
-    let status = match wait_for_git_process(&mut child, COMMAND_TIMEOUT).await {
+    let mut stdout_task = tokio::spawn(read_bounded(stdout, output_limit));
+    let mut stderr_task = tokio::spawn(read_bounded(stderr, 16 * 1024));
+    let status_result = match control.as_deref_mut() {
+        Some(control) => {
+            wait_for_git_process_with_cancellation(
+                &mut child,
+                control.cancellation,
+                control.deadline.min(Instant::now() + COMMAND_TIMEOUT),
+            )
+            .await
+        }
+        None => wait_for_git_process(&mut child, COMMAND_TIMEOUT).await,
+    };
+    let status = match status_result {
         Ok(status) => status,
         Err(error) => {
             stdout_task.abort();
@@ -177,14 +254,35 @@ async fn run_git(
             return Err(error);
         }
     };
-    let (stdout, truncated) = stdout_task
-        .await
-        .map_err(|_| GitInspectionError::Unavailable)?
-        .map_err(|_| GitInspectionError::Unavailable)?;
-    let _ = stderr_task
-        .await
-        .map_err(|_| GitInspectionError::Unavailable)?
-        .map_err(|_| GitInspectionError::Unavailable)?;
+    let stdout_result = match control.as_deref_mut() {
+        Some(control) => wait_for_reader(&mut stdout_task, control).await,
+        None => (&mut stdout_task)
+            .await
+            .map_err(|_| GitInspectionError::Unavailable)?
+            .map_err(|_| GitInspectionError::Unavailable),
+    };
+    let (stdout, truncated) = match stdout_result {
+        Ok(output) => output,
+        Err(error) => {
+            stdout_task.abort();
+            stderr_task.abort();
+            let _ = stdout_task.await;
+            let _ = stderr_task.await;
+            return Err(error);
+        }
+    };
+    let stderr_result = match control.as_deref_mut() {
+        Some(control) => wait_for_reader(&mut stderr_task, control).await,
+        None => (&mut stderr_task)
+            .await
+            .map_err(|_| GitInspectionError::Unavailable)?
+            .map_err(|_| GitInspectionError::Unavailable),
+    };
+    if let Err(error) = stderr_result {
+        stderr_task.abort();
+        let _ = stderr_task.await;
+        return Err(error);
+    }
 
     if !status.success() {
         let mut repository_check = Command::new(git_program());
@@ -203,7 +301,17 @@ async fn run_git(
         let mut repository_check = repository_check
             .spawn()
             .map_err(|_| GitInspectionError::Unavailable)?;
-        let check_status = wait_for_git_process(&mut repository_check, COMMAND_TIMEOUT).await?;
+        let check_status = match control.as_deref_mut() {
+            Some(control) => {
+                wait_for_git_process_with_cancellation(
+                    &mut repository_check,
+                    control.cancellation,
+                    control.deadline.min(Instant::now() + COMMAND_TIMEOUT),
+                )
+                .await?
+            }
+            None => wait_for_git_process(&mut repository_check, COMMAND_TIMEOUT).await?,
+        };
         return Err(if check_status.success() {
             GitInspectionError::Unavailable
         } else {
@@ -222,11 +330,72 @@ async fn wait_for_git_process(
         Ok(Ok(status)) => Ok(status),
         Ok(Err(_)) => Err(GitInspectionError::Unavailable),
         Err(_) => {
-            let _ = child.kill().await;
-            let _ = child.wait().await;
+            stop_git_process(child).await;
             Err(GitInspectionError::TimedOut)
         }
     }
+}
+
+pub(crate) async fn wait_for_git_process_with_cancellation(
+    child: &mut tokio::process::Child,
+    cancellation: &mut watch::Receiver<bool>,
+    deadline: Instant,
+) -> Result<std::process::ExitStatus, GitInspectionError> {
+    loop {
+        if *cancellation.borrow() {
+            stop_git_process(child).await;
+            return Err(GitInspectionError::Cancelled);
+        }
+        tokio::select! {
+            biased;
+            changed = cancellation.changed() => {
+                if changed.is_err() || *cancellation.borrow() {
+                    stop_git_process(child).await;
+                    return Err(GitInspectionError::Cancelled);
+                }
+            }
+            result = timeout_at(deadline, child.wait()) => {
+                return match result {
+                    Ok(Ok(status)) => Ok(status),
+                    Ok(Err(_)) => Err(GitInspectionError::Unavailable),
+                    Err(_) => {
+                        stop_git_process(child).await;
+                        Err(GitInspectionError::TimedOut)
+                    }
+                };
+            }
+        }
+    }
+}
+
+async fn wait_for_reader<T>(
+    task: &mut JoinHandle<std::io::Result<T>>,
+    control: &mut GitProcessControl<'_>,
+) -> Result<T, GitInspectionError> {
+    loop {
+        if *control.cancellation.borrow() {
+            return Err(GitInspectionError::Cancelled);
+        }
+        tokio::select! {
+            biased;
+            changed = control.cancellation.changed() => {
+                if changed.is_err() || *control.cancellation.borrow() {
+                    return Err(GitInspectionError::Cancelled);
+                }
+            }
+            _ = sleep_until(control.deadline) => return Err(GitInspectionError::TimedOut),
+            result = &mut *task => {
+                return result
+                    .map_err(|_| GitInspectionError::Unavailable)?
+                    .map_err(|_| GitInspectionError::Unavailable);
+            }
+        }
+    }
+}
+
+async fn stop_git_process(child: &mut tokio::process::Child) {
+    let _ = child.start_kill();
+    let _ = timeout(Duration::from_secs(1), child.wait()).await;
 }
 
 async fn read_bounded<R: AsyncRead + Unpin>(
@@ -364,6 +533,7 @@ fn split_status_record(record: &[u8], field_count: usize) -> Option<(String, &[u
 mod tests {
     use super::{Stdio, diff, parse_status, status, wait_for_git_process};
     use std::{path::PathBuf, process::Command, time::Duration};
+    use tokio::sync::watch;
 
     struct TestRepository(PathBuf);
 
@@ -459,6 +629,49 @@ mod tests {
             .expect_err("the child must exceed the test deadline");
 
         assert!(matches!(error, super::GitInspectionError::TimedOut));
+        assert!(
+            child
+                .try_wait()
+                .expect("check the reaped process")
+                .is_some()
+        );
+    }
+
+    #[tokio::test]
+    async fn cancelled_git_child_is_killed_and_reaped() {
+        #[cfg(windows)]
+        let mut command = tokio::process::Command::new("ping.exe");
+        #[cfg(windows)]
+        command.args(["-n", "30", "127.0.0.1"]);
+        #[cfg(not(windows))]
+        let mut command = tokio::process::Command::new("sleep");
+        #[cfg(not(windows))]
+        command.arg("30");
+        let mut child = command
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .kill_on_drop(true)
+            .spawn()
+            .expect("start a delayed child process");
+        let (sender, mut cancellation) = watch::channel(false);
+        let error = {
+            let waiting = super::wait_for_git_process_with_cancellation(
+                &mut child,
+                &mut cancellation,
+                tokio::time::Instant::now() + Duration::from_secs(10),
+            );
+            tokio::pin!(waiting);
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            sender.send(true).expect("notify the child cancellation");
+
+            tokio::time::timeout(Duration::from_secs(2), &mut waiting)
+                .await
+                .expect("cancellation should stop waiting promptly")
+                .expect_err("the cancelled child must not return a successful status")
+        };
+
+        assert!(matches!(error, super::GitInspectionError::Cancelled));
         assert!(
             child
                 .try_wait()

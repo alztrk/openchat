@@ -49,7 +49,7 @@ pub(super) async fn dispatch(
             let project_id = required_string(params, "projectId")?;
             let project_root = project_root_for_mcp(storage, project_id)?;
             let project_root = project_root.to_string_lossy().into_owned();
-            git_worktrees::list(storage, project_id, &project_root)
+            git_worktrees::list(storage, project_id, &project_root, cancellation)
                 .await
                 .map_err(git_worktree_error)
         }
@@ -693,6 +693,11 @@ fn git_worktree_error(error: git_worktrees::GitWorktreeError) -> ServiceError {
             "Git could not complete the worktree operation. Check the repository state and try again.",
             false,
         ),
+        GitWorktreeError::Cancelled => ServiceError::new(
+            "operation_cancelled",
+            "The project worktree list request was cancelled.",
+            false,
+        ),
         GitWorktreeError::TimedOut => ServiceError::new(
             "project_worktree_timed_out",
             "Git did not finish the worktree operation before the time limit.",
@@ -878,6 +883,27 @@ mod tests {
         .expect("read worktrees from the registered project");
 
         assert_eq!(result, json!({"worktrees": [], "truncated": false}));
+    }
+
+    #[tokio::test]
+    async fn worktree_list_rpc_forwards_request_cancellation() {
+        let (_directory, storage, _worktree_id, _worktree_path) = create_task_test_fixture().await;
+        let (_cancellation_sender, mut cancellation) = watch::channel(true);
+        let mut params = json!({"projectId": "project-1"});
+
+        let error = dispatch(
+            "project.worktrees.list",
+            &mut params,
+            &json!("cancel-list-worktrees"),
+            &storage,
+            &ToolPermissionBroker::default(),
+            &EventSink::new(),
+            &mut cancellation,
+        )
+        .await
+        .expect_err("a cancelled list request must stop in the project RPC");
+
+        assert_eq!(error.code, "operation_cancelled");
     }
 
     /// A renderer-supplied confirmation flag cannot replace the service approval broker.

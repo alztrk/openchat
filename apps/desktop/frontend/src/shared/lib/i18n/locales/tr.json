@@ -1234,6 +1234,7 @@
   "projectWorktreeCreate": "Worktree oluştur",
   "projectWorktreeCreateFailed": "Worktree oluşturulamadı. Klasörün bir Git deposu olduğunu kontrol edin.",
   "projectWorktreeLoadFailed": "Proje worktree'leri yüklenemedi.",
+  "projectWorktreeTimedOut": "Worktree listesi çok uzun sürdü. Depoyu kontrol edip yeniden yenile.",
   "projectWorktreeOperationFailed": "Git işlemi başarısız oldu. Depo durumunu kontrol edip yeniden deneyin.",
   "projectWorktreeNotRepository": "Bu proje klasörü bir Git deposunun içinde değil.",
   "projectWorktreeBranch": "Dal: {branch}",

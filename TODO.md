@@ -2,7 +2,7 @@
 
 > **Durum:** Mimari geçiş fazları tamamlandı ✅; hata ve kullanılabilirlik araştırması devam ediyor.
 > **Oluşturulma:** 2026-10-31
-> **Son güncelleme:** 2026-11-04
+> **Son güncelleme:** 2026-11-05
 > **Amaç:** OpenChat frontend ve Rust sidecar'ın endüstri standardına (FSD + Modular Monolith) incremental geçiş  
 
 ---
@@ -232,6 +232,7 @@
 - [x] `QA-01`: Mesaj gruplama ve gün ayırma testleri üretimde kullanılan saf fonksiyonlara bağlandı. 10.000 mesaj benchmark'ı sentetik fixture için tanı ölçümü verir; React render/scroll ve gerçek kullanıcı workload'u ölçmediği açıkça yazılır. Donanıma bağlı sert süre eşiği kaldırıldı.
 - [x] `QA-09`: Repo mimari kuralıyla çelişen feature/widget → app izinleri kaldırıldı; app-runtime facade'ları alt feature API'lerine yönlendirildi; çapraz feature sınırları public slice entrypoint'lerine alındı.
 - [x] `QA-13`: Import checker re-export'ları tarıyor, dosya/ağaç okuma hatalarını hata sonucu yapıyor; statik import, type-only re-export, okuma ve enumerasyon hataları için test eklendi.
+- [x] `QA-14`: ChatGPT account testlerinin geçici veritabanı dizinleri PID ve süreç içi sayaç yerine UUID ile tekil oluşturuluyor; önceki kesilmiş test koşusundan kalan dizinin yeniden kullanımına bağlı tablo çakışması kapatıldı.
 - [x] Kısmi kabul: check adımları ayrı isimlerle raporlanır ve runner hatasında diğerleri de denenir; local/CI ortak komutları hizalı; frontend build, test, locale/import kontrolleri ve checker testleri geçti.
 - [ ] Kalan kabul: desteklenen Windows CI çalışması; Cargo check/test'in 20 GiB hedef sınırına uyarak tamamlanması; browser'da Görsel stüdyosu lazy route ve paketlenmiş build karşılaştırması.
 
@@ -276,7 +277,8 @@
 - [x] `SVC-12`: Archive restore, başlamadan orphan attachment klasörlerini uzlaştırıyor; temizleme hatası varsa import'u başlatmıyor. Servis başlangıcında ve yeni restore öncesinde abandoned `restore-*` staging klasörleri containment kontrolüyle temizleniyor; aynı süreçteki aktif klasörler korunuyor. Yarım kalmış dosya/stage kalıntısından restore retry testi ve merkezi check geçti.
 - [x] `SVC-13`: Security scan silme, DB commit'inden sonra `{ deleted: true, attachmentCleanupPending }` döndürüyor. UI silinen taramayı listeden çıkarıyor; dosya temizliği bekliyorsa kullanıcıya yerelleştirilmiş durum mesajı gösteriliyor. Açılıştaki orphan attachment uzlaştırması tekrar deneyebiliyor; hata ve başarılı temizlik yolları test edildi, merkezi check geçti.
 - [x] `SVC-14`: Security scan silerken cancellation ve operation settlement aynı 10 saniyelik deadline içinde bekleniyor; bekleme aşılırsa kayıt silinmiyor ve kullanıcıya tekrar deneyebileceği açık hata gösteriliyor.
-- [ ] `SVC-15/17/20`: Worktree listeleme, attachment index ve archive işlemlerinde cancellation, timeout, progress/status ve yeniden deneme davranışını hizala.
+- [x] `SVC-15`: Worktree listeleme, Git çağrıları boyunca cancellation alıyor ve 25 saniyelik ortak backend deadline'ı kullanıyor; 30 saniyelik RPC timeout'undan önce typed timeout hatası döndürüyor. Boş ve dolu başarı yanıtları dönmeden önce deadline/cancellation yeniden kontrol ediliyor. UI timeout'u ayırt edip yenileme öneriyor.
+- [ ] `SVC-17/20`: Attachment index ve archive işlemlerinde cancellation, timeout, progress/status ve yeniden deneme davranışını hizala.
 - [ ] `SVC-16`: Worktree limitini backend'de deterministik sırayla uygula; gizli kalan kayıtları kullanıcıya bildir veya yönetilebilir kıl.
 - [ ] Kabul: dosya/DB tutarlılığı her hata noktasında korunur veya kalıcı reconciliation kaydı kalır; timeout sonrası işin sürüp sürmediği ve iptal sonucu gözlenebilir; uzun listelerde kesilme açıkça bildirilir.
 
