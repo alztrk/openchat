@@ -895,11 +895,11 @@ pub(super) async fn finish_run(
 
     let (current_run, is_goal_run, mut outcome) = match outcome_result {
         Ok(values) => values,
+        Err(error) if result.is_ok() && !is_security_scan => {
+            log_chat_finalization_failure(storage, "chat.send.finish_run_read", &error);
+            return Err(storage_unavailable());
+        }
         Err(error) => {
-            if result.is_ok() && !is_security_scan {
-                eprintln!("chat.send.finish_open_failed_but_response_completed: {error:?}");
-                return result;
-            }
             return Err(error);
         }
     };
@@ -987,8 +987,8 @@ pub(super) async fn finish_run(
         .await
     {
         if result.is_ok() && !is_security_scan {
-            eprintln!("user_question_broker.finish_run_failed_but_response_completed: {error:?}");
-            return result;
+            log_chat_finalization_failure(storage, "chat.send.finish_run_write", &error);
+            return Err(storage_unavailable());
         }
         return Err(error);
     }
@@ -1099,6 +1099,22 @@ fn log_chat_storage_failure(
     }
 }
 
+fn log_chat_finalization_failure(
+    storage: &AppStorage,
+    operation: &'static str,
+    error: &ServiceError,
+) {
+    if error.code == "storage_unavailable" {
+        return;
+    }
+    if storage
+        .log_rpc_failure_with_detail(operation, "storage_unavailable", Some(error.code))
+        .is_err()
+    {
+        eprintln!("chat_storage_diagnostic_write_failed");
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::{fs, path::PathBuf, sync::atomic::AtomicBool};
@@ -1138,6 +1154,43 @@ mod tests {
         fn drop(&mut self) {
             fs::remove_dir_all(&self.0).expect("remove isolated test directory");
         }
+    }
+
+    fn initialized_chat_storage() -> (TestDirectory, AppStorage, String) {
+        let directory = TestDirectory::new();
+        let storage =
+            AppStorage::open_at(directory.0.join("data")).expect("open isolated test storage");
+        storage
+            .prepare_chat_schema_migration(crate::CHAT_SCHEMA_VERSION)
+            .expect("prepare current chat schema");
+        storage
+            .initialize_backend_schema()
+            .expect("initialize current backend schema");
+
+        let conversation_id = format!("conversation-{}", Uuid::new_v4().simple());
+        storage
+            .connect()
+            .expect("connect to test storage")
+            .execute(
+                "INSERT INTO conversations (id, title, created_at, updated_at)
+                 VALUES (?1, 'Finalization test', 1, 1)",
+                [&conversation_id],
+            )
+            .expect("insert test conversation");
+        (directory, storage, conversation_id)
+    }
+
+    fn create_running_chat_run(storage: &AppStorage, conversation_id: &str, run_id: &str) {
+        let mut connection = storage.connect().expect("connect to test storage");
+        user_questions::create_run_with_checkpoint(
+            &mut connection,
+            &NewAgentRun {
+                run_id: run_id.to_owned(),
+                conversation_id: conversation_id.to_owned(),
+            },
+            &json!({"version": 1}),
+        )
+        .expect("create running chat run");
     }
 
     fn create_test_security_scan_run(
@@ -1416,6 +1469,109 @@ mod tests {
             ),
             RunOutcome::Cancelled,
         );
+    }
+
+    #[tokio::test]
+    async fn normal_chat_returns_success_only_after_the_run_is_completed() {
+        let (_directory, storage, conversation_id) = initialized_chat_storage();
+        let run_id = format!("run-{}", Uuid::new_v4().simple());
+        create_running_chat_run(&storage, &conversation_id, &run_id);
+        let shutdown_requested = AtomicBool::new(false);
+        let broker = UserQuestionBroker::default();
+        let response = json!({"status": "completed", "text": "saved response"});
+
+        let result = finish_run(
+            ChatRunFinalization {
+                storage: &storage,
+                conversation_id: &conversation_id,
+                run_id: &run_id,
+                scan_attempt_id: "not-a-scan",
+                is_security_scan: false,
+                resuming_question_run: false,
+                shutdown_requested: &shutdown_requested,
+                user_question_broker: &broker,
+            },
+            Ok(response.clone()),
+        )
+        .await
+        .expect("persist run status before returning success");
+
+        assert_eq!(result, response);
+        let connection = storage.connect().expect("read completed run");
+        let run = user_questions::load_run_for_conversation(&connection, &conversation_id, &run_id)
+            .expect("load completed run");
+        assert_eq!(run.status, AgentRunStatus::Completed);
+    }
+
+    #[tokio::test]
+    async fn normal_chat_reports_when_the_durable_run_cannot_be_completed() {
+        let (_directory, storage, conversation_id) = initialized_chat_storage();
+        let run_id = format!("run-{}", Uuid::new_v4().simple());
+        create_running_chat_run(&storage, &conversation_id, &run_id);
+        storage
+            .connect()
+            .expect("connect before installing failure trigger")
+            .execute_batch(
+                "CREATE TRIGGER reject_run_completion
+                 BEFORE UPDATE OF status ON agent_runs
+                 WHEN NEW.status = 'completed'
+                 BEGIN
+                     SELECT RAISE(FAIL, 'simulated finalization write failure');
+                 END;",
+            )
+            .expect("install finalization failure trigger");
+        let shutdown_requested = AtomicBool::new(false);
+        let broker = UserQuestionBroker::default();
+
+        let error = finish_run(
+            ChatRunFinalization {
+                storage: &storage,
+                conversation_id: &conversation_id,
+                run_id: &run_id,
+                scan_attempt_id: "not-a-scan",
+                is_security_scan: false,
+                resuming_question_run: false,
+                shutdown_requested: &shutdown_requested,
+                user_question_broker: &broker,
+            },
+            Ok(json!({"status": "completed", "text": "generated response"})),
+        )
+        .await
+        .expect_err("must not return a successful response after run save failure");
+
+        assert_eq!(error.code, "storage_unavailable");
+        assert!(!error.retryable);
+        let connection = storage.connect().expect("read uncompleted run");
+        let run = user_questions::load_run_for_conversation(&connection, &conversation_id, &run_id)
+            .expect("load run after failed finalization");
+        assert_eq!(run.status, AgentRunStatus::Running);
+    }
+
+    #[tokio::test]
+    async fn normal_chat_does_not_return_success_when_the_run_cannot_be_loaded() {
+        let (_directory, storage, conversation_id) = initialized_chat_storage();
+        let missing_run_id = format!("missing-run-{}", Uuid::new_v4().simple());
+        let shutdown_requested = AtomicBool::new(false);
+        let broker = UserQuestionBroker::default();
+
+        let error = finish_run(
+            ChatRunFinalization {
+                storage: &storage,
+                conversation_id: &conversation_id,
+                run_id: &missing_run_id,
+                scan_attempt_id: "not-a-scan",
+                is_security_scan: false,
+                resuming_question_run: false,
+                shutdown_requested: &shutdown_requested,
+                user_question_broker: &broker,
+            },
+            Ok(json!({"status": "completed"})),
+        )
+        .await
+        .expect_err("must not return a successful response without a durable run");
+
+        assert_eq!(error.code, "storage_unavailable");
+        assert!(!error.retryable);
     }
 
     #[test]
