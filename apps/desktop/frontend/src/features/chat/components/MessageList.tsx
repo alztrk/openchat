@@ -2,6 +2,7 @@ import { LoaderCircle } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { ChatFileChange } from '@features/chat/data/chatFileChanges';
+import { groupResponses, startsNewDay, type ResponseGroup } from '@features/chat/data/messageGrouping';
 import type { ChatMessage } from '@app/runtime/chatStorage';
 import { useInChatSearchHighlight } from '@features/chat/hooks/useInChatSearchHighlight';
 import { useVirtualMessageList } from '@features/chat/hooks/useVirtualMessageList';
@@ -77,7 +78,7 @@ export function MessageList({
 
   // Build message ID → group map for O(1) lookup instead of O(n*m) .find()
   const messageIdToGroupMap = useMemo(() => {
-    const map = new Map<string, ResponseGroup>();
+    const map = new Map<string, ResponseGroup<ChatMessage>>();
     for (const group of responseGroups) {
       for (const message of group.messages) {
         map.set(message.id, group);
@@ -349,26 +350,6 @@ function CompactionStatusDivider({ label }: { label: string }) {
   );
 }
 
-interface ResponseGroup {
-  id: string;
-  messages: [ChatMessage, ...ChatMessage[]];
-}
-
-function groupResponses(messages: ChatMessage[]): ResponseGroup[] {
-  const groups: ResponseGroup[] = [];
-  for (let i = 0; i < messages.length; i++) {
-    const message = messages[i];
-    if (!message) continue;
-    const previous = groups[groups.length - 1];
-    if (message.role === 'assistant' && previous?.messages[previous.messages.length - 1]?.role === 'assistant') {
-      previous.messages.push(message);
-      continue;
-    }
-    groups.push({ id: message.id, messages: [message] });
-  }
-  return groups;
-}
-
 function normalizeResponseIndex(index: number | undefined, length: number): number {
   if (length < 1) return 0;
   return index !== undefined && index >= 0 && index < length ? index : length - 1;
@@ -406,18 +387,6 @@ function AssistantLoadingSkeleton({
         <span className="h-3 w-1/2 animate-pulse rounded bg-selected motion-reduce:animate-none" />
       </div>
     </div>
-  );
-}
-
-function startsNewDay(previous: number | null, current: number | null): boolean {
-  if (previous === null || current === null) return previous !== current;
-  if (previous === current) return false;
-  const previousDate = new Date(previous);
-  const currentDate = new Date(current);
-  return (
-    previousDate.getFullYear() !== currentDate.getFullYear() ||
-    previousDate.getMonth() !== currentDate.getMonth() ||
-    previousDate.getDate() !== currentDate.getDate()
   );
 }
 
