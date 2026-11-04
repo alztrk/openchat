@@ -15,12 +15,12 @@ import {
   saveCompatibleProviderApiKey,
   saveCustomProvider as saveCustomProviderRecord,
   saveOpenCodeApiKey,
-} from '@app/runtime/providerCredentials';
+} from '@features/provider-settings/data';
 import {
   clearProviderRequestOutcomeRecord,
   type ProviderRequestRoute,
   readProviderRequestOutcomeRecord,
-} from '@app/runtime/providerRequestOutcome';
+} from '@features/provider-settings/data';
 import {
   clearProviderVerificationRecord,
   type ProviderVerificationRoute,

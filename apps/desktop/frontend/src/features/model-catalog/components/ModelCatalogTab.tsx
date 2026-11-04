@@ -49,7 +49,7 @@ import {
 } from '@features/model-catalog/data/modelCatalogData';
 import { useModelDownloadStore } from '@features/model-catalog/stores/modelDownloadStore';
 import { LocalEngineIcon } from '@shared/components';
-import { useModelDirectoryStore } from '@app/runtime/modelDirectoryStore';
+import { useModelDirectoryStore } from '@features/app-settings/stores';
 import { localServiceClient, localServiceErrorDetails } from '@shared/lib/platform/local-service';
 import { ModelReadmeMarkdown } from './ModelReadmeMarkdown';
 

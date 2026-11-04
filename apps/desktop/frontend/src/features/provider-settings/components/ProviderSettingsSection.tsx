@@ -33,7 +33,7 @@ import {
   type TitleGenerationPreference,
   titlePreferenceForModel,
 } from '@entities/model/titleGenerationPreferences';
-import { refreshOAuthPlans, subscribeToOAuthPlanUpdates } from '@app/runtime/oauthPlanMonitor';
+import { refreshOAuthPlans, subscribeToOAuthPlanUpdates } from '@features/provider-settings/data';
 import {
   LocalServiceError,
   localServiceClient,

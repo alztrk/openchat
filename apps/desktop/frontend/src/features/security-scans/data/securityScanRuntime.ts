@@ -3,12 +3,12 @@ import { useSyncExternalStore } from 'react';
 
 import { type ChatGoal, parseChatGoal } from '@shared/lib/preferences/chatGoals';
 import type { ChatMessage } from '@entities/conversation';
-import { getMessages, saveMessage } from '@app/runtime/chatStorage';
+import { getMessages, saveMessage } from '@features/chat/data';
 import {
   formatUnknownServiceError,
   resolveServiceFailureCode,
-} from '@app/runtime/chatStoreErrorDetails';
-import { applyStreamEvent, upsertMessage } from '@app/runtime/chatStoreUtils';
+} from '@features/chat/state';
+import { applyStreamEvent, upsertMessage } from '@features/chat/state';
 import { LocalServiceError, localServiceClient, type ServiceOperation } from '@shared/lib/platform/local-service';
 import { retryDelayFromServiceError } from './securityScanRetry';
 import {

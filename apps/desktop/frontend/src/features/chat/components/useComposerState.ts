@@ -2,17 +2,17 @@ import { type FormEvent, type KeyboardEvent, type RefObject, useEffect, useMemo,
 import { useTranslation } from 'react-i18next';
 import type { PendingChatAttachment } from '@features/chat/data/chatAttachments';
 import { readChatGptFastMode, writeChatGptFastMode } from '@features/chat/data/chatGptFastMode';
-import type { ChatConversation, ChatMessage, ChatModelFavorite } from '@app/runtime/chatStorage';
+import type { ChatConversation, ChatMessage, ChatModelFavorite } from '@features/chat/data';
 import type { ChatModel } from '@entities/model';
-import { renameConversation } from '@app/runtime/chatStorage';
+import { renameConversation } from '@features/chat/data';
 import {
   readConversationComposerDraft,
   writeConversationComposerDraft,
 } from '@features/chat/data/conversationComposerDrafts';
 import { clearPendingComposerDraft, readPendingComposerDraft } from '@features/chat/data/pendingComposerDraft';
 import { useChatStreaming } from '@features/chat/hooks/useChatStreaming';
-import { useChatStore } from '@app/runtime/chatStore';
-import { favoriteSourceConnection, isSameRoute } from '@app/runtime/chatStoreUtils';
+import { useChatStore } from '@features/chat/state';
+import { favoriteSourceConnection, isSameRoute } from '@features/chat/state';
 import type { ToolPermissionMode } from '@entities/project';
 import { modelRouteKey } from '@entities/model/modelPreferences';
 import { keyboardShortcutMatches, useKeyboardShortcutsStore } from '@shared/lib/preferences/keyboardShortcutsStore';

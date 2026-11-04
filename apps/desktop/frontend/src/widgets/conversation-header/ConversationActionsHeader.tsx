@@ -2,9 +2,9 @@ import { Check, Clock3, ListTodo, MessageSquare, MessageSquarePlus, PanelRight, 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button, Dialog, Input } from '@shared/components';
-import type { ChatConversation } from '@app/runtime/chatStorage';
+import type { ChatConversation } from '@features/chat/data';
 import { clearChatTodos, createChatTodos, deleteChatTodo, listChatTodos, type ChatTodo, updateChatTodo } from '@features/chat/data/chatTodos';
-import { useChatStore } from '@app/runtime/chatStore';
+import { useChatStore } from '@features/chat/state';
 import { localServiceClient } from '@shared/lib/platform/local-service';
 import { ConversationExportMenu } from './ConversationExportMenu';
 

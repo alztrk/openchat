@@ -12,7 +12,7 @@ import {
   setConversationRoute,
   setConversationReasoningEffort,
   setModelFavorite,
-} from '@app/runtime/chatStorage';
+} from '@features/chat/data';
 import type { ChatModel, ChatModelProvider } from '@entities/model';
 
 export type { ChatModel } from '@entities/model';

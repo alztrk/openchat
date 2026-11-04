@@ -2,7 +2,7 @@ import { type FormEvent, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Button, Dialog, Input } from '@shared/components';
-import type { ChatConversation } from '@app/runtime/chatStorage';
+import type { ChatConversation } from '@features/chat/data';
 
 type EditMode = 'rename';
 

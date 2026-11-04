@@ -6,7 +6,7 @@ import {
   listConversations,
   listProjects,
   renameConversation as renameConversationStorage,
-} from '@app/runtime/chatStorage';
+} from '@features/chat/data';
 import { readProjectDefaultModelPreference } from '@entities/project/projectPreferences';
 import {
   type DefaultModelPreference,

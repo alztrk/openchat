@@ -1,1 +1,2 @@
-export * from '@app/runtime/notificationRuntime';
+export * from './components/NotificationSettingsSection';
+export * from './data/notificationRuntime';

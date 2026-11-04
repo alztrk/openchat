@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ChatModel } from '@entities/model';
-import type { ChatMessage } from '@app/runtime/chatStorage';
+import type { ChatMessage } from '@features/chat/data';
 import { useComposerPreferencesStore } from '@shared/lib/preferences/composerPreferences';
 import { loadRouteParameters } from '@entities/model/modelRouteParameters';
 import { localServiceClient, type ServiceOperation } from '@shared/lib/platform/local-service';

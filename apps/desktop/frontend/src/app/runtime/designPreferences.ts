@@ -1,1 +1,1 @@
-export * from '@features/design-workspace/data/designPreferences';
+export * from '@features/design-workspace/data';

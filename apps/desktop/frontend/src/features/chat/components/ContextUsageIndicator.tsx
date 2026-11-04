@@ -4,7 +4,7 @@ import { type KeyboardEvent, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next';
 
 import type { PendingChatAttachment } from '@features/chat/data/chatAttachments';
-import type { ChatMessage } from '@app/runtime/chatStorage';
+import type { ChatMessage } from '@features/chat/data';
 import {
   type ContextUsageConfiguration,
   type ContextUsageMemory,

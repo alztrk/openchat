@@ -1,5 +1,5 @@
-import { useChatStore } from '@app/runtime/chatStore';
-import { ProviderSettingsSection } from '@app/runtime/providerSettings';
+import { useChatStore } from '@features/chat/state';
+import { ProviderSettingsSection } from '@features/provider-settings';
 
 export function ProviderSettingsSectionContainer() {
   const serviceStatus = useChatStore((state) => state.serviceStatus);

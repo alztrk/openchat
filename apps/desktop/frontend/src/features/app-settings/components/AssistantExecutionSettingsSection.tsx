@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button, Select, Switch } from '@shared/components';
 import { providerNameForModel } from '@entities/model/composerUtils';
-import { useChatStore } from '@app/runtime/chatStore';
+import { useChatStore } from '@features/chat/state';
 import { modelRouteKey } from '@entities/model/modelPreferences';
 import { useAssistantExecutionPreferencesStore } from '@shared/lib/preferences/assistantExecutionPreferences';
 import { useAssistantProfilesStore } from '@shared/lib/preferences/assistantProfilesStore';

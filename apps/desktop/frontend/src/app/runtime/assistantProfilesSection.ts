@@ -1,1 +1,1 @@
-export * from '@features/app-settings/components/AssistantProfilesSettingsSection';
+export * from '@features/app-settings/components';

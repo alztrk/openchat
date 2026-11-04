@@ -1,1 +1,1 @@
-export * from '@features/app-settings/stores/modelDirectoryStore';
+export * from '@features/app-settings/stores';

@@ -9,8 +9,8 @@ import {
   recordChatMessagePersistenceFailure,
   recordChatRequestFailure,
   saveMessage,
-} from '@app/runtime/chatStorage';
-import { notifyAssistantResponse, notifyPendingQuestion } from '@app/runtime/notificationRuntime';
+} from '@features/chat/data';
+import { notifyAssistantResponse, notifyPendingQuestion } from '@features/notifications/data';
 import {
   loadProjectToolPermissionRules,
   loadToolPermissionMode,
@@ -18,11 +18,11 @@ import {
 import { readProjectSkillIds } from '@entities/project/projectPreferences';
 import { modelRouteKey } from '@entities/model/modelPreferences';
 import { loadRouteParameters } from '@entities/model/modelRouteParameters';
-import { recordOAuthRateLimit } from '@app/runtime/oauthRateLimits';
+import { recordOAuthRateLimit } from '@features/provider-settings/data';
 import {
   type ProviderRequestOutcome,
   writeProviderRequestOutcomeRecord,
-} from '@app/runtime/providerRequestOutcome';
+} from '@features/provider-settings/data';
 import { readAssistantExecutionPreferences } from '@shared/lib/preferences/assistantExecutionPreferences';
 import {
   personalMemoryContextForConversation,

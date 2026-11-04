@@ -51,7 +51,7 @@ const loadLocalData = () =>
 const loadPersonalMemory = () =>
   import('./PersonalMemorySettingsSection').then((module) => ({ default: module.PersonalMemorySettingsSection }));
 const loadNotifications = () =>
-  import('@app/runtime/notificationSettings').then((module) => ({
+  import('@features/notifications/components').then((module) => ({
     default: module.NotificationSettingsSection,
   }));
 const loadShortcuts = () => import('./ShortcutsSection').then((module) => ({ default: module.ShortcutsSection }));

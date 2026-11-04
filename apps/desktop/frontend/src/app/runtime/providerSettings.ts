@@ -1,1 +1,1 @@
-export * from '@features/provider-settings/components/ProviderSettingsSection';
+export * from '@features/provider-settings';

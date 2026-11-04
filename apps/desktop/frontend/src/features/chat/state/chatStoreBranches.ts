@@ -1,4 +1,4 @@
-import { createConversationBranchFromUserMessage } from '@app/runtime/chatStorage';
+import { createConversationBranchFromUserMessage } from '@features/chat/data';
 import type { ChatState } from './chatStore';
 import { isSameRoute } from './chatStoreUtils';
 

@@ -20,12 +20,25 @@ const sourceRoot = resolve(scriptDirectory, '../apps/desktop/frontend/src');
 const layers = {
   shared: { level: 0, allowed: ['shared'] },
   entities: { level: 1, allowed: ['shared'] },
-  features: { level: 2, allowed: ['app', 'entities', 'shared'], crossFeature: true },
+  features: { level: 2, allowed: ['entities', 'shared'], crossFeature: true },
   widgets: { level: 3, allowed: ['shared', 'features', 'entities'] },
   app: { level: 4, allowed: ['app', 'features', 'entities', 'widgets', 'shared', 'modules', 'platform', 'shell'] },
 };
 
 const appUniverse = new Set(['app', 'platform', 'shell', 'bootstrap', 'design-system', 'localization']);
+const publicFeatureApis = new Set([
+  '@features/app-settings/components',
+  '@features/app-settings/stores',
+  '@features/chat/components',
+  '@features/chat/data',
+  '@features/chat/state',
+  '@features/design-workspace/data',
+  '@features/notifications/components',
+  '@features/notifications/data',
+  '@features/projects/components',
+  '@features/provider-settings',
+  '@features/provider-settings/data',
+]);
 const importAliases = new Map([
   ['@app', 'app'],
   ['@features', 'features'],
@@ -114,10 +127,6 @@ function getImportLayerKey(importPath) {
   return null;
 }
 
-function isAppUmbrella(layer) {
-  return appUniverse.has(layer);
-}
-
 function collectFiles(directory) {
   const entries = readdirSync(directory, { withFileTypes: true });
   const files = [];
@@ -165,13 +174,13 @@ function checkImport(relativeSource, importPath) {
     return { severity: 'info', source: relativeSource, importPath: importDisplay, message: 'migrate to @features/*' };
   }
   if (sourceLayerKey === 'shared') {
-    if (!layers.shared.allowed.includes(targetLayerKey) && !isAppUmbrella(targetLayerKey)) {
+    if (!layers.shared.allowed.includes(targetLayerKey)) {
       return { severity: 'error', source: relativeSource, importPath: importDisplay, message: `layer violation (@shared → @${targetLayerKey})` };
     }
     return null;
   }
   if (sourceLayerKey === 'entities') {
-    if (!layers.entities.allowed.includes(targetLayerKey) && !isAppUmbrella(targetLayerKey)) {
+    if (!layers.entities.allowed.includes(targetLayerKey)) {
       return { severity: 'error', source: relativeSource, importPath: importDisplay, message: `layer violation (@entities → @${targetLayerKey})` };
     }
     return null;
@@ -182,6 +191,7 @@ function checkImport(relativeSource, importPath) {
       const sourceFeature = sourceParts[0] === 'features' ? sourceParts[1] : null;
       const targetFeature = importPath.startsWith('@features/') ? importPath.split('/')[1] : null;
       if (sourceFeature && targetFeature && sourceFeature !== targetFeature) {
+        if (publicFeatureApis.has(importPath)) return null;
         return {
           severity: 'warning',
           source: relativeSource,
@@ -191,13 +201,13 @@ function checkImport(relativeSource, importPath) {
       }
       return null;
     }
-    if (!layers.features.allowed.includes(targetLayerKey) && !isAppUmbrella(targetLayerKey)) {
+    if (!layers.features.allowed.includes(targetLayerKey)) {
       return { severity: 'error', source: relativeSource, importPath: importDisplay, message: `layer violation (@features → @${targetLayerKey})` };
     }
     return null;
   }
   if (sourceLayerKey === 'widgets') {
-    if (!layers.widgets.allowed.includes(targetLayerKey) && !isAppUmbrella(targetLayerKey)) {
+    if (!layers.widgets.allowed.includes(targetLayerKey)) {
       return { severity: 'error', source: relativeSource, importPath: importDisplay, message: `layer violation (@widgets → @${targetLayerKey})` };
     }
   }

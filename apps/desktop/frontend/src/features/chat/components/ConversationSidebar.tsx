@@ -27,7 +27,7 @@ import {
 import { useTranslation } from 'react-i18next';
 
 import { Button, Checkbox, Dialog, Input, TitleTooltip } from '@shared/components';
-import type { ChatConversation } from '@app/runtime/chatStorage';
+import type { ChatConversation } from '@features/chat/data';
 import {
   type CustomSidebarFolder,
   clampSidebarWidth,
@@ -55,12 +55,12 @@ import {
   writeSkipConversationDeleteConfirmation,
 } from '@shared/lib/preferences/sidebarPreferences';
 import { useConversationSidebarActions } from '@features/chat/hooks/useConversationSidebarActions';
-import { useChatStore } from '@app/runtime/chatStore';
+import { useChatStore } from '@features/chat/state';
 import {
   formatServiceErrorMessage,
   isRedundantHistoryError,
-} from '@app/runtime/chatStoreErrorDetails';
-import { ProjectSidebarSection } from '@app/runtime/projectTools';
+} from '@features/chat/state';
+import { ProjectSidebarSection } from '@features/projects/components';
 import { type AssistantAgentSnapshot, snapshotAssistantProfile } from '@shared/lib/preferences/assistantProfiles';
 import { useAssistantProfilesStore } from '@shared/lib/preferences/assistantProfilesStore';
 import { ConversationSidebarEditDialog } from './ConversationSidebarEditDialog';
@@ -78,7 +78,7 @@ import {
 export { groupConversationsByRecency, normalizeProjectPath, type RecencyBucket, type RecencyBucketKey };
 
 const CreateProjectDialog = lazy(() =>
-  import('@app/runtime/projectTools').then((module) => ({
+  import('@features/projects/components').then((module) => ({
     default: module.CreateProjectDialog,
   })),
 );

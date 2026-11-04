@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Button, Card, Input } from '@shared/components';
-import { useChatStore } from '@app/runtime/chatStore';
+import { useChatStore } from '@features/chat/state';
 import { type ProjectMcpServer, parseProjectMcpCatalog } from '@entities/project/projectMcp';
 import {
   loadProjectToolPermissionRules,

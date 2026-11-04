@@ -33,7 +33,7 @@ The React frontend follows **Feature-Sliced Design (FSD)** with five layers:
 | `@widgets` | Composed UI sections built from features |
 | `@app` | Routing, bootstrap, global state managers |
 
-Import rules are validated automatically (`npm run check:imports`).
+Import rules are validated automatically (`npm run check:imports`). Lower layers cannot import upper layers. Cross-feature imports use the owning feature's declared public entrypoint; imports into another feature's implementation files are reported as warnings. An unreadable source file or an unavailable source tree fails the check.
 
 ### Local Service
 

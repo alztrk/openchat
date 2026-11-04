@@ -11,8 +11,8 @@ import {
   parseSearchQuery,
   type StoredSearchMessageResult,
   searchStoredMessages,
-} from '@app/runtime/chatStorage';
-import { useChatStore } from '@app/runtime/chatStore';
+} from '@features/chat/data';
+import { useChatStore } from '@features/chat/state';
 
 export interface TitleBarSearchProps {
   onSelectConversation(conversationId: string, messageId?: string | null, searchQuery?: string | null): void;

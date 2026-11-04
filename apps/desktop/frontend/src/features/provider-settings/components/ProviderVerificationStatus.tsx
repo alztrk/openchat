@@ -1,9 +1,9 @@
 import { useTranslation } from 'react-i18next';
-import type { ProviderCredentialSnapshot } from '@app/runtime/providerCredentials';
+import type { ProviderCredentialSnapshot } from '@features/provider-settings/data';
 import type {
   ProviderRequestOutcomeRecord,
   ProviderRequestRoute,
-} from '@app/runtime/providerRequestOutcome';
+} from '@features/provider-settings/data';
 import type { ProviderVerificationOutcome } from '@features/provider-settings/data/providerVerification';
 import { ProviderRequestOutcomeStatus } from './ProviderRequestOutcomeStatus';
 

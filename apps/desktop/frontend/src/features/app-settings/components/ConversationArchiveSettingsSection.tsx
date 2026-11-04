@@ -3,7 +3,7 @@ import { type FormEvent, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button, Card, Checkbox, Dialog, Input, RadioGroup } from '@shared/components';
 import type { ChatConversation } from '@entities/conversation';
-import { useChatStore } from '@app/runtime/chatStore';
+import { useChatStore } from '@features/chat/state';
 import {
   buildArchiveFileName,
   type ConversationArchiveSummary,

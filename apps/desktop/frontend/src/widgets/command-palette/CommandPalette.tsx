@@ -38,7 +38,7 @@ import { Button, Input } from '@shared/components';
 import { Dialog } from '@shared/components/Dialog';
 import type en from '@shared/lib/i18n/locales/en.json';
 import { providerNameForModel } from '@entities/model/composerUtils';
-import { useChatStore } from '@app/runtime/chatStore';
+import { useChatStore } from '@features/chat/state';
 import { modelRouteKey } from '@entities/model/modelPreferences';
 import type { SettingsSection } from '@features/app-settings/components/SettingsPage';
 import type { AssistantAgentSnapshot } from '@shared/lib/preferences/assistantProfiles';

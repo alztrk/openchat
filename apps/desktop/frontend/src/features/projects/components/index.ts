@@ -1,3 +1,4 @@
-export { CreateProjectDialog } from './CreateProjectDialog';
-export { ProjectSidebarSection } from './ProjectSidebarSection';
-export { ToolPermissionModeSelector } from './ToolPermissionModeSelector';
+export * from './CreateProjectDialog';
+export * from './ProjectSidebarSection';
+export * from './ProjectWorkspaceRootsPanel';
+export * from './ToolPermissionModeSelector';

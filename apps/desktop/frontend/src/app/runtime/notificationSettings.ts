@@ -1,1 +1,1 @@
-export * from '@features/notifications/components/NotificationSettingsSection';
+export * from '@features/notifications/components';

@@ -1,1 +1,1 @@
-export * from '@features/chat/state/chatStoreUtils';
+export * from '@features/chat/state';

@@ -9,8 +9,8 @@ import {
   restoreStoredAttachment,
   validateAttachmentSelection,
 } from '@features/chat/data/chatAttachments';
-import { type ConversationAttachmentSummary, readMessageAttachment } from '@app/runtime/chatStorage';
-import { useChatStore } from '@app/runtime/chatStore';
+import { type ConversationAttachmentSummary, readMessageAttachment } from '@features/chat/data';
+import { useChatStore } from '@features/chat/state';
 import type { ChatModel } from '@entities/model';
 import { isObject } from '@entities/model/composerUtils';
 

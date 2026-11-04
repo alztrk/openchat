@@ -8,7 +8,7 @@ import {
   deleteConversation,
   listConversations,
   saveMessage,
-} from '@app/runtime/chatStorage';
+} from '@features/chat/data';
 import type { ChatModel } from '@entities/model';
 import { loadRouteParameters } from '@entities/model/modelRouteParameters';
 import { type LocalServiceClient, LocalServiceError } from '@shared/lib/platform/local-service';

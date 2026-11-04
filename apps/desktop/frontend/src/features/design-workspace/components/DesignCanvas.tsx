@@ -11,7 +11,7 @@ import {
 import { useTranslation } from 'react-i18next';
 
 import { Button, Dialog, Select, Textarea } from '@shared/components';
-import { useChatStore } from '@app/runtime/chatStore';
+import { useChatStore } from '@features/chat/state';
 import { type CanvasColorTokenKey, CanvasInspector } from '@features/design-workspace/components/CanvasInspector';
 import { CanvasZoomControls } from '@features/design-workspace/components/CanvasZoomControls';
 import {

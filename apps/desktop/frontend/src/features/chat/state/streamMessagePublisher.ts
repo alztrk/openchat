@@ -1,4 +1,4 @@
-import type { ChatMessage } from '@app/runtime/chatStorage';
+import type { ChatMessage } from '@features/chat/data';
 
 const streamUiUpdateIntervalMs = 50;
 

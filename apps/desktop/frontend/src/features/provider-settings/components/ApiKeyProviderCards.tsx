@@ -6,8 +6,8 @@ import type {
   ChatGptApiKeySummary,
   CompatibleProviderId,
   CustomProviderSummary,
-} from '@app/runtime/providerCredentials';
-import type { ProviderRequestOutcomeRecord } from '@app/runtime/providerRequestOutcome';
+} from '@features/provider-settings/data';
+import type { ProviderRequestOutcomeRecord } from '@features/provider-settings/data';
 import { ProviderIcon } from '@shared/components';
 import { ProviderVerificationStatus, type ProviderVerificationViewState } from './ProviderVerificationStatus';
 

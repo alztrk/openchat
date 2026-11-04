@@ -1,4 +1,4 @@
-import { parseToolActivities } from '@app/runtime/chatComponents';
+import { parseToolActivities } from '@features/chat/components';
 import { readProjectSkillIds, type ToolPermissionMode } from '@entities/project/projectPreferences';
 import type { ChatModel } from '@entities/model';
 import { modelRouteKey, readModelPreferences } from '@entities/model/modelPreferences';

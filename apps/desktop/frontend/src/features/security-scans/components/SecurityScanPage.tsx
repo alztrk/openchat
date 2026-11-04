@@ -48,10 +48,10 @@ function readSecurityScanSidebarWidth(): number {
 }
 
 import { Button, Checkbox, Dialog, Select, TitleTooltip } from '@shared/components';
-import { MessageList } from '@app/runtime/chatComponents';
+import { MessageList } from '@features/chat/components';
 import type { ChatProject } from '@entities/project';
-import { useChatStore } from '@app/runtime/chatStore';
-import { formatFailureCodeMessage } from '@app/runtime/chatStoreErrorDetails';
+import { useChatStore } from '@features/chat/state';
+import { formatFailureCodeMessage } from '@features/chat/state';
 import { ProviderIcon } from '@shared/components';
 import type { ChatModel } from '@entities/model';
 import { unifiedStorage } from '@shared/lib/platform/storage/unifiedStorage';

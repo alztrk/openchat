@@ -6,7 +6,7 @@ const URL_REVOCATION_DELAY_MS = 1_000;
 import { useTranslation } from 'react-i18next';
 import { Button, Dialog, Slider } from '@shared/components';
 import type { ChatAttachmentMetadata } from '@features/chat/data/chatAttachments';
-import { readMessageAttachment } from '@app/runtime/chatStorage';
+import { readMessageAttachment } from '@features/chat/data';
 
 interface MessageAttachmentsProps {
   conversationId: string;

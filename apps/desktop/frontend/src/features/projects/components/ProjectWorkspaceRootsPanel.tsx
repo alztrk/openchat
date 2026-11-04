@@ -7,8 +7,8 @@ import type { ChatProject } from '@entities/project';
 import {
   addProjectWorkspaceRoot,
   removeProjectWorkspaceRoot,
-} from '@app/runtime/chatStorage';
-import { useChatStore } from '@app/runtime/chatStore';
+} from '@features/chat/data';
+import { useChatStore } from '@features/chat/state';
 import { discardProjectFolderSelection, selectProjectFolder } from '@shared/lib/platform/tauri';
 
 interface ProjectWorkspaceRootsPanelProps {

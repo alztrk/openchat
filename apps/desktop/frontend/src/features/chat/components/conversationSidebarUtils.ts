@@ -1,4 +1,4 @@
-import type { ChatConversation } from '@app/runtime/chatStorage';
+import type { ChatConversation } from '@features/chat/data';
 
 export type RecencyBucketKey = 'today' | 'yesterday' | 'previous7Days' | 'previous30Days' | 'older';
 

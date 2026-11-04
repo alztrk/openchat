@@ -24,7 +24,7 @@ import {
   parseExternalCandidate,
   parseInstallProgress,
 } from '@features/app-settings/data/localEngineCatalog';
-import { useModelDirectoryStore } from '@app/runtime/modelDirectoryStore';
+import { useModelDirectoryStore } from '@features/app-settings/stores';
 import {
   type JsonObject,
   LocalServiceError,

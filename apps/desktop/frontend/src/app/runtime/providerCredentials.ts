@@ -1,1 +1,1 @@
-export * from '@features/provider-settings/data/providerCredentials';
+export * from '@features/provider-settings/data';

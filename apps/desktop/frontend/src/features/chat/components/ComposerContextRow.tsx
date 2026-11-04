@@ -12,15 +12,15 @@ import {
   Input, TitleTooltip,
 } from '@shared/components';
 import type { PendingChatAttachment } from '@features/chat/data/chatAttachments';
-import type { ChatMessage } from '@app/runtime/chatStorage';
+import type { ChatMessage } from '@features/chat/data';
 import { useConversationSidebarActions } from '@features/chat/hooks/useConversationSidebarActions';
-import { useChatStore } from '@app/runtime/chatStore';
+import { useChatStore } from '@features/chat/state';
 import type { ToolPermissionMode } from '@entities/project';
 import type { ChatModel } from '@entities/model';
 import { ContextUsageIndicator } from './ContextUsageIndicator';
 
 const CreateProjectDialog = lazy(() =>
-  import('@app/runtime/projectTools').then((module) => ({
+  import('@features/projects/components').then((module) => ({
     default: module.CreateProjectDialog,
   })),
 );

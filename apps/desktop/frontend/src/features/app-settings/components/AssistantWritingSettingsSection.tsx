@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Card, Select, Switch } from '@shared/components';
 import { providerNameForModel } from '@entities/model/composerUtils';
 import { useComposerPreferencesStore } from '@shared/lib/preferences/composerPreferences';
-import { useChatStore } from '@app/runtime/chatStore';
+import { useChatStore } from '@features/chat/state';
 import { SettingsPreferenceRow } from './SettingsPreferenceRow';
 import { TitleGenerationSettingsSection } from './TitleGenerationSettingsSection';
 

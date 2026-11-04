@@ -34,7 +34,7 @@ import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 
 import { Button, Input, TitleTooltip } from '@shared/components';
-import type { ChatConversation, ChatProject, ExportFormat } from '@app/runtime/chatStorage';
+import type { ChatConversation, ChatProject, ExportFormat } from '@features/chat/data';
 import type { CustomSidebarFolder, SidebarViewMode } from '@shared/lib/preferences/sidebarPreferences';
 import { setSidebarDraggingConversationId } from '@shared/lib/preferences/sidebarPreferences';
 import { useTransitionPresence } from '@shared/lib/hooks/useTransitionPresence';

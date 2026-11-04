@@ -2,7 +2,7 @@ import { FolderOpen, Globe, LoaderCircle, LockKeyhole, ServerCog, Terminal } fro
 import { useTranslation } from 'react-i18next';
 
 import { Button } from '@shared/components';
-import type { ChatToolPermissionRequest } from '@app/runtime/chatStore';
+import type { ChatToolPermissionRequest } from '@features/chat/state';
 
 // Default limits for tool permissions
 const DEFAULT_WEB_SEARCH_LIMIT = 5;

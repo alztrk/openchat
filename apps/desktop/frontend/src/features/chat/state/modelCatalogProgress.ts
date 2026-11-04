@@ -1,5 +1,5 @@
 import type { ChatModel } from '@entities/model';
-import type { ModelCatalogBatch } from '@app/runtime/modelCatalogLoader';
+import type { ModelCatalogBatch } from '@features/provider-settings/data';
 
 export type ModelCatalogLoadResult<T> = { status: 'fulfilled'; value: T } | { status: 'rejected'; reason: unknown };
 

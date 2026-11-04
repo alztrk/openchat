@@ -1,5 +1,5 @@
-import type { ChatGptAccountQuotaStatus } from '@app/runtime/oauthRateLimits';
-import { loadProviderCredentialStatus } from '@app/runtime/providerCredentials';
+import type { ChatGptAccountQuotaStatus } from '@features/provider-settings/data';
+import { loadProviderCredentialStatus } from '@features/provider-settings/data';
 import { localServiceClient } from '@shared/lib/platform/local-service';
 import type { ServiceOperation } from '@shared/lib/platform/local-service/LocalServiceClient';
 

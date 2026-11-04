@@ -1,7 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import { Button } from '@shared/components';
 import type { ChatAttachmentErrorCode } from '@features/chat/data/chatAttachments';
-import type { ChatErrorCode } from '@app/runtime/chatStore';
+import type { ChatErrorCode } from '@features/chat/state';
 import type { ChatCommandFeedbackKey } from '@entities/model/composerUtils';
 import { formatServiceErrorMessage } from '../state/chatStoreErrorDetails';
 

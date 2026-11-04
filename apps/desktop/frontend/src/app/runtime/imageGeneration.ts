@@ -1,1 +1,1 @@
-export * from '@features/design-workspace/data/imageGeneration';
+export * from '@features/design-workspace/data';

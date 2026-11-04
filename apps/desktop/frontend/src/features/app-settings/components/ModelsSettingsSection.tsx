@@ -27,7 +27,7 @@ import {
   Input,
 } from '@shared/components';
 import { reasoningLevelLabel } from '@entities/model/composerUtils';
-import { useChatStore } from '@app/runtime/chatStore';
+import { useChatStore } from '@features/chat/state';
 import { ProviderIcon } from '@shared/components';
 import { SettingsSectionSkeleton } from './SettingsSectionSkeleton';
 import type { ChatModel } from '@entities/model';

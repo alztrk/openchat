@@ -1,4 +1,4 @@
-import type { ChatConversation, ChatMessage } from '@app/runtime/chatStorage';
+import type { ChatConversation, ChatMessage } from '@features/chat/data';
 import type { ChatModel } from '@entities/model';
 import type { JsonObject } from '@shared/lib/platform/local-service';
 import { isObject } from '@shared/lib/utils/json';

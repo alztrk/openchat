@@ -1,7 +1,7 @@
 import type { TFunction } from 'i18next';
 
-import type { ConversationAttachmentSummary } from '@app/runtime/chatStorage';
-import { readMessageAttachment } from '@app/runtime/chatStorage';
+import type { ConversationAttachmentSummary } from '@features/chat/data';
+import { readMessageAttachment } from '@features/chat/data';
 import {
   type DesignImageRecord,
   type DesignImageTarget,
@@ -10,7 +10,7 @@ import {
   type ImageOutputFormat,
   type ImageQuality,
   readDesignImage,
-} from '@app/runtime/imageGeneration';
+} from '@features/design-workspace/data';
 import { LocalServiceError } from '@shared/lib/platform/local-service/LocalServiceClient';
 
 export type GalleryImage =

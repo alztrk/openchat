@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useChatStore } from '@app/runtime/chatStore';
+import { useChatStore } from '@features/chat/state';
 import {
   findLightweightModel,
   TitleGenerationSettings,
-} from '@app/runtime/providerSettings';
+} from '@features/provider-settings';
 import { formatModelRouteKey } from '@entities/model/modelPreferences';
 import {
   readTitleGenerationPreference,

@@ -12,7 +12,7 @@ import {
   DropdownMenuTrigger,
   Tooltip,
 } from '@shared/components';
-import type { ChatConversation } from '@app/runtime/chatStorage';
+import type { ChatConversation } from '@features/chat/data';
 import type { ExportFormat } from '@features/chat/data/conversationExport';
 import { conversationMarkdownLabels } from '@features/chat/data/conversationMarkdownLabels';
 

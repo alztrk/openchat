@@ -10,8 +10,8 @@ import {
   type CopilotUsageSnapshot,
   loadCopilotOAuthStatus,
   loadCopilotUsage,
-} from '@app/runtime/copilotOAuth';
-import { subscribeToOAuthPlanUpdates } from '@app/runtime/oauthPlanMonitor';
+} from '@features/provider-settings/data';
+import { subscribeToOAuthPlanUpdates } from '@features/provider-settings/data';
 import { LocalServiceError } from '@shared/lib/platform/local-service';
 
 interface CopilotUsageCardProps {

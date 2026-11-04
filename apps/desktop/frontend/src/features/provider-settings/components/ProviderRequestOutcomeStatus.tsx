@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import type {
   ProviderRequestOutcome,
   ProviderRequestOutcomeRecord,
-} from '@app/runtime/providerRequestOutcome';
+} from '@features/provider-settings/data';
 
 interface ProviderRequestOutcomeStatusProps {
   record: ProviderRequestOutcomeRecord | null;

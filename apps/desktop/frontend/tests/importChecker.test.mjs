@@ -62,3 +62,33 @@ test('import checker does not treat an unrelated alias prefix as a known layer',
   assert.deepEqual(result.warnings, []);
   assert.deepEqual(result.infos, []);
 });
+
+test('import checker rejects application imports from feature and widget layers', () => {
+  const sourceRoot = path.resolve('checker-fixture', 'src');
+  const featureFile = path.join(sourceRoot, 'features', 'sample', 'index.ts');
+  const widgetFile = path.join(sourceRoot, 'widgets', 'sample', 'index.tsx');
+  const result = scanImports({
+    sourceRoot,
+    collectFilesFn: () => [featureFile, widgetFile],
+    readFileFn: () => "import { useChatStore } from '@app/runtime/chatStore';",
+  });
+
+  assert.equal(result.errors.length, 2);
+  assert.equal(result.errors.every((error) => error.message.includes('layer violation')), true);
+  assert.deepEqual(result.warnings, []);
+});
+
+test('import checker accepts public feature APIs and warns on cross-feature deep imports', () => {
+  const sourceRoot = path.resolve('checker-fixture', 'src');
+  const sourceFile = path.join(sourceRoot, 'features', 'provider-settings', 'index.ts');
+  const result = scanImports({
+    sourceRoot,
+    collectFilesFn: () => [sourceFile],
+    readFileFn: () =>
+      "import { useChatStore } from '@features/chat/state';\nimport { ChatMessage } from '@features/chat/data/chatStorage';",
+  });
+
+  assert.deepEqual(result.errors, []);
+  assert.equal(result.warnings.length, 1);
+  assert.equal(result.warnings[0].importPath, '@features/chat/data/chatStorage');
+});

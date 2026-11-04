@@ -8,7 +8,7 @@ import {
   clearAttachmentTextIndex,
   getAttachmentTextIndexStatus,
   rebuildAttachmentTextIndex,
-} from '@app/runtime/chatStorage';
+} from '@features/chat/data';
 
 type LoadState = 'loading' | 'ready' | 'error';
 
