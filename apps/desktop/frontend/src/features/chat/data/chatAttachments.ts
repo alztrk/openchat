@@ -2,6 +2,7 @@ import { LocalServiceError, localServiceClient } from '@shared/lib/platform/loca
 import { containsAsciiControlCharacters } from '@shared/lib/utils/textValidation';
 
 const attachmentContentPrefix = '\u001eopenchat-attachments-v1:';
+const plainMessageContentPrefix = '\u001eopenchat-message-text-v1:';
 
 export const maximumAttachmentFileCount = 10;
 export const maximumAttachmentImageCount = 3;
@@ -251,12 +252,15 @@ export function decodeStoredMessageContent(storedContent: string): {
   content: string;
   attachments: ChatAttachmentMetadata[];
 } {
+  if (storedContent.startsWith(plainMessageContentPrefix)) {
+    return { content: storedContent.slice(plainMessageContentPrefix.length), attachments: [] };
+  }
   if (!storedContent.startsWith(attachmentContentPrefix)) return { content: storedContent, attachments: [] };
   let decoded: unknown;
   try {
     decoded = JSON.parse(storedContent.slice(attachmentContentPrefix.length));
   } catch {
-    throw new Error('The saved attachment data is invalid.');
+    return { content: storedContent, attachments: [] };
   }
   if (!isObject(decoded) || typeof decoded.content !== 'string' || !Array.isArray(decoded.attachments)) {
     throw new Error('The saved attachment data is invalid.');

@@ -569,7 +569,9 @@ pub(super) fn save_message(
             })
         })
         .collect::<Vec<_>>();
-    if !attachments.is_empty() && !content.starts_with(MESSAGE_CONTENT_PREFIX) {
+    if attachments.is_empty() {
+        content = crate::attachments::encode_plain_message_content(&content);
+    } else if !content.starts_with(MESSAGE_CONTENT_PREFIX) {
         content = format!(
             "{MESSAGE_CONTENT_PREFIX}{}",
             json!({"content": content, "attachments": attachment_metadata})

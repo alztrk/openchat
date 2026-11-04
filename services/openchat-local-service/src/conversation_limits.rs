@@ -28,3 +28,5 @@ pub const MAXIMUM_ATTACHMENT_MIME_TYPE_BYTES: usize = 128;
 pub const MAXIMUM_ATTACHMENT_KIND_BYTES: usize = 5;
 /// Prefix that separates persisted message text from attachment metadata.
 pub const MESSAGE_CONTENT_PREFIX: &str = "\u{1e}openchat-attachments-v1:";
+/// Prefix that preserves plain text beginning with a reserved message-content prefix.
+pub const MESSAGE_TEXT_PREFIX: &str = "\u{1e}openchat-message-text-v1:";

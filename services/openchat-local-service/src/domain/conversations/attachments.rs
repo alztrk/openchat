@@ -23,6 +23,7 @@ use crate::{
         MAXIMUM_ATTACHMENT_IMAGE_COUNT as MAXIMUM_IMAGE_COUNT, MAXIMUM_ATTACHMENT_NAME_CHARS,
         MAXIMUM_ATTACHMENT_TEXT_BYTES as MAXIMUM_TEXT_BYTES,
         MAXIMUM_ATTACHMENT_TOTAL_BYTES as MAXIMUM_TOTAL_BYTES, MESSAGE_CONTENT_PREFIX,
+        MESSAGE_TEXT_PREFIX,
     },
     protocol::ServiceError,
     storage::AppStorage,
@@ -306,10 +307,10 @@ pub(crate) fn merge_content_preserving_attachments(
     content: &str,
 ) -> Result<String, AttachmentMetadataError> {
     let Some(existing_content) = existing_content else {
-        return Ok(content.to_owned());
+        return Ok(encode_plain_message_content(content));
     };
     let Some(encoded) = existing_content.strip_prefix(MESSAGE_CONTENT_PREFIX) else {
-        return Ok(content.to_owned());
+        return Ok(encode_plain_message_content(content));
     };
     let mut envelope = serde_json::from_str::<MessageEnvelope>(encoded)
         .map_err(|_| AttachmentMetadataError("The saved attachment envelope is invalid."))?;
@@ -320,6 +321,15 @@ pub(crate) fn merge_content_preserving_attachments(
     }
     envelope.content = content.to_owned();
     encode_message_envelope(&envelope)
+}
+
+/// Escapes plain text that could otherwise be mistaken for a persisted attachment envelope.
+pub(crate) fn encode_plain_message_content(content: &str) -> String {
+    if content.starts_with(MESSAGE_CONTENT_PREFIX) || content.starts_with(MESSAGE_TEXT_PREFIX) {
+        format!("{MESSAGE_TEXT_PREFIX}{content}")
+    } else {
+        content.to_owned()
+    }
 }
 
 /// Converts stored generated images into bounded provider input-image values.
@@ -373,13 +383,23 @@ fn append_attachment_metadata(
     existing_content: &str,
     attachments: &[AttachmentMetadata],
 ) -> Result<String, AttachmentMetadataError> {
-    let mut envelope = match existing_content.strip_prefix(MESSAGE_CONTENT_PREFIX) {
-        Some(encoded) => serde_json::from_str::<MessageEnvelope>(encoded)
-            .map_err(|_| AttachmentMetadataError("The saved attachment envelope is invalid."))?,
-        None => MessageEnvelope {
-            content: existing_content.to_owned(),
+    let mut envelope = if let Some(plain_content) =
+        existing_content.strip_prefix(MESSAGE_TEXT_PREFIX)
+    {
+        MessageEnvelope {
+            content: plain_content.to_owned(),
             attachments: Vec::new(),
-        },
+        }
+    } else {
+        match existing_content.strip_prefix(MESSAGE_CONTENT_PREFIX) {
+            Some(encoded) => serde_json::from_str::<MessageEnvelope>(encoded).map_err(|_| {
+                AttachmentMetadataError("The saved attachment envelope is invalid.")
+            })?,
+            None => MessageEnvelope {
+                content: existing_content.to_owned(),
+                attachments: Vec::new(),
+            },
+        }
     };
     if attachments.is_empty()
         || envelope.attachments.len().saturating_add(attachments.len()) > MAXIMUM_FILE_COUNT
@@ -661,11 +681,16 @@ pub(crate) fn decode_message_content(
     conversation_id: &str,
     message_id: &str,
 ) -> Result<(String, Vec<StoredAttachment>), SqlError> {
+    if let Some(content) = value.strip_prefix(MESSAGE_TEXT_PREFIX) {
+        return Ok((content.to_owned(), Vec::new()));
+    }
     let Some(encoded) = value.strip_prefix(MESSAGE_CONTENT_PREFIX) else {
         return Ok((value, Vec::new()));
     };
-    let envelope = serde_json::from_str::<MessageEnvelope>(encoded)
-        .map_err(|error| SqlError::FromSqlConversionFailure(2, Type::Text, Box::new(error)))?;
+    let envelope = match serde_json::from_str::<MessageEnvelope>(encoded) {
+        Ok(envelope) => envelope,
+        Err(_) => return Ok((value, Vec::new())),
+    };
     if envelope.attachments.is_empty()
         || envelope.attachments.len() > MAXIMUM_FILE_COUNT
         || !is_safe_identifier(conversation_id)
@@ -976,6 +1001,49 @@ mod tests {
         assert_eq!(decoded.content, "final response");
         assert_eq!(decoded.attachments.len(), 1);
         assert_eq!(decoded.attachments[0].id, "image-1");
+    }
+
+    #[test]
+    fn reserved_plain_content_prefixes_round_trip_and_survive_attachment_append() {
+        let original = format!("{MESSAGE_CONTENT_PREFIX}ordinary message text");
+        let stored = encode_plain_message_content(&original);
+        assert_eq!(stored, format!("{MESSAGE_TEXT_PREFIX}{original}"));
+        let (decoded, attachments) = decode_message_content(
+            stored.clone(),
+            Path::new("unused-storage-root"),
+            "conversation-1",
+            "assistant-1",
+        )
+        .expect("escaped plain text should decode");
+        assert_eq!(decoded, original);
+        assert!(attachments.is_empty());
+
+        let metadata = AttachmentMetadata {
+            id: "image-1".to_owned(),
+            name: "generated-image.png".to_owned(),
+            mime_type: "image/png".to_owned(),
+            size_bytes: PNG.len(),
+            kind: "image".to_owned(),
+        };
+        let envelope = append_attachment_metadata(&stored, &[metadata])
+            .expect("escaped message text should be preserved in an attachment envelope");
+        let decoded = serde_json::from_str::<MessageEnvelope>(
+            envelope
+                .strip_prefix(MESSAGE_CONTENT_PREFIX)
+                .expect("attachment envelope prefix"),
+        )
+        .expect("attachment envelope should decode");
+        assert_eq!(decoded.content, original);
+        assert_eq!(decoded.attachments.len(), 1);
+
+        let assistant_content = format!("{MESSAGE_CONTENT_PREFIX}assistant response");
+        let saved_assistant_content =
+            merge_content_preserving_attachments(None, &assistant_content)
+                .expect("assistant plain text should be escaped");
+        assert_eq!(
+            saved_assistant_content,
+            format!("{MESSAGE_TEXT_PREFIX}{assistant_content}")
+        );
     }
 
     #[test]

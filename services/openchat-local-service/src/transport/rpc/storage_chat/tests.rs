@@ -570,6 +570,92 @@ fn attachment_message_input(
     })
 }
 
+#[tokio::test]
+async fn plain_messages_starting_with_reserved_prefixes_are_escaped_before_persistence() {
+    let directory = TestDirectory::new();
+    let storage = initialized_chat_storage(&directory);
+    let conversation_id = create_attachment_test_conversation(&storage).await;
+    let contents = [
+        format!(
+            "{}ordinary message text",
+            crate::conversation_limits::MESSAGE_CONTENT_PREFIX
+        ),
+        format!(
+            "{}literal escape marker",
+            crate::conversation_limits::MESSAGE_TEXT_PREFIX
+        ),
+    ];
+
+    for (index, content) in contents.iter().enumerate() {
+        let message_id = format!("reserved-prefix-message-{index}");
+        dispatch(
+            "storage.chat.messages.save",
+            &json!({
+                "input": {
+                    "id": message_id,
+                    "conversationId": conversation_id,
+                    "role": "user",
+                    "content": content,
+                    "status": "completed"
+                }
+            }),
+            &storage,
+        )
+        .await
+        .expect("save plain message with reserved prefix");
+
+        let stored_content = storage
+            .connect()
+            .expect("connect to persisted chat storage")
+            .query_row(
+                "SELECT content FROM messages WHERE conversation_id = ?1 AND id = ?2",
+                rusqlite::params![&conversation_id, message_id],
+                |row| row.get::<_, String>(0),
+            )
+            .expect("read escaped plain message");
+        assert_eq!(
+            stored_content,
+            format!(
+                "{}{content}",
+                crate::conversation_limits::MESSAGE_TEXT_PREFIX
+            )
+        );
+        let (decoded, attachments) = crate::attachments::decode_message_content(
+            stored_content,
+            storage.root(),
+            &conversation_id,
+            &message_id,
+        )
+        .expect("decode escaped plain message");
+        assert_eq!(decoded, *content);
+        assert!(attachments.is_empty());
+    }
+
+    let legacy_content = format!(
+        "{}legacy message text",
+        crate::conversation_limits::MESSAGE_CONTENT_PREFIX
+    );
+    let connection = storage
+        .connect()
+        .expect("connect to legacy message storage");
+    connection
+        .execute(
+            "INSERT INTO messages (id, conversation_id, role, content, created_at, status)
+             VALUES ('legacy-prefix-message', ?1, 'user', ?2, 1, 'completed')",
+            rusqlite::params![&conversation_id, &legacy_content],
+        )
+        .expect("insert legacy plain message");
+    let (decoded, attachments) = crate::attachments::decode_message_content(
+        legacy_content.clone(),
+        storage.root(),
+        &conversation_id,
+        "legacy-prefix-message",
+    )
+    .expect("malformed legacy prefix should remain readable as text");
+    assert_eq!(decoded, legacy_content);
+    assert!(attachments.is_empty());
+}
+
 fn initialized_chat_storage(directory: &TestDirectory) -> AppStorage {
     let storage = AppStorage::open_at(directory.0.join("data")).expect("open test storage");
     storage
