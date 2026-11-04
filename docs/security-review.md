@@ -1,6 +1,6 @@
 # Security Review
 
-**Last review date:** 2026-10-29  
+**Last review date:** 2026-11-05
 **Status:** In progress. Records checks and fixes completed in the current review slice.
 
 ## Audit scope
@@ -74,9 +74,9 @@ Read-modify-write updates now use a profile-scoped `.lock` file with Windows exc
 
 Project file tools and metadata readers now open enumerated files through the selected root's directory capability via `cap-std`. Hard links after traversal cannot redirect reads. Reads and writes reject hard-linked files so an in-scope name cannot expose or mutate an inode linked outside the scope.
 
-### Open — Authenticode validation race
+### Resolved — Authenticode package replacement race
 
-Package verification uses `WinVerifyTrustEx` before publishing, and re-verifies before launch. The check uses cached trust data with **no revocation checking**. A same-user process could replace the verified executable between check and launch. This is acceptable under OpenChat's threat model (same-user desktop trust), but Authenticode does not provide isolation from processes owned by the same Windows account.
+Launch verification opens the installed package with write and delete sharing denied, checks its digest and Authenticode signer through that handle, and retains the handle until process creation succeeds. The Windows regression test `holds_the_verified_package_handle_through_process_creation` confirms that replacing the path fails while verification is held and succeeds after release. Trust data remains cache-only and revocation is not checked; same-user processes are outside the package-isolation boundary.
 
 ### Open — Vulnerability reporting
 
