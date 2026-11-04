@@ -371,7 +371,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                     }
                     Err(error) => {
-                        eprintln!("OpenChat could not start the window geometry writer: {error}");
+                        eprintln!(
+                            "openchat_window_state_writer_start_failed kind={:?}",
+                            error.kind()
+                        );
                     }
                 }
                 main_window.unminimize()?;

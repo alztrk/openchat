@@ -1,6 +1,8 @@
 //! Persists and restores window state (position, size, maximized) in a separate JSON file.
 //!
 //! Replaces `tauri-plugin-window-state` without opening the primary application database.
+//! Startup maximizes the main window when no readable saved geometry is available. Saving is
+//! best-effort; failures are reported with fixed stage codes that omit filesystem paths.
 
 use serde::{Deserialize, Serialize};
 #[cfg(test)]
@@ -26,6 +28,46 @@ const MIN_WINDOW_WIDTH: u32 = 400;
 const MIN_WINDOW_HEIGHT: u32 = 300;
 const WINDOW_STATE_SAVE_DEBOUNCE: Duration = Duration::from_millis(300);
 const WINDOW_STATE_FLUSH_TIMEOUT: Duration = Duration::from_secs(2);
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum WindowStateWriteFailure {
+    AppDataDirectory,
+    MissingParent,
+    CreateDirectory,
+    Serialize,
+    OpenTemporaryFile,
+    WriteTemporaryFile,
+    SyncTemporaryFile,
+    RemoveTemporaryFile,
+    ReplaceStateFile,
+    FlushDeadline,
+    WriterStopped,
+}
+
+impl WindowStateWriteFailure {
+    fn diagnostic_code(self) -> &'static str {
+        match self {
+            Self::AppDataDirectory => "app_data_directory",
+            Self::MissingParent => "missing_parent",
+            Self::CreateDirectory => "create_directory",
+            Self::Serialize => "serialize",
+            Self::OpenTemporaryFile => "open_temporary_file",
+            Self::WriteTemporaryFile => "write_temporary_file",
+            Self::SyncTemporaryFile => "sync_temporary_file",
+            Self::RemoveTemporaryFile => "remove_temporary_file",
+            Self::ReplaceStateFile => "replace_state_file",
+            Self::FlushDeadline => "flush_deadline",
+            Self::WriterStopped => "writer_stopped",
+        }
+    }
+}
+
+fn report_window_state_failure(failure: WindowStateWriteFailure) {
+    eprintln!(
+        "openchat_window_state_failure code={}",
+        failure.diagnostic_code()
+    );
+}
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
 /// Persisted window geometry and state.
@@ -64,16 +106,17 @@ struct WindowStateWriterShared {
     state: Mutex<WindowStateWriterState>,
     changed: Condvar,
     #[cfg(test)]
-    writes_completed: AtomicUsize,
+    write_attempts: AtomicUsize,
 }
 
 struct WindowStateWriterState {
     current: WindowStateRecord,
     revision: u64,
-    persisted_revision: u64,
+    processed_revision: u64,
+    last_write_result: Result<(), WindowStateWriteFailure>,
     debounce_deadline: Option<Instant>,
     flush_requested: bool,
-    flush_replies: Vec<mpsc::Sender<()>>,
+    flush_replies: Vec<mpsc::Sender<Result<(), WindowStateWriteFailure>>>,
     shutdown: bool,
 }
 
@@ -83,7 +126,7 @@ impl WindowStateWriter {
         let path = app
             .path()
             .app_data_dir()
-            .map_err(std::io::Error::other)?
+            .map_err(|_| std::io::Error::other("application data directory unavailable"))?
             .join(WINDOW_STATE_FILE_NAME);
         let initial = load_window_state(app).unwrap_or_default();
         Self::start_for_path(path, initial, WINDOW_STATE_SAVE_DEBOUNCE)
@@ -98,7 +141,8 @@ impl WindowStateWriter {
             state: Mutex::new(WindowStateWriterState {
                 current: initial,
                 revision: 0,
-                persisted_revision: 0,
+                processed_revision: 0,
+                last_write_result: Ok(()),
                 debounce_deadline: None,
                 flush_requested: false,
                 flush_replies: Vec::new(),
@@ -106,7 +150,7 @@ impl WindowStateWriter {
             }),
             changed: Condvar::new(),
             #[cfg(test)]
-            writes_completed: AtomicUsize::new(0),
+            write_attempts: AtomicUsize::new(0),
         });
         let worker_shared = Arc::clone(&shared);
         thread::Builder::new()
@@ -139,14 +183,18 @@ impl WindowStateWriter {
     }
 
     fn flush(&self, record: Option<WindowStateRecord>) {
-        self.request_flush(record, false);
+        let _ = self.request_flush(record, false);
     }
 
     fn shutdown_and_flush(&self) {
-        self.request_flush(None, true);
+        let _ = self.request_flush(None, true);
     }
 
-    fn request_flush(&self, record: Option<WindowStateRecord>, shutdown: bool) {
+    fn request_flush(
+        &self,
+        record: Option<WindowStateRecord>,
+        shutdown: bool,
+    ) -> Result<(), WindowStateWriteFailure> {
         let (reply, response) = mpsc::channel();
         {
             let mut state = lock_writer_state(&self.shared);
@@ -160,8 +208,16 @@ impl WindowStateWriter {
             self.shared.changed.notify_one();
         }
 
-        if response.recv_timeout(WINDOW_STATE_FLUSH_TIMEOUT).is_err() {
-            eprintln!("OpenChat window geometry save did not finish before the close deadline.");
+        match response.recv_timeout(WINDOW_STATE_FLUSH_TIMEOUT) {
+            Ok(result) => result,
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                report_window_state_failure(WindowStateWriteFailure::FlushDeadline);
+                Err(WindowStateWriteFailure::FlushDeadline)
+            }
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                report_window_state_failure(WindowStateWriteFailure::WriterStopped);
+                Err(WindowStateWriteFailure::WriterStopped)
+            }
         }
     }
 }
@@ -191,14 +247,15 @@ fn run_window_state_writer(
         let (record, revision) = {
             let mut state = lock_writer_state(&shared);
             loop {
-                if state.revision == state.persisted_revision {
+                if state.revision == state.processed_revision {
                     if state.flush_requested || state.shutdown {
                         state.flush_requested = false;
                         let replies = std::mem::take(&mut state.flush_replies);
                         let should_exit = state.shutdown;
+                        let result = state.last_write_result;
                         drop(state);
                         for reply in replies {
-                            let _ = reply.send(());
+                            let _ = reply.send(result);
                         }
                         if should_exit {
                             return;
@@ -232,21 +289,26 @@ fn run_window_state_writer(
             }
         };
 
-        save_window_state_path(&path, &record);
+        let result = save_window_state_path(&path, &record);
+        if let Err(failure) = result {
+            report_window_state_failure(failure);
+        }
         #[cfg(test)]
-        shared.writes_completed.fetch_add(1, Ordering::Relaxed);
+        shared.write_attempts.fetch_add(1, Ordering::Relaxed);
 
         let mut state = lock_writer_state(&shared);
-        state.persisted_revision = state.persisted_revision.max(revision);
-        if state.revision == state.persisted_revision {
+        state.processed_revision = state.processed_revision.max(revision);
+        state.last_write_result = result;
+        if state.revision == state.processed_revision {
             state.debounce_deadline = None;
             if state.flush_requested {
                 state.flush_requested = false;
                 let replies = std::mem::take(&mut state.flush_replies);
                 let should_exit = state.shutdown;
+                let result = state.last_write_result;
                 drop(state);
                 for reply in replies {
-                    let _ = reply.send(());
+                    let _ = reply.send(result);
                 }
                 if should_exit {
                     return;
@@ -410,7 +472,9 @@ fn intersection_area(state: WindowStateRecord, area: MonitorWorkArea) -> u64 {
 pub fn save_window_state(window: &Window) {
     let previous = load_window_state(window.app_handle()).unwrap_or_default();
     if let Some(current) = capture_window_state(window, previous) {
-        save_window_state_file(window.app_handle(), &current);
+        if let Err(failure) = save_window_state_file(window.app_handle(), &current) {
+            report_window_state_failure(failure);
+        }
     }
 }
 
@@ -465,39 +529,51 @@ fn read_window_state(path: &Path) -> Option<WindowStateRecord> {
     })
 }
 
-fn save_window_state_file(app: &AppHandle, state: &WindowStateRecord) {
-    let Some(path) = window_state_file_path(app) else {
-        return;
-    };
-    save_window_state_path(&path, state);
+fn save_window_state_file(
+    app: &AppHandle,
+    state: &WindowStateRecord,
+) -> Result<(), WindowStateWriteFailure> {
+    let path = window_state_file_path(app).ok_or(WindowStateWriteFailure::AppDataDirectory)?;
+    save_window_state_path(&path, state)
 }
 
-fn save_window_state_path(path: &Path, state: &WindowStateRecord) {
-    let Some(directory) = path.parent() else {
-        return;
-    };
-    if fs::create_dir_all(directory).is_err() {
-        return;
-    }
+fn save_window_state_path(
+    path: &Path,
+    state: &WindowStateRecord,
+) -> Result<(), WindowStateWriteFailure> {
+    let directory = path
+        .parent()
+        .ok_or(WindowStateWriteFailure::MissingParent)?;
+    fs::create_dir_all(directory).map_err(|_| WindowStateWriteFailure::CreateDirectory)?;
     let temporary_path = path.with_extension("json.tmp");
-    let Ok(bytes) = serde_json::to_vec(state) else {
-        return;
-    };
-    let Ok(mut file) = OpenOptions::new()
+    let bytes = serde_json::to_vec(state).map_err(|_| WindowStateWriteFailure::Serialize)?;
+    let mut file = OpenOptions::new()
         .write(true)
         .create(true)
         .truncate(true)
         .open(&temporary_path)
-    else {
-        return;
-    };
-    if file.write_all(&bytes).is_err() || file.sync_all().is_err() {
-        let _ = fs::remove_file(&temporary_path);
-        return;
+        .map_err(|_| WindowStateWriteFailure::OpenTemporaryFile)?;
+    if file.write_all(&bytes).is_err() {
+        drop(file);
+        remove_temporary_file(&temporary_path);
+        return Err(WindowStateWriteFailure::WriteTemporaryFile);
+    }
+    if file.sync_all().is_err() {
+        drop(file);
+        remove_temporary_file(&temporary_path);
+        return Err(WindowStateWriteFailure::SyncTemporaryFile);
     }
     drop(file);
-    if fs::rename(&temporary_path, &path).is_err() {
-        let _ = fs::remove_file(&temporary_path);
+    if fs::rename(&temporary_path, path).is_err() {
+        remove_temporary_file(&temporary_path);
+        return Err(WindowStateWriteFailure::ReplaceStateFile);
+    }
+    Ok(())
+}
+
+fn remove_temporary_file(path: &Path) {
+    if fs::remove_file(path).is_err() {
+        report_window_state_failure(WindowStateWriteFailure::RemoveTemporaryFile);
     }
 }
 
@@ -522,7 +598,7 @@ mod tests {
 
     use super::{
         read_window_state, resolve_window_state, MonitorWorkArea, WindowStateRecord,
-        WindowStateWriter,
+        WindowStateWriteFailure, WindowStateWriter,
     };
 
     struct TestDirectory(PathBuf);
@@ -650,7 +726,7 @@ mod tests {
         let deadline = std::time::Instant::now() + Duration::from_secs(2);
         while writer
             .shared
-            .writes_completed
+            .write_attempts
             .load(std::sync::atomic::Ordering::Relaxed)
             == 0
             && std::time::Instant::now() < deadline
@@ -661,7 +737,7 @@ mod tests {
         assert_eq!(
             writer
                 .shared
-                .writes_completed
+                .write_attempts
                 .load(std::sync::atomic::Ordering::Relaxed),
             1
         );
@@ -676,13 +752,68 @@ mod tests {
         assert_eq!(
             writer
                 .shared
-                .writes_completed
+                .write_attempts
                 .load(std::sync::atomic::Ordering::Relaxed),
             2
         );
         assert_eq!(
             read_window_state(&path),
             Some(state(1440, 960, 220, 180, false))
+        );
+    }
+
+    #[test]
+    fn writer_flush_acknowledges_a_successful_save() {
+        let directory = TestDirectory::create();
+        let path = directory.0.join("window-state.json");
+        let writer = WindowStateWriter::start_for_path(
+            path.clone(),
+            WindowStateRecord::default(),
+            Duration::from_secs(60),
+        )
+        .expect("start window-state writer");
+        let expected = state(1280, 840, 140, 120, false);
+        writer.schedule(expected);
+
+        assert_eq!(writer.request_flush(None, true), Ok(()));
+        assert_eq!(read_window_state(&path), Some(expected));
+        assert_eq!(
+            writer
+                .shared
+                .write_attempts
+                .load(std::sync::atomic::Ordering::Relaxed),
+            1
+        );
+    }
+
+    #[test]
+    fn writer_flush_reports_a_save_failure_without_retrying_in_a_loop() {
+        let directory = TestDirectory::create();
+        let blocker = directory.0.join("not-a-directory");
+        fs::write(&blocker, b"blocker").expect("create non-directory parent");
+        let path = blocker.join("window-state.json");
+        let writer = WindowStateWriter::start_for_path(
+            path,
+            WindowStateRecord::default(),
+            Duration::from_secs(60),
+        )
+        .expect("start window-state writer");
+        writer.schedule(state(1280, 840, 140, 120, false));
+
+        assert_eq!(
+            writer.request_flush(None, true),
+            Err(WindowStateWriteFailure::CreateDirectory)
+        );
+        assert_eq!(
+            writer
+                .shared
+                .write_attempts
+                .load(std::sync::atomic::Ordering::Relaxed),
+            1
+        );
+        assert_eq!(
+            WindowStateWriteFailure::CreateDirectory.diagnostic_code(),
+            "create_directory"
         );
     }
 }
