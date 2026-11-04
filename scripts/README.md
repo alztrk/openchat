@@ -37,19 +37,30 @@ under the canonical temporary directory. Remove that exact profile directory whe
 the test is complete.
 
 For interactive checks that should leave no generated profile behind, pass
-`--cleanup-profile` without `--profile-root`. The CLI then removes only the
+`--cleanup-profile` without `--profile-root`. The CLI removes only the
 UUID-named profile it created directly under the OS temporary directory after
-the app exits, including when the build or launch fails. When interrupted with
-Ctrl+C, it waits for the child process to exit before removing that profile.
-The option cannot be combined with a caller-supplied profile path.
+the app exits, including when the build or launch fails. On Ctrl+C, it gives
+the child process tree 1.5 seconds to close, then requests forced tree
+termination and waits up to 3 seconds for confirmation. If shutdown cannot be
+confirmed, the command fails and preserves the profile so a remaining process
+cannot keep using files that were removed underneath it. The retained path is
+included in the error. The option cannot be combined with a caller-supplied
+profile path.
+
+The test-profile command treats an app exit as a normal window close only when
+the debug-only host records a user-requested Tauri exit after the local service
+stops successfully. That run-specific marker is required for either exit code
+`0` or the observed Windows wrapper code `4294967295`; crashes, startup errors,
+service shutdown failures, missing markers, and other exit codes remain errors.
 
 `startup-benchmark` builds a debug local-service sidecar with isolated-profile
 support, starts a Tauri debug build with startup timing enabled, and measures the
 process-to-React-ready interval. It requires the normal OpenChat application shell
 and verifies the temporary active database has no plaintext SQLite header before
 reporting a result. The command removes its UUID-named temporary profile after the
-run, including when interrupted with Ctrl+C. This is a debug startup measurement,
-not a release-package result.
+run, including a confirmed Ctrl+C shutdown. If child-tree shutdown cannot be
+confirmed, it preserves and reports the profile path. This is a debug startup
+measurement, not a release-package result.
 
 `maintain-target` reports Cargo target sizes and previews cleanup by default. Add
 `--apply` only when you want to clean those Cargo target directories.

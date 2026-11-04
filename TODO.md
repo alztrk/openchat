@@ -183,7 +183,7 @@
 - [ ] Eşzamanlı tercih güncellemelerinde patch merge/invariant davranışını test et; notification saat girişini Windows WebView2'de doğrula.
 - [x] Merkezi CLI `check` hata toplama, local/CI Cargo feature ve lock eşleşmesi, task orchestration testleri ve FSD checker'ın tarama hatasında başarısız olması tamamlandı; uygulama ve odaklı test doğrulamaları Faz 10.2.2'de kaydedildi.
 - [x] QA-09: Feature ve widget kaynaklarındaki `@app` bağımlılıkları kaldırıldı; OAuth/bildirim runtime'ları sahibi feature'lara taşındı. Checker alt→üst katman importlarını reddediyor, yalnız tanımlı feature-slice API'lerini kabul ediyor.
-- [ ] `dev-test-profile --cleanup-profile` interrupt/child-process shutdown yolunu doğrula; bu araştırmanın Ctrl+C ile kesilen oturumunda cleanup gerçekleşmedi ve doğrulanmış helper'la temizlendi. İkinci oturum pencere normal kapatılınca geçici profil bırakmadı, fakat npm sarmalayıcısı `4294967295` koduyla sonlandı; kapanış/exit davranışını ayrıştır.
+- [ ] QA-07/11: Sinyal aboneliği, Windows `taskkill /T /F` ve Unix process group sonlandırması, bounded kapanış, kapanışı doğrulayamama halinde profil koruması ve run-ID'li normal pencere kapanış işareti uygulandı; 165 frontend ve 84 Tauri testi geçti. Gerçek GUI normal kapatma, terminal Ctrl+C ve crash/startup-failure runtime ayrımı hâlâ doğrulanmalı.
 - [x] `maintain-target --apply` ve `clean` için aktif build koruması, güvenli target seçimi ve görünür önizleme davranışı Faz 10.1'de uygulandı; bu araştırma sırasında gerçek cleanup komutları çalıştırılmadı.
 - [x] Tek npm workspace/install otoritesi olarak kök workspace ve `package-lock.json` seçildi; eski iç lockfile kaldırıldı, CI cache yolu ve bootstrap köke hizalandı. Temiz `npm ci` ve izole dependency ağacındaki ilk Vite başlangıcı başarılı; gerçek UI rota yürütmesi ve paketlenmiş uygulama karşılaştırması ayrı takipte.
 - [ ] `recent searches` renderer `localStorage` saklama/retention kararını privacy sözleşmesiyle karşılaştır; hassas sorgu içerme olasılığını ve uzunluk sınırını değerlendir.
@@ -237,9 +237,10 @@
 
 ### 10.3 CLI, Tauri ve sidecar yaşam döngüsü
 
-- [ ] `QA-07/11`: Ctrl+C, normal pencere kapatma, çökme ve başlatma hatasını ayır; child process sonlandırma ve geçici profil temizliğini sınırlı sürede tamamla; normal kapanış için doğru exit kodunu belirle.
+- [x] `QA-07/11` kod dilimi: Interrupt sonrası 1,5 sn graceful bekleme, Windows process-tree sonlandırma veya Unix process-group sinyalleme, en çok 3 sn kapanış doğrulaması ve doğrulanamayan süreçte profili koruma eklendi. Normal test penceresi kapanışı Tauri'nin kullanıcı kaynaklı exit isteği, başarılı sidecar kapanışı ve eşleşen tek kullanımlık run marker'ı ile tanınıyor; `0` ve gözlenen Windows `4294967295` yalnız bu marker ile kabul ediliyor.
+- [ ] `QA-07/11` runtime kabulü: Gerçek terminal Ctrl+C ile nested Tauri/Vite child tree kapanışını; GUI normal close ile exit kodu/profile cleanup eşleşmesini; crash ve startup failure yollarını ayrı ayrı doğrula.
 - [ ] `T-HOST-01..09`: Pencere başlangıç/geometry/recovery, pipe yazımı ve mutex süresi, dialog callback timeout'u, resize disk yazımı, event payload sınırı ve kayıt hatası davranışlarını tek tek kapat.
-- [ ] Kabul: normal kapanış başarıyla raporlanır; interrupt ve child kapanışı bounded olur; geçici profil her sonuçta temizlenir; dialog ve IPC arızaları kullanıcıya görünür, güvenli hata verir.
+- [ ] Kabul: doğrulanmış normal kapanış başarıyla raporlanır; interrupt ve child kapanışı bounded olur; süreç ağacı kapandığı doğrulanınca geçici profil temizlenir, kapanış doğrulanamazsa çalışan süreçten veri silmemek için profil korunur ve yolu raporlanır; dialog ve IPC arızaları kullanıcıya görünür, güvenli hata verir.
 
 ### 10.4 Yerel servis ve veri bütünlüğü
 

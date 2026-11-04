@@ -82,6 +82,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let desktop_test_profile_root = Some(desktop_test_profile_root_from_args()?);
     #[cfg(not(feature = "desktop-profile-test-support"))]
     let desktop_test_profile_root: Option<std::path::PathBuf> = None;
+    #[cfg(feature = "desktop-profile-test-support")]
+    let desktop_test_run_id = desktop_test_run_id_from_args()?;
 
     #[cfg(all(
         feature = "startup-benchmark",
@@ -105,6 +107,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .as_ref()
         .map(|root| local_service::LocalServiceState::with_storage_root(root.join("storage")))
         .unwrap_or_default();
+    #[cfg(feature = "desktop-profile-test-support")]
+    let desktop_test_normal_close_marker = desktop_test_profile_root
+        .as_ref()
+        .map(|root| desktop_test_normal_close_marker_path(root, desktop_test_run_id));
 
     let builder = tauri::Builder::default();
     #[cfg(feature = "startup-benchmark")]
@@ -379,10 +385,31 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         })
         .build(tauri::generate_context!())?;
-    app.run(|handle, event| {
-        if matches!(event, tauri::RunEvent::Exit) {
-            if let Err(error) = handle.state::<local_service::LocalServiceState>().stop() {
+    #[cfg(feature = "desktop-profile-test-support")]
+    let mut desktop_test_window_close_requested = false;
+    app.run(move |handle, event| {
+        #[cfg(feature = "desktop-profile-test-support")]
+        if let tauri::RunEvent::ExitRequested { code, .. } = &event {
+            desktop_test_window_close_requested = desktop_test_user_exit_requested(*code);
+        }
+
+        if matches!(&event, tauri::RunEvent::Exit) {
+            let shutdown_result = handle.state::<local_service::LocalServiceState>().stop();
+            if let Err(error) = &shutdown_result {
                 eprintln!("OpenChat local service shutdown failed: {error}");
+            }
+
+            #[cfg(feature = "desktop-profile-test-support")]
+            if shutdown_result.is_ok() && desktop_test_window_close_requested {
+                if let Some(marker_path) = &desktop_test_normal_close_marker {
+                    if let Err(error) =
+                        write_desktop_test_normal_close_marker(marker_path, desktop_test_run_id)
+                    {
+                        eprintln!(
+                            "OpenChat could not record the normal test-window close: {error}"
+                        );
+                    }
+                }
             }
         }
     });
@@ -392,6 +419,66 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(feature = "desktop-profile-test-support")]
 fn desktop_test_profile_root_from_args() -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
     desktop_test_profile_root_from(std::env::args_os().skip(1))
+}
+
+#[cfg(feature = "desktop-profile-test-support")]
+fn desktop_test_run_id_from_args() -> Result<uuid::Uuid, Box<dyn std::error::Error>> {
+    desktop_test_run_id_from(std::env::args_os().skip(1))
+}
+
+#[cfg(feature = "desktop-profile-test-support")]
+fn desktop_test_run_id_from(
+    mut arguments: impl Iterator<Item = std::ffi::OsString>,
+) -> Result<uuid::Uuid, Box<dyn std::error::Error>> {
+    let mut run_id = None;
+    while let Some(argument) = arguments.next() {
+        if argument == std::ffi::OsStr::new("--desktop-test-run-id") {
+            if run_id.is_some() {
+                return Err(
+                    std::io::Error::other("The desktop test run identifier is invalid").into(),
+                );
+            }
+            run_id = arguments.next();
+        }
+    }
+
+    let run_id = run_id
+        .and_then(|value| value.into_string().ok())
+        .ok_or_else(|| std::io::Error::other("A desktop test run identifier is required"))?;
+    let parsed_id = uuid::Uuid::parse_str(&run_id)
+        .map_err(|_| std::io::Error::other("The desktop test run identifier is invalid"))?;
+    if parsed_id.to_string() != run_id {
+        return Err(std::io::Error::other("The desktop test run identifier is invalid").into());
+    }
+    Ok(parsed_id)
+}
+
+#[cfg(feature = "desktop-profile-test-support")]
+fn desktop_test_normal_close_marker_path(
+    profile_root: &std::path::Path,
+    run_id: uuid::Uuid,
+) -> std::path::PathBuf {
+    profile_root.join(format!("normal-close-{run_id}.marker"))
+}
+
+#[cfg(feature = "desktop-profile-test-support")]
+fn desktop_test_user_exit_requested(code: Option<i32>) -> bool {
+    code.is_none()
+}
+
+#[cfg(feature = "desktop-profile-test-support")]
+fn write_desktop_test_normal_close_marker(
+    marker_path: &std::path::Path,
+    run_id: uuid::Uuid,
+) -> std::io::Result<()> {
+    use std::io::Write;
+
+    let mut marker = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(marker_path)?;
+    marker.write_all(run_id.to_string().as_bytes())?;
+    marker.sync_all()
 }
 
 #[cfg(feature = "desktop-profile-test-support")]
@@ -519,7 +606,66 @@ mod desktop_test_profile_tests {
 
     use uuid::Uuid;
 
-    use super::{desktop_test_profile_root_from, ensure_profile_child_directory};
+    use super::{
+        desktop_test_normal_close_marker_path, desktop_test_profile_root_from,
+        desktop_test_run_id_from, desktop_test_user_exit_requested, ensure_profile_child_directory,
+        write_desktop_test_normal_close_marker,
+    };
+
+    #[test]
+    fn only_user_requested_exit_is_classified_as_a_normal_window_close() {
+        assert!(desktop_test_user_exit_requested(None));
+        assert!(!desktop_test_user_exit_requested(Some(0)));
+        assert!(!desktop_test_user_exit_requested(Some(1)));
+    }
+
+    #[test]
+    fn run_identifier_must_be_a_single_canonical_uuid() {
+        let run_id = Uuid::new_v4();
+        let valid = [
+            OsString::from("--desktop-test-run-id"),
+            OsString::from(run_id.to_string()),
+        ];
+        assert_eq!(
+            desktop_test_run_id_from(valid.into_iter()).expect("parse test run identifier"),
+            run_id,
+        );
+
+        let duplicate = [
+            OsString::from("--desktop-test-run-id"),
+            OsString::from(run_id.to_string()),
+            OsString::from("--desktop-test-run-id"),
+            OsString::from(run_id.to_string()),
+        ];
+        assert!(desktop_test_run_id_from(duplicate.into_iter()).is_err());
+
+        let invalid = [
+            OsString::from("--desktop-test-run-id"),
+            OsString::from("not-a-uuid"),
+        ];
+        assert!(desktop_test_run_id_from(invalid.into_iter()).is_err());
+    }
+
+    #[test]
+    fn normal_close_marker_is_unique_to_the_test_run_and_contains_its_identifier() {
+        let profile = TestProfile::new();
+        let profile_args = [
+            OsString::from("--desktop-test-profile-root"),
+            profile.0.as_os_str().to_owned(),
+        ];
+        let profile_root =
+            desktop_test_profile_root_from(profile_args.into_iter()).expect("create test profile");
+        let run_id = Uuid::new_v4();
+        let marker_path = desktop_test_normal_close_marker_path(&profile_root, run_id);
+
+        write_desktop_test_normal_close_marker(&marker_path, run_id)
+            .expect("write normal-close marker");
+        assert_eq!(
+            fs::read_to_string(&marker_path).expect("read normal-close marker"),
+            run_id.to_string(),
+        );
+        assert!(write_desktop_test_normal_close_marker(&marker_path, run_id).is_err());
+    }
 
     #[test]
     fn profile_argument_creates_and_reuses_only_a_direct_uuid_temporary_child() {

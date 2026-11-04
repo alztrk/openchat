@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+import { existsSync, lstatSync, readFileSync, unlinkSync } from 'node:fs';
 import { runNpm } from '../shared/runner.mjs';
 import { buildLocalService } from '../shared/rust.mjs';
 import { ensureFrontendDependencies } from '../shared/rust.mjs';
@@ -7,6 +9,29 @@ import { reserveTemporaryTestProfileRoot, temporaryTestProfilePath } from '../sh
 import { removeTemporaryTestProfile } from '../shared/profile-clean.mjs';
 import { getFrontendDirectory } from '../shared/runner.mjs';
 import { ensureNoArguments } from '../help.mjs';
+
+export function assertDesktopTestProfileExit(status, markerContents, runId) {
+  if (markerContents !== runId) {
+    const outcome = status === null ? 'was terminated by a signal' : `exited with code ${status}`;
+    throw new Error(`The desktop test ${outcome} without a confirmed normal window close.`);
+  }
+  if (status !== 0 && status !== 0xffff_ffff) {
+    throw new Error(`The desktop test confirmed a normal window close but exited with unexpected code ${status}.`);
+  }
+}
+
+function readNormalCloseMarker(markerPath) {
+  if (!existsSync(markerPath)) return null;
+  const metadata = lstatSync(markerPath);
+  if (!metadata.isFile() || metadata.isSymbolicLink()) return null;
+  return readFileSync(markerPath, 'utf8');
+}
+
+function removeNormalCloseMarker(markerPath) {
+  if (!existsSync(markerPath)) return;
+  const metadata = lstatSync(markerPath);
+  if (metadata.isFile() && !metadata.isSymbolicLink()) unlinkSync(markerPath);
+}
 
 export const dev = {
   name: 'dev',
@@ -71,6 +96,7 @@ export const devTestProfile = {
     const { runTemporaryProfileSession } = await import('../shared/session.mjs');
 
     const { interruptedSignal } = await runTemporaryProfileSession({
+      getRetainedProfilePath: () => profileRoot,
       run: async (interruptController) => {
         profileRoot ??= reserveTemporaryTestProfileRoot();
         await buildLocalServiceInterruptibly('debug', false, ['desktop-profile-test-support'], interruptController);
@@ -84,10 +110,18 @@ export const devTestProfile = {
           throw new Error('Run this task through its npm script so it can invoke npm without a shell.');
         }
 
-        await runInterruptibleCommand(process.execPath, [
+        const runId = randomUUID();
+        const markerPath = pathMod.join(profileRoot, `normal-close-${runId}.marker`);
+        const result = await runInterruptibleCommand(process.execPath, [
           npmCliPath, 'run', 'tauri:dev:raw', '--', '--features', 'desktop-profile-test-support',
           '--', '--', '--desktop-test-profile-root', profileRoot,
-        ], { cwd: getFrontendDirectory(), interruptController });
+          '--desktop-test-run-id', runId,
+        ], { cwd: getFrontendDirectory(), interruptController, allowFailure: true });
+        try {
+          assertDesktopTestProfileExit(result.status, readNormalCloseMarker(markerPath), runId);
+        } finally {
+          removeNormalCloseMarker(markerPath);
+        }
       },
       cleanup: () => {
         if (cleanupProfileOnExit && profileRoot) removeTemporaryTestProfile(profileRoot);
@@ -117,6 +151,7 @@ export const startupBenchmark = {
 
     let profileRoot;
     const { interruptedSignal } = await runTemporaryProfileSession({
+      getRetainedProfilePath: () => profileRoot,
       run: async (interruptController) => {
         profileRoot = temporaryTestProfilePath();
         const resultPath = pathMod.join(profileRoot, 'result.json');
