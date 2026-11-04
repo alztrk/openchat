@@ -84,6 +84,7 @@ export function SecurityScanPage() {
   const [deleteTarget, setDeleteTarget] = useState<SecurityScan | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [sidebarWidth, setSidebarWidth] = useState(readSecurityScanSidebarWidth);
   const [isResizingSidebar, setIsResizingSidebar] = useState(false);
   const isRefreshingScansRef = useRef(false);
@@ -138,14 +139,16 @@ export function SecurityScanPage() {
     const target = deleteTarget;
     setIsDeleting(true);
     setError(null);
+    setNotice(null);
     try {
-      await deleteSecurityScanRuntime(target);
+      const attachmentCleanupPending = await deleteSecurityScanRuntime(target);
       setScans((current) => {
         const remaining = current.filter((item) => item.id !== target.id);
         setSelectedScanId((selected) => (selected === target.id ? (remaining[0]?.id ?? null) : selected));
         return remaining;
       });
       setDeleteTarget(null);
+      if (attachmentCleanupPending) setNotice(t('securityScanDeleteCleanupPending'));
     } catch (cause) {
       setError(formatSecurityScanError(cause, t, 'securityScanDeleteFailed'));
     } finally {
@@ -325,6 +328,15 @@ export function SecurityScanPage() {
             <div className="flex items-start gap-2 rounded-control border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">
               <CircleAlert aria-hidden="true" className="mt-0.5 shrink-0" size={16} />
               <p role="alert">{error}</p>
+            </div>
+          </div>
+        ) : null}
+
+        {notice ? (
+          <div className="mx-auto mt-3 w-full max-w-conversation px-4 md:px-6">
+            <div className="flex items-start gap-2 rounded-control border border-warning/40 bg-warning/5 px-3 py-2 text-sm text-warning">
+              <CircleAlert aria-hidden="true" className="mt-0.5 shrink-0" size={16} />
+              <p role="status">{notice}</p>
             </div>
           </div>
         ) : null}

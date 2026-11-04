@@ -3006,6 +3006,7 @@
   "securityScanDeleteConfirmBody": "“{project}” güvenlik taraması ve tüm çıktıları bu cihazdan kalıcı olarak silinecek. Bu işlem geri alınamaz.",
   "securityScanDeletePermanently": "Taramayı sil",
   "securityScanDeleteFailed": "Güvenlik taraması silinemedi.",
+  "securityScanDeleteCleanupPending": "Tarama silindi, ancak bazı ek dosyalar henüz silinemedi. OpenChat temizlemeyi bir sonraki açılışta yeniden deneyecek.",
   "serviceErrorValidation": "İstek bilgileri eksik veya geçersiz.",
   "serviceErrorAuthentication": "Hesap oturumu veya kimlik bilgileri kontrol edilmeli.",
   "serviceErrorAuthorization": "Bu işlem mevcut hesap veya proje için izinli değil.",

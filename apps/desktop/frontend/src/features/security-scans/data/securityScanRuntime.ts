@@ -230,7 +230,7 @@ export async function stopSecurityScan(scan: SecurityScan): Promise<void> {
   }
 }
 
-export async function deleteSecurityScanRuntime(scan: SecurityScan): Promise<void> {
+export async function deleteSecurityScanRuntime(scan: SecurityScan): Promise<boolean> {
   deletedScans.add(scan.id);
   clearRetryTimer(scan.id);
   resumeAfterOperation.delete(scan.id);
@@ -252,7 +252,7 @@ export async function deleteSecurityScanRuntime(scan: SecurityScan): Promise<voi
         // Cancelled or failed operation has finished unwinding before database deletion.
       }
     }
-    await deleteSecurityScan(scan.id);
+    const attachmentCleanupPending = await deleteSecurityScan(scan.id);
     operations.delete(scan.id);
     operationStarts.delete(scan.id);
     inFlight.delete(scan.id);
@@ -260,6 +260,7 @@ export async function deleteSecurityScanRuntime(scan: SecurityScan): Promise<voi
     initialized.delete(scan.id);
     snapshots.delete(scan.id);
     for (const listener of listeners.get(scan.id) ?? []) listener();
+    return attachmentCleanupPending;
   } catch (error) {
     deletedScans.delete(scan.id);
     throw error;

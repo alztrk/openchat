@@ -3006,6 +3006,7 @@
   "securityScanDeleteConfirmBody": "Der Sicherheitsscan „{project}“ und alle zugehörigen Ergebnisse werden dauerhaft von diesem Gerät gelöscht. Diese Aktion kann nicht rückgängig gemacht werden.",
   "securityScanDeletePermanently": "Scan löschen",
   "securityScanDeleteFailed": "Der Sicherheitsscan konnte nicht gelöscht werden.",
+  "securityScanDeleteCleanupPending": "Der Scan wurde gelöscht, aber einige Anhangdateien konnten noch nicht entfernt werden. OpenChat versucht die Bereinigung beim nächsten Start erneut.",
   "serviceErrorValidation": "Einige Angaben fehlen oder sind ungültig.",
   "serviceErrorAuthentication": "Die Anmeldung oder die Zugangsdaten müssen überprüft werden.",
   "serviceErrorAuthorization": "Dieser Vorgang ist für das aktuelle Konto oder Projekt nicht zulässig.",

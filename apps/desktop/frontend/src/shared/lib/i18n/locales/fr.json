@@ -3006,6 +3006,7 @@
   "securityScanDeleteConfirmBody": "L’analyse de sécurité « {project} » et tous ses résultats seront définitivement supprimés de cet appareil. Cette action est irréversible.",
   "securityScanDeletePermanently": "Supprimer l’analyse",
   "securityScanDeleteFailed": "L’analyse de sécurité n’a pas pu être supprimée.",
+  "securityScanDeleteCleanupPending": "L’analyse a été supprimée, mais certains fichiers joints n’ont pas encore pu être effacés. OpenChat réessaiera au prochain démarrage.",
   "serviceErrorValidation": "Certaines informations de la demande sont manquantes ou invalides.",
   "serviceErrorAuthentication": "La connexion au compte ou ses identifiants doivent être vérifiés.",
   "serviceErrorAuthorization": "Cette opération n’est pas autorisée pour le compte ou le projet actuel.",

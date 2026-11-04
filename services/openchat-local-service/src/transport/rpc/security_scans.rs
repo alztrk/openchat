@@ -449,8 +449,15 @@ fn delete_scan(params: &Value, storage: &AppStorage) -> Result<Value, ServiceErr
     }
     transaction.commit().map_err(|_| storage_error())?;
     drop(connection);
-    super::storage_chat::remove_attachment_directory(storage.root(), &conversation_id)?;
-    Ok(json!({"deleted": true}))
+    let attachment_cleanup_pending =
+        super::storage_chat::remove_attachment_directory(storage.root(), &conversation_id).is_err();
+    if attachment_cleanup_pending {
+        eprintln!("security_scan_attachment_cleanup_pending");
+    }
+    Ok(json!({
+        "deleted": true,
+        "attachmentCleanupPending": attachment_cleanup_pending,
+    }))
 }
 
 fn parse_and_validate_roots(
@@ -1173,6 +1180,7 @@ mod tests {
         )
         .expect("delete scan");
         assert_eq!(deleted["deleted"], json!(true));
+        assert_eq!(deleted["attachmentCleanupPending"], json!(false));
 
         let remaining =
             dispatch("security.scans.list", &json!({}), &storage).expect("list after delete");
@@ -1203,5 +1211,66 @@ mod tests {
         )
         .expect_err("deleting unknown scan must fail");
         assert_eq!(missing.code, "security_scan_not_found");
+    }
+
+    #[test]
+    fn deleting_scan_reports_pending_attachment_cleanup_and_orphan_reconciliation_removes_it() {
+        let directory = TestDirectory::new();
+        let project_root = directory.0.join("project");
+        fs::create_dir_all(&project_root).expect("create project root");
+        let storage = AppStorage::open_at(directory.0.join("data")).expect("open storage");
+        storage
+            .prepare_chat_schema_migration(crate::CHAT_SCHEMA_VERSION)
+            .expect("prepare current chat schema");
+        storage
+            .initialize_backend_schema()
+            .expect("initialize current backend schema");
+        let project_root_text = insert_test_project(&storage, "project-del-pending", &project_root);
+        let conversation_id = "scan-del-pending-conv";
+
+        dispatch(
+            "security.scans.create",
+            &json!({
+                "input": {
+                    "scanId": "scan-del-pending",
+                    "conversationId": conversation_id,
+                    "projectId": "project-del-pending",
+                    "providerId": "opencode",
+                    "modelId": "security-model",
+                    "selectedRoots": [project_root_text]
+                }
+            }),
+            &storage,
+        )
+        .expect("create scan");
+        fs::write(
+            storage.root().join("attachments"),
+            b"invalid attachment root",
+        )
+        .expect("make attachment cleanup fail safely");
+
+        let deleted = dispatch(
+            "security.scans.delete",
+            &json!({"input": {"scanId": "scan-del-pending"}}),
+            &storage,
+        )
+        .expect("report committed deletion with pending attachment cleanup");
+
+        assert_eq!(deleted["deleted"], json!(true));
+        assert_eq!(deleted["attachmentCleanupPending"], json!(true));
+        let remaining = dispatch("security.scans.list", &json!({}), &storage)
+            .expect("list scans after deletion");
+        assert_eq!(remaining["scans"], json!([]));
+
+        let attachments_root = storage.root().join("attachments");
+        fs::remove_file(&attachments_root).expect("remove invalid attachment root");
+        let orphan_directory = attachments_root.join(conversation_id);
+        fs::create_dir_all(&orphan_directory).expect("create orphan left by interrupted cleanup");
+        fs::write(orphan_directory.join("stale.data"), b"orphan attachment")
+            .expect("write orphan attachment");
+
+        storage_chat::cleanup_orphaned_attachment_directories(&storage)
+            .expect("retry orphan cleanup after the storage path recovers");
+        assert!(!orphan_directory.exists());
     }
 }
