@@ -690,7 +690,7 @@ pub(crate) fn decode_message_content(
             "image"
                 if matches!(
                     metadata.mime_type.as_str(),
-                    "image/png" | "image/jpeg" | "image/webp"
+                    "image/png" | "image/jpeg" | "image/webp" | "image/gif"
                 ) =>
             {
                 image_count = image_count.saturating_add(1);

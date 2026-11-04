@@ -665,6 +665,47 @@ async fn message_save_rejects_attachment_metadata_that_cannot_be_read_later() {
 }
 
 #[tokio::test]
+async fn saved_gif_attachment_round_trips_through_history_decoder() {
+    const GIF: &[u8] = b"GIF89aopenchat-test-image";
+
+    let directory = TestDirectory::new();
+    let storage = initialized_chat_storage(&directory);
+    let conversation_id = create_attachment_test_conversation(&storage).await;
+    let message_id = format!("attachment-message-{}", Uuid::new_v4().simple());
+    let attachment_id = format!("attachment-{}", Uuid::new_v4().simple());
+    let mut input = attachment_message_input(&conversation_id, &message_id, &attachment_id, GIF);
+    input["input"]["attachments"][0]["name"] = json!("sample.gif");
+    input["input"]["attachments"][0]["mimeType"] = json!("image/gif");
+    input["input"]["attachments"][0]["kind"] = json!("image");
+
+    dispatch("storage.chat.messages.save", &input, &storage)
+        .await
+        .expect("save a GIF attachment");
+
+    let stored_content = storage
+        .connect()
+        .expect("connect to persisted chat storage")
+        .query_row(
+            "SELECT content FROM messages WHERE conversation_id = ?1 AND id = ?2",
+            rusqlite::params![&conversation_id, &message_id],
+            |row| row.get::<_, String>(0),
+        )
+        .expect("read persisted GIF message");
+    let (content, attachments) = crate::attachments::decode_message_content(
+        stored_content,
+        storage.root(),
+        &conversation_id,
+        &message_id,
+    )
+    .expect("decode a persisted GIF attachment");
+
+    assert!(content.contains("[Attached image: sample.gif]"));
+    assert_eq!(attachments.len(), 1);
+    assert_eq!(attachments[0].mime_type, "image/gif");
+    assert_eq!(attachments[0].content.as_deref(), Some(GIF));
+}
+
+#[tokio::test]
 async fn message_commit_failure_removes_the_newly_published_attachment_directory() {
     let directory = TestDirectory::new();
     let storage = initialized_chat_storage(&directory);

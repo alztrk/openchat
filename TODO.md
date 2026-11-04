@@ -266,7 +266,8 @@
 - [ ] `SVC-02` crash recovery: Dosya rename'i ile SQLite commit'i arasındaki süreç kapanması/güç kaybı penceresi hâlâ orphan dosya bırakabilir; kalıcı journal ve açılış reconciliation tasarla.
 - [x] `SVC-03`: Ekler kökü gerçekten yoksa temizlik no-op; bozuk/erişilemeyen kökte DB silmesi `attachmentCleanupPending` ile başarılı dönüyor. Tek sohbet silme ve tüm geçmişi temizleme arayüz durumunu güncelliyor, yerelleştirilmiş uyarı gösteriyor; açılışta yalnız DB'de karşılığı olmayan sohbet ek dizinleri yeniden temizleniyor. Eksik/bozuk kök, kısmi silme ve live/orphan ayrımı test edildi.
 - [x] `SVC-04`: Mesaj kaydı, mevcut uzantı/MIME metadata doğrulayıcısını dosya yazımından önce çalıştırıyor; uyuşmayan MIME ve desteklenmeyen uzantı `invalid_request_params` ile reddediliyor. DB ve dosya sisteminde kayıt oluşmadığını doğrulayan RPC testi eklendi.
-- [ ] `SVC-05..11`: GIF okuma/yazma tutarlılığı, upsert, envelope limiti/prefix'i ve uzun transcript pagination'ını konu bazında düzelt.
+- [x] `SVC-05`: Persisted history decoder, GIF MIME'ını mevcut imza doğrulamasıyla birlikte kabul ediyor; RPC ile kaydedilip SQLite'tan okunan GIF'in history decode round-trip testi eklendi.
+- [ ] `SVC-06..11`: Message upsert/attachment temizliği, envelope limiti/prefix'i ve uzun transcript pagination'ını konu bazında düzelt.
 - [ ] `SVC-12/13`: Archive restore ve security scan silme için crash-safe cleanup/reconciliation sözleşmesi belirle; DB ile dosya sistemi sonuçlarını tekrar denenebilir hale getir.
 - [ ] `SVC-14..17/20`: Operation cancel, timeout, progress/status ve yeniden deneme davranışını security scan, worktree listeleme, attachment index ve archive işlemlerinde hizala.
 - [ ] `SVC-16`: Worktree limitini backend'de deterministik sırayla uygula; gizli kalan kayıtları kullanıcıya bildir veya yönetilebilir kıl.
