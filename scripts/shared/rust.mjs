@@ -1,8 +1,10 @@
-import { runCommand } from './runner.mjs';
+import { getTauriDirectory, getWorkspaceRoot, runCommand, runNpm } from './runner.mjs';
 import { runInterruptibleCommand } from './session.mjs';
-import { mkdirSync, copyFileSync, existsSync } from 'node:fs';
+import { mkdirSync, copyFileSync } from 'node:fs';
 import path from 'node:path';
-import { getWorkspaceRoot, getTauriDirectory, getFrontendDirectory, runNpm } from './runner.mjs';
+
+const frontendWorkspaceName = 'openchat-frontend';
+const frontendDependencyCheckArgs = ['ls', '--workspace', frontendWorkspaceName, '--all', '--parseable', '--silent'];
 
 export function rustHostTargetTriple() {
   const result = runCommand('rustc', ['-vV'], { captureOutput: true });
@@ -68,21 +70,38 @@ export async function buildLocalServiceInterruptibly(profile, locked, features, 
   installLocalServiceSidecar(profile, targetTriple);
 }
 
-export function ensureFrontendDependencies() {
-  if (!existsSync(path.join(getFrontendDirectory(), 'node_modules'))) {
-    runNpm(['ci'], getFrontendDirectory());
-  }
+export function ensureFrontendDependencies({
+  workspaceRoot = getWorkspaceRoot(),
+  runNpmFn = runNpm,
+  write = (message) => process.stdout.write(message),
+} = {}) {
+  const result = runNpmFn(frontendDependencyCheckArgs, workspaceRoot, { captureOutput: true, allowFailure: true });
+  if (result.status === 0) return;
+
+  write('Frontend workspace dependencies are incomplete; installing from the workspace root.\n');
+  runNpmFn(['ci'], workspaceRoot);
 }
 
-export async function ensureFrontendDependenciesInterruptibly(interruptController) {
-  if (!existsSync(path.join(getFrontendDirectory(), 'node_modules'))) {
-    const npmCliPath = process.env.npm_execpath;
-    if (!npmCliPath) {
-      throw new Error('Run this task through its npm script so it can invoke npm without a shell.');
-    }
-    await runInterruptibleCommand(process.execPath, [npmCliPath, 'ci'], {
-      cwd: getFrontendDirectory(),
-      interruptController,
-    });
+export async function ensureFrontendDependenciesInterruptibly(
+  interruptController,
+  {
+    workspaceRoot = getWorkspaceRoot(),
+    npmCliPath = process.env.npm_execpath,
+    runInterruptibleCommandFn = runInterruptibleCommand,
+    write = (message) => process.stdout.write(message),
+  } = {},
+) {
+  if (!npmCliPath) {
+    throw new Error('Run this task through its npm script so it can invoke npm without a shell.');
   }
+
+  const result = await runInterruptibleCommandFn(
+    process.execPath,
+    [npmCliPath, ...frontendDependencyCheckArgs],
+    { cwd: workspaceRoot, captureOutput: true, interruptController, allowFailure: true },
+  );
+  if (result.status === 0) return;
+
+  write('Frontend workspace dependencies are incomplete; installing from the workspace root.\n');
+  await runInterruptibleCommandFn(process.execPath, [npmCliPath, 'ci'], { cwd: workspaceRoot, interruptController });
 }

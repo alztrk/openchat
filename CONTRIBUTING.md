@@ -23,8 +23,8 @@ OpenChat's Windows desktop application uses a React frontend hosted by Tauri v2.
 ### Getting started
 
 ```bash
-# Install frontend dependencies
-npm ci --prefix apps/desktop/frontend
+# Install the root npm workspace dependencies
+npm ci
 
 # Start dev server (with sidecar)
 npm --prefix apps/desktop/frontend run openchat -- dev

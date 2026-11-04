@@ -31,7 +31,11 @@ export function createInterruptController({ signalSource = process, platform = p
   };
 }
 
-export async function runInterruptibleCommand(command, args, { cwd, captureOutput = false, interruptController, spawnProcess = spawn } = {}) {
+export async function runInterruptibleCommand(
+  command,
+  args,
+  { cwd, captureOutput = false, interruptController, spawnProcess = spawn, allowFailure = false } = {},
+) {
   interruptController?.throwIfInterrupted();
 
   return new Promise((resolve, reject) => {
@@ -69,14 +73,14 @@ export async function runInterruptibleCommand(command, args, { cwd, captureOutpu
         return;
       }
 
-      if (code !== 0) {
+      if (code !== 0 && (!allowFailure || code === null)) {
         const outcome = code === null ? `signal ${signal ?? 'unknown'}` : `exit code ${code}`;
         rejectOnce(new Error(`${command} failed with ${outcome}.`));
         return;
       }
 
       settled = true;
-      resolve({ stdout });
+      resolve(allowFailure ? { stdout, status: code } : { stdout });
     });
   });
 }

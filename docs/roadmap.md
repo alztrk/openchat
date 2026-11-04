@@ -6,7 +6,7 @@ OpenChat is a local-first desktop AI workspace. This roadmap captures planned wo
 
 - **Platform:** Windows 10/11 (64-bit), with Linux/macOS planned
 - **Stack:** React 19 frontend, Tauri v2 desktop host, Rust local service (SQLite + SQLCipher)
-- **Core experience:** Chat, projects, model discovery, settings — working and validated
+- **Core experience:** Chat, projects, model discovery, and settings are implemented; the reliability review below has open follow-up work.
 
 ## Completed
 
@@ -46,6 +46,43 @@ OpenChat is a local-first desktop AI workspace. This roadmap captures planned wo
 - Modular CLI (`npm run openchat --`) with dev, build, check, maintain-target tasks
 
 ## In progress
+
+### Reliability and usability review (2026-11-04)
+
+A static source review identified the following open work. Cleanup safety and npm workspace lockfile authority have been addressed; runtime checks, a real clean dependency installation, and other regression work remain outstanding.
+
+#### Priority 1 — Reproducible install and validation
+- The root `package-lock.json` matches the frontend workspace manifest and is the npm workspace authority. The stale nested `apps/desktop/frontend/package-lock.json` was removed, and CI now keys its npm cache to the root lockfile. A real clean install remains to be validated; only an offline `npm ci --dry-run` has run so far.
+- The local `check` task omits frontend unit tests, locale consistency, and FSD import checks that CI runs separately. Its README also describes a frontend build that the task does not run. Align the local command and its documentation with the checks expected from CI.
+
+#### Priority 2 — Frontend workflow feedback
+- Correct the new-chat welcome state when no model is selected.
+- Restore a reachable entry point for the attachment library dialog.
+- Reconcile optimistic folder drag-and-drop state after a failed save, and surface folder preference write failures in the affected UI.
+- Make the startup-surface setting validator accept every supported surface.
+- Add rendered workflow coverage for loading, empty, error, cancellation, retry, and state-recovery behavior.
+
+#### Priority 2 — Desktop lifecycle and responsiveness
+- Restore saved window geometry and avoid showing an uninitialized window.
+- Verify the WebView2 recovery retry target and reset crash tracking after recovery.
+- Bound native dialog waits and RPC event payloads; avoid blocking sidecar writes while process locks are held.
+- Avoid synchronous disk flushes for every window move/resize event and report persistence failures.
+
+#### Priority 2 — Storage consistency and error contracts
+- Keep attachment files and database references consistent when save, update, delete, or transaction commit fails.
+- Apply the same attachment MIME/type rules at save and read boundaries; cover GIF and malformed metadata consistently.
+- Enforce message-size limits after attachment metadata is encoded, paginate or expose truncation for long histories, and prevent reserved-prefix collisions.
+- Return a conversation-not-found error for stale send requests and preserve run-state persistence failures instead of reporting a completed response.
+
+#### Priority 2 — Local development network boundary
+- The Vite dev server listens on `127.0.0.1:5173`. It is reachable by a browser or process on the same machine while running; this bind does not expose it to LAN interfaces. Measure browser-origin, HMR, and LAN behavior, and inspect listening ports in a packaged build before changing the boundary.
+- The managed llama.cpp server also binds to loopback on a dynamically selected port. OpenChat does not pass it an API key or explicit CORS setting. The pinned upstream `b11349` source defaults CORS to `*` with credentials enabled and reflects the requesting origin. A page on the same machine may be able to call the server if it discovers the port and browser local-network policy permits the request. Verify this in a controlled browser-origin check; the loopback bind does not expose the endpoint to LAN interfaces.
+
+#### Priority 2 — Windows first-run verification
+- The NSIS installer requires a WebView2 runtime at least `111.0.1661.0`. Tauri defaults to downloading its bootstrapper when the runtime is missing or outdated, so that install path needs network access. Validate missing, outdated, and offline-runtime cases.
+- CI builds and uploads the NSIS installer but does not install or launch it. Add an installed-app smoke path that covers WebView2 startup, sidecar startup, and first-profile initialization.
+
+These items are from static review. Treat them as open until focused runtime or regression checks establish the expected behavior.
 
 ### Provider usage coverage
 - Map provider-reported usage fields (thinking tokens, cache reads) to the local ledger

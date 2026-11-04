@@ -16,6 +16,11 @@ npm run openchat -- clean --apply
 npm run openchat -- maintain-target --max-gib 20
 ```
 
+The npm workspace is rooted at the repository root. Its `package-lock.json` is
+the single dependency lockfile; run `npm ci` from the repository root. The
+startup dependency check validates the full frontend workspace and, if needed,
+runs `npm ci` from that root.
+
 `dev` builds the debug local-service sidecar and starts Tauri. `build` builds the
 locked release sidecar and Tauri bundle. `check` runs Biome, TypeScript, Rust
 formatting, workspace checking, and Rust tests. It does not run frontend `npm test`,

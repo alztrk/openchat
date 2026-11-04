@@ -47,6 +47,7 @@ Run development tasks safely through configurable permission boundaries:
 
 ### Requirements
 - Windows 10 or 11 (64-bit)
+- Microsoft Edge WebView2 Runtime 111.0.1661.0 or newer
 - Node.js 22 and npm
 - Rust 1.95 (pinned by `rust-toolchain.toml`)
 
@@ -60,8 +61,8 @@ Run development tasks safely through configurable permission boundaries:
 
 2. Install frontend dependencies and start development mode:
    ```bash
-   cd apps/desktop/frontend
    npm ci
+   cd apps/desktop/frontend
    npm run openchat -- dev
    ```
 
@@ -71,6 +72,8 @@ Run development tasks safely through configurable permission boundaries:
    npm run openchat -- check
    ```
 
+This local check runs Biome, TypeScript, Rust formatting/checking, and Rust tests. Frontend unit tests, locale/import checks, and the Vite asset build run as separate CI steps.
+
 ### Packaging
 
 To build the standalone installer:
@@ -78,6 +81,8 @@ To build the standalone installer:
 cd apps/desktop/frontend
 npm run openchat -- build
 ```
+
+The Windows installer uses Tauri’s default WebView2 download-bootstrapper mode. If the runtime is missing or older than 111.0.1661.0, installation attempts to download or update it and requires an internet connection. See [Tauri’s WebView2 installation options](https://v2.tauri.app/distribute/windows-installer/#webview2-installation-options).
 
 ---
 

@@ -8,7 +8,11 @@ const workspaceRoot = path.resolve(__dirname, '..', '..');
 const frontendDirectory = path.join(workspaceRoot, 'apps', 'desktop', 'frontend');
 const tauriDirectory = path.join(workspaceRoot, 'apps', 'desktop', 'tauri');
 
-export function runCommand(command, args, { cwd = workspaceRoot, captureOutput = false, env = process.env } = {}) {
+export function runCommand(
+  command,
+  args,
+  { cwd = workspaceRoot, captureOutput = false, env = process.env, allowFailure = false } = {},
+) {
   const result = spawnSync(command, args, {
     cwd,
     env,
@@ -21,7 +25,7 @@ export function runCommand(command, args, { cwd = workspaceRoot, captureOutput =
     throw new Error(`Could not start ${command}: ${result.error.message}`, { cause: result.error });
   }
 
-  if (result.status !== 0) {
+  if (result.status !== 0 && (!allowFailure || result.status === null)) {
     const outcome = result.status === null ? `signal ${result.signal ?? 'unknown'}` : `exit code ${result.status}`;
     throw new Error(`${command} failed with ${outcome}.`);
   }
@@ -29,12 +33,12 @@ export function runCommand(command, args, { cwd = workspaceRoot, captureOutput =
   return result;
 }
 
-export function runNpm(args, cwd = frontendDirectory) {
+export function runNpm(args, cwd = frontendDirectory, options = {}) {
   const npmCliPath = process.env.npm_execpath;
   if (!npmCliPath) {
     throw new Error('Run this task through its npm script so it can invoke npm without a shell.');
   }
-  return runCommand(process.execPath, [npmCliPath, ...args], { cwd });
+  return runCommand(process.execPath, [npmCliPath, ...args], { ...options, cwd });
 }
 
 export function getFrontendDirectory() { return frontendDirectory; }

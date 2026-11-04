@@ -31,7 +31,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: apps/desktop/frontend/package-lock.json
+          cache-dependency-path: package-lock.json
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
@@ -48,7 +48,6 @@ jobs:
 
       - name: Install frontend dependencies
         run: npm ci
-        working-directory: apps/desktop/frontend
 
       - name: Audit frontend dependencies
         run: npm audit
