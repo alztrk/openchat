@@ -2,7 +2,9 @@ use std::{fs, path::PathBuf};
 
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
+use tokio::sync::watch;
 use uuid::Uuid;
+use zeroize::Zeroizing;
 
 use crate::{protocol::MAX_REQUEST_PARAMETER_NODES, storage::AppStorage};
 
@@ -1321,6 +1323,91 @@ async fn startup_attachment_cleanup_removes_orphans_and_preserves_live_message_a
     assert!(live_attachment.exists());
     assert!(!orphan_message_directory.exists());
     assert!(!orphan_directory.exists());
+}
+
+#[tokio::test]
+async fn archive_restore_recovers_interrupted_attachment_and_stage_files_before_retry() {
+    let source_directory = TestDirectory::new();
+    let source = initialized_chat_storage(&source_directory);
+    let conversation_id = create_attachment_test_conversation(&source).await;
+    let message_id = "archive-recovery-message";
+    let attachment_id = "archive-recovery-attachment";
+    let attachment_bytes = b"restored after interrupted import";
+    dispatch(
+        "storage.chat.messages.save",
+        &attachment_message_input(
+            &conversation_id,
+            message_id,
+            attachment_id,
+            attachment_bytes,
+        ),
+        &source,
+    )
+    .await
+    .expect("save source archive attachment");
+    let passphrase = "archive-recovery-passphrase-2026";
+    let exported = crate::conversation_archive::export(
+        &source,
+        std::slice::from_ref(&conversation_id),
+        Zeroizing::new(passphrase.to_owned()),
+    )
+    .expect("export source archive");
+    let export_id = exported["exportId"]
+        .as_str()
+        .expect("export should return its identifier");
+    let archive_path = source
+        .root()
+        .join("cache/archive-exports")
+        .join(format!("{export_id}.openchatbackup"));
+
+    let destination_directory = TestDirectory::new();
+    let destination = initialized_chat_storage(&destination_directory);
+    let orphan_directory = destination
+        .root()
+        .join("attachments")
+        .join(&conversation_id)
+        .join(message_id);
+    fs::create_dir_all(&orphan_directory).expect("create interrupted restore attachment path");
+    fs::write(
+        orphan_directory.join(format!("{attachment_id}.data")),
+        b"partial restore before database commit",
+    )
+    .expect("write interrupted restore attachment");
+    let stale_stage_directory = destination
+        .root()
+        .join("cache/conversation-archives/restore-interrupted-process");
+    fs::create_dir_all(&stale_stage_directory).expect("create interrupted restore stage");
+    fs::write(
+        stale_stage_directory.join("staged.data"),
+        b"staged archive data",
+    )
+    .expect("write interrupted restore stage");
+
+    let (_sender, mut cancellation) = watch::channel(false);
+    let mut params = json!({
+        "path": archive_path.to_string_lossy().into_owned(),
+        "passphrase": passphrase,
+        "conflictPolicy": "skip_existing"
+    });
+    let restored = super::super::conversations::dispatch(
+        "conversation.archive.restore",
+        &mut params,
+        &json!("archive-recovery-test"),
+        &destination,
+        &crate::protocol::EventSink::new(),
+        &mut cancellation,
+    )
+    .await
+    .expect("restore should recover abandoned files and retry successfully");
+
+    assert_eq!(restored["restoredConversationCount"], json!(1));
+    assert_eq!(restored["restoredAttachmentCount"], json!(1));
+    assert!(!stale_stage_directory.exists());
+    assert_eq!(
+        fs::read(orphan_directory.join(format!("{attachment_id}.data")))
+            .expect("restored attachment should be present"),
+        attachment_bytes
+    );
 }
 
 struct TestDirectory(PathBuf);

@@ -9,6 +9,7 @@ use std::{
     io::{self, BufReader, Read, Write},
     iter,
     path::{Path, PathBuf},
+    sync::{Mutex, OnceLock},
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -44,6 +45,12 @@ const MAX_MANIFEST_BYTES: u64 = 32 * 1024 * 1024;
 const MAX_CONVERSATIONS_JSON_BYTES: u64 = 256 * 1024 * 1024;
 const MAX_ATTACHMENT_BYTES: u64 = 4 * 1024 * 1024 * 1024;
 const MAX_AGE_SCRYPT_LOG_N: u8 = 18;
+
+static ACTIVE_RESTORE_STAGES: OnceLock<Mutex<HashSet<PathBuf>>> = OnceLock::new();
+
+fn active_restore_stages() -> &'static Mutex<HashSet<PathBuf>> {
+    ACTIVE_RESTORE_STAGES.get_or_init(|| Mutex::new(HashSet::new()))
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -169,9 +176,11 @@ impl Drop for CreatedAttachmentFiles {
 
 impl RestoreStage {
     fn create(storage: &AppStorage) -> Result<Self, ArchiveFailure> {
-        let root = storage.root().join("cache").join("conversation-archives");
-        fs::create_dir_all(&root).map_err(|_| ArchiveFailure::Storage)?;
-        let canonical_root = fs::canonicalize(&root).map_err(|_| ArchiveFailure::Storage)?;
+        let mut active_stages = active_restore_stages()
+            .lock()
+            .map_err(|_| ArchiveFailure::Storage)?;
+        let canonical_root = restore_stage_root(storage)?;
+        cleanup_abandoned_restore_stages(&canonical_root, &active_stages)?;
         let directory = canonical_root.join(format!("restore-{}", Uuid::new_v4().simple()));
         fs::create_dir(&directory).map_err(|_| ArchiveFailure::Storage)?;
         let canonical_directory =
@@ -179,6 +188,8 @@ impl RestoreStage {
         if canonical_directory.parent() != Some(canonical_root.as_path()) {
             return Err(ArchiveFailure::Storage);
         }
+        active_stages.insert(canonical_directory.clone());
+        drop(active_stages);
         Ok(Self {
             root: canonical_root,
             directory: canonical_directory,
@@ -209,7 +220,17 @@ impl RestoreStage {
     fn cleanup(mut self) -> Result<(), ArchiveFailure> {
         fs::remove_dir_all(&self.directory).map_err(|_| ArchiveFailure::Storage)?;
         self.active = false;
+        self.unregister();
         Ok(())
+    }
+
+    fn unregister(&self) {
+        let Some(active_stages) = ACTIVE_RESTORE_STAGES.get() else {
+            return;
+        };
+        if let Ok(mut active_stages) = active_stages.lock() {
+            active_stages.remove(&self.directory);
+        }
     }
 }
 
@@ -226,7 +247,78 @@ impl Drop for RestoreStage {
             // The stage contains only files created by this archive operation.
             let _ = fs::remove_dir_all(&self.directory);
         }
+        self.unregister();
     }
+}
+
+fn cleanup_abandoned_restore_stages(
+    root: &Path,
+    active_stages: &HashSet<PathBuf>,
+) -> Result<(), ArchiveFailure> {
+    for entry in fs::read_dir(root).map_err(|_| ArchiveFailure::Storage)? {
+        let entry = entry.map_err(|_| ArchiveFailure::Storage)?;
+        let path = entry.path();
+        let Some(name) = entry.file_name().to_str().map(str::to_owned) else {
+            continue;
+        };
+        if !name.starts_with("restore-") || active_stages.contains(&path) {
+            continue;
+        }
+        let metadata = fs::symlink_metadata(&path).map_err(|_| ArchiveFailure::Storage)?;
+        if metadata.file_type().is_symlink() {
+            return Err(ArchiveFailure::Storage);
+        }
+        if !metadata.is_dir() {
+            continue;
+        }
+        let canonical_path = fs::canonicalize(&path).map_err(|_| ArchiveFailure::Storage)?;
+        if canonical_path.parent() != Some(root) {
+            return Err(ArchiveFailure::Storage);
+        }
+        fs::remove_dir_all(canonical_path).map_err(|_| ArchiveFailure::Storage)?;
+    }
+    Ok(())
+}
+
+fn restore_stage_root(storage: &AppStorage) -> Result<PathBuf, ArchiveFailure> {
+    let canonical_storage =
+        fs::canonicalize(storage.root()).map_err(|_| ArchiveFailure::Storage)?;
+    let cache = ensure_archive_directory(&canonical_storage.join("cache"), &canonical_storage)?;
+    ensure_archive_directory(&cache.join("conversation-archives"), &canonical_storage)
+}
+
+fn ensure_archive_directory(path: &Path, storage_root: &Path) -> Result<PathBuf, ArchiveFailure> {
+    match fs::symlink_metadata(path) {
+        Ok(_) => {}
+        Err(error) if error.kind() == io::ErrorKind::NotFound => match fs::create_dir(path) {
+            Ok(()) => {}
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
+            Err(_) => return Err(ArchiveFailure::Storage),
+        },
+        Err(_) => return Err(ArchiveFailure::Storage),
+    }
+    let metadata = fs::symlink_metadata(path).map_err(|_| ArchiveFailure::Storage)?;
+    if metadata.file_type().is_symlink() || !metadata.is_dir() {
+        return Err(ArchiveFailure::Storage);
+    }
+    let canonical_path = fs::canonicalize(path).map_err(|_| ArchiveFailure::Storage)?;
+    if !canonical_path.starts_with(storage_root) {
+        return Err(ArchiveFailure::Storage);
+    }
+    Ok(canonical_path)
+}
+
+/// Removes staging directories left behind by interrupted conversation archive restores.
+///
+/// # Errors
+/// Returns `conversation_archive_storage_unavailable` if the staging root cannot be validated or
+/// an abandoned stage cannot be removed.
+pub(crate) fn recover_interrupted_restore_stages(storage: &AppStorage) -> Result<(), ServiceError> {
+    let active_stages = active_restore_stages()
+        .lock()
+        .map_err(|_| service_error(ArchiveFailure::Storage))?;
+    let root = restore_stage_root(storage).map_err(service_error)?;
+    cleanup_abandoned_restore_stages(&root, &active_stages).map_err(service_error)
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -1513,7 +1605,9 @@ mod tests {
 
     use crate::storage::AppStorage;
 
-    use super::{ArchiveFailure, export, export_inner, inspect, restore, validate_output_path};
+    use super::{
+        ArchiveFailure, RestoreStage, export, export_inner, inspect, restore, validate_output_path,
+    };
 
     struct TemporaryProfiles(PathBuf);
 
@@ -1789,6 +1883,28 @@ mod tests {
             .expect("copy attachment should follow the copied conversation"),
             attachment
         );
+    }
+
+    #[test]
+    fn restore_stage_recovery_removes_abandoned_stages_and_preserves_active_ones() {
+        let temporary = TemporaryProfiles::new();
+        let storage = temporary.storage("stage-recovery");
+        let active = RestoreStage::create(&storage).expect("create active restore stage");
+        fs::write(active.directory.join("active.txt"), b"active restore")
+            .expect("write active stage marker");
+
+        let recovery_root = storage.root().join("cache/conversation-archives");
+        let abandoned = recovery_root.join("restore-interrupted-process");
+        fs::create_dir_all(&abandoned).expect("create abandoned restore stage");
+        fs::write(abandoned.join("attachment.data"), b"abandoned stage")
+            .expect("write abandoned stage marker");
+
+        let next = RestoreStage::create(&storage).expect("create next restore stage");
+
+        assert!(active.directory.join("active.txt").exists());
+        assert!(!abandoned.exists());
+        drop(next);
+        drop(active);
     }
 
     #[test]

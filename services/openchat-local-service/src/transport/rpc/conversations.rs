@@ -624,6 +624,7 @@ pub(super) async fn dispatch(
             let passphrase = required_secret_string(params, "passphrase")?;
             let path = required_string(params, "path")?.to_owned();
             let conflict_policy = required_string(params, "conflictPolicy")?.to_owned();
+            super::storage_chat::cleanup_orphaned_attachment_directories(storage)?;
             conversation_archive::restore(storage, &path, passphrase, &conflict_policy)
         }
         "profile.archive.export" => {
