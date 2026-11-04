@@ -23,10 +23,15 @@ test('the native main window stays hidden until React commits its first view', (
   const revealFunction = rendererMain.slice(revealStart, applicationStart);
   const reactCommit = revealFunction.indexOf('flushSync(render)');
   const nativeShow = revealFunction.indexOf('.show()');
+  const rendererReadyReport = revealFunction.indexOf("invoke('report_webview_renderer_ready')");
+  const visibleEvent = revealFunction.indexOf("new Event('openchat-startup-window-visible')");
   assert.notEqual(reactCommit, -1);
   assert.ok(nativeShow > reactCommit);
-  assert.match(revealFunction, /\.then\(\(\) => window\.dispatchEvent\(new Event\('openchat-startup-window-visible'\)\)\)/u);
+  assert.ok(rendererReadyReport > nativeShow);
+  assert.ok(visibleEvent > rendererReadyReport);
 
+  assert.match(tauriMain, /report_webview_renderer_ready/u);
+  assert.match(tauriMain, /recovery_for_callback\.record_failure\(\)/u);
   assert.equal([...rendererMain.matchAll(/renderAndRevealWindow\(/gu)].length, 3);
   assert.match(rendererMain, /React\.createElement\(StartupErrorPage/u);
 });

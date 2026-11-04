@@ -6,8 +6,6 @@
 #[cfg(all(feature = "desktop-profile-test-support", not(debug_assertions)))]
 compile_error!("desktop profile test support is unavailable in optimized builds");
 
-#[cfg(windows)]
-use std::sync::atomic::{AtomicU8, Ordering as AtomicOrdering};
 use tauri::Manager;
 #[cfg(windows)]
 use webview2_com::{
@@ -58,6 +56,7 @@ mod mcp_storage;
 mod notifications;
 mod project_folder;
 mod provider_storage;
+mod renderer_recovery;
 mod request_bounds;
 mod save_dialog;
 #[cfg_attr(test, allow(dead_code))]
@@ -112,7 +111,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .as_ref()
         .map(|root| desktop_test_normal_close_marker_path(root, desktop_test_run_id));
 
-    let builder = tauri::Builder::default();
+    let builder =
+        tauri::Builder::default().manage(renderer_recovery::RendererRecoveryTracker::default());
     #[cfg(feature = "startup-benchmark")]
     let builder = {
         let result_path = benchmark_profile_root
@@ -176,6 +176,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             provider_storage::save_custom_provider,
             provider_storage::delete_custom_provider,
             window_broadcast::broadcast_window_sync_event,
+            report_webview_renderer_ready,
         ])
         .setup(move |app| {
             if let Err(error) = local_service::start_local_service_early(app.handle()) {
@@ -271,6 +272,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             #[cfg(windows)]
             let app_handle = app.handle().clone();
             #[cfg(windows)]
+            let renderer_recovery = app
+                .state::<renderer_recovery::RendererRecoveryTracker>()
+                .inner()
+                .clone();
+            #[cfg(windows)]
             main_window.with_webview(move |webview| {
                 // SAFETY: Tauri keeps the WebView2 controller alive for this UI-thread callback.
                 // The COM interfaces are obtained from that controller and used on the UI thread.
@@ -284,8 +290,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 .cast::<ICoreWebView2Settings3>()?;
                             settings.SetAreBrowserAcceleratorKeysEnabled(false)?;
 
-                            let renderer_failures = std::sync::Arc::new(AtomicU8::new(0));
-                            let failures_for_callback = renderer_failures.clone();
+                            let recovery_for_callback = renderer_recovery.clone();
                             let handler = ProcessFailedEventHandler::create(Box::new(
                                 move |sender, args| {
                                     let Some(core) = sender else {
@@ -305,19 +310,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         return Ok(());
                                     }
 
-                                    let failure_count = failures_for_callback
-                                        .fetch_add(1, AtomicOrdering::Relaxed);
-                                    if failure_count < 2 {
-                                        eprintln!("OpenChat WebView2 renderer exited; reloading the application view (attempt {}).", failure_count + 1);
-                                        if let Err(error) = core.Reload() {
-                                            eprintln!("OpenChat could not reload the WebView2 renderer: {error}");
+                                    match recovery_for_callback.record_failure() {
+                                        renderer_recovery::RendererRecoveryAction::Reload { attempt } => {
+                                            eprintln!("OpenChat WebView2 renderer exited; reloading the application view (attempt {attempt}).");
+                                            if let Err(error) = core.Reload() {
+                                                eprintln!("OpenChat could not reload the WebView2 renderer: {error}");
+                                            }
                                         }
-                                    } else {
-                                        eprintln!("OpenChat WebView2 renderer exited repeatedly; showing recovery screen.");
-                                        let recovery_page = "<!doctype html><html lang=\"tr\"><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>OpenChat başlatılamadı</title><style>body{font:16px system-ui,sans-serif;background:#111;color:#eee;display:grid;min-height:100vh;place-items:center;margin:0}main{max-width:34rem;padding:2rem}button{font:inherit;padding:.65rem 1rem;cursor:pointer}</style><main><h1>OpenChat başlatılamadı</h1><p>Uygulama görünümü beklenmedik şekilde durdu. Yeniden yüklemeyi deneyin. Sorun sürerse OpenChat'i yeniden başlatın.</p><button onclick=\"location.reload()\">Yeniden dene</button></main></html>";
-                                        let recovery_page = CoTaskMemPWSTR::from(recovery_page);
-                                        if let Err(error) = core.NavigateToString(*recovery_page.as_ref().as_pcwstr()) {
-                                            eprintln!("OpenChat could not show the WebView2 recovery screen: {error}");
+                                        renderer_recovery::RendererRecoveryAction::ShowRecovery => {
+                                            eprintln!("OpenChat WebView2 renderer exited repeatedly; showing recovery screen.");
+                                            let recovery_page = "<!doctype html><html lang=\"tr\"><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>OpenChat başlatılamadı</title><style>body{font:16px system-ui,sans-serif;background:#111;color:#eee;display:grid;min-height:100vh;place-items:center;margin:0}main{max-width:34rem;padding:2rem}button{font:inherit;padding:.65rem 1rem;cursor:pointer}</style><main><h1>OpenChat başlatılamadı</h1><p>Uygulama görünümü beklenmedik şekilde durdu. Yeniden yüklemeyi deneyin. Sorun sürerse OpenChat'i yeniden başlatın.</p><button onclick=\"location.reload()\">Yeniden dene</button></main></html>";
+                                            let recovery_page = CoTaskMemPWSTR::from(recovery_page);
+                                            if let Err(error) = core.NavigateToString(*recovery_page.as_ref().as_pcwstr()) {
+                                                eprintln!("OpenChat could not show the WebView2 recovery screen: {error}");
+                                            }
                                         }
                                     }
                                     Ok(())
@@ -721,6 +727,18 @@ mod desktop_test_profile_tests {
             }
         }
     }
+}
+
+#[tauri::command]
+fn report_webview_renderer_ready(
+    window: tauri::WebviewWindow,
+    renderer_recovery: tauri::State<'_, renderer_recovery::RendererRecoveryTracker>,
+) -> Result<(), &'static str> {
+    if window.label() != "main" {
+        return Err("Renderer readiness can only be reported by the main window.");
+    }
+    renderer_recovery.renderer_ready();
+    Ok(())
 }
 
 #[cfg(feature = "startup-benchmark")]

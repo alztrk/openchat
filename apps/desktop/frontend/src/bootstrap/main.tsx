@@ -1,6 +1,6 @@
 import { flushSync } from 'react-dom';
 import type { Root } from 'react-dom/client';
-import { getCurrentWindow, isTauri } from '@shared/lib/platform/tauri';
+import { getCurrentWindow, invoke, isTauri } from '@shared/lib/platform/tauri';
 
 function requireRootElement(): HTMLElement {
   const rootElement = document.getElementById('root');
@@ -32,6 +32,11 @@ function renderAndRevealWindow(render: () => void): void {
   flushSync(render);
   void getCurrentWindow()
     .show()
+    .then(() =>
+      invoke('report_webview_renderer_ready').catch((cause: unknown) => {
+        globalThis.reportError(new Error('The desktop host could not reset renderer recovery state.', { cause }));
+      }),
+    )
     .then(() => window.dispatchEvent(new Event('openchat-startup-window-visible')))
     .catch((cause: unknown) => {
       globalThis.reportError(new Error('The application window could not be shown.', { cause }));
