@@ -52,6 +52,7 @@ type WorktreeErrorKey =
   | 'projectWorktreeCreateFailed'
   | 'projectWorktreeOperationFailed'
   | 'projectWorktreeNotRepository'
+  | 'projectWorktreeLimitReached'
   | 'projectWorktreeCheckFailed'
   | 'projectWorktreeTaskEmpty'
   | 'projectWorktreeTaskLoadFailed'
@@ -655,6 +656,7 @@ function worktreeErrorKey(
 ): WorktreeErrorKey {
   if (!(error instanceof LocalServiceError)) return fallback;
   if (error.code === 'project_not_git_repository') return 'projectWorktreeNotRepository';
+  if (error.code === 'project_worktree_limit_reached') return 'projectWorktreeLimitReached';
   if (
     error.code === 'project_worktree_timed_out' ||
     (error.code === 'service_timeout' && fallback === 'projectWorktreeLoadFailed')

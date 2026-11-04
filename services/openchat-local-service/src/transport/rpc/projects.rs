@@ -703,6 +703,11 @@ fn git_worktree_error(error: git_worktrees::GitWorktreeError) -> ServiceError {
             "Git did not finish the worktree operation before the time limit.",
             true,
         ),
+        GitWorktreeError::LimitReached => ServiceError::new(
+            "project_worktree_limit_reached",
+            "This project already has the maximum of 20 managed worktrees. Remove one and retry.",
+            false,
+        ),
         GitWorktreeError::Unavailable => ServiceError::new(
             "project_worktree_unavailable",
             "The Git worktree service is unavailable.",
@@ -744,7 +749,15 @@ mod tests {
         git_worktrees, permissions::ToolPermissionBroker, protocol::EventSink, storage::AppStorage,
     };
 
-    use super::dispatch;
+    use super::{dispatch, git_worktree_error};
+
+    #[test]
+    fn worktree_limit_has_a_stable_service_error_code() {
+        let error = git_worktree_error(git_worktrees::GitWorktreeError::LimitReached);
+
+        assert_eq!(error.code, "project_worktree_limit_reached");
+        assert!(!error.retryable);
+    }
 
     #[tokio::test]
     async fn project_dispatch_preserves_known_and_unknown_method_errors() {

@@ -5,9 +5,11 @@
 //! temporary hooks directory so repository hooks do not run during management.
 
 use std::{
+    collections::{BTreeSet, HashMap},
     fs,
     path::{Path, PathBuf},
     process::Stdio,
+    sync::{Arc, Mutex as StdMutex, OnceLock, Weak},
     time::Duration,
 };
 
@@ -15,7 +17,7 @@ use serde_json::{Value, json};
 use tokio::{
     io::{AsyncRead, AsyncReadExt},
     process::Command,
-    sync::watch,
+    sync::{Mutex, watch},
     task::JoinHandle,
     time::{Instant, sleep_until, timeout},
 };
@@ -38,6 +40,7 @@ pub(crate) enum GitWorktreeError {
     GitFailed,
     Cancelled,
     TimedOut,
+    LimitReached,
     Unavailable,
 }
 
@@ -79,8 +82,6 @@ pub(crate) async fn list(
     let project = project_location(storage, project_id, project_root, Some(&mut control)).await?;
     control.check()?;
     let base_exists = ensure_worktree_base(&project, false)?;
-    let mut worktrees = Vec::new();
-    let mut truncated = false;
     if !base_exists {
         control.check()?;
         return Ok(json!({"worktrees": [], "truncated": false}));
@@ -97,6 +98,8 @@ pub(crate) async fn list(
         }
     };
 
+    let mut worktree_ids = BTreeSet::new();
+    let mut truncated = false;
     let mut scanned_entries = 0usize;
     for entry in entries {
         scanned_entries = scanned_entries.saturating_add(1);
@@ -111,10 +114,16 @@ pub(crate) async fn list(
         if !file_type.is_dir() {
             continue;
         }
-        let id = entry.file_name().to_string_lossy().into_owned();
-        if canonical_worktree_id(&id).is_none() {
+        let entry_id = entry.file_name().to_string_lossy().into_owned();
+        let Some(id) = canonical_worktree_id(&entry_id) else {
             continue;
-        }
+        };
+        retain_worktree_id(&mut worktree_ids, &mut truncated, id);
+    }
+
+    let mut worktrees = Vec::with_capacity(worktree_ids.len());
+    for id in worktree_ids {
+        control.check()?;
         let worktree = checked_worktree(&project, &id, Some(&mut control)).await?;
         let branch = git_text(&worktree, &["branch", "--show-current"], Some(&mut control)).await?;
         let status = git_inspection::status_with_cancellation(
@@ -124,10 +133,6 @@ pub(crate) async fn list(
         )
         .await
         .map_err(map_git_inspection_error)?;
-        if worktrees.len() == MAX_WORKTREES {
-            truncated = true;
-            break;
-        }
         worktrees.push(json!({
             "id": id,
             "branch": branch,
@@ -152,7 +157,13 @@ pub(crate) async fn create(
     project_root: &str,
 ) -> Result<Value, GitWorktreeError> {
     let project = project_location(storage, project_id, project_root, None).await?;
+    let creation_lock = worktree_creation_lock(&project.worktree_base)?;
+    let _creation_guard = creation_lock.lock().await;
     ensure_worktree_base(&project, true)?;
+    let _creation_file_guard = acquire_worktree_creation_file_lock(&project.worktree_base).await?;
+    if existing_worktree_count(&project.worktree_base)? >= MAX_WORKTREES {
+        return Err(GitWorktreeError::LimitReached);
+    }
     let id = Uuid::new_v4().simple().to_string();
     let branch = format!("openchat/{id}");
     let checkout = project.worktree_base.join(&id);
@@ -187,6 +198,72 @@ pub(crate) async fn create(
         "branch": branch,
         "path": path.to_string_lossy(),
     }))
+}
+
+fn retain_worktree_id(ids: &mut BTreeSet<String>, truncated: &mut bool, id: String) {
+    ids.insert(id);
+    if ids.len() > MAX_WORKTREES {
+        *truncated = true;
+        ids.pop_last();
+    }
+}
+
+fn existing_worktree_count(base: &Path) -> Result<usize, GitWorktreeError> {
+    let entries = fs::read_dir(base).map_err(|_| GitWorktreeError::Unavailable)?;
+    let mut ids = BTreeSet::new();
+    for entry in entries {
+        let entry = entry.map_err(|_| GitWorktreeError::Unavailable)?;
+        if !entry
+            .file_type()
+            .map_err(|_| GitWorktreeError::Unavailable)?
+            .is_dir()
+        {
+            continue;
+        }
+        let entry_id = entry.file_name().to_string_lossy().into_owned();
+        if let Some(id) = canonical_worktree_id(&entry_id) {
+            ids.insert(id);
+            if ids.len() >= MAX_WORKTREES {
+                return Ok(ids.len());
+            }
+        }
+    }
+    Ok(ids.len())
+}
+
+fn worktree_creation_lock(path: &Path) -> Result<Arc<Mutex<()>>, GitWorktreeError> {
+    static LOCKS: OnceLock<StdMutex<HashMap<PathBuf, Weak<Mutex<()>>>>> = OnceLock::new();
+    let locks = LOCKS.get_or_init(|| StdMutex::new(HashMap::new()));
+    let mut locks = locks.lock().map_err(|_| GitWorktreeError::Unavailable)?;
+    locks.retain(|_, lock| lock.strong_count() > 0);
+    if let Some(lock) = locks.get(path).and_then(Weak::upgrade) {
+        return Ok(lock);
+    }
+    let lock = Arc::new(Mutex::new(()));
+    locks.insert(path.to_path_buf(), Arc::downgrade(&lock));
+    Ok(lock)
+}
+
+async fn acquire_worktree_creation_file_lock(base: &Path) -> Result<fs::File, GitWorktreeError> {
+    let lock_path = base.join(".create.lock");
+    let file = fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .read(true)
+        .write(true)
+        .open(lock_path)
+        .map_err(|_| GitWorktreeError::Unavailable)?;
+    let deadline = Instant::now() + COMMAND_TIMEOUT;
+    loop {
+        match file.try_lock() {
+            Ok(()) => return Ok(file),
+            Err(std::fs::TryLockError::WouldBlock) if Instant::now() < deadline => {
+                sleep_until((Instant::now() + Duration::from_millis(25)).min(deadline)).await;
+            }
+            Err(std::fs::TryLockError::WouldBlock) => return Err(GitWorktreeError::TimedOut),
+            Err(std::fs::TryLockError::Error(_)) => return Err(GitWorktreeError::Unavailable),
+        }
+    }
 }
 
 /// Returns bounded Git status and staged/unstaged diff data for one worktree.
@@ -355,8 +432,12 @@ fn ensure_worktree_base(project: &ProjectLocation, create: bool) -> Result<bool,
         .worktree_base
         .parent()
         .ok_or(GitWorktreeError::UnsafePath)?;
-    if create && !worktrees_root.exists() {
-        fs::create_dir(worktrees_root).map_err(|_| GitWorktreeError::Unavailable)?;
+    if create {
+        match fs::create_dir(worktrees_root) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
+            Err(_) => return Err(GitWorktreeError::Unavailable),
+        }
     }
     let worktrees_metadata = match fs::symlink_metadata(worktrees_root) {
         Ok(metadata) => metadata,
@@ -373,8 +454,12 @@ fn ensure_worktree_base(project: &ProjectLocation, create: bool) -> Result<bool,
     if canonical_worktrees.parent() != Some(canonical_storage.as_path()) {
         return Err(GitWorktreeError::UnsafePath);
     }
-    if create && !project.worktree_base.exists() {
-        fs::create_dir(&project.worktree_base).map_err(|_| GitWorktreeError::Unavailable)?;
+    if create {
+        match fs::create_dir(&project.worktree_base) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
+            Err(_) => return Err(GitWorktreeError::Unavailable),
+        }
     }
     let base_metadata = match fs::symlink_metadata(&project.worktree_base) {
         Ok(metadata) => metadata,
@@ -579,9 +664,17 @@ async fn read_bounded<R: AsyncRead + Unpin>(mut reader: R) -> std::io::Result<(V
 
 #[cfg(test)]
 mod tests {
-    use std::{fs, path::PathBuf, process::Command};
+    use std::{
+        collections::BTreeSet,
+        fs,
+        path::{Path, PathBuf},
+        process::Command,
+        time::Duration,
+    };
 
-    use super::{create, list, project_root_for_worktree, remove, review};
+    use super::{
+        MAX_WORKTREES, create, list, project_root_for_worktree, remove, retain_worktree_id, review,
+    };
     use crate::{git_inspection, storage::AppStorage};
     use tokio::sync::watch;
 
@@ -654,6 +747,19 @@ mod tests {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.root);
         }
+    }
+
+    fn direct_worktree_directory_count(base: &Path) -> usize {
+        fs::read_dir(base)
+            .expect("read worktree base")
+            .map(|entry| {
+                entry
+                    .expect("read worktree directory entry")
+                    .file_type()
+                    .expect("read worktree entry type")
+            })
+            .filter(|file_type| file_type.is_dir())
+            .count()
     }
 
     #[tokio::test]
@@ -750,5 +856,106 @@ mod tests {
         .expect_err("an already cancelled request must not start list work");
 
         assert!(matches!(error, super::GitWorktreeError::Cancelled));
+    }
+
+    #[test]
+    fn worktree_selection_is_stable_and_bounded() {
+        let candidates = (1..=MAX_WORKTREES + 5)
+            .map(|value| uuid::Uuid::from_u128(value as u128).simple().to_string())
+            .collect::<Vec<_>>();
+        let mut forward = BTreeSet::new();
+        let mut forward_truncated = false;
+        for id in candidates.iter().cloned() {
+            retain_worktree_id(&mut forward, &mut forward_truncated, id);
+        }
+        let mut reverse = BTreeSet::new();
+        let mut reverse_truncated = false;
+        for id in candidates.iter().rev().cloned() {
+            retain_worktree_id(&mut reverse, &mut reverse_truncated, id);
+        }
+
+        assert_eq!(forward, reverse);
+        assert_eq!(forward.len(), MAX_WORKTREES);
+        assert!(forward_truncated);
+        assert!(reverse_truncated);
+        assert_eq!(
+            forward.into_iter().collect::<Vec<_>>(),
+            candidates[..MAX_WORKTREES]
+        );
+    }
+
+    #[tokio::test]
+    async fn create_rejects_when_the_managed_worktree_limit_is_reached() {
+        let fixture = Fixture::new();
+        let base = fixture.storage.root().join("worktrees").join("project-1");
+        fs::create_dir_all(&base).expect("create worktree base");
+        for value in 1..=MAX_WORKTREES {
+            let id = uuid::Uuid::from_u128(value as u128).simple().to_string();
+            fs::create_dir(base.join(id)).expect("create existing worktree directory");
+        }
+        let project_path = fixture.repository.to_string_lossy();
+
+        let error = create(&fixture.storage, "project-1", &project_path)
+            .await
+            .expect_err("creation must stop at the managed worktree limit");
+
+        assert!(matches!(error, super::GitWorktreeError::LimitReached));
+        assert_eq!(direct_worktree_directory_count(&base), MAX_WORKTREES);
+    }
+
+    #[tokio::test]
+    async fn concurrent_creates_cannot_exceed_the_managed_worktree_limit() {
+        let fixture = Fixture::new();
+        let base = fixture.storage.root().join("worktrees").join("project-1");
+        fs::create_dir_all(&base).expect("create worktree base");
+        for value in 1..MAX_WORKTREES {
+            let id = uuid::Uuid::from_u128(value as u128).simple().to_string();
+            fs::create_dir(base.join(id)).expect("create existing worktree directory");
+        }
+        let project_path = fixture.repository.to_string_lossy().into_owned();
+
+        let (first, second) = tokio::join!(
+            create(&fixture.storage, "project-1", &project_path),
+            create(&fixture.storage, "project-1", &project_path),
+        );
+
+        assert!(first.is_ok() ^ second.is_ok());
+        let failed = if first.is_err() {
+            first.err()
+        } else {
+            second.err()
+        };
+        assert!(matches!(
+            failed,
+            Some(super::GitWorktreeError::LimitReached)
+        ));
+        assert_eq!(direct_worktree_directory_count(&base), MAX_WORKTREES);
+    }
+
+    #[tokio::test]
+    async fn worktree_creation_file_lock_waits_for_another_handle() {
+        let fixture = Fixture::new();
+        let base = fixture.storage.root().join("worktrees").join("project-1");
+        fs::create_dir_all(&base).expect("create worktree base");
+        let first = super::acquire_worktree_creation_file_lock(&base)
+            .await
+            .expect("acquire first worktree creation lock");
+
+        let second_attempt = tokio::time::timeout(
+            Duration::from_millis(150),
+            super::acquire_worktree_creation_file_lock(&base),
+        )
+        .await;
+        assert!(second_attempt.is_err());
+
+        drop(first);
+        let second = tokio::time::timeout(
+            Duration::from_secs(1),
+            super::acquire_worktree_creation_file_lock(&base),
+        )
+        .await
+        .expect("second worktree creation lock should not time out")
+        .expect("acquire worktree creation lock after release");
+        drop(second);
     }
 }
