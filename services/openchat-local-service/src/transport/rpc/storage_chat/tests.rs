@@ -775,6 +775,115 @@ async fn message_and_attachment_are_persisted_together_on_success() {
 }
 
 #[tokio::test]
+async fn prefixed_attachment_envelope_must_match_the_staged_attachment_payload() {
+    const BYTES: &[u8] = b"attachment content";
+
+    let directory = TestDirectory::new();
+    let storage = initialized_chat_storage(&directory);
+    let conversation_id = create_attachment_test_conversation(&storage).await;
+    let attachment_id = "attachment-matching";
+    let message_id = "prefixed-attachment-message";
+    let mut matching_input =
+        attachment_message_input(&conversation_id, message_id, attachment_id, BYTES);
+    let envelope = format!(
+        "{}{}",
+        crate::conversation_limits::MESSAGE_CONTENT_PREFIX,
+        json!({
+            "content": "Attached text file",
+            "attachments": [{
+                "id": attachment_id,
+                "name": "notes.txt",
+                "mimeType": "text/plain",
+                "sizeBytes": BYTES.len(),
+                "kind": "text"
+            }]
+        })
+    );
+    matching_input["input"]["content"] = json!(&envelope);
+
+    dispatch("storage.chat.messages.save", &matching_input, &storage)
+        .await
+        .expect("matching encoded metadata should persist with its bytes");
+
+    let stored_content = storage
+        .connect()
+        .expect("connect to persisted chat storage")
+        .query_row(
+            "SELECT content FROM messages WHERE conversation_id = ?1 AND id = ?2",
+            rusqlite::params![&conversation_id, message_id],
+            |row| row.get::<_, String>(0),
+        )
+        .expect("read persisted attachment envelope");
+    assert_eq!(stored_content, envelope);
+    let (content, attachments) = crate::attachments::decode_message_content(
+        stored_content,
+        storage.root(),
+        &conversation_id,
+        message_id,
+    )
+    .expect("decode matching attachment metadata and bytes");
+    assert_eq!(
+        content,
+        "Attached text file\n\n[Attached text file: notes.txt]\nattachment content"
+    );
+    assert_eq!(attachments.len(), 1);
+    assert_eq!(attachments[0].content.as_deref(), Some(BYTES));
+
+    for (index, (envelope_id, envelope_name)) in [
+        ("unreferenced-attachment", "notes.txt"),
+        (attachment_id, "different-name.txt"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let mismatched_message_id = format!("mismatched-attachment-message-{index}");
+        let mut input = attachment_message_input(
+            &conversation_id,
+            &mismatched_message_id,
+            attachment_id,
+            BYTES,
+        );
+        input["input"]["content"] = json!(format!(
+            "{}{}",
+            crate::conversation_limits::MESSAGE_CONTENT_PREFIX,
+            json!({
+                "content": "Attached text file",
+                "attachments": [{
+                    "id": envelope_id,
+                    "name": envelope_name,
+                    "mimeType": "text/plain",
+                    "sizeBytes": BYTES.len(),
+                    "kind": "text"
+                }]
+            })
+        ));
+
+        let error = dispatch("storage.chat.messages.save", &input, &storage)
+            .await
+            .expect_err("mismatched envelope metadata must be rejected");
+        assert_eq!(error.code, "invalid_request_params");
+        assert!(
+            !storage
+                .root()
+                .join("attachments")
+                .join(&conversation_id)
+                .join(&mismatched_message_id)
+                .exists()
+        );
+        let message_exists = storage
+            .connect()
+            .expect("connect after rejected attachment save")
+            .query_row(
+                "SELECT EXISTS (SELECT 1 FROM messages WHERE conversation_id = ?1 AND id = ?2)",
+                rusqlite::params![&conversation_id, &mismatched_message_id],
+                |row| row.get::<_, bool>(0),
+            )
+            .expect("check that the rejected message is absent");
+        assert!(!message_exists);
+    }
+}
+
+#[tokio::test]
 async fn message_save_rejects_attachment_metadata_that_cannot_be_read_later() {
     let directory = TestDirectory::new();
     let storage = initialized_chat_storage(&directory);

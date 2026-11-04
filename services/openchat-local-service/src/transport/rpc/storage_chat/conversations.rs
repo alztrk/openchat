@@ -557,6 +557,24 @@ pub(super) fn save_message(
     if role != "user" && !attachments.is_empty() {
         return Err(invalid_request_params());
     }
+    if !attachments.is_empty() && content.starts_with(MESSAGE_CONTENT_PREFIX) {
+        let envelope = parse_attachment_envelope(&content).map_err(|_| invalid_request_params())?;
+        let matches_payload = envelope.attachments.len() == attachments.len()
+            && envelope
+                .attachments
+                .iter()
+                .zip(&attachments)
+                .all(|(metadata, attachment)| {
+                    metadata.id == attachment.id
+                        && metadata.name == attachment.name
+                        && metadata.mime_type == attachment.mime_type
+                        && metadata.size_bytes == attachment.size_bytes
+                        && metadata.kind == attachment.kind
+                });
+        if !matches_payload {
+            return Err(invalid_request_params());
+        }
+    }
     let attachment_metadata = attachments
         .iter()
         .map(|attachment| {
