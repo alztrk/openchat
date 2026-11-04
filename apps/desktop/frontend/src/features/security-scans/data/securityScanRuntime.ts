@@ -11,6 +11,7 @@ import {
 import { applyStreamEvent, upsertMessage } from '@features/chat/state';
 import { LocalServiceError, localServiceClient, type ServiceOperation } from '@shared/lib/platform/local-service';
 import { retryDelayFromServiceError } from './securityScanRetry';
+import { cancelSecurityScanOperationAndWait } from './securityScanCancellation';
 import {
   cancelSecurityScan,
   deleteSecurityScan,
@@ -27,6 +28,7 @@ export type SecurityScanErrorKey =
   | 'securityScanNoResumableCheckpoint'
   | 'securityScanStopFailed'
   | 'securityScanDeleteFailed'
+  | 'securityScanDeleteWaitTimedOut'
   | 'securityScanStatusInvalid'
   | 'securityScansLoadFailed'
   | 'securityScanCreateFailed';
@@ -78,6 +80,7 @@ const resumeAfterOperation = new Set<string>();
 const initialized = new Set<string>();
 
 const STREAM_SAVE_THROTTLE_MS = 2_500;
+const DELETE_OPERATION_SETTLE_TIMEOUT_MS = 10_000;
 const streamTextEncoder = new TextEncoder();
 
 export function useSecurityScanRuntime(scanId: string | null): SecurityScanRuntimeSnapshot {
@@ -245,12 +248,11 @@ export async function deleteSecurityScanRuntime(scan: SecurityScan): Promise<boo
       }
     }
     if (operation) {
-      await operation.cancel().catch(() => false);
-      try {
-        await operation.result;
-      } catch {
-        // Cancelled or failed operation has finished unwinding before database deletion.
-      }
+      const cancellation = await cancelSecurityScanOperationAndWait(
+        operation,
+        DELETE_OPERATION_SETTLE_TIMEOUT_MS,
+      );
+      if (!cancellation.settled) throw new SecurityScanUiError('securityScanDeleteWaitTimedOut');
     }
     const attachmentCleanupPending = await deleteSecurityScan(scan.id);
     operations.delete(scan.id);

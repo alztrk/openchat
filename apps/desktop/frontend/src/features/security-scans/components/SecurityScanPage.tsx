@@ -83,6 +83,7 @@ export function SecurityScanPage() {
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<SecurityScan | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [sidebarWidth, setSidebarWidth] = useState(readSecurityScanSidebarWidth);
@@ -134,11 +135,17 @@ export function SecurityScanPage() {
     return () => window.clearInterval(timer);
   }, [activeScanId, runtime.isActive]);
 
+  const openDeleteDialog = (scan: SecurityScan) => {
+    setDeleteError(null);
+    setDeleteTarget(scan);
+  };
+
   const confirmDeleteScan = async () => {
     if (!deleteTarget || isDeleting) return;
     const target = deleteTarget;
     setIsDeleting(true);
     setError(null);
+    setDeleteError(null);
     setNotice(null);
     try {
       const attachmentCleanupPending = await deleteSecurityScanRuntime(target);
@@ -150,7 +157,7 @@ export function SecurityScanPage() {
       setDeleteTarget(null);
       if (attachmentCleanupPending) setNotice(t('securityScanDeleteCleanupPending'));
     } catch (cause) {
-      setError(formatSecurityScanError(cause, t, 'securityScanDeleteFailed'));
+      setDeleteError(formatSecurityScanError(cause, t, 'securityScanDeleteFailed'));
     } finally {
       setIsDeleting(false);
     }
@@ -246,7 +253,7 @@ export function SecurityScanPage() {
                   key={scan.id}
                   active={scan.id === selectedScanId}
                   modelLabel={resolveScanModelLabel(scan, models, t('securityScanModelUnavailable'))}
-                  onDelete={() => setDeleteTarget(scan)}
+                  onDelete={() => openDeleteDialog(scan)}
                   onSelect={() => {
                     setShowCreateForm(false);
                     setSelectedScanId(scan.id);
@@ -314,7 +321,7 @@ export function SecurityScanPage() {
                     {t('securityScanStop')}
                   </Button>
                 ) : null}
-                <Button onClick={() => setDeleteTarget(selectedScan)} size="small" variant="ghost">
+                <Button onClick={() => openDeleteDialog(selectedScan)} size="small" variant="ghost">
                   <Trash2 aria-hidden="true" size={15} />
                   {t('securityScanDelete')}
                 </Button>
@@ -393,7 +400,10 @@ export function SecurityScanPage() {
 
       <Dialog
         onOpenChange={(open) => {
-          if (!open && !isDeleting) setDeleteTarget(null);
+          if (!open && !isDeleting) {
+            setDeleteTarget(null);
+            setDeleteError(null);
+          }
         }}
         open={deleteTarget !== null}
         title={t('securityScanDeleteConfirmTitle')}
@@ -403,8 +413,25 @@ export function SecurityScanPage() {
             <p className="text-sm text-secondary-text">
               {t('securityScanDeleteConfirmBody', { project: deleteTarget.projectName })}
             </p>
+            {isDeleting ? (
+              <p className="text-sm text-secondary-text" role="status">
+                {t('securityScanDeleteStopping')}
+              </p>
+            ) : null}
+            {deleteError ? (
+              <p className="text-sm text-destructive" role="alert">
+                {deleteError}
+              </p>
+            ) : null}
             <div className="flex justify-end gap-2 border-t border-border pt-4">
-              <Button disabled={isDeleting} onClick={() => setDeleteTarget(null)} variant="ghost">
+              <Button
+                disabled={isDeleting}
+                onClick={() => {
+                  setDeleteTarget(null);
+                  setDeleteError(null);
+                }}
+                variant="ghost"
+              >
                 {t('cancel')}
               </Button>
               <Button
