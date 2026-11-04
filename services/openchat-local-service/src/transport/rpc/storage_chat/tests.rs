@@ -728,6 +728,106 @@ async fn rollback_cleanup_preserves_published_attachments_when_message_exists() 
     );
 }
 
+#[tokio::test]
+async fn deleting_a_conversation_reports_pending_cleanup_after_database_delete() {
+    let directory = TestDirectory::new();
+    let storage = initialized_chat_storage(&directory);
+    let conversation_id = create_attachment_test_conversation(&storage).await;
+    fs::write(
+        storage.root().join("attachments"),
+        b"invalid attachment root",
+    )
+    .expect("create invalid attachment root");
+
+    let result = dispatch(
+        "storage.chat.conversations.delete",
+        &json!({"input": {"conversationId": conversation_id}}),
+        &storage,
+    )
+    .await
+    .expect("report committed delete with pending attachment cleanup");
+
+    assert_eq!(result["deleted"], true);
+    assert_eq!(result["attachmentCleanupPending"], true);
+    let conversation_exists = storage
+        .connect()
+        .expect("connect after delete")
+        .query_row(
+            "SELECT EXISTS (SELECT 1 FROM conversations WHERE id = ?1)",
+            [&conversation_id],
+            |row| row.get::<_, bool>(0),
+        )
+        .expect("check conversation after delete");
+    assert!(!conversation_exists);
+}
+
+#[tokio::test]
+async fn clearing_history_reports_pending_cleanup_after_database_clear() {
+    let directory = TestDirectory::new();
+    let storage = initialized_chat_storage(&directory);
+    create_attachment_test_conversation(&storage).await;
+    fs::write(
+        storage.root().join("attachments"),
+        b"invalid attachment root",
+    )
+    .expect("create invalid attachment root");
+
+    let result = dispatch("storage.chat.conversations.clear", &json!({}), &storage)
+        .await
+        .expect("report committed history clear with pending attachment cleanup");
+
+    assert_eq!(result["cleared"], true);
+    assert_eq!(result["attachmentCleanupPending"], true);
+    let conversation_count = storage
+        .connect()
+        .expect("connect after history clear")
+        .query_row("SELECT COUNT(*) FROM conversations", [], |row| {
+            row.get::<_, i64>(0)
+        })
+        .expect("count conversations after clear");
+    assert_eq!(conversation_count, 0);
+}
+
+#[tokio::test]
+async fn conversation_delete_without_attachment_root_has_no_pending_cleanup() {
+    let directory = TestDirectory::new();
+    let storage = initialized_chat_storage(&directory);
+    let conversation_id = create_attachment_test_conversation(&storage).await;
+
+    let result = dispatch(
+        "storage.chat.conversations.delete",
+        &json!({"input": {"conversationId": conversation_id}}),
+        &storage,
+    )
+    .await
+    .expect("delete a conversation without attachments");
+
+    assert_eq!(result["deleted"], true);
+    assert_eq!(result["attachmentCleanupPending"], false);
+}
+
+#[tokio::test]
+async fn startup_attachment_cleanup_removes_orphans_and_preserves_live_conversation_files() {
+    let directory = TestDirectory::new();
+    let storage = initialized_chat_storage(&directory);
+    let live_conversation_id = create_attachment_test_conversation(&storage).await;
+    let attachments_root = storage.root().join("attachments");
+    let live_directory = attachments_root.join(&live_conversation_id);
+    let orphan_directory = attachments_root.join("orphaned-conversation");
+    fs::create_dir_all(&live_directory).expect("create live attachment directory");
+    fs::create_dir_all(&orphan_directory).expect("create orphan attachment directory");
+    let live_attachment = live_directory.join("message.data");
+    let orphan_attachment = orphan_directory.join("message.data");
+    fs::write(&live_attachment, b"live attachment").expect("write live attachment");
+    fs::write(&orphan_attachment, b"orphan attachment").expect("write orphan attachment");
+
+    super::cleanup_orphaned_attachment_directories(&storage)
+        .expect("recover orphaned attachment directories");
+
+    assert!(live_attachment.exists());
+    assert!(!orphan_directory.exists());
+}
+
 struct TestDirectory(PathBuf);
 
 impl TestDirectory {

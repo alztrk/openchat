@@ -142,9 +142,9 @@ export function useConversationSidebarActions() {
 
   const persistConversationDeletion = async (conversationId: string, actionGeneration: number): Promise<void> => {
     let deleted = false;
-    let cleanupFailed = false;
+    let attachmentCleanupPending = false;
     try {
-      await deleteConversationStorage(conversationId);
+      attachmentCleanupPending = await deleteConversationStorage(conversationId);
       deleted = true;
     } catch {
       try {
@@ -152,7 +152,7 @@ export function useConversationSidebarActions() {
       } catch {
         deleted = false;
       }
-      cleanupFailed = deleted;
+      attachmentCleanupPending = deleted;
     }
 
     if (!deleted) {
@@ -168,8 +168,8 @@ export function useConversationSidebarActions() {
       return;
     }
 
-    if (cleanupFailed && actionGenerationRef.current === actionGeneration) {
-      showFeedback('conversationDeletedFileChangesCleanupFailed');
+    if (attachmentCleanupPending && actionGenerationRef.current === actionGeneration) {
+      showFeedback('conversationDeletedAttachmentCleanupPending');
     }
     void localServiceClient.call('chat.file_changes.delete', { conversationId }).catch(() => {
       if (actionGenerationRef.current === actionGeneration) {

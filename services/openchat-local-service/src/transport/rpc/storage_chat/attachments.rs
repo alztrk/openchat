@@ -829,6 +829,7 @@ pub(super) fn optional_checked_directory(
     if !is_safe_identifier(name) {
         return Err(invalid_request_params());
     }
+    let parent = fs::canonicalize(parent).map_err(|_| storage_unavailable())?;
     let expected_directory = parent.join(name);
     let metadata = match fs::symlink_metadata(&expected_directory) {
         Ok(metadata) => metadata,
@@ -840,7 +841,7 @@ pub(super) fn optional_checked_directory(
     }
     let canonical_directory =
         fs::canonicalize(&expected_directory).map_err(|_| storage_unavailable())?;
-    if canonical_directory != expected_directory || !canonical_directory.starts_with(parent) {
+    if canonical_directory != expected_directory || !canonical_directory.starts_with(&parent) {
         return Err(storage_unavailable());
     }
     Ok(Some(canonical_directory))
@@ -886,14 +887,15 @@ pub(crate) fn remove_attachment_directory(
     storage_root: &Path,
     conversation_id: &str,
 ) -> Result<(), ServiceError> {
-    let attachments = match checked_directory(storage_root, "attachments", false) {
-        Ok(path) => path,
-        Err(_) => return Ok(()),
-    };
     if !is_safe_identifier(conversation_id) {
         return Err(invalid_request_params());
     }
-    let path = attachments.join(conversation_id);
+    let Some(attachments) = optional_checked_directory(storage_root, "attachments")? else {
+        return Ok(());
+    };
+    let Some(path) = optional_checked_directory(&attachments, conversation_id)? else {
+        return Ok(());
+    };
     match fs::remove_dir_all(path) {
         Ok(()) => Ok(()),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
@@ -902,19 +904,72 @@ pub(crate) fn remove_attachment_directory(
 }
 
 pub(super) fn remove_all_attachment_directories(storage_root: &Path) -> Result<(), ServiceError> {
-    let attachments = match checked_directory(storage_root, "attachments", false) {
-        Ok(path) => path,
-        Err(_) => return Ok(()),
+    let Some(attachments) = optional_checked_directory(storage_root, "attachments")? else {
+        return Ok(());
     };
     for entry in fs::read_dir(&attachments).map_err(|_| storage_unavailable())? {
         let entry = entry.map_err(|_| storage_unavailable())?;
-        let metadata = fs::symlink_metadata(entry.path()).map_err(|_| storage_unavailable())?;
-        if metadata.file_type().is_symlink() || !metadata.is_dir() {
-            return Err(storage_unavailable());
-        }
-        fs::remove_dir_all(entry.path()).map_err(|_| storage_unavailable())?;
+        let name = entry
+            .file_name()
+            .into_string()
+            .map_err(|_| storage_unavailable())?;
+        let directory = checked_child_directory(&attachments, &name, false)?;
+        fs::remove_dir_all(directory).map_err(|_| storage_unavailable())?;
     }
     Ok(())
+}
+
+pub(crate) fn cleanup_orphaned_attachment_directories(
+    storage: &AppStorage,
+) -> Result<(), ServiceError> {
+    let Some(attachments) = optional_checked_directory(storage.root(), "attachments")? else {
+        return Ok(());
+    };
+    let mut connection = storage.connect().map_err(storage_error)?;
+    let transaction = connection
+        .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+        .map_err(storage_error)?;
+    let mut statement = transaction
+        .prepare("SELECT EXISTS (SELECT 1 FROM conversations WHERE id = ?1)")
+        .map_err(storage_error)?;
+    let mut cleanup_failed = false;
+
+    for entry in fs::read_dir(&attachments).map_err(|_| storage_unavailable())? {
+        let entry = entry.map_err(|_| storage_unavailable())?;
+        let name = match entry.file_name().into_string() {
+            Ok(name) if is_safe_identifier(&name) => name,
+            _ => {
+                cleanup_failed = true;
+                continue;
+            }
+        };
+        let directory = match checked_child_directory(&attachments, &name, false) {
+            Ok(directory) => directory,
+            Err(_) => {
+                cleanup_failed = true;
+                continue;
+            }
+        };
+        let conversation_exists = statement
+            .query_row([name.as_str()], |row| row.get::<_, bool>(0))
+            .map_err(storage_error)?;
+        if conversation_exists {
+            continue;
+        }
+        match fs::remove_dir_all(directory) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(_) => cleanup_failed = true,
+        }
+    }
+
+    drop(statement);
+    transaction.commit().map_err(storage_error)?;
+    if cleanup_failed {
+        Err(storage_unavailable())
+    } else {
+        Ok(())
+    }
 }
 
 pub(super) fn remove_directory_if_present(path: &Path) -> std::io::Result<()> {

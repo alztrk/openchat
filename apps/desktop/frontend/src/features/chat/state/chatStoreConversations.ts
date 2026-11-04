@@ -177,7 +177,7 @@ export function createConversationsActions(set: StoreSet, get: StoreGet) {
       }
     },
 
-    async clearConversationHistory(): Promise<void> {
+    async clearConversationHistory(): Promise<boolean> {
       if (get().isSending) {
         throw new LocalServiceError(
           'conversation_archive_busy',
@@ -191,7 +191,7 @@ export function createConversationsActions(set: StoreSet, get: StoreGet) {
         );
       }
       await localServiceClient.call('chat.file_changes.delete_all');
-      await clearConversationHistoryStorage();
+      const attachmentCleanupPending = await clearConversationHistoryStorage();
       messageLoadGeneration += 1;
       set({
         conversations: [],
@@ -222,6 +222,7 @@ export function createConversationsActions(set: StoreSet, get: StoreGet) {
         errorMessage: null,
         opencodeRetryAtUnixMs: null,
       });
+      return attachmentCleanupPending;
     },
 
     setPendingQuestionSendBlock(conversationId: string | null, blocked: boolean): void {

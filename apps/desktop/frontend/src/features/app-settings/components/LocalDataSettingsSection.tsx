@@ -19,6 +19,7 @@ export function LocalDataSettingsSection() {
   const [isClearing, setIsClearing] = useState(false);
   const [clearFailed, setClearFailed] = useState(false);
   const [clearSucceeded, setClearSucceeded] = useState(false);
+  const [attachmentCleanupPending, setAttachmentCleanupPending] = useState(false);
   const historyStatus = historyStorageStatusForInitialization(serviceStatus, storageInitializationErrorCode);
   const available = historyStatus === 'available';
   const clearHistory = async () => {
@@ -26,10 +27,12 @@ export function LocalDataSettingsSection() {
     setIsClearing(true);
     setClearFailed(false);
     setClearSucceeded(false);
+    setAttachmentCleanupPending(false);
     try {
-      await useChatStore.getState().clearConversationHistory();
+      const cleanupPending = await useChatStore.getState().clearConversationHistory();
       setIsConfirmingClear(false);
       setClearSucceeded(true);
+      setAttachmentCleanupPending(cleanupPending);
     } catch {
       setClearFailed(true);
     } finally {
@@ -58,6 +61,7 @@ export function LocalDataSettingsSection() {
               onClick={() => {
                 setClearFailed(false);
                 setClearSucceeded(false);
+                setAttachmentCleanupPending(false);
                 setIsConfirmingClear(true);
               }}
               variant="secondary"
@@ -78,6 +82,11 @@ export function LocalDataSettingsSection() {
             {clearSucceeded ? (
               <p aria-live="polite" className="text-sm text-success">
                 {t('clearHistorySucceeded')}
+              </p>
+            ) : null}
+            {attachmentCleanupPending ? (
+              <p aria-live="polite" className="text-sm text-warning" role="status">
+                {t('conversationHistoryAttachmentCleanupPending')}
               </p>
             ) : null}
             </div>

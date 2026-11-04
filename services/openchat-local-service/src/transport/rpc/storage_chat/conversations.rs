@@ -374,8 +374,14 @@ pub(super) fn delete_conversation(
     }
     transaction.commit().map_err(storage_error)?;
     drop(connection);
-    remove_attachment_directory(storage.root(), id)?;
-    Ok(json!({"deleted": true}))
+    let attachment_cleanup_pending = remove_attachment_directory(storage.root(), id).is_err();
+    if attachment_cleanup_pending {
+        eprintln!("conversation_attachment_cleanup_pending");
+    }
+    Ok(json!({
+        "deleted": true,
+        "attachmentCleanupPending": attachment_cleanup_pending,
+    }))
 }
 
 pub(super) fn clear_conversation_history(storage: &AppStorage) -> Result<Value, ServiceError> {
@@ -392,8 +398,14 @@ pub(super) fn clear_conversation_history(storage: &AppStorage) -> Result<Value, 
         .map_err(storage_error)?;
     transaction.commit().map_err(storage_error)?;
     drop(connection);
-    remove_all_attachment_directories(storage.root())?;
-    Ok(json!({"cleared": true}))
+    let attachment_cleanup_pending = remove_all_attachment_directories(storage.root()).is_err();
+    if attachment_cleanup_pending {
+        eprintln!("conversation_history_attachment_cleanup_pending");
+    }
+    Ok(json!({
+        "cleared": true,
+        "attachmentCleanupPending": attachment_cleanup_pending,
+    }))
 }
 
 pub(super) fn list_messages(params: &Value, storage: &AppStorage) -> Result<Value, ServiceError> {

@@ -255,6 +255,9 @@ pub(crate) async fn dispatch(context: RpcDispatchContext<'_>) -> Result<Value, S
                     error,
                 )
             })?;
+            if storage_chat::cleanup_orphaned_attachment_directories(storage).is_err() {
+                eprintln!("orphaned_attachment_cleanup_recovery_failed");
+            }
             crate::image_library::recover_incomplete_generations(storage)?;
             service.schedule_pending_credential_cleanup();
             usage_statistics::mark_interrupted_requests(storage).map_err(|_| {

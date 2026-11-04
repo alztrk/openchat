@@ -197,12 +197,12 @@ export async function setConversationsArchived(conversationIds: string[], isArch
   );
 }
 
-export async function deleteConversation(conversationId: string): Promise<void> {
-  expectDeleted(
-    await localServiceClient.call('storage.chat.conversations.delete', {
-      input: { conversationId },
-    }),
-  );
+export async function deleteConversation(conversationId: string): Promise<boolean> {
+  const response = await localServiceClient.call('storage.chat.conversations.delete', {
+    input: { conversationId },
+  });
+  expectDeleted(response);
+  return expectAttachmentCleanupPending(response);
 }
 
 export async function recordChatRequestFailure(
@@ -288,11 +288,12 @@ export async function hasCompletedAssistantResponse(): Promise<boolean> {
   return response.completed;
 }
 
-export async function clearConversationHistory(): Promise<void> {
+export async function clearConversationHistory(): Promise<boolean> {
   const response = await localServiceClient.call('storage.chat.conversations.clear');
   if (response.cleared !== true) {
     throw new Error('The conversation history clear result is invalid.');
   }
+  return expectAttachmentCleanupPending(response);
 }
 
 export async function listModelFavorites(): Promise<ChatModelFavorite[]> {
@@ -742,6 +743,13 @@ function expectDeleted(response: Record<string, unknown>): void {
   if (response.deleted !== true) {
     throw new Error('The local service delete result is invalid.');
   }
+}
+
+function expectAttachmentCleanupPending(response: Record<string, unknown>): boolean {
+  if (typeof response.attachmentCleanupPending !== 'boolean') {
+    throw new Error('The local service attachment cleanup result is invalid.');
+  }
+  return response.attachmentCleanupPending;
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {

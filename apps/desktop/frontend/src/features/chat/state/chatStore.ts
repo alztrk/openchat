@@ -190,7 +190,7 @@ export interface ChatState {
   renameConversation(conversationId: string, title: string): Promise<void>;
   applyTitleUpdate(conversationId: string, title: string): void;
   refreshProjects(): Promise<void>;
-  clearConversationHistory(): Promise<void>;
+  clearConversationHistory(): Promise<boolean>;
   refreshModels(forceRefresh?: boolean): Promise<void>;
   refreshModelFavorites(): Promise<void>;
   setDefaultModel(model: ChatModel): boolean;

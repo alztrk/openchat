@@ -103,8 +103,10 @@ mod todos;
 #[path = "storage_chat/validation.rs"]
 mod validation;
 
-pub(super) use attachments::remove_attachment_directory;
 use attachments::*;
+pub(super) use attachments::{
+    cleanup_orphaned_attachment_directories, remove_attachment_directory,
+};
 use conversations::*;
 use errors::*;
 use projects::*;

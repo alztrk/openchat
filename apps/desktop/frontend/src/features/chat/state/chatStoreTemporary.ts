@@ -440,7 +440,7 @@ export function createSaveTemporaryChatAction(
       let rollbackFailed = false;
       if (conversationCreated) {
         try {
-          await deleteConversation(conversationId);
+          rollbackFailed = await deleteConversation(conversationId);
         } catch {
           rollbackFailed = true;
         }
