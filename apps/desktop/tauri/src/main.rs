@@ -192,11 +192,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .ok_or_else(|| std::io::Error::other("Main window configuration is unavailable"))?;
             let mut main_window_builder =
                 tauri::WebviewWindowBuilder::from_config(app.handle(), main_window_config)?
-                    .visible(true);
-            #[cfg(feature = "desktop-profile-test-support")]
-            if desktop_test_profile_root.is_some() {
-                main_window_builder = main_window_builder.visible(true);
-            }
+                    .visible(false);
             #[cfg(feature = "startup-benchmark")]
             {
                 main_window_builder = main_window_builder.initialization_script(

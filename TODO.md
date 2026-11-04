@@ -241,7 +241,9 @@
 - [ ] `QA-07/11` runtime kabulü: Gerçek terminal Ctrl+C ile nested Tauri/Vite child tree kapanışını; GUI normal close ile exit kodu/profile cleanup eşleşmesini; crash ve startup failure yollarını ayrı ayrı doğrula.
 - [x] `T-HOST-01` kod dilimi: Kaydedilen normal/maximized geometri açılışta geri yükleniyor; boyut/konum monitör çalışma alanına sığıyor, artık bulunmayan monitör birincil monitöre taşınıyor. Geometri hesaplama için altı Rust testi eklendi.
 - [ ] `T-HOST-01` runtime kabulü: Farklı çözünürlük/DPI ve monitör çıkarma sonrası gerçek pencerede konum, boyut ve maximize durumunu doğrula.
-- [ ] `T-HOST-02..09`: İlk frame görünürlüğü, recovery, pipe yazımı ve mutex süresi, dialog callback timeout'u, resize disk yazımı, event payload sınırı ve kayıt hatası davranışlarını tek tek kapat.
+- [x] `T-HOST-02` kod dilimi: Ana Tauri penceresi gizli başlatılıyor; normal React ekranı ve startup hata ekranı `flushSync(render)` sonrasında ortak `show()` yolunu kullanıyor. `startupWindowVisibility.test.mjs` host görünürlüğü, render/show sırasını ve benchmark görünürlük event'ini sabitliyor.
+- [ ] `T-HOST-02` runtime kabulü: Gerçek Windows penceresinde soğuk/yavaş başlangıç ve startup hata ekranında boş/unstyled frame olmadığını gözle doğrula.
+- [ ] `T-HOST-03..09`: WebView2 recovery, pipe yazımı ve mutex süresi, dialog callback timeout'u, resize disk yazımı, event payload sınırı ve kayıt hatası davranışlarını tek tek kapat.
 - [ ] Kabul: doğrulanmış normal kapanış başarıyla raporlanır; interrupt ve child kapanışı bounded olur; süreç ağacı kapandığı doğrulanınca geçici profil temizlenir, kapanış doğrulanamazsa çalışan süreçten veri silmemek için profil korunur ve yolu raporlanır; dialog ve IPC arızaları kullanıcıya görünür, güvenli hata verir.
 
 ### 10.4 Yerel servis ve veri bütünlüğü
