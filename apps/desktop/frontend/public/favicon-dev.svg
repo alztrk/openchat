@@ -110,6 +110,12 @@
     <use href="#hammer-mark" x="328" y="452" width="27" height="27" opacity="0.15" transform="rotate(-18 341.5 465.5)" />
     <use href="#git-branch-mark" x="394" y="445" width="21" height="21" opacity="0.12" transform="rotate(32 404.5 455.5)" />
     <use href="#code-xml-mark" x="433" y="420" width="22" height="22" opacity="0.17" transform="rotate(-13 444 431)" />
+
+    <use href="#code-xml-mark" x="240" y="229" width="20" height="20" opacity="0.10" transform="rotate(-12 250 239)" />
+    <use href="#git-branch-mark" x="268" y="242" width="18" height="18" opacity="0.08" transform="rotate(18 277 251)" />
+    <use href="#terminal-mark" x="246" y="266" width="21" height="21" opacity="0.10" transform="rotate(-13 256.5 276.5)" />
+    <use href="#braces-mark" x="222" y="289" width="17" height="17" opacity="0.08" transform="rotate(22 230.5 297.5)" />
+    <use href="#wrench-mark" x="280" y="289" width="18" height="18" opacity="0.09" transform="rotate(-16 289 298)" />
   </g>
 
   <g transform="translate(250 250) scale(0.76) translate(-250 -250)">
