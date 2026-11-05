@@ -1346,10 +1346,14 @@ async fn archive_restore_recovers_interrupted_attachment_and_stage_files_before_
     .await
     .expect("save source archive attachment");
     let passphrase = "archive-recovery-passphrase-2026";
+    let (_cancel_sender, cancellation) = watch::channel(false);
     let exported = crate::conversation_archive::export(
         &source,
+        &json!(1),
         std::slice::from_ref(&conversation_id),
         Zeroizing::new(passphrase.to_owned()),
+        &cancellation,
+        &crate::service::OperationGate::default(),
     )
     .expect("export source archive");
     let export_id = exported["exportId"]
@@ -1396,6 +1400,7 @@ async fn archive_restore_recovers_interrupted_attachment_and_stage_files_before_
         &destination,
         &crate::protocol::EventSink::new(),
         &mut cancellation,
+        &crate::service::OperationGate::default(),
     )
     .await
     .expect("restore should recover abandoned files and retry successfully");

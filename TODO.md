@@ -280,8 +280,8 @@
 - [x] `SVC-15`: Worktree listeleme, Git çağrıları boyunca cancellation alıyor ve 25 saniyelik ortak backend deadline'ı kullanıyor; 30 saniyelik RPC timeout'undan önce typed timeout hatası döndürüyor. Boş ve dolu başarı yanıtları dönmeden önce deadline/cancellation yeniden kontrol ediliyor. UI timeout'u ayırt edip yenileme öneriyor.
 - [x] `SVC-16`: Worktree listesi sabit ID sıralı ilk 20 kaydı, tarama sırasından bağımsız ve sınırlı bellekle seçiyor. Backend create, aynı proje için süreç içi ve OS dosya kilidi altında sayım/oluşturma yaparak eşzamanlı isteklerin 20 sınırını aşmasını engelliyor; limit dolu hatası yerelleştirilmiş, kırpılma mesajı görünmeyen sonraki kayıtları kaldırma yoluyla yönetmeyi açıklıyor. Kararlı seçim, limit ve eşzamanlı oluşturma testleri ile merkezi check geçti.
 - [x] `SVC-17`: Attachment text-index rebuild ve clear için süreç içi single-flight, ölçülebilir durum/ilerleme, rebuild iptali ve timeout sonrası status reconciliation ekle; iptal/hata halinde önceki indeks korunmalı.
-- [ ] `SVC-20`: Conversation archive export/inspect/restore işlemlerinde cancellation, timeout, progress/status ve yeniden deneme davranışını hizala.
-- [ ] Kabul: dosya/DB tutarlılığı her hata noktasında korunur veya kalıcı reconciliation kaydı kalır; timeout sonrası işin sürüp sürmediği ve iptal sonucu gözlenebilir; uzun listelerde kesilme açıkça bildirilir.
+- [x] `SVC-20`: Conversation archive export/inspect/restore işlemlerinde cancellation, timeout, progress/status ve yeniden deneme davranışını hizala. RPC cancellation, single-flight status, byte/item progress, 30 dakikalık kullanıcı iptali ve final export/restore commit gate eklendi; restore öncesi orphan temizliği de aktif operasyon kapsamında.
+- [x] Kabul: iptal kazandığında export kalıntısı temizlenir ve restore DB/dosyaları commit öncesi geri alınır; timeout veya renderer yeniden açılışı sonrası aktif işlem status üzerinden gözlenip güvenle iptal edilebilir; export'ta bilinmeyen toplam sırasında işlenen öğe sayısı gösterilir.
 
 ### 10.5 Dış erişim ve yerel model sınırı
 

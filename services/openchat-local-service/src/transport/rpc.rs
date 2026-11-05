@@ -200,6 +200,7 @@ pub(crate) async fn dispatch(context: RpcDispatchContext<'_>) -> Result<Value, S
             storage,
             &events,
             &mut cancellation,
+            &cancellation_gate,
         )
         .await;
     }

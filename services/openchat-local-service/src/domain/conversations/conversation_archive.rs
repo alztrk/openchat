@@ -9,7 +9,7 @@ use std::{
     io::{self, BufReader, Read, Write},
     iter,
     path::{Path, PathBuf},
-    sync::{Mutex, OnceLock},
+    sync::{Arc, Mutex, OnceLock, Weak},
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -19,6 +19,7 @@ use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use tar::{Archive, Builder, EntryType, Header};
+use tokio::sync::watch;
 use uuid::Uuid;
 use zeroize::Zeroizing;
 
@@ -27,6 +28,7 @@ use crate::{
         AttachmentMetadata, message_attachment_metadata, validate_portable_attachment_content,
     },
     protocol::ServiceError,
+    service::OperationGate,
     storage::{AppStorage, StorageConnection, StorageTransaction},
 };
 
@@ -47,6 +49,47 @@ const MAX_ATTACHMENT_BYTES: u64 = 4 * 1024 * 1024 * 1024;
 const MAX_AGE_SCRYPT_LOG_N: u8 = 18;
 
 static ACTIVE_RESTORE_STAGES: OnceLock<Mutex<HashSet<PathBuf>>> = OnceLock::new();
+
+type SharedArchiveOperationState = Arc<Mutex<ArchiveOperationState>>;
+
+#[derive(Clone, Default)]
+struct ArchiveOperationState {
+    in_progress: bool,
+    operation_id: Option<Value>,
+    action: Option<ArchiveOperationKind>,
+    progress: Option<ArchiveOperationProgress>,
+}
+
+#[derive(Clone, Copy)]
+enum ArchiveOperationKind {
+    Export,
+    Inspect,
+    Restore,
+}
+
+impl ArchiveOperationKind {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Export => "export",
+            Self::Inspect => "inspect",
+            Self::Restore => "restore",
+        }
+    }
+}
+
+#[derive(Clone)]
+struct ArchiveOperationProgress {
+    phase: &'static str,
+    completed_items: usize,
+    total_items: Option<usize>,
+    completed_bytes: u64,
+    total_bytes: Option<u64>,
+}
+
+struct ArchiveOperationLease {
+    state: SharedArchiveOperationState,
+    finished: bool,
+}
 
 fn active_restore_stages() -> &'static Mutex<HashSet<PathBuf>> {
     ACTIVE_RESTORE_STAGES.get_or_init(|| Mutex::new(HashSet::new()))
@@ -329,6 +372,8 @@ enum ArchiveFailure {
     NotFound,
     Conflict,
     Busy,
+    OperationBusy,
+    Cancelled,
     Storage,
     LimitExceeded,
 }
@@ -367,6 +412,16 @@ fn service_error(failure: ArchiveFailure) -> ServiceError {
             "A conversation has an active assistant run. Finish or stop it before creating an archive.",
             true,
         ),
+        ArchiveFailure::OperationBusy => ServiceError::new(
+            "conversation_archive_operation_busy",
+            "A conversation archive operation is already in progress.",
+            true,
+        ),
+        ArchiveFailure::Cancelled => ServiceError::new(
+            "operation_cancelled",
+            "The conversation archive operation was cancelled.",
+            false,
+        ),
         ArchiveFailure::Storage => ServiceError::new(
             "conversation_archive_storage_failed",
             "The archive could not be read, written, or safely restored.",
@@ -380,12 +435,128 @@ fn service_error(failure: ArchiveFailure) -> ServiceError {
     }
 }
 
+pub(crate) fn status(storage: &AppStorage) -> Result<Value, ServiceError> {
+    let operation = operation_snapshot(storage).map_err(service_error)?;
+    Ok(json!({
+        "operationInProgress": operation.in_progress,
+        "operationId": operation.operation_id,
+        "action": operation.action.map(ArchiveOperationKind::as_str),
+        "progress": operation.progress.map(|progress| json!({
+            "phase": progress.phase,
+            "completedItems": progress.completed_items,
+            "totalItems": progress.total_items,
+            "completedBytes": progress.completed_bytes,
+            "totalBytes": progress.total_bytes,
+        })),
+    }))
+}
+
+fn archive_operation_state(
+    storage: &AppStorage,
+) -> Result<SharedArchiveOperationState, ArchiveFailure> {
+    static STATES: OnceLock<Mutex<HashMap<PathBuf, Weak<Mutex<ArchiveOperationState>>>>> =
+        OnceLock::new();
+    let states = STATES.get_or_init(|| Mutex::new(HashMap::new()));
+    let mut states = states.lock().map_err(|_| ArchiveFailure::Storage)?;
+    states.retain(|_, state| state.strong_count() > 0);
+    if let Some(state) = states.get(storage.root()).and_then(Weak::upgrade) {
+        return Ok(state);
+    }
+    let state = Arc::new(Mutex::new(ArchiveOperationState::default()));
+    states.insert(storage.root().to_path_buf(), Arc::downgrade(&state));
+    Ok(state)
+}
+
+fn operation_snapshot(storage: &AppStorage) -> Result<ArchiveOperationState, ArchiveFailure> {
+    archive_operation_state(storage)?
+        .lock()
+        .map(|state| state.clone())
+        .map_err(|_| ArchiveFailure::Storage)
+}
+
+fn begin_operation(
+    storage: &AppStorage,
+    action: ArchiveOperationKind,
+    operation_id: &Value,
+) -> Result<ArchiveOperationLease, ArchiveFailure> {
+    let state = archive_operation_state(storage)?;
+    let mut snapshot = state.lock().map_err(|_| ArchiveFailure::Storage)?;
+    if snapshot.in_progress {
+        return Err(ArchiveFailure::OperationBusy);
+    }
+    snapshot.in_progress = true;
+    snapshot.operation_id = Some(operation_id.clone());
+    snapshot.action = Some(action);
+    snapshot.progress = None;
+    drop(snapshot);
+    Ok(ArchiveOperationLease {
+        state,
+        finished: false,
+    })
+}
+
+impl ArchiveOperationLease {
+    fn set_progress(
+        &self,
+        phase: &'static str,
+        completed_items: usize,
+        total_items: Option<usize>,
+        completed_bytes: u64,
+        total_bytes: Option<u64>,
+    ) -> Result<(), ArchiveFailure> {
+        let mut state = self.state.lock().map_err(|_| ArchiveFailure::Storage)?;
+        state.progress = Some(ArchiveOperationProgress {
+            phase,
+            completed_items,
+            total_items,
+            completed_bytes,
+            total_bytes,
+        });
+        Ok(())
+    }
+
+    fn finish(mut self) {
+        self.release();
+        self.finished = true;
+    }
+
+    fn release(&self) {
+        let mut state = self
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        *state = ArchiveOperationState::default();
+    }
+}
+
+impl Drop for ArchiveOperationLease {
+    fn drop(&mut self) {
+        if !self.finished {
+            self.release();
+        }
+    }
+}
+
+fn check_cancelled(cancellation: &watch::Receiver<bool>) -> Result<(), ArchiveFailure> {
+    if *cancellation.borrow() {
+        Err(ArchiveFailure::Cancelled)
+    } else {
+        Ok(())
+    }
+}
+
 pub(crate) fn export(
     storage: &AppStorage,
+    operation_id: &Value,
     conversation_ids: &[String],
     passphrase: Zeroizing<String>,
+    cancellation: &watch::Receiver<bool>,
+    cancellation_gate: &OperationGate,
 ) -> Result<Value, ServiceError> {
     validate_passphrase(&passphrase).map_err(service_error)?;
+    check_cancelled(cancellation).map_err(service_error)?;
+    let lease = begin_operation(storage, ArchiveOperationKind::Export, operation_id)
+        .map_err(service_error)?;
     let pending = crate::pending_archive_export::PendingArchiveExport::begin(
         storage.root(),
         ARCHIVE_EXTENSION,
@@ -395,38 +566,77 @@ pub(crate) fn export(
         conversation_ids,
         pending.archive_path(),
         passphrase.as_str(),
+        cancellation,
+        &lease,
     )
     .map_err(service_error)?;
-    pending.finish(result)
+    check_cancelled(cancellation).map_err(service_error)?;
+    if !cancellation_gate.try_begin_commit() {
+        return Err(service_error(ArchiveFailure::Cancelled));
+    }
+    let result = pending.finish(result)?;
+    lease.finish();
+    Ok(result)
 }
 
 pub(crate) fn inspect(
     storage: &AppStorage,
+    operation_id: &Value,
     path: &str,
     passphrase: Zeroizing<String>,
+    cancellation: &watch::Receiver<bool>,
 ) -> Result<Value, ServiceError> {
     validate_passphrase(&passphrase).map_err(service_error)?;
-    let (manifest, data) =
-        read_archive(Path::new(path), passphrase.as_str(), None).map_err(service_error)?;
+    check_cancelled(cancellation).map_err(service_error)?;
+    let lease = begin_operation(storage, ArchiveOperationKind::Inspect, operation_id)
+        .map_err(service_error)?;
+    let (manifest, data) = read_archive(
+        Path::new(path),
+        passphrase.as_str(),
+        None,
+        cancellation,
+        &lease,
+    )
+    .map_err(service_error)?;
+    check_cancelled(cancellation).map_err(service_error)?;
     let connection = storage
         .connect()
         .map_err(|_| service_error(ArchiveFailure::Storage))?;
     let duplicates =
-        count_existing_conversations(&connection, &data.conversations).map_err(service_error)?;
-    Ok(archive_summary(&manifest, duplicates))
+        count_existing_conversations(&connection, &data.conversations, cancellation, &lease)
+            .map_err(service_error)?;
+    let result = archive_summary(&manifest, duplicates);
+    lease.finish();
+    Ok(result)
 }
 
 pub(crate) fn restore(
     storage: &AppStorage,
+    operation_id: &Value,
     path: &str,
     passphrase: Zeroizing<String>,
     conflict_policy: &str,
+    cancellation: &watch::Receiver<bool>,
+    cancellation_gate: &OperationGate,
+    pre_restore_cleanup: impl FnOnce() -> Result<(), ServiceError>,
 ) -> Result<Value, ServiceError> {
     validate_passphrase(&passphrase).map_err(service_error)?;
     let conflict_policy = ConflictPolicy::parse(conflict_policy)?;
+    check_cancelled(cancellation).map_err(service_error)?;
+    let lease = begin_operation(storage, ArchiveOperationKind::Restore, operation_id)
+        .map_err(service_error)?;
+    pre_restore_cleanup()?;
+    check_cancelled(cancellation).map_err(service_error)?;
     let stage = RestoreStage::create(storage).map_err(service_error)?;
-    let (manifest, data) =
-        read_archive(Path::new(path), passphrase.as_str(), Some(&stage)).map_err(service_error)?;
+    let (manifest, data) = read_archive(
+        Path::new(path),
+        passphrase.as_str(),
+        Some(&stage),
+        cancellation,
+        &lease,
+    )
+    .map_err(service_error)?;
+    check_cancelled(cancellation).map_err(service_error)?;
     let mut connection = storage
         .connect()
         .map_err(|_| service_error(ArchiveFailure::Storage))?;
@@ -440,13 +650,21 @@ pub(crate) fn restore(
         &manifest,
         data,
         conflict_policy,
+        cancellation,
+        &lease,
     )
     .map_err(service_error)?;
+    check_cancelled(cancellation).map_err(service_error)?;
     stage.cleanup().map_err(service_error)?;
+    check_cancelled(cancellation).map_err(service_error)?;
+    if !cancellation_gate.try_begin_commit() {
+        return Err(service_error(ArchiveFailure::Cancelled));
+    }
     transaction
         .commit()
         .map_err(|_| service_error(ArchiveFailure::Storage))?;
     created_files.commit();
+    lease.finish();
     Ok(result)
 }
 
@@ -455,9 +673,13 @@ fn export_inner(
     conversation_ids: &[String],
     target: &Path,
     passphrase: &str,
+    cancellation: &watch::Receiver<bool>,
+    lease: &ArchiveOperationLease,
 ) -> Result<Value, ArchiveFailure> {
+    check_cancelled(cancellation)?;
     let target = validate_output_path(target)?;
-    let (data, sources) = load_conversations(storage, conversation_ids)?;
+    let (data, sources) = load_conversations(storage, conversation_ids, cancellation, lease)?;
+    check_cancelled(cancellation)?;
     let message_count = data
         .conversations
         .iter()
@@ -482,6 +704,8 @@ fn export_inner(
         attachments: sources.iter().map(|source| source.record.clone()).collect(),
     };
     validate_archive_data(&manifest, &data)?;
+    lease.set_progress("verifying", 0, None, 0, None)?;
+    check_cancelled(cancellation)?;
     let manifest_json = serde_json::to_vec(&manifest).map_err(|_| ArchiveFailure::Storage)?;
     let conversations_json = serde_json::to_vec(&data).map_err(|_| ArchiveFailure::Storage)?;
     if manifest_json.len() as u64 > MAX_MANIFEST_BYTES
@@ -516,7 +740,10 @@ fn export_inner(
         &conversations_json,
         &sources,
         passphrase,
+        cancellation,
+        lease,
     )?;
+    check_cancelled(cancellation)?;
     fs::rename(partial.path(), &target).map_err(|error| {
         if error.kind() == io::ErrorKind::AlreadyExists {
             ArchiveFailure::Conflict
@@ -566,29 +793,93 @@ fn write_archive(
     conversations_json: &[u8],
     sources: &[AttachmentSource],
     passphrase: &str,
+    cancellation: &watch::Receiver<bool>,
+    lease: &ArchiveOperationLease,
 ) -> Result<(), ArchiveFailure> {
+    check_cancelled(cancellation)?;
     let secret = SecretString::from(passphrase.to_owned());
     let encrypted = Encryptor::with_user_passphrase(secret)
         .wrap_output(output)
         .map_err(|_| ArchiveFailure::Storage)?;
     let mut archive = Builder::new(encrypted);
-    append_bytes(&mut archive, MANIFEST_PATH, manifest_json)?;
-    append_bytes(&mut archive, CONVERSATIONS_PATH, conversations_json)?;
-    for source in sources {
+    let attachment_bytes = sources
+        .iter()
+        .try_fold(0_u64, |total, source| {
+            total.checked_add(source.record.size_bytes)
+        })
+        .ok_or(ArchiveFailure::LimitExceeded)?;
+    let total_bytes = u64::try_from(manifest_json.len())
+        .ok()
+        .and_then(|manifest| {
+            u64::try_from(conversations_json.len())
+                .ok()
+                .and_then(|conversations| manifest.checked_add(conversations))
+        })
+        .and_then(|bytes| bytes.checked_add(attachment_bytes))
+        .ok_or(ArchiveFailure::LimitExceeded)?;
+    let total_items = sources.len().saturating_add(2);
+    let mut completed_bytes = 0_u64;
+    lease.set_progress("writing", 0, Some(total_items), 0, Some(total_bytes))?;
+    append_bytes(
+        &mut archive,
+        MANIFEST_PATH,
+        manifest_json,
+        cancellation,
+        lease,
+        0,
+        total_items,
+        completed_bytes,
+        total_bytes,
+    )?;
+    completed_bytes = completed_bytes.saturating_add(manifest_json.len() as u64);
+    append_bytes(
+        &mut archive,
+        CONVERSATIONS_PATH,
+        conversations_json,
+        cancellation,
+        lease,
+        1,
+        total_items,
+        completed_bytes,
+        total_bytes,
+    )?;
+    completed_bytes = completed_bytes.saturating_add(conversations_json.len() as u64);
+    for (index, source) in sources.iter().enumerate() {
+        check_cancelled(cancellation)?;
         let file = File::open(&source.path).map_err(|_| ArchiveFailure::Storage)?;
-        let mut reader = HashingReader::new(BufReader::new(file));
+        let cancellable_reader = CancellableReader::new(
+            BufReader::new(file),
+            cancellation,
+            lease,
+            index + 2,
+            total_items,
+            completed_bytes,
+            total_bytes,
+        );
+        let mut reader = HashingReader::new(cancellable_reader);
         append_reader(
             &mut archive,
             &source.record.path,
             source.record.size_bytes,
             &mut reader,
+            cancellation,
         )?;
+        check_cancelled(cancellation)?;
         if reader.bytes_read != source.record.size_bytes
             || digest_hex(&reader.hasher.finalize()) != source.record.sha256
         {
             return Err(ArchiveFailure::Storage);
         }
+        completed_bytes = completed_bytes.saturating_add(source.record.size_bytes);
+        lease.set_progress(
+            "writing",
+            index + 3,
+            Some(total_items),
+            completed_bytes,
+            Some(total_bytes),
+        )?;
     }
+    check_cancelled(cancellation)?;
     let encrypted = archive.into_inner().map_err(|_| ArchiveFailure::Storage)?;
     let output = encrypted.finish().map_err(|_| ArchiveFailure::Storage)?;
     output.sync_all().map_err(|_| ArchiveFailure::Storage)
@@ -598,13 +889,35 @@ fn append_bytes<W: Write>(
     archive: &mut Builder<W>,
     path: &str,
     content: &[u8],
+    cancellation: &watch::Receiver<bool>,
+    lease: &ArchiveOperationLease,
+    completed_items: usize,
+    total_items: usize,
+    completed_bytes: u64,
+    total_bytes: u64,
 ) -> Result<(), ArchiveFailure> {
-    let mut reader = content;
+    let mut reader = CancellableReader::new(
+        content,
+        cancellation,
+        lease,
+        completed_items,
+        total_items,
+        completed_bytes,
+        total_bytes,
+    );
     append_reader(
         archive,
         path,
         u64::try_from(content.len()).map_err(|_| ArchiveFailure::LimitExceeded)?,
         &mut reader,
+        cancellation,
+    )?;
+    lease.set_progress(
+        "writing",
+        completed_items + 1,
+        Some(total_items),
+        completed_bytes.saturating_add(content.len() as u64),
+        Some(total_bytes),
     )
 }
 
@@ -613,21 +926,90 @@ fn append_reader<W: Write, R: Read>(
     path: &str,
     size: u64,
     reader: &mut R,
+    cancellation: &watch::Receiver<bool>,
 ) -> Result<(), ArchiveFailure> {
+    check_cancelled(cancellation)?;
     let mut header = Header::new_gnu();
     header.set_entry_type(EntryType::Regular);
     header.set_size(size);
     header.set_mode(0o600);
     header.set_cksum();
-    archive
-        .append_data(&mut header, path, reader)
-        .map_err(|_| ArchiveFailure::Storage)
+    if archive.append_data(&mut header, path, reader).is_err() {
+        return Err(if *cancellation.borrow() {
+            ArchiveFailure::Cancelled
+        } else {
+            ArchiveFailure::Storage
+        });
+    }
+    check_cancelled(cancellation)
 }
 
 struct HashingReader<R> {
     inner: R,
     hasher: Sha256,
     bytes_read: u64,
+}
+
+struct CancellableReader<'a, R> {
+    inner: R,
+    cancellation: &'a watch::Receiver<bool>,
+    lease: &'a ArchiveOperationLease,
+    completed_items: usize,
+    total_items: usize,
+    completed_bytes: u64,
+    total_bytes: u64,
+    bytes_read: u64,
+    last_reported_bytes: u64,
+}
+
+impl<'a, R> CancellableReader<'a, R> {
+    fn new(
+        inner: R,
+        cancellation: &'a watch::Receiver<bool>,
+        lease: &'a ArchiveOperationLease,
+        completed_items: usize,
+        total_items: usize,
+        completed_bytes: u64,
+        total_bytes: u64,
+    ) -> Self {
+        Self {
+            inner,
+            cancellation,
+            lease,
+            completed_items,
+            total_items,
+            completed_bytes,
+            total_bytes,
+            bytes_read: 0,
+            last_reported_bytes: 0,
+        }
+    }
+}
+
+impl<R: Read> Read for CancellableReader<'_, R> {
+    fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+        if *self.cancellation.borrow() {
+            return Err(io::Error::new(
+                io::ErrorKind::Interrupted,
+                "archive operation cancelled",
+            ));
+        }
+        let count = self.inner.read(buffer)?;
+        self.bytes_read = self.bytes_read.saturating_add(count as u64);
+        if count > 0 && self.bytes_read.saturating_sub(self.last_reported_bytes) >= 1024 * 1024 {
+            self.lease
+                .set_progress(
+                    "writing",
+                    self.completed_items,
+                    Some(self.total_items),
+                    self.completed_bytes.saturating_add(self.bytes_read),
+                    Some(self.total_bytes),
+                )
+                .map_err(|_| io::Error::other("archive operation status is unavailable"))?;
+            self.last_reported_bytes = self.bytes_read;
+        }
+        Ok(count)
+    }
 }
 
 impl<R> HashingReader<R> {
@@ -652,7 +1034,10 @@ impl<R: Read> Read for HashingReader<R> {
 fn load_conversations(
     storage: &AppStorage,
     conversation_ids: &[String],
+    cancellation: &watch::Receiver<bool>,
+    lease: &ArchiveOperationLease,
 ) -> Result<(ArchiveData, Vec<AttachmentSource>), ArchiveFailure> {
+    check_cancelled(cancellation)?;
     if conversation_ids.is_empty() || conversation_ids.len() > MAX_CONVERSATION_IDS {
         return Err(ArchiveFailure::InvalidRequest);
     }
@@ -668,7 +1053,9 @@ fn load_conversations(
     let mut conversations = Vec::with_capacity(conversation_ids.len());
     let mut sources = Vec::new();
     let mut message_count = 0_usize;
+    lease.set_progress("reading", 0, None, 0, None)?;
     for conversation_id in conversation_ids {
+        check_cancelled(cancellation)?;
         let active_run = transaction.query_row(
             "SELECT EXISTS (
                 SELECT 1 FROM agent_runs
@@ -714,6 +1101,7 @@ fn load_conversations(
         )?;
         let mut rows = statement.query([conversation_id])?;
         while let Some(row) = rows.next()? {
+            check_cancelled(cancellation)?;
             message_count = message_count.saturating_add(1);
             if message_count > MAX_MESSAGES {
                 return Err(ArchiveFailure::LimitExceeded);
@@ -734,9 +1122,10 @@ fn load_conversations(
             for metadata in message_attachment_metadata(&message.content)
                 .map_err(|_| ArchiveFailure::InvalidArchive)?
             {
+                check_cancelled(cancellation)?;
                 let path =
                     attachment_path(storage.root(), conversation_id, &message.id, &metadata.id)?;
-                let bytes = read_verified_attachment(&path, &metadata)?;
+                let bytes = read_verified_attachment(&path, &metadata, cancellation)?;
                 let record = ArchiveAttachmentRecord {
                     path: archive_attachment_path(conversation_id, &message.id, &metadata.id),
                     size_bytes: bytes.len() as u64,
@@ -745,9 +1134,14 @@ fn load_conversations(
                 sources.push(AttachmentSource { record, path });
             }
             conversation.messages.push(message);
+            if message_count % 100 == 0 {
+                lease.set_progress("reading", message_count, None, 0, None)?;
+            }
         }
         conversations.push(conversation);
+        lease.set_progress("reading", message_count, None, 0, None)?;
     }
+    check_cancelled(cancellation)?;
     if conversations.len() != unique_ids.len() {
         return Err(ArchiveFailure::NotFound);
     }
@@ -847,23 +1241,31 @@ fn read_archive(
     path: &Path,
     passphrase: &str,
     stage: Option<&RestoreStage>,
+    cancellation: &watch::Receiver<bool>,
+    lease: &ArchiveOperationLease,
 ) -> Result<(ArchiveManifest, ArchiveData), ArchiveFailure> {
+    check_cancelled(cancellation)?;
     let file = validate_input_path(path)?;
+    let archive_bytes = file.metadata().map_err(|_| ArchiveFailure::Storage)?.len();
+    lease.set_progress("reading", 0, None, 0, Some(archive_bytes))?;
     let decryptor =
         Decryptor::new(BufReader::new(file)).map_err(|_| ArchiveFailure::InvalidArchive)?;
     if !decryptor.is_scrypt() {
         return Err(ArchiveFailure::InvalidArchive);
     }
+    check_cancelled(cancellation)?;
     let mut identity = Identity::new(SecretString::from(passphrase.to_owned()));
     identity.set_max_work_factor(MAX_AGE_SCRYPT_LOG_N);
     let decrypted = decryptor
         .decrypt(iter::once(&identity as &dyn age::Identity))
         .map_err(|_| ArchiveFailure::InvalidArchive)?;
+    check_cancelled(cancellation)?;
     let limited = decrypted.take(MAX_ARCHIVE_FILE_BYTES.saturating_add(1));
     let mut archive = Archive::new(limited);
     let mut entries = archive
         .entries()
         .map_err(|_| ArchiveFailure::InvalidArchive)?;
+    check_cancelled(cancellation)?;
     let first = entries
         .next()
         .transpose()
@@ -873,9 +1275,16 @@ fn read_archive(
     if first.size() > MAX_MANIFEST_BYTES {
         return Err(ArchiveFailure::LimitExceeded);
     }
-    let manifest = read_entry_json::<ArchiveManifest, _>(first, MAX_MANIFEST_BYTES)?;
+    let manifest = read_entry_json::<ArchiveManifest, _>(
+        first,
+        MAX_MANIFEST_BYTES,
+        cancellation,
+        lease,
+        None,
+    )?;
     validate_manifest(&manifest)?;
 
+    check_cancelled(cancellation)?;
     let second = entries
         .next()
         .transpose()
@@ -885,7 +1294,13 @@ fn read_archive(
     if second.size() > MAX_CONVERSATIONS_JSON_BYTES {
         return Err(ArchiveFailure::LimitExceeded);
     }
-    let data = read_entry_json::<ArchiveData, _>(second, MAX_CONVERSATIONS_JSON_BYTES)?;
+    let data = read_entry_json::<ArchiveData, _>(
+        second,
+        MAX_CONVERSATIONS_JSON_BYTES,
+        cancellation,
+        lease,
+        None,
+    )?;
     validate_archive_data(&manifest, &data)?;
 
     let mut attachment_records = manifest
@@ -895,8 +1310,21 @@ fn read_archive(
         .collect::<HashMap<_, _>>();
     let mut attachment_metadata = expected_attachment_metadata(&data)?;
     let mut attachment_bytes = 0_u64;
+    let total_attachment_bytes = manifest
+        .attachments
+        .iter()
+        .try_fold(0_u64, |total, record| total.checked_add(record.size_bytes))
+        .ok_or(ArchiveFailure::LimitExceeded)?;
+    let mut attachments_read = 0_usize;
     for entry in entries.by_ref() {
-        let mut entry = entry.map_err(|_| ArchiveFailure::InvalidArchive)?;
+        check_cancelled(cancellation)?;
+        let mut entry = entry.map_err(|_| {
+            if *cancellation.borrow() {
+                ArchiveFailure::Cancelled
+            } else {
+                ArchiveFailure::InvalidArchive
+            }
+        })?;
         let path = tar_path(&entry)?;
         let record = attachment_records
             .remove(path.as_str())
@@ -925,9 +1353,14 @@ fn read_archive(
         let mut hasher = Sha256::new();
         let mut buffer = [0_u8; 64 * 1024];
         loop {
-            let count = entry
-                .read(&mut buffer)
-                .map_err(|_| ArchiveFailure::InvalidArchive)?;
+            check_cancelled(cancellation)?;
+            let count = entry.read(&mut buffer).map_err(|_| {
+                if *cancellation.borrow() {
+                    ArchiveFailure::Cancelled
+                } else {
+                    ArchiveFailure::InvalidArchive
+                }
+            })?;
             if count == 0 {
                 break;
             }
@@ -943,6 +1376,13 @@ fn read_archive(
                 file.write_all(&buffer[..count])
                     .map_err(|_| ArchiveFailure::Storage)?;
             }
+            lease.set_progress(
+                "reading",
+                attachments_read,
+                Some(manifest.attachments.len()),
+                attachment_bytes.saturating_add(bytes.len() as u64),
+                Some(total_attachment_bytes),
+            )?;
         }
         if bytes.len() != metadata.size_bytes || digest_hex(&hasher.finalize()) != record.sha256 {
             return Err(ArchiveFailure::InvalidArchive);
@@ -955,16 +1395,41 @@ fn read_archive(
         attachment_bytes = attachment_bytes
             .checked_add(record.size_bytes)
             .ok_or(ArchiveFailure::LimitExceeded)?;
+        attachments_read += 1;
+        lease.set_progress(
+            "reading",
+            attachments_read,
+            Some(manifest.attachments.len()),
+            attachment_bytes,
+            Some(total_attachment_bytes),
+        )?;
         if attachment_bytes > MAX_ATTACHMENT_BYTES {
             return Err(ArchiveFailure::LimitExceeded);
         }
     }
+    check_cancelled(cancellation)?;
     if !attachment_records.is_empty() || !attachment_metadata.is_empty() {
         return Err(ArchiveFailure::InvalidArchive);
     }
     let mut decrypted = archive.into_inner();
-    let drained =
-        io::copy(&mut decrypted, &mut io::sink()).map_err(|_| ArchiveFailure::InvalidArchive)?;
+    let mut drain_buffer = [0_u8; 64 * 1024];
+    let mut drained = 0_u64;
+    loop {
+        check_cancelled(cancellation)?;
+        let count = decrypted.read(&mut drain_buffer).map_err(|_| {
+            if *cancellation.borrow() {
+                ArchiveFailure::Cancelled
+            } else {
+                ArchiveFailure::InvalidArchive
+            }
+        })?;
+        if count == 0 {
+            break;
+        }
+        drained = drained
+            .checked_add(count as u64)
+            .ok_or(ArchiveFailure::LimitExceeded)?;
+    }
     let consumed = MAX_ARCHIVE_FILE_BYTES
         .saturating_add(1)
         .saturating_sub(decrypted.limit());
@@ -999,6 +1464,9 @@ fn tar_path<R: Read>(entry: &tar::Entry<'_, R>) -> Result<String, ArchiveFailure
 fn read_entry_json<T: DeserializeOwned, R: Read>(
     entry: tar::Entry<'_, R>,
     maximum: u64,
+    cancellation: &watch::Receiver<bool>,
+    lease: &ArchiveOperationLease,
+    total_items: Option<usize>,
 ) -> Result<T, ArchiveFailure> {
     let size = entry.size();
     if size > maximum {
@@ -1006,10 +1474,23 @@ fn read_entry_json<T: DeserializeOwned, R: Read>(
     }
     let mut bytes =
         Vec::with_capacity(usize::try_from(size).map_err(|_| ArchiveFailure::LimitExceeded)?);
-    entry
-        .take(maximum.saturating_add(1))
-        .read_to_end(&mut bytes)
-        .map_err(|_| ArchiveFailure::InvalidArchive)?;
+    let mut entry = entry.take(maximum.saturating_add(1));
+    let mut buffer = [0_u8; 64 * 1024];
+    loop {
+        check_cancelled(cancellation)?;
+        let count = entry.read(&mut buffer).map_err(|_| {
+            if *cancellation.borrow() {
+                ArchiveFailure::Cancelled
+            } else {
+                ArchiveFailure::InvalidArchive
+            }
+        })?;
+        if count == 0 {
+            break;
+        }
+        bytes.extend_from_slice(&buffer[..count]);
+        lease.set_progress("reading", 0, total_items, bytes.len() as u64, Some(size))?;
+    }
     if bytes.len() as u64 != size {
         return Err(ArchiveFailure::InvalidArchive);
     }
@@ -1237,13 +1718,20 @@ fn expected_attachment_metadata(
 fn count_existing_conversations(
     connection: &StorageConnection<'_>,
     conversations: &[ArchivedConversation],
+    cancellation: &watch::Receiver<bool>,
+    lease: &ArchiveOperationLease,
 ) -> Result<usize, ArchiveFailure> {
     let mut statement =
         connection.prepare("SELECT EXISTS (SELECT 1 FROM conversations WHERE id = ?1)")?;
-    conversations.iter().try_fold(0, |count, conversation| {
+    let mut count = 0;
+    for (index, conversation) in conversations.iter().enumerate() {
+        check_cancelled(cancellation)?;
         let exists = statement.query_row([&conversation.id], |row| row.get::<_, bool>(0))?;
-        Ok(count + usize::from(exists))
-    })
+        count += usize::from(exists);
+        lease.set_progress("verifying", index + 1, Some(conversations.len()), 0, None)?;
+    }
+    check_cancelled(cancellation)?;
+    Ok(count)
 }
 
 fn archive_summary(manifest: &ArchiveManifest, duplicate_count: usize) -> Value {
@@ -1265,11 +1753,15 @@ fn restore_transaction(
     manifest: &ArchiveManifest,
     data: ArchiveData,
     policy: ConflictPolicy,
+    cancellation: &watch::Receiver<bool>,
+    lease: &ArchiveOperationLease,
 ) -> Result<(Value, CreatedAttachmentFiles), ArchiveFailure> {
+    check_cancelled(cancellation)?;
     validate_archive_data(manifest, &data)?;
     let mut target_ids = HashMap::with_capacity(data.conversations.len());
     let mut duplicate_count = 0_usize;
     for conversation in &data.conversations {
+        check_cancelled(cancellation)?;
         let exists = transaction.query_row(
             "SELECT EXISTS (SELECT 1 FROM conversations WHERE id = ?1)",
             [&conversation.id],
@@ -1302,7 +1794,14 @@ fn restore_transaction(
         }
     }
     let mut created_files = CreatedAttachmentFiles::new(manifest.attachments.len());
-    for record in &manifest.attachments {
+    let total_attachment_bytes = manifest
+        .attachments
+        .iter()
+        .try_fold(0_u64, |total, record| total.checked_add(record.size_bytes))
+        .ok_or(ArchiveFailure::LimitExceeded)?;
+    let mut copied_attachment_bytes = 0_u64;
+    for (index, record) in manifest.attachments.iter().enumerate() {
+        check_cancelled(cancellation)?;
         let (source_conversation_id, message_id, _, file_name) =
             parse_attachment_archive_path(&record.path)?;
         let Some(target_conversation_id) = target_ids
@@ -1318,12 +1817,33 @@ fn restore_transaction(
             message_id,
             file_name,
         )?;
-        copy_new_file(&staged_path, &target, &mut created_files)?;
+        copy_new_file(
+            &staged_path,
+            &target,
+            &mut created_files,
+            cancellation,
+            lease,
+            index,
+            manifest.attachments.len(),
+            copied_attachment_bytes,
+            total_attachment_bytes,
+        )?;
+        copied_attachment_bytes = copied_attachment_bytes
+            .checked_add(record.size_bytes)
+            .ok_or(ArchiveFailure::LimitExceeded)?;
+        lease.set_progress(
+            "restoring",
+            index + 1,
+            Some(manifest.attachments.len()),
+            copied_attachment_bytes,
+            Some(total_attachment_bytes),
+        )?;
     }
 
     let mut inserted_count = 0_usize;
     let mut inserted_messages = 0_usize;
     for conversation in &data.conversations {
+        check_cancelled(cancellation)?;
         let target_id = target_ids
             .get(&conversation.id)
             .ok_or(ArchiveFailure::InvalidArchive)?;
@@ -1363,6 +1883,7 @@ fn restore_transaction(
             )?;
         }
         for message in &conversation.messages {
+            check_cancelled(cancellation)?;
             transaction.execute(
                 "INSERT INTO messages (
                     id, conversation_id, role, content, created_at, output_tokens,
@@ -1385,9 +1906,26 @@ fn restore_transaction(
                 ],
             )?;
             inserted_messages += 1;
+            if inserted_messages % 100 == 0 {
+                lease.set_progress(
+                    "restoring",
+                    inserted_messages,
+                    Some(manifest.message_count),
+                    copied_attachment_bytes,
+                    Some(total_attachment_bytes),
+                )?;
+            }
         }
         inserted_count += 1;
     }
+    check_cancelled(cancellation)?;
+    lease.set_progress(
+        "committing",
+        inserted_messages,
+        Some(manifest.message_count),
+        copied_attachment_bytes,
+        Some(total_attachment_bytes),
+    )?;
     Ok((
         json!({
             "restoredConversationCount": inserted_count,
@@ -1454,8 +1992,19 @@ fn copy_new_file(
     source: &Path,
     destination: &Path,
     created_files: &mut CreatedAttachmentFiles,
+    cancellation: &watch::Receiver<bool>,
+    lease: &ArchiveOperationLease,
+    completed_items: usize,
+    total_items: usize,
+    completed_bytes: u64,
+    total_bytes: u64,
 ) -> Result<(), ArchiveFailure> {
+    check_cancelled(cancellation)?;
     let mut source = File::open(source).map_err(|_| ArchiveFailure::Storage)?;
+    let file_bytes = source
+        .metadata()
+        .map_err(|_| ArchiveFailure::Storage)?
+        .len();
     let mut destination_file = OpenOptions::new()
         .write(true)
         .create_new(true)
@@ -1468,7 +2017,38 @@ fn copy_new_file(
             }
         })?;
     created_files.push(destination.to_path_buf());
-    io::copy(&mut source, &mut destination_file).map_err(|_| ArchiveFailure::Storage)?;
+    let mut copied_bytes = 0_u64;
+    let mut last_reported_bytes = 0_u64;
+    let mut buffer = [0_u8; 64 * 1024];
+    loop {
+        check_cancelled(cancellation)?;
+        let count = source
+            .read(&mut buffer)
+            .map_err(|_| ArchiveFailure::Storage)?;
+        if count == 0 {
+            break;
+        }
+        destination_file
+            .write_all(&buffer[..count])
+            .map_err(|_| ArchiveFailure::Storage)?;
+        copied_bytes = copied_bytes
+            .checked_add(count as u64)
+            .ok_or(ArchiveFailure::LimitExceeded)?;
+        if copied_bytes.saturating_sub(last_reported_bytes) >= 1024 * 1024 {
+            lease.set_progress(
+                "restoring",
+                completed_items,
+                Some(total_items),
+                completed_bytes.saturating_add(copied_bytes),
+                Some(total_bytes),
+            )?;
+            last_reported_bytes = copied_bytes;
+        }
+    }
+    if copied_bytes != file_bytes {
+        return Err(ArchiveFailure::Storage);
+    }
+    check_cancelled(cancellation)?;
     destination_file
         .sync_all()
         .map_err(|_| ArchiveFailure::Storage)
@@ -1515,16 +2095,28 @@ fn attachment_path(
 fn read_verified_attachment(
     path: &Path,
     metadata: &AttachmentMetadata,
+    cancellation: &watch::Receiver<bool>,
 ) -> Result<Vec<u8>, ArchiveFailure> {
+    check_cancelled(cancellation)?;
     let file = File::open(path).map_err(|_| ArchiveFailure::Storage)?;
     let file_metadata = file.metadata().map_err(|_| ArchiveFailure::Storage)?;
     if file_metadata.len() != metadata.size_bytes as u64 {
         return Err(ArchiveFailure::Storage);
     }
     let mut bytes = Vec::with_capacity(metadata.size_bytes);
-    file.take(file_metadata.len().saturating_add(1))
-        .read_to_end(&mut bytes)
-        .map_err(|_| ArchiveFailure::Storage)?;
+    let mut reader = file.take(file_metadata.len().saturating_add(1));
+    let mut buffer = [0_u8; 64 * 1024];
+    loop {
+        check_cancelled(cancellation)?;
+        let count = reader
+            .read(&mut buffer)
+            .map_err(|_| ArchiveFailure::Storage)?;
+        if count == 0 {
+            break;
+        }
+        bytes.extend_from_slice(&buffer[..count]);
+    }
+    check_cancelled(cancellation)?;
     validate_portable_attachment_content(metadata, &bytes).map_err(|_| ArchiveFailure::Storage)?;
     Ok(bytes)
 }
@@ -1600,13 +2192,16 @@ mod tests {
     use std::{fs, path::PathBuf};
 
     use serde_json::json;
+    use tokio::sync::watch;
     use uuid::Uuid;
     use zeroize::Zeroizing;
 
+    use crate::service::OperationGate;
     use crate::storage::AppStorage;
 
     use super::{
-        ArchiveFailure, RestoreStage, export, export_inner, inspect, restore, validate_output_path,
+        ArchiveFailure, ArchiveOperationKind, RestoreStage, begin_operation, export, export_inner,
+        inspect, restore, status, validate_output_path,
     };
 
     struct TemporaryProfiles(PathBuf);
@@ -1749,6 +2344,140 @@ mod tests {
         Zeroizing::new("archive-passphrase-2026".to_owned())
     }
 
+    #[test]
+    fn archive_operation_status_exposes_single_flight_and_clears_after_drop() {
+        let temporary = TemporaryProfiles::new();
+        let storage = temporary.storage("status");
+        let lease = begin_operation(&storage, ArchiveOperationKind::Export, &json!(41))
+            .expect("first archive operation should start");
+
+        let active = status(&storage).expect("active archive status should load");
+        assert_eq!(active["operationInProgress"], true);
+        assert_eq!(active["operationId"], json!(41));
+        assert_eq!(active["action"], "export");
+
+        let second = begin_operation(&storage, ArchiveOperationKind::Inspect, &json!(42));
+        assert!(matches!(second, Err(ArchiveFailure::OperationBusy)));
+
+        drop(lease);
+        let idle = status(&storage).expect("idle archive status should load");
+        assert_eq!(idle["operationInProgress"], false);
+        assert!(idle["operationId"].is_null());
+        assert!(idle["action"].is_null());
+        assert!(idle["progress"].is_null());
+    }
+
+    #[test]
+    fn restore_cancellation_during_preflight_releases_the_archive_operation() {
+        let temporary = TemporaryProfiles::new();
+        let storage = temporary.storage("restore-cancel");
+        let (cancel_sender, cancellation) = watch::channel(false);
+
+        let error = restore(
+            &storage,
+            &json!(43),
+            "missing.openchatbackup",
+            fresh_passphrase(),
+            "skip_existing",
+            &cancellation,
+            &OperationGate::default(),
+            || {
+                let active = status(&storage).expect("preflight should see active status");
+                assert_eq!(active["operationInProgress"], true);
+                assert_eq!(active["action"], "restore");
+                cancel_sender
+                    .send(true)
+                    .expect("restore cancellation receiver should be active");
+                Ok(())
+            },
+        )
+        .expect_err("cancellation after preflight should stop before reading an archive");
+
+        assert_eq!(error.code, "operation_cancelled");
+        assert_eq!(
+            status(&storage).expect("archive status should reset after cancellation")["operationInProgress"],
+            false
+        );
+    }
+
+    #[test]
+    fn restore_cancellation_winning_the_commit_gate_rolls_back_database_and_files() {
+        let temporary = TemporaryProfiles::new();
+        let source = temporary.storage("commit-source");
+        add_conversation_with_attachment(&source);
+        let (_cancel_sender, cancellation) = watch::channel(false);
+        let exported = export(
+            &source,
+            &json!(44),
+            &["conversation-1".to_owned()],
+            fresh_passphrase(),
+            &cancellation,
+            &OperationGate::default(),
+        )
+        .expect("source archive should export");
+        let export_id = exported["exportId"]
+            .as_str()
+            .expect("source export should return its identifier");
+        let archive_path = source
+            .root()
+            .join("cache/archive-exports")
+            .join(format!("{export_id}.openchatbackup"));
+
+        let destination = temporary.storage("commit-destination");
+        let cancellation_gate = OperationGate::default();
+        let error = restore(
+            &destination,
+            &json!(45),
+            archive_path.to_str().expect("archive path should be UTF-8"),
+            fresh_passphrase(),
+            "skip_existing",
+            &cancellation,
+            &cancellation_gate,
+            || {
+                assert!(cancellation_gate.request_cancellation());
+                Ok(())
+            },
+        )
+        .expect_err("a cancellation that wins the commit gate must stop restore");
+
+        assert_eq!(error.code, "operation_cancelled");
+        assert!(read_conversation_ids(&destination).is_empty());
+        assert!(
+            !destination
+                .root()
+                .join("attachments/conversation-1/message-1/attachment-1.data")
+                .exists()
+        );
+    }
+
+    #[test]
+    fn export_cancellation_winning_the_commit_gate_removes_the_pending_archive() {
+        let temporary = TemporaryProfiles::new();
+        let storage = temporary.storage("export-cancel");
+        add_conversation_with_attachment(&storage);
+        let (_cancel_sender, cancellation) = watch::channel(false);
+        let cancellation_gate = OperationGate::default();
+        assert!(cancellation_gate.request_cancellation());
+
+        let error = export(
+            &storage,
+            &json!(46),
+            &["conversation-1".to_owned()],
+            fresh_passphrase(),
+            &cancellation,
+            &cancellation_gate,
+        )
+        .expect_err("a cancellation that wins export publication must stop the export");
+
+        assert_eq!(error.code, "operation_cancelled");
+        let export_directory = storage.root().join("cache/archive-exports");
+        let leftovers = fs::read_dir(export_directory)
+            .expect("export directory should exist")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("export directory contents should be readable");
+        assert!(leftovers.is_empty());
+    }
+
     fn read_conversation_ids(storage: &AppStorage) -> Vec<String> {
         let connection = storage.connect().expect("database should connect");
         let mut statement = connection
@@ -1766,8 +2495,16 @@ mod tests {
         let temporary = TemporaryProfiles::new();
         let source = temporary.storage("source");
         let attachment = add_conversation_with_attachment(&source);
-        let exported = export(&source, &["conversation-1".to_owned()], fresh_passphrase())
-            .expect("archive should export");
+        let (_cancel_sender, cancellation) = watch::channel(false);
+        let exported = export(
+            &source,
+            &json!(1),
+            &["conversation-1".to_owned()],
+            fresh_passphrase(),
+            &cancellation,
+            &OperationGate::default(),
+        )
+        .expect("archive should export");
         let export_id = exported["exportId"]
             .as_str()
             .expect("service should return a pending archive identifier");
@@ -1783,8 +2520,10 @@ mod tests {
         let destination = temporary.storage("destination");
         let preview = inspect(
             &destination,
+            &json!(2),
             archive_path.to_str().expect("archive path should be UTF-8"),
             fresh_passphrase(),
+            &cancellation,
         )
         .expect("archive should be inspected before restore");
         assert_eq!(preview["duplicateConversationCount"], 0);
@@ -1792,9 +2531,13 @@ mod tests {
 
         let restored = restore(
             &destination,
+            &json!(3),
             archive_path.to_str().expect("archive path should be UTF-8"),
             fresh_passphrase(),
             "skip_existing",
+            &cancellation,
+            &OperationGate::default(),
+            || Ok(()),
         )
         .expect("archive should restore");
         assert_eq!(restored["restoredConversationCount"], 1);
@@ -1851,9 +2594,13 @@ mod tests {
 
         let second_restore = restore(
             &destination,
+            &json!(4),
             archive_path.to_str().expect("archive path should be UTF-8"),
             fresh_passphrase(),
             "skip_existing",
+            &cancellation,
+            &OperationGate::default(),
+            || Ok(()),
         )
         .expect("existing conversation should be skipped");
         assert_eq!(second_restore["restoredConversationCount"], 0);
@@ -1861,9 +2608,13 @@ mod tests {
 
         let copied = restore(
             &destination,
+            &json!(5),
             archive_path.to_str().expect("archive path should be UTF-8"),
             fresh_passphrase(),
             "import_as_copy",
+            &cancellation,
+            &OperationGate::default(),
+            || Ok(()),
         )
         .expect("existing conversation should import as a copy");
         assert_eq!(copied["restoredConversationCount"], 1);
@@ -1913,19 +2664,27 @@ mod tests {
         let source = temporary.storage("source");
         add_conversation_with_attachment(&source);
         let archive_path = temporary.0.join("selected.openchatbackup");
+        let (_cancel_sender, cancellation) = watch::channel(false);
+        let lease = begin_operation(&source, ArchiveOperationKind::Export, &json!(1))
+            .expect("archive export operation should begin");
         export_inner(
             &source,
             &["conversation-1".to_owned()],
             &archive_path,
             fresh_passphrase().as_str(),
+            &cancellation,
+            &lease,
         )
         .expect("archive should export");
+        lease.finish();
 
         let destination = temporary.storage("destination");
         let wrong_password = inspect(
             &destination,
+            &json!(2),
             archive_path.to_str().expect("archive path should be UTF-8"),
             Zeroizing::new("not-the-correct-passphrase".to_owned()),
+            &cancellation,
         )
         .expect_err("wrong password must not inspect the archive");
         assert_eq!(wrong_password.code, "conversation_archive_invalid");
@@ -1997,13 +2756,19 @@ mod tests {
         drop(connection);
 
         let archive_path = temporary.0.join("rollback.openchatbackup");
+        let (_cancel_sender, cancellation) = watch::channel(false);
+        let lease = begin_operation(&source, ArchiveOperationKind::Export, &json!(1))
+            .expect("archive export operation should begin");
         export_inner(
             &source,
             &["conversation-1".to_owned()],
             &archive_path,
             fresh_passphrase().as_str(),
+            &cancellation,
+            &lease,
         )
         .expect("source archive should export");
+        lease.finish();
 
         let destination = temporary.storage("destination");
         let existing_attachment_directory = destination
@@ -2020,9 +2785,13 @@ mod tests {
 
         let error = restore(
             &destination,
+            &json!(2),
             archive_path.to_str().expect("archive path should be UTF-8"),
             fresh_passphrase(),
             "skip_existing",
+            &cancellation,
+            &OperationGate::default(),
+            || Ok(()),
         )
         .expect_err("the existing attachment should cause a conflict");
         assert_eq!(error.code, "conversation_archive_conflict");

@@ -962,6 +962,21 @@ pub(super) fn remove_all_attachment_directories(storage_root: &Path) -> Result<(
 pub(crate) fn cleanup_orphaned_attachment_directories(
     storage: &AppStorage,
 ) -> Result<(), ServiceError> {
+    cleanup_orphaned_attachment_directories_inner(storage, None)
+}
+
+pub(crate) fn cleanup_orphaned_attachment_directories_with_cancellation(
+    storage: &AppStorage,
+    cancellation: &tokio::sync::watch::Receiver<bool>,
+) -> Result<(), ServiceError> {
+    cleanup_orphaned_attachment_directories_inner(storage, Some(cancellation))
+}
+
+fn cleanup_orphaned_attachment_directories_inner(
+    storage: &AppStorage,
+    cancellation: Option<&tokio::sync::watch::Receiver<bool>>,
+) -> Result<(), ServiceError> {
+    check_cleanup_cancellation(cancellation)?;
     let Some(attachments) = optional_checked_directory(storage.root(), "attachments")? else {
         return Ok(());
     };
@@ -978,6 +993,7 @@ pub(crate) fn cleanup_orphaned_attachment_directories(
     let mut cleanup_failed = false;
 
     for entry in fs::read_dir(&attachments).map_err(|_| storage_unavailable())? {
+        check_cleanup_cancellation(cancellation)?;
         let entry = entry.map_err(|_| storage_unavailable())?;
         let name = match entry.file_name().into_string() {
             Ok(name) if is_safe_identifier(&name) => name,
@@ -998,6 +1014,7 @@ pub(crate) fn cleanup_orphaned_attachment_directories(
             .map_err(storage_error)?;
         if conversation_exists {
             for message_entry in fs::read_dir(&directory).map_err(|_| storage_unavailable())? {
+                check_cleanup_cancellation(cancellation)?;
                 let message_entry = message_entry.map_err(|_| storage_unavailable())?;
                 let message_name = match message_entry.file_name().into_string() {
                     Ok(name) if name.starts_with(".stage-") => continue,
@@ -1046,6 +1063,7 @@ pub(crate) fn cleanup_orphaned_attachment_directories(
                     },
                 };
                 if remove_orphan {
+                    check_cleanup_cancellation(cancellation)?;
                     match fs::remove_dir_all(message_directory) {
                         Ok(()) => {}
                         Err(error) if error.kind() == io::ErrorKind::NotFound => {}
@@ -1055,6 +1073,7 @@ pub(crate) fn cleanup_orphaned_attachment_directories(
             }
             continue;
         }
+        check_cleanup_cancellation(cancellation)?;
         match fs::remove_dir_all(directory) {
             Ok(()) => {}
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
@@ -1062,11 +1081,26 @@ pub(crate) fn cleanup_orphaned_attachment_directories(
         }
     }
 
+    check_cleanup_cancellation(cancellation)?;
     drop(message_statement);
     drop(statement);
     transaction.commit().map_err(storage_error)?;
     if cleanup_failed {
         Err(storage_unavailable())
+    } else {
+        Ok(())
+    }
+}
+
+fn check_cleanup_cancellation(
+    cancellation: Option<&tokio::sync::watch::Receiver<bool>>,
+) -> Result<(), ServiceError> {
+    if cancellation.is_some_and(|receiver| *receiver.borrow()) {
+        Err(ServiceError::new(
+            "operation_cancelled",
+            "The conversation archive operation was cancelled.",
+            false,
+        ))
     } else {
         Ok(())
     }

@@ -5,12 +5,19 @@ import { Button, Card, Checkbox, Dialog, Input, RadioGroup } from '@shared/compo
 import type { ChatConversation } from '@entities/conversation';
 import { useChatStore } from '@features/chat/state';
 import {
+  type ConversationArchiveAction,
+  type ConversationArchiveOperationHandle,
+  type ConversationArchiveOperationStatus,
   buildArchiveFileName,
   type ConversationArchiveSummary,
-  exportConversationArchive,
-  inspectConversationArchive,
-  restoreConversationArchive,
+  CONVERSATION_ARCHIVE_TIMEOUT_MS,
+  cancelConversationArchiveOperation,
+  getActiveConversationArchiveOperation,
+  getConversationArchiveOperationStatus,
   savePendingArchiveExport,
+  startConversationArchiveExport,
+  startConversationArchiveInspection,
+  startConversationArchiveRestore,
 } from '@features/app-settings/data/localDataOperations';
 import { LocalServiceError } from '@shared/lib/platform/local-service';
 import { open } from '@shared/lib/platform/tauri';
@@ -32,6 +39,8 @@ type ErrorKey =
   | 'conversationArchiveStorageFailed'
   | 'conversationArchiveLimitExceeded'
   | 'conversationArchiveTakingLong'
+  | 'conversationArchiveCancelled'
+  | 'conversationArchiveCancelUncertain'
   | 'conversationArchiveOperationFailed'
   | 'historyLoadFailed';
 
@@ -40,10 +49,24 @@ interface ExportRequest {
   passphrase: string;
 }
 
+interface ActiveArchiveControl {
+  id: number;
+  action: ConversationArchiveAction;
+  cancel(): Promise<boolean>;
+}
+
+function getActiveArchiveControl(): ActiveArchiveControl | null {
+  const operation = getActiveConversationArchiveOperation();
+  return operation ? { id: operation.id, action: operation.action, cancel: operation.cancel } : null;
+}
+
 export function ConversationArchiveSettingsSection({ enabled }: { enabled: boolean }) {
   const { i18n, t } = useTranslation();
   const conversations = useChatStore((state) => state.conversations);
   const [isWorking, setIsWorking] = useState(false);
+  const [activeOperation, setActiveOperation] = useState(getActiveArchiveControl);
+  const [operationStatus, setOperationStatus] = useState<ConversationArchiveOperationStatus | null>(null);
+  const [isCancelling, setIsCancelling] = useState(false);
   const [isChoosingConversations, setIsChoosingConversations] = useState(false);
   const [archiveToRestore, setArchiveToRestore] = useState<ConversationArchiveSummary | null>(null);
   const [restorePath, setRestorePath] = useState<string | null>(null);
@@ -55,12 +78,43 @@ export function ConversationArchiveSettingsSection({ enabled }: { enabled: boole
     key: 'conversationArchiveExportSuccess' | 'conversationArchiveImportSuccess';
     count: number;
   } | null>(null);
+  const isArchiveOperationWorking = activeOperation !== null || operationStatus?.operationInProgress === true;
+  const isBusy = isWorking || isArchiveOperationWorking;
+
+  useEffect(() => {
+    let stopped = false;
+    let timer: number | undefined;
+    const pollStatus = async () => {
+      let continuePolling = getActiveConversationArchiveOperation() !== null;
+      try {
+        const status = await getConversationArchiveOperationStatus();
+        continuePolling ||= status.operationInProgress;
+        if (!stopped) {
+          setOperationStatus(status);
+          setActiveOperation(getActiveArchiveControl());
+          if (!status.operationInProgress) setIsCancelling(false);
+        }
+      } catch {
+        continuePolling ||= operationStatus?.operationInProgress === true;
+      }
+      if (!stopped && continuePolling) {
+        timer = window.setTimeout(() => void pollStatus(), 750);
+      }
+    };
+    void pollStatus();
+    return () => {
+      stopped = true;
+      if (timer !== undefined) window.clearTimeout(timer);
+    };
+  }, [operationStatus?.operationInProgress]);
 
   const reportError = (error: unknown, action: 'export' | 'import') => {
     if (error instanceof LocalServiceError) {
       setErrorKey(
         archiveErrorKey(error.code) ??
-          (error.code === 'invalid_service_response'
+          (error.code === 'operation_cancelled'
+            ? 'conversationArchiveCancelled'
+            : error.code === 'invalid_service_response'
             ? 'conversationArchiveInvalidResponse'
             : action === 'export'
               ? 'conversationArchiveExportFailed'
@@ -71,13 +125,64 @@ export function ConversationArchiveSettingsSection({ enabled }: { enabled: boole
     }
   };
 
+  const startArchiveDeadline = (operation: Pick<ConversationArchiveOperationHandle<unknown>, 'cancel'>) =>
+    window.setTimeout(() => {
+      setErrorKey('conversationArchiveTakingLong');
+      setIsCancelling(true);
+      void operation
+        .cancel()
+        .then((accepted) => {
+          if (!accepted) {
+            setIsCancelling(false);
+            setErrorKey('conversationArchiveCancelUncertain');
+          }
+        })
+        .catch(() => {
+          setIsCancelling(false);
+          setErrorKey('conversationArchiveCancelUncertain');
+        });
+    }, CONVERSATION_ARCHIVE_TIMEOUT_MS);
+
+  const cancelArchiveOperation = async () => {
+    if (isCancelling) return;
+    setIsCancelling(true);
+    setErrorKey(null);
+    try {
+      const accepted = activeOperation
+        ? await activeOperation.cancel()
+        : operationStatus?.operationId !== null && operationStatus?.operationId !== undefined
+          ? await cancelConversationArchiveOperation(operationStatus.operationId)
+          : false;
+      if (!accepted) {
+        setIsCancelling(false);
+        setErrorKey('conversationArchiveCancelUncertain');
+      }
+    } catch {
+      setIsCancelling(false);
+      setErrorKey('conversationArchiveCancelUncertain');
+    }
+  };
+
   const exportSelected = async (request: ExportRequest) => {
+    if (isBusy) return;
     setIsChoosingConversations(false);
     setIsWorking(true);
     setErrorKey(null);
     setFeedback(null);
+    let timeout: number | undefined;
     try {
-      const result = await exportConversationArchive(request.conversationIds, request.passphrase);
+      const operation = await startConversationArchiveExport(request.conversationIds, request.passphrase);
+      setActiveOperation({ id: operation.id, action: operation.action, cancel: operation.cancel });
+      setOperationStatus({
+        operationInProgress: true,
+        operationId: operation.id,
+        action: 'export',
+        progress: null,
+      });
+      timeout = startArchiveDeadline(operation);
+      const result = await operation.result;
+      window.clearTimeout(timeout);
+      timeout = undefined;
       const saved = await savePendingArchiveExport(
         'conversation',
         result.exportId,
@@ -89,7 +194,15 @@ export function ConversationArchiveSettingsSection({ enabled }: { enabled: boole
     } catch (error) {
       reportError(error, 'export');
     } finally {
+      if (timeout !== undefined) window.clearTimeout(timeout);
+      setActiveOperation(getActiveArchiveControl());
+      setIsCancelling(false);
       setIsWorking(false);
+      try {
+        setOperationStatus(await getConversationArchiveOperationStatus());
+      } catch {
+        // Keep the last confirmed archive operation status visible while the service is unavailable.
+      }
     }
   };
 
@@ -127,11 +240,23 @@ export function ConversationArchiveSettingsSection({ enabled }: { enabled: boole
 
   const unlockArchive = async (passphrase: string): Promise<boolean> => {
     const path = pendingImportPath;
-    if (!path || isWorking) return false;
+    if (!path || isBusy) return false;
     setIsWorking(true);
     setErrorKey(null);
+    let timeout: number | undefined;
     try {
-      const summary = await inspectConversationArchive(path, passphrase);
+      const operation = await startConversationArchiveInspection(path, passphrase);
+      setActiveOperation({ id: operation.id, action: operation.action, cancel: operation.cancel });
+      setOperationStatus({
+        operationInProgress: true,
+        operationId: operation.id,
+        action: 'inspect',
+        progress: null,
+      });
+      timeout = startArchiveDeadline(operation);
+      const summary = await operation.result;
+      window.clearTimeout(timeout);
+      timeout = undefined;
       setRestorePath(path);
       setRestorePassphrase(passphrase);
       setArchiveToRestore(summary);
@@ -142,17 +267,37 @@ export function ConversationArchiveSettingsSection({ enabled }: { enabled: boole
       reportError(error, 'import');
       return false;
     } finally {
+      if (timeout !== undefined) window.clearTimeout(timeout);
+      setActiveOperation(getActiveArchiveControl());
+      setIsCancelling(false);
       setIsWorking(false);
+      try {
+        setOperationStatus(await getConversationArchiveOperationStatus());
+      } catch {
+        // Keep the last confirmed archive operation status visible while the service is unavailable.
+      }
     }
   };
 
   const restoreArchive = async (policy: 'skip_existing' | 'import_as_copy') => {
-    if (!restorePath || restorePassphrase === null || isWorking) return;
+    if (!restorePath || restorePassphrase === null || isBusy) return;
     setArchiveToRestore(null);
     setIsWorking(true);
     setErrorKey(null);
+    let timeout: number | undefined;
     try {
-      const result = await restoreConversationArchive(restorePath, restorePassphrase, policy);
+      const operation = await startConversationArchiveRestore(restorePath, restorePassphrase, policy);
+      setActiveOperation({ id: operation.id, action: operation.action, cancel: operation.cancel });
+      setOperationStatus({
+        operationInProgress: true,
+        operationId: operation.id,
+        action: 'restore',
+        progress: null,
+      });
+      timeout = startArchiveDeadline(operation);
+      const result = await operation.result;
+      window.clearTimeout(timeout);
+      timeout = undefined;
       setFeedback({ key: 'conversationArchiveImportSuccess', count: result.conversationCount });
       try {
         await useChatStore.getState().refreshConversations();
@@ -162,11 +307,38 @@ export function ConversationArchiveSettingsSection({ enabled }: { enabled: boole
     } catch (error) {
       reportError(error, 'import');
     } finally {
+      if (timeout !== undefined) window.clearTimeout(timeout);
       setRestorePath(null);
       setRestorePassphrase(null);
+      setActiveOperation(getActiveArchiveControl());
+      setIsCancelling(false);
       setIsWorking(false);
+      try {
+        setOperationStatus(await getConversationArchiveOperationStatus());
+      } catch {
+        // Keep the last confirmed archive operation status visible while the service is unavailable.
+      }
     }
   };
+
+  const progress = operationStatus?.progress;
+  const progressPhaseKey =
+    progress?.phase === 'writing'
+      ? 'conversationArchiveProgressWriting'
+      : progress?.phase === 'verifying'
+        ? 'conversationArchiveProgressVerifying'
+        : progress?.phase === 'restoring'
+          ? 'conversationArchiveProgressRestoring'
+          : progress?.phase === 'committing'
+            ? 'conversationArchiveProgressCommitting'
+            : progress
+              ? 'conversationArchiveProgressReading'
+              : null;
+  const formatCount = (value: number) => new Intl.NumberFormat(i18n.resolvedLanguage ?? i18n.language).format(value);
+  const formatMegabytes = (value: number) =>
+    new Intl.NumberFormat(i18n.resolvedLanguage ?? i18n.language, { maximumFractionDigits: 1 }).format(
+      value / (1024 * 1024),
+    );
 
   return (
     <Card className="grid content-start gap-4 rounded-card border border-border bg-raised p-4">
@@ -181,7 +353,7 @@ export function ConversationArchiveSettingsSection({ enabled }: { enabled: boole
 
       <div className="flex flex-wrap gap-2">
         <Button
-          disabled={!enabled || isWorking}
+          disabled={!enabled || isBusy}
           onClick={() => {
             setErrorKey(null);
             setFeedback(null);
@@ -195,7 +367,7 @@ export function ConversationArchiveSettingsSection({ enabled }: { enabled: boole
           <Archive aria-hidden="true" size={16} />
           {t('exportConversations')}
         </Button>
-        <Button disabled={!enabled || isWorking} onClick={() => void startImport()}>
+        <Button disabled={!enabled || isBusy} onClick={() => void startImport()}>
           <ArchiveRestore aria-hidden="true" size={16} />
           {t('importConversations')}
         </Button>
@@ -206,7 +378,7 @@ export function ConversationArchiveSettingsSection({ enabled }: { enabled: boole
           {t('conversationArchiveUnavailable')}
         </p>
       ) : null}
-      {isWorking ? (
+      {isBusy ? (
         <>
           <div
             aria-label={t('conversationArchiveProcessing')}
@@ -216,8 +388,39 @@ export function ConversationArchiveSettingsSection({ enabled }: { enabled: boole
             <div className="h-full w-1/3 animate-pulse rounded-full bg-accent" />
           </div>
           <p aria-live="polite" className="text-sm text-secondary-text">
-            {t('conversationArchiveProcessing')}
+            {isCancelling
+              ? t('conversationArchiveCancelling')
+              : progressPhaseKey
+                ? t(progressPhaseKey)
+                : t('conversationArchiveProcessing')}
           </p>
+          {progress && progress.totalItems !== null ? (
+            <p className="text-sm text-secondary-text">
+              {t('conversationArchiveProgressItems', {
+                count: formatCount(progress.completedItems),
+                total: formatCount(progress.totalItems),
+              })}
+            </p>
+          ) : progress && progress.completedItems > 0 ? (
+            <p className="text-sm text-secondary-text">
+              {t('conversationArchiveProgressScanned', {
+                count: formatCount(progress.completedItems),
+              })}
+            </p>
+          ) : null}
+          {progress && progress.completedBytes > 0 && progress.totalBytes !== null ? (
+            <p className="text-sm text-secondary-text">
+              {t('conversationArchiveProgressBytes', {
+                count: formatMegabytes(progress.completedBytes),
+                total: formatMegabytes(progress.totalBytes),
+              })}
+            </p>
+          ) : null}
+          {isArchiveOperationWorking ? (
+            <Button disabled={isCancelling} onClick={() => void cancelArchiveOperation()} size="small" variant="ghost">
+              {t(isCancelling ? 'conversationArchiveCancelling' : 'conversationArchiveCancel')}
+            </Button>
+          ) : null}
         </>
       ) : null}
       {errorKey ? (
@@ -255,7 +458,7 @@ export function ConversationArchiveSettingsSection({ enabled }: { enabled: boole
         onSubmit={unlockArchive}
         open={isPassphraseOpen}
         title={t('conversationArchivePassphraseTitle')}
-        working={isWorking}
+        working={isBusy}
       />
 
       <ArchiveRestoreDialog
@@ -556,6 +759,8 @@ function archiveErrorKey(code: string): ErrorKey | null {
     case 'conversation_archive_conflict':
       return 'conversationArchiveConflict';
     case 'conversation_archive_busy':
+      return 'conversationArchiveBusy';
+    case 'conversation_archive_operation_busy':
       return 'conversationArchiveBusy';
     case 'conversation_archive_storage_failed':
       return 'conversationArchiveStorageFailed';

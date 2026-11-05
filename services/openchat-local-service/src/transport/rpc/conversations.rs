@@ -11,6 +11,7 @@ use crate::{
     chatgpt_store, context_usage, conversation_archive, document_parser, instructions,
     openai_compatible, profile_archive,
     protocol::{EventSink, Response, ServiceError},
+    service::OperationGate,
     storage::{AppStorage, sqlite_error_code},
     tools::{self, ToolPermissionMode},
 };
@@ -28,6 +29,7 @@ pub(super) async fn dispatch(
     storage: &AppStorage,
     events: &EventSink,
     cancellation: &mut watch::Receiver<bool>,
+    cancellation_gate: &OperationGate,
 ) -> Result<Value, ServiceError> {
     match method {
         "chat.document.extract" => {
@@ -613,20 +615,41 @@ pub(super) async fn dispatch(
         "conversation.archive.export" => {
             let passphrase = required_secret_string(params, "passphrase")?;
             let conversation_ids = required_string_array(params, "conversationIds")?;
-            conversation_archive::export(storage, &conversation_ids, passphrase)
+            conversation_archive::export(
+                storage,
+                request_id,
+                &conversation_ids,
+                passphrase,
+                cancellation,
+                cancellation_gate,
+            )
         }
         "conversation.archive.inspect" => {
             let passphrase = required_secret_string(params, "passphrase")?;
             let path = required_string(params, "path")?.to_owned();
-            conversation_archive::inspect(storage, &path, passphrase)
+            conversation_archive::inspect(storage, request_id, &path, passphrase, cancellation)
         }
         "conversation.archive.restore" => {
             let passphrase = required_secret_string(params, "passphrase")?;
             let path = required_string(params, "path")?.to_owned();
             let conflict_policy = required_string(params, "conflictPolicy")?.to_owned();
-            super::storage_chat::cleanup_orphaned_attachment_directories(storage)?;
-            conversation_archive::restore(storage, &path, passphrase, &conflict_policy)
+            conversation_archive::restore(
+                storage,
+                request_id,
+                &path,
+                passphrase,
+                &conflict_policy,
+                cancellation,
+                cancellation_gate,
+                || {
+                    super::storage_chat::cleanup_orphaned_attachment_directories_with_cancellation(
+                        storage,
+                        cancellation,
+                    )
+                },
+            )
         }
+        "conversation.archive.status" => conversation_archive::status(storage),
         "profile.archive.export" => {
             let passphrase = required_secret_string(params, "passphrase")?;
             profile_archive::export(storage, passphrase)
@@ -1137,7 +1160,7 @@ mod tests {
     use tokio::sync::watch;
     use uuid::Uuid;
 
-    use crate::{protocol::EventSink, storage::AppStorage};
+    use crate::{protocol::EventSink, service::OperationGate, storage::AppStorage};
 
     use super::{
         dispatch, required_memory_conversation_id, required_memory_search_query,
@@ -1200,6 +1223,7 @@ mod tests {
             &storage,
             &events,
             &mut cancellation,
+            &OperationGate::default(),
         )
         .await
         .expect_err("missing archive paths are rejected");
@@ -1214,6 +1238,7 @@ mod tests {
             &storage,
             &events,
             &mut cancellation,
+            &OperationGate::default(),
         )
         .await
         .expect_err("unsupported provider identifiers are rejected");
@@ -1227,6 +1252,7 @@ mod tests {
             &storage,
             &events,
             &mut cancellation,
+            &OperationGate::default(),
         )
         .await
         .expect_err("unknown conversation methods are rejected");
@@ -1258,6 +1284,7 @@ mod tests {
             &storage,
             &events,
             &mut cancellation,
+            &OperationGate::default(),
         )
         .await
         .expect("Kilo context estimates should be local and credential independent");
@@ -1294,6 +1321,7 @@ mod tests {
             &storage,
             &events,
             &mut cancellation,
+            &OperationGate::default(),
         )
         .await
         .expect("new conversation memory should be inspectable");
@@ -1323,6 +1351,7 @@ mod tests {
             &storage,
             &events,
             &mut cancellation,
+            &OperationGate::default(),
         )
         .await
         .expect_err("missing context state table should be diagnosed");
@@ -1365,6 +1394,7 @@ mod tests {
             &storage,
             &events,
             &mut cancellation,
+            &OperationGate::default(),
         )
         .await
         .expect("memory inspection should not query archive settings");

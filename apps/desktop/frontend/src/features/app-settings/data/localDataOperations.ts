@@ -1,7 +1,12 @@
-import { getChatSchemaVersion, LocalServiceError, localServiceClient } from '@shared/lib/platform/local-service';
+import {
+  type ServiceOperation,
+  getChatSchemaVersion,
+  LocalServiceError,
+  localServiceClient,
+} from '@shared/lib/platform/local-service';
 import { savePendingArchiveExport as saveArchiveExport } from '@shared/lib/platform/tauri';
 
-const conversationArchiveTimeoutMs = 30 * 60 * 1000;
+export const CONVERSATION_ARCHIVE_TIMEOUT_MS = 30 * 60 * 1000;
 const profileArchiveTimeoutMs = 3 * 60 * 60 * 1000;
 
 export function buildArchiveFileName(archiveType: 'openchatbackup' | 'openchatprofilebackup'): string {
@@ -49,6 +54,39 @@ export interface ConversationArchiveExportResult extends ConversationArchiveResu
   exportId: string;
 }
 
+export type ConversationArchiveAction = 'export' | 'inspect' | 'restore';
+
+export type ConversationArchiveOperationProgress = {
+  phase: 'reading' | 'writing' | 'verifying' | 'restoring' | 'committing';
+  completedItems: number;
+  totalItems: number | null;
+  completedBytes: number;
+  totalBytes: number | null;
+};
+
+export interface ConversationArchiveOperationStatus {
+  operationInProgress: boolean;
+  operationId: number | null;
+  action: ConversationArchiveAction | null;
+  progress: ConversationArchiveOperationProgress | null;
+}
+
+export interface RawConversationArchiveOperation {
+  id: number;
+  action: ConversationArchiveAction;
+  result: ServiceOperation['result'];
+  cancel: ServiceOperation['cancel'];
+}
+
+export type ConversationArchiveOperationHandle<T> = Omit<RawConversationArchiveOperation, 'result'> & {
+  result: Promise<T>;
+};
+
+let activeConversationArchiveOperation: RawConversationArchiveOperation | null = null;
+let startingConversationArchiveOperation:
+  | { action: ConversationArchiveAction; promise: Promise<RawConversationArchiveOperation> }
+  | null = null;
+
 export interface ProfileArchiveResult {
   conversationCount: number;
   messageCount: number;
@@ -61,62 +99,176 @@ export interface ProfileArchiveExportResult extends ProfileArchiveResult {
   exportId: string;
 }
 
-export async function exportConversationArchive(
+export async function startConversationArchiveExport(
   conversationIds: string[],
   passphrase: string,
-): Promise<ConversationArchiveExportResult> {
-  const value = await localServiceClient.call(
+): Promise<ConversationArchiveOperationHandle<ConversationArchiveExportResult>> {
+  const operation = await startRawConversationArchiveOperation(
+    'export',
     'conversation.archive.export',
     {
       conversationIds,
       passphrase,
     },
-    conversationArchiveTimeoutMs,
   );
   return {
-    ...parseConversationArchiveResult(value),
-    exportId: requiredExportId(value),
+    ...operation,
+    result: operation.result.then((value) => ({
+      ...parseConversationArchiveResult(value),
+      exportId: requiredExportId(value),
+    })),
   };
 }
 
-export async function inspectConversationArchive(
+export async function startConversationArchiveInspection(
   path: string,
   passphrase: string,
-): Promise<ConversationArchiveSummary> {
-  const value = await localServiceClient.call(
+): Promise<ConversationArchiveOperationHandle<ConversationArchiveSummary>> {
+  const operation = await startRawConversationArchiveOperation(
+    'inspect',
     'conversation.archive.inspect',
     {
       path,
       passphrase,
     },
-    conversationArchiveTimeoutMs,
   );
   return {
-    conversationCount: requiredCount(value, 'conversationCount'),
-    messageCount: requiredCount(value, 'messageCount'),
-    attachmentCount: requiredCount(value, 'attachmentCount'),
-    attachmentBytes: requiredCount(value, 'attachmentBytes'),
-    duplicateConversationCount: requiredCount(value, 'duplicateConversationCount'),
-    createdAtUnixMs: requiredCount(value, 'createdAtUnixMs'),
-    formatVersion: requiredPositiveCount(value, 'formatVersion'),
+    ...operation,
+    result: operation.result.then((value) => ({
+      conversationCount: requiredCount(value, 'conversationCount'),
+      messageCount: requiredCount(value, 'messageCount'),
+      attachmentCount: requiredCount(value, 'attachmentCount'),
+      attachmentBytes: requiredCount(value, 'attachmentBytes'),
+      duplicateConversationCount: requiredCount(value, 'duplicateConversationCount'),
+      createdAtUnixMs: requiredCount(value, 'createdAtUnixMs'),
+      formatVersion: requiredPositiveCount(value, 'formatVersion'),
+    })),
   };
 }
 
-export async function restoreConversationArchive(
+export async function startConversationArchiveRestore(
   path: string,
   passphrase: string,
   conflictPolicy: 'skip_existing' | 'import_as_copy',
-): Promise<ConversationArchiveResult> {
-  const value = await localServiceClient.call(
+): Promise<ConversationArchiveOperationHandle<ConversationArchiveResult>> {
+  const operation = await startRawConversationArchiveOperation(
+    'restore',
     'conversation.archive.restore',
     {
       path,
       passphrase,
       conflictPolicy,
     },
-    conversationArchiveTimeoutMs,
   );
-  return parseConversationArchiveResult(value);
+  return { ...operation, result: operation.result.then(parseConversationArchiveResult) };
+}
+
+export function getActiveConversationArchiveOperation(): RawConversationArchiveOperation | null {
+  return activeConversationArchiveOperation;
+}
+
+export async function getConversationArchiveOperationStatus(): Promise<ConversationArchiveOperationStatus> {
+  const value = await localServiceClient.call('conversation.archive.status');
+  if (
+    typeof value.operationInProgress !== 'boolean' ||
+    (value.operationId !== null &&
+      (typeof value.operationId !== 'number' || !Number.isSafeInteger(value.operationId) || value.operationId < 0)) ||
+    (value.action !== null && !isConversationArchiveAction(value.action)) ||
+    (value.progress !== null && !isConversationArchiveProgress(value.progress))
+  ) {
+    throw invalidResponse('The archive operation status is invalid.');
+  }
+  if (value.operationInProgress && (value.operationId === null || value.action === null)) {
+    throw invalidResponse('The active archive operation status is incomplete.');
+  }
+  if (
+    !value.operationInProgress &&
+    (value.operationId !== null || value.action !== null || value.progress !== null)
+  ) {
+    throw invalidResponse('The idle archive operation status contains active operation data.');
+  }
+  return {
+    operationInProgress: value.operationInProgress,
+    operationId: value.operationId,
+    action: value.action,
+    progress: value.progress,
+  };
+}
+
+export async function cancelConversationArchiveOperation(operationId: number): Promise<boolean> {
+  const result = await localServiceClient.call('system.cancel', { targetId: operationId });
+  return result.cancelled === true;
+}
+
+function startRawConversationArchiveOperation(
+  action: ConversationArchiveAction,
+  method: string,
+  params: Record<string, unknown>,
+): Promise<RawConversationArchiveOperation> {
+  if (activeConversationArchiveOperation) {
+    return activeConversationArchiveOperation.action === action
+      ? Promise.resolve(activeConversationArchiveOperation)
+      : Promise.reject(archiveOperationBusy());
+  }
+  if (startingConversationArchiveOperation) {
+    return startingConversationArchiveOperation.action === action
+      ? startingConversationArchiveOperation.promise
+      : Promise.reject(archiveOperationBusy());
+  }
+
+  const promise = localServiceClient.startOperation(method, params).then((operation) => {
+    const active: RawConversationArchiveOperation = { ...operation, action };
+    activeConversationArchiveOperation = active;
+    const clearActiveOperation = () => {
+      if (activeConversationArchiveOperation?.id === active.id) {
+        activeConversationArchiveOperation = null;
+      }
+    };
+    void operation.result.then(clearActiveOperation, clearActiveOperation);
+    return active;
+  });
+  const trackedPromise = promise.finally(() => {
+    if (startingConversationArchiveOperation?.promise === trackedPromise) {
+      startingConversationArchiveOperation = null;
+    }
+  });
+  startingConversationArchiveOperation = { action, promise: trackedPromise };
+  return trackedPromise;
+}
+
+function archiveOperationBusy(): LocalServiceError {
+  return new LocalServiceError(
+    'conversation_archive_operation_busy',
+    'A conversation archive operation is already in progress.',
+    true,
+  );
+}
+
+function isConversationArchiveAction(value: unknown): value is ConversationArchiveAction {
+  return value === 'export' || value === 'inspect' || value === 'restore';
+}
+
+function isConversationArchiveProgress(value: unknown): value is ConversationArchiveOperationProgress {
+  if (!isObject(value)) return false;
+  return (
+    (value.phase === 'reading' ||
+      value.phase === 'writing' ||
+      value.phase === 'verifying' ||
+      value.phase === 'restoring' ||
+      value.phase === 'committing') &&
+    isNonNegativeSafeInteger(value.completedItems) &&
+    (value.totalItems === null || isNonNegativeSafeInteger(value.totalItems)) &&
+    isNonNegativeSafeInteger(value.completedBytes) &&
+    (value.totalBytes === null || isNonNegativeSafeInteger(value.totalBytes))
+  );
+}
+
+function isNonNegativeSafeInteger(value: unknown): value is number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 export async function exportProfileArchive(passphrase: string): Promise<ProfileArchiveExportResult> {
