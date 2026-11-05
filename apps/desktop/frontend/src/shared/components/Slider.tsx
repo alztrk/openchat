@@ -42,11 +42,17 @@ export const Slider = forwardRef<HTMLInputElement, SliderProps>(function Slider(
       label={label}
       layout={fieldLayout}
     >
-      {(controlProps) => (
+      {({
+        id: controlId,
+        'aria-describedby': controlDescription,
+        'aria-invalid': controlInvalid,
+      }) => (
         <TitleTooltip title={title}>
           <input
             {...props}
-            {...controlProps}
+            id={controlId}
+            aria-describedby={controlDescription}
+            aria-invalid={controlInvalid}
             className={cn(
               'w-full cursor-pointer accent-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus disabled:cursor-not-allowed disabled:opacity-50',
               className,

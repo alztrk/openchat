@@ -183,7 +183,7 @@
 - [ ] Eşzamanlı tercih güncellemelerinde patch merge/invariant davranışını test et; notification saat girişini Windows WebView2'de doğrula.
 - [x] Merkezi CLI `check` hata toplama, local/CI Cargo feature ve lock eşleşmesi, task orchestration testleri ve FSD checker'ın tarama hatasında başarısız olması tamamlandı; uygulama ve odaklı test doğrulamaları Faz 10.2.2'de kaydedildi.
 - [x] QA-09: Feature ve widget kaynaklarındaki `@app` bağımlılıkları kaldırıldı; OAuth/bildirim runtime'ları sahibi feature'lara taşındı. Checker alt→üst katman importlarını reddediyor, yalnız tanımlı feature-slice API'lerini kabul ediyor.
-- [ ] QA-07/11: Sinyal aboneliği, Windows `taskkill /T /F` ve Unix process group sonlandırması, bounded kapanış, kapanışı doğrulayamama halinde profil koruması ve run-ID'li normal pencere kapanış işareti uygulandı; 165 frontend ve 84 Tauri testi geçti. Gerçek GUI normal kapatma, terminal Ctrl+C ve crash/startup-failure runtime ayrımı hâlâ doğrulanmalı.
+- [ ] QA-07/11: Sinyal aboneliği, Windows `taskkill /T /F` ve Unix process group sonlandırması, bounded kapanış, kapanışı doğrulayamama halinde profil koruması ve run-ID'li normal pencere kapanış işareti uygulandı. Yeni GUI normal kapatma denemesinde wrapper exit `0`, UUID profil temizliği ve süreç kapanışı doğrulandı; iç `npm run dev` yine lifecycle failure yazdı. Bunun benign shutdown sinyali olup olmadığı, terminal Ctrl+C, crash ve startup-failure ayrımı hâlâ doğrulanmalı.
 - [x] `maintain-target --apply` ve `clean` için aktif build koruması, güvenli target seçimi ve görünür önizleme davranışı Faz 10.1'de uygulandı; bu araştırma sırasında gerçek cleanup komutları çalıştırılmadı.
 - [x] Tek npm workspace/install otoritesi olarak kök workspace ve `package-lock.json` seçildi; eski iç lockfile kaldırıldı, CI cache yolu ve bootstrap köke hizalandı. Temiz `npm ci` ve izole dependency ağacındaki ilk Vite başlangıcı başarılı; gerçek UI rota yürütmesi ve paketlenmiş uygulama karşılaştırması ayrı takipte.
 - [ ] `recent searches` renderer `localStorage` saklama/retention kararını privacy sözleşmesiyle karşılaştır; hassas sorgu içerme olasılığını ve uzunluk sınırını değerlendir.
@@ -239,7 +239,7 @@
 ### 10.3 CLI, Tauri ve sidecar yaşam döngüsü
 
 - [x] `QA-07/11` kod dilimi: Interrupt sonrası 1,5 sn graceful bekleme, Windows process-tree sonlandırma veya Unix process-group sinyalleme, en çok 3 sn kapanış doğrulaması ve doğrulanamayan süreçte profili koruma eklendi. Normal test penceresi kapanışı Tauri'nin kullanıcı kaynaklı exit isteği, başarılı sidecar kapanışı ve eşleşen tek kullanımlık run marker'ı ile tanınıyor; `0` ve gözlenen Windows `4294967295` yalnız bu marker ile kabul ediliyor.
-- [ ] `QA-07/11` runtime kabulü: Gerçek terminal Ctrl+C ile nested Tauri/Vite child tree kapanışını; GUI normal close ile exit kodu/profile cleanup eşleşmesini; crash ve startup failure yollarını ayrı ayrı doğrula.
+- [ ] `QA-07/11` runtime kalan kabulü: GUI normal close wrapper exit `0`, UUID profil temizliği ve OpenChat süreç kapanışı olarak gözlendi; iç `npm run dev` lifecycle failure çıktısının beklenen shutdown davranışı olup olmadığını açıkla. Gerçek terminal Ctrl+C ile nested Tauri/Vite child tree kapanışını; crash ve startup failure yollarını da ayrı doğrula.
 - [x] `T-HOST-01` kod dilimi: Kaydedilen normal/maximized geometri açılışta geri yükleniyor; boyut/konum monitör çalışma alanına sığıyor, artık bulunmayan monitör birincil monitöre taşınıyor. Geometri hesaplama için altı Rust testi eklendi.
 - [x] `T-HOST-01` runtime kısmi kabulü: Aynı Windows ekranında test profiline kayıtlı normal geometri gerçek pencerede yeniden açıldı; büyütme/geri yükleme sonrası geometri state dosyasına kaydedildi.
 - [ ] `T-HOST-01` kalan runtime kabulü: Farklı çözünürlük/DPI ve monitör çıkarma sonrası konum, boyut ve maximize durumunu doğrula.
@@ -294,7 +294,9 @@
 ### 10.6 Kullanıcı akışları, erişilebilirlik ve kurtarma
 
 - [ ] `FE-01..19`: Sohbet, MCP filtreleri, provider/proje formları, kısayollar, odak/combobox, loading metinleri, prompt retry, recent-search retention ve indirme progress etiketlerini tek kullanıcı akışı başına ele al.
-- [ ] `FE-20`: Bildirim ayarındaki `Slider`, `Field`'dan gelen dahili `labelId` alanını native input'a yayıyor ve React runtime uyarısı oluşturuyor; prop aktarımını düzeltip erişilebilir etiket ilişkisinin korunduğunu doğrula.
+- [x] `FE-20` kod dilimi: `Slider` `Field`'dan yalnızca native input'a ait `id` ve ARIA alanlarını alıyor; dahili `labelId` artık DOM'a yayılmıyor. Regresyon testi prop sızıntısını ve `Field` etiketinin `htmlFor`/`id` bağını kapsıyor.
+- [x] `FE-20` runtime kısmi kabulü: İzole WebView2 bildirim ekranında kaydırıcının erişilebilir adı `Ses düzeyi`, değeri `%70` olarak göründü.
+- [ ] `FE-20` kalan runtime kabulü: WebView2 geliştirme konsolunda React `labelId` uyarısının artık oluşmadığını doğrudan doğrula.
 - [ ] `FE-21`: Tarihçe arama helper'ı, yerelleştirilmiş tarihçe arama etiketleri ve backend RPC'si mevcut ancak etkin bir UI tüketicisine bağlı değil; akışı ürün içinde etkinleştir veya kullanılmayan yüzeyleri kaldır.
 - [x] `SVC-18`: Bozuk kanvas JSON/schema/size-limit durumlarını ayır; ham veriyi dışa aktarma ve kullanıcı onaylı yeni boş kanvas akışı ekle. Silme hatası özgün veriyi korur.
 - [x] `SVC-19`: Tasarım, sohbet görünümü ve asistan yürütme tercih yazımlarını store başına seri kuyruğa al; sıradaki işlemin en güncel state'i temel alıp farklı alan patch'lerini birleştirdiğini test et.
