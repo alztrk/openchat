@@ -1865,6 +1865,8 @@
   "modelReadmeTooLarge": "El README es demasiado grande para mostrarlo.",
   "modelReadmeUnavailable": "No se pudo cargar la descripción del modelo.",
   "modelDownloadOptionsLabel": "Opciones de descarga",
+  "modelDownloadProgressLabel": "Progreso de descarga del modelo",
+  "modelDownloadProgressValue": "Se han descargado {downloaded} de {total}.",
   "modelDownloadGroupLabel": "Conjunto de archivos",
   "modelDownloadSizeLabel": "Tamaño",
   "modelDownloadButton": "Descargar modelo",

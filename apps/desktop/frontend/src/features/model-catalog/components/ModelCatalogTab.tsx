@@ -987,7 +987,7 @@ function ModelDownloadStatus({
     progress && progress.totalBytes > 0 ? Math.min(1, progress.downloadedBytes / progress.totalBytes) : null;
   return (
     <section
-      aria-label={t('modelDownloadOptionsLabel')}
+      aria-label={t('modelDownloadProgressLabel')}
       aria-live="polite"
       className="grid gap-3 rounded-card border border-border bg-surface p-4"
     >
@@ -1011,7 +1011,15 @@ function ModelDownloadStatus({
         </Button>
       </div>
       <progress
-        aria-label={t('modelDownloadOptionsLabel')}
+        aria-label={t('modelDownloadProgressLabel')}
+        aria-valuetext={
+          progress && progress.totalBytes > 0
+            ? t('modelDownloadProgressValue', {
+                downloaded: formatBytes(progress.downloadedBytes, locale),
+                total: formatBytes(progress.totalBytes, locale),
+              })
+            : undefined
+        }
         className="h-2 w-full accent-accent"
         max={1}
         value={fraction ?? undefined}

@@ -1865,6 +1865,8 @@
   "modelReadmeTooLarge": "README dosyası görüntülenemeyecek kadar büyük.",
   "modelReadmeUnavailable": "Model açıklaması yüklenemedi.",
   "modelDownloadOptionsLabel": "İndirme seçenekleri",
+  "modelDownloadProgressLabel": "Model indirme ilerlemesi",
+  "modelDownloadProgressValue": "İndirilen: {downloaded} / {total}.",
   "modelDownloadGroupLabel": "Dosya grubu",
   "modelDownloadSizeLabel": "Boyut",
   "modelDownloadButton": "Modeli indir",
