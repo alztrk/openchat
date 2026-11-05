@@ -78,6 +78,12 @@ const vite = await createServer({
         ) {
           return '\0openchat-test-project-sidebar';
         }
+        if (
+          normalizedSource.endsWith('/src/features/model-catalog/stores/mcpStore') &&
+          normalizedImporter.endsWith('/src/features/model-catalog/components/McpCatalogTab.tsx')
+        ) {
+          return '\0openchat-test-mcp-store';
+        }
         return null;
       },
       load(id) {
@@ -181,6 +187,14 @@ const vite = await createServer({
             export function CreateProjectDialog() { return null; }
           `;
         }
+        if (id === '\0openchat-test-mcp-store') {
+          return `
+            import process from 'node:process';
+            export function useMcpStore(selector) {
+              return selector(process.__openchatMcpHarness.state);
+            }
+          `;
+        }
         return null;
       },
     },
@@ -220,7 +234,7 @@ for (const [name, value] of globals) {
 
 const React = await import('react');
 const { I18nextProvider } = await import('react-i18next');
-const { cleanup, fireEvent, render, screen, waitFor } = await import('@testing-library/react');
+const { cleanup, fireEvent, render, screen, waitFor, within } = await import('@testing-library/react');
 const { ConversationEmptyState } = await vite.ssrLoadModule('/src/features/chat/components/ConversationEmptyState.tsx');
 const { AttachmentLibraryDialog } = await vite.ssrLoadModule('/src/features/chat/components/AttachmentLibraryDialog.tsx');
 const { NavigationRail } = await vite.ssrLoadModule('/src/widgets/navigation-rail/NavigationRail.tsx');
@@ -228,6 +242,7 @@ const { AppWindowSettingsSection } = await vite.ssrLoadModule(
   '/src/features/app-settings/components/AppWindowSettingsSection.tsx',
 );
 const { ConversationSidebar } = await vite.ssrLoadModule('/src/features/chat/components/ConversationSidebar.tsx');
+const { McpCatalogTab } = await vite.ssrLoadModule('/src/features/model-catalog/components/McpCatalogTab.tsx');
 
 const localeDirectory = path.resolve('src/shared/lib/i18n/locales');
 const supportedLocales = ['de', 'en', 'es', 'fr', 'tr'];
@@ -236,6 +251,7 @@ const i18nByLocale = new Map();
 const originalAttachmentLibraryHarness = Object.getOwnPropertyDescriptor(process, '__openchatAttachmentLibraryHarness');
 const originalAppPreferencesHarness = Object.getOwnPropertyDescriptor(process, '__openchatAppPreferencesHarness');
 const originalSidebarHarness = Object.getOwnPropertyDescriptor(process, '__openchatSidebarHarness');
+const originalMcpHarness = Object.getOwnPropertyDescriptor(process, '__openchatMcpHarness');
 const attachmentLibraryHarness = {
   list: async () => ({ items: [], nextOffset: null }),
 };
@@ -256,6 +272,9 @@ const sidebarHarness = {
     sidebarHarness.customFolders = folders;
   },
 };
+const mcpHarness = {
+  state: {},
+};
 
 Object.defineProperty(process, '__openchatAttachmentLibraryHarness', {
   configurable: true,
@@ -270,6 +289,11 @@ Object.defineProperty(process, '__openchatAppPreferencesHarness', {
 Object.defineProperty(process, '__openchatSidebarHarness', {
   configurable: true,
   value: sidebarHarness,
+  writable: true,
+});
+Object.defineProperty(process, '__openchatMcpHarness', {
+  configurable: true,
+  value: mcpHarness,
   writable: true,
 });
 
@@ -322,6 +346,7 @@ afterEach(() => {
     sidebarHarness.writeCustomFoldersCalls.push(folders);
     sidebarHarness.customFolders = folders;
   };
+  mcpHarness.state = {};
 });
 
 after(async () => {
@@ -352,6 +377,11 @@ after(async () => {
     Object.defineProperty(process, '__openchatSidebarHarness', originalSidebarHarness);
   } else {
     Reflect.deleteProperty(process, '__openchatSidebarHarness');
+  }
+  if (originalMcpHarness) {
+    Object.defineProperty(process, '__openchatMcpHarness', originalMcpHarness);
+  } else {
+    Reflect.deleteProperty(process, '__openchatMcpHarness');
   }
 });
 
@@ -685,6 +715,68 @@ test('a failed sidebar service move leaves the custom folder membership unchange
   });
   assert.deepEqual(sidebarHarness.writeCustomFoldersCalls, []);
   assert.deepEqual(sidebarHarness.customFolders, [folder]);
+});
+
+test('the MCP catalog renders localized category labels and filters matching servers', () => {
+  const translations = translationsByLocale.get('en');
+  assert.ok(translations);
+  const categoryCases = [
+    ['developer', 'mcpCategoryDeveloper', 'Developer toolkit'],
+    ['database', 'mcpCategoryDatabase', 'Database connector'],
+    ['webSearch', 'mcpCategoryWebSearch', 'Web search'],
+    ['devOpsCloud', 'mcpCategoryDevOpsCloud', 'Cloud operations'],
+    ['productivity', 'mcpCategoryProductivity', 'Productivity tools'],
+    ['memoryReasoning', 'mcpCategoryMemoryReasoning', 'Memory research'],
+    ['finance', 'mcpCategoryFinance', 'Finance data'],
+  ];
+  const servers = categoryCases.map(([category, , name], index) => ({
+    id: `mcp-test-${index + 1}`,
+    name,
+    category,
+    description: `${name} description`,
+    command: 'node',
+    args: [],
+    requiredEnvKeys: [],
+    optionalEnvKeys: [],
+    installed: false,
+    enabled: false,
+    installDir: '',
+    discoveredTools: [],
+  }));
+  const state = {
+    servers,
+    loadState: 'ready',
+    invalidConfigCount: 0,
+    busyServerIds: [],
+    errorCode: null,
+    errorDetails: null,
+    initialize: async () => undefined,
+    install: async () => false,
+    setEnabled: async () => false,
+    remove: async () => false,
+    loadSecretStatus: async () => [],
+    saveSecrets: async () => false,
+    probe: async () => false,
+  };
+  mcpHarness.state = state;
+
+  render(localized('en', React.createElement(McpCatalogTab)));
+
+  const categoryNavigation = screen.getByRole('navigation', { name: translations.mcpCategoryFilter });
+  for (const [selectedCategory, translationKey, expectedServerName] of categoryCases) {
+    const filter = within(categoryNavigation).getByRole('button', { name: translations[translationKey] });
+    fireEvent.click(filter);
+    assert.equal(filter.getAttribute('aria-pressed'), 'true', `${selectedCategory} filter is selected`);
+
+    for (const server of servers) {
+      assert.equal(
+        screen.queryByRole('heading', { name: server.name }) !== null,
+        server.name === expectedServerName,
+        `${selectedCategory} filter visibility for ${server.name}`,
+      );
+    }
+    assert.ok(screen.getByText(translations[translationKey], { selector: 'span' }));
+  }
 });
 
 test('the primary navigation landmark and surface action render in every supported locale', () => {

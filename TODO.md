@@ -193,7 +193,8 @@
 - [x] FE-08 kod dilimi: Ana gezinme `<nav>` landmark'ı artık Sohbetler'e özel ad yerine beş locale'de “Ana gezinme” anlamındaki `primaryNavigation` etiketiyle adlandırılıyor; gerçek DOM render/erişilebilirlik regresyonu FE-06 testine taşındı.
 - [ ] FE-08 runtime: Windows WebView2 erişilebilirlik ağacında ana gezinme landmark'ının seçilen dilde doğru adı taşıdığını doğrula.
 - [x] FE-09: MCP kategori etiketleri ve filtreleri ortak kategori normalizasyonuna bağlandı; yedi kategori için etiket ve çapraz filtre eşleşme regresyonları eklendi.
-- [ ] FE-09: MCP ekranındaki etiketleri ve filtre sonuçlarını değişiklik sonrası render edilmiş UI otomasyonuyla doğrula; bu oturumdaki Windows tıklama aracı iki yöntemde de hedefe ulaşamadı.
+- [x] FE-09 render testi: Gerçek `McpCatalogTab` render'ında yedi yerelleştirilmiş kategori düğmesi, `aria-pressed` ve her kategoriye ait tek sunucu kartı doğrulanıyor.
+- [ ] FE-09 masaüstü runtime: Windows WebView2'de etiketleri ve filtre sonuçlarını ayrıca doğrula; önceki UI otomasyon denemesinde hedefe tıklama başarısız olmuştu.
 - [x] FE-10: Farklı yüzeye geçişte erişilebilir adı olan ana içerik odağı alıyor; ilk render’da odak değişmiyor ve aynı yüzeye basıldığında mevcut odak davranışı korunuyor. Regresyon testi eklendi.
 - [ ] FE-10: Gerçek yüzey geçişi, geri/ileri geçmişi ve geçici sohbet onayından sonraki odağı render edilmiş masaüstü arayüzünde doğrula; Windows UI aracı bu oturumda hedefe tıklayamadı.
 - [x] FE-11: Global kısayol dinleyicisi bubble aşamasına taşındı; kayıt modundaki capture listener tuş olayını önce engelliyor. Normal global dispatch ve listener cleanup fazı için regresyon testi eklendi.
