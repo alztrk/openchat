@@ -2,16 +2,16 @@ import { FileCode, FileJson, FileText, Share } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { Button } from '@shared/components/Button';
 import {
-  Button,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-  Tooltip,
-} from '@shared/components';
+} from '@shared/components/DropdownMenu';
+import { Tooltip } from '@shared/components/Tooltip';
 import type { ChatConversation } from '@features/chat/data';
 import type { ExportFormat } from '@features/chat/data/conversationExport';
 import { conversationMarkdownLabels } from '@features/chat/data/conversationMarkdownLabels';

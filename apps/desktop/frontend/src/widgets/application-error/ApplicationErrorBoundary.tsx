@@ -1,6 +1,6 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button } from '@shared/components';
+import { Button } from '@shared/components/Button';
 import { LocalServiceError, localServiceErrorDetails } from '@shared/lib/platform/local-service';
 
 interface ApplicationErrorBoundaryProps {

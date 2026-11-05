@@ -1,7 +1,9 @@
 import { Check, Clock3, ListTodo, MessageSquare, MessageSquarePlus, PanelRight, Plus, Trash2, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button, Dialog, Input } from '@shared/components';
+import { Button } from '@shared/components/Button';
+import { Dialog } from '@shared/components/Dialog';
+import { Input } from '@shared/components/Input';
 import type { ChatConversation } from '@features/chat/data';
 import { clearChatTodos, createChatTodos, deleteChatTodo, listChatTodos, type ChatTodo, updateChatTodo } from '@features/chat/data/chatTodos';
 import { useChatStore } from '@features/chat/state';

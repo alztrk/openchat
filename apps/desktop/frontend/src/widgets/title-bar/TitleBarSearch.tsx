@@ -13,7 +13,8 @@ import {
 } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button, Input } from '@shared/components';
+import { Button } from '@shared/components/Button';
+import { Input } from '@shared/components/Input';
 import { Tooltip } from '@shared/components/Tooltip';
 import { unifiedStorage } from '@shared/lib/platform/storage/unifiedStorage';
 

@@ -2,7 +2,7 @@ import { ArrowLeft, ArrowRight, Command, Copy, Minus, PanelLeftClose, PanelLeftO
 import { type MouseEvent, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button } from '@shared/components';
+import { Button } from '@shared/components/Button';
 import { Tooltip } from '@shared/components/Tooltip';
 import {
   formatKeyboardShortcut,

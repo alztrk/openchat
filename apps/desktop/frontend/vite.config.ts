@@ -7,7 +7,7 @@ import { defineConfig } from 'vite';
 const frontendRoot = fileURLToPath(new URL('.', import.meta.url));
 const projectRoot = resolve(frontendRoot, '..');
 
-export default defineConfig({
+export default defineConfig(({ command }) => ({
   root: frontendRoot,
   plugins: [
     {
@@ -30,6 +30,10 @@ export default defineConfig({
       '@widgets': resolve(frontendRoot, 'src/widgets'),
       '@shared': resolve(frontendRoot, 'src/shared'),
     },
+  },
+  json: {
+    // Named exports duplicate the locale dictionaries in Vite dev; source JSON imports use defaults.
+    namedExports: command !== 'serve',
   },
   clearScreen: false,
   server: {
@@ -74,4 +78,4 @@ export default defineConfig({
       },
     },
   },
-});
+}));
