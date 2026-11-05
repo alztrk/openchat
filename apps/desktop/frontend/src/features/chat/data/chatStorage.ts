@@ -1,6 +1,9 @@
 import type { ChatRoute } from '@entities/model';
 import { type AssistantAgentSnapshot, isAssistantAgentSnapshot } from '@shared/lib/preferences/assistantProfiles';
-import { localServiceClient } from '@shared/lib/platform/local-service';
+import {
+  type ServiceOperation,
+  localServiceClient,
+} from '@shared/lib/platform/local-service';
 import { invoke } from '@shared/lib/platform/tauri';
 
 import {
@@ -85,7 +88,37 @@ export interface AttachmentTextIndexStatus {
   indexedFileCount: number;
   indexedBytes: number;
   truncated: boolean;
+  operationInProgress: boolean;
+  progress: AttachmentTextIndexProgress | null;
 }
+
+export type AttachmentTextIndexProgress =
+  | {
+      phase: 'scan';
+      completedMessages: number;
+      totalMessages: number;
+    }
+  | {
+      phase: 'write';
+      completedFiles: number;
+      totalFiles: number;
+    }
+  | {
+      phase: 'read';
+      completedFiles: number;
+      totalFiles: number;
+      indexedFiles: number;
+      indexedBytes: number;
+    };
+
+export interface AttachmentTextIndexRebuildOperation {
+  id: ServiceOperation['id'];
+  result: Promise<AttachmentTextIndexStatus>;
+  cancel: ServiceOperation['cancel'];
+}
+
+let activeAttachmentTextIndexRebuild: AttachmentTextIndexRebuildOperation | null = null;
+let startingAttachmentTextIndexRebuild: Promise<AttachmentTextIndexRebuildOperation> | null = null;
 
 export async function listConversations(): Promise<ChatConversation[]> {
   const response = await localServiceClient.call('storage.chat.conversations.list');
@@ -678,10 +711,44 @@ export async function getAttachmentTextIndexStatus(): Promise<AttachmentTextInde
   return value;
 }
 
-export async function rebuildAttachmentTextIndex(): Promise<AttachmentTextIndexStatus> {
-  const value: unknown = await localServiceClient.call('storage.chat.attachments.text_index.rebuild');
-  if (!isAttachmentTextIndexStatus(value)) throw new Error('The attachment text index status is invalid.');
-  return value;
+export function getActiveAttachmentTextIndexRebuild(): AttachmentTextIndexRebuildOperation | null {
+  return activeAttachmentTextIndexRebuild;
+}
+
+export async function startAttachmentTextIndexRebuild(): Promise<AttachmentTextIndexRebuildOperation> {
+  if (activeAttachmentTextIndexRebuild) return activeAttachmentTextIndexRebuild;
+  if (startingAttachmentTextIndexRebuild) return startingAttachmentTextIndexRebuild;
+
+  const starting = localServiceClient
+    .startOperation('storage.chat.attachments.text_index.rebuild')
+    .then((serviceOperation) => {
+      const operation: AttachmentTextIndexRebuildOperation = {
+        id: serviceOperation.id,
+        result: serviceOperation.result.then((value) => {
+          if (!isAttachmentTextIndexStatus(value)) {
+            throw new Error('The attachment text index status is invalid.');
+          }
+          return value;
+        }),
+        cancel: serviceOperation.cancel,
+      };
+      activeAttachmentTextIndexRebuild = operation;
+      const clearActiveOperation = () => {
+        if (activeAttachmentTextIndexRebuild?.id === operation.id) {
+          activeAttachmentTextIndexRebuild = null;
+        }
+      };
+      void operation.result.then(clearActiveOperation, clearActiveOperation);
+      return operation;
+    });
+  startingAttachmentTextIndexRebuild = starting;
+  try {
+    return await starting;
+  } finally {
+    if (startingAttachmentTextIndexRebuild === starting) {
+      startingAttachmentTextIndexRebuild = null;
+    }
+  }
 }
 
 export async function clearAttachmentTextIndex(): Promise<AttachmentTextIndexStatus> {
@@ -850,8 +917,51 @@ function isAttachmentTextIndexStatus(value: unknown): value is AttachmentTextInd
     Number.isSafeInteger(value.indexedBytes) &&
     typeof value.indexedBytes === 'number' &&
     value.indexedBytes >= 0 &&
-    typeof value.truncated === 'boolean'
+    typeof value.truncated === 'boolean' &&
+    typeof value.operationInProgress === 'boolean' &&
+    (value.progress === null || isAttachmentTextIndexProgress(value.progress))
   );
+}
+
+function isAttachmentTextIndexProgress(value: unknown): value is AttachmentTextIndexProgress {
+  if (!isObject(value)) return false;
+  if (value.phase === 'scan') {
+    return (
+      Number.isSafeInteger(value.completedMessages) &&
+      typeof value.completedMessages === 'number' &&
+      value.completedMessages >= 0 &&
+      Number.isSafeInteger(value.totalMessages) &&
+      typeof value.totalMessages === 'number' &&
+      value.totalMessages > 0
+    );
+  }
+  if (value.phase === 'write') {
+    return (
+      Number.isSafeInteger(value.completedFiles) &&
+      typeof value.completedFiles === 'number' &&
+      value.completedFiles >= 0 &&
+      Number.isSafeInteger(value.totalFiles) &&
+      typeof value.totalFiles === 'number' &&
+      value.totalFiles >= 0
+    );
+  }
+  if (value.phase === 'read') {
+    return (
+      Number.isSafeInteger(value.completedFiles) &&
+      typeof value.completedFiles === 'number' &&
+      value.completedFiles >= 0 &&
+      Number.isSafeInteger(value.totalFiles) &&
+      typeof value.totalFiles === 'number' &&
+      value.totalFiles >= 0 &&
+      Number.isSafeInteger(value.indexedFiles) &&
+      typeof value.indexedFiles === 'number' &&
+      value.indexedFiles >= 0 &&
+      Number.isSafeInteger(value.indexedBytes) &&
+      typeof value.indexedBytes === 'number' &&
+      value.indexedBytes >= 0
+    );
+  }
+  return false;
 }
 
 function isJsonArray(value: string): boolean {

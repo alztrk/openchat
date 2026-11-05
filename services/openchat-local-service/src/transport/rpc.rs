@@ -102,7 +102,7 @@ pub(crate) async fn dispatch(context: RpcDispatchContext<'_>) -> Result<Value, S
         return internal_secrets::dispatch(&method, &mut request.params, storage);
     }
     if method.starts_with("storage.chat.attachments.text_index.") {
-        return storage_attachment_index::dispatch(&method, storage).await;
+        return storage_attachment_index::dispatch(&method, storage, &cancellation);
     }
     if method.starts_with("storage.chat.") {
         return storage_chat::dispatch_with_gate(

@@ -279,7 +279,8 @@
 - [x] `SVC-14`: Security scan silerken cancellation ve operation settlement aynı 10 saniyelik deadline içinde bekleniyor; bekleme aşılırsa kayıt silinmiyor ve kullanıcıya tekrar deneyebileceği açık hata gösteriliyor.
 - [x] `SVC-15`: Worktree listeleme, Git çağrıları boyunca cancellation alıyor ve 25 saniyelik ortak backend deadline'ı kullanıyor; 30 saniyelik RPC timeout'undan önce typed timeout hatası döndürüyor. Boş ve dolu başarı yanıtları dönmeden önce deadline/cancellation yeniden kontrol ediliyor. UI timeout'u ayırt edip yenileme öneriyor.
 - [x] `SVC-16`: Worktree listesi sabit ID sıralı ilk 20 kaydı, tarama sırasından bağımsız ve sınırlı bellekle seçiyor. Backend create, aynı proje için süreç içi ve OS dosya kilidi altında sayım/oluşturma yaparak eşzamanlı isteklerin 20 sınırını aşmasını engelliyor; limit dolu hatası yerelleştirilmiş, kırpılma mesajı görünmeyen sonraki kayıtları kaldırma yoluyla yönetmeyi açıklıyor. Kararlı seçim, limit ve eşzamanlı oluşturma testleri ile merkezi check geçti.
-- [ ] `SVC-17/20`: Attachment index ve archive işlemlerinde cancellation, timeout, progress/status ve yeniden deneme davranışını hizala.
+- [x] `SVC-17`: Attachment text-index rebuild ve clear için süreç içi single-flight, ölçülebilir durum/ilerleme, rebuild iptali ve timeout sonrası status reconciliation ekle; iptal/hata halinde önceki indeks korunmalı.
+- [ ] `SVC-20`: Conversation archive export/inspect/restore işlemlerinde cancellation, timeout, progress/status ve yeniden deneme davranışını hizala.
 - [ ] Kabul: dosya/DB tutarlılığı her hata noktasında korunur veya kalıcı reconciliation kaydı kalır; timeout sonrası işin sürüp sürmediği ve iptal sonucu gözlenebilir; uzun listelerde kesilme açıkça bildirilir.
 
 ### 10.5 Dış erişim ve yerel model sınırı
