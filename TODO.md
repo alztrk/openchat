@@ -190,7 +190,8 @@
 - [x] FE-15: Custom provider, proje oluşturma/MCP ve arşiv passphrase doğrulamaları ilgili alanlara `aria-invalid`/`aria-describedby`/alert ilişkisiyle bağlandı; submit sonrası ilgili ilk geçersiz alan odaklanıyor. Arşiv hatalarının dialog dışında yinelenen alert'i kaldırıldı; kaynak regresyon testi eklendi.
 - [ ] FE-15: Custom provider, proje oluşturma/MCP ve arşiv passphrase hatalarının görünümünü, ekran okuyucu duyurusunu ve ilk geçersiz alana odağı gerçek masaüstü arayüzünde doğrula.
 - [x] FE-16: Yanlış `modelsLoading`/`historyLoading` kullanımları düzeltildi; OAuth, sağlayıcı credential durumu, ajanlar, MCP credential durumu, prompt şablonları, proje içeriği ve istatistikler doğru domain etiketiyle yükleniyor. Beş locale tutarlı; kaynak regresyon testi eklendi.
-- [ ] FE-17: Prompt template storage okuma hatasında veri kaybetmeyen retry ve kullanıcı onaylı export/reset recovery yolu ekle.
+- [x] FE-17 kod dilimi: Prompt şablonu okuması bozuk ham kaydı koruyor; storage ve schema hataları ayrılıyor. Retry, kullanıcı tetiklemeli ham export ve onaylı kalıcı reset eklendi. Kaydetme/silme artık durable sonucu bekleyip hata halinde false success göstermiyor; beş locale ve kaynak regresyon testleri eklendi.
+- [ ] FE-17 runtime: Bozuk ham kayıt, indirilen dosya içeriği ve kalıcı silme başarısını/başarısızlığını Windows masaüstü WebView2'de doğrula.
 - [ ] Design canvas bozulma kurtarması, security scan delete/cleanup reconciliation ve cancel timeout davranışı için ürün sözleşmesi belirle.
 - [ ] Archive restore crash recovery/journal ve archive cancellation/status; attachment index cancellation/progress; worktree list cancellation ve backend limiti konularını tasarla.
 - [ ] Eşzamanlı tercih güncellemelerinde patch merge/invariant davranışını test et; notification saat girişini Windows WebView2'de doğrula.

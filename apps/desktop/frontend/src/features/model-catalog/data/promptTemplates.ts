@@ -6,6 +6,25 @@ const maximumNameLength = 64;
 const maximumPromptBytes = 32 * 1024;
 const maximumParameters = 16;
 
+type PromptTemplateValidationErrorKind = 'invalid' | 'duplicate';
+
+class PromptTemplateValidationError extends Error {
+  constructor(readonly kind: PromptTemplateValidationErrorKind) {
+    super(kind === 'duplicate' ? 'Prompt templates are duplicated.' : 'Prompt templates are invalid.');
+    this.name = 'PromptTemplateValidationError';
+  }
+}
+
+export class PromptTemplateReadError extends Error {
+  constructor(
+    readonly kind: 'unavailable' | 'corrupt',
+    readonly rawValue: string | null = null,
+  ) {
+    super(kind === 'corrupt' ? 'Saved prompt template data is invalid.' : 'Prompt template storage is unavailable.');
+    this.name = 'PromptTemplateReadError';
+  }
+}
+
 export interface PromptTemplate {
   id: string;
   name: string;
@@ -21,23 +40,47 @@ export interface PromptTemplateDraft {
 }
 
 export function readPromptTemplates(): PromptTemplate[] {
-  const encoded = unifiedStorage.getItem(storageKey);
+  let encoded: string | null;
+  try {
+    encoded = unifiedStorage.getItem(storageKey);
+  } catch {
+    throw new PromptTemplateReadError('unavailable');
+  }
   if (encoded === null) return [];
-  return parsePromptTemplates(JSON.parse(encoded));
+
+  let value: unknown;
+  try {
+    value = JSON.parse(encoded);
+  } catch {
+    throw new PromptTemplateReadError('corrupt', encoded);
+  }
+
+  try {
+    return parsePromptTemplates(value);
+  } catch (cause: unknown) {
+    if (cause instanceof PromptTemplateValidationError) {
+      throw new PromptTemplateReadError('corrupt', encoded);
+    }
+    throw cause;
+  }
 }
 
-export function writePromptTemplates(templates: PromptTemplate[]): void {
+export async function writePromptTemplates(templates: PromptTemplate[]): Promise<void> {
   const parsed = parsePromptTemplates(templates);
   if (parsed.length === 0) {
-    unifiedStorage.removeItem(storageKey);
+    await unifiedStorage.removePersistedItem(storageKey);
     return;
   }
-  unifiedStorage.setItem(storageKey, JSON.stringify(parsed));
+  await unifiedStorage.setPersistedItem(storageKey, JSON.stringify(parsed));
+}
+
+export async function resetPromptTemplates(): Promise<void> {
+  await unifiedStorage.removePersistedItem(storageKey);
 }
 
 export function parsePromptTemplates(value: unknown): PromptTemplate[] {
   if (!Array.isArray(value) || value.length > maximumTemplates) {
-    throw new Error('Prompt templates are invalid.');
+    throw new PromptTemplateValidationError('invalid');
   }
   const templates = value.map(parsePromptTemplate);
   const ids = new Set<string>();
@@ -45,7 +88,7 @@ export function parsePromptTemplates(value: unknown): PromptTemplate[] {
   for (const template of templates) {
     const normalizedName = template.name.toLocaleLowerCase('en-US');
     if (ids.has(template.id) || names.has(normalizedName)) {
-      throw new Error('Prompt templates are duplicated.');
+      throw new PromptTemplateValidationError('duplicate');
     }
     ids.add(template.id);
     names.add(normalizedName);
@@ -54,7 +97,7 @@ export function parsePromptTemplates(value: unknown): PromptTemplate[] {
 }
 
 export function parsePromptTemplate(value: unknown): PromptTemplate {
-  if (!isRecord(value)) throw new Error('A prompt template is invalid.');
+  if (!isRecord(value)) throw new PromptTemplateValidationError('invalid');
   const { id, name, prompt, createdAt, updatedAt } = value;
   if (
     typeof id !== 'string' ||
@@ -69,10 +112,10 @@ export function parsePromptTemplate(value: unknown): PromptTemplate {
     !isTimestamp(createdAt) ||
     !isTimestamp(updatedAt)
   ) {
-    throw new Error('A prompt template is invalid.');
+    throw new PromptTemplateValidationError('invalid');
   }
   const parameters = promptParameterNames(prompt);
-  if (parameters.length > maximumParameters) throw new Error('A prompt template has too many parameters.');
+  if (parameters.length > maximumParameters) throw new PromptTemplateValidationError('invalid');
   return { id, name, prompt, createdAt, updatedAt };
 }
 

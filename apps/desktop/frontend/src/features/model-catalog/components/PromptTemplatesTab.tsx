@@ -1,16 +1,18 @@
 import { Pencil, Plus, Send, Trash2 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Button, Card, Dialog, Input, Textarea } from '@shared/components';
 import {
   expandPromptTemplate,
   isPromptTemplateNameAvailable,
+  PromptTemplateReadError,
   type PromptTemplate,
   type PromptTemplateDraft,
   promptParameterNames,
   promptTemplateLimits,
   readPromptTemplates,
+  resetPromptTemplates,
   writePromptTemplates,
 } from '@features/model-catalog/data/promptTemplates';
 
@@ -26,47 +28,66 @@ type FormError =
   | 'tooManyParameters'
   | 'saveFailed';
 
+type LoadFailure = PromptTemplateReadError | { kind: 'unexpected' };
+type RecoveryError = 'exportFailed' | 'resetFailed';
+const urlRevocationDelayMs = 1000;
+
 export function PromptTemplatesTab({ onUsePrompt }: PromptTemplatesTabProps) {
   const { t } = useTranslation();
   const [templates, setTemplates] = useState<PromptTemplate[]>([]);
   const [isLoaded, setIsLoaded] = useState(false);
-  const [loadFailed, setLoadFailed] = useState(false);
+  const [loadError, setLoadError] = useState<LoadFailure | null>(null);
   const [draft, setDraft] = useState<PromptTemplateDraft | null>(null);
   const [activeTemplate, setActiveTemplate] = useState<PromptTemplate | null>(null);
   const [pendingRemoval, setPendingRemoval] = useState<PromptTemplate | null>(null);
   const [parameterValues, setParameterValues] = useState<Record<string, string>>({});
   const [formError, setFormError] = useState<FormError | null>(null);
+  const [recoveryError, setRecoveryError] = useState<RecoveryError | null>(null);
+  const [isResetDialogOpen, setIsResetDialogOpen] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const savingRef = useRef(false);
 
-  useEffect(() => {
+  const loadTemplates = useCallback(() => {
     try {
       setTemplates(readPromptTemplates());
-      setLoadFailed(false);
-    } catch {
-      setLoadFailed(true);
+      setLoadError(null);
+      setRecoveryError(null);
+    } catch (cause: unknown) {
+      setLoadError(cause instanceof PromptTemplateReadError ? cause : { kind: 'unexpected' });
     } finally {
       setIsLoaded(true);
     }
   }, []);
+
+  useEffect(() => {
+    loadTemplates();
+  }, [loadTemplates]);
 
   const activeParameters = useMemo(
     () => (activeTemplate ? promptParameterNames(activeTemplate.prompt) : []),
     [activeTemplate],
   );
 
-  const persist = (next: PromptTemplate[]) => {
+  const persist = async (next: PromptTemplate[]): Promise<boolean> => {
+    if (savingRef.current) return false;
+    savingRef.current = true;
+    setIsSaving(true);
     try {
-      writePromptTemplates(next);
+      await writePromptTemplates(next);
       setTemplates(next);
-      setLoadFailed(false);
       setFormError(null);
       return true;
     } catch {
       setFormError('saveFailed');
       return false;
+    } finally {
+      savingRef.current = false;
+      setIsSaving(false);
     }
   };
 
-  const saveDraft = () => {
+  const saveDraft = async () => {
     if (!draft) return;
     const name = draft.name.trim();
     if (!name) return setFormError('nameRequired');
@@ -90,18 +111,58 @@ export function PromptTemplatesTab({ onUsePrompt }: PromptTemplatesTabProps) {
       ? templates.map((item) => (item.id === existing.id ? nextTemplate : item))
       : [...templates, nextTemplate];
     if (next.length > promptTemplateLimits.maximumTemplates) return setFormError('saveFailed');
-    if (persist(next)) {
+    if (await persist(next)) {
       setDraft(null);
       setFormError(null);
     }
   };
 
-  const removeTemplate = () => {
+  const removeTemplate = async () => {
     if (!pendingRemoval) return;
-    if (persist(templates.filter((item) => item.id !== pendingRemoval.id))) {
+    if (await persist(templates.filter((item) => item.id !== pendingRemoval.id))) {
       if (activeTemplate?.id === pendingRemoval.id) setActiveTemplate(null);
       if (draft?.id === pendingRemoval.id) setDraft(null);
       setPendingRemoval(null);
+    }
+  };
+
+  const exportRawData = () => {
+    if (loadError?.kind !== 'corrupt' || loadError.rawValue === null) return;
+    let pendingObjectUrl: string | null = null;
+    let pendingAnchor: HTMLAnchorElement | null = null;
+    try {
+      const objectUrl = URL.createObjectURL(new Blob([loadError.rawValue], { type: 'text/plain;charset=utf-8' }));
+      pendingObjectUrl = objectUrl;
+      pendingAnchor = document.createElement('a');
+      pendingAnchor.href = objectUrl;
+      pendingAnchor.download = 'openchat-prompt-templates-raw.txt';
+      document.body.append(pendingAnchor);
+      pendingAnchor.click();
+      pendingAnchor.remove();
+      pendingAnchor = null;
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), urlRevocationDelayMs);
+      pendingObjectUrl = null;
+      setRecoveryError(null);
+    } catch {
+      pendingAnchor?.remove();
+      if (pendingObjectUrl) URL.revokeObjectURL(pendingObjectUrl);
+      setRecoveryError('exportFailed');
+    }
+  };
+
+  const confirmReset = async () => {
+    if (loadError?.kind !== 'corrupt' || isResetting) return;
+    setIsResetting(true);
+    setRecoveryError(null);
+    try {
+      await resetPromptTemplates();
+      setTemplates([]);
+      setLoadError(null);
+      setIsResetDialogOpen(false);
+    } catch {
+      setRecoveryError('resetFailed');
+    } finally {
+      setIsResetting(false);
     }
   };
 
@@ -113,11 +174,60 @@ export function PromptTemplatesTab({ onUsePrompt }: PromptTemplatesTabProps) {
     );
   }
 
-  if (loadFailed) {
+  if (loadError) {
     return (
-      <p className="m-6 text-sm text-destructive" role="alert">
-        {t('promptTemplatesLoadFailed')}
-      </p>
+      <section aria-labelledby="prompt-templates-heading" className="mx-auto grid w-full max-w-5xl gap-5 p-5 sm:p-8">
+        <h2 className="text-lg font-semibold text-text" id="prompt-templates-heading">
+          {t('promptTemplatesTitle')}
+        </h2>
+        <div className="grid gap-4 rounded-card border border-destructive/30 p-5">
+          <p className="text-sm text-destructive" role="alert">
+            {loadError.kind === 'corrupt' ? t('promptTemplatesCorruptData') : t('promptTemplatesLoadFailed')}
+          </p>
+          {recoveryError === 'exportFailed' ? (
+            <p className="text-sm text-destructive">{t('promptTemplatesExportFailed')}</p>
+          ) : null}
+          <div className="flex flex-wrap gap-2">
+            {loadError.kind === 'corrupt' ? (
+              <Button onClick={exportRawData} variant="secondary">
+                {t('promptTemplatesExportRaw')}
+              </Button>
+            ) : null}
+            <Button onClick={loadTemplates} variant="secondary">
+              {t('promptTemplatesRetry')}
+            </Button>
+            {loadError.kind === 'corrupt' ? (
+              <Button onClick={() => setIsResetDialogOpen(true)} variant="destructive">
+                {t('promptTemplatesReset')}
+              </Button>
+            ) : null}
+          </div>
+        </div>
+        <Dialog
+          onOpenChange={(open) => {
+            if (!isResetting) setIsResetDialogOpen(open);
+          }}
+          open={isResetDialogOpen}
+          title={t('promptTemplatesResetTitle')}
+        >
+          <div className="grid gap-4">
+            <p className="text-sm text-secondary-text">{t('promptTemplatesResetConfirmation')}</p>
+            {recoveryError === 'resetFailed' ? (
+              <p className="text-sm text-destructive" role="alert">
+                {t('promptTemplatesResetFailed')}
+              </p>
+            ) : null}
+            <div className="flex justify-end gap-2">
+              <Button disabled={isResetting} onClick={() => setIsResetDialogOpen(false)} variant="secondary">
+                {t('cancel')}
+              </Button>
+              <Button loading={isResetting} onClick={confirmReset} variant="destructive">
+                {t('promptTemplatesResetConfirm')}
+              </Button>
+            </div>
+          </div>
+        </Dialog>
+      </section>
     );
   }
 
@@ -152,6 +262,7 @@ export function PromptTemplatesTab({ onUsePrompt }: PromptTemplatesTabProps) {
           </h3>
           <Input
             autoFocus
+            disabled={isSaving}
             label={t('promptTemplateName')}
             maxLength={promptTemplateLimits.maximumNameLength}
             onChange={(event) => {
@@ -166,6 +277,7 @@ export function PromptTemplatesTab({ onUsePrompt }: PromptTemplatesTabProps) {
             </label>
             <Textarea
               className="min-h-40 max-h-64 w-full resize-y rounded-control border border-control-border bg-surface px-3 py-2 text-sm text-text outline-none placeholder:text-secondary-text focus-visible:ring-2 focus-visible:ring-focus"
+              disabled={isSaving}
               id="prompt-template-content"
               fieldLayout="none"
               maxLength={promptTemplateLimits.maximumPromptBytes}
@@ -185,6 +297,7 @@ export function PromptTemplatesTab({ onUsePrompt }: PromptTemplatesTabProps) {
           ) : null}
           <div className="flex flex-wrap justify-end gap-2">
             <Button
+              disabled={isSaving}
               onClick={() => {
                 setDraft(null);
                 setFormError(null);
@@ -193,7 +306,7 @@ export function PromptTemplatesTab({ onUsePrompt }: PromptTemplatesTabProps) {
             >
               {t('cancel')}
             </Button>
-            <Button onClick={saveDraft} variant="primary">
+            <Button loading={isSaving} onClick={() => void saveDraft()} variant="primary">
               {t('save')}
             </Button>
           </div>
@@ -304,7 +417,7 @@ export function PromptTemplatesTab({ onUsePrompt }: PromptTemplatesTabProps) {
       )}
       <Dialog
         onOpenChange={(open) => {
-          if (!open) setPendingRemoval(null);
+          if (!open && !isSaving) setPendingRemoval(null);
         }}
         open={pendingRemoval !== null}
         title={t('promptTemplateDeleteTitle')}
@@ -319,10 +432,10 @@ export function PromptTemplatesTab({ onUsePrompt }: PromptTemplatesTabProps) {
             </p>
           ) : null}
           <div className="flex justify-end gap-2">
-            <Button onClick={() => setPendingRemoval(null)} variant="secondary">
+            <Button disabled={isSaving} onClick={() => setPendingRemoval(null)} variant="secondary">
               {t('cancel')}
             </Button>
-            <Button onClick={removeTemplate} variant="destructive">
+            <Button loading={isSaving} onClick={() => void removeTemplate()} variant="destructive">
               {t('promptTemplateDelete')}
             </Button>
           </div>
