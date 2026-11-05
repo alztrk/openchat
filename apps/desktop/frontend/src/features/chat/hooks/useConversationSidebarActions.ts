@@ -91,9 +91,9 @@ export function useConversationSidebarActions() {
     );
   };
 
-  const moveConversation = async (conversation: ChatConversation, projectId: string | null) => {
-    if (conversation.projectId === projectId && !conversation.isPinned) return;
-    await runMutation(() => moveConversations([conversation.id], projectId), 'projectMoveFailed');
+  const moveConversation = async (conversation: ChatConversation, projectId: string | null): Promise<boolean> => {
+    if (conversation.projectId === projectId && !conversation.isPinned) return true;
+    return runMutation(() => moveConversations([conversation.id], projectId), 'projectMoveFailed');
   };
 
   const exportConversation = async (conversation: ChatConversation, format: ExportFormat = 'md') => {

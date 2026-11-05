@@ -391,33 +391,35 @@ export function ConversationSidebar({
     }
   };
 
-  const dropConversationToProject = (conversationId: string, projectId: string) => {
+  const dropConversationToProject = async (conversationId: string, projectId: string) => {
     const conversation = activeConversations.find((item) => item.id === conversationId);
-    if (conversation) {
-      handleMoveConversationToFolder(conversation, null);
-      if (conversation.projectId !== projectId) {
-        void moveConversation(conversation, projectId);
-      }
+    if (!conversation) return;
+    if (conversation.projectId !== projectId) {
+      const moved = await moveConversation(conversation, projectId);
+      if (!moved) return;
     }
+    handleMoveConversationToFolder(conversation, null);
   };
 
-  const dropConversationToFolder = (conversationId: string, folderId: string) => {
+  const dropConversationToFolder = async (conversationId: string, folderId: string) => {
     const conversation = activeConversations.find((item) => item.id === conversationId);
     if (!conversation) return;
     if (conversation.projectId !== null || conversation.isPinned) {
-      void moveConversation(conversation, null);
+      const moved = await moveConversation(conversation, null);
+      if (!moved) return;
     }
     handleMoveConversationToFolder(conversation, folderId);
   };
 
-  const dropConversationToChats = (conversationId: string) => {
+  const dropConversationToChats = async (conversationId: string) => {
     const conversation = activeConversations.find((item) => item.id === conversationId);
     if (!conversation) return;
+    if (conversation.projectId !== null || conversation.isPinned) {
+      const moved = await moveConversation(conversation, null);
+      if (!moved) return;
+    }
     if (folderIdByConversationId.has(conversation.id)) {
       handleMoveConversationToFolder(conversation, null);
-    }
-    if (conversation.projectId !== null || conversation.isPinned) {
-      void moveConversation(conversation, null);
     }
   };
 
