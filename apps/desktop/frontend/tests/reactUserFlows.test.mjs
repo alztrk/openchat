@@ -84,6 +84,38 @@ const vite = await createServer({
         ) {
           return '\0openchat-test-mcp-store';
         }
+        if (
+          (normalizedSource === '@features/chat/data' || normalizedSource.endsWith('/src/features/chat/data')) &&
+          normalizedImporter.includes('TitleBarSearch.tsx')
+        ) {
+          return '\0openchat-test-titlebar-search-data';
+        }
+        if (
+          (normalizedSource === '@features/chat/state' || normalizedSource.endsWith('/src/features/chat/state')) &&
+          normalizedImporter.includes('TitleBarSearch.tsx')
+        ) {
+          return '\0openchat-test-titlebar-search-store';
+        }
+        if (
+          (normalizedSource === '@features/chat/components/HistorySearchDialog' ||
+            normalizedSource.endsWith('/src/features/chat/components/HistorySearchDialog')) &&
+          normalizedImporter.includes('TitleBarSearch.tsx')
+        ) {
+          return '\0openchat-test-titlebar-search-history-dialog';
+        }
+        if (
+          (normalizedSource === '@shared/lib/platform/storage/unifiedStorage' ||
+            normalizedSource.endsWith('/src/shared/lib/platform/storage/unifiedStorage')) &&
+          normalizedImporter.includes('TitleBarSearch.tsx')
+        ) {
+          return '\0openchat-test-titlebar-search-storage';
+        }
+        if (
+          normalizedSource === './recentSearches' &&
+          normalizedImporter.includes('TitleBarSearch.tsx')
+        ) {
+          return '\0openchat-test-titlebar-search-recents';
+        }
         return null;
       },
       load(id) {
@@ -195,6 +227,48 @@ const vite = await createServer({
             }
           `;
         }
+        if (id === '\0openchat-test-titlebar-search-data') {
+          return `
+            export function listConversationAttachments() { return Promise.resolve({ items: [], nextOffset: null }); }
+            export function normalizeSearchText(value) { return value.toLowerCase(); }
+            export function parseSearchQuery(value) { return { cleanQuery: value.trim() }; }
+            export function searchStoredMessages() {
+              return Promise.resolve([{
+                id: 'message-river',
+                conversationId: 'conversation-river',
+                role: 'user',
+                content: 'A river route',
+                createdAt: null,
+              }]);
+            }
+          `;
+        }
+        if (id === '\0openchat-test-titlebar-search-store') {
+          return `
+            const chatState = { conversations: [], projects: [] };
+            export function useChatStore(selector) {
+              return selector(chatState);
+            }
+          `;
+        }
+        if (id === '\0openchat-test-titlebar-search-history-dialog') {
+          return 'export function HistorySearchDialog() { return null; }';
+        }
+        if (id === '\0openchat-test-titlebar-search-storage') {
+          return 'export const unifiedStorage = { isInitialized: true };';
+        }
+        if (id === '\0openchat-test-titlebar-search-recents') {
+          return `
+            export const recentSearchLimits = { maximumLength: 256 };
+            export function readRecentSearches() { return []; }
+            export async function writeRecentSearches() {}
+            export function addRecentSearch(terms, term) {
+              const value = term.trim();
+              return value ? [value, ...terms.filter((item) => item.toLowerCase() !== value.toLowerCase())].slice(0, 5) : terms;
+            }
+            export function removeRecentSearch(terms, term) { return terms.filter((item) => item !== term); }
+          `;
+        }
         return null;
       },
     },
@@ -243,6 +317,7 @@ const { AppWindowSettingsSection } = await vite.ssrLoadModule(
 );
 const { ConversationSidebar } = await vite.ssrLoadModule('/src/features/chat/components/ConversationSidebar.tsx');
 const { McpCatalogTab } = await vite.ssrLoadModule('/src/features/model-catalog/components/McpCatalogTab.tsx');
+const { TitleBarSearch } = await vite.ssrLoadModule('/src/widgets/title-bar/TitleBarSearch.tsx');
 
 const localeDirectory = path.resolve('src/shared/lib/i18n/locales');
 const supportedLocales = ['de', 'en', 'es', 'fr', 'tr'];
@@ -296,7 +371,6 @@ Object.defineProperty(process, '__openchatMcpHarness', {
   value: mcpHarness,
   writable: true,
 });
-
 for (const locale of supportedLocales) {
   const translations = JSON.parse(readFileSync(path.join(localeDirectory, `${locale}.json`), 'utf8'));
   const i18n = createInstance();
@@ -777,6 +851,60 @@ test('the MCP catalog renders localized category labels and filters matching ser
     }
     assert.ok(screen.getByText(translations[translationKey], { selector: 'span' }));
   }
+});
+
+test('title bar search points its active descendant at a rendered result and closes on Escape', async () => {
+  const translations = translationsByLocale.get('en');
+  assert.ok(translations);
+  let selectedConversation = null;
+
+  render(
+    localized(
+      'en',
+      React.createElement(TitleBarSearch, {
+        onSelectConversation: (...args) => {
+          selectedConversation = args;
+        },
+      }),
+    ),
+  );
+
+  const input = screen.getByRole('combobox', { name: translations.searchChats });
+  fireEvent.change(input, { target: { value: 'river' } });
+  assert.equal(input.value, 'river');
+
+  await waitFor(() => {
+    const listbox = screen.getByRole('listbox', { name: translations.searchChats });
+    assert.equal(input.getAttribute('aria-expanded'), 'true');
+    assert.equal(input.getAttribute('aria-controls'), listbox.id);
+  });
+
+  await waitFor(() => assert.ok(input.getAttribute('aria-activedescendant')));
+  const initialActiveId = input.getAttribute('aria-activedescendant');
+  assert.ok(initialActiveId);
+  const initialOption = document.getElementById(initialActiveId);
+  assert.ok(initialOption);
+  assert.equal(initialOption.getAttribute('role'), 'option');
+  assert.equal(initialOption.getAttribute('aria-selected'), 'true');
+
+  fireEvent.keyDown(input, { key: 'ArrowDown' });
+  const nextActiveId = input.getAttribute('aria-activedescendant');
+  assert.ok(nextActiveId);
+  assert.notEqual(nextActiveId, initialActiveId);
+  const nextOption = document.getElementById(nextActiveId);
+  assert.ok(nextOption);
+  assert.equal(nextOption.getAttribute('role'), 'option');
+  assert.equal(nextOption.getAttribute('aria-selected'), 'true');
+
+  fireEvent.click(nextOption);
+  assert.deepEqual(selectedConversation, ['conversation-river', 'message-river', 'river']);
+
+  fireEvent.focus(input);
+  await waitFor(() => screen.getByRole('listbox', { name: translations.searchChats }));
+  fireEvent.keyDown(input, { key: 'Escape' });
+  assert.equal(input.getAttribute('aria-expanded'), 'false');
+  assert.equal(input.hasAttribute('aria-controls'), false);
+  assert.equal(screen.queryByRole('listbox', { name: translations.searchChats }), null);
 });
 
 test('the primary navigation landmark and surface action render in every supported locale', () => {
