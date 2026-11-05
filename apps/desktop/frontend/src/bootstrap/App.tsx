@@ -1,4 +1,4 @@
-import { SiGithub } from '@icons-pack/react-simple-icons';
+import SiGithub from '@icons-pack/react-simple-icons/icons/SiGithub';
 import { MessageSquare, PanelRight } from 'lucide-react';
 import {
   lazy,
