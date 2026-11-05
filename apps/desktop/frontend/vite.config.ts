@@ -34,6 +34,8 @@ export default defineConfig(({ command }) => ({
   json: {
     // Named exports duplicate the locale dictionaries in Vite dev; source JSON imports use defaults.
     namedExports: command !== 'serve',
+    // Keep large development locale modules as object literals instead of escaped JSON.parse strings.
+    stringify: command === 'serve' ? false : 'auto',
   },
   clearScreen: false,
   server: {
