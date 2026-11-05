@@ -344,6 +344,8 @@
 ### 10.6 Kullanıcı akışları, erişilebilirlik ve kurtarma
 
 - [ ] `FE-01..19`: Sohbet, MCP filtreleri, provider/proje formları, kısayollar, odak/combobox, loading metinleri, prompt retry, recent-search retention ve indirme progress etiketlerini tek kullanıcı akışı başına ele al.
+- [x] `FE-R02` kod dilimi: Özel klasör tercih okuyucusu geçerli, bozuk ve okunamayan veriyi ayırıyor; bozuk ham değer korunup dışa aktarılabiliyor. Bozuk/okunamayan veri varken klasör CRUD ve konuşma konumu değişiklikleri engelleniyor; yazıcı da saklanan veriyi yeniden doğruluyor. Decoder ve React DOM regresyonları geçti.
+- [ ] `FE-R02` runtime: İzole Windows WebView2 profilinde bozuk JSON ve kısmi geçersiz kayıtla klasör uyarısını, kurtarma dosyasının ham veriyi aynen taşımasını ve klasör/konuşma değişikliklerinin saklanan değeri koruduğunu doğrula.
 - [x] `FE-20` kod dilimi: `Slider` `Field`'dan yalnızca native input'a ait `id` ve ARIA alanlarını alıyor; dahili `labelId` artık DOM'a yayılmıyor. Regresyon testi prop sızıntısını ve `Field` etiketinin `htmlFor`/`id` bağını kapsıyor.
 - [x] `FE-20` runtime kısmi kabulü: İzole WebView2 bildirim ekranında kaydırıcının erişilebilir adı `Ses düzeyi`, değeri `%70` olarak göründü.
 - [ ] `FE-20` kalan runtime kabulü: WebView2 geliştirme konsolunda React `labelId` uyarısının artık oluşmadığını doğrudan doğrula.
@@ -353,6 +355,7 @@
 - [ ] `FE-21` veri içeren profil runtime kabulü: Gerçek konuşma/mesaj/proje kayıtlarında arama sonucu seçimini, filtreleri ve hedef yüzeye geçişi doğrula; izole profilde bu veriler bulunmuyordu.
 - [ ] `FE-21` kayıtlı arama runtime kabulü: En az iki farklı sorgu/filtre preset'i arasında normal fare ve klavye kullanımıyla geçiş yap; tüm alanların doğru geri yüklendiğini doğrula. İzole WebView2 erişilebilirlik otomasyonunda kayıt/listeme görüldü, seçim sonucu tutarlı doğrulanamadı.
 - [ ] `FE-22` WebView2 runtime araştırması: Gelişmiş arama etkileşimleri sırasında tekrarlanan `ResizeObserver loop completed with undelivered notifications` istemci hatasını yeniden üret; hangi observer'ın tetiklediğini ve kullanıcıya/üretim sürümüne etkisini belirle, uygulama kaynaklı ve etkiliyse düzelt.
+- [x] `FE-22` kaynak taraması: ResizeObserver kullanan yanıtların boyut/konum durumunu veya sanal liste ölçülerini güncellediği doğrulandı; tarama bildirilen WebView2 hatasını tek bir observer'a bağlamadı. Runtime attribution ve kullanıcı etkisi açık.
 - [x] `SVC-18`: Bozuk kanvas JSON/schema/size-limit durumlarını ayır; ham veriyi dışa aktarma ve kullanıcı onaylı yeni boş kanvas akışı ekle. Silme hatası özgün veriyi korur.
 - [x] `SVC-19`: Tasarım, sohbet görünümü ve asistan yürütme tercih yazımlarını store başına seri kuyruğa al; sıradaki işlemin en güncel state'i temel alıp farklı alan patch'lerini birleştirdiğini test et.
 - [x] `SVC-21`: Sessiz saatler native time alanları düzenleme sırasında taslak tutuyor ve yalnız geçerli `HH:mm` değerini odak kaybında kaydediyor; regresyon testleri ve izole WebView2 giriş/kayıt akışı doğrulandı.

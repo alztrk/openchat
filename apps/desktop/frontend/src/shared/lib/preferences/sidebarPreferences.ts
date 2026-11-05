@@ -12,6 +12,11 @@ export interface CustomSidebarFolder {
   createdAt: number;
 }
 
+export type CustomSidebarFoldersReadResult =
+  | { kind: 'ready'; folders: CustomSidebarFolder[] }
+  | { kind: 'invalid'; folders: CustomSidebarFolder[]; rawValue: string; error: Error }
+  | { kind: 'unavailable'; folders: CustomSidebarFolder[]; error: Error };
+
 export const SIDEBAR_DEFAULT_WIDTH = 280;
 export const SIDEBAR_MIN_WIDTH = 152;
 export const SIDEBAR_MAX_WIDTH = 420;
@@ -136,39 +141,107 @@ export function writeSidebarManualOrder(order: readonly string[]): void {
   unifiedStorage.setItem(sidebarManualOrderKey, JSON.stringify([...new Set(order)]));
 }
 
-export function readCustomSidebarFolders(): CustomSidebarFolder[] {
+export function readCustomSidebarFolders(): CustomSidebarFoldersReadResult {
+  let encoded: string | null;
   try {
-    const encoded = unifiedStorage.getItem(customFoldersKey);
-    if (!encoded) return [];
-    const parsed: unknown = JSON.parse(encoded);
-    if (!Array.isArray(parsed)) return [];
-    const validFolders: CustomSidebarFolder[] = [];
-    for (const item of parsed) {
-      if (!isObject(item)) continue;
-      const { id, name, conversationIds, createdAt } = item;
-      if (typeof id !== 'string' || typeof name !== 'string' || !Array.isArray(conversationIds)) continue;
-      const trimmedId = id.trim();
-      const trimmedName = name.trim();
-      const validConversationIds = conversationIds.filter(
-        (conversationId): conversationId is string => typeof conversationId === 'string' && conversationId.length > 0,
-      );
-      const folderCreatedAt = typeof createdAt === 'number' ? createdAt : Date.now();
-      if (trimmedId && trimmedName) {
-        validFolders.push({
-          id: trimmedId,
-          name: trimmedName,
-          conversationIds: [...new Set(validConversationIds)],
-          createdAt: folderCreatedAt,
-        });
-      }
-    }
-    return validFolders;
-  } catch {
-    return [];
+    encoded = unifiedStorage.getItem(customFoldersKey);
+  } catch (cause) {
+    return {
+      kind: 'unavailable',
+      folders: [],
+      error: new Error('Custom sidebar folders could not be read.', { cause }),
+    };
   }
+
+  if (encoded === null || encoded === '') return { kind: 'ready', folders: [] };
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(encoded);
+  } catch (cause) {
+    return {
+      kind: 'invalid',
+      folders: [],
+      rawValue: encoded,
+      error: new Error('Custom sidebar folder data is invalid JSON.', { cause }),
+    };
+  }
+  if (!Array.isArray(parsed)) {
+    return {
+      kind: 'invalid',
+      folders: [],
+      rawValue: encoded,
+      error: new Error('Custom sidebar folder data has an invalid shape.'),
+    };
+  }
+
+  const validFolders: CustomSidebarFolder[] = [];
+  const folderIds = new Set<string>();
+  let hasInvalidEntry = false;
+
+  for (const item of parsed) {
+    if (!isObject(item)) {
+      hasInvalidEntry = true;
+      continue;
+    }
+
+    const { id, name, conversationIds, createdAt } = item;
+    const hasUnknownProperty = Object.keys(item).some(
+      (key) => key !== 'id' && key !== 'name' && key !== 'conversationIds' && key !== 'createdAt',
+    );
+    if (hasUnknownProperty) hasInvalidEntry = true;
+    if (typeof id !== 'string' || typeof name !== 'string' || !Array.isArray(conversationIds)) {
+      hasInvalidEntry = true;
+      continue;
+    }
+
+    const trimmedId = id.trim();
+    const trimmedName = name.trim();
+    const validConversationIds = conversationIds.filter(
+      (conversationId): conversationId is string => typeof conversationId === 'string' && conversationId.length > 0,
+    );
+    const uniqueConversationIds = [...new Set(validConversationIds)];
+    const hasInvalidCreatedAt =
+      createdAt !== undefined && (typeof createdAt !== 'number' || !Number.isFinite(createdAt));
+    const folderCreatedAt = typeof createdAt === 'number' && Number.isFinite(createdAt) ? createdAt : Date.now();
+    if (
+      !trimmedId ||
+      !trimmedName ||
+      trimmedId !== id ||
+      trimmedName !== name ||
+      validConversationIds.length !== conversationIds.length ||
+      uniqueConversationIds.length !== validConversationIds.length ||
+      hasInvalidCreatedAt ||
+      folderIds.has(trimmedId)
+    ) {
+      hasInvalidEntry = true;
+    }
+    if (!trimmedId || !trimmedName || folderIds.has(trimmedId)) continue;
+
+    folderIds.add(trimmedId);
+    validFolders.push({
+      id: trimmedId,
+      name: trimmedName,
+      conversationIds: uniqueConversationIds,
+      createdAt: folderCreatedAt,
+    });
+  }
+
+  return hasInvalidEntry
+    ? {
+        kind: 'invalid',
+        folders: validFolders,
+        rawValue: encoded,
+        error: new Error('Custom sidebar folder data contains invalid entries.'),
+      }
+    : { kind: 'ready', folders: validFolders };
 }
 
-export function writeCustomSidebarFolders(folders: readonly CustomSidebarFolder[]): Promise<void> {
+export async function writeCustomSidebarFolders(folders: readonly CustomSidebarFolder[]): Promise<void> {
+  const current = readCustomSidebarFolders();
+  if (current.kind !== 'ready') {
+    throw new Error('Custom sidebar folder data could not be verified and was not overwritten.');
+  }
   return unifiedStorage.setPersistedItem(customFoldersKey, JSON.stringify(folders));
 }
 

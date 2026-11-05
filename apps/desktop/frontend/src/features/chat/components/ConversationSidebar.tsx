@@ -124,8 +124,13 @@ export function ConversationSidebar({
   const [sortMode, setSortMode] = useState<SidebarSortMode>(readSidebarSortMode);
   const [viewMode, setViewMode] = useState<SidebarViewMode>(readSidebarViewMode);
   const [manualOrder, setManualOrder] = useState<string[]>(readSidebarManualOrder);
-  const [customFolders, setCustomFolders] = useState<CustomSidebarFolder[]>(readCustomSidebarFolders);
+  const [customFoldersState, setCustomFoldersState] = useState(readCustomSidebarFolders);
+  const customFolders = customFoldersState.folders;
+  const customFolderDataIsValid = customFoldersState.kind === 'ready';
   const [isCustomFolderSaving, setIsCustomFolderSaving] = useState(false);
+  const [customFolderRecoveryFeedback, setCustomFolderRecoveryFeedback] = useState<
+    'exported' | 'exportFailed' | null
+  >(null);
   const [collapsedFolderIds, setCollapsedFolderIds] = useState<ReadonlySet<string>>(() => new Set());
   const [folderDropTargetId, setFolderDropTargetId] = useState<string | null>(null);
   const [isCreatingFolder, setIsCreatingFolder] = useState(false);
@@ -190,6 +195,39 @@ export function ConversationSidebar({
     togglePinned,
   } = useConversationSidebarActions();
 
+  const showCustomFolderDataError = () => {
+    showFeedback(
+      customFoldersState.kind === 'unavailable' ? 'customFolderDataUnavailable' : 'customFolderDataInvalid',
+    );
+  };
+
+  const exportCustomFolderRecoveryData = () => {
+    if (customFoldersState.kind !== 'invalid') return;
+    let pendingObjectUrl: string | null = null;
+    let pendingAnchor: HTMLAnchorElement | null = null;
+    try {
+      const objectUrl = URL.createObjectURL(
+        new Blob([customFoldersState.rawValue], { type: 'application/json;charset=utf-8' }),
+      );
+      pendingObjectUrl = objectUrl;
+      pendingAnchor = document.createElement('a');
+      pendingAnchor.href = objectUrl;
+      pendingAnchor.download = 'openchat-custom-folders-recovery.json';
+      document.body.append(pendingAnchor);
+      pendingAnchor.click();
+      pendingAnchor.remove();
+      pendingAnchor = null;
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
+      pendingObjectUrl = null;
+      setCustomFolderRecoveryFeedback('exported');
+    } catch (cause) {
+      pendingAnchor?.remove();
+      if (pendingObjectUrl) URL.revokeObjectURL(pendingObjectUrl);
+      globalThis.reportError?.(new Error('Custom sidebar folder recovery data could not be exported.', { cause }));
+      setCustomFolderRecoveryFeedback('exportFailed');
+    }
+  };
+
   const isConversationAiWorking = useCallback(
     (conversationId: string) =>
       sendingConversationIds.includes(conversationId) ||
@@ -201,6 +239,10 @@ export function ConversationSidebar({
   useEffect(() => {
     if (sidebarPreferences.error) globalThis.reportError(sidebarPreferences.error);
   }, [sidebarPreferences.error]);
+
+  useEffect(() => {
+    if (customFoldersState.kind !== 'ready') globalThis.reportError?.(customFoldersState.error);
+  }, [customFoldersState]);
 
   useEffect(() => initializeAgentProfiles(), [initializeAgentProfiles]);
 
@@ -315,13 +357,17 @@ export function ConversationSidebar({
   };
 
   const persistCustomFolders = async (nextFolders: CustomSidebarFolder[]): Promise<boolean> => {
+    if (!customFolderDataIsValid) {
+      showCustomFolderDataError();
+      return false;
+    }
     if (customFolderMutationPendingRef.current) return false;
     customFolderMutationPendingRef.current = true;
     setIsCustomFolderSaving(true);
     try {
       await writeCustomSidebarFolders(nextFolders);
       customFoldersRef.current = nextFolders;
-      setCustomFolders(nextFolders);
+      setCustomFoldersState({ kind: 'ready', folders: nextFolders });
       return true;
     } catch (cause) {
       globalThis.reportError(new Error('Custom sidebar folders could not be saved.', { cause }));
@@ -337,6 +383,10 @@ export function ConversationSidebar({
     conversation: ChatConversation,
     targetFolderId: string | null,
   ): Promise<boolean> => {
+    if (!customFolderDataIsValid) {
+      showCustomFolderDataError();
+      return false;
+    }
     if (customFolderMutationPendingRef.current) {
       showFeedback('customFolderSaveInProgress');
       return false;
@@ -357,6 +407,10 @@ export function ConversationSidebar({
 
   const handleCreateCustomFolder = async (event?: FormEvent<HTMLFormElement>) => {
     event?.preventDefault();
+    if (!customFolderDataIsValid) {
+      showCustomFolderDataError();
+      return;
+    }
     if (customFolderMutationPendingRef.current) return;
     const trimmed = newFolderName.trim();
     if (!trimmed) {
@@ -380,6 +434,10 @@ export function ConversationSidebar({
   };
 
   const handleRenameCustomFolder = async (folderId: string) => {
+    if (!customFolderDataIsValid) {
+      showCustomFolderDataError();
+      return;
+    }
     if (customFolderMutationPendingRef.current) return;
     const trimmed = editingFolderName.trim();
     if (!trimmed) {
@@ -401,6 +459,10 @@ export function ConversationSidebar({
   };
 
   const handleDeleteCustomFolder = async (folderId: string) => {
+    if (!customFolderDataIsValid) {
+      showCustomFolderDataError();
+      return;
+    }
     if (customFolderMutationPendingRef.current) return;
     const currentFolders = customFoldersRef.current;
     const next = currentFolders.filter((folder) => folder.id !== folderId);
@@ -430,6 +492,10 @@ export function ConversationSidebar({
     targetProjectId: string | null,
     targetFolderId: string | null,
   ): Promise<boolean> => {
+    if (!customFolderDataIsValid) {
+      showCustomFolderDataError();
+      return false;
+    }
     if (customFolderMutationPendingRef.current) {
       showFeedback('customFolderSaveInProgress');
       return false;
@@ -755,7 +821,8 @@ export function ConversationSidebar({
   const showPinned = (sectionFilter === 'all' || sectionFilter === 'chats') && sectionIsVisible(visiblePinned, false);
   const showProjects = sectionFilter === 'all' || sectionFilter === 'projects';
   const showFolders =
-    (sectionFilter === 'all' || sectionFilter === 'chats') && (customFolders.length > 0 || isCreatingFolder);
+    (sectionFilter === 'all' || sectionFilter === 'chats') &&
+    (customFolders.length > 0 || isCreatingFolder || !customFolderDataIsValid);
   const showChats = (sectionFilter === 'all' || sectionFilter === 'chats') && sectionIsVisible(unassignedConversations, true);
   const showArchived =
     (sectionFilter === 'all' || sectionFilter === 'chats') && sectionIsVisible(visibleArchived, false);
@@ -907,7 +974,7 @@ export function ConversationSidebar({
                       <Button
                         aria-label={t('createCustomFolder')}
                         className="size-6 rounded-control text-secondary-icon hover:bg-hover hover:text-text"
-                        disabled={isBusy || isCustomFolderSaving}
+                        disabled={isBusy || isCustomFolderSaving || !customFolderDataIsValid}
                         onClick={() => setIsCreatingFolder(true)}
                         size="icon"
                         title={t('createCustomFolder')}
@@ -921,6 +988,40 @@ export function ConversationSidebar({
                     onToggle={() => toggleSection('folders')}
                     title={t('customFolders')}
                   >
+                    {!customFolderDataIsValid ? (
+                      <li className="grid gap-2 rounded-button border border-border bg-surface px-3 py-2">
+                        <p className="text-xs text-destructive" role="alert">
+                          {t(
+                            customFoldersState.kind === 'unavailable'
+                              ? 'customFolderDataUnavailable'
+                              : 'customFolderDataInvalid',
+                          )}
+                        </p>
+                        {customFoldersState.kind === 'invalid' ? (
+                          <Button
+                            className="min-h-8 justify-start px-2 text-xs"
+                            onClick={exportCustomFolderRecoveryData}
+                            size="small"
+                            type="button"
+                            variant="secondary"
+                          >
+                            {t('customFolderDataExport')}
+                          </Button>
+                        ) : null}
+                        {customFolderRecoveryFeedback ? (
+                          <p
+                            className="text-xs text-secondary-text"
+                            role={customFolderRecoveryFeedback === 'exportFailed' ? 'alert' : 'status'}
+                          >
+                            {t(
+                              customFolderRecoveryFeedback === 'exported'
+                                ? 'customFolderDataExported'
+                                : 'customFolderDataExportFailed',
+                            )}
+                          </p>
+                        ) : null}
+                      </li>
+                    ) : null}
                     {isCreatingFolder ? (
                       <li className="px-1 py-0.5">
                         <form
@@ -931,7 +1032,7 @@ export function ConversationSidebar({
                             aria-label={t('customFolderNamePlaceholder')}
                             className="h-7 min-h-0 w-auto min-w-0 flex-1 rounded-control border-accent/60 bg-surface px-2 text-xs text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
                             density="compact"
-                            disabled={isBusy || isCustomFolderSaving}
+                            disabled={isBusy || isCustomFolderSaving || !customFolderDataIsValid}
                             fieldLayout="none"
                             maxLength={80}
                             onBlur={() => void handleCreateCustomFolder()}
@@ -950,7 +1051,7 @@ export function ConversationSidebar({
                           <Button
                             aria-label={t('save')}
                             className="size-6 rounded-control p-0 text-accent hover:bg-hover"
-                            disabled={isBusy || isCustomFolderSaving}
+                            disabled={isBusy || isCustomFolderSaving || !customFolderDataIsValid}
                             onMouseDown={(event) => event.preventDefault()}
                             size="icon"
                             type="submit"
@@ -961,7 +1062,7 @@ export function ConversationSidebar({
                           <Button
                             aria-label={t('cancel')}
                             className="size-6 rounded-control p-0 text-secondary-icon hover:bg-hover hover:text-text"
-                            disabled={isBusy || isCustomFolderSaving}
+                            disabled={isBusy || isCustomFolderSaving || !customFolderDataIsValid}
                             onClick={() => {
                               setIsCreatingFolder(false);
                               setNewFolderName('');
@@ -1031,7 +1132,7 @@ export function ConversationSidebar({
                                 className="h-7 min-h-0 w-auto min-w-0 flex-1 rounded-control border-accent/60 bg-surface px-2 text-xs text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
                                 density="compact"
                                 data-custom-folder-editor="true"
-                                disabled={isBusy || isCustomFolderSaving}
+                                disabled={isBusy || isCustomFolderSaving || !customFolderDataIsValid}
                                 fieldLayout="none"
                                 maxLength={80}
                                 onBlur={() => void handleRenameCustomFolder(folder.id)}
@@ -1080,7 +1181,7 @@ export function ConversationSidebar({
                                 <Button
                                   aria-label={t('renameCustomFolder')}
                                   className="size-7 rounded-control text-secondary-icon hover:bg-surface/80 hover:text-text"
-                                  disabled={isBusy || isCustomFolderSaving}
+                                  disabled={isBusy || isCustomFolderSaving || !customFolderDataIsValid}
                                   onClick={() => {
                                     setEditingFolderName(folder.name);
                                     setEditingFolderId(folder.id);
@@ -1094,7 +1195,7 @@ export function ConversationSidebar({
                                 <Button
                                   aria-label={t('deleteCustomFolder')}
                                   className="size-7 rounded-control text-secondary-icon hover:bg-surface/80 hover:text-destructive"
-                                  disabled={isBusy || isCustomFolderSaving}
+                                  disabled={isBusy || isCustomFolderSaving || !customFolderDataIsValid}
                                   onClick={() => void handleDeleteCustomFolder(folder.id)}
                                   size="icon"
                                   title={t('deleteCustomFolder')}

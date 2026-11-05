@@ -17,15 +17,18 @@ function sourceBetween(startMarker, endMarker) {
 }
 
 test('custom folder preference writes resolve only after durable storage succeeds', () => {
-  assert.match(
-    preferencesSource,
-    /export function writeCustomSidebarFolders\(folders: readonly CustomSidebarFolder\[\]\): Promise<void> \{\s*return unifiedStorage\.setPersistedItem\(customFoldersKey, JSON\.stringify\(folders\)\);/u,
-  );
+  const writerStart = preferencesSource.indexOf('export async function writeCustomSidebarFolders(');
+  const writerEnd = preferencesSource.indexOf('\n}', writerStart);
+  assert.ok(writerStart >= 0 && writerEnd > writerStart);
+  const writer = preferencesSource.slice(writerStart, writerEnd);
+  const validationIndex = writer.indexOf("if (current.kind !== 'ready')");
+  const storageWriteIndex = writer.indexOf('unifiedStorage.setPersistedItem(customFoldersKey, JSON.stringify(folders))');
+  assert.ok(validationIndex >= 0 && validationIndex < storageWriteIndex);
 
   const persist = sourceBetween('const persistCustomFolders', 'const handleMoveConversationToFolder');
   const writeIndex = persist.indexOf('await writeCustomSidebarFolders(nextFolders)');
   const refIndex = persist.indexOf('customFoldersRef.current = nextFolders');
-  const stateIndex = persist.indexOf('setCustomFolders(nextFolders)');
+  const stateIndex = persist.indexOf("setCustomFoldersState({ kind: 'ready', folders: nextFolders })");
   assert.ok(writeIndex >= 0 && writeIndex < refIndex && refIndex < stateIndex);
   assert.match(persist, /catch \(cause\)[\s\S]*?showFeedback\('customFolderSaveFailed'\)/u);
 });

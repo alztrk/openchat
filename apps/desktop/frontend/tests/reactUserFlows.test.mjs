@@ -49,6 +49,13 @@ const vite = await createServer({
           return '\0openchat-test-sidebar-preferences';
         }
         if (
+          (normalizedSource === '@shared/lib/platform/storage/unifiedStorage' ||
+            normalizedSource.endsWith('/src/shared/lib/platform/storage/unifiedStorage')) &&
+          normalizedImporter.endsWith('/src/shared/lib/preferences/sidebarPreferences.ts')
+        ) {
+          return '\0openchat-test-sidebar-preference-storage';
+        }
+        if (
           normalizedSource.endsWith('/src/shared/lib/preferences/assistantProfilesStore') &&
           normalizedImporter.endsWith('/src/features/chat/components/ConversationSidebar.tsx')
         ) {
@@ -171,7 +178,7 @@ const vite = await createServer({
             export function clampSidebarWidth(width) { return Math.round(Math.min(420, Math.max(152, width))); }
             export function readCollapsedSidebarSections() { return { collapsedSections: new Set(), error: null }; }
             export function readCustomSidebarFolders() {
-              return process.__openchatSidebarHarness.customFolders;
+              return process.__openchatSidebarHarness.customFoldersReadResult;
             }
             export function readLegacyHiddenConversationIds() { return new Set(); }
             export function readSidebarManualOrder() { return []; }
@@ -183,6 +190,9 @@ const vite = await createServer({
             export function sortSidebarConversations(conversations) { return [...conversations]; }
             export function writeCollapsedSidebarSections() {}
             export function writeCustomSidebarFolders(folders) {
+              if (process.__openchatSidebarHarness.customFoldersReadResult.kind !== 'ready') {
+                throw new Error('Custom sidebar folder data is not writable.');
+              }
               return process.__openchatSidebarHarness.writeCustomFolders(folders);
             }
             export function writeSidebarManualOrder() {}
@@ -190,6 +200,27 @@ const vite = await createServer({
             export function writeSidebarViewMode() {}
             export function writeSidebarWidth() {}
             export function writeSkipConversationDeleteConfirmation() { return Promise.resolve(); }
+          `;
+        }
+        if (id === '\0openchat-test-sidebar-preference-storage') {
+          return `
+            import process from 'node:process';
+            export const unifiedStorage = {
+              getItem(key) {
+                if (key !== 'chat.custom_sidebar_folders') throw new Error('Unexpected preference key.');
+                if (process.__openchatSidebarHarness.preferenceReadFailure) {
+                  throw process.__openchatSidebarHarness.preferenceReadFailure;
+                }
+                return process.__openchatSidebarHarness.preferenceValue;
+              },
+              setPersistedItem(key, value) {
+                if (key !== 'chat.custom_sidebar_folders') throw new Error('Unexpected preference key.');
+                process.__openchatSidebarHarness.preferenceWriteCalls.push(value);
+                process.__openchatSidebarHarness.preferenceValue = value;
+                return Promise.resolve();
+              },
+              setItem() {},
+            };
           `;
         }
         if (id === '\0openchat-test-assistant-profiles') {
@@ -321,6 +352,7 @@ const { AppWindowSettingsSection } = await vite.ssrLoadModule(
   '/src/features/app-settings/components/AppWindowSettingsSection.tsx',
 );
 const { ConversationSidebar } = await vite.ssrLoadModule('/src/features/chat/components/ConversationSidebar.tsx');
+const sidebarPreferencesModule = await vite.ssrLoadModule('/src/shared/lib/preferences/sidebarPreferences.ts');
 const { McpCatalogTab } = await vite.ssrLoadModule('/src/features/model-catalog/components/McpCatalogTab.tsx');
 const { TitleBarSearch } = await vite.ssrLoadModule('/src/widgets/title-bar/TitleBarSearch.tsx');
 
@@ -345,12 +377,15 @@ const appPreferencesHarness = {
 const sidebarHarness = {
   actions: {},
   chatState: {},
-  customFolders: [],
+  customFoldersReadResult: { kind: 'ready', folders: [] },
   moveCalls: [],
   writeCustomFoldersCalls: [],
+  preferenceValue: null,
+  preferenceReadFailure: null,
+  preferenceWriteCalls: [],
   writeCustomFolders: async (folders) => {
     sidebarHarness.writeCustomFoldersCalls.push(folders);
-    sidebarHarness.customFolders = folders;
+    sidebarHarness.customFoldersReadResult = { kind: 'ready', folders };
   },
 };
 const mcpHarness = {
@@ -429,12 +464,15 @@ afterEach(() => {
   };
   sidebarHarness.actions = {};
   sidebarHarness.chatState = {};
-  sidebarHarness.customFolders = [];
+  sidebarHarness.customFoldersReadResult = { kind: 'ready', folders: [] };
   sidebarHarness.moveCalls = [];
   sidebarHarness.writeCustomFoldersCalls = [];
+  sidebarHarness.preferenceValue = null;
+  sidebarHarness.preferenceReadFailure = null;
+  sidebarHarness.preferenceWriteCalls = [];
   sidebarHarness.writeCustomFolders = async (folders) => {
     sidebarHarness.writeCustomFoldersCalls.push(folders);
-    sidebarHarness.customFolders = folders;
+    sidebarHarness.customFoldersReadResult = { kind: 'ready', folders };
   };
   mcpHarness.state = {};
   recentSearchHarness.terms = ['river', 'ocean'];
@@ -752,7 +790,7 @@ test('a failed sidebar service move leaves the custom folder membership unchange
     conversationIds: [],
     createdAt: 1,
   };
-  sidebarHarness.customFolders = [folder];
+  sidebarHarness.customFoldersReadResult = { kind: 'ready', folders: [folder] };
   sidebarHarness.chatState = {
     activeConversationId: null,
     compactingConversationId: null,
@@ -811,7 +849,181 @@ test('a failed sidebar service move leaves the custom folder membership unchange
     assert.deepEqual(sidebarHarness.moveCalls, [{ conversationId: conversation.id, projectId: null }]);
   });
   assert.deepEqual(sidebarHarness.writeCustomFoldersCalls, []);
-  assert.deepEqual(sidebarHarness.customFolders, [folder]);
+  assert.deepEqual(sidebarHarness.customFoldersReadResult.folders, [folder]);
+});
+
+test('custom folder preference decoding preserves invalid data and blocks writes', async () => {
+  const validFolder = {
+    id: 'folder-one',
+    name: 'Folder one',
+    conversationIds: ['conversation-one'],
+    createdAt: 1,
+  };
+  const invalidValues = [
+    '{not valid json',
+    JSON.stringify({ folders: [validFolder] }),
+    JSON.stringify([validFolder, { id: '', name: 'Invalid', conversationIds: [], createdAt: 2 }]),
+  ];
+
+  for (const rawValue of invalidValues) {
+    sidebarHarness.preferenceValue = rawValue;
+    const result = sidebarPreferencesModule.readCustomSidebarFolders();
+
+    assert.equal(result.kind, 'invalid');
+    assert.equal(result.rawValue, rawValue);
+    await assert.rejects(
+      sidebarPreferencesModule.writeCustomSidebarFolders([validFolder]),
+      /was not overwritten/u,
+    );
+    assert.equal(sidebarHarness.preferenceValue, rawValue);
+    assert.deepEqual(sidebarHarness.preferenceWriteCalls, []);
+  }
+
+  sidebarHarness.preferenceValue = JSON.stringify([validFolder]);
+  assert.deepEqual(sidebarPreferencesModule.readCustomSidebarFolders(), {
+    kind: 'ready',
+    folders: [validFolder],
+  });
+  await sidebarPreferencesModule.writeCustomSidebarFolders([]);
+  assert.equal(sidebarHarness.preferenceValue, '[]');
+  assert.deepEqual(sidebarHarness.preferenceWriteCalls, ['[]']);
+
+  sidebarHarness.preferenceValue = JSON.stringify([
+    { id: 'legacy-folder', name: 'Legacy folder', conversationIds: [] },
+  ]);
+  const legacyResult = sidebarPreferencesModule.readCustomSidebarFolders();
+  assert.equal(legacyResult.kind, 'ready');
+  assert.equal(typeof legacyResult.folders[0]?.createdAt, 'number');
+});
+
+test('custom folder read failures are reported and block preference writes', async () => {
+  sidebarHarness.preferenceReadFailure = new Error('test-only read failure');
+
+  const result = sidebarPreferencesModule.readCustomSidebarFolders();
+
+  assert.equal(result.kind, 'unavailable');
+  await assert.rejects(
+    sidebarPreferencesModule.writeCustomSidebarFolders([]),
+    /was not overwritten/u,
+  );
+  assert.deepEqual(sidebarHarness.preferenceWriteCalls, []);
+});
+
+test('invalid custom folder data stays visible, can be exported, and blocks moves', async () => {
+  const translations = translationsByLocale.get('en');
+  assert.ok(translations);
+  const rawValue = '[{"id":"folder-one","name":"Saved data","conversationIds":[],"createdAt":1},null]';
+  const folder = {
+    id: 'folder-one',
+    name: 'Saved data',
+    conversationIds: [],
+    createdAt: 1,
+  };
+  const conversation = {
+    id: 'conversation-project-1',
+    title: 'Existing project conversation',
+    projectId: 'project-1',
+    isArchived: false,
+    isPinned: false,
+    createdAt: 1,
+    updatedAt: 1,
+  };
+  sidebarHarness.customFoldersReadResult = {
+    kind: 'invalid',
+    folders: [folder],
+    rawValue,
+    error: new Error('test-only invalid preference'),
+  };
+  sidebarHarness.chatState = {
+    activeConversationId: null,
+    compactingConversationId: null,
+    conversations: [conversation],
+    errorMessage: null,
+    initialize: async () => undefined,
+    projects: [],
+    projectsStatus: 'ready',
+    refreshProjects: async () => undefined,
+    selectConversation: async () => undefined,
+    sendingConversationId: null,
+    sendingConversationIds: [],
+    serviceStatus: 'ready',
+    startNewChat: async () => undefined,
+    startNewChatWithAgent: async () => undefined,
+    startTemporaryChat: async () => undefined,
+    temporaryChat: null,
+  };
+  const feedbackKeys = [];
+  sidebarHarness.actions = {
+    archiveConversation: async () => undefined,
+    createProject: async () => null,
+    deleteConversation: async () => false,
+    duplicateConversation: async () => null,
+    exportConversation: async () => undefined,
+    feedback: null,
+    isBusy: false,
+    moveConversation: async (movedConversation, projectId) => {
+      sidebarHarness.moveCalls.push({ conversationId: movedConversation.id, projectId });
+      return true;
+    },
+    saveTitle: async () => undefined,
+    showFeedback: (key) => feedbackKeys.push(key),
+    togglePinned: async () => false,
+  };
+
+  const previousCreateObjectURL = Object.getOwnPropertyDescriptor(URL, 'createObjectURL');
+  const previousRevokeObjectURL = Object.getOwnPropertyDescriptor(URL, 'revokeObjectURL');
+  const exportedBlobs = [];
+  Object.defineProperty(URL, 'createObjectURL', {
+    configurable: true,
+    value: (blob) => {
+      exportedBlobs.push(blob);
+      return 'blob:openchat-recovery-test';
+    },
+    writable: true,
+  });
+  Object.defineProperty(URL, 'revokeObjectURL', {
+    configurable: true,
+    value: () => undefined,
+    writable: true,
+  });
+
+  try {
+    render(
+      localized(
+        'en',
+        React.createElement(ConversationSidebar, {
+          onRequestTemporaryExit: () => undefined,
+        }),
+      ),
+    );
+
+    assert.equal(screen.getByRole('alert').textContent, translations.customFolderDataInvalid);
+    assert.equal(screen.getByRole('button', { name: translations.createCustomFolder }).disabled, true);
+    assert.equal(screen.getByRole('button', { name: translations.renameCustomFolder }).disabled, true);
+    assert.equal(screen.getByRole('button', { name: translations.deleteCustomFolder }).disabled, true);
+
+    fireEvent.click(screen.getByRole('button', { name: translations.customFolderDataExport }));
+    assert.equal(await exportedBlobs[0]?.text(), rawValue);
+    assert.equal(screen.getByRole('status').textContent, translations.customFolderDataExported);
+
+    const chatsSection = screen.getByRole('region', { name: translations.chats });
+    fireEvent.drop(chatsSection, {
+      dataTransfer: {
+        dropEffect: 'none',
+        getData: (type) => (type === 'application/x-openchat-conversation' ? conversation.id : ''),
+        types: ['application/x-openchat-conversation'],
+      },
+    });
+
+    await waitFor(() => assert.deepEqual(feedbackKeys, ['customFolderDataInvalid']));
+    assert.deepEqual(sidebarHarness.moveCalls, []);
+    assert.deepEqual(sidebarHarness.writeCustomFoldersCalls, []);
+  } finally {
+    if (previousCreateObjectURL) Object.defineProperty(URL, 'createObjectURL', previousCreateObjectURL);
+    else Reflect.deleteProperty(URL, 'createObjectURL');
+    if (previousRevokeObjectURL) Object.defineProperty(URL, 'revokeObjectURL', previousRevokeObjectURL);
+    else Reflect.deleteProperty(URL, 'revokeObjectURL');
+  }
 });
 
 test('the MCP catalog renders localized category labels and filters matching servers', () => {
