@@ -220,7 +220,7 @@
 - [x] `src/app/AppManager.tsx` consumer/import graph'ını tarama; kaynakta aktif consumer bulunmadı, çalışan giriş `bootstrap/main.tsx` üzerinden `bootstrap/App.tsx` yükleyip render ediyor.
 - [x] `QA-12`: `AppManager` dosyası ve barrel export'ları tüketici/import taramasından sonra kaldırıldı; çalışan giriş `bootstrap/main.tsx` üzerinden `bootstrap/App.tsx` render ediyor.
 - [x] Aynı makinedeki browser'dan Vite loopback URL'sini aç; uygulama kabuğuna giden gezinme artık Tauri servisleri başlatılmadan yerelleştirilmiş masaüstü gereksinimi ekranında sonlanıyor. Bu renderer guard'ı HTTP portunu kapatmaz veya LAN sınırı kanıtı sayılmaz.
-- [x] Vite HTTP yanıtında dış `Origin` için CORS izin başlığının olmadığını, `localhost` loopback origininin ise izinli olduğunu doğrula; bu yalnız header probe'dur, browser enforcement testi değildir.
+- [x] Vite HTTP CORS sınırını ölç ve daralt: varsayılan ayar loopback `localhost` originlerini genişçe kabul ediyordu; artık izin verilen CORS origin'i yalnız `http://127.0.0.1:5173`. Diğer originlere GET yine HTTP 200 dönebilir, fakat `Access-Control-Allow-Origin` sabit dev URL'siyle eşleşmez. Bu raw-header ölçümüdür, browser enforcement veya port erişimini engelleme kanıtı değildir.
 - [ ] Gerçek browser'da farklı HTTPS Origin/PNA, DNS rebinding, HMR ve LAN erişimini ölç; paketlenmiş uygulamanın dinleyen port envanterini çıkar.
 - [x] Yerel llama.cpp başlatma argümanlarını ve sabitlenmiş upstream `b11349` CORS/auth varsayılanlarını kaynak koddan incele; statik riski raporla.
 - [ ] Farklı browser Origin'den aktif model portuna istek, port keşfi, tarayıcının local-network policy davranışı ve boş port seçimi/child başlatma yarışını kontrollü runtime incele.
@@ -324,6 +324,7 @@
 ### 10.5 Dış erişim ve yerel model sınırı
 
 - [x] `CROSS-02` kullanılabilirlik dilimi: Tauri dışı başlangıç, storage/sidecar/overlay akışından önce erişilebilir ve beş dilde yerelleştirilmiş masaüstü gereksinimi ekranı gösteriyor. Runtime'da aynı Vite URL'si tarayıcıda bu ekranı, Tauri penceresinde normal sohbeti gösterdi. Guard yalnız UI davranışını değiştirir; HTTP isteğini, kaynakların indirilmesini veya loopback portunu engellemez.
+- [x] `CROSS-02` CORS dilimi: Vite'ın varsayılan geniş localhost-origin regex'i yerine `tauri.conf.json` içindeki sabit dev origin'i (`http://127.0.0.1:5173`) CORS izni oldu. Config regresyon testi ve raw HTTP GET/preflight başlıkları doğrulandı. Dış origin yanıtı okuyamaz; doğrudan GET/gezinti hâlâ çalışır. Tauri WebView2 sohbeti normal yüklendi.
 - [ ] `CROSS-02/03/06`: Farklı Origin, CORS preflight, PNA, DNS rebinding, HMR ve LAN davranışlarını kontrollü ortamda ölç; aktif llama.cpp port keşfini, boş port seçimi/child başlatma yarışını ve paketlenmiş dinleyici envanterini doğrula.
 - [ ] Ölçüm sonucuna göre Vite dev server ve yerel model API'si için en dar gerekli erişim sınırını seç; gerekiyorsa auth, origin kısıtı veya Tauri üzerinden kontrollü proxy tasarımını uygula.
 - [ ] Kabul: hangi yerel/dış originin hangi endpoint'e erişebildiği kanıtla kayıtlıdır; aynı makine testi LAN güvenliği kanıtı olarak kullanılmaz; paketlenmiş sürümde beklenmeyen listener kalmaz.
