@@ -7,6 +7,7 @@ import { SettingsPreferenceRow } from '@features/app-settings/components/Setting
 import { SettingsSaveFeedback, type SettingsSaveState } from '@features/app-settings/components/SettingsState';
 import {
   type CloseWindowBehavior,
+  isAppSurface,
   readCloseWindowBehavior,
   readLaunchOnStartup,
   readStartupSurfacePreference,
@@ -74,9 +75,7 @@ export function AppWindowSettingsSection() {
   };
 
   const changeStartupSurface = async (value: string) => {
-    if (value !== 'last' && value !== 'chats' && value !== 'models' && value !== 'design' && value !== 'settings') {
-      return;
-    }
+    if (value !== 'last' && !isAppSurface(value)) return;
     setAppSaveState('saving');
     try {
       await writeStartupSurfacePreference(value);

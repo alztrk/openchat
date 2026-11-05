@@ -74,6 +74,6 @@ export async function writeLaunchOnStartup(enabled: boolean): Promise<void> {
   }
 }
 
-function isAppSurface(value: string | null): value is AppSurface {
+export function isAppSurface(value: string | null): value is AppSurface {
   return value === 'chats' || value === 'design' || value === 'models' || value === 'security' || value === 'settings';
 }
