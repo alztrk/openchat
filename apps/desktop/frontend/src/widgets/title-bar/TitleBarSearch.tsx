@@ -1,8 +1,18 @@
 import { Bot, Clock, File, LoaderCircle, MessageSquare, Pin, Search, Trash2, User, X } from 'lucide-react';
-import { type KeyboardEvent, type ReactNode, useEffect, useId, useMemo, useRef, useState } from 'react';
+import {
+  type KeyboardEvent,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Button, Input } from '@shared/components';
+import { unifiedStorage } from '@shared/lib/platform/storage/unifiedStorage';
 
 import {
   type ChatConversation,
@@ -13,6 +23,13 @@ import {
   searchStoredMessages,
 } from '@features/chat/data';
 import { useChatStore } from '@features/chat/state';
+import {
+  addRecentSearch,
+  readRecentSearches,
+  recentSearchLimits,
+  removeRecentSearch,
+  writeRecentSearches,
+} from './recentSearches';
 
 export interface TitleBarSearchProps {
   onSelectConversation(conversationId: string, messageId?: string | null, searchQuery?: string | null): void;
@@ -43,49 +60,7 @@ type NavigableTarget =
   | { type: 'conversation'; conversationId: string }
   | { type: 'message'; conversationId: string; messageId: string };
 
-const RECENT_SEARCHES_STORAGE_KEY = 'openchat:recent_searches';
-
-function loadRecentSearches(): string[] {
-  try {
-    const raw = localStorage.getItem(RECENT_SEARCHES_STORAGE_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : [];
-  } catch {
-    return [];
-  }
-}
-
-function persistRecentSearch(term: string): string[] {
-  const trimmed = term.trim();
-  if (!trimmed) return loadRecentSearches();
-  try {
-    const existing = loadRecentSearches().filter((item) => item.toLowerCase() !== trimmed.toLowerCase());
-    const updated = [trimmed, ...existing].slice(0, 5);
-    localStorage.setItem(RECENT_SEARCHES_STORAGE_KEY, JSON.stringify(updated));
-    return updated;
-  } catch {
-    return [];
-  }
-}
-
-function deleteRecentSearch(term: string): string[] {
-  try {
-    const existing = loadRecentSearches().filter((item) => item !== term);
-    localStorage.setItem(RECENT_SEARCHES_STORAGE_KEY, JSON.stringify(existing));
-    return existing;
-  } catch {
-    return [];
-  }
-}
-
-function clearAllRecentSearches(): void {
-  try {
-    localStorage.removeItem(RECENT_SEARCHES_STORAGE_KEY);
-  } catch {
-    // Storage may be unavailable in restricted environments.
-  }
-}
+type RecentSearchError = 'loadFailed' | 'saveFailed' | 'deleteFailed' | 'clearFailed';
 
 function extractExcerpt(content: string, query: string, radius = 45): string {
   const normContent = normalizeSearchText(content);
@@ -132,6 +107,9 @@ export function TitleBarSearch({ onSelectConversation }: TitleBarSearchProps) {
     Awaited<ReturnType<typeof listConversationAttachments>>['items']
   >([]);
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
+  const [recentSearchError, setRecentSearchError] = useState<RecentSearchError | null>(null);
+  const [isSavingRecentSearches, setIsSavingRecentSearches] = useState(false);
+  const recentSearchWriteRef = useRef(false);
 
   const searchId = useId();
   const recentSearchesListboxId = `${searchId}-recent-searches`;
@@ -142,9 +120,46 @@ export function TitleBarSearch({ onSelectConversation }: TitleBarSearchProps) {
   const conversations = useChatStore((state) => state.conversations);
   const projects = useChatStore((state) => state.projects);
 
-  useEffect(() => {
-    setRecentSearches(loadRecentSearches());
+  const reloadRecentSearches = useCallback(() => {
+    try {
+      setRecentSearches(readRecentSearches());
+      setRecentSearchError(null);
+    } catch {
+      setRecentSearchError('loadFailed');
+    }
   }, []);
+
+  useEffect(() => {
+    if (unifiedStorage.isInitialized) {
+      reloadRecentSearches();
+      return;
+    }
+    window.addEventListener('openchat-storage-ready', reloadRecentSearches, { once: true });
+    return () => window.removeEventListener('openchat-storage-ready', reloadRecentSearches);
+  }, [reloadRecentSearches]);
+
+  const persistRecentSearchList = async (next: string[], error: RecentSearchError = 'saveFailed') => {
+    if (recentSearchWriteRef.current) return false;
+    recentSearchWriteRef.current = true;
+    setIsSavingRecentSearches(true);
+    try {
+      await writeRecentSearches(next);
+      setRecentSearches(next);
+      setRecentSearchError(null);
+      return true;
+    } catch {
+      setRecentSearchError(error);
+      return false;
+    } finally {
+      recentSearchWriteRef.current = false;
+      setIsSavingRecentSearches(false);
+    }
+  };
+
+  const saveRecentSearch = (term: string) => {
+    if (recentSearchError === 'loadFailed') return Promise.resolve(false);
+    return persistRecentSearchList(addRecentSearch(recentSearches, term));
+  };
 
   useEffect(() => {
     const openSearch = () => {
@@ -330,13 +345,14 @@ export function TitleBarSearch({ onSelectConversation }: TitleBarSearchProps) {
     return targets;
   }, [searchGroups]);
 
-  const showRecentSearches = isOpen && !query.trim() && recentSearches.length > 0;
+  const showRecentSearches = isOpen && !query.trim() && (recentSearches.length > 0 || recentSearchError !== null);
   const showSearchResults = isOpen && shouldSearch;
   const isPopupVisible = showRecentSearches || showSearchResults;
   const activeSearchOptionId =
     showSearchResults && navigableTargets[selectedIndex]
       ? `${searchResultsListboxId}-option-${selectedIndex}`
       : undefined;
+  const recentSearchErrorMessage = recentSearchError ? t(recentSearchErrorTranslationKey(recentSearchError)) : null;
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: Reset the selected result whenever the query changes.
   useEffect(() => {
@@ -373,7 +389,7 @@ export function TitleBarSearch({ onSelectConversation }: TitleBarSearchProps) {
       const selected = navigableTargets[selectedIndex];
       if (selected) {
         if (query.trim()) {
-          setRecentSearches(persistRecentSearch(query.trim()));
+          void saveRecentSearch(query.trim());
         }
         if (selected.type === 'conversation') {
           onSelectConversation(selected.conversationId);
@@ -391,7 +407,7 @@ export function TitleBarSearch({ onSelectConversation }: TitleBarSearchProps) {
 
   const handleSelectConversation = (conversationId: string) => {
     if (query.trim()) {
-      setRecentSearches(persistRecentSearch(query.trim()));
+      void saveRecentSearch(query.trim());
     }
     onSelectConversation(conversationId);
     setIsOpen(false);
@@ -399,7 +415,7 @@ export function TitleBarSearch({ onSelectConversation }: TitleBarSearchProps) {
 
   const handleSelectMessage = (conversationId: string, messageId: string) => {
     if (query.trim()) {
-      setRecentSearches(persistRecentSearch(query.trim()));
+      void saveRecentSearch(query.trim());
     }
     onSelectConversation(conversationId, messageId, parsedQuery.cleanQuery || query.trim());
     setIsOpen(false);
@@ -413,13 +429,12 @@ export function TitleBarSearch({ onSelectConversation }: TitleBarSearchProps) {
 
   const handleDeleteRecentSearch = (term: string, event: React.MouseEvent) => {
     event.stopPropagation();
-    setRecentSearches(deleteRecentSearch(term));
+    void persistRecentSearchList(removeRecentSearch(recentSearches, term), 'deleteFailed');
   };
 
   const handleClearAllRecent = (event: React.MouseEvent) => {
     event.stopPropagation();
-    clearAllRecentSearches();
-    setRecentSearches([]);
+    void persistRecentSearchList([], 'clearFailed');
   };
 
   const handleClear = () => {
@@ -469,15 +484,13 @@ export function TitleBarSearch({ onSelectConversation }: TitleBarSearchProps) {
           density="compact"
           fieldClassName="w-full"
           fieldLayout="inline"
+          maxLength={recentSearchLimits.maximumLength}
           onChange={(event) => {
             const nextValue = event.target.value;
             setQuery(nextValue);
             setIsOpen(true);
           }}
-          onFocus={() => {
-            setRecentSearches(loadRecentSearches());
-            setIsOpen(true);
-          }}
+          onFocus={() => setIsOpen(true)}
           onKeyDown={handleKeyDown}
           placeholder={t('searchChats')}
           ref={inputRef}
@@ -516,6 +529,7 @@ export function TitleBarSearch({ onSelectConversation }: TitleBarSearchProps) {
             <span>{t('recentSearches')}</span>
             <Button
               className="min-h-0 gap-1 px-1 text-caption text-secondary-text transition-colors hover:text-destructive"
+              disabled={isSavingRecentSearches}
               onClick={handleClearAllRecent}
               size="small"
               variant="ghost"
@@ -525,36 +539,61 @@ export function TitleBarSearch({ onSelectConversation }: TitleBarSearchProps) {
               <span>{t('clearRecentSearches')}</span>
             </Button>
           </div>
-          <div className="flex flex-col gap-0.5">
-            {recentSearches.map((term) => (
-              <div
-                className="group flex w-full items-center justify-between rounded-button px-2.5 py-1.5 text-xs text-text transition-colors hover:bg-hover cursor-pointer"
-                key={term}
-                onClick={() => handleSelectRecentSearch(term)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') handleSelectRecentSearch(term);
-                }}
-                role="option"
-                tabIndex={0}
-              >
-                <div className="flex items-center gap-2 truncate">
-                  <Clock aria-hidden="true" className="shrink-0 text-secondary-icon" size={12} />
-                  <span className="truncate">{term}</span>
-                </div>
-                <Button
-                  aria-label={t('deleteRecentSearch')}
-                  className="size-6 p-0.5 text-secondary-icon opacity-0 transition-opacity hover:text-text group-hover:opacity-100"
-                  onClick={(e) => handleDeleteRecentSearch(term, e)}
-                  size="icon"
-                  variant="ghost"
-                  type="button"
-                >
-                  <X size={12} />
+          <p className="px-2.5 pb-1 text-caption text-secondary-text">{t('recentSearchesPrivacyNotice')}</p>
+          {recentSearchErrorMessage ? (
+            <div className="flex items-center justify-between gap-2 px-2.5 py-1.5">
+              <p className="text-caption text-destructive" role="alert">
+                {recentSearchErrorMessage}
+              </p>
+              {recentSearchError === 'loadFailed' ? (
+                <Button disabled={isSavingRecentSearches} onClick={reloadRecentSearches} size="small" variant="secondary">
+                  {t('retry')}
                 </Button>
-              </div>
-            ))}
-          </div>
+              ) : null}
+            </div>
+          ) : null}
+          {recentSearches.length > 0 ? (
+            <div className="flex flex-col gap-0.5">
+              {recentSearches.map((term) => (
+                <div
+                  className="group flex w-full items-center justify-between rounded-button px-2.5 py-1.5 text-xs text-text transition-colors hover:bg-hover cursor-pointer"
+                  key={term}
+                  onClick={() => handleSelectRecentSearch(term)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleSelectRecentSearch(term);
+                  }}
+                  role="option"
+                  tabIndex={0}
+                >
+                  <div className="flex items-center gap-2 truncate">
+                    <Clock aria-hidden="true" className="shrink-0 text-secondary-icon" size={12} />
+                    <span className="truncate">{term}</span>
+                  </div>
+                  <Button
+                    aria-label={t('deleteRecentSearch')}
+                    className="size-6 p-0.5 text-secondary-icon opacity-0 transition-opacity hover:text-text group-hover:opacity-100"
+                    disabled={isSavingRecentSearches}
+                    onClick={(e) => handleDeleteRecentSearch(term, e)}
+                    size="icon"
+                    variant="ghost"
+                    type="button"
+                  >
+                    <X size={12} />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          ) : null}
         </div>
+      ) : null}
+
+      {recentSearchErrorMessage && !showRecentSearches && !showSearchResults ? (
+        <p
+          className="absolute left-0 right-0 top-full z-50 mt-1 rounded-card border border-destructive/30 bg-surface p-2 text-caption text-destructive"
+          role="alert"
+        >
+          {recentSearchErrorMessage}
+        </p>
       ) : null}
 
       {showSearchResults ? (
@@ -564,6 +603,11 @@ export function TitleBarSearch({ onSelectConversation }: TitleBarSearchProps) {
           id={searchResultsListboxId}
           role="listbox"
         >
+          {recentSearchErrorMessage ? (
+            <p className="px-2.5 py-1.5 text-caption text-destructive" role="alert">
+              {recentSearchErrorMessage}
+            </p>
+          ) : null}
           {hasActiveFilter ? (
             <div className="flex items-center gap-1.5 border-b border-border/70 bg-surface-raised/40 px-2.5 py-1.5 text-caption text-secondary-text">
               <span className="font-medium">{t('searchFilterLabel')}</span>
@@ -681,4 +725,15 @@ export function TitleBarSearch({ onSelectConversation }: TitleBarSearchProps) {
       ) : null}
     </div>
   );
+}
+
+function recentSearchErrorTranslationKey(error: RecentSearchError):
+  | 'recentSearchesLoadFailed'
+  | 'recentSearchesSaveFailed'
+  | 'recentSearchesDeleteFailed'
+  | 'recentSearchesClearFailed' {
+  if (error === 'loadFailed') return 'recentSearchesLoadFailed';
+  if (error === 'deleteFailed') return 'recentSearchesDeleteFailed';
+  if (error === 'clearFailed') return 'recentSearchesClearFailed';
+  return 'recentSearchesSaveFailed';
 }
