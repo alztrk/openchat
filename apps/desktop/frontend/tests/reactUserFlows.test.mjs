@@ -283,7 +283,19 @@ const vite = await createServer({
           `;
         }
         if (id === '\0openchat-test-titlebar-search-history-dialog') {
-          return 'export function HistorySearchDialog() { return null; }';
+          return `
+            import { createElement } from 'react';
+            import process from 'node:process';
+            process.__openchatTitlebarSearchHarness.historyDialogModuleLoads += 1;
+            export function HistorySearchDialog({ onFiltersActiveChange, onOpenChange, open }) {
+              return open ? createElement(
+                'div',
+                { 'aria-label': 'history-search-dialog', role: 'dialog' },
+                createElement('button', { onClick: () => onOpenChange(false), type: 'button' }, 'Close history search'),
+                createElement('button', { onClick: () => onFiltersActiveChange(true), type: 'button' }, 'Activate history filters'),
+              ) : null;
+            }
+          `;
         }
         if (id === '\0openchat-test-titlebar-search-storage') {
           return 'export const unifiedStorage = { isInitialized: true };';
@@ -365,6 +377,7 @@ const originalAppPreferencesHarness = Object.getOwnPropertyDescriptor(process, '
 const originalSidebarHarness = Object.getOwnPropertyDescriptor(process, '__openchatSidebarHarness');
 const originalMcpHarness = Object.getOwnPropertyDescriptor(process, '__openchatMcpHarness');
 const originalRecentSearchHarness = Object.getOwnPropertyDescriptor(process, '__openchatRecentSearchHarness');
+const originalTitlebarSearchHarness = Object.getOwnPropertyDescriptor(process, '__openchatTitlebarSearchHarness');
 const attachmentLibraryHarness = {
   list: async () => ({ items: [], nextOffset: null }),
 };
@@ -395,6 +408,7 @@ const recentSearchHarness = {
   terms: ['river', 'ocean'],
   failWrites: false,
 };
+const titlebarSearchHarness = { historyDialogModuleLoads: 0 };
 
 Object.defineProperty(process, '__openchatAttachmentLibraryHarness', {
   configurable: true,
@@ -419,6 +433,11 @@ Object.defineProperty(process, '__openchatMcpHarness', {
 Object.defineProperty(process, '__openchatRecentSearchHarness', {
   configurable: true,
   value: recentSearchHarness,
+  writable: true,
+});
+Object.defineProperty(process, '__openchatTitlebarSearchHarness', {
+  configurable: true,
+  value: titlebarSearchHarness,
   writable: true,
 });
 
@@ -477,6 +496,7 @@ afterEach(() => {
   mcpHarness.state = {};
   recentSearchHarness.terms = ['river', 'ocean'];
   recentSearchHarness.failWrites = false;
+  titlebarSearchHarness.historyDialogModuleLoads = 0;
 });
 
 after(async () => {
@@ -517,6 +537,11 @@ after(async () => {
     Object.defineProperty(process, '__openchatRecentSearchHarness', originalRecentSearchHarness);
   } else {
     Reflect.deleteProperty(process, '__openchatRecentSearchHarness');
+  }
+  if (originalTitlebarSearchHarness) {
+    Object.defineProperty(process, '__openchatTitlebarSearchHarness', originalTitlebarSearchHarness);
+  } else {
+    Reflect.deleteProperty(process, '__openchatTitlebarSearchHarness');
   }
 });
 
@@ -1140,6 +1165,39 @@ test('title bar search points its active descendant at a rendered result and clo
   assert.equal(input.getAttribute('aria-expanded'), 'false');
   assert.equal(input.hasAttribute('aria-controls'), false);
   assert.equal(screen.queryByRole('listbox', { name: translations.searchChats }), null);
+});
+
+test('advanced history search loads only after the title bar filter button is activated', async () => {
+  const translations = translationsByLocale.get('en');
+  assert.ok(translations);
+
+  render(
+    localized(
+      'en',
+      React.createElement(TitleBarSearch, { onSelectConversation: () => undefined }),
+    ),
+  );
+
+  const filtersButton = screen.getByRole('button', { name: translations.historySearchOpenFilters });
+  assert.equal(titlebarSearchHarness.historyDialogModuleLoads, 0);
+  assert.equal(screen.queryByRole('dialog'), null);
+
+  fireEvent.click(filtersButton);
+  await screen.findByRole('dialog', { name: 'history-search-dialog' });
+  assert.equal(titlebarSearchHarness.historyDialogModuleLoads, 1);
+
+  fireEvent.click(screen.getByRole('button', { name: 'Activate history filters' }));
+  assert.ok(
+    screen.getByRole('button', {
+      name: `${translations.historySearchOpenFilters}: ${translations.historySearchFiltersActive}`,
+    }),
+  );
+
+  fireEvent.click(screen.getByRole('button', { name: 'Close history search' }));
+  await waitFor(() => assert.equal(screen.queryByRole('dialog'), null));
+  fireEvent.click(filtersButton);
+  assert.ok(await screen.findByRole('dialog', { name: 'history-search-dialog' }));
+  assert.equal(titlebarSearchHarness.historyDialogModuleLoads, 1);
 });
 
 test('recent-search options follow arrow keys and Enter opens the selected term', async () => {

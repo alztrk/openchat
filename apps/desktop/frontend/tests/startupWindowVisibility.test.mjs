@@ -49,12 +49,16 @@ test('the native main window reveals the static startup status before React comm
   const appStylesImport = application.indexOf('const appStylesPromise = loadAppStyles()');
   const storageImport = application.indexOf("import('@shared/lib/platform/storage/unifiedStorage')");
   const appImport = application.indexOf("import('./App')");
+  const errorBoundaryImport = application.indexOf("import('@widgets/application-error')");
+  const storageImportAwait = application.indexOf('const { unifiedStorage } = await storageModulePromise');
   assert.notEqual(startupShowRequest, -1);
   assert.notEqual(earlyShow, -1);
   assert.ok(earlyShow > startupShowRequest);
   assert.ok(earlyShow < appStylesImport);
   assert.ok(earlyShow < storageImport);
   assert.ok(earlyShow < appImport);
+  assert.ok(appImport < storageImportAwait);
+  assert.ok(errorBoundaryImport < storageImportAwait);
 
   assert.match(tauriMain, /report_webview_renderer_ready/u);
   assert.match(tauriMain, /recovery_for_callback\.record_failure\(\)/u);

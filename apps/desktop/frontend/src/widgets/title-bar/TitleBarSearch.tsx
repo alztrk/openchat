@@ -1,5 +1,7 @@
-import { Bot, Clock, File, LoaderCircle, MessageSquare, Pin, Search, Trash2, User, X } from 'lucide-react';
+import { Bot, Clock, File, FileSearch, LoaderCircle, MessageSquare, Pin, Search, Trash2, User, X } from 'lucide-react';
 import {
+  lazy,
+  Suspense,
   type KeyboardEvent,
   type ReactNode,
   useCallback,
@@ -12,9 +14,9 @@ import {
 import { useTranslation } from 'react-i18next';
 
 import { Button, Input } from '@shared/components';
+import { Tooltip } from '@shared/components/Tooltip';
 import { unifiedStorage } from '@shared/lib/platform/storage/unifiedStorage';
 
-import { HistorySearchDialog } from '@features/chat/components/HistorySearchDialog';
 import {
   type ChatConversation,
   listConversationAttachments,
@@ -31,6 +33,11 @@ import {
   removeRecentSearch,
   writeRecentSearches,
 } from './recentSearches';
+
+const LazyHistorySearchDialog = lazy(async () => {
+  const { HistorySearchDialog } = await import('@features/chat/components/HistorySearchDialog');
+  return { default: HistorySearchDialog };
+});
 
 export interface TitleBarSearchProps {
   onSelectConversation(conversationId: string, messageId?: string | null, searchQuery?: string | null): void;
@@ -102,6 +109,9 @@ export function TitleBarSearch({ onSelectConversation, onSelectProject }: TitleB
   const { t, i18n } = useTranslation();
   const [query, setQuery] = useState('');
   const [isOpen, setIsOpen] = useState(false);
+  const [isHistorySearchDialogMounted, setIsHistorySearchDialogMounted] = useState(false);
+  const [isHistorySearchDialogOpen, setIsHistorySearchDialogOpen] = useState(false);
+  const [areHistorySearchFiltersActive, setAreHistorySearchFiltersActive] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [isSearchingMessages, setIsSearchingMessages] = useState(false);
   const [messageResults, setMessageResults] = useState<StoredSearchMessageResult[]>([]);
@@ -556,10 +566,36 @@ export function TitleBarSearch({ onSelectConversation, onSelectProject }: TitleB
         </div>
       </div>
 
-      <HistorySearchDialog
-        onSelectConversation={onSelectConversation}
-        onSelectProject={onSelectProject}
-      />
+      <Tooltip label={t('historySearchOpenFilters')}>
+        <Button
+          aria-label={
+            areHistorySearchFiltersActive
+              ? `${t('historySearchOpenFilters')}: ${t('historySearchFiltersActive')}`
+              : t('historySearchOpenFilters')
+          }
+          className={`size-8 shrink-0 ${areHistorySearchFiltersActive ? 'text-accent' : 'text-secondary-icon'}`}
+          onClick={() => {
+            setIsHistorySearchDialogMounted(true);
+            setIsHistorySearchDialogOpen(true);
+          }}
+          size="icon"
+          type="button"
+          variant="ghost"
+        >
+          <FileSearch aria-hidden="true" size={16} />
+        </Button>
+      </Tooltip>
+      <Suspense fallback={null}>
+        {isHistorySearchDialogMounted ? (
+          <LazyHistorySearchDialog
+            onFiltersActiveChange={setAreHistorySearchFiltersActive}
+            onOpenChange={setIsHistorySearchDialogOpen}
+            onSelectConversation={onSelectConversation}
+            onSelectProject={onSelectProject}
+            open={isHistorySearchDialogOpen}
+          />
+        ) : null}
+      </Suspense>
 
       {showRecentSearches ? (
         <div

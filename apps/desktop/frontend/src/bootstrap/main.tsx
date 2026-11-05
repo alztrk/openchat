@@ -129,12 +129,6 @@ async function startApplication(options: { startWithEmptyStorage?: boolean } = {
     return module;
   });
   const reactRootPromise = getReactRoot();
-  const { unifiedStorage } = await storageModulePromise;
-  markStartupMilestone('storage-initialize-start');
-  const storageInitialization = unifiedStorage.initialize(options).then(() => {
-    markStartupMilestone('storage-initialize-ready');
-  });
-  void storageInitialization.catch(() => undefined);
   markStartupMilestone('app-module-import-start');
   const appImportPromise = import('./App').then((module) => {
     markStartupMilestone('app-module-ready');
@@ -144,6 +138,12 @@ async function startApplication(options: { startWithEmptyStorage?: boolean } = {
     markStartupMilestone('error-boundary-module-ready');
     return module;
   });
+  const { unifiedStorage } = await storageModulePromise;
+  markStartupMilestone('storage-initialize-start');
+  const storageInitialization = unifiedStorage.initialize(options).then(() => {
+    markStartupMilestone('storage-initialize-ready');
+  });
+  void storageInitialization.catch(() => undefined);
   await appStylesPromise;
   const [{ App }, { ApplicationErrorBoundary }, i18nModule, [React, root]] = await Promise.all([
     appImportPromise,

@@ -13,7 +13,6 @@ import { useTranslation } from 'react-i18next';
 
 import { type TranslationKey, providerNameForModel } from '@entities/model';
 import { Button, Dialog, Input, Select } from '@shared/components';
-import { Tooltip } from '@shared/components/Tooltip';
 import {
   emptyHistorySearchFilters,
   deleteHistorySearch,
@@ -37,8 +36,11 @@ type FilterOptionsStatus = 'idle' | 'loading' | 'ready' | 'error';
 type SavedSearchStatus = 'idle' | 'loading' | 'ready' | 'error';
 
 export interface HistorySearchDialogProps {
+  onFiltersActiveChange(active: boolean): void;
+  onOpenChange(open: boolean): void;
   onSelectConversation(conversationId: string, messageId?: string | null, searchQuery?: string | null): void;
   onSelectProject?: (projectId: string) => void;
+  open: boolean;
 }
 
 const resultTypes: readonly HistoryResultType[] = ['all', 'chats', 'projects', 'messages', 'conversations'];
@@ -56,9 +58,14 @@ const sortOrderKeys: Record<HistorySortOrder, TranslationKey> = {
   oldest: 'historySearchSortOldest',
 };
 
-export function HistorySearchDialog({ onSelectConversation, onSelectProject }: HistorySearchDialogProps) {
+export function HistorySearchDialog({
+  onFiltersActiveChange,
+  onOpenChange,
+  onSelectConversation,
+  onSelectProject,
+  open,
+}: HistorySearchDialogProps) {
   const { i18n, t } = useTranslation();
-  const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [filters, setFilters] = useState<HistorySearchFilters>(emptyHistorySearchFilters);
   const [fromDate, setFromDate] = useState('');
@@ -223,7 +230,7 @@ export function HistorySearchDialog({ onSelectConversation, onSelectProject }: H
       searchGeneration.current += 1;
       setIsSearching(false);
     }
-    setOpen(nextOpen);
+    onOpenChange(nextOpen);
   };
 
   const clearFilters = () => {
@@ -318,6 +325,10 @@ export function HistorySearchDialog({ onSelectConversation, onSelectProject }: H
     fromDate.length > 0 ||
     throughDate.length > 0;
 
+  useEffect(() => {
+    onFiltersActiveChange(filtersActive);
+  }, [filtersActive, onFiltersActiveChange]);
+
   const selectResult = (result: HistorySearchResult) => {
     if (result.kind === 'project') {
       if (result.projectId) onSelectProject?.(result.projectId);
@@ -339,24 +350,7 @@ export function HistorySearchDialog({ onSelectConversation, onSelectProject }: H
   };
 
   return (
-    <>
-      <Tooltip label={t('historySearchOpenFilters')}>
-        <Button
-          aria-label={
-            filtersActive
-              ? `${t('historySearchOpenFilters')}: ${t('historySearchFiltersActive')}`
-              : t('historySearchOpenFilters')
-          }
-          className={`size-8 shrink-0 ${filtersActive ? 'text-accent' : 'text-secondary-icon'}`}
-          onClick={() => handleOpenChange(true)}
-          size="icon"
-          type="button"
-          variant="ghost"
-        >
-          <FileSearch aria-hidden="true" size={16} />
-        </Button>
-      </Tooltip>
-      <Dialog
+    <Dialog
         initialFocusRef={queryInputRef}
         onOpenChange={handleOpenChange}
         open={open}
@@ -599,8 +593,7 @@ export function HistorySearchDialog({ onSelectConversation, onSelectProject }: H
             </div>
           </div>
         </form>
-      </Dialog>
-    </>
+    </Dialog>
   );
 }
 

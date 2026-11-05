@@ -31,7 +31,8 @@ test('saved history searches load, restore, persist, and delete named filters', 
 test('history results reuse conversation navigation and open project chats', () => {
   assert.match(component, /onSelectConversation\(/u);
   assert.match(component, /onSelectProject\?\./u);
-  assert.match(titleBarSearch, /<HistorySearchDialog/u);
+  assert.match(titleBarSearch, /import\('@features\/chat\/components\/HistorySearchDialog'\)/u);
+  assert.match(titleBarSearch, /<LazyHistorySearchDialog/u);
   assert.match(app, /startNewChat\(projectId\)/u);
 });
 
