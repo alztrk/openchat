@@ -87,6 +87,14 @@ export function favoriteSourceConnection(model: ChatModel): string | null {
 }
 
 export function upsertMessage(messages: ChatMessage[], message: ChatMessage): ChatMessage[] {
+  const lastIndex = messages.length - 1;
+  if (lastIndex >= 0 && messages[lastIndex]?.id === message.id) {
+    // Message IDs are unique within a conversation, so streaming tail updates can skip the scan.
+    const nextMessages = messages.slice();
+    nextMessages[lastIndex] = message;
+    return nextMessages;
+  }
+
   const index = messages.findIndex((item) => item.id === message.id);
   if (index < 0) return [...messages, message];
   return messages.map((item, itemIndex) => (itemIndex === index ? message : item));
