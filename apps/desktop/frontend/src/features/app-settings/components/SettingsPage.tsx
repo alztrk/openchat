@@ -616,8 +616,8 @@ export function SettingsPage({
             width={visibleSidebarWidth}
           />
         </div>
-        <main
-          aria-label={t(sectionTitleKeys[section])}
+        <section
+          aria-labelledby="settings-page-heading"
           className="settings-main settings-main-surface flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
         >
           <header className="settings-page-header shrink-0">
@@ -787,7 +787,7 @@ export function SettingsPage({
               <ProjectSettingsSection />
             </SettingsSectionPage>
           </div>
-        </main>
+        </section>
       </div>
     </div>
   );

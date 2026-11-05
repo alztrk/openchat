@@ -1489,11 +1489,16 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
         </div></TitleTooltip>
       </aside>
 
-      <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background">
+      <section
+        aria-labelledby="design-library-heading"
+        className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background"
+      >
         <header className="grid gap-4 border-b border-border px-5 py-4 sm:px-7">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h2 className="text-base font-semibold text-text">{t('designImageLibrary')}</h2>
+              <h2 className="text-base font-semibold text-text" id="design-library-heading">
+                {t('designImageLibrary')}
+              </h2>
               <p className="mt-1 text-sm text-secondary-text">{t('designImageLibraryDescription')}</p>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -1785,7 +1790,7 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
             </>
           ) : null}
         </div>
-      </main>
+      </section>
 
       <Dialog
         className="w-full max-w-5xl"

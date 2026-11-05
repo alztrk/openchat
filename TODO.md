@@ -183,7 +183,8 @@
 - [x] FE-13: Başlık çubuğu aramasında input, görünür recent/search popup ve aktif arama sonucu arasında ARIA ID ilişkileri kuruldu; expanded durumu gerçek popup görünürlüğünden türetiliyor. Kaynak regresyon testi eklendi.
 - [ ] FE-13: Klavye/fare ile arama sonuçlarını açıp seç; erişilebilirlik ağacında controls ve active descendant hedeflerinin mevcut option'ları gösterdiğini masaüstü UI'da doğrula.
 - [ ] FE-R04: Recent search option seçili/klavye davranışını ve option içindeki silme kontrolünün erişilebilirlik semantiğini düzelt.
-- [ ] Settings içeriğindeki iç içe `<main>` landmark'ını tek ana içerik landmark'ı olacak şekilde düzelt ve erişilebilirlik ağacında doğrula.
+- [x] Aktif uygulama yüzeylerinde iç içe `<main>` landmark'ları kaldırıldı: Settings ve Görsel stüdyosu içerikleri başlıklarıyla ilişkili section'lara dönüştürüldü. Kaynak regresyon testi eklendi.
+- [ ] Ayarlar, Görsel kütüphanesi ve canvas yüzeylerini masaüstünde açıp erişilebilirlik ağacında yalnızca uygulama kabuğunun ana landmark'ı bulunduğunu doğrula.
 - [ ] Provider API key ve proje MCP editörlerine klavye ile submit davranışı ekle; doğrulama hatalarını ilgili alanlara bağla.
 - [ ] Yanlış loading metinlerini domain'e göre düzelt; prompt template load hatasına güvenli retry/recovery ekle.
 - [ ] Design canvas bozulma kurtarması, security scan delete/cleanup reconciliation ve cancel timeout davranışı için ürün sözleşmesi belirle.

@@ -839,10 +839,12 @@ export function DesignCanvas({ onOpenImageStudio, onOpenSettings }: DesignCanvas
   }
 
   return (
-    <div className="design-vector-editor">
+    <section aria-labelledby="design-canvas-title" className="design-vector-editor">
       <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-surface px-4 py-3 sm:px-6">
         <div className="min-w-0">
-          <h1 className="text-section-title font-semibold text-text">{t('designCanvasTitle')}</h1>
+          <h1 className="text-section-title font-semibold text-text" id="design-canvas-title">
+            {t('designCanvasTitle')}
+          </h1>
           <p className="mt-1 max-w-3xl text-sm text-secondary-text">{t('designCanvasDescription')}</p>
         </div>
         <Button onClick={onOpenImageStudio} size="small" variant="secondary">
@@ -852,7 +854,7 @@ export function DesignCanvas({ onOpenImageStudio, onOpenSettings }: DesignCanvas
       </header>
 
       <div className="design-vector-layout">
-        <main className="design-vector-main min-w-0">
+        <div className="design-vector-main min-w-0">
           <div className="design-vector-prompt-row grid shrink-0 gap-3 border-b border-border bg-raised p-3 sm:p-4">
             <label className="grid min-w-0 gap-2 text-sm font-medium text-text" htmlFor="design-canvas-prompt">
               {t('designCanvasPrompt')}
@@ -1049,7 +1051,7 @@ export function DesignCanvas({ onOpenImageStudio, onOpenSettings }: DesignCanvas
               )}
             </div>
           </section>
-        </main>
+        </div>
 
         <CanvasInspector
           activeBreakpoint={activeBreakpoint}
@@ -1107,7 +1109,7 @@ export function DesignCanvas({ onOpenImageStudio, onOpenSettings }: DesignCanvas
           </div>
         </div>
       </Dialog>
-    </div>
+    </section>
   );
 
   function feedbackKey(value: CanvasFeedback): CanvasFeedbackTranslationKey | null {
