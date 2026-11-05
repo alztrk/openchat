@@ -52,6 +52,7 @@
   "temporaryChatResponseFailed": "Aucune réponse n’a été reçue. Vous pouvez envoyer un autre message ou réessayer.",
   "chatCompacting": "Compression du contexte…",
   "chats": "Discussions",
+  "primaryNavigation": "Navigation principale",
   "workspaces": "Espaces de travail",
   "workspacesDescription": "Regroupez les conversations par sujet. Les fichiers et les outils restent dans les projets de code.",
   "workspaceCreate": "Nouvel espace de travail",

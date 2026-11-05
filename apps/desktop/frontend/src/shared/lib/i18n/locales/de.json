@@ -52,6 +52,7 @@
   "temporaryChatResponseFailed": "Es wurde keine Antwort empfangen. Du kannst eine neue Nachricht senden oder es erneut versuchen.",
   "chatCompacting": "Kontext wird komprimiert …",
   "chats": "Unterhaltungen",
+  "primaryNavigation": "Hauptnavigation",
   "workspaces": "Arbeitsbereiche",
   "workspacesDescription": "Unterhaltungen nach Thema gruppieren. Dateien und Tools bleiben in Codeprojekten.",
   "workspaceCreate": "Neuer Arbeitsbereich",

@@ -52,6 +52,7 @@
   "temporaryChatResponseFailed": "No response was received. You can send another message or try again.",
   "chatCompacting": "Compacting…",
   "chats": "Chats",
+  "primaryNavigation": "Primary navigation",
   "workspaces": "Workspaces",
   "workspacesDescription": "Group conversations by topic. Files and tools stay in code projects.",
   "workspaceCreate": "New workspace",

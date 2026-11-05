@@ -19,7 +19,7 @@ export function NavigationRail({ activeSurface, isDark, onNavigate, onToggleThem
 
   return (
     <nav
-      aria-label={t('chats')}
+      aria-label={t('primaryNavigation')}
       className="app-shell-chrome app-shell-sidebar flex h-full w-navigation-rail shrink-0 flex-col px-2 py-3"
     >
       <div className="flex flex-col gap-2">

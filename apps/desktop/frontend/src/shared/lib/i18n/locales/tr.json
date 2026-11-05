@@ -52,6 +52,7 @@
   "temporaryChatResponseFailed": "Yanıt alınamadı. Yeni bir mesaj gönderebilir veya yeniden deneyebilirsiniz.",
   "chatCompacting": "Bağlam sıkıştırılıyor…",
   "chats": "Sohbetler",
+  "primaryNavigation": "Ana gezinme",
   "workspaces": "Çalışma alanları",
   "workspacesDescription": "Sohbetleri konularına göre gruplayın. Dosyalar ve araçlar kod projelerinde kalır.",
   "workspaceCreate": "Yeni çalışma alanı",

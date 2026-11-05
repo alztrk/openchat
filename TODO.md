@@ -188,6 +188,8 @@
 - [x] FE-05 runtime: İzole Windows WebView2 profilinde “Security scans” başlangıç yüzeyi seçildi, “Ayarlar kaydedildi.” durumu görüldü; pencere kapatılıp aynı profille yeniden açıldığında erişilebilirlik ağacı ana yüzey olarak “Güvenlik taramaları” gösterdi.
 - [x] FE-07 kod dilimi: Storage hazır olayı, yalnızca kullanıcı henüz yüzey veya geri/ileri gezinmesi yapmadıysa kayıtlı başlangıç yüzeyini uyguluyor. Erken gezinmede seçili yüzey ve mevcut geçmiş korunuyor; kaynak regresyon testi eklendi.
 - [ ] FE-07 runtime: Yavaş storage/legacy tercih aktarımı sırasında başka bir yüzeye geç; storage-ready olayının seçimi ve geri/ileri geçmişini koruduğunu gerçek masaüstünde doğrula. Kullanıcı gezinmezse kayıtlı başlangıç yüzeyinin yine uygulandığını da doğrula.
+- [x] FE-08 kod dilimi: Ana gezinme `<nav>` landmark'ı artık Sohbetler'e özel ad yerine beş locale'de “Ana gezinme” anlamındaki `primaryNavigation` etiketiyle adlandırılıyor; kaynak regresyon testi eklendi.
+- [ ] FE-08 runtime: Windows WebView2 erişilebilirlik ağacında ana gezinme landmark'ının seçilen dilde doğru adı taşıdığını doğrula.
 - [x] FE-09: MCP kategori etiketleri ve filtreleri ortak kategori normalizasyonuna bağlandı; yedi kategori için etiket ve çapraz filtre eşleşme regresyonları eklendi.
 - [ ] FE-09: MCP ekranındaki etiketleri ve filtre sonuçlarını değişiklik sonrası render edilmiş UI otomasyonuyla doğrula; bu oturumdaki Windows tıklama aracı iki yöntemde de hedefe ulaşamadı.
 - [x] FE-10: Farklı yüzeye geçişte erişilebilir adı olan ana içerik odağı alıyor; ilk render’da odak değişmiyor ve aynı yüzeye basıldığında mevcut odak davranışı korunuyor. Regresyon testi eklendi.
