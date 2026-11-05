@@ -103,6 +103,13 @@ export interface DesignCanvasState {
   selectedFrameId: string | null;
 }
 
+export type DesignCanvasRecoveryReason = 'invalidJson' | 'invalidStructure' | 'tooLarge';
+
+export type DesignCanvasReadResult =
+  | { kind: 'ready'; canvas: DesignCanvasState }
+  | { kind: 'recoveryRequired'; rawData: string; reason: DesignCanvasRecoveryReason }
+  | { kind: 'unavailable' };
+
 export interface GeneratedDesignCanvasFrame {
   title: string;
   width: number;
@@ -140,26 +147,44 @@ export function emptyDesignCanvas(): DesignCanvasState {
   return { version: 1, frames: [], selectedFrameId: null };
 }
 
-export function readDesignCanvas(): DesignCanvasState {
-  const encoded = unifiedStorage.getItem(storageKey);
-  if (encoded === null) return emptyDesignCanvas();
+export function readDesignCanvas(): DesignCanvasReadResult {
+  let encoded: string | null;
+  try {
+    encoded = unifiedStorage.getItem(storageKey);
+  } catch {
+    return { kind: 'unavailable' };
+  }
+  if (encoded === null) return { kind: 'ready', canvas: emptyDesignCanvas() };
   if (new TextEncoder().encode(encoded).byteLength > maximumCanvasBytes) {
-    throw new Error('The saved design canvas exceeds its storage limit.');
+    return { kind: 'recoveryRequired', rawData: encoded, reason: 'tooLarge' };
   }
-  const value: unknown = JSON.parse(encoded);
-  if (!isRecord(value) || value.version !== 1 || !Array.isArray(value.frames)) {
-    throw new Error('The saved design canvas is invalid.');
+  let value: unknown;
+  try {
+    value = JSON.parse(encoded);
+  } catch {
+    return { kind: 'recoveryRequired', rawData: encoded, reason: 'invalidJson' };
   }
-  if (value.frames.length > maximumFrameCount) throw new Error('The saved design canvas has too many frames.');
-  const frames = value.frames.map(parseFrame);
-  const selectedFrameId = value.selectedFrameId;
-  if (
-    selectedFrameId !== null &&
-    (typeof selectedFrameId !== 'string' || !frames.some((frame) => frame.id === selectedFrameId))
-  ) {
-    throw new Error('The selected design frame is invalid.');
+  try {
+    if (!isRecord(value) || value.version !== 1 || !Array.isArray(value.frames)) {
+      throw new Error('The saved design canvas is invalid.');
+    }
+    if (value.frames.length > maximumFrameCount) throw new Error('The saved design canvas has too many frames.');
+    const frames = value.frames.map(parseFrame);
+    const selectedFrameId = value.selectedFrameId;
+    if (
+      selectedFrameId !== null &&
+      (typeof selectedFrameId !== 'string' || !frames.some((frame) => frame.id === selectedFrameId))
+    ) {
+      throw new Error('The selected design frame is invalid.');
+    }
+    return { kind: 'ready', canvas: { version: 1, frames, selectedFrameId } };
+  } catch {
+    return { kind: 'recoveryRequired', rawData: encoded, reason: 'invalidStructure' };
   }
-  return { version: 1, frames, selectedFrameId };
+}
+
+export async function removeDesignCanvasForRecovery(): Promise<void> {
+  await unifiedStorage.removePersistedItem(storageKey);
 }
 
 export async function saveDesignCanvas(state: DesignCanvasState): Promise<void> {

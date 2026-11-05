@@ -1,4 +1,4 @@
-import { Image as ImageIcon, LoaderCircle, RotateCcw, Sparkles, Trash2 } from 'lucide-react';
+import { Download, Image as ImageIcon, LoaderCircle, RotateCcw, Sparkles, Trash2 } from 'lucide-react';
 import {
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
@@ -20,6 +20,7 @@ import {
   type DesignCanvasBreakpoint,
   type DesignCanvasExportFormat,
   type DesignCanvasFrame,
+  type DesignCanvasReadResult,
   type DesignCanvasState,
   type DesignCanvasTokens,
   designCanvasDataUrl,
@@ -32,6 +33,7 @@ import {
   listDesignCanvasElements,
   parseGeneratedDesignCanvas,
   readDesignCanvas,
+  removeDesignCanvasForRecovery,
   responsiveBreakpointForWidth,
   restoreResponsiveLayoutRevision,
   reviseFrame,
@@ -51,7 +53,7 @@ interface DesignCanvasProps {
   onOpenSettings(): void;
 }
 
-type CanvasLoadState = { kind: 'ready'; canvas: DesignCanvasState } | { kind: 'error' };
+type CanvasLoadState = DesignCanvasReadResult;
 type CanvasFeedback =
   | 'none'
   | 'cancelled'
@@ -100,6 +102,11 @@ type CanvasDrag =
 
 const defaultCamera: Camera = { x: 40, y: 64, scale: 0.8 };
 const maximumPromptLength = 4_000;
+const recoveryLoadErrorKeys = {
+  invalidJson: 'designCanvasLoadInvalidJson',
+  invalidStructure: 'designCanvasLoadInvalidStructure',
+  tooLarge: 'designCanvasLoadTooLarge',
+} as const;
 
 export function DesignCanvas({ onOpenImageStudio, onOpenSettings }: DesignCanvasProps) {
   const { t } = useTranslation();
@@ -117,6 +124,11 @@ export function DesignCanvas({ onOpenImageStudio, onOpenSettings }: DesignCanvas
   const [operation, setOperation] = useState<ServiceOperation | null>(null);
   const [requestMode, setRequestMode] = useState<'generate' | 'reflow' | 'revise' | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [recoveryDialogOpen, setRecoveryDialogOpen] = useState(false);
+  const [isRecoveringCanvas, setIsRecoveringCanvas] = useState(false);
+  const [recoveryActionError, setRecoveryActionError] = useState<
+    'designCanvasRecoveryExportFailed' | 'designCanvasRecoveryResetFailed' | null
+  >(null);
   const [tokenDraft, setTokenDraft] = useState<DesignCanvasTokens | null>(null);
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
   const [responsivePreviewWidth, setResponsivePreviewWidth] = useState(360);
@@ -585,6 +597,47 @@ export function DesignCanvas({ onOpenImageStudio, onOpenSettings }: DesignCanvas
     window.setTimeout(() => URL.revokeObjectURL(url), 0);
   };
 
+  const exportRecoveryData = () => {
+    if (loadState.kind !== 'recoveryRequired') return;
+    let url: string | null = null;
+    try {
+      url = URL.createObjectURL(new Blob([loadState.rawData], { type: 'application/json;charset=utf-8' }));
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = 'OpenChat-DesignCanvas-recovery.json';
+      document.body.append(anchor);
+      anchor.click();
+      anchor.remove();
+      window.setTimeout(() => {
+        if (url) URL.revokeObjectURL(url);
+      }, 0);
+      setRecoveryActionError(null);
+    } catch {
+      if (url) URL.revokeObjectURL(url);
+      setRecoveryActionError('designCanvasRecoveryExportFailed');
+    }
+  };
+
+  const startFreshCanvas = async () => {
+    if (loadState.kind !== 'recoveryRequired' || isRecoveringCanvas) return;
+    setIsRecoveringCanvas(true);
+    setRecoveryActionError(null);
+    try {
+      await removeDesignCanvasForRecovery();
+      if (!mountedRef.current) return;
+      const freshCanvas = emptyDesignCanvas();
+      canvasRef.current = freshCanvas;
+      setLoadState({ kind: 'ready', canvas: freshCanvas });
+      setSaveState('idle');
+      setFeedback('none');
+      setRecoveryDialogOpen(false);
+    } catch {
+      if (mountedRef.current) setRecoveryActionError('designCanvasRecoveryResetFailed');
+    } finally {
+      if (mountedRef.current) setIsRecoveringCanvas(false);
+    }
+  };
+
   const generateResponsiveLayout = async () => {
     if (!selectedFrame || !activeBreakpoint) return;
     if (!selectedModel) {
@@ -696,7 +749,11 @@ export function DesignCanvas({ onOpenImageStudio, onOpenSettings }: DesignCanvas
 
   const feedbackMessage = feedbackKey(feedback);
 
-  if (loadState.kind === 'error') {
+  if (loadState.kind !== 'ready') {
+    const loadErrorKey =
+      loadState.kind === 'unavailable'
+        ? 'designCanvasLoadFailed'
+        : recoveryLoadErrorKeys[loadState.reason];
     return (
       <div className="grid h-full place-items-center bg-background p-6">
         <section aria-labelledby="design-canvas-load-title" className="grid max-w-lg gap-4 text-center">
@@ -704,22 +761,78 @@ export function DesignCanvas({ onOpenImageStudio, onOpenSettings }: DesignCanvas
             {t('designCanvasTitle')}
           </h1>
           <p className="text-sm text-destructive" role="alert">
-            {t('designCanvasLoadFailed')}
+            {t(loadErrorKey)}
           </p>
-          <Button
-            onClick={() => {
-              try {
-                setLoadState({ kind: 'ready', canvas: readDesignCanvas() });
+          {loadState.kind === 'recoveryRequired' && (
+            <>
+              <p className="text-sm text-secondary-text">{t('designCanvasRecoveryInstructions')}</p>
+              {recoveryActionError === 'designCanvasRecoveryExportFailed' && (
+                <p className="text-sm text-destructive" role="alert">
+                  {t(recoveryActionError)}
+                </p>
+              )}
+            </>
+          )}
+          <div className="flex flex-wrap justify-center gap-2">
+            {loadState.kind === 'recoveryRequired' && (
+              <Button disabled={isRecoveringCanvas} onClick={exportRecoveryData} variant="secondary">
+                <Download aria-hidden="true" size={16} />
+                {t('designCanvasExportRaw')}
+              </Button>
+            )}
+            <Button
+              onClick={() => {
+                setRecoveryActionError(null);
+                setLoadState(loadCanvas());
                 setSaveState('idle');
-              } catch {
-                setLoadState({ kind: 'error' });
-              }
+              }}
+              variant="secondary"
+            >
+              <RotateCcw aria-hidden="true" size={16} />
+              {t('retry')}
+            </Button>
+            {loadState.kind === 'recoveryRequired' && (
+              <Button
+                disabled={isRecoveringCanvas}
+                onClick={() => {
+                  setRecoveryActionError(null);
+                  setRecoveryDialogOpen(true);
+                }}
+                variant="destructive"
+              >
+                {t('designCanvasStartFresh')}
+              </Button>
+            )}
+          </div>
+          <Dialog
+            onOpenChange={(open) => {
+              if (!isRecoveringCanvas) setRecoveryDialogOpen(open);
             }}
-            variant="secondary"
+            open={recoveryDialogOpen}
+            title={t('designCanvasRecoveryConfirmTitle')}
           >
-            <RotateCcw aria-hidden="true" size={16} />
-            {t('retry')}
-          </Button>
+            <div className="grid gap-4">
+              <p className="text-sm text-secondary-text">{t('designCanvasRecoveryConfirmDescription')}</p>
+              {recoveryActionError === 'designCanvasRecoveryResetFailed' && (
+                <p className="text-sm text-destructive" role="alert">
+                  {t(recoveryActionError)}
+                </p>
+              )}
+              <div className="flex flex-wrap justify-end gap-2">
+                <Button disabled={isRecoveringCanvas} onClick={() => setRecoveryDialogOpen(false)} variant="secondary">
+                  {t('cancel')}
+                </Button>
+                <Button disabled={isRecoveringCanvas} onClick={() => void startFreshCanvas()} variant="destructive">
+                  {isRecoveringCanvas ? (
+                    <LoaderCircle aria-hidden="true" className="animate-spin" size={15} />
+                  ) : (
+                    <Trash2 aria-hidden="true" size={15} />
+                  )}
+                  {t('designCanvasRecoveryConfirm')}
+                </Button>
+              </div>
+            </div>
+          </Dialog>
         </section>
       </div>
     );
@@ -1024,11 +1137,7 @@ export function DesignCanvas({ onOpenImageStudio, onOpenSettings }: DesignCanvas
 }
 
 function loadCanvas(): CanvasLoadState {
-  try {
-    return { kind: 'ready', canvas: readDesignCanvas() };
-  } catch {
-    return { kind: 'error' };
-  }
+  return readDesignCanvas();
 }
 
 function buildDesignPrompt(description: string): string {

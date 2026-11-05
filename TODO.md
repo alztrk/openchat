@@ -292,7 +292,8 @@
 ### 10.6 Kullanıcı akışları, erişilebilirlik ve kurtarma
 
 - [ ] `FE-01..19`: Sohbet, MCP filtreleri, provider/proje formları, kısayollar, odak/combobox, loading metinleri, prompt retry, recent-search retention ve indirme progress etiketlerini tek kullanıcı akışı başına ele al.
-- [ ] `SVC-18/19/21/22`, `QA-12`, `T-HOST-01..04/07`: Canvas kurtarma, tercih patch merge, saat girişi, kullanılmayan history helper ve `AppManager` rolü için ürün kararı ver; gerekli olan davranışı regresyon testleriyle doğrula.
+- [x] `SVC-18`: Bozuk kanvas JSON/schema/size-limit durumlarını ayır; ham veriyi dışa aktarma ve kullanıcı onaylı yeni boş kanvas akışı ekle. Silme hatası özgün veriyi korur.
+- [ ] `SVC-19/21/22`, `QA-12`, `T-HOST-01..04/07`: Tercih patch merge, saat girişi, kullanılmayan history helper ve `AppManager` rolü için ürün kararı ver; gerekli olan davranışı regresyon testleriyle doğrula.
 - [ ] Kabul: klavye ve ekran okuyucu akışları; loading/empty/error/retry/cancel; hatalı ve uzun girdiler; pencere boyutu ve yeniden açılış durumları ilgili yüzeylerde gözlenebilir testlerle kapsanır.
 
 ### 10.7 Paketlenmiş ilk açılış ve release doğrulaması

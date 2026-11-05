@@ -4,12 +4,19 @@ import path from 'node:path';
 import test from 'node:test';
 import ts from 'typescript';
 
-const storageState = { values: new Map(), failure: null };
+const storageState = { values: new Map(), failure: null, readFailure: null };
 globalThis.__openChatDesignCanvasTestStorage = {
-  getItem: (key) => storageState.values.get(key) ?? null,
+  getItem: (key) => {
+    if (storageState.readFailure) throw storageState.readFailure;
+    return storageState.values.get(key) ?? null;
+  },
   setPersistedItem: async (key, value) => {
     if (storageState.failure) throw storageState.failure;
     storageState.values.set(key, value);
+  },
+  removePersistedItem: async (key) => {
+    if (storageState.failure) throw storageState.failure;
+    storageState.values.delete(key);
   },
 };
 
@@ -27,6 +34,7 @@ const {
   designCanvasFrameForViewport,
   emptyDesignCanvas,
   readDesignCanvas,
+  removeDesignCanvasForRecovery,
   responsiveBreakpointForWidth,
   saveDesignCanvas,
   settleDesignCanvasRequest,
@@ -83,7 +91,67 @@ test('profile-local design canvas storage round-trips the empty state', async ()
   await saveDesignCanvas(canvas);
 
   assert.equal(storageState.values.get('design.vector_canvas.v1'), JSON.stringify(canvas));
-  assert.deepEqual(readDesignCanvas(), canvas);
+  assert.deepEqual(readDesignCanvas(), { kind: 'ready', canvas });
+});
+
+test('invalid JSON remains available for recovery export', () => {
+  const rawData = '{"version":';
+  storageState.values.set('design.vector_canvas.v1', rawData);
+
+  assert.deepEqual(readDesignCanvas(), { kind: 'recoveryRequired', rawData, reason: 'invalidJson' });
+  assert.equal(storageState.values.get('design.vector_canvas.v1'), rawData);
+});
+
+test('invalid canvas structure remains available for recovery export', () => {
+  const rawData = JSON.stringify({ version: 2, frames: [], selectedFrameId: null });
+  storageState.values.set('design.vector_canvas.v1', rawData);
+
+  assert.deepEqual(readDesignCanvas(), { kind: 'recoveryRequired', rawData, reason: 'invalidStructure' });
+  assert.equal(storageState.values.get('design.vector_canvas.v1'), rawData);
+});
+
+test('oversized canvas remains available for recovery export', () => {
+  const rawData = 'x'.repeat(2 * 1024 * 1024 + 1);
+  storageState.values.set('design.vector_canvas.v1', rawData);
+
+  const result = readDesignCanvas();
+
+  assert.deepEqual(result, { kind: 'recoveryRequired', rawData, reason: 'tooLarge' });
+  assert.equal(storageState.values.get('design.vector_canvas.v1'), rawData);
+});
+
+test('confirmed canvas recovery removes the saved canvas', async () => {
+  const rawData = '{"version":';
+  storageState.values.set('design.vector_canvas.v1', rawData);
+
+  await removeDesignCanvasForRecovery();
+
+  assert.equal(storageState.values.has('design.vector_canvas.v1'), false);
+  assert.deepEqual(readDesignCanvas(), { kind: 'ready', canvas: emptyDesignCanvas() });
+});
+
+test('failed canvas recovery preserves the original data', async () => {
+  const rawData = '{"version":';
+  const failure = new Error('profile storage unavailable');
+  storageState.values.set('design.vector_canvas.v1', rawData);
+  storageState.failure = failure;
+
+  try {
+    await assert.rejects(removeDesignCanvasForRecovery(), (error) => error === failure);
+    assert.equal(storageState.values.get('design.vector_canvas.v1'), rawData);
+  } finally {
+    storageState.failure = null;
+  }
+});
+
+test('unavailable profile storage produces a retryable read state', () => {
+  storageState.readFailure = new Error('profile storage unavailable');
+
+  try {
+    assert.deepEqual(readDesignCanvas(), { kind: 'unavailable' });
+  } finally {
+    storageState.readFailure = null;
+  }
 });
 
 test('design canvas save propagates profile storage failures', async () => {
