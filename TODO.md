@@ -182,7 +182,8 @@
 - [x] FE-12: Komut paleti başlık çubuğu etiketi düzenlenmiş kısayol bağını gösteriyor; atanmamış durumda yerelleştirilmiş metin kullanıyor. Kaynak regresyon testi eklendi.
 - [x] FE-13: Başlık çubuğu aramasında input, görünür recent/search popup ve aktif arama sonucu arasında ARIA ID ilişkileri kuruldu; expanded durumu gerçek popup görünürlüğünden türetiliyor. Kaynak regresyon testi eklendi.
 - [ ] FE-13: Klavye/fare ile arama sonuçlarını açıp seç; erişilebilirlik ağacında controls ve active descendant hedeflerinin mevcut option'ları gösterdiğini masaüstü UI'da doğrula.
-- [ ] FE-R04: Recent search option seçili/klavye davranışını ve option içindeki silme kontrolünün erişilebilirlik semantiğini düzelt.
+- [x] FE-R04 kod dilimi: Son aramalar için listbox-option ilişkisi ve `aria-selected` eklendi; ok tuşları/Enter ile seçim ve Escape ile kapatma destekleniyor. Tekil silme düğmeleri listbox dışındaki isimli `fieldset` grubunda ve arama terimini içeren erişilebilir ad kullanıyor.
+- [ ] FE-R04 runtime: Windows masaüstü WebView2’de klavye-only gezinmeyi ve ekran okuyucu ağacında listbox, seçili option ve terim adı içeren silme düğmelerini doğrula. İzole profilde sorgu/yok-sonuç popup'ı açılıp Escape ile kapandı; son arama verisi bulunmadığından option seçimi ve silme denetlenemedi.
 - [x] Aktif uygulama yüzeylerinde iç içe `<main>` landmark'ları kaldırıldı: Settings ve Görsel stüdyosu içerikleri başlıklarıyla ilişkili section'lara dönüştürüldü. Kaynak regresyon testi eklendi.
 - [ ] Ayarlar, Görsel kütüphanesi ve canvas yüzeylerini masaüstünde açıp erişilebilirlik ağacında yalnızca uygulama kabuğunun ana landmark'ı bulunduğunu doğrula.
 - [x] FE-14: Provider API key ve proje MCP editörleri native form submit kullanıyor; Enter ile kaydetme mümkün, doğrulama akışları korunuyor. Regresyon testi eklendi.

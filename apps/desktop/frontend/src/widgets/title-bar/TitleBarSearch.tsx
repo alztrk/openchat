@@ -107,6 +107,7 @@ export function TitleBarSearch({ onSelectConversation }: TitleBarSearchProps) {
     Awaited<ReturnType<typeof listConversationAttachments>>['items']
   >([]);
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
+  const [selectedRecentSearchIndex, setSelectedRecentSearchIndex] = useState(-1);
   const [recentSearchError, setRecentSearchError] = useState<RecentSearchError | null>(null);
   const [isSavingRecentSearches, setIsSavingRecentSearches] = useState(false);
   const recentSearchWriteRef = useRef(false);
@@ -123,6 +124,7 @@ export function TitleBarSearch({ onSelectConversation }: TitleBarSearchProps) {
   const reloadRecentSearches = useCallback(() => {
     try {
       setRecentSearches(readRecentSearches());
+      setSelectedRecentSearchIndex(-1);
       setRecentSearchError(null);
     } catch {
       setRecentSearchError('loadFailed');
@@ -145,6 +147,7 @@ export function TitleBarSearch({ onSelectConversation }: TitleBarSearchProps) {
     try {
       await writeRecentSearches(next);
       setRecentSearches(next);
+      setSelectedRecentSearchIndex(-1);
       setRecentSearchError(null);
       return true;
     } catch {
@@ -352,6 +355,10 @@ export function TitleBarSearch({ onSelectConversation }: TitleBarSearchProps) {
     showSearchResults && navigableTargets[selectedIndex]
       ? `${searchResultsListboxId}-option-${selectedIndex}`
       : undefined;
+  const activeRecentSearchOptionId =
+    showRecentSearches && recentSearches[selectedRecentSearchIndex]
+      ? `${recentSearchesListboxId}-option-${selectedRecentSearchIndex}`
+      : undefined;
   const recentSearchErrorMessage = recentSearchError ? t(recentSearchErrorTranslationKey(recentSearchError)) : null;
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: Reset the selected result whenever the query changes.
@@ -370,8 +377,40 @@ export function TitleBarSearch({ onSelectConversation }: TitleBarSearchProps) {
   }, []);
 
   const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === 'Escape' && isOpen) {
+      event.preventDefault();
+      setIsOpen(false);
+      return;
+    }
+
+    if (!query.trim() && recentSearches.length > 0 && ['ArrowDown', 'ArrowUp', 'Enter'].includes(event.key)) {
+      if (event.key === 'Enter' && isOpen) {
+        event.preventDefault();
+        const selected = recentSearches[selectedRecentSearchIndex];
+        if (selected) {
+          handleSelectRecentSearch(selected);
+        }
+        return;
+      }
+
+      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        event.preventDefault();
+        if (!isOpen) {
+          setSelectedRecentSearchIndex(event.key === 'ArrowDown' ? 0 : recentSearches.length - 1);
+          setIsOpen(true);
+        } else {
+          const direction = event.key === 'ArrowDown' ? 1 : -1;
+          setSelectedRecentSearchIndex((index) => {
+            if (index < 0) return direction > 0 ? 0 : recentSearches.length - 1;
+            return (index + direction + recentSearches.length) % recentSearches.length;
+          });
+        }
+        return;
+      }
+    }
+
     if (!isOpen || navigableTargets.length === 0) {
-      if (event.key === 'ArrowDown' && (shouldSearch || recentSearches.length > 0)) {
+      if (event.key === 'ArrowDown' && (shouldSearch || recentSearches.length > 0 || recentSearchError !== null)) {
         setIsOpen(true);
         event.preventDefault();
       }
@@ -399,9 +438,6 @@ export function TitleBarSearch({ onSelectConversation }: TitleBarSearchProps) {
         setIsOpen(false);
         inputRef.current?.blur();
       }
-    } else if (event.key === 'Escape') {
-      event.preventDefault();
-      setIsOpen(false);
     }
   };
 
@@ -469,7 +505,7 @@ export function TitleBarSearch({ onSelectConversation }: TitleBarSearchProps) {
       <div className="relative flex w-full items-center">
         <Search aria-hidden="true" className="pointer-events-none absolute left-2.5 text-secondary-icon" size={14} />
         <Input
-          aria-activedescendant={activeSearchOptionId}
+          aria-activedescendant={activeSearchOptionId ?? activeRecentSearchOptionId}
           aria-autocomplete="list"
           aria-controls={
             showRecentSearches
@@ -520,10 +556,7 @@ export function TitleBarSearch({ onSelectConversation }: TitleBarSearchProps) {
 
       {showRecentSearches ? (
         <div
-          aria-label={t('recentSearches')}
           className="openchat-dropdown-surface absolute left-0 right-0 top-full z-50 mt-1 flex w-full origin-top flex-col overflow-hidden p-1"
-          id={recentSearchesListboxId}
-          role="listbox"
         >
           <div className="flex items-center justify-between px-2 py-1.5 text-caption font-medium text-secondary-text">
             <span>{t('recentSearches')}</span>
@@ -552,38 +585,54 @@ export function TitleBarSearch({ onSelectConversation }: TitleBarSearchProps) {
               ) : null}
             </div>
           ) : null}
-          {recentSearches.length > 0 ? (
-            <div className="flex flex-col gap-0.5">
-              {recentSearches.map((term) => (
+          <div className="flex min-w-0 gap-0.5">
+            <div
+              aria-label={t('recentSearches')}
+              className="flex min-w-0 flex-1 flex-col gap-0.5"
+              id={recentSearchesListboxId}
+              role="listbox"
+            >
+              {recentSearches.map((term, index) => (
                 <div
-                  className="group flex w-full items-center justify-between rounded-button px-2.5 py-1.5 text-xs text-text transition-colors hover:bg-hover cursor-pointer"
+                  aria-selected={selectedRecentSearchIndex === index}
+                  className="flex min-h-8 w-full cursor-pointer items-center gap-2 rounded-button px-2.5 py-1.5 text-xs text-text transition-colors hover:bg-hover aria-selected:bg-hover"
+                  id={`${recentSearchesListboxId}-option-${index}`}
                   key={term}
                   onClick={() => handleSelectRecentSearch(term)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') handleSelectRecentSearch(term);
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      handleSelectRecentSearch(term);
+                    }
                   }}
                   role="option"
-                  tabIndex={0}
+                  tabIndex={-1}
                 >
-                  <div className="flex items-center gap-2 truncate">
-                    <Clock aria-hidden="true" className="shrink-0 text-secondary-icon" size={12} />
-                    <span className="truncate">{term}</span>
-                  </div>
+                  <Clock aria-hidden="true" className="shrink-0 text-secondary-icon" size={12} />
+                  <span className="truncate">{term}</span>
+                </div>
+              ))}
+            </div>
+            {recentSearches.length > 0 ? (
+              <fieldset className="m-0 flex shrink-0 flex-col gap-0.5 border-0 p-0">
+                <legend className="sr-only">{t('recentSearchesActions')}</legend>
+                {recentSearches.map((term) => (
                   <Button
-                    aria-label={t('deleteRecentSearch')}
-                    className="size-6 p-0.5 text-secondary-icon opacity-0 transition-opacity hover:text-text group-hover:opacity-100"
+                    aria-label={t('deleteRecentSearch', { term })}
+                    className="size-8 p-1 text-secondary-icon transition-colors hover:text-text"
                     disabled={isSavingRecentSearches}
-                    onClick={(e) => handleDeleteRecentSearch(term, e)}
+                    key={term}
+                    onClick={(event) => handleDeleteRecentSearch(term, event)}
                     size="icon"
                     variant="ghost"
                     type="button"
                   >
-                    <X size={12} />
+                    <X aria-hidden="true" size={12} />
                   </Button>
-                </div>
-              ))}
-            </div>
-          ) : null}
+                ))}
+              </fieldset>
+            ) : null}
+          </div>
         </div>
       ) : null}
 
