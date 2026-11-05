@@ -72,9 +72,9 @@ fn report_window_state_failure(failure: WindowStateWriteFailure) {
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
 /// Persisted window geometry and state.
 pub struct WindowStateRecord {
-    /// Window width in physical pixels.
+    /// Outer window width, including platform borders, in physical pixels.
     pub width: u32,
-    /// Window height in physical pixels.
+    /// Outer window height, including platform borders, in physical pixels.
     pub height: u32,
     /// Window X coordinate in physical pixels.
     pub x: i32,
@@ -129,6 +129,11 @@ impl WindowStateWriter {
             .map_err(|_| std::io::Error::other("application data directory unavailable"))?
             .join(WINDOW_STATE_FILE_NAME);
         let initial = load_window_state(app).unwrap_or_default();
+        Self::start_for_path(path, initial, WINDOW_STATE_SAVE_DEBOUNCE)
+    }
+
+    pub(crate) fn start_at_path(path: PathBuf) -> std::io::Result<Self> {
+        let initial = read_window_state(&path).unwrap_or_default();
         Self::start_for_path(path, initial, WINDOW_STATE_SAVE_DEBOUNCE)
     }
 
@@ -346,7 +351,21 @@ pub fn shutdown_window_state_writer(app: &AppHandle) {
 
 /// Restores the previous window geometry or maximizes the first launch.
 pub fn restore_window_state(window: &WebviewWindow) -> tauri::Result<()> {
-    let Some(state) = load_window_state(window.app_handle()) else {
+    restore_window_state_from_record(window, load_window_state(window.app_handle()))
+}
+
+pub(crate) fn restore_window_state_at_path(
+    window: &WebviewWindow,
+    path: &Path,
+) -> tauri::Result<()> {
+    restore_window_state_from_record(window, read_window_state(path))
+}
+
+fn restore_window_state_from_record(
+    window: &WebviewWindow,
+    state: Option<WindowStateRecord>,
+) -> tauri::Result<()> {
+    let Some(state) = state else {
         return window.maximize();
     };
 
@@ -378,9 +397,12 @@ pub fn restore_window_state(window: &WebviewWindow) -> tauri::Result<()> {
 
     let restore_result: tauri::Result<()> = (|| {
         window.unmaximize()?;
-        window.set_size(PhysicalSize::new(
-            restored_state.width,
-            restored_state.height,
+        let outer_size = window.outer_size()?;
+        let inner_size = window.inner_size()?;
+        window.set_size(inner_size_for_saved_outer_size(
+            restored_state,
+            outer_size,
+            inner_size,
         ))?;
         window.set_position(PhysicalPosition::new(restored_state.x, restored_state.y))?;
         if restored_state.maximized {
@@ -398,6 +420,21 @@ pub fn restore_window_state(window: &WebviewWindow) -> tauri::Result<()> {
         }
     }
     Ok(())
+}
+
+fn inner_size_for_saved_outer_size(
+    saved: WindowStateRecord,
+    current_outer: PhysicalSize<u32>,
+    current_inner: PhysicalSize<u32>,
+) -> PhysicalSize<u32> {
+    PhysicalSize::new(
+        saved
+            .width
+            .saturating_sub(current_outer.width.saturating_sub(current_inner.width)),
+        saved
+            .height
+            .saturating_sub(current_outer.height.saturating_sub(current_inner.height)),
+    )
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -597,8 +634,9 @@ mod tests {
     use std::{fs, path::PathBuf, thread, time::Duration};
 
     use super::{
-        read_window_state, resolve_window_state, MonitorWorkArea, WindowStateRecord,
-        WindowStateWriteFailure, WindowStateWriter,
+        inner_size_for_saved_outer_size, lock_writer_state, read_window_state,
+        resolve_window_state, save_window_state_path, MonitorWorkArea, PhysicalSize,
+        WindowStateRecord, WindowStateWriteFailure, WindowStateWriter,
     };
 
     struct TestDirectory(PathBuf);
@@ -653,6 +691,29 @@ mod tests {
         let area = work_area(-1920, 0, 1920, 1080);
 
         assert_eq!(resolve_window_state(saved, &[area], None), Some(saved));
+    }
+
+    #[test]
+    fn restoring_saved_outer_size_subtracts_current_window_chrome() {
+        let saved = state(1116, 789, 80, 70, false);
+        let current_outer = PhysicalSize::new(1440, 900);
+        let current_inner = PhysicalSize::new(1424, 861);
+
+        assert_eq!(
+            inner_size_for_saved_outer_size(saved, current_outer, current_inner),
+            PhysicalSize::new(1100, 750)
+        );
+    }
+
+    #[test]
+    fn restoring_saved_outer_size_keeps_dimensions_when_no_window_chrome_exists() {
+        let saved = state(1100, 750, 80, 70, false);
+        let size = PhysicalSize::new(1440, 900);
+
+        assert_eq!(
+            inner_size_for_saved_outer_size(saved, size, size),
+            PhysicalSize::new(1100, 750)
+        );
     }
 
     #[test]
@@ -760,6 +821,24 @@ mod tests {
             read_window_state(&path),
             Some(state(1440, 960, 220, 180, false))
         );
+    }
+
+    #[test]
+    fn profile_writer_loads_and_saves_geometry_at_its_isolated_path() {
+        let directory = TestDirectory::create();
+        let path = directory.0.join("window-state.json");
+        let saved = state(1180, 760, 80, 90, false);
+        save_window_state_path(&path, &saved).expect("write initial profile geometry");
+
+        let writer =
+            WindowStateWriter::start_at_path(path.clone()).expect("start isolated profile writer");
+        assert_eq!(lock_writer_state(&writer.shared).current, saved);
+
+        let latest = state(1260, 820, 120, 130, false);
+        writer.schedule(latest);
+        writer.shutdown_and_flush();
+
+        assert_eq!(read_window_state(&path), Some(latest));
     }
 
     #[test]

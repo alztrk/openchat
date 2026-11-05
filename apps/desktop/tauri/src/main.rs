@@ -363,8 +363,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     app_handle.exit(1);
                 }
             })?;
-            if setup_profile_root.is_none() {
-                match window_state::WindowStateWriter::start(app.handle()) {
+            if setup_profile_root.is_none() || cfg!(feature = "desktop-profile-test-support") {
+                let writer_result = match setup_profile_root.as_ref() {
+                    Some(profile_root) => window_state::WindowStateWriter::start_at_path(
+                        profile_root.join("window-state.json"),
+                    ),
+                    None => window_state::WindowStateWriter::start(app.handle()),
+                };
+                match writer_result {
                     Ok(writer) => {
                         if !app.manage(writer) {
                             eprintln!("OpenChat could not register the window geometry writer.");
@@ -378,26 +384,29 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
                 main_window.unminimize()?;
-                window_state::restore_window_state(&main_window)?;
-                notifications::initialize(app.handle()).map_err(std::io::Error::other)?;
+                if let Some(profile_root) = setup_profile_root.as_ref() {
+                    window_state::restore_window_state_at_path(
+                        &main_window,
+                        &profile_root.join("window-state.json"),
+                    )?;
+                } else {
+                    window_state::restore_window_state(&main_window)?;
+                    notifications::initialize(app.handle()).map_err(std::io::Error::other)?;
+                }
             }
             Ok(())
         })
         .on_window_event(|window, event| {
-            #[cfg(any(
-                feature = "startup-benchmark",
-                feature = "desktop-profile-test-support"
-            ))]
-            {
-                let _ = (window, event);
-                return;
-            }
-            #[cfg(not(any(
-                feature = "startup-benchmark",
-                feature = "desktop-profile-test-support"
-            )))]
-            {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                #[cfg(any(
+                    feature = "startup-benchmark",
+                    feature = "desktop-profile-test-support"
+                ))]
+                let _ = api;
+                #[cfg(not(any(
+                    feature = "startup-benchmark",
+                    feature = "desktop-profile-test-support"
+                )))]
                 if let Some(state) = window
                     .app_handle()
                     .try_state::<app_preferences::AppPreferencesState>()
@@ -418,7 +427,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 tauri::WindowEvent::Resized(_) | tauri::WindowEvent::Moved(_)
             ) {
                 window_state::schedule_window_state_save(window);
-            }
             }
         })
         .build(tauri::generate_context!())?;
