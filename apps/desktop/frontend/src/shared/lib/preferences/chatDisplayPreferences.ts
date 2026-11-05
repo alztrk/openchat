@@ -1,7 +1,9 @@
 import { create } from 'zustand';
+import { createSerialTaskQueue } from '@shared/lib/async/serialTaskQueue';
 import { unifiedStorage } from '@shared/lib/platform/storage/unifiedStorage';
 
 const storageKey = 'chat.display_preferences';
+const enqueuePreferenceWrite = createSerialTaskQueue();
 
 export interface ChatDisplayPreferences {
   autoFollowResponses: boolean;
@@ -47,30 +49,34 @@ export const useChatDisplayPreferencesStore = create<ChatDisplayPreferencesState
     get().initialize();
   },
 
-  async setPreference(key, value) {
-    if (get().loadState !== 'ready') return false;
-    const next = { ...get().preferences, [key]: value };
-    set({ saveState: 'saving' });
-    try {
-      await unifiedStorage.setPersistedItem(storageKey, JSON.stringify(next));
-      set({ preferences: next, saveState: 'saved' });
-      return true;
-    } catch {
-      set({ saveState: 'error' });
-      return false;
-    }
+  setPreference(key, value) {
+    return enqueuePreferenceWrite(async () => {
+      if (get().loadState !== 'ready') return false;
+      const next = { ...get().preferences, [key]: value };
+      set({ saveState: 'saving' });
+      try {
+        await unifiedStorage.setPersistedItem(storageKey, JSON.stringify(next));
+        set({ preferences: next, saveState: 'saved' });
+        return true;
+      } catch {
+        set({ saveState: 'error' });
+        return false;
+      }
+    });
   },
 
-  async reset() {
-    set({ saveState: 'saving' });
-    try {
-      await unifiedStorage.setPersistedItem(storageKey, JSON.stringify(defaultChatDisplayPreferences));
-      set({ preferences: defaultChatDisplayPreferences, loadState: 'ready', saveState: 'saved' });
-      return true;
-    } catch {
-      set({ saveState: 'error' });
-      return false;
-    }
+  reset() {
+    return enqueuePreferenceWrite(async () => {
+      set({ saveState: 'saving' });
+      try {
+        await unifiedStorage.setPersistedItem(storageKey, JSON.stringify(defaultChatDisplayPreferences));
+        set({ preferences: defaultChatDisplayPreferences, loadState: 'ready', saveState: 'saved' });
+        return true;
+      } catch {
+        set({ saveState: 'error' });
+        return false;
+      }
+    });
   },
 }));
 

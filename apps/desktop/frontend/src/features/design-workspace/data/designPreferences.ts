@@ -5,6 +5,7 @@ import type {
   ImageOutputFormat,
   ImageQuality,
 } from '@features/design-workspace/data';
+import { createSerialTaskQueue } from '@shared/lib/async/serialTaskQueue';
 import { unifiedStorage } from '@shared/lib/platform/storage/unifiedStorage';
 
 export const DESIGN_PANEL_DEFAULT_WIDTH = 320;
@@ -13,6 +14,7 @@ export const DESIGN_PANEL_MAX_WIDTH = 420;
 
 const designPanelWidthKey = 'design.control_panel_width';
 const designSettingsKey = 'design.generation_preferences';
+const enqueuePreferenceWrite = createSerialTaskQueue();
 
 export interface DesignGenerationSettings {
   size: string;
@@ -134,52 +136,58 @@ export const useDesignPreferencesStore = create<DesignPreferencesState>((set, ge
     get().initialize();
   },
 
-  async updatePreferences(patch) {
-    if (get().loadState !== 'ready') return false;
-    const preferences = { ...get().preferences, ...patch };
-    return persistPreferences(preferences, set);
+  updatePreferences(patch) {
+    return enqueuePreferenceWrite(async () => {
+      if (get().loadState !== 'ready') return false;
+      const preferences = { ...get().preferences, ...patch };
+      return persistPreferences(preferences, set);
+    });
   },
 
-  async savePreset(name) {
-    const current = get();
-    const trimmedName = name.trim();
-    if (
-      current.loadState !== 'ready' ||
-      trimmedName.length === 0 ||
-      trimmedName.length > 48 ||
-      current.preferences.presets.length >= 20 ||
-      current.preferences.presets.some(
-        (preset) => preset.name.toLocaleLowerCase('en-US') === trimmedName.toLocaleLowerCase('en-US'),
-      )
-    ) {
-      return false;
-    }
-    const id = globalThis.crypto.randomUUID();
-    return persistPreferences(
-      {
+  savePreset(name) {
+    return enqueuePreferenceWrite(async () => {
+      const current = get();
+      const trimmedName = name.trim();
+      if (
+        current.loadState !== 'ready' ||
+        trimmedName.length === 0 ||
+        trimmedName.length > 48 ||
+        current.preferences.presets.length >= 20 ||
+        current.preferences.presets.some(
+          (preset) => preset.name.toLocaleLowerCase('en-US') === trimmedName.toLocaleLowerCase('en-US'),
+        )
+      ) {
+        return false;
+      }
+      const id = globalThis.crypto.randomUUID();
+      return persistPreferences(
+        {
+          ...current.preferences,
+          presets: [
+            ...current.preferences.presets,
+            { id, name: trimmedName, settings: current.preferences.defaultGenerationSettings },
+          ],
+        },
+        set,
+      );
+    });
+  },
+
+  deletePreset(presetId) {
+    return enqueuePreferenceWrite(async () => {
+      const current = get();
+      if (current.loadState !== 'ready') return false;
+      const preferences = {
         ...current.preferences,
-        presets: [
-          ...current.preferences.presets,
-          { id, name: trimmedName, settings: current.preferences.defaultGenerationSettings },
-        ],
-      },
-      set,
-    );
+        presets: current.preferences.presets.filter((preset) => preset.id !== presetId),
+        defaultPresetId: current.preferences.defaultPresetId === presetId ? null : current.preferences.defaultPresetId,
+      };
+      return persistPreferences(preferences, set);
+    });
   },
 
-  async deletePreset(presetId) {
-    const current = get();
-    if (current.loadState !== 'ready') return false;
-    const preferences = {
-      ...current.preferences,
-      presets: current.preferences.presets.filter((preset) => preset.id !== presetId),
-      defaultPresetId: current.preferences.defaultPresetId === presetId ? null : current.preferences.defaultPresetId,
-    };
-    return persistPreferences(preferences, set);
-  },
-
-  async reset() {
-    return persistPreferences(defaultDesignPreferences, set);
+  reset() {
+    return enqueuePreferenceWrite(() => persistPreferences(defaultDesignPreferences, set));
   },
 }));
 

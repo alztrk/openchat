@@ -1,8 +1,10 @@
 import { create } from 'zustand';
+import { createSerialTaskQueue } from '@shared/lib/async/serialTaskQueue';
 import { unifiedStorage } from '@shared/lib/platform/storage/unifiedStorage';
 
 const storageKey = 'assistant.execution_preferences';
 const goalRuntimeOptions = [0, 30, 60, 120, 240] as const;
+const enqueuePreferenceWrite = createSerialTaskQueue();
 
 export interface AssistantExecutionPreferences {
   defaultProfileId: string | null;
@@ -53,35 +55,39 @@ export const useAssistantExecutionPreferencesStore = create<AssistantExecutionPr
     get().initialize();
   },
 
-  async setPreference(key, value) {
-    if (get().loadState !== 'ready') return false;
-    const next = { ...get().preferences, [key]: value };
-    set({ saveState: 'saving' });
-    try {
-      validatePreferences(next);
-      await unifiedStorage.setPersistedItem(storageKey, JSON.stringify(next));
-      set({ preferences: next, saveState: 'saved' });
-      return true;
-    } catch {
-      set({ saveState: 'error' });
-      return false;
-    }
+  setPreference(key, value) {
+    return enqueuePreferenceWrite(async () => {
+      if (get().loadState !== 'ready') return false;
+      const next = { ...get().preferences, [key]: value };
+      set({ saveState: 'saving' });
+      try {
+        validatePreferences(next);
+        await unifiedStorage.setPersistedItem(storageKey, JSON.stringify(next));
+        set({ preferences: next, saveState: 'saved' });
+        return true;
+      } catch {
+        set({ saveState: 'error' });
+        return false;
+      }
+    });
   },
 
-  async reset() {
-    set({ saveState: 'saving' });
-    try {
-      await unifiedStorage.setPersistedItem(storageKey, JSON.stringify(defaultAssistantExecutionPreferences));
-      set({
-        preferences: defaultAssistantExecutionPreferences,
-        loadState: 'ready',
-        saveState: 'saved',
-      });
-      return true;
-    } catch {
-      set({ saveState: 'error' });
-      return false;
-    }
+  reset() {
+    return enqueuePreferenceWrite(async () => {
+      set({ saveState: 'saving' });
+      try {
+        await unifiedStorage.setPersistedItem(storageKey, JSON.stringify(defaultAssistantExecutionPreferences));
+        set({
+          preferences: defaultAssistantExecutionPreferences,
+          loadState: 'ready',
+          saveState: 'saved',
+        });
+        return true;
+      } catch {
+        set({ saveState: 'error' });
+        return false;
+      }
+    });
   },
 }));
 
