@@ -1,7 +1,9 @@
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 
 const INTERRUPT_GRACE_MS = 1500;
 const FORCED_SHUTDOWN_CONFIRMATION_MS = 3000;
+const PROFILE_PROCESS_GRACE_MS = 2000;
+const PROCESS_MARKER_CONFIRMATION_MS = 30_000;
 const TERMINATOR_TIMEOUT_MS = 5000;
 
 export class CommandInterruptedError extends Error {
@@ -14,7 +16,11 @@ export class CommandInterruptedError extends Error {
 
 export class UnconfirmedChildTerminationError extends Error {
   constructor(pid, signal, options) {
-    super(`Could not confirm shutdown of child process tree${pid ? ` (PID ${pid})` : ''} after ${signal}.`, options);
+    const causeMessage = options?.cause instanceof Error ? ` ${options.cause.message}` : '';
+    super(
+      `Could not confirm shutdown of child process tree${pid ? ` (PID ${pid})` : ''} after ${signal}.${causeMessage}`,
+      options,
+    );
     this.name = 'UnconfirmedChildTerminationError';
     this.pid = pid;
     this.signal = signal;
@@ -120,6 +126,131 @@ async function forceTerminateProcessTree(child, platform) {
   }
 }
 
+function inspectWindowsProcessesWithMarker(marker, spawnSyncProcess, timeoutMs) {
+  const encodedMarker = Buffer.from(marker, 'utf16le').toString('base64');
+  const script =
+    `$marker = [System.Text.Encoding]::Unicode.GetString([System.Convert]::FromBase64String('${encodedMarker}')); ` +
+    '$matches = @(Get-CimInstance -ClassName Win32_Process | Where-Object { ' +
+    '$_.ProcessId -ne $PID -and $null -ne $_.CommandLine -and ' +
+    '$_.CommandLine.IndexOf($marker, [System.StringComparison]::OrdinalIgnoreCase) -ge 0 }); ' +
+    '[Console]::Out.Write(($matches | ForEach-Object { \'{0},{1}\' -f $_.ProcessId,$_.ParentProcessId }) -join "`n")';
+  const result = spawnSyncProcess(
+    'powershell.exe',
+    ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', script],
+    { encoding: 'utf8', timeout: timeoutMs, windowsHide: true },
+  );
+
+  if (result.error) {
+    throw new Error('Could not inspect Windows processes while confirming desktop shutdown.', {
+      cause: result.error,
+    });
+  }
+  if (result.status !== 0) {
+    throw new Error(`Windows process inspection failed with exit code ${result.status}.`);
+  }
+
+  const output = String(result.stdout ?? '').trim();
+  if (!output) return [];
+
+  return output.split(/\r?\n/u).map((line) => {
+    const match = /^(\d+),(\d+)$/u.exec(line);
+    if (!match) throw new Error('Windows process inspection returned invalid process identifiers.');
+    const processId = Number(match[1]);
+    const parentProcessId = Number(match[2]);
+    if (!Number.isSafeInteger(processId) || processId <= 0 || !Number.isSafeInteger(parentProcessId)) {
+      throw new Error('Windows process inspection returned invalid process identifiers.');
+    }
+    return { processId, parentProcessId };
+  });
+}
+
+export async function waitForWindowsProcessMarkerToExit(
+  marker,
+  {
+    platform = process.platform,
+    timeoutMs = 30_000,
+    pollIntervalMs = 250,
+    queryTimeoutMs = 3000,
+    spawnSyncProcess = spawnSync,
+    now = Date.now,
+    wait = (delayMs) => new Promise((resolve) => setTimeout(resolve, delayMs)),
+  } = {},
+) {
+  if (platform !== 'win32') return true;
+  if (!marker) throw new Error('A process marker is required to confirm Windows shutdown.');
+  if (timeoutMs < 0 || pollIntervalMs <= 0 || queryTimeoutMs <= 0) {
+    throw new Error('Invalid Windows process polling interval.');
+  }
+
+  const deadline = now() + timeoutMs;
+  let completedProcessQuery = false;
+
+  while (true) {
+    const remainingMs = deadline - now();
+    const boundedQueryTimeoutMs = Math.min(queryTimeoutMs, Math.max(1, remainingMs));
+    let matchingProcesses;
+    try {
+      matchingProcesses = inspectWindowsProcessesWithMarker(marker, spawnSyncProcess, boundedQueryTimeoutMs);
+    } catch (error) {
+      if (error.cause?.code === 'ETIMEDOUT') {
+        const remainingAfterTimeoutMs = deadline - now();
+        if (remainingAfterTimeoutMs <= 0) {
+          if (completedProcessQuery) return false;
+          throw new Error('Windows process inspection timed out before shutdown could be confirmed.', {
+            cause: error.cause,
+          });
+        }
+        await wait(Math.min(pollIntervalMs, remainingAfterTimeoutMs));
+        continue;
+      }
+      throw error;
+    }
+    completedProcessQuery = true;
+    if (matchingProcesses.length === 0) return true;
+
+    const remainingAfterQueryMs = deadline - now();
+    if (remainingAfterQueryMs <= 0) return false;
+    await wait(Math.min(pollIntervalMs, remainingAfterQueryMs));
+  }
+}
+
+export function terminateWindowsProcessesUsingMarker(
+  marker,
+  { platform = process.platform, spawnSyncProcess = spawnSync } = {},
+) {
+  if (platform !== 'win32') return { matchedProcessCount: 0, failure: null };
+  if (!marker) throw new Error('A process marker is required to terminate Windows processes.');
+
+  const matchingProcesses = inspectWindowsProcessesWithMarker(marker, spawnSyncProcess, TERMINATOR_TIMEOUT_MS);
+  const matchedIds = new Set(matchingProcesses.map(({ processId }) => processId));
+  const rootProcesses = matchingProcesses.filter(({ parentProcessId }) => !matchedIds.has(parentProcessId));
+  const terminationTargets = rootProcesses.length > 0 ? rootProcesses : matchingProcesses;
+  const terminationDeadline = Date.now() + TERMINATOR_TIMEOUT_MS;
+  let failure = null;
+
+  for (const { processId } of terminationTargets) {
+    const remainingMs = terminationDeadline - Date.now();
+    if (remainingMs <= 0) {
+      failure ??= new Error('Windows process termination exceeded its time limit.');
+      break;
+    }
+    const result = spawnSyncProcess(
+      'taskkill.exe',
+      ['/PID', String(processId), '/T', '/F'],
+      { encoding: 'utf8', timeout: remainingMs, windowsHide: true },
+    );
+    if (result.error) {
+      failure ??= new Error('Could not stop a Windows process that references the temporary profile.', {
+        cause: result.error,
+      });
+    } else if (result.status !== 0) {
+      failure ??= new Error(`Windows process termination failed with exit code ${result.status}.`);
+    }
+  }
+
+  return { matchedProcessCount: matchingProcesses.length, failure };
+}
+
 export async function runInterruptibleCommand(
   command,
   args,
@@ -132,6 +263,11 @@ export async function runInterruptibleCommand(
     platform = process.platform,
     shutdownGraceMs = INTERRUPT_GRACE_MS,
     shutdownConfirmationMs = FORCED_SHUTDOWN_CONFIRMATION_MS,
+    shutdownMarker,
+    shutdownMarkerConfirmationMs = PROCESS_MARKER_CONFIRMATION_MS,
+    shutdownMarkerGraceMs = PROFILE_PROCESS_GRACE_MS,
+    waitForShutdownMarkerToExit = waitForWindowsProcessMarkerToExit,
+    terminateProcessesUsingMarker = terminateWindowsProcessesUsingMarker,
     terminateProcessTree = forceTerminateProcessTree,
   } = {},
 ) {
@@ -173,18 +309,49 @@ export async function runInterruptibleCommand(
       interruptShutdown = (async () => {
         if (!childClosed && platform !== 'win32') signalUnixProcessTree(child, signal);
 
-        if (!await waitForClose(childClosedPromise, () => childClosed, shutdownGraceMs)) {
-          const terminationConfirmed = await terminateProcessTree(child, platform);
-          const childClosedAfterTermination = await waitForClose(
+        const childClosedDuringGrace = await waitForClose(childClosedPromise, () => childClosed, shutdownGraceMs);
+        let terminationConfirmed = true;
+        let childClosedAfterTermination = childClosedDuringGrace;
+        if (!childClosedDuringGrace) {
+          terminationConfirmed = await terminateProcessTree(child, platform);
+          childClosedAfterTermination = await waitForClose(
             childClosedPromise,
             () => childClosed,
             shutdownConfirmationMs,
           );
-          if (!terminationConfirmed || !childClosedAfterTermination) {
+        }
+
+        if (platform === 'win32' && shutdownMarker) {
+          let markerProcessesStopped = await waitForShutdownMarkerToExit(shutdownMarker, {
+            platform,
+            timeoutMs: shutdownMarkerGraceMs,
+          });
+          if (!markerProcessesStopped) {
+            const termination = await terminateProcessesUsingMarker(shutdownMarker, { platform });
+            markerProcessesStopped = await waitForShutdownMarkerToExit(shutdownMarker, {
+              platform,
+              timeoutMs: shutdownMarkerConfirmationMs,
+            });
+            if (markerProcessesStopped) {
+              settle(reject, new CommandInterruptedError(signal));
+              return;
+            }
+
             child.unref?.();
-            settle(reject, new UnconfirmedChildTerminationError(child.pid, signal));
+            settle(
+              reject,
+              new UnconfirmedChildTerminationError(child.pid, signal, {
+                cause: termination.failure ?? new Error(
+                  `Windows processes still reference the temporary profile (${termination.matchedProcessCount} found).`,
+                ),
+              }),
+            );
             return;
           }
+        } else if (!terminationConfirmed || !childClosedAfterTermination) {
+          child.unref?.();
+          settle(reject, new UnconfirmedChildTerminationError(child.pid, signal));
+          return;
         }
 
         settle(reject, new CommandInterruptedError(signal));

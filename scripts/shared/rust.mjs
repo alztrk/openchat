@@ -1,4 +1,4 @@
-import { getTauriDirectory, getWorkspaceRoot, runCommand, runNpm } from './runner.mjs';
+import { getTauriDirectory, getWorkspaceRoot, resolveNpmCliPath, runCommand, runNpm } from './runner.mjs';
 import { runInterruptibleCommand } from './session.mjs';
 import { mkdirSync, copyFileSync } from 'node:fs';
 import path from 'node:path';
@@ -86,15 +86,11 @@ export async function ensureFrontendDependenciesInterruptibly(
   interruptController,
   {
     workspaceRoot = getWorkspaceRoot(),
-    npmCliPath = process.env.npm_execpath,
+    npmCliPath = resolveNpmCliPath(),
     runInterruptibleCommandFn = runInterruptibleCommand,
     write = (message) => process.stdout.write(message),
   } = {},
 ) {
-  if (!npmCliPath) {
-    throw new Error('Run this task through its npm script so it can invoke npm without a shell.');
-  }
-
   const result = await runInterruptibleCommandFn(
     process.execPath,
     [npmCliPath, ...frontendDependencyCheckArgs],

@@ -33,11 +33,31 @@ export function runCommand(
   return result;
 }
 
-export function runNpm(args, cwd = frontendDirectory, options = {}) {
-  const npmCliPath = process.env.npm_execpath;
-  if (!npmCliPath) {
-    throw new Error('Run this task through its npm script so it can invoke npm without a shell.');
+export function resolveNpmCliPath({
+  npmExecPath = process.env.npm_execpath,
+  execPath = process.execPath,
+  platform = process.platform,
+  fileExists = existsSync,
+} = {}) {
+  if (npmExecPath) return npmExecPath;
+
+  if (platform === 'win32') {
+    const windowsPath = path.win32;
+    const bundledNpmCliPath = windowsPath.join(
+      windowsPath.dirname(execPath),
+      'node_modules',
+      'npm',
+      'bin',
+      'npm-cli.js',
+    );
+    if (fileExists(bundledNpmCliPath)) return bundledNpmCliPath;
   }
+
+  throw new Error('Run this task through npm, or install npm where this Node.js installation can find it.');
+}
+
+export function runNpm(args, cwd = frontendDirectory, options = {}) {
+  const npmCliPath = resolveNpmCliPath();
   return runCommand(process.execPath, [npmCliPath, ...args], { ...options, cwd });
 }
 

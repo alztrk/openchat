@@ -7,7 +7,7 @@
     "frontendDist": "../frontend/dist",
     "devUrl": "http://127.0.0.1:5173",
     "beforeDevCommand": {
-      "script": "npm run dev",
+      "script": "node ../../../node_modules/vite/bin/vite.js",
       "cwd": "../frontend",
       "wait": false
     },

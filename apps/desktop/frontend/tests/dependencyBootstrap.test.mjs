@@ -2,8 +2,41 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { ensureFrontendDependencies, ensureFrontendDependenciesInterruptibly } from '../../../../scripts/shared/rust.mjs';
-import { runCommand } from '../../../../scripts/shared/runner.mjs';
+import { resolveNpmCliPath, runCommand } from '../../../../scripts/shared/runner.mjs';
 import { CommandInterruptedError, runInterruptibleCommand } from '../../../../scripts/shared/session.mjs';
+
+test('npm cli path uses the invoking npm path when available', () => {
+  assert.equal(
+    resolveNpmCliPath({ npmExecPath: 'C:\\npm\\npm-cli.js', platform: 'win32', fileExists: () => false }),
+    'C:\\npm\\npm-cli.js',
+  );
+});
+
+test('npm cli path resolves the Node-bundled npm CLI for direct Windows invocation', () => {
+  const expectedPath = 'D:\\tools\\nodejs\\node_modules\\npm\\bin\\npm-cli.js';
+  const checkedPaths = [];
+
+  assert.equal(
+    resolveNpmCliPath({
+      npmExecPath: '',
+      execPath: 'D:\\tools\\nodejs\\node.exe',
+      platform: 'win32',
+      fileExists: (candidate) => {
+        checkedPaths.push(candidate);
+        return candidate === expectedPath;
+      },
+    }),
+    expectedPath,
+  );
+  assert.deepEqual(checkedPaths, [expectedPath]);
+});
+
+test('npm cli path explains how to recover when direct invocation cannot find npm', () => {
+  assert.throws(
+    () => resolveNpmCliPath({ npmExecPath: '', platform: 'linux', fileExists: () => false }),
+    /Run this task through npm, or install npm where this Node\.js installation can find it/u,
+  );
+});
 
 test('frontend dependency bootstrap validates the root workspace and does not reinstall a complete tree', () => {
   const calls = [];

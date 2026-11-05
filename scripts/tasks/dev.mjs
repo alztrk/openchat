@@ -1,14 +1,21 @@
 import { randomUUID } from 'node:crypto';
 import { existsSync, lstatSync, readFileSync, unlinkSync } from 'node:fs';
-import { runNpm } from '../shared/runner.mjs';
-import { buildLocalService } from '../shared/rust.mjs';
-import { ensureFrontendDependencies } from '../shared/rust.mjs';
-import { buildLocalServiceInterruptibly, ensureFrontendDependenciesInterruptibly } from '../shared/rust.mjs';
+import path from 'node:path';
+import { runCommand } from '../shared/runner.mjs';
+import {
+  buildLocalService,
+  buildLocalServiceInterruptibly,
+  ensureFrontendDependencies,
+  ensureFrontendDependenciesInterruptibly,
+} from '../shared/rust.mjs';
 import { runInterruptibleCommand } from '../shared/session.mjs';
 import { reserveTemporaryTestProfileRoot, temporaryTestProfilePath } from '../shared/profile.mjs';
 import { removeTemporaryTestProfile } from '../shared/profile-clean.mjs';
-import { getFrontendDirectory } from '../shared/runner.mjs';
+import { getFrontendDirectory, getTauriDirectory } from '../shared/runner.mjs';
 import { ensureNoArguments } from '../help.mjs';
+
+const tauriCliPath = path.join(getFrontendDirectory(), 'node_modules', '@tauri-apps', 'cli', 'tauri.js');
+const tauriShutdownGraceMs = process.platform === 'win32' ? 10_000 : undefined;
 
 export function assertDesktopTestProfileExit(status, markerContents, runId) {
   if (markerContents !== runId) {
@@ -41,7 +48,7 @@ export const dev = {
     ensureNoArguments('dev', []);
     buildLocalService('debug', false);
     ensureFrontendDependencies();
-    runNpm(['run', 'tauri:dev:raw']);
+    runCommand(process.execPath, [tauriCliPath, 'dev'], { cwd: getTauriDirectory() });
   },
 };
 
@@ -66,7 +73,6 @@ export const devTestProfile = {
       return;
     }
 
-    const pathMod = await import('node:path');
     let cleanupProfileOnExit = false;
     let explicitProfileRoot;
 
@@ -78,10 +84,10 @@ export const devTestProfile = {
       }
       if (argument === '--profile-root' && explicitProfileRoot === undefined) {
         const value = args[index + 1];
-        if (!value || !pathMod.isAbsolute(value)) {
+        if (!value || !path.isAbsolute(value)) {
           throw new Error('--profile-root requires an absolute path.');
         }
-        explicitProfileRoot = pathMod.normalize(value);
+        explicitProfileRoot = path.normalize(value);
         index += 1;
         continue;
       }
@@ -105,23 +111,33 @@ export const devTestProfile = {
         interruptController.throwIfInterrupted();
         process.stdout.write('Isolated desktop test profile: ' + profileRoot + '\n');
 
-        const npmCliPath = process.env.npm_execpath;
-        if (!npmCliPath) {
-          throw new Error('Run this task through its npm script so it can invoke npm without a shell.');
-        }
-
         const runId = randomUUID();
-        const markerPath = pathMod.join(profileRoot, `normal-close-${runId}.marker`);
-        const result = await runInterruptibleCommand(process.execPath, [
-          npmCliPath, 'run', 'tauri:dev:raw', '--', '--features', 'desktop-profile-test-support',
-          '--', '--', '--desktop-test-profile-root', profileRoot,
-          '--desktop-test-run-id', runId,
-        ], { cwd: getFrontendDirectory(), interruptController, allowFailure: true });
+        const markerPath = path.join(profileRoot, `normal-close-${runId}.marker`);
+        let result;
+        let commandError;
+        let markerContents;
         try {
-          assertDesktopTestProfileExit(result.status, readNormalCloseMarker(markerPath), runId);
+          result = await runInterruptibleCommand(process.execPath, [
+            tauriCliPath, 'dev', '--features', 'desktop-profile-test-support',
+            '--', '--', '--desktop-test-profile-root', profileRoot,
+            '--desktop-test-run-id', runId,
+          ], {
+            cwd: getTauriDirectory(),
+            interruptController,
+            allowFailure: true,
+            shutdownGraceMs: tauriShutdownGraceMs,
+            shutdownMarker: profileRoot,
+          });
+        } catch (error) {
+          commandError = error;
         } finally {
+          markerContents = readNormalCloseMarker(markerPath);
           removeNormalCloseMarker(markerPath);
         }
+
+        if (commandError) throw commandError;
+        if (!result) throw new Error('The desktop command exited without a result.');
+        assertDesktopTestProfileExit(result.status, markerContents, runId);
       },
       cleanup: async () => {
         if (cleanupProfileOnExit && profileRoot) await removeTemporaryTestProfile(profileRoot);
@@ -146,7 +162,6 @@ export const startupBenchmark = {
     ensureNoArguments('startup-benchmark', args);
 
     const fs = await import('node:fs');
-    const pathMod = await import('node:path');
     const { runTemporaryProfileSession } = await import('../shared/session.mjs');
 
     let profileRoot;
@@ -154,21 +169,21 @@ export const startupBenchmark = {
       getRetainedProfilePath: () => profileRoot,
       run: async (interruptController) => {
         profileRoot = temporaryTestProfilePath();
-        const resultPath = pathMod.join(profileRoot, 'result.json');
+        const resultPath = path.join(profileRoot, 'result.json');
         await buildLocalServiceInterruptibly('debug', false, ['desktop-profile-test-support'], interruptController);
         interruptController.throwIfInterrupted();
         await ensureFrontendDependenciesInterruptibly(interruptController);
         interruptController.throwIfInterrupted();
 
-        const npmCliPath = process.env.npm_execpath;
-        if (!npmCliPath) {
-          throw new Error('Run this task through its npm script so it can invoke npm without a shell.');
-        }
-
         await runInterruptibleCommand(process.execPath, [
-          npmCliPath, 'run', 'tauri:dev:raw', '--', '--features', 'startup-benchmark',
+          tauriCliPath, 'dev', '--features', 'startup-benchmark',
           '--', '--', '--startup-benchmark-root', profileRoot,
-        ], { cwd: getFrontendDirectory(), interruptController });
+        ], {
+          cwd: getTauriDirectory(),
+          interruptController,
+          shutdownGraceMs: tauriShutdownGraceMs,
+          shutdownMarker: profileRoot,
+        });
         interruptController.throwIfInterrupted();
 
         const result = JSON.parse(fs.readFileSync(resultPath, 'utf8'));
@@ -185,7 +200,7 @@ export const startupBenchmark = {
           throw new Error('The desktop did not reach the OpenChat application shell.');
         }
 
-        const databasePath = pathMod.join(profileRoot, 'storage', 'db', 'openchat.sqlite3');
+        const databasePath = path.join(profileRoot, 'storage', 'db', 'openchat.sqlite3');
         if (!fs.existsSync(databasePath)) {
           throw new Error('The benchmark profile did not create the active database.');
         }

@@ -1,7 +1,7 @@
 # Developer tasks
 
-All developer tasks use the single cross-platform CLI in `scripts/run.mjs`. Run
-it through the frontend npm script from `apps/desktop/frontend`:
+All developer tasks use the single cross-platform CLI in `scripts/run.mjs`. The
+normal entry point is the frontend npm script from `apps/desktop/frontend`:
 
 ```bash
 npm run openchat -- dev
@@ -21,8 +21,20 @@ the single dependency lockfile; run `npm ci` from the repository root. The
 startup dependency check validates the full frontend workspace and, if needed,
 runs `npm ci` from that root.
 
-`dev` builds the debug local-service sidecar and starts Tauri. `build` builds the
-locked release sidecar and Tauri bundle. `check` runs Biome, frontend unit tests,
+`dev` builds the debug local-service sidecar and starts Tauri. The development
+task launches the Tauri CLI directly through Node, and Tauri launches Vite's JS
+entry point directly. On Windows, run interruptible interactive tasks directly
+through Node when you need Ctrl+C cleanup to stay under the CLI's control:
+
+```powershell
+node ../../../scripts/run.mjs dev-test-profile --cleanup-profile
+```
+
+The direct entry point resolves the npm CLI bundled beside `node.exe` for the
+workspace dependency check. If npm is installed separately, use the normal npm
+entry point above. Avoiding the npm script shell keeps it from intercepting
+Ctrl+C; the Tauri and Vite processes also avoid nested `.cmd` shims.
+`build` builds the locked release sidecar and Tauri bundle. `check` runs Biome, frontend unit tests,
 locale and FSD import checks, the TypeScript/Vite asset build, Rust formatting,
 locked workspace checking, and locked Rust tests. It reports all task failures
 after attempting every check. `clean` previews generated build and bundle output
@@ -39,13 +51,18 @@ the test is complete.
 For interactive checks that should leave no generated profile behind, pass
 `--cleanup-profile` without `--profile-root`. The CLI removes only the
 UUID-named profile it created directly under the OS temporary directory after
-the app exits, including when the build or launch fails. On Ctrl+C, it gives
-the child process tree 1.5 seconds to close, then requests forced tree
-termination and waits up to 3 seconds for confirmation. If shutdown cannot be
-confirmed, the command fails and preserves the profile so a remaining process
-cannot keep using files that were removed underneath it. The retained path is
-included in the error. The option cannot be combined with a caller-supplied
-profile path.
+the app exits, including when the build or launch fails. On Ctrl+C on Windows,
+it gives Tauri up to 10 seconds to stop. If the CLI remains open, the runner
+requests forced tree termination and waits up to 3 seconds for its exit. It then
+allows profile-using Windows processes 2 seconds to close. If any still
+reference the unique profile path, the runner terminates only the matching
+process trees and checks for up to 30 seconds that they have exited. This check
+also runs if the Tauri CLI exits first, because its app processes can remain
+open after the CLI stops. Cleanup retries transient Windows profile-lock errors
+for up to about 16 seconds. If shutdown cannot be confirmed or profile removal
+still fails, the command fails and keeps the remaining profile data. The
+retained path is included in the error. The option cannot be combined with a
+caller-supplied profile path.
 
 The test-profile command treats an app exit as a normal window close only when
 the debug-only host records a user-requested Tauri exit after the local service

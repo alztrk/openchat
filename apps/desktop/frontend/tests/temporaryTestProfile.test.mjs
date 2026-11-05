@@ -116,8 +116,8 @@ test('preserves the profile and reports a persistent removal error after bounded
       (error) => error.code === 'EPERM' && error.message === 'profile remains locked',
     );
 
-    assert.equal(attempts, 6);
-    assert.deepEqual(retryDelays, [100, 250, 500, 1000, 2000]);
+    assert.equal(attempts, 8);
+    assert.deepEqual(retryDelays, [100, 250, 500, 1000, 2000, 4000, 8000]);
     assert.equal(existsSync(profileRoot), true);
   } finally {
     if (existsSync(profileRoot)) rmSync(profileRoot, { recursive: true, force: true });

@@ -2,7 +2,7 @@ import { existsSync, lstatSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-const REMOVAL_RETRY_DELAYS_MS = [100, 250, 500, 1000, 2000];
+const REMOVAL_RETRY_DELAYS_MS = [100, 250, 500, 1000, 2000, 4000, 8000];
 const RETRYABLE_REMOVAL_CODES = new Set(['EBUSY', 'ENOTEMPTY', 'EPERM']);
 
 export async function removeTemporaryTestProfile(
