@@ -8,10 +8,12 @@ import type { ChatProject } from '@entities/project';
 import { listProjects } from '@features/chat/data';
 import {
   type NotificationPreferences,
+  commitNotificationTimeDraft,
   openWindowsNotificationSettings,
   readNotificationPreferences,
   readWindowsNotificationStatus,
   sendTestNotification,
+  type NotificationTimePreferenceKey,
   type WindowsNotificationStatus,
   writeNotificationPreference,
 } from '@shared/lib/preferences/notificationPreferences';
@@ -114,18 +116,25 @@ export function NotificationSettingsSection() {
   }, [loadDeliveryStatus]);
 
   const save = async <K extends keyof NotificationPreferences>(key: K, value: NotificationPreferences[K]) => {
-    if (isSaving || loadState !== 'loaded') return;
+    if (isSaving || loadState !== 'loaded') return false;
     const updated = { ...preferences, [key]: value };
     setIsSaving(true);
     setSaveFailed(false);
     try {
       await writeNotificationPreference(key, value);
       setPreferences(updated);
+      return true;
     } catch {
       setSaveFailed(true);
+      return false;
     } finally {
       setIsSaving(false);
     }
+  };
+
+  const commitQuietHoursDraft = async (key: NotificationTimePreferenceKey, input: HTMLInputElement) => {
+    const result = await commitNotificationTimeDraft(input.value, preferences[key], (nextValue) => save(key, nextValue));
+    if (result === 'invalid') input.value = preferences[key];
   };
 
   const toggleMutedProject = (projectId: string, muted: boolean) => {
@@ -348,17 +357,17 @@ export function NotificationSettingsSection() {
             <div className="grid gap-3 sm:grid-cols-2">
               <Input
                 disabled={isSaving || !preferences.quietHoursEnabled}
+                defaultValue={preferences.quietHoursStart}
                 label={t('notificationQuietHoursStart')}
-                onChange={(event) => void save('quietHoursStart', event.target.value)}
+                onBlur={(event) => void commitQuietHoursDraft('quietHoursStart', event.currentTarget)}
                 type="time"
-                value={preferences.quietHoursStart}
               />
               <Input
                 disabled={isSaving || !preferences.quietHoursEnabled}
+                defaultValue={preferences.quietHoursEnd}
                 label={t('notificationQuietHoursEnd')}
-                onChange={(event) => void save('quietHoursEnd', event.target.value)}
+                onBlur={(event) => void commitQuietHoursDraft('quietHoursEnd', event.currentTarget)}
                 type="time"
-                value={preferences.quietHoursEnd}
               />
             </div>
           </section>

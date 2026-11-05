@@ -16,6 +16,24 @@ export interface NotificationPreferences {
   mutedProjectIds: string[];
 }
 
+export type NotificationTimePreferenceKey = 'quietHoursStart' | 'quietHoursEnd';
+
+export type NotificationTimeDraftResult = 'invalid' | 'unchanged' | 'saved' | 'failed';
+
+export function isValidNotificationTime(value: string): boolean {
+  return /^([01]\d|2[0-3]):[0-5]\d$/.test(value);
+}
+
+export async function commitNotificationTimeDraft(
+  value: string,
+  currentValue: string,
+  save: (value: string) => Promise<boolean>,
+): Promise<NotificationTimeDraftResult> {
+  if (!isValidNotificationTime(value)) return 'invalid';
+  if (value === currentValue) return 'unchanged';
+  return (await save(value)) ? 'saved' : 'failed';
+}
+
 export type WindowsNotificationStatus =
   | 'enabled'
   | 'disabledForApplication'
@@ -102,7 +120,7 @@ export function writeNotificationPreference<K extends keyof NotificationPreferen
       }
     }
     if (key === 'quietHoursStart' || key === 'quietHoursEnd') {
-      if (typeof value !== 'string' || !/^([01]\d|2[0-3]):[0-5]\d$/.test(value)) {
+      if (typeof value !== 'string' || !isValidNotificationTime(value)) {
         throw new Error('Notification quiet hours are invalid.');
       }
     }
@@ -232,7 +250,7 @@ function readTimePreference(key: 'quietHoursStart' | 'quietHoursEnd'): string {
     throw new Error('Notification preferences could not be read.');
   }
   if (value === null) return defaultPreferences[key];
-  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(value)) throw new Error('Notification preferences are invalid.');
+  if (!isValidNotificationTime(value)) throw new Error('Notification preferences are invalid.');
   return value;
 }
 
