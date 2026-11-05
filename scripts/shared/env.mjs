@@ -2,6 +2,12 @@ import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { getWorkspaceRoot } from './runner.mjs';
 
+const localEnvTasks = new Set(['build', 'dev']);
+
+export function taskLoadsLocalEnv(taskName) {
+  return localEnvTasks.has(taskName);
+}
+
 export function loadLocalEnv() {
   const envPath = path.join(getWorkspaceRoot(), '.env');
   if (!existsSync(envPath)) return;

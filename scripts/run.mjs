@@ -1,5 +1,5 @@
 import { runTask } from './shared/task.mjs';
-import { loadLocalEnv, ensureOpenSSLEnvironment } from './shared/env.mjs';
+import { loadLocalEnv, ensureOpenSSLEnvironment, taskLoadsLocalEnv } from './shared/env.mjs';
 import { withWorkspaceArtifactLock } from './shared/artifact-task-lock.mjs';
 
 // Load all task modules
@@ -23,9 +23,9 @@ const tasks = {
 const artifactProducingTasks = new Set(['build', 'check', 'check-types', 'dev', 'dev-test-profile', 'startup-benchmark']);
 
 async function main() {
-  loadLocalEnv();
-  ensureOpenSSLEnvironment();
   const [taskName, ...args] = process.argv.slice(2);
+  if (taskLoadsLocalEnv(taskName)) loadLocalEnv();
+  ensureOpenSSLEnvironment();
   if (!taskName || taskName === '--help' || taskName === '-h') {
     printHelp();
     return;
