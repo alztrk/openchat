@@ -1,4 +1,4 @@
-import { Check, File, Folder, FolderOpen } from 'lucide-react';
+import { Check, File, Folder, FolderOpen, LoaderCircle } from 'lucide-react';
 import { cloneElement, isValidElement, lazy, Suspense, useEffect, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button, TitleTooltip } from '@shared/components';
@@ -6,7 +6,6 @@ import { readConversationFileChangeDiff, type ChatFileChangeDiff } from '@featur
 import type { ToolActivity } from './messageData';
 import { ReadCodeLines } from './ReadCodeLines';
 import { detectFileLanguage, highlightFileLines, useHighlightingState } from './FileSyntaxHighlight';
-import { DiffContent } from '../ChatFileChangesDiffViewer';
 import { PathHeading, PreviewBlock, ResultFootnote, ToolResultNotice } from './ToolSharedComponents';
 import {
   asRecord,
@@ -23,6 +22,9 @@ import {
 
 const HighlightedReadLines = lazy(() =>
   import('./HighlightedReadLines').then((module) => ({ default: module.HighlightedReadLines })),
+);
+const DiffContent = lazy(() =>
+  import('../ChatFileChangesDiffViewer').then((module) => ({ default: module.DiffContent })),
 );
 
 export function FileListingResult({
@@ -351,15 +353,31 @@ export function EditResult({ activity, conversationId }: { activity: ToolActivit
 
   return (
     <div className="flex h-64 min-h-0 flex-col overflow-hidden">
-      <DiffContent
-        canRevertHunks={false}
-        diff={diff}
-        flush
-        isLoading={isLoading}
-        mutatingHunkIndex={null}
-        onRevertHunk={() => undefined}
-        viewMode="unified"
-      />
+      {isLoading ? (
+        <FileDiffLoading />
+      ) : (
+        <Suspense fallback={<FileDiffLoading />}>
+          <DiffContent
+            canRevertHunks={false}
+            diff={diff}
+            flush
+            isLoading={false}
+            mutatingHunkIndex={null}
+            onRevertHunk={() => undefined}
+            viewMode="unified"
+          />
+        </Suspense>
+      )}
+    </div>
+  );
+}
+
+function FileDiffLoading() {
+  const { t } = useTranslation();
+  return (
+    <div className="flex min-h-0 flex-1 items-center justify-center" role="status">
+      <LoaderCircle aria-hidden="true" className="animate-spin text-accent motion-reduce:animate-none" size={18} />
+      <span className="sr-only">{t('fileChangesDiffLoading')}</span>
     </div>
   );
 }

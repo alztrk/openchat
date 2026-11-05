@@ -1938,6 +1938,7 @@
   "fileChangesBinary": "İkili dosya değişiklikleri metin olarak gösterilemiyor.",
   "fileChangesDiffUnavailable": "Bu dosya için metin farkı gösterilemiyor.",
   "fileChangesDiffTruncated": "Fark uzun olduğu için yalnızca ilk bölümü gösteriliyor.",
+  "fileChangesDiffLoading": "Dosya farkı yükleniyor…",
   "fileChangesActive": "Değişti",
   "fileChangesReverted": "Geri alındı",
   "fileChangesRevert": "Geri al",

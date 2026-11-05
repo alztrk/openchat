@@ -1938,6 +1938,7 @@
   "fileChangesBinary": "Los cambios en archivos binarios no se pueden mostrar como texto.",
   "fileChangesDiffUnavailable": "No hay una diferencia de texto disponible para este archivo.",
   "fileChangesDiffTruncated": "La diferencia es larga. Solo se muestra el comienzo.",
+  "fileChangesDiffLoading": "Cargando la diferencia del archivo…",
   "fileChangesActive": "Modificado",
   "fileChangesReverted": "Revertido",
   "fileChangesRevert": "Revertir",

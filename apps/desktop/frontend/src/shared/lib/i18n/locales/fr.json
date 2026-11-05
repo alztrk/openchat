@@ -1938,6 +1938,7 @@
   "fileChangesBinary": "Les modifications des fichiers binaires ne peuvent pas être affichées en texte.",
   "fileChangesDiffUnavailable": "Aucun diff texte n’est disponible pour ce fichier.",
   "fileChangesDiffTruncated": "Le diff est long. Seul le début est affiché.",
+  "fileChangesDiffLoading": "Chargement du diff du fichier…",
   "fileChangesActive": "Modifié",
   "fileChangesReverted": "Annulé",
   "fileChangesRevert": "Annuler",

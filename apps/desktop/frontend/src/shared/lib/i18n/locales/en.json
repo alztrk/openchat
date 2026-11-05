@@ -1938,6 +1938,7 @@
   "fileChangesBinary": "Binary file changes cannot be shown as text.",
   "fileChangesDiffUnavailable": "A text diff is unavailable for this file.",
   "fileChangesDiffTruncated": "The diff is long. Only its first part is shown.",
+  "fileChangesDiffLoading": "Loading file diff…",
   "fileChangesActive": "Changed",
   "fileChangesReverted": "Reverted",
   "fileChangesRevert": "Revert",
