@@ -179,7 +179,7 @@
 - [x] FE-10: Farklı yüzeye geçişte erişilebilir adı olan ana içerik odağı alıyor; ilk render’da odak değişmiyor ve aynı yüzeye basıldığında mevcut odak davranışı korunuyor. Regresyon testi eklendi.
 - [ ] FE-10: Gerçek yüzey geçişi, geri/ileri geçmişi ve geçici sohbet onayından sonraki odağı render edilmiş masaüstü arayüzünde doğrula; Windows UI aracı bu oturumda hedefe tıklayamadı.
 - [x] FE-11: Global kısayol dinleyicisi bubble aşamasına taşındı; kayıt modundaki capture listener tuş olayını önce engelliyor. Normal global dispatch ve listener cleanup fazı için regresyon testi eklendi.
-- [ ] FE-12: Komut paleti başlık çubuğu etiketi düzenlenmiş kısayol bağını göstersin; atanmamış durumda yerelleştirilmiş metin kullan.
+- [x] FE-12: Komut paleti başlık çubuğu etiketi düzenlenmiş kısayol bağını gösteriyor; atanmamış durumda yerelleştirilmiş metin kullanıyor. Kaynak regresyon testi eklendi.
 - [ ] FE-13: Başlık çubuğu aramasında input, görünür popup ve aktif sonuç arasında ARIA ilişkilerini kur; expanded durumunu gerçek görünürlükle eşleştir.
 - [ ] Settings içeriğindeki iç içe `<main>` landmark'ını tek ana içerik landmark'ı olacak şekilde düzelt ve erişilebilirlik ağacında doğrula.
 - [ ] Provider API key ve proje MCP editörlerine klavye ile submit davranışı ekle; doğrulama hatalarını ilgili alanlara bağla.

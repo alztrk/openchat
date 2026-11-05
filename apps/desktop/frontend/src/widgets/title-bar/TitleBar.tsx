@@ -4,6 +4,10 @@ import { useTranslation } from 'react-i18next';
 
 import { Button } from '@shared/components';
 import { Tooltip } from '@shared/components/Tooltip';
+import {
+  formatKeyboardShortcut,
+  useKeyboardShortcutsStore,
+} from '@shared/lib/preferences/keyboardShortcutsStore';
 import { getCurrentWindow, isTauri } from '@shared/lib/platform/tauri';
 import { TitleBarSearch } from './TitleBarSearch';
 
@@ -31,6 +35,10 @@ export function TitleBar({
   const { t } = useTranslation();
   const [maximized, setMaximized] = useState(false);
   const desktop = isTauri();
+  const commandPaletteBinding = useKeyboardShortcutsStore((state) => state.bindings.openCommandPalette);
+  const commandPaletteShortcutLabel = commandPaletteBinding
+    ? formatKeyboardShortcut(commandPaletteBinding)
+    : t('keyboardShortcutUnassigned');
 
   useEffect(() => {
     if (!desktop) return;
@@ -132,7 +140,9 @@ export function TitleBar({
             variant="ghost"
           >
             <Command aria-hidden="true" size={16} />
-            <kbd className="hidden rounded-control border border-border px-1 text-xs sm:inline">Ctrl K</kbd>
+            <kbd className="hidden rounded-control border border-border px-1 text-xs sm:inline">
+              {commandPaletteShortcutLabel}
+            </kbd>
           </Button>
         </Tooltip>
         <div className="titlebar-drag-region min-w-3 flex-1 self-stretch" />
