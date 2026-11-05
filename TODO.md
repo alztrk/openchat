@@ -390,3 +390,19 @@
 8. `10.8` gerçek OpenChat dogfooding
 
 Her aşamada değişikliği küçük bir dikey dilim halinde uygula; ilgili regresyon testini ekle, hedefli kontrolleri çalıştır, ardından merkezi `check`/CI kapsamını doğrula. Aşama ancak kabul maddeleri kanıtlandığında kapanır. Kurulum, WebView2, ağ ve dogfooding kanıtı olmadan statik bulguları runtime çözümü olarak işaretleme.
+
+---
+
+## Faz 11 — Çoklu Model Kıyaslama ve Sesli Etkileşim (Planlanan)
+
+### 11.1 Yan Yana Model Desteği (Split Chat / Multi-Model Execution)
+- [ ] Aynı istemin (prompt) seçilen 2-3 farklı modele (bulut ve yerel dahil) eşzamanlı gönderilmesi.
+- [ ] Yan yana dikey bölünmüş sohbet görünümü (Split View), bağımsız akış (stream) yönetimi.
+- [ ] Çıktı karşılaştırma metrikleri: İlk token gecikmesi (TTFT), saniye başına token hızı, toplam maliyet ve harcanan token kıyaslaması.
+- [ ] Kıyaslanan yanıtlar arasından tek tıkla tercih edilen yanıtı seçip konuşmaya o daldan devam edebilme.
+
+### 11.2 Sesli Etkileşim (Voice Interaction: STT & TTS)
+- [ ] Yerel veya tarayıcı API'si üzerinden sesli giriş (Speech-to-Text / yerel Whisper veya Web Speech API).
+- [ ] Model yanıtlarının otomatik veya isteğe bağlı seslendirilmesi (Text-to-Speech / sistem sesi veya yerel ses sentezleme).
+- [ ] Ses kaydı sırasında canlı dalga boyu/görsel geri bildirim, sessizlik algılama (VAD) ve ses kısayolları.
+- [ ] Ses verilerinin yerel gizlilik ilkelerine uygunluğu ve isteğe bağlı açılıp kapatılabilmesi.

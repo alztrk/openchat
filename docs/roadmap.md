@@ -100,6 +100,8 @@ These items are from static review. Treat them as open until focused runtime or 
 - **Message branches** — edit a message to create a new branch; response version selection
 - **Subagents** — child runs with context, tool allowlist, concurrency/timeout/usage bounds
 - **Reusable workflows** — parameterized recipes: initial prompt, context, provider, tools
+- **Side-by-side model comparison (Split Chat)** — concurrent multi-model execution, side-by-side response comparison, latency and token metrics
+- **Voice interaction (STT / TTS)** — native speech-to-text input (local Whisper / web speech), text-to-speech response playback, and hands-free voice controls
 
 ### Priority 2 — Provider expansion
 - **Ollama and LM Studio** — dedicated connections with health checks and model discovery
