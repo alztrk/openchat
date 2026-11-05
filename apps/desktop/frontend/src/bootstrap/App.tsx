@@ -553,6 +553,16 @@ export function App() {
     [navigateSurface, requestTemporaryChatExit],
   );
 
+  const openSearchProject = useCallback(
+    (projectId: string) => {
+      requestTemporaryChatExit(() => {
+        navigateSurface('chats');
+        useChatStore.getState().startNewChat(projectId);
+      });
+    },
+    [navigateSurface, requestTemporaryChatExit],
+  );
+
   const navigate = useCallback(
     (surface: AppSurface) => {
       if (surface === activeSurface) {
@@ -1035,6 +1045,7 @@ export function App() {
         onGoForward={() => moveInHistory(1)}
         onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
         onSelectConversation={openSearchConversation}
+        onSelectProject={openSearchProject}
         onToggleSidebar={activeSurface === 'chats' ? () => setIsSidebarOpen((open) => !open) : undefined}
       />
       <NavigationRail activeSurface={activeSurface} isDark={isDark} onNavigate={navigate} onToggleTheme={toggleTheme} />

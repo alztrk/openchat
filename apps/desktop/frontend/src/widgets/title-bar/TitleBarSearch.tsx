@@ -14,6 +14,7 @@ import { useTranslation } from 'react-i18next';
 import { Button, Input } from '@shared/components';
 import { unifiedStorage } from '@shared/lib/platform/storage/unifiedStorage';
 
+import { HistorySearchDialog } from '@features/chat/components/HistorySearchDialog';
 import {
   type ChatConversation,
   listConversationAttachments,
@@ -33,6 +34,7 @@ import {
 
 export interface TitleBarSearchProps {
   onSelectConversation(conversationId: string, messageId?: string | null, searchQuery?: string | null): void;
+  onSelectProject?: (projectId: string) => void;
 }
 
 interface ThreadMessageItem {
@@ -96,7 +98,7 @@ function renderHighlightedExcerpt(text: string, query: string): ReactNode {
   );
 }
 
-export function TitleBarSearch({ onSelectConversation }: TitleBarSearchProps) {
+export function TitleBarSearch({ onSelectConversation, onSelectProject }: TitleBarSearchProps) {
   const { t, i18n } = useTranslation();
   const [query, setQuery] = useState('');
   const [isOpen, setIsOpen] = useState(false);
@@ -498,7 +500,7 @@ export function TitleBarSearch({ onSelectConversation }: TitleBarSearchProps) {
 
   return (
     <div
-      className="relative flex min-w-0 w-full max-w-xs sm:max-w-sm md:max-w-md lg:max-w-lg items-center"
+      className="relative flex min-w-0 w-full max-w-xs items-center gap-1 sm:max-w-sm md:max-w-md lg:max-w-lg"
       data-titlebar-no-drag="true"
       ref={containerRef}
     >
@@ -553,6 +555,11 @@ export function TitleBarSearch({ onSelectConversation }: TitleBarSearchProps) {
           ) : null}
         </div>
       </div>
+
+      <HistorySearchDialog
+        onSelectConversation={onSelectConversation}
+        onSelectProject={onSelectProject}
+      />
 
       {showRecentSearches ? (
         <div

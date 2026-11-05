@@ -52,7 +52,7 @@ export class HistorySearchInputError extends Error {
 }
 
 export class SavedHistorySearchError extends Error {
-  constructor(readonly reason: 'loadFailed' | 'saveFailed' | 'limitReached') {
+  constructor(readonly reason: 'loadFailed' | 'saveFailed' | 'deleteFailed' | 'limitReached') {
     super('Saved history searches could not be updated.');
     this.name = 'SavedHistorySearchError';
   }
@@ -66,6 +66,37 @@ export const emptyHistorySearchFilters: HistorySearchFilters = {
   resultType: 'all',
   sortOrder: 'relevance',
 };
+
+export interface HistorySearchDateRange {
+  fromUnixMs: number | null;
+  throughUnixMs: number | null;
+}
+
+/** Converts inclusive local calendar dates to the service's exclusive upper bound. */
+export function historySearchDateRange(fromDate: string, throughDate: string): HistorySearchDateRange | null {
+  const fromUnixMs = parseLocalDate(fromDate, 0);
+  const throughUnixMs = parseLocalDate(throughDate, 1);
+  if (fromUnixMs === undefined || throughUnixMs === undefined) return null;
+  if (fromUnixMs !== null && throughUnixMs !== null && fromUnixMs >= throughUnixMs) return null;
+  return { fromUnixMs, throughUnixMs };
+}
+
+function parseLocalDate(value: string, dayOffset: number): number | null | undefined {
+  if (value.length === 0) return null;
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/u.exec(value);
+  if (!match) return undefined;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(0);
+  date.setFullYear(year, month - 1, day);
+  date.setHours(0, 0, 0, 0);
+  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) return undefined;
+  date.setDate(date.getDate() + dayOffset);
+  const timestamp = date.getTime();
+  if (!Number.isSafeInteger(timestamp) || timestamp > maximumTimestamp) return undefined;
+  return Math.max(0, timestamp);
+}
 
 export async function loadHistorySearchFilterOptions(): Promise<HistorySearchFilterOptions> {
   const response = await localServiceClient.call('chat.history.search_filters', {}, 15_000);
@@ -129,12 +160,12 @@ async function searchNativeHistory(
     'chat.history.search',
     {
       query,
-      fromUnixMs,
-      throughUnixMs,
-      providerId: filters.providerId,
-      modelId: filters.modelId,
-      projectId: filters.projectId,
-      isArchived: filters.isArchived,
+      ...(fromUnixMs === null ? {} : { fromUnixMs }),
+      ...(throughUnixMs === null ? {} : { throughUnixMs }),
+      ...(filters.providerId === null ? {} : { providerId: filters.providerId }),
+      ...(filters.modelId === null ? {} : { modelId: filters.modelId }),
+      ...(filters.projectId === null ? {} : { projectId: filters.projectId }),
+      ...(filters.isArchived === null ? {} : { isArchived: filters.isArchived }),
       resultType: nativeResultType(filters.resultType),
       sortOrder: filters.sortOrder,
     },
@@ -190,7 +221,7 @@ export function loadSavedHistorySearches(): SavedHistorySearch[] {
   }
 }
 
-export function saveHistorySearch(search: SavedHistorySearch): SavedHistorySearch[] {
+export async function saveHistorySearch(search: SavedHistorySearch): Promise<SavedHistorySearch[]> {
   const current = loadSavedHistorySearches();
   const locale = currentLocale();
   const remaining = current.filter(
@@ -199,14 +230,15 @@ export function saveHistorySearch(search: SavedHistorySearch): SavedHistorySearc
   if (remaining.length >= maximumSavedSearches) {
     throw new SavedHistorySearchError('limitReached');
   }
-  return writeSavedHistorySearches([search, ...remaining]);
+  return writeSavedHistorySearches([search, ...remaining], 'saveFailed');
 }
 
-export function deleteHistorySearch(name: string): SavedHistorySearch[] {
+export async function deleteHistorySearch(name: string): Promise<SavedHistorySearch[]> {
   const current = loadSavedHistorySearches();
   const locale = currentLocale();
   return writeSavedHistorySearches(
     current.filter((item) => item.name.toLocaleLowerCase(locale) !== name.toLocaleLowerCase(locale)),
+    'deleteFailed',
   );
 }
 
@@ -214,12 +246,15 @@ function currentLocale(): string {
   return i18n.resolvedLanguage ?? i18n.language;
 }
 
-function writeSavedHistorySearches(searches: SavedHistorySearch[]): SavedHistorySearch[] {
+async function writeSavedHistorySearches(
+  searches: SavedHistorySearch[],
+  failureReason: 'saveFailed' | 'deleteFailed',
+): Promise<SavedHistorySearch[]> {
   try {
-    unifiedStorage.setItem(savedSearchesKey, JSON.stringify(searches));
+    await unifiedStorage.setPersistedItem(savedSearchesKey, JSON.stringify(searches));
     return searches;
   } catch {
-    throw new SavedHistorySearchError('saveFailed');
+    throw new SavedHistorySearchError(failureReason);
   }
 }
 

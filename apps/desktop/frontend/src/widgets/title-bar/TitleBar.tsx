@@ -19,6 +19,7 @@ export interface TitleBarProps {
   onGoForward(): void;
   onOpenCommandPalette(): void;
   onSelectConversation(conversationId: string, messageId?: string | null, searchQuery?: string | null): void;
+  onSelectProject?: (projectId: string) => void;
   onToggleSidebar?(): void;
 }
 
@@ -30,6 +31,7 @@ export function TitleBar({
   onGoForward,
   onOpenCommandPalette,
   onSelectConversation,
+  onSelectProject,
   onToggleSidebar,
 }: TitleBarProps) {
   const { t } = useTranslation();
@@ -130,7 +132,7 @@ export function TitleBar({
           ) : null}
         </div>
         <div className="titlebar-drag-region min-w-3 flex-1 self-stretch" />
-        <TitleBarSearch onSelectConversation={onSelectConversation} />
+        <TitleBarSearch onSelectConversation={onSelectConversation} onSelectProject={onSelectProject} />
         <Tooltip label={t('commandPaletteOpen')}>
           <Button
             aria-label={t('commandPaletteOpen')}
