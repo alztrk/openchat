@@ -150,7 +150,7 @@ export const devTestProfile = {
 
 export const startupBenchmark = {
   name: 'startup-benchmark',
-  description: 'Measures debug startup time from process start to React-ready.',
+  description: 'Measures debug startup time to Tauri window show completion and React-ready.',
   args: [
     { name: '--help', short: '-h', description: 'Show this help message' },
   ],
@@ -187,17 +187,26 @@ export const startupBenchmark = {
         interruptController.throwIfInterrupted();
 
         const result = JSON.parse(fs.readFileSync(resultPath, 'utf8'));
+        const processToWindowShowCompletedMs = result?.processToWindowVisibleMs;
         const elapsedMs = result?.processToReactReadyMs;
-        const renderedRootClass = result?.performanceSnapshot?.renderedRootClass;
+        const performanceSnapshot = result?.performanceSnapshot;
+        const renderedRootClass = performanceSnapshot?.renderedRootClass;
+        const startupMilestones = performanceSnapshot?.startupMilestones;
         if (
+          typeof processToWindowShowCompletedMs !== 'number' ||
+          !Number.isFinite(processToWindowShowCompletedMs) ||
+          processToWindowShowCompletedMs <= 0 ||
           typeof elapsedMs !== 'number' ||
           !Number.isFinite(elapsedMs) ||
           elapsedMs <= 0 ||
+          processToWindowShowCompletedMs > elapsedMs ||
           typeof renderedRootClass !== 'string' ||
           !renderedRootClass.split(/\s+/u).includes('app-shell') ||
-          renderedRootClass.includes('startup-error-page')
+          renderedRootClass.includes('startup-error-page') ||
+          !Array.isArray(startupMilestones) ||
+          !startupMilestones.some((milestone) => milestone?.name === 'react-first-commit-complete')
         ) {
-          throw new Error('The desktop did not reach the OpenChat application shell.');
+          throw new Error('The desktop did not reach the OpenChat application shell with startup milestones.');
         }
 
         const databasePath = path.join(profileRoot, 'storage', 'db', 'openchat.sqlite3');
@@ -212,7 +221,41 @@ export const startupBenchmark = {
           throw new Error('The benchmark profile database is missing or plaintext SQLite.');
         }
 
-        process.stdout.write(`Debug startup to React ready: ${elapsedMs.toFixed(1)} ms; app shell and encrypted database verified.\n`);
+        process.stdout.write(
+          `Debug startup to Tauri window show() completion: ${processToWindowShowCompletedMs.toFixed(1)} ms; ` +
+            `React ready: ${elapsedMs.toFixed(1)} ms; app shell and encrypted database verified.\n`,
+        );
+        process.stdout.write('Renderer startup milestones (navigation-relative):\n');
+        let previousMilestoneTimeMs = 0;
+        for (const milestone of startupMilestones) {
+          if (typeof milestone?.name !== 'string' || typeof milestone?.timeMs !== 'number') continue;
+          const deltaMs = milestone.timeMs - previousMilestoneTimeMs;
+          process.stdout.write(
+            `  ${milestone.name}: ${milestone.timeMs.toFixed(1)} ms (+${deltaMs.toFixed(1)} ms)\n`,
+          );
+          previousMilestoneTimeMs = milestone.timeMs;
+        }
+        const navigation = performanceSnapshot?.navigation;
+        if (navigation && typeof navigation === 'object') {
+          process.stdout.write(
+            `Navigation: DOM interactive ${navigation.domInteractiveMs?.toFixed(1) ?? 'unavailable'} ms, ` +
+              `DOMContentLoaded ${navigation.domContentLoadedMs?.toFixed(1) ?? 'unavailable'} ms, ` +
+              `load ${navigation.loadEventEndMs?.toFixed(1) ?? 'unavailable'} ms.\n`,
+          );
+        }
+        const resources = performanceSnapshot?.resources;
+        if (Array.isArray(resources)) {
+          const latestResources = resources.slice(0, 20);
+          process.stdout.write(`Latest renderer resources (top ${latestResources.length} of ${resources.length} by response end):\n`);
+          for (const resource of latestResources) {
+            if (typeof resource?.path !== 'string' || typeof resource?.responseEndMs !== 'number') continue;
+            process.stdout.write(
+              `  ${resource.responseEndMs.toFixed(1)} ms ${resource.path} ` +
+                `(${resource.durationMs.toFixed(1)} ms, ` +
+                `${resource.encodedBytes} encoded/${resource.decodedBytes} decoded/${resource.transferBytes} transferred bytes)\n`,
+            );
+          }
+        }
       },
       cleanup: async () => {
         if (profileRoot) await removeTemporaryTestProfile(profileRoot);

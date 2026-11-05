@@ -22,18 +22,21 @@ use windows_core::{Interface, PWSTR};
 
 #[cfg(feature = "startup-benchmark")]
 use std::sync::atomic::{AtomicBool, Ordering};
+#[cfg(feature = "startup-benchmark")]
+use std::sync::Mutex;
 
 #[cfg(feature = "startup-benchmark")]
 struct StartupBenchmarkState {
     started_at: std::time::Instant,
     result_path: std::path::PathBuf,
     reported: AtomicBool,
+    window_visible_at_ms: Mutex<Option<f64>>,
 }
 
 #[cfg(feature = "startup-benchmark")]
 macro_rules! app_invoke_handler {
     ($($command:path),* $(,)?) => {
-        tauri::generate_handler![$($command,)* startup_benchmark_ready]
+        tauri::generate_handler![$($command,)* startup_benchmark_ready, startup_benchmark_window_visible]
     };
 }
 
@@ -123,6 +126,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             started_at: startup_started_at,
             result_path,
             reported: AtomicBool::new(false),
+            window_visible_at_ms: Mutex::new(None),
         })
     };
 
@@ -198,10 +202,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             {
                 main_window_builder = main_window_builder.initialization_script(
                     r#"(() => {
+                      window.__OPENCHAT_STARTUP_BENCHMARK__ = {
+                        mark: (milestone) => performance.mark(`openchat-startup:${milestone}`),
+                        reportWindowVisible: () => window.__TAURI_INTERNALS__.invoke('startup_benchmark_window_visible'),
+                      };
                       let windowVisible = false;
                       let reportReactReady = () => {};
                       window.addEventListener('openchat-startup-window-visible', () => {
                         windowVisible = true;
+                        performance.mark('openchat-startup:window-visible-event');
                         reportReactReady();
                       }, { once: true });
                       const observeReactRoot = () => {
@@ -216,16 +225,30 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                           const navigation = performance.getEntriesByType('navigation')[0];
                           const resources = performance.getEntriesByType('resource')
                             .filter((entry) => entry.initiatorType === 'script' || entry.initiatorType === 'css' || /\.(m?js|css)(?:$|\?)/.test(new URL(entry.name).pathname))
-                            .map((entry) => ({
-                              file: new URL(entry.name).pathname.split('/').pop(),
-                              initiatorType: entry.initiatorType,
-                              startTimeMs: Math.round(entry.startTime * 10) / 10,
-                              responseEndMs: Math.round(entry.responseEnd * 10) / 10,
-                              durationMs: Math.round(entry.duration * 10) / 10,
-                              transferBytes: entry.transferSize,
-                            }))
+                            .map((entry) => {
+                              const resourcePath = new URL(entry.name).pathname;
+                              const path = resourcePath.startsWith('/@fs/')
+                                ? `/assets/${resourcePath.split('/').pop() ?? 'resource'}`
+                                : resourcePath;
+                              return {
+                                path,
+                                initiatorType: entry.initiatorType,
+                                startTimeMs: Math.round(entry.startTime * 10) / 10,
+                                responseEndMs: Math.round(entry.responseEnd * 10) / 10,
+                                durationMs: Math.round(entry.duration * 10) / 10,
+                                encodedBytes: entry.encodedBodySize,
+                                decodedBytes: entry.decodedBodySize,
+                                transferBytes: entry.transferSize,
+                              };
+                            })
                             .sort((left, right) => right.responseEndMs - left.responseEndMs)
-                            .slice(0, 20);
+                          const startupMilestones = performance.getEntriesByType('mark')
+                            .filter((entry) => entry.name.startsWith('openchat-startup:'))
+                            .map((entry) => ({
+                              name: entry.name.slice('openchat-startup:'.length),
+                              timeMs: Math.round(entry.startTime * 10) / 10,
+                            }))
+                            .sort((left, right) => left.timeMs - right.timeMs);
                           const performanceSnapshot = {
                             renderedRootClass: String(root.firstElementChild?.className ?? ''),
                             renderedRootText: (root.textContent ?? '').slice(0, 600),
@@ -234,6 +257,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                               domContentLoadedMs: navigation.domContentLoadedEventEnd,
                               loadEventEndMs: navigation.loadEventEnd,
                             } : null,
+                            startupMilestones,
                             resources,
                           };
                           void window.__TAURI_INTERNALS__.invoke('startup_benchmark_ready', { performanceSnapshot }).catch((error) => {
@@ -798,6 +822,21 @@ fn report_webview_renderer_ready(
 
 #[cfg(feature = "startup-benchmark")]
 #[tauri::command]
+fn startup_benchmark_window_visible(app: tauri::AppHandle) -> Result<(), String> {
+    let benchmark = app.state::<StartupBenchmarkState>();
+    let elapsed_ms = benchmark.started_at.elapsed().as_secs_f64() * 1000.0;
+    let mut window_visible_at_ms = benchmark
+        .window_visible_at_ms
+        .lock()
+        .map_err(|_| "The startup benchmark state is unavailable.")?;
+    if window_visible_at_ms.is_none() {
+        *window_visible_at_ms = Some(elapsed_ms);
+    }
+    Ok(())
+}
+
+#[cfg(feature = "startup-benchmark")]
+#[tauri::command]
 fn startup_benchmark_ready(
     app: tauri::AppHandle,
     performance_snapshot: serde_json::Value,
@@ -807,7 +846,13 @@ fn startup_benchmark_ready(
         return Ok(());
     }
     let elapsed_ms = benchmark.started_at.elapsed().as_secs_f64() * 1000.0;
+    let window_visible_at_ms = benchmark
+        .window_visible_at_ms
+        .lock()
+        .map_err(|_| "The startup benchmark state is unavailable.")?
+        .ok_or("The benchmark did not record the first visible window.")?;
     let result = serde_json::json!({
+        "processToWindowVisibleMs": window_visible_at_ms,
         "processToReactReadyMs": elapsed_ms,
         "performanceSnapshot": performance_snapshot,
     });
