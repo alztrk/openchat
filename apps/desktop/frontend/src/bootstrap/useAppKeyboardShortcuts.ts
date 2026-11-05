@@ -112,8 +112,8 @@ export function useAppKeyboardShortcuts({
           break;
       }
     };
-    window.addEventListener('keydown', handleGlobalShortcut, true);
-    return () => window.removeEventListener('keydown', handleGlobalShortcut, true);
+    window.addEventListener('keydown', handleGlobalShortcut);
+    return () => window.removeEventListener('keydown', handleGlobalShortcut);
   }, [
     activeConversationId,
     activeSurface,
