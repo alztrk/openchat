@@ -9,7 +9,7 @@ updates:
     open-pull-requests-limit: 5
 
   - package-ecosystem: cargo
-    directory: /apps/desktop/tauri
+    directory: /
     schedule:
       interval: weekly
     cooldown:
@@ -23,12 +23,3 @@ updates:
     cooldown:
       default-days: 7
     open-pull-requests-limit: 5
-
-  - package-ecosystem: cargo
-    directory: /services/openchat-local-service
-    schedule:
-      interval: weekly
-    cooldown:
-      default-days: 7
-    open-pull-requests-limit: 5
-
