@@ -337,6 +337,41 @@ fn storage_error_retry_policy_matches_only_transient_failures() {
 }
 
 #[test]
+fn sqlite_error_diagnostics_classify_query_mapping_failures_without_column_data() {
+    assert_eq!(
+        sqlite_error_code(&rusqlite::Error::InvalidColumnType(
+            3,
+            "private-column-name".to_owned(),
+            rusqlite::types::Type::Null,
+        )),
+        "invalid_column_type"
+    );
+    assert_eq!(
+        sqlite_error_code(&rusqlite::Error::InvalidColumnIndex(3)),
+        "invalid_column_index"
+    );
+    assert_eq!(
+        sqlite_error_code(&rusqlite::Error::InvalidColumnName(
+            "private-column-name".to_owned()
+        )),
+        "invalid_column_name"
+    );
+    assert_eq!(
+        sqlite_error_code(&rusqlite::Error::QueryReturnedNoRows),
+        "query_returned_no_rows"
+    );
+    assert_eq!(
+        sqlite_error_code(&rusqlite::Error::InvalidParameterCount(1, 2)),
+        "invalid_parameter_count"
+    );
+    let sql_error = Connection::open_in_memory()
+        .expect("open in-memory database")
+        .prepare("SELECT missing_attachment_library_column")
+        .expect_err("missing column should fail while preparing SQL");
+    assert_eq!(sqlite_error_code(&sql_error), "sql_input_error");
+}
+
+#[test]
 fn copilot_catalog_diagnostic_rejects_unbounded_stage_values() {
     let directory = TestDirectory::new();
     let storage = AppStorage::open_at(directory.0.clone()).expect("open test storage");

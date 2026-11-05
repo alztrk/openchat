@@ -672,6 +672,62 @@ fn initialized_chat_storage(directory: &TestDirectory) -> AppStorage {
 }
 
 #[tokio::test]
+async fn attachment_library_returns_an_empty_page_for_fresh_storage() {
+    let directory = TestDirectory::new();
+    let storage = initialized_chat_storage(&directory);
+
+    let page = dispatch(
+        "storage.chat.attachments.list",
+        &json!({
+            "offset": 0,
+            "limit": 30,
+            "query": null,
+            "availability": "available",
+        }),
+        &storage,
+    )
+    .await
+    .expect("list attachments in fresh storage");
+
+    assert_eq!(page, json!({"items": [], "nextOffset": null}));
+}
+
+#[tokio::test]
+async fn attachment_library_lists_a_saved_attachment() {
+    let directory = TestDirectory::new();
+    let storage = initialized_chat_storage(&directory);
+    let conversation_id = create_attachment_test_conversation(&storage).await;
+    let message_id = format!("attachment-message-{}", Uuid::new_v4().simple());
+    let attachment_id = format!("attachment-{}", Uuid::new_v4().simple());
+    let bytes = b"saved library content";
+
+    dispatch(
+        "storage.chat.messages.save",
+        &attachment_message_input(&conversation_id, &message_id, &attachment_id, bytes),
+        &storage,
+    )
+    .await
+    .expect("save message with attachment");
+
+    let page = dispatch(
+        "storage.chat.attachments.list",
+        &json!({"limit": 30, "availability": "available"}),
+        &storage,
+    )
+    .await
+    .expect("list saved attachments");
+
+    assert_eq!(page["items"].as_array().map(Vec::len), Some(1));
+    assert_eq!(page["items"][0]["conversationId"], conversation_id);
+    assert_eq!(page["items"][0]["messageId"], message_id);
+    assert_eq!(page["items"][0]["attachmentId"], attachment_id);
+    assert_eq!(page["items"][0]["fileName"], "notes.txt");
+    assert_eq!(page["items"][0]["sizeBytes"], bytes.len());
+    assert_eq!(page["items"][0]["isAvailable"], true);
+    assert_eq!(page["nextOffset"], Value::Null);
+}
+
+#[tokio::test]
 async fn message_history_pages_cover_all_rows_in_stable_chronological_order() {
     let directory = TestDirectory::new();
     let storage = initialized_chat_storage(&directory);

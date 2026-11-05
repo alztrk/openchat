@@ -258,10 +258,10 @@ pub(super) fn query_attachment_library_batch(
                     generation.id, generation.prompt, generation.model_id, generation.provider_route,
                     COALESCE(annotation.is_favorite, 0), COALESCE(annotation.tags_json, '[]'),
                     CASE WHEN ?2 = 1 THEN COALESCE((
-                        SELECT indexed.content FROM attachment_text_index indexed
-                        WHERE indexed.conversation_id = m.conversation_id
-                          AND indexed.message_id = m.id
-                          AND indexed.attachment_id = json_extract(attachment.value, '$.id')
+                        SELECT attachment_index.content FROM attachment_text_index attachment_index
+                        WHERE attachment_index.conversation_id = m.conversation_id
+                          AND attachment_index.message_id = m.id
+                          AND attachment_index.attachment_id = json_extract(attachment.value, '$.id')
                     ), '') ELSE '' END
              FROM messages m
              JOIN conversations c ON c.id = m.conversation_id
@@ -308,7 +308,7 @@ pub(super) fn query_attachment_library_batch(
                       json_extract(attachment.value, '$.id') ASC
              LIMIT ?3 OFFSET ?4",
         )
-        .map_err(storage_error)?;
+        .map_err(|error| attachment_library_storage_error("attachment_library_page_query", error))?;
     let rows = statement
         .query_map(
             params![
@@ -398,9 +398,16 @@ pub(super) fn query_attachment_library_batch(
                 })
             },
         )
-        .map_err(storage_error)?;
+        .map_err(|error| {
+            attachment_library_storage_error("attachment_library_page_query", error)
+        })?;
     rows.collect::<rusqlite::Result<Vec<_>>>()
-        .map_err(storage_error)
+        .map_err(|error| attachment_library_storage_error("attachment_library_page_query", error))
+}
+
+fn attachment_library_storage_error(stage: &'static str, error: rusqlite::Error) -> ServiceError {
+    let diagnostic_code = format!("{stage}_{}", sqlite_error_code(&error));
+    storage_error(error).with_diagnostic_code(diagnostic_code)
 }
 
 pub(super) fn attachment_text_index_enabled(
@@ -413,7 +420,9 @@ pub(super) fn attachment_text_index_enabled(
             |row| row.get::<_, String>(0),
         )
         .optional()
-        .map_err(storage_error)?;
+        .map_err(|error| {
+            attachment_library_storage_error("attachment_library_setting_read", error)
+        })?;
     match value.as_deref() {
         None | Some("false") => Ok(false),
         Some("true") => Ok(true),

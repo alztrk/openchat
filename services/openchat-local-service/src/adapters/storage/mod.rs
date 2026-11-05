@@ -127,6 +127,14 @@ pub(crate) fn sqlite_error_code(error: &rusqlite::Error) -> &'static str {
             _ => "sqlite_failure",
         },
         rusqlite::Error::InvalidQuery => "invalid_query",
+        rusqlite::Error::InvalidColumnType(_, _, _) => "invalid_column_type",
+        rusqlite::Error::InvalidColumnIndex(_) => "invalid_column_index",
+        rusqlite::Error::InvalidColumnName(_) => "invalid_column_name",
+        rusqlite::Error::QueryReturnedNoRows => "query_returned_no_rows",
+        rusqlite::Error::QueryReturnedMoreThanOneRow => "query_returned_multiple_rows",
+        rusqlite::Error::InvalidParameterName(_) => "invalid_parameter_name",
+        rusqlite::Error::InvalidParameterCount(_, _) => "invalid_parameter_count",
+        rusqlite::Error::SqlInputError { .. } => "sql_input_error",
         rusqlite::Error::FromSqlConversionFailure(_, _, _) => "stored_value_invalid",
         rusqlite::Error::ToSqlConversionFailure(source) => {
             #[cfg(windows)]
