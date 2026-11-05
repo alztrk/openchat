@@ -49,6 +49,19 @@ function renderAndRevealWindow(render: () => void): void {
 }
 
 async function startApplication(options: { startWithEmptyStorage?: boolean } = {}): Promise<void> {
+  if (!isTauri()) {
+    const [, { DesktopRequiredPage }, i18nModule, [React, root]] = await Promise.all([
+      loadAppStyles(),
+      import('./DesktopRequiredPage'),
+      import('@shared/lib/i18n/i18n'),
+      getReactRoot(),
+    ]);
+    await i18nModule.i18nReady;
+    document.documentElement.lang = i18nModule.i18n.language;
+    root.render(React.createElement(DesktopRequiredPage));
+    return;
+  }
+
   if (new URLSearchParams(location.search).get('computerUseOverlay') === '1') {
     const [{ ComputerUseOverlay }, [React, root]] = await Promise.all([import('./ComputerUseOverlay'), getReactRoot()]);
     root.render(React.createElement(ComputerUseOverlay));

@@ -1,5 +1,7 @@
 {
   "appTitle": "OpenChat",
+  "desktopRequiredTitle": "Se necesita la aplicación de escritorio de OpenChat",
+  "desktopRequiredDescription": "Los chats y las herramientas locales solo están disponibles en la aplicación de escritorio de OpenChat. Ábrela para continuar.",
   "newChat": "Nuevo chat",
   "commandPaletteTitle": "Paleta de comandos",
   "commandPaletteDescription": "Busca conversaciones, proyectos, modelos o agentes, abre una sección o ejecuta una acción.",

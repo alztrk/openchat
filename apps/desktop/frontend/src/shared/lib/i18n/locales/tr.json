@@ -1,5 +1,7 @@
 {
   "appTitle": "OpenChat",
+  "desktopRequiredTitle": "OpenChat masaüstü uygulaması gerekli",
+  "desktopRequiredDescription": "Sohbetler ve yerel araçlar yalnızca OpenChat masaüstü uygulamasında kullanılabilir. Devam etmek için masaüstü uygulamasını açın.",
   "newChat": "Yeni sohbet",
   "commandPaletteTitle": "Komut paleti",
   "commandPaletteDescription": "Sohbet, proje, model veya ajan arayın; bir bölüme gidin ya da işlem başlatın.",

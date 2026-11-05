@@ -219,7 +219,7 @@
 - [ ] FE-19 runtime: Gerçek bir model indirmesinde Windows WebView2 erişilebilirlik ağacındaki ilerleme adını ve byte değer metninin ilerlemeyle güncellenmesini doğrula.
 - [x] `src/app/AppManager.tsx` consumer/import graph'ını tarama; kaynakta aktif consumer bulunmadı, çalışan giriş `bootstrap/main.tsx` üzerinden `bootstrap/App.tsx` yükleyip render ediyor.
 - [x] `QA-12`: `AppManager` dosyası ve barrel export'ları tüketici/import taramasından sonra kaldırıldı; çalışan giriş `bootstrap/main.tsx` üzerinden `bootstrap/App.tsx` render ediyor.
-- [x] Aynı makinedeki browser'dan Vite loopback URL'sini aç; uygulama kabuğu geliyor, Tauri RPC kullanan alanlar loading/error durumunda kalıyor.
+- [x] Aynı makinedeki browser'dan Vite loopback URL'sini aç; uygulama kabuğuna giden gezinme artık Tauri servisleri başlatılmadan yerelleştirilmiş masaüstü gereksinimi ekranında sonlanıyor. Bu renderer guard'ı HTTP portunu kapatmaz veya LAN sınırı kanıtı sayılmaz.
 - [x] Vite HTTP yanıtında dış `Origin` için CORS izin başlığının olmadığını, `localhost` loopback origininin ise izinli olduğunu doğrula; bu yalnız header probe'dur, browser enforcement testi değildir.
 - [ ] Gerçek browser'da farklı HTTPS Origin/PNA, DNS rebinding, HMR ve LAN erişimini ölç; paketlenmiş uygulamanın dinleyen port envanterini çıkar.
 - [x] Yerel llama.cpp başlatma argümanlarını ve sabitlenmiş upstream `b11349` CORS/auth varsayılanlarını kaynak koddan incele; statik riski raporla.
@@ -323,6 +323,7 @@
 
 ### 10.5 Dış erişim ve yerel model sınırı
 
+- [x] `CROSS-02` kullanılabilirlik dilimi: Tauri dışı başlangıç, storage/sidecar/overlay akışından önce erişilebilir ve beş dilde yerelleştirilmiş masaüstü gereksinimi ekranı gösteriyor. Runtime'da aynı Vite URL'si tarayıcıda bu ekranı, Tauri penceresinde normal sohbeti gösterdi. Guard yalnız UI davranışını değiştirir; HTTP isteğini, kaynakların indirilmesini veya loopback portunu engellemez.
 - [ ] `CROSS-02/03/06`: Farklı Origin, CORS preflight, PNA, DNS rebinding, HMR ve LAN davranışlarını kontrollü ortamda ölç; aktif llama.cpp port keşfini, boş port seçimi/child başlatma yarışını ve paketlenmiş dinleyici envanterini doğrula.
 - [ ] Ölçüm sonucuna göre Vite dev server ve yerel model API'si için en dar gerekli erişim sınırını seç; gerekiyorsa auth, origin kısıtı veya Tauri üzerinden kontrollü proxy tasarımını uygula.
 - [ ] Kabul: hangi yerel/dış originin hangi endpoint'e erişebildiği kanıtla kayıtlıdır; aynı makine testi LAN güvenliği kanıtı olarak kullanılmaz; paketlenmiş sürümde beklenmeyen listener kalmaz.

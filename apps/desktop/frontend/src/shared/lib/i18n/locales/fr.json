@@ -1,5 +1,7 @@
 {
   "appTitle": "OpenChat",
+  "desktopRequiredTitle": "L’application de bureau OpenChat est requise",
+  "desktopRequiredDescription": "Les conversations et les outils locaux sont disponibles uniquement dans l’application de bureau OpenChat. Ouvrez-la pour continuer.",
   "newChat": "Nouvelle discussion",
   "commandPaletteTitle": "Palette de commandes",
   "commandPaletteDescription": "Recherchez des discussions, projets, modèles ou agents, ouvrez une section ou lancez une action.",

@@ -1416,6 +1416,17 @@ html[data-motion-input='keyboard'] .openchat-popover-enter[data-state='closed'] 
   transition: none;
 }
 
+.desktop-required-page {
+  display: grid;
+  width: 100%;
+  min-height: 100dvh;
+  min-width: 0;
+  grid-template-rows: minmax(0, 1fr) 30px;
+  overflow: hidden;
+  background: rgb(var(--background));
+  color: rgb(var(--text));
+}
+
 .startup-error-page {
   display: grid;
   width: 100%;

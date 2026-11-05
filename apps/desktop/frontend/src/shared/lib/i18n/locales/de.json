@@ -1,5 +1,7 @@
 {
   "appTitle": "OpenChat",
+  "desktopRequiredTitle": "OpenChat-Desktop-App erforderlich",
+  "desktopRequiredDescription": "Chats und lokale Werkzeuge sind nur in der OpenChat-Desktop-App verfügbar. Öffnen Sie die Desktop-App, um fortzufahren.",
   "newChat": "Neuer Chat",
   "commandPaletteTitle": "Befehlspalette",
   "commandPaletteDescription": "Finde Unterhaltungen, Projekte, Modelle oder Agenten, öffne einen Bereich oder führe eine Aktion aus.",

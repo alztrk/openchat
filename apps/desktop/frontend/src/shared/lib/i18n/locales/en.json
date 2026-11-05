@@ -1,5 +1,7 @@
 {
   "appTitle": "OpenChat",
+  "desktopRequiredTitle": "OpenChat desktop app required",
+  "desktopRequiredDescription": "Chats and local tools are available only in the OpenChat desktop app. Open the desktop app to continue.",
   "newChat": "New chat",
   "commandPaletteTitle": "Command palette",
   "commandPaletteDescription": "Find a conversation, project, model, or agent, open a workspace area, or run an action.",
