@@ -48,7 +48,7 @@ export const dev = {
     ensureNoArguments('dev', []);
     buildLocalService('debug', false);
     ensureFrontendDependencies();
-    runCommand(process.execPath, [tauriCliPath, 'dev'], { cwd: getTauriDirectory() });
+    runCommand(process.execPath, [tauriCliPath, 'dev', '--config', 'tauri.dev.conf.json'], { cwd: getTauriDirectory() });
   },
 };
 
@@ -118,7 +118,7 @@ export const devTestProfile = {
         let markerContents;
         try {
           result = await runInterruptibleCommand(process.execPath, [
-            tauriCliPath, 'dev', '--features', 'desktop-profile-test-support',
+            tauriCliPath, 'dev', '--config', 'tauri.dev.conf.json', '--features', 'desktop-profile-test-support',
             '--', '--', '--desktop-test-profile-root', profileRoot,
             '--desktop-test-run-id', runId,
           ], {
@@ -176,7 +176,7 @@ export const startupBenchmark = {
         interruptController.throwIfInterrupted();
 
         await runInterruptibleCommand(process.execPath, [
-          tauriCliPath, 'dev', '--features', 'startup-benchmark',
+          tauriCliPath, 'dev', '--config', 'tauri.dev.conf.json', '--features', 'startup-benchmark',
           '--', '--', '--startup-benchmark-root', profileRoot,
         ], {
           cwd: getTauriDirectory(),
