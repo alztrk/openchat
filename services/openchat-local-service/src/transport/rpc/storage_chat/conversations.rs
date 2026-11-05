@@ -623,7 +623,16 @@ pub(super) fn save_message(
     let mut failure_stage = "transaction_begin";
     let mut published_attachment_directory = false;
     let mut attachment_cleanup_required = false;
+    let mut durable_commit_mode_enabled = false;
     let write_result = (|| -> Result<(), ServiceError> {
+        if !attachments.is_empty() {
+            failure_stage = "attachment_durability_setup";
+            connection
+                .execute_batch("PRAGMA synchronous = FULL;")
+                .map_err(storage_error)?;
+            durable_commit_mode_enabled = true;
+        }
+
         let transaction = connection
             .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
             .map_err(storage_error)?;
@@ -718,9 +727,11 @@ pub(super) fn save_message(
         if let Some(staged) = staged.as_ref()
             && let Some(staging) = staged.staging.as_ref()
         {
-            match fs::rename(staging, &staged.destination) {
+            match publish_staged_attachment_directory(staging, &staged.destination) {
                 Ok(()) => published_attachment_directory = true,
-                Err(_) if attachment_directory_matches(&staged.destination, &attachments)? => {
+                Err(AttachmentDirectoryPublishError::Rename)
+                    if attachment_directory_matches(&staged.destination, &attachments)? =>
+                {
                     let _ = remove_directory_if_present(staging);
                 }
                 Err(_) => return Err(storage_unavailable()),
@@ -729,6 +740,15 @@ pub(super) fn save_message(
         failure_stage = "transaction_commit";
         transaction.commit().map_err(storage_error)
     })();
+    if durable_commit_mode_enabled
+        && let Err(error) = connection.execute_batch("PRAGMA synchronous = NORMAL;")
+    {
+        log_message_save_failure(
+            storage,
+            "attachment_durability_reset",
+            &storage_error(error),
+        );
+    }
     if let Err(error) = &write_result {
         if error.code != "operation_cancelled" {
             log_message_save_failure(storage, failure_stage, error);

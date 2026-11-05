@@ -8,7 +8,9 @@ use zeroize::Zeroizing;
 
 use crate::{protocol::MAX_REQUEST_PARAMETER_NODES, storage::AppStorage};
 
-use super::attachments::StagedAttachments;
+use super::attachments::{
+    AttachmentDirectoryPublishError, StagedAttachments, publish_staged_attachment_directory,
+};
 use super::{
     MAX_AGENT_METADATA_BYTES, MAX_STRUCTURED_METADATA_JSON_NESTING, dispatch, optional_json_array,
     parse_stored_agent_json, sanitize_stored_metadata, sanitize_tool_activity_metadata,
@@ -756,6 +758,13 @@ async fn message_and_attachment_are_persisted_together_on_success() {
     .await
     .expect("save message with attachment");
 
+    let synchronous = storage
+        .connect()
+        .expect("connect after durable attachment save")
+        .query_row("PRAGMA synchronous", [], |row| row.get::<_, i64>(0))
+        .expect("read restored SQLite synchronization mode");
+    assert_eq!(synchronous, 1, "non-attachment writes retain NORMAL mode");
+
     let attachment_path = storage
         .root()
         .join("attachments")
@@ -1127,6 +1136,12 @@ async fn message_commit_failure_removes_the_newly_published_attachment_directory
     .expect_err("deferred foreign key must fail the message commit");
 
     assert_eq!(error.code, "storage_chat_unavailable");
+    let synchronous = storage
+        .connect()
+        .expect("connect after rolled-back durable attachment save")
+        .query_row("PRAGMA synchronous", [], |row| row.get::<_, i64>(0))
+        .expect("read restored SQLite synchronization mode");
+    assert_eq!(synchronous, 1);
     let attachment_directory = storage
         .root()
         .join("attachments")
@@ -1200,6 +1215,32 @@ async fn rollback_cleanup_preserves_published_attachments_when_message_exists() 
     assert_eq!(
         fs::read(attachment_path).expect("read preserved attachment"),
         b"preserve committed attachment"
+    );
+}
+
+#[test]
+fn attachment_publication_failure_keeps_the_staging_directory() {
+    let directory = TestDirectory::new();
+    let staging = directory.0.join(".stage-message-uuid");
+    let destination = directory.0.join("message");
+    fs::create_dir(&staging).expect("create staged attachment directory");
+    fs::write(staging.join("attachment.data"), b"staged bytes")
+        .expect("write staged attachment data");
+    fs::create_dir(&destination).expect("create conflicting destination directory");
+    fs::write(destination.join("existing.data"), b"existing bytes")
+        .expect("write conflicting destination data");
+
+    assert!(matches!(
+        publish_staged_attachment_directory(&staging, &destination),
+        Err(AttachmentDirectoryPublishError::Rename)
+    ));
+    assert!(
+        staging.is_dir(),
+        "failed publication keeps recoverable staging"
+    );
+    assert_eq!(
+        fs::read(destination.join("existing.data")).expect("read destination contents"),
+        b"existing bytes"
     );
 }
 

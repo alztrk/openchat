@@ -667,8 +667,23 @@ pub(super) fn stage_attachments(
     message_id: &str,
     attachments: &[AttachmentInput],
 ) -> Result<StagedAttachments, ServiceError> {
+    #[cfg(unix)]
+    let attachments_root_was_missing =
+        optional_checked_directory(storage_root, "attachments")?.is_none();
     let root = checked_directory(storage_root, "attachments", true)?;
+    #[cfg(unix)]
+    if attachments_root_was_missing {
+        sync_directory(storage_root).map_err(|_| storage_unavailable())?;
+    }
+
+    #[cfg(unix)]
+    let conversation_was_missing = optional_checked_directory(&root, conversation_id)?.is_none();
     let conversation = checked_child_directory(&root, conversation_id, true)?;
+    #[cfg(unix)]
+    if conversation_was_missing {
+        sync_directory(&root).map_err(|_| storage_unavailable())?;
+    }
+
     let destination_path = conversation.join(message_id);
     match fs::symlink_metadata(&destination_path) {
         Ok(metadata) => {
@@ -701,10 +716,81 @@ pub(super) fn stage_attachments(
             return Err(storage_unavailable());
         }
     }
+    #[cfg(unix)]
+    sync_directory(&staging).map_err(|_| storage_unavailable())?;
+
     Ok(StagedAttachments {
         staging: Some(staging),
         destination: destination_path,
     })
+}
+
+/// Publishes a complete attachment directory and persists the rename where the platform exposes
+/// a supported durability operation.
+///
+/// The distinction prevents a failed parent-directory flush from being treated as a harmless
+/// destination race after the directory has already been renamed.
+pub(super) enum AttachmentDirectoryPublishError {
+    Rename,
+    Flush,
+}
+
+pub(super) fn publish_staged_attachment_directory(
+    staging: &Path,
+    destination: &Path,
+) -> Result<(), AttachmentDirectoryPublishError> {
+    #[cfg(windows)]
+    {
+        use std::os::windows::ffi::OsStrExt;
+        use windows_sys::Win32::Storage::FileSystem::{MOVEFILE_WRITE_THROUGH, MoveFileExW};
+
+        let staging_wide = staging
+            .as_os_str()
+            .encode_wide()
+            .chain(Some(0))
+            .collect::<Vec<_>>();
+        let destination_wide = destination
+            .as_os_str()
+            .encode_wide()
+            .chain(Some(0))
+            .collect::<Vec<_>>();
+        // SAFETY: Both path buffers are NUL-terminated and live through the Win32 call.
+        let moved = unsafe {
+            MoveFileExW(
+                staging_wide.as_ptr(),
+                destination_wide.as_ptr(),
+                MOVEFILE_WRITE_THROUGH,
+            )
+        };
+        if moved == 0 {
+            if fs::symlink_metadata(staging).is_ok() {
+                Err(AttachmentDirectoryPublishError::Rename)
+            } else {
+                Err(AttachmentDirectoryPublishError::Flush)
+            }
+        } else {
+            Ok(())
+        }
+    }
+
+    #[cfg(unix)]
+    {
+        let parent = destination
+            .parent()
+            .ok_or_else(|| AttachmentDirectoryPublishError::Rename)?;
+        fs::rename(staging, destination).map_err(|_| AttachmentDirectoryPublishError::Rename)?;
+        sync_directory(parent).map_err(|_| AttachmentDirectoryPublishError::Flush)
+    }
+
+    #[cfg(not(any(unix, windows)))]
+    {
+        fs::rename(staging, destination).map_err(|_| AttachmentDirectoryPublishError::Rename)
+    }
+}
+
+#[cfg(unix)]
+fn sync_directory(path: &Path) -> std::io::Result<()> {
+    std::fs::File::open(path)?.sync_all()
 }
 
 pub(super) fn attachment_directory_matches(
