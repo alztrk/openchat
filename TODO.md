@@ -174,6 +174,8 @@
 ### Bulgular ve takip işleri
 
 - [x] Üç ayrı uzman incelemesi, çapraz kaynak taraması, ilk kullanım arayüz gözlemi, aynı makineden Vite adresini browser'da açma ve CORS yanıt başlığı probu tamamlandı; bulgular gitignored rapora kaydedildi. Normal browser uygulama kabuğunu açtı; Tauri RPC gerektiren alanlar loading/error durumunda kaldı. Görsel stüdyosu geliştirme runtime'ında hata sınırına düştü; eksik yerel dependency dosyası nedeniyle release kusuru olarak genellenmedi.
+- [x] FE-01 kod dilimi: Model seçimi `null` olduğunda boş sohbet ekranı artık karşılama metni yerine model seçme yönergesini gösteriyor; seçili model ve katalog boş durumları için kaynak regresyon testi eklendi.
+- [ ] FE-01 runtime: Model kataloğu dolu durumda model seçilmeden ve seçildikten sonra boş sohbet başlığını masaüstünde doğrula.
 - [x] FE-09: MCP kategori etiketleri ve filtreleri ortak kategori normalizasyonuna bağlandı; yedi kategori için etiket ve çapraz filtre eşleşme regresyonları eklendi.
 - [ ] FE-09: MCP ekranındaki etiketleri ve filtre sonuçlarını değişiklik sonrası render edilmiş UI otomasyonuyla doğrula; bu oturumdaki Windows tıklama aracı iki yöntemde de hedefe ulaşamadı.
 - [x] FE-10: Farklı yüzeye geçişte erişilebilir adı olan ana içerik odağı alıyor; ilk render’da odak değişmiyor ve aynı yüzeye basıldığında mevcut odak davranışı korunuyor. Regresyon testi eklendi.

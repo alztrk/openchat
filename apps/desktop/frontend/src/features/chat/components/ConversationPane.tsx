@@ -753,7 +753,7 @@ export function ConversationPane({
                   chatGptWorkspaceSelectionRequired={chatGptWorkspaceSelectionRequired}
                   onOpenConnections={onOpenSettings}
                   onRetryModels={() => void refreshModels(true)}
-                  selectedModel={selectedModel !== undefined}
+                  selectedModel={selectedModel !== null}
                 />
               )}
               {errorCode === 'searchMessageUnavailable' ? (
