@@ -56,12 +56,30 @@ use super::{
     commands::{AssistantResponseNotification, UserQuestionNotification},
 };
 
-const APP_USER_MODEL_ID: &str = "OpenChat.Desktop";
+#[derive(Clone, Copy)]
+struct ToastIdentity {
+    app_user_model_id: &'static str,
+    activator_class_id: GUID,
+    activator_class_id_text: &'static str,
+    shortcut_name: &'static str,
+}
+
+// Debug toast registration must not replace the installed app's Search shortcut or COM activator.
+const RELEASE_TOAST_IDENTITY: ToastIdentity = ToastIdentity {
+    app_user_model_id: "OpenChat.Desktop",
+    activator_class_id: GUID::from_u128(0x7db420de_9ea4_4e36_91f5_8d2224017381),
+    activator_class_id_text: "7db420de-9ea4-4e36-91f5-8d2224017381",
+    shortcut_name: "OpenChat.lnk",
+};
+const DEVELOPMENT_TOAST_IDENTITY: ToastIdentity = ToastIdentity {
+    app_user_model_id: "OpenChat.Desktop.Dev",
+    activator_class_id: GUID::from_u128(0x2f4a8c7e_74f3_4e9e_b80d_d84b3d39e1e1),
+    activator_class_id_text: "2f4a8c7e-74f3-4e9e-b80d-d84b3d39e1e1",
+    shortcut_name: "OpenChat Dev.lnk",
+};
 const REPLY_INPUT_ID: &str = "assistant_reply";
 const REPLY_ACTION_ID: &str = "assistant_reply_send";
 const MAXIMUM_RETAINED_NOTIFICATIONS: usize = 64;
-const ACTIVATOR_CLASS_ID: GUID = GUID::from_u128(0x7db420de_9ea4_4e36_91f5_8d2224017381);
-const ACTIVATOR_CLASS_ID_TEXT: &str = "7db420de-9ea4-4e36-91f5-8d2224017381";
 
 static APP_IDENTITY: OnceLock<Result<(), String>> = OnceLock::new();
 static TOAST_IDENTITY: OnceLock<Result<(), String>> = OnceLock::new();
@@ -115,7 +133,7 @@ pub(crate) fn read_status() -> String {
 }
 
 fn read_status_on_current_thread() -> String {
-    let Ok(notifier) = ToastsNotifier::new(Some(APP_USER_MODEL_ID)) else {
+    let Ok(notifier) = ToastsNotifier::new(Some(current_toast_identity().app_user_model_id)) else {
         return "unavailable".to_owned();
     };
     // SAFETY: The notifier owns a live COM interface for the duration of this call.
@@ -338,7 +356,7 @@ fn notifier() -> Result<&'static ToastsNotifier, String> {
 
 fn notifier_instance() -> Result<&'static ToastsNotifier, String> {
     match NOTIFIER.get_or_init(|| {
-        ToastsNotifier::new(Some(APP_USER_MODEL_ID))
+        ToastsNotifier::new(Some(current_toast_identity().app_user_model_id))
             .map_err(|_| "Windows notification delivery is unavailable.".to_owned())
     }) {
         Ok(notifier) => Ok(notifier),
@@ -355,16 +373,24 @@ fn register_app_identity() -> Result<(), String> {
 }
 
 fn register_toast_identity() -> Result<(), String> {
-    // SAFETY: The macro supplies a static NUL-terminated application identifier.
-    unsafe { SetCurrentProcessExplicitAppUserModelID(w!("OpenChat.Desktop")) }
-        .map_err(|_| "Windows could not register the OpenChat notification identity.".to_owned())?;
+    let identity = current_toast_identity();
+    let app_user_model_id = encode_wide(identity.app_user_model_id);
+    // SAFETY: The identity buffer is NUL-terminated and remains live through the API call.
+    unsafe {
+        SetCurrentProcessExplicitAppUserModelID(PCWSTR::from_raw(app_user_model_id.as_ptr()))
+    }
+    .map_err(|_| "Windows could not register the OpenChat notification identity.".to_owned())?;
     ensure_toast_shortcut()
 }
 
 fn register_custom_activator() -> Result<(), String> {
-    let class_id = format!("{{{ACTIVATOR_CLASS_ID_TEXT}}}");
+    let identity = current_toast_identity();
+    let class_id = format!("{{{}}}", identity.activator_class_id_text);
     set_registry_string(
-        "Software\\Classes\\AppUserModelId\\OpenChat.Desktop",
+        &format!(
+            "Software\\Classes\\AppUserModelId\\{}",
+            identity.app_user_model_id
+        ),
         "CustomActivator",
         &OsString::from(class_id),
     )?;
@@ -374,7 +400,10 @@ fn register_custom_activator() -> Result<(), String> {
     let mut local_server = OsString::from("\"");
     local_server.push(executable.as_os_str());
     local_server.push("\" -Embedding");
-    let subkey = format!("Software\\Classes\\CLSID\\{{{ACTIVATOR_CLASS_ID_TEXT}}}\\LocalServer32");
+    let subkey = format!(
+        "Software\\Classes\\CLSID\\{{{}}}\\LocalServer32",
+        identity.activator_class_id_text
+    );
     set_registry_string(&subkey, "", &local_server)?;
     Ok(())
 }
@@ -606,7 +635,7 @@ fn start_activation_class_server() -> Result<(), String> {
                 // SAFETY: COM was initialized on this thread and both interface references remain alive for registration.
                 unsafe {
                     CoRegisterClassObject(
-                        &ACTIVATOR_CLASS_ID,
+                        &current_toast_identity().activator_class_id,
                         &factory,
                         CLSCTX_LOCAL_SERVER,
                         REGCLS_MULTIPLEUSE,
@@ -686,7 +715,8 @@ fn create_toast_shortcut() -> Result<(), String> {
     let property_store: IPropertyStore = shell_link.cast().map_err(|_| {
         "Windows could not configure the OpenChat notification identity.".to_owned()
     })?;
-    let app_user_model_id = encode_wide("OpenChat.Desktop");
+    let identity = current_toast_identity();
+    let app_user_model_id = encode_wide(identity.app_user_model_id);
     // SAFETY: The requested allocation size matches the live UTF-16 source buffer copied below.
     let app_user_model_id_buffer = unsafe {
         CoTaskMemAlloc(std::mem::size_of_val(app_user_model_id.as_slice())).cast::<u16>()
@@ -740,7 +770,7 @@ fn create_toast_shortcut() -> Result<(), String> {
     };
     // SAFETY: `programs_path` is the CoTaskMem allocation returned above and has not been freed yet.
     unsafe { CoTaskMemFree(Some(programs_path.0.cast())) };
-    let shortcut_path = std::path::PathBuf::from(path).join("OpenChat.lnk");
+    let shortcut_path = std::path::PathBuf::from(path).join(identity.shortcut_name);
     let shortcut_wide = shortcut_path
         .as_os_str()
         .encode_wide()
@@ -749,6 +779,18 @@ fn create_toast_shortcut() -> Result<(), String> {
     // SAFETY: `shortcut_wide` is a live NUL-terminated path buffer and `persist_file` is a live COM interface.
     unsafe { persist_file.Save(PCWSTR::from_raw(shortcut_wide.as_ptr()), true) }
         .map_err(|_| "Windows could not save the OpenChat notification shortcut.".to_owned())
+}
+
+fn toast_identity(is_development_build: bool) -> &'static ToastIdentity {
+    if is_development_build {
+        &DEVELOPMENT_TOAST_IDENTITY
+    } else {
+        &RELEASE_TOAST_IDENTITY
+    }
+}
+
+fn current_toast_identity() -> &'static ToastIdentity {
+    toast_identity(cfg!(debug_assertions))
 }
 
 fn retain_notification(notification: Notification<'static>) -> Result<(), String> {
@@ -817,7 +859,25 @@ unsafe fn bounded_wide_string(
 
 #[cfg(test)]
 mod tests {
-    use super::{bounded_wide_string, BoundedWideStringError};
+    use super::{bounded_wide_string, toast_identity, BoundedWideStringError};
+
+    #[test]
+    fn development_notifications_use_separate_search_and_activation_registration() {
+        let development = toast_identity(true);
+        let release = toast_identity(false);
+
+        assert_eq!(development.app_user_model_id, "OpenChat.Desktop.Dev");
+        assert_eq!(development.shortcut_name, "OpenChat Dev.lnk");
+        assert_eq!(release.app_user_model_id, "OpenChat.Desktop");
+        assert_eq!(release.shortcut_name, "OpenChat.lnk");
+        assert_ne!(development.app_user_model_id, release.app_user_model_id);
+        assert_ne!(development.activator_class_id, release.activator_class_id);
+        assert_ne!(
+            development.activator_class_id_text,
+            release.activator_class_id_text
+        );
+        assert_ne!(development.shortcut_name, release.shortcut_name);
+    }
 
     #[test]
     fn bounded_wide_string_accepts_terminated_text_at_the_limit() {
