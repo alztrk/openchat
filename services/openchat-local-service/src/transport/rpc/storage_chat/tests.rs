@@ -1305,6 +1305,15 @@ async fn startup_attachment_cleanup_removes_orphans_and_preserves_live_message_a
     .await
     .expect("save a live attachment message");
 
+    let stale_stage_directory =
+        live_directory.join(format!(".stage-{live_message_id}-{}", Uuid::new_v4()));
+    fs::create_dir_all(&stale_stage_directory).expect("create abandoned attachment stage");
+    fs::write(
+        stale_stage_directory.join("partial.data"),
+        b"attachment data left before publication",
+    )
+    .expect("write partial attachment data");
+
     let orphan_message_directory = live_directory.join("orphaned-message");
     fs::create_dir_all(&orphan_message_directory).expect("create orphan message directory");
     fs::write(
@@ -1319,10 +1328,53 @@ async fn startup_attachment_cleanup_removes_orphans_and_preserves_live_message_a
 
     super::cleanup_orphaned_attachment_directories(&storage)
         .expect("recover orphaned attachment directories");
+    super::recover_abandoned_attachment_staging_directories(&storage)
+        .expect("remove abandoned attachment staging directories");
 
     assert!(live_attachment.exists());
+    assert!(!stale_stage_directory.exists());
     assert!(!orphan_message_directory.exists());
     assert!(!orphan_directory.exists());
+}
+
+#[tokio::test]
+async fn normal_and_cancellable_attachment_cleanup_preserve_staging_directories() {
+    let directory = TestDirectory::new();
+    let storage = initialized_chat_storage(&directory);
+    let conversation_id = create_attachment_test_conversation(&storage).await;
+    let stage_directory = storage
+        .root()
+        .join("attachments")
+        .join(&conversation_id)
+        .join(format!(".stage-active-message-{}", Uuid::new_v4()));
+    fs::create_dir_all(&stage_directory).expect("create active attachment stage");
+
+    super::cleanup_orphaned_attachment_directories(&storage)
+        .expect("normal cleanup should preserve an active stage");
+    assert!(stage_directory.exists());
+
+    let (_sender, cancellation) = watch::channel(false);
+    super::cleanup_orphaned_attachment_directories_with_cancellation(&storage, &cancellation)
+        .expect("cancellable cleanup should preserve an active stage");
+    assert!(stage_directory.exists());
+}
+
+#[tokio::test]
+async fn startup_attachment_cleanup_preserves_malformed_stage_names() {
+    let directory = TestDirectory::new();
+    let storage = initialized_chat_storage(&directory);
+    let conversation_id = create_attachment_test_conversation(&storage).await;
+    let malformed_stage = storage
+        .root()
+        .join("attachments")
+        .join(&conversation_id)
+        .join(".stage-message-not-a-generated-uuid");
+    fs::create_dir_all(&malformed_stage).expect("create malformed staging directory");
+
+    let result = super::recover_abandoned_attachment_staging_directories(&storage);
+
+    assert!(result.is_err());
+    assert!(malformed_stage.exists());
 }
 
 #[tokio::test]

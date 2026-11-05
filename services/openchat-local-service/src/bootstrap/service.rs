@@ -11,7 +11,7 @@ use std::{
     io,
     path::PathBuf,
     sync::{
-        Arc,
+        Arc, OnceLock,
         atomic::{AtomicBool, AtomicU8, Ordering},
     },
 };
@@ -526,6 +526,7 @@ async fn run_protocol(
     let user_question_broker = UserQuestionBroker::default();
     let shutdown_requested = Arc::new(AtomicBool::new(false));
     let startup_recovered = Arc::new(AtomicBool::new(false));
+    let startup_attachment_stages_recovered = Arc::new(OnceLock::new());
 
     loop {
         let mut line = match read_bounded_request_line(&mut input).await {
@@ -747,6 +748,7 @@ async fn run_protocol(
         let operation_questions = user_question_broker.clone();
         let operation_shutdown = Arc::clone(&shutdown_requested);
         let operation_recovery = Arc::clone(&startup_recovered);
+        let operation_attachment_recovery = Arc::clone(&startup_attachment_stages_recovered);
         let operation_output = output.clone();
         let operation_map = Arc::clone(&active_operations);
         let id = request.id.clone();
@@ -767,6 +769,7 @@ async fn run_protocol(
                     user_question_broker: operation_questions,
                     shutdown_requested: operation_shutdown,
                     startup_recovered: operation_recovery,
+                    startup_attachment_stages_recovered: operation_attachment_recovery,
                 }));
                 if let Err(error) = &result
                     && let Some(operation) = diagnostic_operation

@@ -107,7 +107,8 @@ mod validation;
 use attachments::*;
 pub(super) use attachments::{
     cleanup_orphaned_attachment_directories,
-    cleanup_orphaned_attachment_directories_with_cancellation, remove_attachment_directory,
+    cleanup_orphaned_attachment_directories_with_cancellation,
+    recover_abandoned_attachment_staging_directories, remove_attachment_directory,
 };
 use conversations::*;
 use errors::*;

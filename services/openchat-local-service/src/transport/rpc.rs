@@ -6,7 +6,7 @@
 use std::{
     path::Path,
     sync::{
-        Arc,
+        Arc, OnceLock,
         atomic::{AtomicBool, Ordering},
     },
 };
@@ -78,6 +78,15 @@ pub(crate) struct RpcDispatchContext<'a> {
     pub(crate) user_question_broker: UserQuestionBroker,
     pub(crate) shutdown_requested: Arc<AtomicBool>,
     pub(crate) startup_recovered: Arc<AtomicBool>,
+    pub(crate) startup_attachment_stages_recovered: Arc<OnceLock<()>>,
+}
+
+fn recover_attachment_stages_once(storage: &AppStorage, recovered: &OnceLock<()>) {
+    recovered.get_or_init(|| {
+        if storage_chat::recover_abandoned_attachment_staging_directories(storage).is_err() {
+            eprintln!("orphaned_attachment_cleanup_recovery_failed");
+        }
+    });
 }
 
 /// Dispatches one request to its method family and returns the serialized result value.
@@ -93,6 +102,7 @@ pub(crate) async fn dispatch(context: RpcDispatchContext<'_>) -> Result<Value, S
         user_question_broker,
         shutdown_requested,
         startup_recovered,
+        startup_attachment_stages_recovered,
     } = context;
     let method = request.method.clone();
     if method.starts_with("internal.tool_permissions.") {
@@ -259,6 +269,7 @@ pub(crate) async fn dispatch(context: RpcDispatchContext<'_>) -> Result<Value, S
             if storage_chat::cleanup_orphaned_attachment_directories(storage).is_err() {
                 eprintln!("orphaned_attachment_cleanup_recovery_failed");
             }
+            recover_attachment_stages_once(storage, &startup_attachment_stages_recovered);
             if crate::conversation_archive::recover_interrupted_restore_stages(storage).is_err() {
                 eprintln!("conversation_archive_restore_cleanup_recovery_failed");
             }
@@ -981,6 +992,31 @@ mod tests {
     }
 
     #[test]
+    fn startup_attachment_stage_recovery_runs_once_per_service() {
+        let directory = TestDirectory::new();
+        let storage = AppStorage::open_at(directory.0.clone()).expect("open test storage");
+        let conversation_directory = storage
+            .root()
+            .join("attachments")
+            .join("recovery-conversation");
+        fs::create_dir_all(&conversation_directory).expect("create conversation attachment path");
+        let stale_stage =
+            conversation_directory.join(format!(".stage-stale-message-{}", Uuid::new_v4()));
+        fs::create_dir(&stale_stage).expect("create abandoned stage");
+        let recovered = std::sync::OnceLock::new();
+
+        super::recover_attachment_stages_once(&storage, &recovered);
+        assert!(!stale_stage.exists());
+
+        let active_stage =
+            conversation_directory.join(format!(".stage-active-message-{}", Uuid::new_v4()));
+        fs::create_dir(&active_stage).expect("create active stage");
+        super::recover_attachment_stages_once(&storage, &recovered);
+
+        assert!(active_stage.exists());
+    }
+
+    #[test]
     fn database_startup_errors_expose_stable_codes_and_retry_only_transient_failures() {
         let transient = database_initialization_error(
             "storage_initialization_failed",
@@ -1112,6 +1148,7 @@ mod tests {
             user_question_broker: UserQuestionBroker::default(),
             shutdown_requested: Arc::new(AtomicBool::new(false)),
             startup_recovered: Arc::new(AtomicBool::new(true)),
+            startup_attachment_stages_recovered: Arc::new(std::sync::OnceLock::new()),
         })
         .await
         .expect_err("temporary IDs must not use the durable send route");
@@ -1159,6 +1196,7 @@ mod tests {
             user_question_broker: UserQuestionBroker::default(),
             shutdown_requested: Arc::new(AtomicBool::new(false)),
             startup_recovered: Arc::new(AtomicBool::new(true)),
+            startup_attachment_stages_recovered: Arc::new(std::sync::OnceLock::new()),
         })
         .await
         .expect_err("the ChatGPT service should validate the saved OAuth route");
@@ -1201,6 +1239,7 @@ mod tests {
                 user_question_broker: UserQuestionBroker::default(),
                 shutdown_requested: Arc::new(AtomicBool::new(false)),
                 startup_recovered: Arc::new(AtomicBool::new(true)),
+                startup_attachment_stages_recovered: Arc::new(std::sync::OnceLock::new()),
             })
             .await
             .expect_err("unscoped file access must not be dispatched");
@@ -1302,6 +1341,7 @@ mod tests {
             user_question_broker: UserQuestionBroker::default(),
             shutdown_requested: Arc::new(AtomicBool::new(false)),
             startup_recovered: Arc::new(AtomicBool::new(true)),
+            startup_attachment_stages_recovered: Arc::new(std::sync::OnceLock::new()),
         })
         .await;
 
@@ -1378,6 +1418,7 @@ mod tests {
             user_question_broker: UserQuestionBroker::default(),
             shutdown_requested: Arc::new(AtomicBool::new(false)),
             startup_recovered: Arc::new(AtomicBool::new(true)),
+            startup_attachment_stages_recovered: Arc::new(std::sync::OnceLock::new()),
         })
         .await
         .expect_err("oversized instructions must be rejected before starting a run");
@@ -1475,6 +1516,7 @@ mod tests {
             user_question_broker: UserQuestionBroker::default(),
             shutdown_requested: Arc::new(AtomicBool::new(false)),
             startup_recovered: Arc::new(AtomicBool::new(true)),
+            startup_attachment_stages_recovered: Arc::new(std::sync::OnceLock::new()),
         })
         .await
         .expect("list runs");

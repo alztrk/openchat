@@ -965,6 +965,71 @@ pub(crate) fn cleanup_orphaned_attachment_directories(
     cleanup_orphaned_attachment_directories_inner(storage, None)
 }
 
+pub(crate) fn recover_abandoned_attachment_staging_directories(
+    storage: &AppStorage,
+) -> Result<(), ServiceError> {
+    let Some(attachments) = optional_checked_directory(storage.root(), "attachments")? else {
+        return Ok(());
+    };
+    let mut cleanup_failed = false;
+
+    for entry in fs::read_dir(&attachments).map_err(|_| storage_unavailable())? {
+        let entry = entry.map_err(|_| storage_unavailable())?;
+        let conversation_name = match entry.file_name().into_string() {
+            Ok(name) if is_safe_identifier(&name) => name,
+            _ => {
+                cleanup_failed = true;
+                continue;
+            }
+        };
+        let conversation_directory =
+            match checked_child_directory(&attachments, &conversation_name, false) {
+                Ok(directory) => directory,
+                Err(_) => {
+                    cleanup_failed = true;
+                    continue;
+                }
+            };
+
+        for staged_entry in
+            fs::read_dir(&conversation_directory).map_err(|_| storage_unavailable())?
+        {
+            let staged_entry = staged_entry.map_err(|_| storage_unavailable())?;
+            let staged_name = match staged_entry.file_name().into_string() {
+                Ok(name) if name.starts_with(".stage-") => name,
+                Ok(_) => continue,
+                Err(_) => {
+                    cleanup_failed = true;
+                    continue;
+                }
+            };
+            if !is_valid_attachment_staging_directory_name(&staged_name) {
+                cleanup_failed = true;
+                continue;
+            }
+            let staging_directory =
+                match checked_directory(&conversation_directory, &staged_name, false) {
+                    Ok(directory) => directory,
+                    Err(_) => {
+                        cleanup_failed = true;
+                        continue;
+                    }
+                };
+            match fs::remove_dir_all(staging_directory) {
+                Ok(()) => {}
+                Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+                Err(_) => cleanup_failed = true,
+            }
+        }
+    }
+
+    if cleanup_failed {
+        Err(storage_unavailable())
+    } else {
+        Ok(())
+    }
+}
+
 pub(crate) fn cleanup_orphaned_attachment_directories_with_cancellation(
     storage: &AppStorage,
     cancellation: &tokio::sync::watch::Receiver<bool>,
@@ -1090,6 +1155,24 @@ fn cleanup_orphaned_attachment_directories_inner(
     } else {
         Ok(())
     }
+}
+
+fn is_valid_attachment_staging_directory_name(name: &str) -> bool {
+    let Some(staging_name) = name.strip_prefix(".stage-") else {
+        return false;
+    };
+    if !staging_name.is_ascii() || staging_name.len() < 38 {
+        return false;
+    }
+
+    let separator_index = staging_name.len() - 37;
+    if staging_name.as_bytes()[separator_index] != b'-' {
+        return false;
+    }
+    let message_id = &staging_name[..separator_index];
+    let uuid = &staging_name[separator_index + 1..];
+    is_safe_identifier(message_id)
+        && uuid::Uuid::parse_str(uuid).is_ok_and(|parsed| parsed.to_string() == uuid)
 }
 
 fn check_cleanup_cancellation(
