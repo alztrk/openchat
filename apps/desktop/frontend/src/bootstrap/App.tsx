@@ -176,6 +176,7 @@ export function App() {
   const workspaceDropRef = useRef<HTMLDivElement>(null);
   const rightPanelShellRef = useRef<HTMLDivElement>(null);
   const surfaceHeadingRef = useRef<HTMLElement>(null);
+  const previousActiveSurfaceRef = useRef(activeSurface);
   const lastInteractionMethod = useRef<'keyboard' | 'pointer'>('pointer');
   const goalBudgetPauseAttemptKey = useRef<string | null>(null);
   const initializeChat = useChatStore((state) => state.initialize);
@@ -192,6 +193,12 @@ export function App() {
   const startNewChat = useChatStore((state) => state.startNewChat);
   const startTemporaryChat = useChatStore((state) => state.startTemporaryChat);
   const isDark = theme === 'dark' || (theme === 'system' && systemIsDark);
+
+  useEffect(() => {
+    if (previousActiveSurfaceRef.current === activeSurface) return;
+    previousActiveSurfaceRef.current = activeSurface;
+    surfaceHeadingRef.current?.focus({ preventScroll: true });
+  }, [activeSurface]);
 
   useEffect(() => {
     if (!isTauri()) return;

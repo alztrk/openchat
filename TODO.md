@@ -176,7 +176,12 @@
 - [x] Üç ayrı uzman incelemesi, çapraz kaynak taraması, ilk kullanım arayüz gözlemi, aynı makineden Vite adresini browser'da açma ve CORS yanıt başlığı probu tamamlandı; bulgular gitignored rapora kaydedildi. Normal browser uygulama kabuğunu açtı; Tauri RPC gerektiren alanlar loading/error durumunda kaldı. Görsel stüdyosu geliştirme runtime'ında hata sınırına düştü; eksik yerel dependency dosyası nedeniyle release kusuru olarak genellenmedi.
 - [x] FE-09: MCP kategori etiketleri ve filtreleri ortak kategori normalizasyonuna bağlandı; yedi kategori için etiket ve çapraz filtre eşleşme regresyonları eklendi.
 - [ ] FE-09: MCP ekranındaki etiketleri ve filtre sonuçlarını değişiklik sonrası render edilmiş UI otomasyonuyla doğrula; bu oturumdaki Windows tıklama aracı iki yöntemde de hedefe ulaşamadı.
-- [ ] Yüzey geçişinde odak yönetimini; kısayol kaydı sırasındaki global kısayol yan etkisini; başlık çubuğu kısayol etiketini ve arama combobox erişilebilirliğini düzelt.
+- [x] FE-10: Farklı yüzeye geçişte erişilebilir adı olan ana içerik odağı alıyor; ilk render’da odak değişmiyor ve aynı yüzeye basıldığında mevcut odak davranışı korunuyor. Regresyon testi eklendi.
+- [ ] FE-10: Gerçek yüzey geçişi, geri/ileri geçmişi ve geçici sohbet onayından sonraki odağı render edilmiş masaüstü arayüzünde doğrula; Windows UI aracı bu oturumda hedefe tıklayamadı.
+- [ ] FE-11: Kısayol kaydı sırasında global kısayol dispatch'inin tetiklenmesini engelle ve yan etki regresyonu ekle.
+- [ ] FE-12: Komut paleti başlık çubuğu etiketi düzenlenmiş kısayol bağını göstersin; atanmamış durumda yerelleştirilmiş metin kullan.
+- [ ] FE-13: Başlık çubuğu aramasında input, görünür popup ve aktif sonuç arasında ARIA ilişkilerini kur; expanded durumunu gerçek görünürlükle eşleştir.
+- [ ] Settings içeriğindeki iç içe `<main>` landmark'ını tek ana içerik landmark'ı olacak şekilde düzelt ve erişilebilirlik ağacında doğrula.
 - [ ] Provider API key ve proje MCP editörlerine klavye ile submit davranışı ekle; doğrulama hatalarını ilgili alanlara bağla.
 - [ ] Yanlış loading metinlerini domain'e göre düzelt; prompt template load hatasına güvenli retry/recovery ekle.
 - [ ] Design canvas bozulma kurtarması, security scan delete/cleanup reconciliation ve cancel timeout davranışı için ürün sözleşmesi belirle.
