@@ -169,7 +169,14 @@ export function CredentialInput({
   const { t } = useTranslation();
   const [isVisible, setIsVisible] = useState(false);
   return (
-    <div className="grid gap-2">
+    <form
+      className="grid gap-2"
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (loading || saving || draft.trim().length === 0) return;
+        onSave();
+      }}
+    >
       <div className="relative">
         <Input
           autoComplete="new-password"
@@ -199,8 +206,8 @@ export function CredentialInput({
         </Button>
         <Button
           disabled={loading || saving || draft.trim().length === 0}
-          onClick={onSave}
           size="small"
+          type="submit"
           variant="primary"
         >
           {saving ? (
@@ -211,7 +218,7 @@ export function CredentialInput({
           {saveLabel}
         </Button>
       </div>
-    </div>
+    </form>
   );
 }
 

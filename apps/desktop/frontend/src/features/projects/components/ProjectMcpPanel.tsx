@@ -695,9 +695,13 @@ function ProjectMcpServerEditor({ server, permission, onSave, onCancel }: Projec
   };
 
   return (
-    <section
+    <form
       className="grid gap-3 rounded-card border border-border bg-raised p-3"
       aria-label={t(server ? 'projectMcpEdit' : 'projectMcpAdd')}
+      onSubmit={(event) => {
+        event.preventDefault();
+        submit();
+      }}
     >
       <div className="grid gap-3 sm:grid-cols-2">
         <Input
@@ -816,12 +820,14 @@ function ProjectMcpServerEditor({ server, permission, onSave, onCancel }: Projec
         </p>
       ) : null}
       <div className="flex justify-end gap-2">
-        <Button onClick={onCancel}>{t('cancel')}</Button>
-        <Button onClick={submit} variant="primary">
+        <Button onClick={onCancel} type="button">
+          {t('cancel')}
+        </Button>
+        <Button type="submit" variant="primary">
           {t('save')}
         </Button>
       </div>
-    </section>
+    </form>
   );
 }
 
