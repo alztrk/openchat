@@ -23,12 +23,17 @@ pub(super) fn llama_server_arguments(
         OsString::from(port.to_string()),
         OsString::from("--alias"),
         OsString::from(&model.id),
+        OsString::from("--no-ui"),
     ];
     if let Some(projector) = models::vision_projector_path(&model.path)? {
         arguments.push(OsString::from("--mmproj"));
         arguments.push(projector.into_os_string());
     }
     Ok(arguments)
+}
+
+pub(super) fn configure_llama_server_api_key(command: &mut Command, api_key: &Zeroizing<String>) {
+    command.env("LLAMA_API_KEY", api_key.as_str());
 }
 
 pub(super) fn model_path_matches_engine(

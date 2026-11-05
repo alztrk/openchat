@@ -1539,6 +1539,60 @@ async fn opencode_free_requests_send_affinity_headers_and_public_auth() {
 }
 
 #[tokio::test]
+async fn managed_llama_requests_send_the_runtime_bearer_key() {
+    let response = sse_event(
+        json!({"choices": [{"finish_reason": "stop", "delta": {"content": "ok"}}]}),
+        true,
+    );
+    let (url, server) = spawn_fixture_server(200, response).await;
+    let mut route = route("llama_cpp");
+    route.chat_url = url;
+    route.local_api_key = Some(zeroize::Zeroizing::new("fixture-token".to_owned()));
+    let client = fixture_client(Duration::from_secs(5));
+    let (events, _event_receiver) = EventSink::test_channel();
+    let (_cancel_sender, mut cancellation) = watch::channel(false);
+    let body = json!({"model": "test-model", "messages": [{"role": "user", "content": "hi"}]});
+    let mut content = String::new();
+    let mut reasoning = String::new();
+    let mut reasoning_summaries = Vec::new();
+    let mut output_tokens = None;
+    let mut input_tokens = None;
+    let request_id = json!("fixture-request");
+    let mut response_budget = ProviderResponseBudget::default();
+
+    let result = receive_for_test(
+        &client,
+        ResponseStreamRequest {
+            route: &route,
+            api_key: None,
+            session_id: None,
+            body: &body,
+            request_id: &request_id,
+            conversation_id: "fixture-conversation",
+            message_id: "fixture-message",
+            created_at: 1,
+            content: &mut content,
+            reasoning_content: &mut reasoning,
+            reasoning_summaries: &mut reasoning_summaries,
+            output_tokens: &mut output_tokens,
+            input_tokens: &mut input_tokens,
+            started: Instant::now(),
+            first_output_recorder: None,
+            rate_limit_observation: None,
+            cancellation: &mut cancellation,
+            events: &events,
+            response_budget: &mut response_budget,
+        },
+    )
+    .await;
+
+    assert!(result.is_ok());
+    let request = server.await.expect("fixture server should finish");
+    let (headers, _) = request_headers_and_body(&request);
+    assert!(headers.contains("authorization: bearer fixture-token"));
+}
+
+#[tokio::test]
 async fn opencode_free_usage_limit_returns_a_specific_error() {
     let response = br#"{"type":"error","error":{"type":"FreeUsageLimitError","message":"Free usage limit reached. Free models work in OpenCode."}}"#.to_vec();
     let (url, server) = spawn_fixture_server(429, response).await;

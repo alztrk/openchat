@@ -19,12 +19,12 @@ use crate::storage::AppStorage;
 use super::{
     ConnectedExternalLlamaServer, ExternalLlamaModel, ExternalLlamaServerCandidate,
     MAX_RUNTIME_PROPERTIES_BYTES, RuntimeCapabilities, bridge_cancellation_sources,
-    excluding_managed_server_processes, external_model_json, external_model_route_id,
-    external_server_for_route, external_server_group_id, health_check_or_cancel,
-    installed_engine_for, llama_server_arguments, managed_server_group_id, model_lifecycle,
-    parse_external_capabilities, parse_external_model_ids, parse_runtime_capabilities,
-    read_runtime_capabilities, remove_external_server, retain_detected_external_servers,
-    runtime_status_json, start_model,
+    configure_llama_server_api_key, excluding_managed_server_processes, external_model_json,
+    external_model_route_id, external_server_for_route, external_server_group_id,
+    health_check_or_cancel, installed_engine_for, llama_server_arguments, managed_server_group_id,
+    model_lifecycle, parse_external_capabilities, parse_external_model_ids,
+    parse_runtime_capabilities, read_runtime_capabilities, remove_external_server,
+    retain_detected_external_servers, runtime_status_json, start_model,
 };
 
 struct TestDirectory(PathBuf);
@@ -306,6 +306,33 @@ fn llama_server_arguments_pass_a_single_matching_vision_projector() {
         projector_path.as_os_str()
     );
     assert_eq!(arguments[5], "12345");
+    assert!(arguments.iter().any(|argument| argument == "--no-ui"));
+}
+
+#[test]
+fn managed_llama_server_api_key_is_given_through_its_environment() {
+    let api_key = zeroize::Zeroizing::new("fixture-token".to_owned());
+    let mut command = tokio::process::Command::new("llama-server");
+    command.arg("--model").arg("fixture-model.gguf");
+    configure_llama_server_api_key(&mut command, &api_key);
+
+    let environment_value = command
+        .as_std()
+        .get_envs()
+        .find_map(|(name, value)| {
+            (name == std::ffi::OsStr::new("LLAMA_API_KEY"))
+                .then_some(value)
+                .flatten()
+        })
+        .expect("managed server key should be set in the child environment");
+
+    assert_eq!(environment_value, std::ffi::OsStr::new("fixture-token"));
+    assert!(
+        command
+            .as_std()
+            .get_args()
+            .all(|argument| argument != std::ffi::OsStr::new("fixture-token"))
+    );
 }
 
 #[test]
@@ -441,7 +468,7 @@ async fn managed_health_check_does_not_follow_redirects() {
         let Ok(Ok((mut stream, _))) = accepted else {
             return false;
         };
-        read_request_headers(&mut stream).await;
+        let _ = read_request_headers(&mut stream).await;
         stream
             .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
             .await
@@ -461,7 +488,7 @@ async fn managed_health_check_does_not_follow_redirects() {
             .accept()
             .await
             .expect("the health request should reach its endpoint");
-        read_request_headers(&mut stream).await;
+        let _ = read_request_headers(&mut stream).await;
         let response = format!(
             "HTTP/1.1 302 Found\r\nLocation: http://{target_address}/health\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
         );
@@ -483,7 +510,7 @@ async fn managed_health_check_does_not_follow_redirects() {
 }
 
 /// Reads a local HTTP fixture request before the fixture sends its response.
-async fn read_request_headers(stream: &mut tokio::net::TcpStream) {
+async fn read_request_headers(stream: &mut tokio::net::TcpStream) -> Vec<u8> {
     let mut request = Vec::new();
     let mut byte = [0; 1];
     while !request.ends_with(b"\r\n\r\n") {
@@ -491,6 +518,7 @@ async fn read_request_headers(stream: &mut tokio::net::TcpStream) {
         assert_ne!(read, 0, "the client closed before sending request headers");
         request.push(byte[0]);
     }
+    request
 }
 
 #[tokio::test]
@@ -507,11 +535,7 @@ async fn reads_reported_capabilities_from_the_local_props_endpoint() {
             .accept()
             .await
             .expect("the properties request should reach the test endpoint");
-        let mut request = [0; 1024];
-        let _ = stream
-            .read(&mut request)
-            .await
-            .expect("the HTTP request should be readable");
+        let request = read_request_headers(&mut stream).await;
         let body = r#"{"default_generation_settings":{"n_ctx":32768},"modalities":{"vision":true},"chat_template_caps":{"supports_tools":true,"supports_tool_calls":true},"model_path":"private"}"#;
         let response = format!(
             "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
@@ -521,10 +545,11 @@ async fn reads_reported_capabilities_from_the_local_props_endpoint() {
             .write_all(response.as_bytes())
             .await
             .expect("the properties response should be written");
+        request
     });
 
     assert_eq!(
-        read_runtime_capabilities(port, None)
+        read_runtime_capabilities(port, Some("fixture-token"))
             .await
             .expect("reported properties should be read"),
         RuntimeCapabilities {
@@ -533,9 +558,14 @@ async fn reads_reported_capabilities_from_the_local_props_endpoint() {
             supports_tool_calls: Some(true),
         }
     );
-    responder
+    let request = responder
         .await
         .expect("the properties server should finish");
+    assert!(
+        String::from_utf8_lossy(&request)
+            .to_ascii_lowercase()
+            .contains("authorization: bearer fixture-token")
+    );
 }
 
 #[tokio::test]

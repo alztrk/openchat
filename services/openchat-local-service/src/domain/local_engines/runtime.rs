@@ -218,11 +218,14 @@ async fn start_model_in_slot(
             current_directory: installed.root.clone(),
             initial_capabilities: None,
             provider_model_id: model.id.clone(),
-            api_key: None,
+            api_key: Some(Zeroizing::new(uuid::Uuid::new_v4().to_string())),
         },
         _ => return Err(model_unavailable_error()),
     };
     let mut command = Command::new(&installed.entrypoint);
+    if let Some(api_key) = launch.api_key.as_ref() {
+        configure_llama_server_api_key(&mut command, api_key);
+    }
     let child = match command
         .args(&launch.arguments)
         .current_dir(&launch.current_directory)

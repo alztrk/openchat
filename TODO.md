@@ -223,6 +223,8 @@
 - [x] Vite HTTP CORS sınırını ölç ve daralt: varsayılan ayar loopback `localhost` originlerini genişçe kabul ediyordu; artık izin verilen CORS origin'i yalnız `http://127.0.0.1:5173`. Diğer originlere GET yine HTTP 200 dönebilir, fakat `Access-Control-Allow-Origin` sabit dev URL'siyle eşleşmez. Bu raw-header ölçümüdür, browser enforcement veya port erişimini engelleme kanıtı değildir.
 - [ ] Gerçek browser'da farklı HTTPS Origin/PNA, DNS rebinding, HMR ve LAN erişimini ölç; paketlenmiş uygulamanın dinleyen port envanterini çıkar.
 - [x] Yerel llama.cpp başlatma argümanlarını ve sabitlenmiş upstream `b11349` CORS/auth varsayılanlarını kaynak koddan incele; statik riski raporla.
+- [x] `CROSS-06` managed llama.cpp kod dilimi: Her yönetilen başlatmada yeni UUIDv4 API anahtarı üret, sabitlenmiş `b11349`'e komut satırı yerine `LLAMA_API_KEY` child environment üzerinden ver, mevcut local-service bearer-auth akışını kullan ve kullanılmayan llama.cpp Web UI'ını kapat. Argüman, child environment, özellik isteği ve sohbet isteği testleri merkezi check'te geçti.
+- [ ] `CROSS-06` runtime kabulü: Gerçek pinned `b11349` ve GGUF modeliyle eksik/yanlış anahtarın inference API'sinden `401` aldığını, OpenChat'in özellik/sohbet isteklerinin çalıştığını ve anahtarın renderer'a sızmadığını doğrula. Testte yalnız `GET /health` endpointinin upstream gereği public kaldığını hesaba kat.
 - [ ] Farklı browser Origin'den aktif model portuna istek, port keşfi, tarayıcının local-network policy davranışı ve boş port seçimi/child başlatma yarışını kontrollü runtime incele.
 - [x] Yerel check kapsamını CI'deki ortak frontend/Rust doğrulama adımlarıyla hizala; Windows CI çalışması henüz gözlenmedi.
 - [ ] Kalan doğrulanmış kullanıcı akışı ve servis kusurlarını ilgili düzeltme dilimlerinde regression senaryolarına bağla.
@@ -325,8 +327,9 @@
 
 - [x] `CROSS-02` kullanılabilirlik dilimi: Tauri dışı başlangıç, storage/sidecar/overlay akışından önce erişilebilir ve beş dilde yerelleştirilmiş masaüstü gereksinimi ekranı gösteriyor. Runtime'da aynı Vite URL'si tarayıcıda bu ekranı, Tauri penceresinde normal sohbeti gösterdi. Guard yalnız UI davranışını değiştirir; HTTP isteğini, kaynakların indirilmesini veya loopback portunu engellemez.
 - [x] `CROSS-02` CORS dilimi: Vite'ın varsayılan geniş localhost-origin regex'i yerine `tauri.conf.json` içindeki sabit dev origin'i (`http://127.0.0.1:5173`) CORS izni oldu. Config regresyon testi ve raw HTTP GET/preflight başlıkları doğrulandı. Dış origin yanıtı okuyamaz; doğrudan GET/gezinti hâlâ çalışır. Tauri WebView2 sohbeti normal yüklendi.
-- [ ] `CROSS-02/03/06`: Farklı Origin, CORS preflight, PNA, DNS rebinding, HMR ve LAN davranışlarını kontrollü ortamda ölç; aktif llama.cpp port keşfini, boş port seçimi/child başlatma yarışını ve paketlenmiş dinleyici envanterini doğrula.
-- [ ] Ölçüm sonucuna göre Vite dev server ve yerel model API'si için en dar gerekli erişim sınırını seç; gerekiyorsa auth, origin kısıtı veya Tauri üzerinden kontrollü proxy tasarımını uygula.
+- [x] `CROSS-06` managed model API kod dilimi: Her başlatmada benzersiz UUIDv4 anahtarı `LLAMA_API_KEY` child environment üzerinden veriliyor; anahtar süreç argümanlarına yazılmıyor. Protected özellik/sohbet istekleri bearer auth kullanıyor ve gereksiz llama.cpp Web UI kapalı.
+- [ ] `CROSS-02/03/06` runtime: Farklı Origin, CORS preflight, PNA, DNS rebinding, HMR ve LAN davranışlarını kontrollü ortamda ölç; aktif llama.cpp portunda yetkisiz isteğin reddini, port keşfini, boş port seçimi/child başlatma yarışını ve paketlenmiş dinleyici envanterini doğrula.
+- [x] `CROSS-06` managed model API için kaynak temelli ilk erişim sınırı seçildi: local-service tarafından saklanan bearer anahtarı ve kapalı Web UI. CORS/PNA ve browser-enforced erişim sınırları runtime kabulünde kalıyor.
 - [ ] Kabul: hangi yerel/dış originin hangi endpoint'e erişebildiği kanıtla kayıtlıdır; aynı makine testi LAN güvenliği kanıtı olarak kullanılmaz; paketlenmiş sürümde beklenmeyen listener kalmaz.
 
 ### 10.6 Kullanıcı akışları, erişilebilirlik ve kurtarma
