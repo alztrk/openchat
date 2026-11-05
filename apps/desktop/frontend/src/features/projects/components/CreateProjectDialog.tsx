@@ -1,5 +1,5 @@
 import { Folder, FolderOpen, LoaderCircle } from 'lucide-react';
-import { type FormEvent, useEffect, useState } from 'react';
+import { type FormEvent, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Button, Dialog, Input } from '@shared/components';
@@ -25,8 +25,11 @@ export function CreateProjectDialog({ open: isOpen, onOpenChange, onCreate }: Cr
   const [folderPath, setFolderPath] = useState<string | null>(null);
   const [folderSelectionId, setFolderSelectionId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [fieldError, setFieldError] = useState<'name' | 'folder' | null>(null);
   const [isBusy, setIsBusy] = useState(false);
   const [isSelectingFolder, setIsSelectingFolder] = useState(false);
+  const nameInputRef = useRef<HTMLInputElement>(null);
+  const folderButtonRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -34,12 +37,14 @@ export function CreateProjectDialog({ open: isOpen, onOpenChange, onCreate }: Cr
     setFolderPath(null);
     setFolderSelectionId(null);
     setError(null);
+    setFieldError(null);
   }, [isOpen]);
 
   const selectFolder = async () => {
     if (isSelectingFolder || isBusy) return;
     setIsSelectingFolder(true);
     setError(null);
+    if (fieldError === 'folder') setFieldError(null);
     try {
       const selected = await selectProjectFolder({
         title: t('chooseProjectFolder'),
@@ -48,6 +53,7 @@ export function CreateProjectDialog({ open: isOpen, onOpenChange, onCreate }: Cr
       if (selected) {
         setFolderPath(selected.folderPath);
         setFolderSelectionId(selected.selectionId);
+        setFieldError(null);
         setName((current) => {
           if (current.trim().length > 0) return current;
           return getFolderBaseName(selected.folderPath);
@@ -64,20 +70,26 @@ export function CreateProjectDialog({ open: isOpen, onOpenChange, onCreate }: Cr
     event.preventDefault();
     const normalizedName = name.trim();
     if (!normalizedName) {
-      setError(t('projectNameRequired'));
+      setError(null);
+      setFieldError('name');
+      nameInputRef.current?.focus();
       return;
     }
     if (!folderSelectionId) {
-      setError(t('projectFolderNotSelected'));
+      setError(null);
+      setFieldError('folder');
+      folderButtonRef.current?.focus();
       return;
     }
     setIsBusy(true);
+    setFieldError(null);
     setError(null);
     try {
       await onCreate(normalizedName, folderSelectionId);
       setName('');
       setFolderPath(null);
       setFolderSelectionId(null);
+      setFieldError(null);
       onOpenChange(false);
     } catch {
       if (folderSelectionId) {
@@ -126,26 +138,33 @@ export function CreateProjectDialog({ open: isOpen, onOpenChange, onCreate }: Cr
         <Input
           autoFocus
           disabled={isBusy || isSelectingFolder}
+          error={fieldError === 'name' ? t('projectNameRequired') : undefined}
           label={t('projectName')}
           maxLength={512}
           onChange={(event) => {
             setName(event.target.value);
+            if (fieldError === 'name') setFieldError(null);
             if (error) setError(null);
           }}
           placeholder={t('projectNamePlaceholder')}
+          ref={nameInputRef}
           value={name}
         />
 
-        <div className="grid gap-2">
-          <span className="text-sm font-medium text-text">{t('projectFolder')}</span>
+        <fieldset className="grid gap-2">
+          <legend className="text-sm font-medium text-text" id="create-project-folder-label">
+            {t('projectFolder')}
+          </legend>
           <Button
             className={`group min-h-12 w-full justify-between gap-3 border px-3 py-2.5 text-left transition-all duration-quick ${
               folderPath
                 ? 'border-accent/40 bg-accent/5 hover:border-accent/60 hover:bg-accent/10'
                 : 'border-control-border bg-surface hover:border-accent/40 hover:bg-hover/60'
             }`}
+            aria-describedby={fieldError === 'folder' ? 'create-project-folder-error' : undefined}
             disabled={isBusy || isSelectingFolder}
             onClick={() => void selectFolder()}
+            ref={folderButtonRef}
             title={folderPath ?? t('chooseProjectFolder')}
             type="button"
             variant="secondary"
@@ -181,7 +200,16 @@ export function CreateProjectDialog({ open: isOpen, onOpenChange, onCreate }: Cr
               {folderPath ? t('changeProjectFolder') : t('chooseProjectFolder')}
             </span>
           </Button>
-        </div>
+          {fieldError === 'folder' ? (
+            <p
+              className="rounded-control border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs font-medium text-destructive"
+              id="create-project-folder-error"
+              role="alert"
+            >
+              {t('projectFolderNotSelected')}
+            </p>
+          ) : null}
+        </fieldset>
 
         {error ? (
           <p

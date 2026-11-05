@@ -1,4 +1,4 @@
-import { type FormEvent, useEffect, useState } from 'react';
+import { type FormEvent, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Button, Dialog, Input } from '@shared/components';
@@ -6,6 +6,8 @@ import { Button, Dialog, Input } from '@shared/components';
 export function ArchivePassphraseDialog({
   confirming,
   errorMessage,
+  errorMessageField = 'form',
+  onInputChange,
   onCancel,
   onSubmit,
   open,
@@ -14,6 +16,8 @@ export function ArchivePassphraseDialog({
 }: {
   confirming: boolean;
   errorMessage: string | null;
+  errorMessageField?: 'passphrase' | 'form';
+  onInputChange(): void;
   onCancel(): void;
   onSubmit(passphrase: string): Promise<boolean>;
   open: boolean;
@@ -29,6 +33,8 @@ export function ArchivePassphraseDialog({
     | 'conversationArchivePassphraseMismatch'
     | null
   >(null);
+  const passphraseInputRef = useRef<HTMLInputElement>(null);
+  const confirmationInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (open) return;
@@ -37,18 +43,30 @@ export function ArchivePassphraseDialog({
     setValidationKey(null);
   }, [open]);
 
+  useEffect(() => {
+    if (!open) return;
+    if (validationKey === 'conversationArchivePassphraseMismatch') {
+      confirmationInputRef.current?.focus();
+    } else if (validationKey || (errorMessageField === 'passphrase' && errorMessage)) {
+      passphraseInputRef.current?.focus();
+    }
+  }, [errorMessage, errorMessageField, open, validationKey]);
+
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (Array.from(passphrase).length < 12) {
       setValidationKey('conversationArchivePassphraseTooShort');
+      passphraseInputRef.current?.focus();
       return;
     }
     if (new TextEncoder().encode(passphrase).byteLength > 512 || passphrase.includes('\0')) {
       setValidationKey('conversationArchivePassphraseTooLong');
+      passphraseInputRef.current?.focus();
       return;
     }
     if (confirming && confirmation !== passphrase) {
       setValidationKey('conversationArchivePassphraseMismatch');
+      confirmationInputRef.current?.focus();
       return;
     }
     setValidationKey(null);
@@ -57,6 +75,16 @@ export function ArchivePassphraseDialog({
       setConfirmation('');
     }
   };
+
+  const passphraseError =
+    validationKey === 'conversationArchivePassphraseTooShort' ||
+    validationKey === 'conversationArchivePassphraseTooLong'
+      ? t(validationKey)
+      : errorMessageField === 'passphrase'
+        ? (errorMessage ?? undefined)
+        : undefined;
+  const confirmationError =
+    validationKey === 'conversationArchivePassphraseMismatch' ? t(validationKey) : undefined;
 
   return (
     <Dialog
@@ -71,24 +99,30 @@ export function ArchivePassphraseDialog({
           <Input
             autoComplete="new-password"
             autoFocus
+            error={passphraseError}
             label={t('conversationArchivePassphrase')}
             maxLength={512}
             onChange={(event) => {
               setPassphrase(event.target.value);
               setValidationKey(null);
+              onInputChange();
             }}
+            ref={passphraseInputRef}
             type="password"
             value={passphrase}
           />
           {confirming ? (
             <Input
               autoComplete="new-password"
+              error={confirmationError}
               label={t('conversationArchiveConfirmPassphrase')}
               maxLength={512}
               onChange={(event) => {
                 setConfirmation(event.target.value);
                 setValidationKey(null);
+                onInputChange();
               }}
+              ref={confirmationInputRef}
               type="password"
               value={confirmation}
             />
@@ -97,9 +131,9 @@ export function ArchivePassphraseDialog({
         {confirming ? (
           <p className="text-sm text-secondary-text">{t('conversationArchivePassphraseRecovery')}</p>
         ) : null}
-        {validationKey || errorMessage ? (
+        {errorMessage && errorMessageField === 'form' ? (
           <p className="text-sm text-destructive" role="alert">
-            {validationKey ? t(validationKey) : errorMessage}
+            {errorMessage}
           </p>
         ) : null}
         <div className="flex flex-wrap justify-end gap-2 border-t border-border pt-3">

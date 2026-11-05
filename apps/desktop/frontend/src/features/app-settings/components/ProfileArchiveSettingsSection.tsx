@@ -195,7 +195,7 @@ export function ProfileArchiveSettingsSection({ enabled }: { enabled: boolean })
           </p>
         </>
       ) : null}
-      {errorKey ? (
+      {errorKey && !(passphraseTarget !== null && errorKey === 'profileArchivePassphraseInvalid') ? (
         <p className="text-sm text-destructive" role="alert">
           {t(errorKey)}
         </p>
@@ -213,6 +213,8 @@ export function ProfileArchiveSettingsSection({ enabled }: { enabled: boolean })
       <ArchivePassphraseDialog
         confirming={passphraseTarget === 'export'}
         errorMessage={errorKey && passphraseTarget ? t(errorKey) : null}
+        errorMessageField={errorKey === 'profileArchivePassphraseInvalid' ? 'passphrase' : 'form'}
+        onInputChange={() => setErrorKey(null)}
         onCancel={() => {
           setPassphraseTarget(null);
           setRestorePath(null);

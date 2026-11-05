@@ -187,7 +187,8 @@
 - [ ] Ayarlar, Görsel kütüphanesi ve canvas yüzeylerini masaüstünde açıp erişilebilirlik ağacında yalnızca uygulama kabuğunun ana landmark'ı bulunduğunu doğrula.
 - [x] FE-14: Provider API key ve proje MCP editörleri native form submit kullanıyor; Enter ile kaydetme mümkün, doğrulama akışları korunuyor. Regresyon testi eklendi.
 - [ ] FE-14: API key ve proje MCP formlarında Enter ile gerçek UI submit akışını masaüstünde doğrula.
-- [ ] FE-15: Custom provider, proje oluşturma/MCP ve arşiv passphrase formlarında doğrulama hatalarını ilgili alanlara bağla; submit sonrası ilk geçersiz alana erişimi doğrula.
+- [x] FE-15: Custom provider, proje oluşturma/MCP ve arşiv passphrase doğrulamaları ilgili alanlara `aria-invalid`/`aria-describedby`/alert ilişkisiyle bağlandı; submit sonrası ilgili ilk geçersiz alan odaklanıyor. Arşiv hatalarının dialog dışında yinelenen alert'i kaldırıldı; kaynak regresyon testi eklendi.
+- [ ] FE-15: Custom provider, proje oluşturma/MCP ve arşiv passphrase hatalarının görünümünü, ekran okuyucu duyurusunu ve ilk geçersiz alana odağı gerçek masaüstü arayüzünde doğrula.
 - [ ] Yanlış loading metinlerini domain'e göre düzelt; prompt template load hatasına güvenli retry/recovery ekle.
 - [ ] Design canvas bozulma kurtarması, security scan delete/cleanup reconciliation ve cancel timeout davranışı için ürün sözleşmesi belirle.
 - [ ] Archive restore crash recovery/journal ve archive cancellation/status; attachment index cancellation/progress; worktree list cancellation ve backend limiti konularını tasarla.

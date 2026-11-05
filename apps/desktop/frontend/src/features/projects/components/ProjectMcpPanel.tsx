@@ -654,6 +654,10 @@ function ProjectMcpServerEditor({ server, permission, onSave, onCancel }: Projec
   const [authEnvironmentVariable, setAuthEnvironmentVariable] = useState(server?.authEnvironmentVariable ?? '');
   const [permissionRule, setPermissionRule] = useState<PermissionChoice>(permission);
   const [errorKey, setErrorKey] = useState<McpEditorError | null>(null);
+  const idInputRef = useRef<HTMLInputElement>(null);
+  const programInputRef = useRef<HTMLInputElement>(null);
+  const environmentTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const endpointInputRef = useRef<HTMLInputElement>(null);
 
   const submit = () => {
     const environmentVariables = environmentText
@@ -678,21 +682,31 @@ function ProjectMcpServerEditor({ server, permission, onSave, onCancel }: Projec
       validateProjectMcpServer(nextServer);
     } catch (error) {
       const code = error instanceof Error ? error.message : 'invalid_server';
-      setErrorKey(
-        code === 'invalid_id'
-          ? 'projectMcpInvalidId'
-          : code === 'program_required'
-            ? 'projectMcpProgramRequired'
-            : code === 'endpoint_required'
-              ? 'projectMcpEndpointRequired'
-              : code === 'environment_variables_invalid'
-                ? 'projectMcpEnvironmentVariablesInvalid'
-                : 'projectMcpSaveFailed',
-      );
+      if (code === 'invalid_id') {
+        setErrorKey('projectMcpInvalidId');
+        idInputRef.current?.focus();
+      } else if (code === 'program_required') {
+        setErrorKey('projectMcpProgramRequired');
+        programInputRef.current?.focus();
+      } else if (code === 'endpoint_required') {
+        setErrorKey('projectMcpEndpointRequired');
+        endpointInputRef.current?.focus();
+      } else if (code === 'environment_variables_invalid') {
+        setErrorKey('projectMcpEnvironmentVariablesInvalid');
+        environmentTextareaRef.current?.focus();
+      } else {
+        setErrorKey('projectMcpSaveFailed');
+      }
       return;
     }
     onSave(nextServer, permissionRule);
   };
+
+  const idError = errorKey === 'projectMcpInvalidId' ? t(errorKey) : undefined;
+  const programError = errorKey === 'projectMcpProgramRequired' ? t(errorKey) : undefined;
+  const endpointError = errorKey === 'projectMcpEndpointRequired' ? t(errorKey) : undefined;
+  const environmentError =
+    errorKey === 'projectMcpEnvironmentVariablesInvalid' ? t(errorKey) : undefined;
 
   return (
     <form
@@ -707,9 +721,15 @@ function ProjectMcpServerEditor({ server, permission, onSave, onCancel }: Projec
         <Input
           autoComplete="off"
           disabled={server !== null}
+          error={idError}
+          id="project-mcp-server-id"
           label={t('projectMcpServerId')}
           maxLength={24}
-          onChange={(event) => setId(event.target.value)}
+          onChange={(event) => {
+            setId(event.target.value);
+            if (errorKey === 'projectMcpInvalidId') setErrorKey(null);
+          }}
+          ref={idInputRef}
           value={id}
         />
         <Select
@@ -731,8 +751,14 @@ function ProjectMcpServerEditor({ server, permission, onSave, onCancel }: Projec
           <Input
             autoComplete="off"
             disabled={server?.package !== undefined}
+            error={programError}
+            id="project-mcp-program"
             label={t('projectMcpProgram')}
-            onChange={(event) => setProgram(event.target.value)}
+            onChange={(event) => {
+              setProgram(event.target.value);
+              if (errorKey === 'projectMcpProgramRequired') setErrorKey(null);
+            }}
+            ref={programInputRef}
             value={server?.package ? t('projectMcpManagedPackage', { version: server.package.version }) : program}
           />
           {server?.package ? (
@@ -767,23 +793,44 @@ function ProjectMcpServerEditor({ server, permission, onSave, onCancel }: Projec
             <label htmlFor="project-mcp-environment">{t('projectMcpEnvironmentVariables')}</label>
             <Textarea
               className="min-h-16 rounded-control border border-border bg-raised px-3 py-2 text-text outline-none focus-visible:ring-2 focus-visible:ring-focus"
+              error={environmentError}
               fieldLayout="none"
               id="project-mcp-environment"
-              aria-describedby="project-mcp-environment-hint"
-              onChange={(event) => setEnvironmentText(event.target.value)}
+              aria-describedby={
+                environmentError
+                  ? 'project-mcp-environment-hint project-mcp-environment-error'
+                  : 'project-mcp-environment-hint'
+              }
+              aria-invalid={environmentError ? true : undefined}
+              onChange={(event) => {
+                setEnvironmentText(event.target.value);
+                if (errorKey === 'projectMcpEnvironmentVariablesInvalid') setErrorKey(null);
+              }}
+              ref={environmentTextareaRef}
               value={environmentText}
             />
             <span className="text-xs font-normal text-secondary-text" id="project-mcp-environment-hint">
               {t('projectMcpEnvironmentVariablesHint')}
             </span>
+            {environmentError ? (
+              <span className="text-sm text-destructive" id="project-mcp-environment-error" role="alert">
+                {environmentError}
+              </span>
+            ) : null}
           </div>
         </>
       ) : (
         <>
           <Input
             autoComplete="off"
+            error={endpointError}
+            id="project-mcp-endpoint"
             label={t('projectMcpEndpoint')}
-            onChange={(event) => setEndpoint(event.target.value)}
+            onChange={(event) => {
+              setEndpoint(event.target.value);
+              if (errorKey === 'projectMcpEndpointRequired') setErrorKey(null);
+            }}
+            ref={endpointInputRef}
             type="url"
             value={endpoint}
           />
@@ -814,7 +861,7 @@ function ProjectMcpServerEditor({ server, permission, onSave, onCancel }: Projec
         options={permissionOptions(t, false)}
         value={permissionRule}
       />
-      {errorKey ? (
+      {errorKey === 'projectMcpSaveFailed' ? (
         <p className="text-sm text-destructive" role="alert">
           {t(errorKey)}
         </p>

@@ -1,6 +1,6 @@
 /** @file Collects custom-provider settings and validates them before native storage. */
 import { LoaderCircle } from 'lucide-react';
-import { type FormEvent, useEffect, useState } from 'react';
+import { type FormEvent, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button, Dialog, Input, Select, Switch } from '@shared/components';
 import type { CustomProviderSummary } from '@features/provider-settings/data';
@@ -34,6 +34,16 @@ interface CustomProviderDialogProps {
   onSave(draft: CustomProviderDraft): void;
 }
 
+type CustomProviderValidationKey =
+  | 'customProviderInvalid'
+  | 'customProviderUrlInvalid'
+  | 'customProviderHttpIpOrLoopbackRequired'
+  | 'customProviderHttpApprovalRequired'
+  | 'customProviderReasoningLevelRequired'
+  | 'apiKeyInvalidFormat';
+
+type CustomProviderValidationField = 'name' | 'baseUrl' | 'httpApproval' | 'reasoningEfforts' | 'apiKey';
+
 /**
  * Edits or creates a custom provider with client-side validation and an explicit HTTP warning.
  *
@@ -53,18 +63,14 @@ export function CustomProviderDialog({
   const [baseUrl, setBaseUrl] = useState('');
   const [protocol, setProtocol] = useState<'openAi' | 'anthropic'>('openAi');
   const [apiKey, setApiKey] = useState('');
-  const [errorKey, setErrorKey] = useState<
-    | 'customProviderInvalid'
-    | 'customProviderUrlInvalid'
-    | 'customProviderHttpIpOrLoopbackRequired'
-    | 'customProviderHttpApprovalRequired'
-    | 'customProviderReasoningLevelRequired'
-    | 'apiKeyInvalidFormat'
-    | null
-  >(null);
+  const [errorKey, setErrorKey] = useState<CustomProviderValidationKey | null>(null);
   const [allowInsecureHttp, setAllowInsecureHttp] = useState(false);
   const [reasoningEffortsText, setReasoningEffortsText] = useState('');
   const [enableThinking, setEnableThinking] = useState(false);
+  const nameInputRef = useRef<HTMLInputElement>(null);
+  const reasoningEffortsInputRef = useRef<HTMLInputElement>(null);
+  const baseUrlInputRef = useRef<HTMLInputElement>(null);
+  const apiKeyInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!open) {
@@ -81,30 +87,51 @@ export function CustomProviderDialog({
     setErrorKey(null);
   }, [open, provider]);
 
+  const showValidationError = (key: CustomProviderValidationKey, field: CustomProviderValidationField) => {
+    setErrorKey(key);
+    switch (field) {
+      case 'name':
+        nameInputRef.current?.focus();
+        break;
+      case 'baseUrl':
+        baseUrlInputRef.current?.focus();
+        break;
+      case 'httpApproval':
+        document.getElementById('custom-provider-http-approval')?.focus();
+        break;
+      case 'reasoningEfforts':
+        reasoningEffortsInputRef.current?.focus();
+        break;
+      case 'apiKey':
+        apiKeyInputRef.current?.focus();
+        break;
+    }
+  };
+
   /** Validates the entered values and submits a normalized draft to the owner. */
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const normalizedName = name.trim();
     const normalizedUrl = baseUrl.trim();
     if (normalizedName.length === 0 || normalizedName.length > 80 || containsAsciiControlCharacters(normalizedName)) {
-      setErrorKey('customProviderInvalid');
+      showValidationError('customProviderInvalid', 'name');
       return;
     }
     if (!isValidBaseUrl(normalizedUrl)) {
-      setErrorKey('customProviderUrlInvalid');
+      showValidationError('customProviderUrlInvalid', 'baseUrl');
       return;
     }
     if (isHttpUrl(normalizedUrl) && !isIpOrLoopbackHttpUrl(normalizedUrl)) {
-      setErrorKey('customProviderHttpIpOrLoopbackRequired');
+      showValidationError('customProviderHttpIpOrLoopbackRequired', 'baseUrl');
       return;
     }
     if (isHttpUrl(normalizedUrl) && !allowInsecureHttp) {
-      setErrorKey('customProviderHttpApprovalRequired');
+      showValidationError('customProviderHttpApprovalRequired', 'httpApproval');
       return;
     }
     const normalizedApiKey = apiKey.trim();
     if (normalizedApiKey.length > 4096 || (normalizedApiKey.length > 0 && !/^[\x21-\x7E]+$/.test(normalizedApiKey))) {
-      setErrorKey('apiKeyInvalidFormat');
+      showValidationError('apiKeyInvalidFormat', 'apiKey');
       return;
     }
     const reasoningEfforts = [
@@ -119,7 +146,7 @@ export function CustomProviderDialog({
       protocol === 'openAi' &&
       (reasoningEfforts.length > 16 || reasoningEfforts.some((value) => !/^[a-zA-Z0-9_-]{1,64}$/.test(value)))
     ) {
-      setErrorKey('customProviderReasoningLevelRequired');
+      showValidationError('customProviderReasoningLevelRequired', 'reasoningEfforts');
       return;
     }
     onSave({
@@ -133,6 +160,16 @@ export function CustomProviderDialog({
       apiKey: normalizedApiKey,
     });
   };
+
+  const nameError = errorKey === 'customProviderInvalid' ? t(errorKey) : undefined;
+  const baseUrlError =
+    errorKey === 'customProviderUrlInvalid' || errorKey === 'customProviderHttpIpOrLoopbackRequired'
+      ? t(errorKey)
+      : undefined;
+  const httpApprovalError = errorKey === 'customProviderHttpApprovalRequired' ? t(errorKey) : undefined;
+  const reasoningEffortsError =
+    errorKey === 'customProviderReasoningLevelRequired' ? t(errorKey) : undefined;
+  const apiKeyError = errorKey === 'apiKeyInvalidFormat' ? t(errorKey) : undefined;
 
   return (
     <Dialog
@@ -148,12 +185,14 @@ export function CustomProviderDialog({
         <Input
           autoComplete="organization"
           disabled={saving}
+          error={nameError}
           label={t('customProviderName')}
           maxLength={80}
           onChange={(event) => {
             setName(event.target.value);
             setErrorKey(null);
           }}
+          ref={nameInputRef}
           value={name}
         />
         <Select
@@ -182,6 +221,7 @@ export function CustomProviderDialog({
             </div>
             <Input
               disabled={saving}
+              error={reasoningEffortsError}
               label={t('customProviderReasoningEffort')}
               maxLength={1100}
               onChange={(event) => {
@@ -189,6 +229,7 @@ export function CustomProviderDialog({
                 setErrorKey(null);
               }}
               placeholder={t('customProviderReasoningEffortsPlaceholder')}
+              ref={reasoningEffortsInputRef}
               value={reasoningEffortsText}
             />
             <div className="flex items-center justify-between gap-3">
@@ -209,6 +250,7 @@ export function CustomProviderDialog({
           autoComplete="url"
           autoCorrect="off"
           disabled={saving}
+          error={baseUrlError}
           label={t('customProviderBaseUrl')}
           maxLength={2048}
           onChange={(event) => {
@@ -216,6 +258,7 @@ export function CustomProviderDialog({
             setAllowInsecureHttp(false);
             setErrorKey(null);
           }}
+          ref={baseUrlInputRef}
           type="url"
           value={baseUrl}
         />
@@ -230,20 +273,29 @@ export function CustomProviderDialog({
               </span>
               <Switch
                 aria-labelledby="custom-provider-http-approval-label"
+                aria-describedby={httpApprovalError ? 'custom-provider-http-approval-error' : undefined}
+                aria-invalid={httpApprovalError ? true : undefined}
                 checked={allowInsecureHttp}
                 disabled={saving}
+                id="custom-provider-http-approval"
                 onCheckedChange={(checked) => {
                   setAllowInsecureHttp(checked);
                   setErrorKey(null);
                 }}
               />
             </div>
+            {httpApprovalError ? (
+              <p className="text-sm text-destructive" id="custom-provider-http-approval-error" role="alert">
+                {httpApprovalError}
+              </p>
+            ) : null}
           </div>
         ) : null}
         <Input
           autoComplete="new-password"
           autoCorrect="off"
           disabled={saving}
+          error={apiKeyError}
           label={t('customProviderApiKey')}
           maxLength={4096}
           onChange={(event) => {
@@ -251,14 +303,11 @@ export function CustomProviderDialog({
             setErrorKey(null);
           }}
           placeholder={t(provider ? 'customProviderKeyUnchanged' : 'customProviderApiKeyOptional')}
+          ref={apiKeyInputRef}
           type="password"
           value={apiKey}
         />
-        {errorKey ? (
-          <p className="text-sm text-destructive" role="alert">
-            {t(errorKey)}
-          </p>
-        ) : externalError ? (
+        {errorKey === null && externalError ? (
           <p className="text-sm text-destructive" role="alert">
             {externalError}
           </p>

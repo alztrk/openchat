@@ -423,7 +423,10 @@ export function ConversationArchiveSettingsSection({ enabled }: { enabled: boole
           ) : null}
         </>
       ) : null}
-      {errorKey ? (
+      {errorKey &&
+      !(isPassphraseOpen &&
+        (errorKey === 'conversationArchiveInvalidPassphraseOrFile' ||
+          errorKey === 'conversationArchivePassphraseInvalid')) ? (
         <p className="text-sm text-destructive" role="alert">
           {t(errorKey)}
         </p>
@@ -450,6 +453,8 @@ export function ConversationArchiveSettingsSection({ enabled }: { enabled: boole
             ? t(errorKey)
             : null
         }
+        errorMessageField={errorKey === 'conversationArchivePassphraseInvalid' ? 'passphrase' : 'form'}
+        onInputChange={() => setErrorKey(null)}
         onCancel={() => {
           setIsPassphraseOpen(false);
           setPendingImportPath(null);
