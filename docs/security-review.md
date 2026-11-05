@@ -5,12 +5,14 @@
 
 ## Audit scope
 
-| Area | Tool | Result |
-|------|------|--------|
-| Rust dependency audit | `cargo-audit` 0.22.2 (RustSec) | No advisory findings |
-| Frontend dependency audit | `npm audit` (prod + dev) | Zero vulnerabilities |
-| Static analysis | Semgrep 1.181.0 (`p/security-audit`, `p/secrets`) | Zero findings across 296 files |
-| Rust unsafe review | Semgrep `p/rust` + manual | 107 `unsafe` usages — all documented via `clippy::undocumented_unsafe_blocks` |
+| Area | Last recorded result | Current review |
+|------|---------------------|----------------|
+| Rust dependency audit | `cargo-audit` 0.22.2 (RustSec): no advisory findings | Not rerun; `cargo-audit` is unavailable in this environment |
+| Frontend dependency audit | `npm audit` (prod + dev): zero vulnerabilities | Reran 2026-11-05: zero vulnerabilities |
+| Static analysis | Semgrep 1.181.0 (`p/security-audit`, `p/secrets`): zero findings across 296 files | Not rerun; Semgrep is unavailable in this environment |
+| Rust unsafe review | Semgrep `p/rust` + manual: 107 `unsafe` usages, all documented via `clippy::undocumented_unsafe_blocks` | Scoped manual review; not a new exhaustive unsafe scan |
+
+The latest Codex Security Standard scan covered eight high-risk surfaces at revision `dca1066` and returned zero validated findings. It was partial and predates the current revision. A Deep Security Scan could not run because the security runner required a managed filesystem permission profile unavailable in this environment.
 
 ### Rust static analysis notes
 
