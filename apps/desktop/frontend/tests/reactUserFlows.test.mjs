@@ -259,9 +259,14 @@ const vite = await createServer({
         }
         if (id === '\0openchat-test-titlebar-search-recents') {
           return `
+            import process from 'node:process';
+            const harness = () => process.__openchatRecentSearchHarness;
             export const recentSearchLimits = { maximumLength: 256 };
-            export function readRecentSearches() { return []; }
-            export async function writeRecentSearches() {}
+            export function readRecentSearches() { return [...harness().terms]; }
+            export async function writeRecentSearches(terms) {
+              if (harness().failWrites) throw new Error('test-only storage write failure');
+              harness().terms = [...terms];
+            }
             export function addRecentSearch(terms, term) {
               const value = term.trim();
               return value ? [value, ...terms.filter((item) => item.toLowerCase() !== value.toLowerCase())].slice(0, 5) : terms;
@@ -327,6 +332,7 @@ const originalAttachmentLibraryHarness = Object.getOwnPropertyDescriptor(process
 const originalAppPreferencesHarness = Object.getOwnPropertyDescriptor(process, '__openchatAppPreferencesHarness');
 const originalSidebarHarness = Object.getOwnPropertyDescriptor(process, '__openchatSidebarHarness');
 const originalMcpHarness = Object.getOwnPropertyDescriptor(process, '__openchatMcpHarness');
+const originalRecentSearchHarness = Object.getOwnPropertyDescriptor(process, '__openchatRecentSearchHarness');
 const attachmentLibraryHarness = {
   list: async () => ({ items: [], nextOffset: null }),
 };
@@ -350,6 +356,10 @@ const sidebarHarness = {
 const mcpHarness = {
   state: {},
 };
+const recentSearchHarness = {
+  terms: ['river', 'ocean'],
+  failWrites: false,
+};
 
 Object.defineProperty(process, '__openchatAttachmentLibraryHarness', {
   configurable: true,
@@ -371,6 +381,12 @@ Object.defineProperty(process, '__openchatMcpHarness', {
   value: mcpHarness,
   writable: true,
 });
+Object.defineProperty(process, '__openchatRecentSearchHarness', {
+  configurable: true,
+  value: recentSearchHarness,
+  writable: true,
+});
+
 for (const locale of supportedLocales) {
   const translations = JSON.parse(readFileSync(path.join(localeDirectory, `${locale}.json`), 'utf8'));
   const i18n = createInstance();
@@ -421,6 +437,8 @@ afterEach(() => {
     sidebarHarness.customFolders = folders;
   };
   mcpHarness.state = {};
+  recentSearchHarness.terms = ['river', 'ocean'];
+  recentSearchHarness.failWrites = false;
 });
 
 after(async () => {
@@ -456,6 +474,11 @@ after(async () => {
     Object.defineProperty(process, '__openchatMcpHarness', originalMcpHarness);
   } else {
     Reflect.deleteProperty(process, '__openchatMcpHarness');
+  }
+  if (originalRecentSearchHarness) {
+    Object.defineProperty(process, '__openchatRecentSearchHarness', originalRecentSearchHarness);
+  } else {
+    Reflect.deleteProperty(process, '__openchatRecentSearchHarness');
   }
 });
 
@@ -905,6 +928,97 @@ test('title bar search points its active descendant at a rendered result and clo
   assert.equal(input.getAttribute('aria-expanded'), 'false');
   assert.equal(input.hasAttribute('aria-controls'), false);
   assert.equal(screen.queryByRole('listbox', { name: translations.searchChats }), null);
+});
+
+test('recent-search options follow arrow keys and Enter opens the selected term', async () => {
+  const translations = translationsByLocale.get('en');
+  assert.ok(translations);
+
+  render(
+    localized(
+      'en',
+      React.createElement(TitleBarSearch, { onSelectConversation: () => undefined }),
+    ),
+  );
+
+  const input = screen.getByRole('combobox', { name: translations.searchChats });
+  fireEvent.focus(input);
+  const recentListbox = await screen.findByRole('listbox', { name: translations.recentSearches });
+  const options = within(recentListbox).getAllByRole('option');
+  assert.deepEqual(options.map((option) => option.textContent), ['river', 'ocean']);
+  assert.equal(input.getAttribute('aria-controls'), recentListbox.id);
+
+  fireEvent.keyDown(input, { key: 'ArrowDown' });
+  assert.equal(input.getAttribute('aria-activedescendant'), options[0].id);
+  assert.equal(options[0].getAttribute('aria-selected'), 'true');
+
+  fireEvent.keyDown(input, { key: 'ArrowDown' });
+  assert.equal(input.getAttribute('aria-activedescendant'), options[1].id);
+  assert.equal(options[0].getAttribute('aria-selected'), 'false');
+  assert.equal(options[1].getAttribute('aria-selected'), 'true');
+
+  fireEvent.keyDown(input, { key: 'Enter' });
+  assert.equal(input.value, 'ocean');
+  const searchListbox = await screen.findByRole('listbox', { name: translations.searchChats });
+  assert.equal(input.getAttribute('aria-controls'), searchListbox.id);
+});
+
+test('recent-search delete actions have term-specific names and update only after persistence succeeds', async () => {
+  const translations = translationsByLocale.get('en');
+  const i18n = i18nByLocale.get('en');
+  assert.ok(translations);
+  assert.ok(i18n);
+
+  render(
+    localized(
+      'en',
+      React.createElement(TitleBarSearch, { onSelectConversation: () => undefined }),
+    ),
+  );
+
+  const input = screen.getByRole('combobox', { name: translations.searchChats });
+  fireEvent.focus(input);
+  const listbox = await screen.findByRole('listbox', { name: translations.recentSearches });
+  assert.equal(within(listbox).queryByRole('button'), null);
+
+  const deleteButton = screen.getByRole('button', {
+    name: i18n.t('deleteRecentSearch', { term: 'river' }),
+  });
+  fireEvent.click(deleteButton);
+
+  await waitFor(() => {
+    const updatedListbox = screen.getByRole('listbox', { name: translations.recentSearches });
+    assert.deepEqual(within(updatedListbox).getAllByRole('option').map((option) => option.textContent), ['ocean']);
+  });
+  assert.deepEqual(recentSearchHarness.terms, ['ocean']);
+});
+
+test('failed recent-search deletion keeps the saved and visible option and announces the error', async () => {
+  const translations = translationsByLocale.get('en');
+  const i18n = i18nByLocale.get('en');
+  assert.ok(translations);
+  assert.ok(i18n);
+  recentSearchHarness.failWrites = true;
+
+  render(
+    localized(
+      'en',
+      React.createElement(TitleBarSearch, { onSelectConversation: () => undefined }),
+    ),
+  );
+
+  const input = screen.getByRole('combobox', { name: translations.searchChats });
+  fireEvent.focus(input);
+  const listbox = await screen.findByRole('listbox', { name: translations.recentSearches });
+  fireEvent.click(
+    screen.getByRole('button', {
+      name: i18n.t('deleteRecentSearch', { term: 'river' }),
+    }),
+  );
+
+  assert.equal((await screen.findByRole('alert')).textContent, translations.recentSearchesDeleteFailed);
+  assert.deepEqual(recentSearchHarness.terms, ['river', 'ocean']);
+  assert.deepEqual(within(listbox).getAllByRole('option').map((option) => option.textContent), ['river', 'ocean']);
 });
 
 test('the primary navigation landmark and surface action render in every supported locale', () => {
