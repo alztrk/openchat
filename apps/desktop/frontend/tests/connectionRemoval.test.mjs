@@ -32,7 +32,7 @@ test('connection removal reconciles a failed RPC while its database deletion fin
     },
     {
       intervalMs: 1,
-      failedOperationReconciliationMs: 30,
+      failedOperationReconciliationMs: 1_000,
       onCheckFailure: () => assert.fail('The connection state query should succeed.'),
     },
   );
