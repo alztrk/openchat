@@ -229,14 +229,19 @@ fn validate_pending_export(
     marker: &Path,
     kind: ArchiveKind,
 ) -> Result<(), ArchiveExportError> {
-    let marker_metadata =
-        fs::symlink_metadata(marker).map_err(|_| ArchiveExportError::invalid())?;
-    if !marker_metadata.is_file() || marker_metadata.file_type().is_symlink() {
+    let expected_marker = format!("{MARKER_CONTENT_PREFIX}{}\n", kind.extension());
+    let marker_file = open_archive_source(marker)?;
+    let marker_metadata = marker_file
+        .metadata()
+        .map_err(|_| ArchiveExportError::unavailable())?;
+    if marker_metadata.len() != expected_marker.len() as u64 {
         return Err(ArchiveExportError::invalid());
     }
-    let marker_contents =
-        fs::read_to_string(marker).map_err(|_| ArchiveExportError::unavailable())?;
-    let expected_marker = format!("{MARKER_CONTENT_PREFIX}{}\n", kind.extension());
+    let mut marker_contents = String::new();
+    marker_file
+        .take(marker_metadata.len().saturating_add(1))
+        .read_to_string(&mut marker_contents)
+        .map_err(|_| ArchiveExportError::unavailable())?;
     if marker_contents != expected_marker {
         return Err(ArchiveExportError::invalid());
     }
@@ -431,7 +436,8 @@ mod tests {
 
     use super::{
         copy_archive, is_export_id, is_safe_file_name, pending_export_directory,
-        ArchiveExportError, MAX_CONVERSATION_ARCHIVE_BYTES,
+        validate_pending_export, ArchiveExportError, ArchiveKind, MARKER_CONTENT_PREFIX,
+        MAX_CONVERSATION_ARCHIVE_BYTES,
     };
 
     struct TestDirectory(PathBuf);
@@ -489,6 +495,58 @@ mod tests {
         );
         assert!(resolved
             .starts_with(fs::canonicalize(storage_root).expect("canonicalize storage root")));
+    }
+
+    #[test]
+    fn pending_export_marker_accepts_the_exact_bounded_contents() {
+        let directory = TestDirectory::new();
+        let canonical_directory =
+            fs::canonicalize(&directory.0).expect("canonicalize test directory");
+        let source = directory
+            .0
+            .join("0123456789abcdef0123456789abcdef.openchatbackup");
+        let marker = directory.0.join("0123456789abcdef0123456789abcdef.pending");
+        fs::write(&source, b"encrypted archive").expect("write staged archive");
+        fs::write(&marker, format!("{MARKER_CONTENT_PREFIX}openchatbackup\n"))
+            .expect("write pending marker");
+
+        validate_pending_export(
+            &canonical_directory,
+            &source,
+            &marker,
+            ArchiveKind::Conversation,
+        )
+        .expect("accept the expected marker and archive");
+    }
+
+    #[test]
+    fn pending_export_marker_rejects_oversized_contents_before_reading_them() {
+        let directory = TestDirectory::new();
+        let canonical_directory =
+            fs::canonicalize(&directory.0).expect("canonicalize test directory");
+        let source = directory
+            .0
+            .join("0123456789abcdef0123456789abcdef.openchatbackup");
+        let marker = directory.0.join("0123456789abcdef0123456789abcdef.pending");
+        fs::write(&source, b"encrypted archive").expect("write staged archive");
+        let marker_file = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&marker)
+            .expect("create oversized marker");
+        marker_file
+            .set_len(2 * 1024 * 1024)
+            .expect("extend marker beyond the accepted size");
+
+        let error = validate_pending_export(
+            &canonical_directory,
+            &source,
+            &marker,
+            ArchiveKind::Conversation,
+        )
+        .expect_err("reject a marker larger than the expected contents");
+
+        assert_eq!(error.code, ArchiveExportError::invalid().code);
     }
 
     #[test]
