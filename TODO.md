@@ -51,7 +51,7 @@
 ## Faz 4 — App.tsx Küçültme ✅ TAMAMLANDI (Commit: 9fa81fb)
 
 - [x] `app/AppRouter.tsx` — surface routing
-- [x] `app/AppManager.tsx` — global event management
+- [x] Application orchestration lives in `bootstrap/App.tsx`; the unused `app/AppManager.tsx` copy was removed after its consumer scan.
 - [x] `app/AppLayout.tsx` — layout management
 
 ---
@@ -188,7 +188,7 @@
 - [x] Tek npm workspace/install otoritesi olarak kök workspace ve `package-lock.json` seçildi; eski iç lockfile kaldırıldı, CI cache yolu ve bootstrap köke hizalandı. Temiz `npm ci` ve izole dependency ağacındaki ilk Vite başlangıcı başarılı; gerçek UI rota yürütmesi ve paketlenmiş uygulama karşılaştırması ayrı takipte.
 - [ ] `recent searches` renderer `localStorage` saklama/retention kararını privacy sözleşmesiyle karşılaştır; hassas sorgu içerme olasılığını ve uzunluk sınırını değerlendir.
 - [x] `src/app/AppManager.tsx` consumer/import graph'ını tarama; kaynakta aktif consumer bulunmadı, çalışan giriş `bootstrap/main.tsx` üzerinden `bootstrap/App.tsx` yükleyip render ediyor.
-- [ ] `AppManager` gerçekten dead ise sonraki kod değişikliği sırasında kaldır; tutacaksan aktif entry point ile rolünü belgeleyip tekilleştir.
+- [x] `QA-12`: `AppManager` dosyası ve barrel export'ları tüketici/import taramasından sonra kaldırıldı; çalışan giriş `bootstrap/main.tsx` üzerinden `bootstrap/App.tsx` render ediyor.
 - [x] Aynı makinedeki browser'dan Vite loopback URL'sini aç; uygulama kabuğu geliyor, Tauri RPC kullanan alanlar loading/error durumunda kalıyor.
 - [x] Vite HTTP yanıtında dış `Origin` için CORS izin başlığının olmadığını, `localhost` loopback origininin ise izinli olduğunu doğrula; bu yalnız header probe'dur, browser enforcement testi değildir.
 - [ ] Gerçek browser'da farklı HTTPS Origin/PNA, DNS rebinding, HMR ve LAN erişimini ölç; paketlenmiş uygulamanın dinleyen port envanterini çıkar.
@@ -298,7 +298,7 @@
 - [x] `SVC-19`: Tasarım, sohbet görünümü ve asistan yürütme tercih yazımlarını store başına seri kuyruğa al; sıradaki işlemin en güncel state'i temel alıp farklı alan patch'lerini birleştirdiğini test et.
 - [x] `SVC-21`: Sessiz saatler native time alanları düzenleme sırasında taslak tutuyor ve yalnız geçerli `HH:mm` değerini odak kaybında kaydediyor; regresyon testleri ve izole WebView2 giriş/kayıt akışı doğrulandı.
 - [x] `SVC-22`: `conversations` history araması artık yerel proje sonuçlarını eklemiyor; `projects` filtresi proje sonuçlarını koruyor ve iki davranış regresyon testleriyle doğrulandı.
-- [ ] `QA-12`, `T-HOST-01..04/07`: `AppManager` rolü ve kalan host runtime kabulleri için ürün/uygulama kararlarını ver; gerekli olan davranışı regresyon testleriyle doğrula.
+- [ ] `T-HOST-01..04/07`: Kalan host runtime kabulleri için ürün/uygulama kararlarını ver; gerekli olan davranışı regresyon testleriyle doğrula.
 - [ ] Kabul: klavye ve ekran okuyucu akışları; loading/empty/error/retry/cancel; hatalı ve uzun girdiler; pencere boyutu ve yeniden açılış durumları ilgili yüzeylerde gözlenebilir testlerle kapsanır.
 
 ### 10.7 Paketlenmiş ilk açılış ve release doğrulaması

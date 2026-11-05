@@ -111,7 +111,7 @@ npm run openchat -- maintain-target --apply
 * **Frontend (`apps/desktop/frontend`):**
   * React 19, Tailwind CSS v4, Vite.
   * **Feature-Sliced Design (FSD) Layering:**
-    * `@app`: Root wiring, entry points, layout (`AppManager`, `AppLayout`, `AppRouter`).
+    * `@app`: Root wiring and layout (`AppLayout`, `AppRouter`). Runtime entry and orchestration live in `bootstrap/main.tsx` and `bootstrap/App.tsx`.
     * `@widgets`: Composite self-contained blocks combining features.
     * `@features`: Domain capabilities (`chat`, `app-settings`, `provider-settings`, `projects`, `model-catalog`, `design-workspace`, `security-scans`).
     * `@entities`: Shared business entities and domain models (`conversation`, `model`, `project`).
