@@ -174,7 +174,8 @@
 ### Bulgular ve takip işleri
 
 - [x] Üç ayrı uzman incelemesi, çapraz kaynak taraması, ilk kullanım arayüz gözlemi, aynı makineden Vite adresini browser'da açma ve CORS yanıt başlığı probu tamamlandı; bulgular gitignored rapora kaydedildi. Normal browser uygulama kabuğunu açtı; Tauri RPC gerektiren alanlar loading/error durumunda kaldı. Görsel stüdyosu geliştirme runtime'ında hata sınırına düştü; eksik yerel dependency dosyası nedeniyle release kusuru olarak genellenmedi.
-- [ ] MCP kategori filtrelerindeki `webSearch`, `devOpsCloud`, `memoryReasoning` anahtar uyumsuzluğunu düzelt ve filtre sonuçlarını doğrula.
+- [x] FE-09: MCP kategori etiketleri ve filtreleri ortak kategori normalizasyonuna bağlandı; yedi kategori için etiket ve çapraz filtre eşleşme regresyonları eklendi.
+- [ ] FE-09: MCP ekranındaki etiketleri ve filtre sonuçlarını değişiklik sonrası render edilmiş UI otomasyonuyla doğrula; bu oturumdaki Windows tıklama aracı iki yöntemde de hedefe ulaşamadı.
 - [ ] Yüzey geçişinde odak yönetimini; kısayol kaydı sırasındaki global kısayol yan etkisini; başlık çubuğu kısayol etiketini ve arama combobox erişilebilirliğini düzelt.
 - [ ] Provider API key ve proje MCP editörlerine klavye ile submit davranışı ekle; doğrulama hatalarını ilgili alanlara bağla.
 - [ ] Yanlış loading metinlerini domain'e göre düzelt; prompt template load hatasına güvenli retry/recovery ekle.

@@ -8,9 +8,12 @@ import { Button, Input } from '@shared/components';
 import {
   formatMcpToolLabel,
   type McpCategory,
-  type McpCategoryKey,
   type McpServerRecord,
 } from '@features/model-catalog/data/mcpCatalog';
+import {
+  matchesMcpCategory,
+  mcpCategoryKeyFor,
+} from '@features/model-catalog/data/mcpCategories';
 import { useMcpStore } from '@features/model-catalog/stores/mcpStore';
 import { McpCard } from './McpCard';
 import { McpEnvModal } from './McpEnvModal';
@@ -59,17 +62,14 @@ export function McpCatalogTab() {
   }, [noticeKey]);
 
   const categoryLabel = (value: string) => {
-    const normalized = value.toLocaleLowerCase('en-US').replace(/[^a-z]/g, '');
-    const categoryKey = categoryKeyFor(normalized);
+    const categoryKey = mcpCategoryKeyFor(value);
     return categoryKey ? t(categoryKey) : value;
   };
 
   const visibleServers = useMemo(() => {
     const normalizedQuery = query.trim().toLocaleLowerCase(i18n.language);
     return servers.filter((server) => {
-      const matchesCategory =
-        category === 'all' ||
-        categoryKeyFor(server.category.toLocaleLowerCase('en-US').replace(/[^a-z]/g, '')) === categoryKeyFor(category);
+      const matchesCategory = matchesMcpCategory(server.category, category);
       if (!matchesCategory) return false;
       if (!normalizedQuery) return true;
       const description = server.descriptionKey ? t(server.descriptionKey) : server.description;
@@ -154,7 +154,7 @@ export function McpCatalogTab() {
               size="small"
               variant="ghost"
             >
-              {t(item === 'all' ? 'mcpCategoryAll' : (categoryKeyFor(item) ?? 'mcpCategoryAll'))}
+              {t(item === 'all' ? 'mcpCategoryAll' : (mcpCategoryKeyFor(item) ?? 'mcpCategoryAll'))}
             </Button>
           ))}
         </nav>
@@ -244,25 +244,4 @@ export function McpCatalogTab() {
       </div>
     </div>
   );
-}
-
-function categoryKeyFor(normalizedCategory: string): McpCategoryKey | null {
-  switch (normalizedCategory) {
-    case 'developer':
-      return 'mcpCategoryDeveloper';
-    case 'database':
-      return 'mcpCategoryDatabase';
-    case 'websearch':
-      return 'mcpCategoryWebSearch';
-    case 'devopscloud':
-      return 'mcpCategoryDevOpsCloud';
-    case 'productivity':
-      return 'mcpCategoryProductivity';
-    case 'memoryreasoning':
-      return 'mcpCategoryMemoryReasoning';
-    case 'finance':
-      return 'mcpCategoryFinance';
-    default:
-      return null;
-  }
 }
