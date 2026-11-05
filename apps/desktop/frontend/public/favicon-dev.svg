@@ -1,6 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 500" role="img" aria-labelledby="title">
   <title id="title">OpenChat development icon</title>
-  <!-- Lucide icon geometry from lucide-react v1.66.0: CodeXml, Hammer, and Braces.
+  <!-- Lucide icon geometry from lucide-react v1.66.0: CodeXml, Hammer, Braces,
+       Terminal, Wrench, Bug, GitBranch, Cpu, and Bot.
        Copyright (c) 2026 Lucide Icons and Contributors. Licensed under ISC.
        Permission to use, copy, modify, and/or distribute this software for any
        purpose with or without fee is hereby granted, provided that the above
@@ -28,27 +29,90 @@
       <path d="M8 3H7a2 2 0 0 0-2 2v5a2 2 0 0 1-2 2 2 2 0 0 1 2 2v5c0 1.1.9 2 2 2h1" />
       <path d="M16 21h1a2 2 0 0 0 2-2v-5c0-1.1.9-2 2-2a2 2 0 0 1-2-2V5a2 2 0 0 0-2-2h-1" />
     </symbol>
+    <symbol id="terminal-mark" viewBox="0 0 24 24">
+      <path d="M12 19h8" />
+      <path d="m4 17 6-6-6-6" />
+    </symbol>
+    <symbol id="wrench-mark" viewBox="0 0 24 24">
+      <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.106-3.105c.32-.322.863-.22.983.218a6 6 0 0 1-8.259 7.057l-7.91 7.91a1 1 0 0 1-2.999-3l7.91-7.91a6 6 0 0 1 7.057-8.259c.438.12.54.662.219.984z" />
+    </symbol>
+    <symbol id="bug-mark" viewBox="0 0 24 24">
+      <path d="M12 20v-9" />
+      <path d="M14 7a4 4 0 0 1 4 4v3a6 6 0 0 1-12 0v-3a4 4 0 0 1 4-4z" />
+      <path d="M14.12 3.88 16 2" />
+      <path d="M21 21a4 4 0 0 0-3.81-4" />
+      <path d="M21 5a4 4 0 0 1-3.55 3.97" />
+      <path d="M22 13h-4" />
+      <path d="M3 21a4 4 0 0 1 3.81-4" />
+      <path d="M3 5a4 4 0 0 0 3.55 3.97" />
+      <path d="M6 13H2" />
+      <path d="m8 2 1.88 1.88" />
+      <path d="M9 7.13V6a3 3 0 1 1 6 0v1.13" />
+    </symbol>
+    <symbol id="git-branch-mark" viewBox="0 0 24 24">
+      <path d="M15 6a9 9 0 0 0-9 9V3" />
+      <circle cx="18" cy="6" r="3" />
+      <circle cx="6" cy="18" r="3" />
+    </symbol>
+    <symbol id="cpu-mark" viewBox="0 0 24 24">
+      <path d="M12 20v2" />
+      <path d="M12 2v2" />
+      <path d="M17 20v2" />
+      <path d="M17 2v2" />
+      <path d="M2 12h2" />
+      <path d="M2 17h2" />
+      <path d="M2 7h2" />
+      <path d="M20 12h2" />
+      <path d="M20 17h2" />
+      <path d="M20 7h2" />
+      <path d="M7 20v2" />
+      <path d="M7 2v2" />
+      <rect x="4" y="4" width="16" height="16" rx="2" />
+      <rect x="8" y="8" width="8" height="8" rx="1" />
+    </symbol>
+    <symbol id="bot-mark" viewBox="0 0 24 24">
+      <path d="M12 8V4H8" />
+      <rect width="16" height="12" x="4" y="8" rx="2" />
+      <path d="M2 14h2" />
+      <path d="M20 14h2" />
+      <path d="M15 13v2" />
+      <path d="M9 13v2" />
+    </symbol>
   </defs>
 
   <rect width="500" height="500" rx="108" fill="#2367C9" />
-  <g fill="none" stroke="#DCEBFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" opacity="0.16">
-    <use href="#code-xml-mark" x="68" y="18" width="30" height="30" />
-    <use href="#hammer-mark" x="180" y="18" width="30" height="30" />
-    <use href="#braces-mark" x="292" y="18" width="30" height="30" />
-    <use href="#code-xml-mark" x="404" y="18" width="30" height="30" />
+  <g fill="none" stroke="#DCEBFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <use href="#code-xml-mark" x="43" y="32" width="24" height="24" opacity="0.17" transform="rotate(-18 55 44)" />
+    <use href="#hammer-mark" x="133" y="20" width="29" height="29" opacity="0.12" transform="rotate(17 147.5 34.5)" />
+    <use href="#wrench-mark" x="202" y="40" width="19" height="19" opacity="0.10" transform="rotate(-24 211.5 49.5)" />
+    <use href="#git-branch-mark" x="272" y="20" width="22" height="22" opacity="0.15" transform="rotate(11 283 31)" />
+    <use href="#bug-mark" x="340" y="35" width="20" height="20" opacity="0.11" transform="rotate(-9 350 45)" />
+    <use href="#bot-mark" x="390" y="17" width="24" height="24" opacity="0.14" transform="rotate(22 402 29)" />
+    <use href="#braces-mark" x="444" y="50" width="18" height="18" opacity="0.16" transform="rotate(-16 453 59)" />
 
-    <use href="#hammer-mark" x="68" y="452" width="30" height="30" />
-    <use href="#code-xml-mark" x="180" y="452" width="30" height="30" />
-    <use href="#hammer-mark" x="292" y="452" width="30" height="30" />
-    <use href="#braces-mark" x="404" y="452" width="30" height="30" />
+    <use href="#cpu-mark" x="13" y="124" width="24" height="24" opacity="0.13" transform="rotate(-19 25 136)" />
+    <use href="#git-branch-mark" x="31" y="177" width="20" height="20" opacity="0.09" transform="rotate(30 41 187)" />
+    <use href="#terminal-mark" x="13" y="224" width="27" height="27" opacity="0.15" transform="rotate(-12 26.5 237.5)" />
+    <use href="#hammer-mark" x="21" y="287" width="19" height="19" opacity="0.12" transform="rotate(25 30.5 296.5)" />
+    <use href="#bug-mark" x="29" y="347" width="22" height="22" opacity="0.10" transform="rotate(-17 40 358)" />
 
-    <use href="#braces-mark" x="16" y="220" width="28" height="28" />
-    <use href="#code-xml-mark" x="16" y="260" width="28" height="28" />
-    <use href="#code-xml-mark" x="456" y="220" width="28" height="28" />
-    <use href="#hammer-mark" x="456" y="260" width="28" height="28" />
+    <use href="#wrench-mark" x="459" y="128" width="22" height="22" opacity="0.12" transform="rotate(24 470 139)" />
+    <use href="#bot-mark" x="458" y="181" width="21" height="21" opacity="0.10" transform="rotate(-19 468.5 191.5)" />
+    <use href="#code-xml-mark" x="461" y="238" width="22" height="22" opacity="0.16" transform="rotate(-27 472 249)" />
+    <use href="#braces-mark" x="457" y="294" width="24" height="24" opacity="0.12" transform="rotate(15 469 306)" />
+    <use href="#git-branch-mark" x="447" y="352" width="24" height="24" opacity="0.10" transform="rotate(-13 459 364)" />
+    <use href="#wrench-mark" x="447" y="399" width="18" height="18" opacity="0.14" transform="rotate(11 456 408)" />
+
+    <use href="#braces-mark" x="41" y="434" width="22" height="22" opacity="0.14" transform="rotate(19 52 445)" />
+    <use href="#terminal-mark" x="107" y="458" width="20" height="20" opacity="0.11" transform="rotate(-24 117 468)" />
+    <use href="#wrench-mark" x="179" y="448" width="25" height="25" opacity="0.13" transform="rotate(26 191.5 460.5)" />
+    <use href="#cpu-mark" x="256" y="462" width="22" height="22" opacity="0.10" transform="rotate(-10 267 473)" />
+    <use href="#hammer-mark" x="328" y="452" width="27" height="27" opacity="0.15" transform="rotate(-18 341.5 465.5)" />
+    <use href="#git-branch-mark" x="394" y="445" width="21" height="21" opacity="0.12" transform="rotate(32 404.5 455.5)" />
+    <use href="#code-xml-mark" x="433" y="420" width="22" height="22" opacity="0.17" transform="rotate(-13 444 431)" />
   </g>
 
-  <g transform="translate(250 250) scale(0.82) translate(-250 -250)">
+  <g transform="translate(250 250) scale(0.76) translate(-250 -250)">
     <g transform="translate(-4 8)">
       <path fill="#EEE9E1" d="M 447 291 C 449 295 450.5 299.5 451.5 304.5 C 452.5 309.5 452.83 314.83 452.5 320.5 C 452.17 326.17 451.17 331.67 449.5 337 C 447.83 342.33 445 348.5 441 355.5 C 437 362.5 429.67 371.17 419 381.5 C 408.33 391.83 396 400.67 382 408 C 368 415.33 351 421.67 331 427 C 311 432.33 291.83 435.5 273.5 436.5 C 255.17 437.5 237.33 436.83 220 434.5 C 202.67 432.17 189.83 429.83 181.5 427.5 C 173.17 425.17 165.17 422.17 157.5 418.5 C 149.83 414.83 146.17 412.5 146.5 411.5 C 146.83 410.5 148.5 409.5 151.5 408.5 C 154.5 407.5 157.67 404.83 161 400.5 C 164.33 396.17 166.5 384.17 167.5 364.5 C 168.5 344.83 169.83 332.83 171.5 328.5 C 173.17 324.17 175.5 320.83 178.5 318.5 C 181.5 316.17 185.5 314.83 190.5 314.5 C 195.5 314.17 205.83 315.17 221.5 317.5 C 237.17 319.83 251.33 321 264 321 C 276.67 321 286 320.5 292 319.5 C 298 318.5 307.5 315.67 320.5 311 C 333.5 306.33 346.83 299.67 360.5 291 C 374.17 282.33 384.5 276.5 391.5 273.5 C 398.5 270.5 405.17 269 411.5 269 C 417.83 269 423 269.83 427 271.5 C 431 273.17 434.83 275.83 438.5 279.5 C 442.17 283.17 445 287 447 291 Z" />
       <path fill="#EEE9E1" d="M 175.5 88 C 179.17 86.67 181.17 87 181.5 89 C 181.83 91 180.67 96 178 104 C 175.33 112 174.67 118.5 176 123.5 C 177.33 128.5 180.33 132.67 185 136 C 189.67 139.33 196.17 141.83 204.5 143.5 C 212.83 145.17 220 147.17 226 149.5 C 232 151.83 237 154.83 241 158.5 C 245 162.17 247.33 165.67 248 169 C 248.67 172.33 248 176.17 246 180.5 C 244 184.83 235 197 219 217 C 203 237 191.33 252.67 184 264 C 176.67 275.33 170.17 288.67 164.5 304 C 158.83 319.33 155.5 337 154.5 357 C 153.5 377 152 388.33 150 391 C 148 393.67 144.67 395.5 140 396.5 C 135.33 397.5 129.83 397.17 123.5 395.5 C 117.17 393.83 110.33 390.83 103 386.5 C 95.67 382.17 87.83 375.33 79.5 366 C 71.17 356.67 65.5 348.83 62.5 342.5 C 59.5 336.17 57.17 329.83 55.5 323.5 C 53.83 317.17 53 307.5 53 294.5 C 53 281.5 55 268.5 59 255.5 C 63 242.5 71.67 224.5 85 201.5 C 98.33 178.5 111.83 158.17 125.5 140.5 C 139.17 122.83 150 110 158 102 C 166 94 171.83 89.33 175.5 88 Z" />
