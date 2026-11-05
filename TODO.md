@@ -309,7 +309,7 @@
 - [ ] `T-HOST-08` framework/runtime takibi: WebView2'nin belgelenmiş/ölçülmüş gerçek mesaj boyutu ve kaynak sınırını belirle; Tauri/Wry'e bounded ingress desteği eklenirse yükseltmeyi tekrar değerlendir. Uygulama komutlarındaki alan sınırlarını invoke zarfı sınırı gibi sunma.
 - [x] `T-HOST-09` kod dilimi: Pencere state yazma ve worker-start hataları path/OS hata metni basmadan sabit aşama kodlarıyla raporlanıyor. Worker başarısız revision'ı tamamlanmış deneme olarak işaretleyip spin-retry yapmıyor; flush ack gerçek kayıt sonucunu taşıyor. Okunabilir kayıt yoksa pencerenin maximize açıldığı module doc'ta açıklandı.
 - [ ] `T-HOST-09` runtime kabulü: Gerçek Windows'ta yazılamayan/yavaş app-data diski, kapanış deadline'ı ve eksik/bozuk state dosyasıyla açılış davranışını doğrula; tanı çıktısında path veya OS hata metni olmadığını gözle.
-- [ ] Kabul: doğrulanmış normal kapanış başarıyla raporlanır; interrupt ve child kapanışı bounded olur; süreç ağacı kapandığı doğrulanınca geçici profil temizlenir, kapanış doğrulanamazsa çalışan süreçten veri silmemek için profil korunur ve yolu raporlanır; dialog iptali ve IPC arızaları doğru, güvenli sonuç verir.
+- [ ] Runtime kabulü: Gerçek Tauri/CLI oturumunda normal kapanış, interrupt, child kapanışı, doğrulanamayan kapanışta profilin korunması, native dialog iptali ve IPC arızası; yukarıda uygulanan sınırlar ve güvenli sonuçlarla uyuşmalı.
 
 ### 10.4 Yerel servis ve veri bütünlüğü
 
@@ -343,7 +343,7 @@
 - [x] `CROSS-06` managed model API kod dilimi: Her başlatmada benzersiz UUIDv4 anahtarı `LLAMA_API_KEY` child environment üzerinden veriliyor; anahtar süreç argümanlarına yazılmıyor. Protected özellik/sohbet istekleri bearer auth kullanıyor ve gereksiz llama.cpp Web UI kapalı.
 - [ ] `CROSS-02/03/06` runtime: Farklı Origin, CORS preflight, PNA, DNS rebinding, HMR ve LAN davranışlarını kontrollü ortamda ölç; aktif llama.cpp portunda yetkisiz isteğin reddini, port keşfini, boş port seçimi/child başlatma yarışını ve paketlenmiş dinleyici envanterini doğrula.
 - [x] `CROSS-06` managed model API için kaynak temelli ilk erişim sınırı seçildi: local-service tarafından saklanan bearer anahtarı ve kapalı Web UI. CORS/PNA ve browser-enforced erişim sınırları runtime kabulünde kalıyor.
-- [ ] Kabul: hangi yerel/dış originin hangi endpoint'e erişebildiği kanıtla kayıtlıdır; aynı makine testi LAN güvenliği kanıtı olarak kullanılmaz; paketlenmiş sürümde beklenmeyen listener kalmaz.
+- [ ] Runtime kabulü: Hangi yerel/dış originin hangi endpoint'e erişebildiği kanıtla kayıtlı olmalı; aynı makine testi LAN güvenliği kanıtı sayılmamalı; paketlenmiş sürümde beklenmeyen listener kalmamalı.
 
 ### 10.6 Kullanıcı akışları, erişilebilirlik ve kurtarma
 
@@ -365,18 +365,18 @@
 - [x] `SVC-21`: Sessiz saatler native time alanları düzenleme sırasında taslak tutuyor ve yalnız geçerli `HH:mm` değerini odak kaybında kaydediyor; regresyon testleri ve izole WebView2 giriş/kayıt akışı doğrulandı.
 - [x] `SVC-22`: `conversations` history araması artık yerel proje sonuçlarını eklemiyor; `projects` filtresi proje sonuçlarını koruyor ve iki davranış regresyon testleriyle doğrulandı.
 - [ ] `T-HOST-01..04/07`: Kalan host runtime kabulleri için ürün/uygulama kararlarını ver; farklı DPI/monitör, startup hata/soğuk başlangıç, gerçek WebView2 crash/recovery ve hızlı resize/yavaş disk davranışlarını doğrula.
-- [ ] Kabul: klavye ve ekran okuyucu akışları; loading/empty/error/retry/cancel; hatalı ve uzun girdiler; pencere boyutu ve yeniden açılış durumları ilgili yüzeylerde gözlenebilir testlerle kapsanır.
+- [ ] WebView2 runtime kabulü: Klavye ve ekran okuyucu akışları; loading/empty/error/retry/cancel; hatalı ve uzun girdiler; pencere boyutu ve yeniden açılış durumları gerçek masaüstü yüzeylerinde doğrulanır.
 
 ### 10.7 Paketlenmiş ilk açılış ve release doğrulaması
 
 - [ ] `CROSS-05/QA-10`: NSIS kurulumunu WebView2 güncel, eksik, eski ve çevrimdışı koşullarında; uygulama, sidecar ve ilk profil başlangıcıyla doğrula. Release host Cargo lock davranışını kanıtla.
-- [ ] Kabul: kurulum gereksinimleri/çevrimdışı davranış açıkça gösterilir; ilk açılış, servis readiness ve hata kurtarma paketten çalıştırılarak doğrulanır; CI installer üretmenin yanında desteklenen smoke doğrulamasını da yapar.
+- [ ] Paket runtime kabulü: Kurulum gereksinimleri/çevrimdışı davranış açıkça gösterilir; ilk açılış, servis readiness ve hata kurtarma paketten çalıştırılır; desteklenen CI installer için smoke doğrulaması sağlar.
 
 ### 10.8 OpenChat ile OpenChat dogfooding
 
 - [ ] `DOGFOOD-01/02`: Repo talimatlarının OpenChat'e aktarım yolunu ve `.openchat/instructions.md`, kurallar ve adlandırılmış doğrulama görevlerinin katkısını değerlendir; seçilen modeli tool-calling desteğiyle doğrula.
 - [ ] İzole bir geliştirme görevinde repo kökünü seçme, talimatı anlama, izinli dosya düzenleme, terminal doğrulaması, diff inceleme/geri alma ve oturumu yeniden açıp devam etme adımlarını OpenChat içinde yürüt.
-- [ ] Kabul: kullanıcı doğru proje kökünü ve değişiklikleri görebilir; araç desteği olmayan model açıkça anlaşılır; izinler işlem bazında uygulanır; check sonucu ve diff aynı oturumdan incelenebilir; yarıda kesilen görev güvenle devam ettirilebilir.
+- [ ] Dogfooding kabulü: OpenChat oturumunda kullanıcı doğru proje kökünü ve değişiklikleri görebilmeli; araç desteği olmayan model açıkça anlaşılmalı; izinler işlem bazında uygulanmalı; check sonucu/diff aynı oturumda incelenebilmeli; yarıda kesilen görev güvenle devam ettirilebilmeli.
 
 ### Uygulama sırası ve entegrasyon kapısı
 
