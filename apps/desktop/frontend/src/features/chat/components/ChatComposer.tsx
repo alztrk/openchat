@@ -1,4 +1,4 @@
-import { ArrowUp, Brain, Paperclip, Play, Square, X } from 'lucide-react';
+import { ArrowUp, Brain, FolderOpen, Paperclip, Play, Square, X } from 'lucide-react';
 import { useCallback, useRef, useState } from 'react';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -168,6 +168,12 @@ export function ChatComposer({
   const contextProjectId = activeConversation?.projectId ?? pendingProjectId;
   const contextToolPermissionMode = composerMode === 'plan' ? 'plan' : selectedPermissionMode;
   const isTargetPlaceholder = targetConversationId === null;
+  const isAttachmentSelectionDisabled =
+    isTargetPlaceholder ||
+    pickerModels.length === 0 ||
+    isSending ||
+    isReadingAttachments ||
+    isUpdatingConversationModel;
   const placeholderHint = useMemo(
     () =>
       isTargetPlaceholder
@@ -348,12 +354,7 @@ export function ChatComposer({
             }
             aria-label={t('attachmentChooseFile')}
             className="sr-only"
-            disabled={
-              pickerModels.length === 0 ||
-              isSending ||
-              isReadingAttachments ||
-              isUpdatingConversationModel
-            }
+            disabled={isAttachmentSelectionDisabled}
             multiple
             onChange={(event) => {
               const files = Array.from(event.currentTarget.files ?? []);
@@ -452,15 +453,24 @@ export function ChatComposer({
             <div className="flex min-w-0 flex-wrap items-center gap-2">
               <Button
                 aria-label={t('attachmentChooseFile')}
-                disabled={
-                  isTargetPlaceholder || pickerModels.length === 0 || isSending || isReadingAttachments
-                }
+                disabled={isAttachmentSelectionDisabled}
                 onClick={() => filePickerRef.current?.click()}
                 size="icon"
                 type="button"
                 variant="ghost"
               >
                 <Paperclip aria-hidden="true" size={18} />
+              </Button>
+              <Button
+                aria-label={t('attachmentChooseFromLibrary')}
+                disabled={isAttachmentSelectionDisabled}
+                onClick={() => setIsAttachmentLibraryOpen(true)}
+                size="icon"
+                title={t('attachmentChooseFromLibrary')}
+                type="button"
+                variant="ghost"
+              >
+                <FolderOpen aria-hidden="true" size={18} />
               </Button>
               <ModelPicker
                 canSelectProvider
@@ -583,7 +593,7 @@ export function ChatComposer({
         </form>
 
         <AttachmentLibraryDialog
-          disabled={isTargetPlaceholder || isSending || isReadingAttachments}
+          disabled={isAttachmentSelectionDisabled}
           onOpenChange={setIsAttachmentLibraryOpen}
           onSelect={(item) => addExistingAttachments([item])}
           open={isAttachmentLibraryOpen}
