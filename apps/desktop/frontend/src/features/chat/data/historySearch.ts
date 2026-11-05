@@ -152,8 +152,7 @@ async function searchLocalLibrary(
   locale: string,
 ): Promise<HistorySearchResult[]> {
   const normalizedQuery = query.toLocaleLowerCase(locale);
-  const includeProjects =
-    filters.resultType === 'all' || filters.resultType === 'projects' || filters.resultType === 'conversations';
+  const includeProjects = filters.resultType === 'all' || filters.resultType === 'projects';
   const projects = includeProjects ? await listProjects() : [];
   const results: HistorySearchResult[] = [];
   if (includeProjects) {

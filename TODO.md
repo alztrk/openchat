@@ -293,10 +293,12 @@
 
 - [ ] `FE-01..19`: Sohbet, MCP filtreleri, provider/proje formları, kısayollar, odak/combobox, loading metinleri, prompt retry, recent-search retention ve indirme progress etiketlerini tek kullanıcı akışı başına ele al.
 - [ ] `FE-20`: Bildirim ayarındaki `Slider`, `Field`'dan gelen dahili `labelId` alanını native input'a yayıyor ve React runtime uyarısı oluşturuyor; prop aktarımını düzeltip erişilebilir etiket ilişkisinin korunduğunu doğrula.
+- [ ] `FE-21`: Tarihçe arama helper'ı, yerelleştirilmiş tarihçe arama etiketleri ve backend RPC'si mevcut ancak etkin bir UI tüketicisine bağlı değil; akışı ürün içinde etkinleştir veya kullanılmayan yüzeyleri kaldır.
 - [x] `SVC-18`: Bozuk kanvas JSON/schema/size-limit durumlarını ayır; ham veriyi dışa aktarma ve kullanıcı onaylı yeni boş kanvas akışı ekle. Silme hatası özgün veriyi korur.
 - [x] `SVC-19`: Tasarım, sohbet görünümü ve asistan yürütme tercih yazımlarını store başına seri kuyruğa al; sıradaki işlemin en güncel state'i temel alıp farklı alan patch'lerini birleştirdiğini test et.
 - [x] `SVC-21`: Sessiz saatler native time alanları düzenleme sırasında taslak tutuyor ve yalnız geçerli `HH:mm` değerini odak kaybında kaydediyor; regresyon testleri ve izole WebView2 giriş/kayıt akışı doğrulandı.
-- [ ] `SVC-22`, `QA-12`, `T-HOST-01..04/07`: Kullanılmayan history helper ve `AppManager` rolü için ürün kararı ver; gerekli olan davranışı regresyon testleriyle doğrula.
+- [x] `SVC-22`: `conversations` history araması artık yerel proje sonuçlarını eklemiyor; `projects` filtresi proje sonuçlarını koruyor ve iki davranış regresyon testleriyle doğrulandı.
+- [ ] `QA-12`, `T-HOST-01..04/07`: `AppManager` rolü ve kalan host runtime kabulleri için ürün/uygulama kararlarını ver; gerekli olan davranışı regresyon testleriyle doğrula.
 - [ ] Kabul: klavye ve ekran okuyucu akışları; loading/empty/error/retry/cancel; hatalı ve uzun girdiler; pencere boyutu ve yeniden açılış durumları ilgili yüzeylerde gözlenebilir testlerle kapsanır.
 
 ### 10.7 Paketlenmiş ilk açılış ve release doğrulaması
