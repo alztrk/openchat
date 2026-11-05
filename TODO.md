@@ -187,7 +187,7 @@
 - [x] FE-05 kod dilimi: Başlangıç yüzeyi değişikliği, tercih okumasında zaten kullanılan `isAppSurface` doğrulayıcısına bağlandı; `security` seçeneği diğer yüzeyler gibi kaydediliyor. Regresyon testi ortak doğrulamayı ve kalıcılık öncesi state güncellenmemesini denetliyor.
 - [x] FE-05 runtime: İzole Windows WebView2 profilinde “Security scans” başlangıç yüzeyi seçildi, “Ayarlar kaydedildi.” durumu görüldü; pencere kapatılıp aynı profille yeniden açıldığında erişilebilirlik ağacı ana yüzey olarak “Güvenlik taramaları” gösterdi.
 - [x] FE-06 kod/test dilimi: Node test runner'ına gerçek React DOM render desteği eklendi. FE-01 boş sohbet durumları, FE-02 kitaplık yükleme/seçim/hata/tekrar deneme, FE-03 başarısız klasör taşıması, FE-05 başlangıç yüzeyi kayıt başarısı/hatası ve FE-08 landmark adı/gezinti düğmesi test ediliyor.
-- [ ] FE-06 runtime sınırı: DOM testleri WebView2/Tauri/gerçek ekran okuyucu davranışını kanıtlamaz; runtime kabulü gereken maddeleri kendi TODO'larında ayrıca doğrula.
+- [x] FE-06 doğrulama sınırı: DOM testlerinin WebView2/Tauri/gerçek ekran okuyucu davranışını kanıtlamadığı kayda alındı; bunlara ait runtime kabulleri ayrı TODO maddelerinde tutuluyor.
 - [x] FE-07 kod dilimi: Storage hazır olayı, yalnızca kullanıcı henüz yüzey veya geri/ileri gezinmesi yapmadıysa kayıtlı başlangıç yüzeyini uyguluyor. Erken gezinmede seçili yüzey ve mevcut geçmiş korunuyor; kaynak regresyon testi eklendi.
 - [ ] FE-07 runtime: Yavaş storage/legacy tercih aktarımı sırasında başka bir yüzeye geç; storage-ready olayının seçimi ve geri/ileri geçmişini koruduğunu gerçek masaüstünde doğrula. Kullanıcı gezinmezse kayıtlı başlangıç yüzeyinin yine uygulandığını da doğrula.
 - [x] FE-08 kod dilimi: Ana gezinme `<nav>` landmark'ı artık Sohbetler'e özel ad yerine beş locale'de “Ana gezinme” anlamındaki `primaryNavigation` etiketiyle adlandırılıyor; gerçek DOM render/erişilebilirlik regresyonu FE-06 testine taşındı.
@@ -219,7 +219,8 @@
 - [x] `SVC-19/21`: Eşzamanlı preference patch yazımları store başına sıraya alınıp güncel state'ten birleştiriliyor; notification saat taslakları yalnız geçerli `HH:mm` değerinde blur sırasında kaydediliyor. Patch merge regresyonları ve izole WebView2 saat girişi doğrulandı.
 - [x] Merkezi CLI `check` hata toplama, local/CI Cargo feature ve lock eşleşmesi, task orchestration testleri ve FSD checker'ın tarama hatasında başarısız olması tamamlandı; uygulama ve odaklı test doğrulamaları Faz 10.2.2'de kaydedildi.
 - [x] QA-09: Feature ve widget kaynaklarındaki `@app` bağımlılıkları kaldırıldı; OAuth/bildirim runtime'ları sahibi feature'lara taşındı. Checker alt→üst katman importlarını reddediyor, yalnız tanımlı feature-slice API'lerini kabul ediyor.
-- [ ] QA-07/11: Sinyal aboneliği, Windows `taskkill /T /F` ve Unix process group sonlandırması, bounded kapanış, kapanışı doğrulayamama halinde profil koruması ve run-ID'li normal pencere kapanış işareti uygulandı. Geçici profil cleanup'ında `EPERM`/`EBUSY`/`ENOTEMPTY` için sınırlı tekrar ve hata sınıflarını kapsayan regresyon testleri eklendi. GUI normal kapatma ve gerçek PTY Ctrl+C sonrası UUID profil temizliği doğrulandı. İç `npm run dev` lifecycle mesajı, Tauri CLI `2.12.3` kaynak kodundaki normal `beforeDevCommand` process-tree cleanup davranışıyla uyumlu. Crash ve startup-failure ayrımı hâlâ doğrulanmalı.
+- [x] QA-07/11 kod dilimi: Sinyal aboneliği, Windows `taskkill /T /F` ve Unix process group sonlandırması, bounded kapanış, kapanışı doğrulayamama halinde profil koruması ve run-ID'li normal pencere kapanış işareti uygulandı. Geçici profil cleanup'ında `EPERM`/`EBUSY`/`ENOTEMPTY` için sınırlı tekrar ve hata sınıflarını kapsayan regresyon testleri eklendi. GUI normal kapatma ve gerçek PTY Ctrl+C sonrası UUID profil temizliği doğrulandı. İç `npm run dev` lifecycle mesajı, Tauri CLI `2.12.3` kaynak kodundaki normal `beforeDevCommand` process-tree cleanup davranışıyla uyumlu.
+- [ ] QA-07/11 runtime kalan kabulü: Tauri crash'i, Vite/Tauri startup failure ve Ctrl+C exit-code aktarımını gerçek konsol/uygulama oturumunda ayrı doğrula; profili silme/koruma davranışı ve kullanıcı tanısı doğru olmalı.
 - [x] `maintain-target --apply` ve `clean` için aktif build koruması, güvenli target seçimi ve görünür önizleme davranışı Faz 10.1'de uygulandı; bu araştırma sırasında gerçek cleanup komutları çalıştırılmadı.
 - [x] Tek npm workspace/install otoritesi olarak kök workspace ve `package-lock.json` seçildi; eski iç lockfile kaldırıldı, CI cache yolu ve bootstrap köke hizalandı. Temiz `npm ci` ve izole dependency ağacındaki ilk Vite başlangıcı başarılı; gerçek UI rota yürütmesi ve paketlenmiş uygulama karşılaştırması ayrı takipte.
 - [x] FE-18 kod dilimi: Son aramalar renderer `localStorage` yerine `unifiedStorage` üzerinden kalıcı saklanıyor; legacy `openchat:recent_searches` anahtarı korunuyor. En fazla 5 arama ve 256 karakter sınırı, cihaz içi saklama açıklaması, tek tek/toplu silme, retry ve hata geri bildirimi eklendi.
@@ -237,7 +238,7 @@
 - [ ] `CROSS-06` runtime kabulü: Gerçek pinned `b11349` ve GGUF modeliyle eksik/yanlış anahtarın inference API'sinden `401` aldığını, OpenChat'in özellik/sohbet isteklerinin çalıştığını ve anahtarın renderer'a sızmadığını doğrula. Testte yalnız `GET /health` endpointinin upstream gereği public kaldığını hesaba kat.
 - [ ] Farklı browser Origin'den aktif model portuna istek, port keşfi, tarayıcının local-network policy davranışı ve boş port seçimi/child başlatma yarışını kontrollü runtime incele.
 - [x] Yerel check kapsamını CI'deki ortak frontend/Rust doğrulama adımlarıyla hizala; Windows CI çalışması henüz gözlenmedi.
-- [ ] Kalan doğrulanmış kullanıcı akışı ve servis kusurlarını ilgili düzeltme dilimlerinde regression senaryolarına bağla.
+- [x] Araştırmada doğrulanan ve kaynak düzeyinde düzeltilebilen kullanıcı akışı/servis kusurları ilgili kod dilimlerinde regresyon senaryolarına bağlandı; gerçek WebView2, installer, veri içeren profil, güç-kaybı ve dogfooding kabulleri aşağıdaki runtime maddelerinde açık.
 - [ ] NSIS installerı eksik/eski WebView2 runtime ve offline koşullarında kurup aç; sidecar ile ilk profil başlangıcını doğrula.
 - [ ] Temiz dependency ağacında Vite, Görsel stüdyosu entry modülünü HTTP 200 ile dönüştürdü; browser'da lazy route'u gerçekten yürütüp önceki dinamik import hatasını ve paketlenmiş build'i karşılaştır.
 - [ ] OpenChat'i OpenChat deposuna proje olarak ekleyip bir geliştirme görevini uygulamanın kendi sohbet, dosya araçları, terminal ve diff/revert akışıyla baştan sona yürüt; proje kökünün, izin kararlarının, komut çıktılarının ve oturum yeniden açma davranışının yeterli olduğunu doğrula.
@@ -276,7 +277,8 @@
 - [x] `QA-13`: Import checker re-export'ları tarıyor, dosya/ağaç okuma hatalarını hata sonucu yapıyor; statik import, type-only re-export, okuma ve enumerasyon hataları için test eklendi.
 - [x] `QA-14`: ChatGPT account testlerinin geçici veritabanı dizinleri PID ve süreç içi sayaç yerine UUID ile tekil oluşturuluyor; önceki kesilmiş test koşusundan kalan dizinin yeniden kullanımına bağlı tablo çakışması kapatıldı.
 - [x] Kısmi kabul: check adımları ayrı isimlerle raporlanır ve runner hatasında diğerleri de denenir; local/CI ortak komutları hizalı; frontend build, test, locale/import kontrolleri ve checker testleri geçti.
-- [ ] Kalan kabul: desteklenen Windows CI çalışması; Cargo check/test'in 20 GiB hedef sınırına uyarak tamamlanması; browser'da Görsel stüdyosu lazy route ve paketlenmiş build karşılaştırması.
+- [x] Cargo check/test disk sınırı kabulü: Merkezi Windows `npm run openchat -- check` hedef kullanımı 15.86 GiB / 20 GiB iken başarıyla tamamlandı.
+- [ ] Kalan kabul: desteklenen Windows CI çalışması ve browser'da Görsel stüdyosu lazy route ile paketlenmiş build karşılaştırması.
 
 ### 10.3 CLI, Tauri ve sidecar yaşam döngüsü
 
@@ -345,7 +347,7 @@
 
 ### 10.6 Kullanıcı akışları, erişilebilirlik ve kurtarma
 
-- [ ] `FE-01..19`: Sohbet, MCP filtreleri, provider/proje formları, kısayollar, odak/combobox, loading metinleri, prompt retry, recent-search retention ve indirme progress etiketlerini tek kullanıcı akışı başına ele al.
+- [x] `FE-01..19` kod/regresyon dilimleri: Sohbet, MCP filtreleri, provider/proje formları, kısayollar, odak/combobox, loading metinleri, prompt retry, recent-search retention ve indirme progress etiketlerine ait kaynak düzeltmeleri ile otomatik regresyonlar tamamlandı. Gerçek masaüstü akışları ve erişilebilirlik kabulleri aşağıda ayrı takip ediliyor.
 - [x] `FE-R02` kod dilimi: Özel klasör tercih okuyucusu geçerli, bozuk ve okunamayan veriyi ayırıyor; bozuk ham değer korunup dışa aktarılabiliyor. Bozuk/okunamayan veri varken klasör CRUD ve konuşma konumu değişiklikleri engelleniyor; yazıcı da saklanan veriyi yeniden doğruluyor. Decoder ve React DOM regresyonları geçti.
 - [ ] `FE-R02` runtime: İzole Windows WebView2 profilinde bozuk JSON ve kısmi geçersiz kayıtla klasör uyarısını, kurtarma dosyasının ham veriyi aynen taşımasını ve klasör/konuşma değişikliklerinin saklanan değeri koruduğunu doğrula.
 - [x] `FE-20` kod dilimi: `Slider` `Field`'dan yalnızca native input'a ait `id` ve ARIA alanlarını alıyor; dahili `labelId` artık DOM'a yayılmıyor. Regresyon testi prop sızıntısını ve `Field` etiketinin `htmlFor`/`id` bağını kapsıyor.
