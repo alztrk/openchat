@@ -2,7 +2,13 @@ import { existsSync, lstatSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-export function removeTemporaryTestProfile(profileRoot) {
+const REMOVAL_RETRY_DELAYS_MS = [100, 250, 500, 1000, 2000];
+const RETRYABLE_REMOVAL_CODES = new Set(['EBUSY', 'ENOTEMPTY', 'EPERM']);
+
+export async function removeTemporaryTestProfile(
+  profileRoot,
+  { removeDirectory = rmSync, wait = (delayMs) => new Promise((resolve) => setTimeout(resolve, delayMs)) } = {},
+) {
   if (!existsSync(profileRoot)) return;
 
   const temporaryRoot = realpathSync(tmpdir());
@@ -21,5 +27,16 @@ export function removeTemporaryTestProfile(profileRoot) {
     throw new Error('Refusing to remove a profile outside the desktop test temporary scope.');
   }
 
-  rmSync(canonicalProfileRoot, { recursive: true });
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      removeDirectory(canonicalProfileRoot, { recursive: true });
+      return;
+    } catch (error) {
+      if (!RETRYABLE_REMOVAL_CODES.has(error?.code) || attempt >= REMOVAL_RETRY_DELAYS_MS.length) {
+        throw error;
+      }
+
+      await wait(REMOVAL_RETRY_DELAYS_MS[attempt]);
+    }
+  }
 }

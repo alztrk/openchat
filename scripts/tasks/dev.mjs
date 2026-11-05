@@ -123,8 +123,8 @@ export const devTestProfile = {
           removeNormalCloseMarker(markerPath);
         }
       },
-      cleanup: () => {
-        if (cleanupProfileOnExit && profileRoot) removeTemporaryTestProfile(profileRoot);
+      cleanup: async () => {
+        if (cleanupProfileOnExit && profileRoot) await removeTemporaryTestProfile(profileRoot);
       },
     });
 
@@ -199,8 +199,8 @@ export const startupBenchmark = {
 
         process.stdout.write(`Debug startup to React ready: ${elapsedMs.toFixed(1)} ms; app shell and encrypted database verified.\n`);
       },
-      cleanup: () => {
-        if (profileRoot) removeTemporaryTestProfile(profileRoot);
+      cleanup: async () => {
+        if (profileRoot) await removeTemporaryTestProfile(profileRoot);
       },
     });
 
