@@ -177,6 +177,7 @@ export function App() {
   const rightPanelShellRef = useRef<HTMLDivElement>(null);
   const surfaceHeadingRef = useRef<HTMLElement>(null);
   const previousActiveSurfaceRef = useRef(activeSurface);
+  const didNavigateBeforeStorageReadyRef = useRef(false);
   const lastInteractionMethod = useRef<'keyboard' | 'pointer'>('pointer');
   const goalBudgetPauseAttemptKey = useRef<string | null>(null);
   const initializeChat = useChatStore((state) => state.initialize);
@@ -298,7 +299,9 @@ export function App() {
     let disposed = false;
     const initializePreferences = () => {
       if (disposed) return;
-      setSurfaceHistory({ surfaces: [readInitialSurface()], index: 0 });
+      if (!didNavigateBeforeStorageReadyRef.current) {
+        setSurfaceHistory({ surfaces: [readInitialSurface()], index: 0 });
+      }
       setTheme(readThemePreference());
       setAppearance(readAppearancePreferences());
       setWorkspaceRatio(readWorkspacePanelRatio());
@@ -498,6 +501,7 @@ export function App() {
   }, [theme]);
 
   const navigateSurface = useCallback((surface: AppSurface) => {
+    didNavigateBeforeStorageReadyRef.current = true;
     try {
       writeLastSurface(surface);
     } catch (cause: unknown) {
@@ -617,6 +621,7 @@ export function App() {
 
   const moveInHistory = (offset: number) => {
     requestTemporaryChatExit(() => {
+      didNavigateBeforeStorageReadyRef.current = true;
       setSurfaceHistory((current) => {
         const nextIndex = current.index + offset;
         return current.surfaces[nextIndex] ? { ...current, index: nextIndex } : current;
