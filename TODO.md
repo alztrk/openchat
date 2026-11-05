@@ -180,7 +180,9 @@
 - [ ] FE-10: Gerçek yüzey geçişi, geri/ileri geçmişi ve geçici sohbet onayından sonraki odağı render edilmiş masaüstü arayüzünde doğrula; Windows UI aracı bu oturumda hedefe tıklayamadı.
 - [x] FE-11: Global kısayol dinleyicisi bubble aşamasına taşındı; kayıt modundaki capture listener tuş olayını önce engelliyor. Normal global dispatch ve listener cleanup fazı için regresyon testi eklendi.
 - [x] FE-12: Komut paleti başlık çubuğu etiketi düzenlenmiş kısayol bağını gösteriyor; atanmamış durumda yerelleştirilmiş metin kullanıyor. Kaynak regresyon testi eklendi.
-- [ ] FE-13: Başlık çubuğu aramasında input, görünür popup ve aktif sonuç arasında ARIA ilişkilerini kur; expanded durumunu gerçek görünürlükle eşleştir.
+- [x] FE-13: Başlık çubuğu aramasında input, görünür recent/search popup ve aktif arama sonucu arasında ARIA ID ilişkileri kuruldu; expanded durumu gerçek popup görünürlüğünden türetiliyor. Kaynak regresyon testi eklendi.
+- [ ] FE-13: Klavye/fare ile arama sonuçlarını açıp seç; erişilebilirlik ağacında controls ve active descendant hedeflerinin mevcut option'ları gösterdiğini masaüstü UI'da doğrula.
+- [ ] FE-R04: Recent search option seçili/klavye davranışını ve option içindeki silme kontrolünün erişilebilirlik semantiğini düzelt.
 - [ ] Settings içeriğindeki iç içe `<main>` landmark'ını tek ana içerik landmark'ı olacak şekilde düzelt ve erişilebilirlik ağacında doğrula.
 - [ ] Provider API key ve proje MCP editörlerine klavye ile submit davranışı ekle; doğrulama hatalarını ilgili alanlara bağla.
 - [ ] Yanlış loading metinlerini domain'e göre düzelt; prompt template load hatasına güvenli retry/recovery ekle.

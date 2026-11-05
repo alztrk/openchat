@@ -1,5 +1,5 @@
 import { Bot, Clock, File, LoaderCircle, MessageSquare, Pin, Search, Trash2, User, X } from 'lucide-react';
-import { type KeyboardEvent, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import { type KeyboardEvent, type ReactNode, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Button, Input } from '@shared/components';
@@ -133,6 +133,9 @@ export function TitleBarSearch({ onSelectConversation }: TitleBarSearchProps) {
   >([]);
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
 
+  const searchId = useId();
+  const recentSearchesListboxId = `${searchId}-recent-searches`;
+  const searchResultsListboxId = `${searchId}-search-results`;
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -327,6 +330,14 @@ export function TitleBarSearch({ onSelectConversation }: TitleBarSearchProps) {
     return targets;
   }, [searchGroups]);
 
+  const showRecentSearches = isOpen && !query.trim() && recentSearches.length > 0;
+  const showSearchResults = isOpen && shouldSearch;
+  const isPopupVisible = showRecentSearches || showSearchResults;
+  const activeSearchOptionId =
+    showSearchResults && navigableTargets[selectedIndex]
+      ? `${searchResultsListboxId}-option-${selectedIndex}`
+      : undefined;
+
   // biome-ignore lint/correctness/useExhaustiveDependencies: Reset the selected result whenever the query changes.
   useEffect(() => {
     setSelectedIndex(0);
@@ -433,7 +444,6 @@ export function TitleBarSearch({ onSelectConversation }: TitleBarSearchProps) {
   };
 
   let currentIndex = 0;
-  const showRecentSearches = isOpen && !query.trim() && recentSearches.length > 0;
 
   return (
     <div
@@ -444,8 +454,16 @@ export function TitleBarSearch({ onSelectConversation }: TitleBarSearchProps) {
       <div className="relative flex w-full items-center">
         <Search aria-hidden="true" className="pointer-events-none absolute left-2.5 text-secondary-icon" size={14} />
         <Input
+          aria-activedescendant={activeSearchOptionId}
           aria-autocomplete="list"
-          aria-expanded={isOpen}
+          aria-controls={
+            showRecentSearches
+              ? recentSearchesListboxId
+              : showSearchResults
+                ? searchResultsListboxId
+                : undefined
+          }
+          aria-expanded={isPopupVisible}
           aria-label={t('searchChats')}
           className="w-full border-border/70 bg-surface/80 pl-8 pr-12 text-xs transition-colors duration-150 hover:border-border focus:bg-surface focus:ring-1 focus:ring-accent"
           density="compact"
@@ -491,6 +509,7 @@ export function TitleBarSearch({ onSelectConversation }: TitleBarSearchProps) {
         <div
           aria-label={t('recentSearches')}
           className="openchat-dropdown-surface absolute left-0 right-0 top-full z-50 mt-1 flex w-full origin-top flex-col overflow-hidden p-1"
+          id={recentSearchesListboxId}
           role="listbox"
         >
           <div className="flex items-center justify-between px-2 py-1.5 text-caption font-medium text-secondary-text">
@@ -538,10 +557,11 @@ export function TitleBarSearch({ onSelectConversation }: TitleBarSearchProps) {
         </div>
       ) : null}
 
-      {isOpen && shouldSearch ? (
+      {showSearchResults ? (
         <div
           aria-label={t('searchChats')}
           className="openchat-dropdown-surface absolute left-0 right-0 top-full z-50 mt-1 flex w-full origin-top flex-col overflow-hidden transition-all duration-150 ease-out"
+          id={searchResultsListboxId}
           role="listbox"
         >
           {hasActiveFilter ? (
@@ -583,6 +603,7 @@ export function TitleBarSearch({ onSelectConversation }: TitleBarSearchProps) {
                           ? 'bg-accent/15 font-medium text-text'
                           : 'text-text/90 hover:bg-hover active:bg-active'
                       }`}
+                      id={`${searchResultsListboxId}-option-${conversationTargetIndex}`}
                       onClick={() => handleSelectConversation(group.conversationId)}
                       onMouseEnter={() => setSelectedIndex(conversationTargetIndex)}
                       role="option"
@@ -623,6 +644,7 @@ export function TitleBarSearch({ onSelectConversation }: TitleBarSearchProps) {
                                   ? 'bg-accent/15 font-medium text-text'
                                   : 'text-secondary-text hover:bg-hover hover:text-text'
                               }`}
+                              id={`${searchResultsListboxId}-option-${messageTargetIndex}`}
                               key={`${msg.messageId}:${msg.attachmentId ?? 'message'}`}
                               onClick={() => handleSelectMessage(group.conversationId, msg.messageId)}
                               onMouseEnter={() => setSelectedIndex(messageTargetIndex)}
