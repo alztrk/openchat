@@ -45,7 +45,7 @@ Transport is stdio/stdout — no inbound network listener. Complex/capacity reje
 ### Service → Storage
 
 - Broker process: no network capability, bounded FIFO queue (8-second response wait)
-- Database and cache live in AppContainer's private local-data directory
+- The SQLCipher database lives in the broker's AppContainer profile. The parent service's cache, logs, and attachment files live under `%LOCALAPPDATA%\OpenChat`, outside that profile.
 - Parent sidecar does **not** open database files directly
 
 ## Findings
@@ -57,6 +57,10 @@ Provider API keys, MCP secrets, and OAuth token pairs are individually DPAPI-pro
 ### Documented — Retained rollback content
 
 Conversation deletion and history clearing affect the active database. Verified migration backups have no automatic expiry or in-app restore flow. Historical filesystem snapshots may retain plaintext blocks from before SQLCipher migration.
+
+### Open — Attachment blobs are outside database encryption (P2, medium)
+
+On Windows, `AppStorage::open` keeps the service root at `%LOCALAPPDATA%\OpenChat` (`services/openchat-local-service/src/adapters/storage/mod.rs`), while the SQLCipher database is owned by the AppContainer storage broker (`services/openchat-local-service/src/storage_broker.rs`). `storage_chat::stage_attachments` writes the incoming attachment bytes directly to `.data` files under that service root (`services/openchat-local-service/src/transport/rpc/storage_chat/attachments.rs`), without application-level content encryption. A filesystem disclosure of the current user's profile can therefore expose attachment contents without access to the SQLCipher database or its key. This review found no cross-user filesystem permission bypass; the finding concerns weaker at-rest protection for attachment content.
 
 ### Documented — No vulnerability reporting channel
 
@@ -93,3 +97,5 @@ No verified vulnerability-reporting channel is documented. Selection and verific
 | Schema initialization stops | Stays at every requested target version; aligns user-question validation |
 | Response API index validation | Rejects malformed tool-call events with invalid or out-of-range output index |
 | Tool call limits | Applies per-turn limit to every event that can create a call |
+| Task-scoped local environment loading | Only `dev` and `build` load the root `.env`; checks, tests, benchmarks, and maintenance tasks do not inherit those local values |
+| Pending archive marker bounds | Requires the exact expected marker length before reading and rejects oversized marker files |
