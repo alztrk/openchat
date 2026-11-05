@@ -126,7 +126,7 @@ export function McpEnvModal({ open, server, busy, loadStatus, onOpenChange, onSa
       {isLoading ? (
         <p aria-live="polite" className="flex items-center gap-2 py-6 text-secondary-text" role="status">
           <LoaderCircle aria-hidden="true" className="animate-spin" size={17} />
-          {t('modelsLoading')}
+          {t('mcpCredentialStatusLoading')}
         </p>
       ) : null}
       {!isLoading && environmentNames.length === 0 ? (

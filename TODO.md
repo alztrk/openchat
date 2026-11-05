@@ -189,7 +189,8 @@
 - [ ] FE-14: API key ve proje MCP formlarında Enter ile gerçek UI submit akışını masaüstünde doğrula.
 - [x] FE-15: Custom provider, proje oluşturma/MCP ve arşiv passphrase doğrulamaları ilgili alanlara `aria-invalid`/`aria-describedby`/alert ilişkisiyle bağlandı; submit sonrası ilgili ilk geçersiz alan odaklanıyor. Arşiv hatalarının dialog dışında yinelenen alert'i kaldırıldı; kaynak regresyon testi eklendi.
 - [ ] FE-15: Custom provider, proje oluşturma/MCP ve arşiv passphrase hatalarının görünümünü, ekran okuyucu duyurusunu ve ilk geçersiz alana odağı gerçek masaüstü arayüzünde doğrula.
-- [ ] Yanlış loading metinlerini domain'e göre düzelt; prompt template load hatasına güvenli retry/recovery ekle.
+- [x] FE-16: Yanlış `modelsLoading`/`historyLoading` kullanımları düzeltildi; OAuth, sağlayıcı credential durumu, ajanlar, MCP credential durumu, prompt şablonları, proje içeriği ve istatistikler doğru domain etiketiyle yükleniyor. Beş locale tutarlı; kaynak regresyon testi eklendi.
+- [ ] FE-17: Prompt template storage okuma hatasında veri kaybetmeyen retry ve kullanıcı onaylı export/reset recovery yolu ekle.
 - [ ] Design canvas bozulma kurtarması, security scan delete/cleanup reconciliation ve cancel timeout davranışı için ürün sözleşmesi belirle.
 - [ ] Archive restore crash recovery/journal ve archive cancellation/status; attachment index cancellation/progress; worktree list cancellation ve backend limiti konularını tasarla.
 - [ ] Eşzamanlı tercih güncellemelerinde patch merge/invariant davranışını test et; notification saat girişini Windows WebView2'de doğrula.

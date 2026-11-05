@@ -79,7 +79,7 @@ export function ProjectInstructionsPanel({ project, onClose }: ProjectInstructio
       <p className="text-sm text-secondary-text">{t('projectInstructionsDescription')}</p>
       {isLoading ? (
         <p aria-live="polite" className="py-8 text-center text-sm text-secondary-text">
-          {t('historyLoading')}
+          {t('projectInstructionsLoading')}
         </p>
       ) : (
         <>

@@ -178,7 +178,7 @@ export function ProjectMemoryPanel({ project, onClose }: ProjectMemoryPanelProps
       <p className="text-sm text-secondary-text">{t('projectMemoryDescription')}</p>
       {isLoading && memory === null ? (
         <p aria-live="polite" className="py-8 text-center text-sm text-secondary-text">
-          {t('historyLoading')}
+          {t('projectMemoryLoading')}
         </p>
       ) : null}
       {memory ? (

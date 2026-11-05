@@ -412,7 +412,7 @@ export function ApiKeyProvidersSection({
   const openCodeKeySuffix = snapshot?.openCodeKeySuffix ?? null;
   const apiKeyLoadingState = loading ? (
     <div className="px-5 py-5">
-      <div aria-label={t('modelsLoading')} className="h-0.5 animate-pulse rounded-full bg-accent" role="status" />
+      <div aria-label={t('providerCredentialStatusLoading')} className="h-0.5 animate-pulse rounded-full bg-accent" role="status" />
     </div>
   ) : null;
   const loadFailureState = loadFailed ? (

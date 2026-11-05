@@ -132,7 +132,7 @@ export function ProjectToolPermissionsPanel({ project, onClose }: ProjectToolPer
     <div className="grid gap-3">
       {isLoading ? (
         <p aria-live="polite" className="py-8 text-center text-sm text-secondary-text">
-          {t('historyLoading')}
+          {t('projectToolRulesSummaryLoading')}
         </p>
       ) : loadFailed ? (
         <div className="grid gap-3">

@@ -356,7 +356,7 @@ export function ProviderSettingsSection({
 
         {request === 'loading' ? (
           <div className="border-t border-border px-5 py-5">
-            <div aria-label={t('modelsLoading')} className="h-0.5 animate-pulse rounded-full bg-accent" role="status" />
+            <div aria-label={t('oauthConnectionsLoading')} className="h-0.5 animate-pulse rounded-full bg-accent" role="status" />
           </div>
         ) : request === 'error' ? (
           <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border px-5 py-4">

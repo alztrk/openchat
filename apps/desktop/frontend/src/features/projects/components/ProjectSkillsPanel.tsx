@@ -97,7 +97,7 @@ export function ProjectSkillsPanel({ project, onClose }: ProjectSkillsPanelProps
     <div className="grid gap-3">
       {isLoading ? (
         <p aria-live="polite" className="py-8 text-center text-sm text-secondary-text">
-          {t('historyLoading')}
+          {t('projectSkillsLoading')}
         </p>
       ) : loadFailed ? (
         <div className="grid gap-3">

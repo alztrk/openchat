@@ -144,7 +144,7 @@ export function ProjectMcpCredentialDialog({ projectId, server, open, onOpenChan
               {stored[name] === null
                 ? errors[name] === 'projectMcpCredentialUnavailable'
                   ? t('projectMcpCredentialUnavailable')
-                  : t('historyLoading')
+                  : t('projectMcpCredentialStatusLoading')
                 : t(stored[name] ? 'projectMcpCredentialStored' : 'projectMcpCredentialMissing')}
             </p>
             <Input

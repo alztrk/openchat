@@ -325,7 +325,7 @@ export function StatisticsSettingsSection({ onOpenConversation }: StatisticsSett
         </Card>
       ) : null}
       {loadState === 'loading' && snapshot === null ? (
-        <SettingsSectionSkeleton label={t('historyLoading')} />
+        <SettingsSectionSkeleton label={t('statisticsLoading')} />
       ) : null}
       {snapshot ? (
         <>

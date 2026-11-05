@@ -108,7 +108,7 @@ export function PromptTemplatesTab({ onUsePrompt }: PromptTemplatesTabProps) {
   if (!isLoaded) {
     return (
       <p aria-live="polite" className="p-6 text-sm text-secondary-text" role="status">
-        {t('modelsLoading')}
+        {t('promptTemplatesLoading')}
       </p>
     );
   }

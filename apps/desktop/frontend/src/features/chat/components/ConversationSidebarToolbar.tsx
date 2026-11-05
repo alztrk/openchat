@@ -69,7 +69,7 @@ export function ConversationSidebarToolbar({
     <>
       {agentProfilesLoadState === 'idle' || agentProfilesLoadState === 'loading' ? (
         <p aria-live="polite" className="px-2 py-2 text-xs text-secondary-text" role="status">
-          {t('modelsLoading')}
+          {t('assistantProfilesLoading')}
         </p>
       ) : agentProfilesLoadState === 'error' ? (
         <div className="grid gap-1 px-2 py-2" role="alert">
