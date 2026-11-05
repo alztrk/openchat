@@ -125,6 +125,7 @@ export function ConversationSidebar({
   const [viewMode, setViewMode] = useState<SidebarViewMode>(readSidebarViewMode);
   const [manualOrder, setManualOrder] = useState<string[]>(readSidebarManualOrder);
   const [customFolders, setCustomFolders] = useState<CustomSidebarFolder[]>(readCustomSidebarFolders);
+  const [isCustomFolderSaving, setIsCustomFolderSaving] = useState(false);
   const [collapsedFolderIds, setCollapsedFolderIds] = useState<ReadonlySet<string>>(() => new Set());
   const [folderDropTargetId, setFolderDropTargetId] = useState<string | null>(null);
   const [isCreatingFolder, setIsCreatingFolder] = useState(false);
@@ -136,6 +137,8 @@ export function ConversationSidebar({
   const drawerRef = useRef<HTMLElement | null>(null);
   const scrollAreaRef = useRef<HTMLDivElement | null>(null);
   const newFolderInputRef = useRef<HTMLInputElement | null>(null);
+  const customFoldersRef = useRef(customFolders);
+  const customFolderMutationPendingRef = useRef(false);
   const [isCompactSidebar, setIsCompactSidebar] = useState(() => sidebarWidth <= SIDEBAR_COMPACT_WIDTH);
 
   useEffect(() => {
@@ -311,8 +314,35 @@ export function ConversationSidebar({
     setDeleteTarget(conversation);
   };
 
-  const handleMoveConversationToFolder = (conversation: ChatConversation, targetFolderId: string | null) => {
-    const nextFolders = customFolders.map((folder) => {
+  const persistCustomFolders = async (nextFolders: CustomSidebarFolder[]): Promise<boolean> => {
+    if (customFolderMutationPendingRef.current) return false;
+    customFolderMutationPendingRef.current = true;
+    setIsCustomFolderSaving(true);
+    try {
+      await writeCustomSidebarFolders(nextFolders);
+      customFoldersRef.current = nextFolders;
+      setCustomFolders(nextFolders);
+      return true;
+    } catch (cause) {
+      globalThis.reportError(new Error('Custom sidebar folders could not be saved.', { cause }));
+      showFeedback('customFolderSaveFailed');
+      return false;
+    } finally {
+      customFolderMutationPendingRef.current = false;
+      setIsCustomFolderSaving(false);
+    }
+  };
+
+  const handleMoveConversationToFolder = async (
+    conversation: ChatConversation,
+    targetFolderId: string | null,
+  ): Promise<boolean> => {
+    if (customFolderMutationPendingRef.current) {
+      showFeedback('customFolderSaveInProgress');
+      return false;
+    }
+    const currentFolders = customFoldersRef.current;
+    const nextFolders = currentFolders.map((folder) => {
       const withoutConversation = folder.conversationIds.filter((id) => id !== conversation.id);
       if (folder.id === targetFolderId) {
         return { ...folder, conversationIds: [conversation.id, ...withoutConversation] };
@@ -321,12 +351,13 @@ export function ConversationSidebar({
         ? folder
         : { ...folder, conversationIds: withoutConversation };
     });
-    setCustomFolders(nextFolders);
-    writeCustomSidebarFolders(nextFolders);
+    if (nextFolders.every((folder, index) => folder === currentFolders[index])) return true;
+    return persistCustomFolders(nextFolders);
   };
 
-  const handleCreateCustomFolder = (event?: FormEvent<HTMLFormElement>) => {
+  const handleCreateCustomFolder = async (event?: FormEvent<HTMLFormElement>) => {
     event?.preventDefault();
+    if (customFolderMutationPendingRef.current) return;
     const trimmed = newFolderName.trim();
     if (!trimmed) {
       setIsCreatingFolder(false);
@@ -339,28 +370,83 @@ export function ConversationSidebar({
       conversationIds: [],
       createdAt: Date.now(),
     };
-    const next = [...customFolders, created];
-    setCustomFolders(next);
-    writeCustomSidebarFolders(next);
-    setNewFolderName('');
-    setIsCreatingFolder(false);
+    const saved = await persistCustomFolders([...customFoldersRef.current, created]);
+    if (saved) {
+      setNewFolderName('');
+      setIsCreatingFolder(false);
+    } else {
+      window.requestAnimationFrame(() => newFolderInputRef.current?.focus());
+    }
   };
 
-  const handleRenameCustomFolder = (folderId: string) => {
+  const handleRenameCustomFolder = async (folderId: string) => {
+    if (customFolderMutationPendingRef.current) return;
     const trimmed = editingFolderName.trim();
-    setEditingFolderId(null);
-    if (!trimmed) return;
-    const next = customFolders.map((folder) =>
+    if (!trimmed) {
+      setEditingFolderId(null);
+      return;
+    }
+    const next = customFoldersRef.current.map((folder) =>
       folder.id === folderId ? { ...folder, name: trimmed.slice(0, 80) } : folder,
     );
-    setCustomFolders(next);
-    writeCustomSidebarFolders(next);
+    const saved = await persistCustomFolders(next);
+    if (saved) {
+      setEditingFolderId(null);
+    } else {
+      window.requestAnimationFrame(() => {
+        const input = drawerRef.current?.querySelector<HTMLInputElement>('[data-custom-folder-editor="true"]');
+        input?.focus();
+      });
+    }
   };
 
-  const handleDeleteCustomFolder = (folderId: string) => {
-    const next = customFolders.filter((folder) => folder.id !== folderId);
-    setCustomFolders(next);
-    writeCustomSidebarFolders(next);
+  const handleDeleteCustomFolder = async (folderId: string) => {
+    if (customFolderMutationPendingRef.current) return;
+    const currentFolders = customFoldersRef.current;
+    const next = currentFolders.filter((folder) => folder.id !== folderId);
+    if (next.length === currentFolders.length) return;
+    await persistCustomFolders(next);
+  };
+
+  const restoreConversationLocation = async (
+    conversation: ChatConversation,
+    currentProjectId: string | null,
+  ): Promise<boolean> => {
+    const conversationAtCurrentLocation: ChatConversation = {
+      ...conversation,
+      isPinned: false,
+      projectId: currentProjectId,
+    };
+    if (currentProjectId !== conversation.projectId) {
+      const restored = await moveConversation(conversationAtCurrentLocation, conversation.projectId);
+      if (!restored) return false;
+    }
+    if (!conversation.isPinned) return true;
+    return togglePinned({ ...conversationAtCurrentLocation, isPinned: false });
+  };
+
+  const moveConversationToSidebarLocation = async (
+    conversation: ChatConversation,
+    targetProjectId: string | null,
+    targetFolderId: string | null,
+  ): Promise<boolean> => {
+    if (customFolderMutationPendingRef.current) {
+      showFeedback('customFolderSaveInProgress');
+      return false;
+    }
+    const needsServiceMove = conversation.projectId !== targetProjectId || conversation.isPinned;
+    if (needsServiceMove && !(await moveConversation(conversation, targetProjectId))) return false;
+
+    const foldersSaved = await handleMoveConversationToFolder(conversation, targetFolderId);
+    if (foldersSaved) return true;
+    if (needsServiceMove) {
+      const restored = await restoreConversationLocation(conversation, targetProjectId);
+      if (!restored) {
+        globalThis.reportError(new Error(`Conversation '${conversation.id}' could not be restored after a folder save failure.`));
+        showFeedback('customFolderMoveRollbackFailed');
+      }
+    }
+    return false;
   };
 
   const toggleFolderExpanded = (folderId: string) => {
@@ -394,33 +480,19 @@ export function ConversationSidebar({
   const dropConversationToProject = async (conversationId: string, projectId: string) => {
     const conversation = activeConversations.find((item) => item.id === conversationId);
     if (!conversation) return;
-    if (conversation.projectId !== projectId) {
-      const moved = await moveConversation(conversation, projectId);
-      if (!moved) return;
-    }
-    handleMoveConversationToFolder(conversation, null);
+    await moveConversationToSidebarLocation(conversation, projectId, null);
   };
 
   const dropConversationToFolder = async (conversationId: string, folderId: string) => {
     const conversation = activeConversations.find((item) => item.id === conversationId);
     if (!conversation) return;
-    if (conversation.projectId !== null || conversation.isPinned) {
-      const moved = await moveConversation(conversation, null);
-      if (!moved) return;
-    }
-    handleMoveConversationToFolder(conversation, folderId);
+    await moveConversationToSidebarLocation(conversation, null, folderId);
   };
 
   const dropConversationToChats = async (conversationId: string) => {
     const conversation = activeConversations.find((item) => item.id === conversationId);
     if (!conversation) return;
-    if (conversation.projectId !== null || conversation.isPinned) {
-      const moved = await moveConversation(conversation, null);
-      if (!moved) return;
-    }
-    if (folderIdByConversationId.has(conversation.id)) {
-      handleMoveConversationToFolder(conversation, null);
-    }
+    await moveConversationToSidebarLocation(conversation, null, null);
   };
 
   const dropConversationToPinned = (conversationId: string) => {
@@ -583,22 +655,16 @@ export function ConversationSidebar({
           currentFolderId={options.currentFolderId ?? folderIdByConversationId.get(conversation.id) ?? null}
           currentProjectId={conversation.projectId ?? options.currentProjectId}
           customFolders={customFolders}
-          disabled={isBusy}
+          disabled={isBusy || isCustomFolderSaving}
           isAiWorking={isConversationAiWorking(conversation.id)}
           onArchive={() => void archiveConversation(conversation)}
           onDelete={() => requestConversationDelete(conversation)}
           onDuplicate={() => handleDuplicateConversation(conversation)}
           onExport={(format) => void exportConversation(conversation, format)}
           onInlineRename={(title) => saveTitle(conversation.id, title)}
-          onMoveToChats={() => {
-            handleMoveConversationToFolder(conversation, null);
-            void moveConversation(conversation, null);
-          }}
-          onMoveToFolder={(folderId) => handleMoveConversationToFolder(conversation, folderId)}
-          onMoveToProject={(projectId) => {
-            handleMoveConversationToFolder(conversation, null);
-            void moveConversation(conversation, projectId);
-          }}
+          onMoveToChats={() => void moveConversationToSidebarLocation(conversation, null, null)}
+          onMoveToFolder={(folderId) => void moveConversationToSidebarLocation(conversation, null, folderId)}
+          onMoveToProject={(projectId) => void moveConversationToSidebarLocation(conversation, projectId, null)}
           onRename={() => setEditTarget({ conversation, mode: 'rename' })}
           onReorderConversation={handleReorderConversation}
           onSelect={() => requestSelectConversation(conversation.id)}
@@ -708,7 +774,7 @@ export function ConversationSidebar({
         <ConversationSidebarToolbar
           agentProfiles={agentProfiles}
           agentProfilesLoadState={agentProfilesLoadState}
-          isBusy={isBusy}
+          isBusy={isBusy || isCustomFolderSaving}
           onCreateFolder={() => setIsCreatingFolder(true)}
           onCreateProject={() => setCreateProjectOpen(true)}
           onManageAgents={handleManageAgents}
@@ -736,6 +802,11 @@ export function ConversationSidebar({
           ref={scrollAreaRef}
         >
           <div className="grid gap-3">
+            {isCustomFolderSaving ? (
+              <p aria-live="polite" className="px-3 py-2 text-xs text-secondary-text" role="status">
+                {t('customFolderSaving')}
+              </p>
+            ) : null}
             {feedback ? (
               <p
                 className={`rounded-button border border-border bg-surface px-3 py-2 text-xs ${feedback.success ? 'text-success' : 'text-destructive'}`}
@@ -798,7 +869,7 @@ export function ConversationSidebar({
                     compactSidebar={isCompactSidebar}
                     conversations={filteredProjectConversations}
                     customFolders={customFolders}
-                    isBusy={isBusy}
+                    isBusy={isBusy || isCustomFolderSaving}
                     isConversationAiWorking={isConversationAiWorking}
                     onArchive={(conversation) => void archiveConversation(conversation)}
                     onCreateProjectChat={(projectId) =>
@@ -812,9 +883,13 @@ export function ConversationSidebar({
                     onDuplicate={handleDuplicateConversation}
                     onExport={(conversation, format) => void exportConversation(conversation, format)}
                     onInlineRename={(conversation, title) => saveTitle(conversation.id, title)}
-                    onMoveToChats={(conversation) => void moveConversation(conversation, null)}
-                    onMoveToFolder={(conversation, folderId) => handleMoveConversationToFolder(conversation, folderId)}
-                    onMoveToProject={(conversation, projectId) => void moveConversation(conversation, projectId)}
+                    onMoveToChats={(conversation) => void moveConversationToSidebarLocation(conversation, null, null)}
+                    onMoveToFolder={(conversation, folderId) =>
+                      void moveConversationToSidebarLocation(conversation, null, folderId)
+                    }
+                    onMoveToProject={(conversation, projectId) =>
+                      void moveConversationToSidebarLocation(conversation, projectId, null)
+                    }
                     onRename={(conversation) => setEditTarget({ conversation, mode: 'rename' })}
                     onRetry={() => void refreshProjects().catch(() => showFeedback('projectLoadFailed'))}
                     onSelectConversation={(id) => requestSelectConversation(id)}
@@ -832,6 +907,7 @@ export function ConversationSidebar({
                       <Button
                         aria-label={t('createCustomFolder')}
                         className="size-6 rounded-control text-secondary-icon hover:bg-hover hover:text-text"
+                        disabled={isBusy || isCustomFolderSaving}
                         onClick={() => setIsCreatingFolder(true)}
                         size="icon"
                         title={t('createCustomFolder')}
@@ -847,14 +923,18 @@ export function ConversationSidebar({
                   >
                     {isCreatingFolder ? (
                       <li className="px-1 py-0.5">
-                        <form className="flex items-center gap-1" onSubmit={handleCreateCustomFolder}>
+                        <form
+                          className="flex items-center gap-1"
+                          onSubmit={(event) => void handleCreateCustomFolder(event)}
+                        >
                           <Input
                             aria-label={t('customFolderNamePlaceholder')}
                             className="h-7 min-h-0 w-auto min-w-0 flex-1 rounded-control border-accent/60 bg-surface px-2 text-xs text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
                             density="compact"
+                            disabled={isBusy || isCustomFolderSaving}
                             fieldLayout="none"
                             maxLength={80}
-                            onBlur={() => handleCreateCustomFolder()}
+                            onBlur={() => void handleCreateCustomFolder()}
                             onChange={(event) => setNewFolderName(event.target.value)}
                             onKeyDown={(event) => {
                               if (event.key === 'Escape') {
@@ -870,6 +950,7 @@ export function ConversationSidebar({
                           <Button
                             aria-label={t('save')}
                             className="size-6 rounded-control p-0 text-accent hover:bg-hover"
+                            disabled={isBusy || isCustomFolderSaving}
                             onMouseDown={(event) => event.preventDefault()}
                             size="icon"
                             type="submit"
@@ -880,6 +961,7 @@ export function ConversationSidebar({
                           <Button
                             aria-label={t('cancel')}
                             className="size-6 rounded-control p-0 text-secondary-icon hover:bg-hover hover:text-text"
+                            disabled={isBusy || isCustomFolderSaving}
                             onClick={() => {
                               setIsCreatingFolder(false);
                               setNewFolderName('');
@@ -941,16 +1023,18 @@ export function ConversationSidebar({
                               className="flex min-h-9 items-center gap-1 px-2 py-1"
                               onSubmit={(event) => {
                                 event.preventDefault();
-                                handleRenameCustomFolder(folder.id);
+                                void handleRenameCustomFolder(folder.id);
                               }}
                             >
                               <Input
                                 aria-label={t('customFolderNamePlaceholder')}
                                 className="h-7 min-h-0 w-auto min-w-0 flex-1 rounded-control border-accent/60 bg-surface px-2 text-xs text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
                                 density="compact"
+                                data-custom-folder-editor="true"
+                                disabled={isBusy || isCustomFolderSaving}
                                 fieldLayout="none"
                                 maxLength={80}
-                                onBlur={() => handleRenameCustomFolder(folder.id)}
+                                onBlur={() => void handleRenameCustomFolder(folder.id)}
                                 onChange={(event) => setEditingFolderName(event.target.value)}
                                 onKeyDown={(event) => {
                                   if (event.key === 'Escape') {
@@ -996,6 +1080,7 @@ export function ConversationSidebar({
                                 <Button
                                   aria-label={t('renameCustomFolder')}
                                   className="size-7 rounded-control text-secondary-icon hover:bg-surface/80 hover:text-text"
+                                  disabled={isBusy || isCustomFolderSaving}
                                   onClick={() => {
                                     setEditingFolderName(folder.name);
                                     setEditingFolderId(folder.id);
@@ -1009,7 +1094,8 @@ export function ConversationSidebar({
                                 <Button
                                   aria-label={t('deleteCustomFolder')}
                                   className="size-7 rounded-control text-secondary-icon hover:bg-surface/80 hover:text-destructive"
-                                  onClick={() => handleDeleteCustomFolder(folder.id)}
+                                  disabled={isBusy || isCustomFolderSaving}
+                                  onClick={() => void handleDeleteCustomFolder(folder.id)}
                                   size="icon"
                                   title={t('deleteCustomFolder')}
                                   variant="ghost"

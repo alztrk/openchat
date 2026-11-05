@@ -15,21 +15,23 @@ function sourceBetween(startMarker, endMarker) {
   return sidebarSource.slice(start, end);
 }
 
-test('failed project and custom-folder drops preserve current folder metadata', () => {
-  const projectDrop = sourceBetween('const dropConversationToProject', 'const dropConversationToFolder');
-  const folderDrop = sourceBetween('const dropConversationToFolder', 'const dropConversationToChats');
+test('service moves succeed before folder metadata changes and failed metadata saves restore location', () => {
+  const moveToLocation = sourceBetween('const moveConversationToSidebarLocation', 'const toggleFolderExpanded');
 
-  assert.match(projectDrop, /const moved = await moveConversation\(conversation, projectId\);\s*if \(!moved\) return;/u);
-  assert.match(projectDrop, /if \(!moved\) return;[\s\S]*?handleMoveConversationToFolder\(conversation, null\)/u);
-  assert.match(folderDrop, /const moved = await moveConversation\(conversation, null\);\s*if \(!moved\) return;/u);
-  assert.match(folderDrop, /if \(!moved\) return;[\s\S]*?handleMoveConversationToFolder\(conversation, folderId\)/u);
+  assert.match(moveToLocation, /if \(needsServiceMove && !\(await moveConversation\(conversation, targetProjectId\)\)\) return false;/u);
+  assert.match(moveToLocation, /const foldersSaved = await handleMoveConversationToFolder\(conversation, targetFolderId\);/u);
+  assert.match(moveToLocation, /if \(foldersSaved\) return true;[\s\S]*?restoreConversationLocation\(conversation, targetProjectId\)/u);
+  assert.match(moveToLocation, /showFeedback\('customFolderMoveRollbackFailed'\)/u);
 });
 
-test('failed project removal leaves a conversation in its current sidebar location', () => {
+test('all drop destinations use the guarded location transaction', () => {
+  const projectDrop = sourceBetween('const dropConversationToProject', 'const dropConversationToFolder');
+  const folderDrop = sourceBetween('const dropConversationToFolder', 'const dropConversationToChats');
   const chatsDrop = sourceBetween('const dropConversationToChats', 'const dropConversationToPinned');
 
-  assert.match(chatsDrop, /const moved = await moveConversation\(conversation, null\);\s*if \(!moved\) return;/u);
-  assert.match(chatsDrop, /if \(!moved\) return;[\s\S]*?handleMoveConversationToFolder\(conversation, null\)/u);
+  assert.match(projectDrop, /await moveConversationToSidebarLocation\(conversation, projectId, null\)/u);
+  assert.match(folderDrop, /await moveConversationToSidebarLocation\(conversation, null, folderId\)/u);
+  assert.match(chatsDrop, /await moveConversationToSidebarLocation\(conversation, null, null\)/u);
 });
 
 test('sidebar move actions report whether the service mutation succeeded', () => {

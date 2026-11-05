@@ -178,6 +178,8 @@
 - [ ] FE-01 runtime: Model kataloğu dolu durumda model seçilmeden ve seçildikten sonra boş sohbet başlığını masaüstünde doğrula.
 - [x] FE-03 kod dilimi: Proje, özel klasör ve Sohbetler bırakma hedeflerinde klasör ilişkisi servis taşıması başarılı olmadan değiştirilmiyor; başarısız mutation mevcut sidebar konumunu koruyor.
 - [ ] FE-03 runtime: Proje/özel klasör/Sohbetler hedeflerine başarılı ve başarısız bırakmayı masaüstünde doğrula.
+- [x] FE-04 kod dilimi: Özel klasör yazımı artık kalıcı depolama sonucunu bekliyor; UI yalnız başarıdan sonra güncelleniyor, hata halinde önceki düzen korunuyor ve kullanıcıya yerelleştirilmiş hata sunuluyor. Kayıt durumu erişilebilir biçimde duyuruluyor, klasör işlemleri tekilleştiriliyor; sohbet taşıması sonrası yazım hatasında önceki servis konumu telafi edilmeye çalışılıyor.
+- [ ] FE-04 runtime: SQLite/servis yazım hatasını masaüstünde enjekte et; klasör oluşturma, yeniden adlandırma, silme ve taşımanın hatada korunmasını, retry ve yeniden açılışta kalıcılığı doğrula. Taşıma telafisi de başarısız olursa uyarı ve mevcut konumu kontrol etme akışını doğrula.
 - [x] FE-09: MCP kategori etiketleri ve filtreleri ortak kategori normalizasyonuna bağlandı; yedi kategori için etiket ve çapraz filtre eşleşme regresyonları eklendi.
 - [ ] FE-09: MCP ekranındaki etiketleri ve filtre sonuçlarını değişiklik sonrası render edilmiş UI otomasyonuyla doğrula; bu oturumdaki Windows tıklama aracı iki yöntemde de hedefe ulaşamadı.
 - [x] FE-10: Farklı yüzeye geçişte erişilebilir adı olan ana içerik odağı alıyor; ilk render’da odak değişmiyor ve aynı yüzeye basıldığında mevcut odak davranışı korunuyor. Regresyon testi eklendi.

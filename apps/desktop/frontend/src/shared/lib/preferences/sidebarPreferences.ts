@@ -168,8 +168,8 @@ export function readCustomSidebarFolders(): CustomSidebarFolder[] {
   }
 }
 
-export function writeCustomSidebarFolders(folders: readonly CustomSidebarFolder[]): void {
-  unifiedStorage.setItem(customFoldersKey, JSON.stringify(folders));
+export function writeCustomSidebarFolders(folders: readonly CustomSidebarFolder[]): Promise<void> {
+  return unifiedStorage.setPersistedItem(customFoldersKey, JSON.stringify(folders));
 }
 
 export function readSkipConversationDeleteConfirmation(): boolean {
