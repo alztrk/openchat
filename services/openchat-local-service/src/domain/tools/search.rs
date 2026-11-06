@@ -91,7 +91,8 @@ impl SearchPattern {
 struct SearchCandidate {
     /// Path relative to the directory capability opened for the active workspace.
     path: PathBuf,
-    bytes_to_read: Option<u64>,
+    /// Bytes reserved from the search-wide read budget for this file.
+    bytes_to_read: u64,
     byte_limited: bool,
 }
 
@@ -213,6 +214,52 @@ pub(super) fn search_files_direct(
     offset: usize,
     limit: usize,
 ) -> Result<Value, ServiceError> {
+    search_files_direct_with_limits(
+        root,
+        directory,
+        query,
+        include_hidden,
+        explicitly_scoped,
+        offset,
+        limit,
+        MAX_SEARCH_BYTES,
+    )
+    .map(|(response, _)| response)
+}
+
+#[cfg(test)]
+pub(super) fn search_files_direct_with_byte_budget(
+    root: &Path,
+    directory: &Path,
+    query: &str,
+    include_hidden: bool,
+    explicitly_scoped: bool,
+    offset: usize,
+    limit: usize,
+    byte_budget: u64,
+) -> Result<(Value, u64), ServiceError> {
+    search_files_direct_with_limits(
+        root,
+        directory,
+        query,
+        include_hidden,
+        explicitly_scoped,
+        offset,
+        limit,
+        byte_budget,
+    )
+}
+
+fn search_files_direct_with_limits(
+    root: &Path,
+    directory: &Path,
+    query: &str,
+    include_hidden: bool,
+    explicitly_scoped: bool,
+    offset: usize,
+    limit: usize,
+    max_search_bytes: u64,
+) -> Result<(Value, u64), ServiceError> {
     let pattern = SearchPattern::new(query);
     let root_directory = crate::filesystem::open_absolute_directory_no_follow(root)
         .map_err(|_| unavailable("The active tool root could not be opened safely."))?;
@@ -235,6 +282,7 @@ pub(super) fn search_files_direct(
         error_index: 0,
     };
     let mut candidates = Vec::new();
+    let mut batch_reserved_bytes = 0_u64;
     let mut deferred_walk_errors = Vec::new();
     let mut file_buffer = Vec::with_capacity(64 * 1024);
 
@@ -352,10 +400,26 @@ pub(super) fn search_files_direct(
                 continue;
             }
         };
+        let file_size = match entry.metadata() {
+            Ok(metadata) => metadata.len(),
+            Err(_) => {
+                mark_walk_problem(
+                    file_order,
+                    progress.serial_file_limit,
+                    &mut progress.truncated,
+                    &mut deferred_walk_errors,
+                );
+                continue;
+            }
+        };
+        let remaining_budget = max_search_bytes
+            .saturating_sub(bytes_read)
+            .saturating_sub(batch_reserved_bytes);
+        let bytes_to_read = file_size.min(remaining_budget);
         let candidate = SearchCandidate {
             path: relative_path,
-            bytes_to_read: None,
-            byte_limited: false,
+            bytes_to_read,
+            byte_limited: file_size > bytes_to_read,
         };
 
         if progress.serial_file_count < progress.serial_file_limit {
@@ -392,15 +456,22 @@ pub(super) fn search_files_direct(
                 progress.truncated = true;
                 break 'walk;
             }
+            if bytes_read >= max_search_bytes {
+                progress.truncated = true;
+                break 'walk;
+            }
         } else {
+            batch_reserved_bytes = batch_reserved_bytes.saturating_add(candidate.bytes_to_read);
             candidates.push(candidate);
             let batch_file_limit = if progress.next_candidate_index == 0 {
                 DIRECT_SEARCH_INITIAL_BATCH_FILES
             } else {
                 DIRECT_SEARCH_BATCH_FILES
             };
-            if candidates.len() >= batch_file_limit {
-                let reserved_bytes = process_search_candidate_batch(
+            if candidates.len() >= batch_file_limit
+                || bytes_read.saturating_add(batch_reserved_bytes) >= max_search_bytes
+            {
+                let batch_bytes_read = process_search_candidate_batch(
                     root,
                     &root_directory,
                     &mut serial_directory_cache,
@@ -409,10 +480,11 @@ pub(super) fn search_files_direct(
                     &deferred_walk_errors,
                     &mut progress,
                 )?;
-                bytes_read = bytes_read.saturating_add(reserved_bytes);
+                bytes_read = bytes_read.saturating_add(batch_bytes_read);
                 candidates.clear();
-                if progress.has_more_matches || bytes_read >= MAX_SEARCH_BYTES {
-                    if bytes_read >= MAX_SEARCH_BYTES {
+                batch_reserved_bytes = 0;
+                if progress.has_more_matches || bytes_read >= max_search_bytes {
+                    if bytes_read >= max_search_bytes {
                         progress.truncated = true;
                     }
                     break 'walk;
@@ -422,7 +494,7 @@ pub(super) fn search_files_direct(
     }
 
     if !progress.has_more_matches && !candidates.is_empty() {
-        process_search_candidate_batch(
+        let batch_bytes_read = process_search_candidate_batch(
             root,
             &root_directory,
             &mut serial_directory_cache,
@@ -431,6 +503,10 @@ pub(super) fn search_files_direct(
             &deferred_walk_errors,
             &mut progress,
         )?;
+        bytes_read = bytes_read.saturating_add(batch_bytes_read);
+        if bytes_read >= max_search_bytes {
+            progress.truncated = true;
+        }
     }
     if progress.error_index < deferred_walk_errors.len() {
         progress.truncated = true;
@@ -439,17 +515,20 @@ pub(super) fn search_files_direct(
     let next_offset = progress
         .has_more_matches
         .then_some(offset.saturating_add(limit));
-    Ok(json!({
-        "matches": progress.results.into_iter().take(limit).collect::<Vec<_>>(),
-        "nextOffset": next_offset,
-        "truncated": progress.truncated,
-    }))
+    Ok((
+        json!({
+            "matches": progress.results.into_iter().take(limit).collect::<Vec<_>>(),
+            "nextOffset": next_offset,
+            "truncated": progress.truncated,
+        }),
+        bytes_read,
+    ))
 }
 
 /// Scans and merges one bounded batch while preserving traversal order.
 ///
-/// Advances `progress` and returns the candidate bytes reserved against the
-/// search-wide read limit. Worker failures are returned to the caller.
+/// Advances `progress` and returns the bytes actually read by the workers.
+/// Worker failures are returned to the caller.
 fn process_search_candidate_batch(
     root: &Path,
     root_directory: &crate::filesystem::OpenedDirectory,
@@ -471,8 +550,8 @@ fn process_search_candidate_batch(
     progress.next_candidate_index = progress
         .next_candidate_index
         .saturating_add(candidates.len());
-    let reserved_bytes = candidates.iter().fold(0u64, |total, candidate| {
-        total.saturating_add(candidate.bytes_to_read.unwrap_or(0))
+    let batch_bytes_read = batch_results.iter().fold(0u64, |total, (_, result)| {
+        total.saturating_add(result.bytes_read)
     });
     let mut file_buffer = Vec::with_capacity(64 * 1024);
 
@@ -537,7 +616,7 @@ fn process_search_candidate_batch(
         }
     }
 
-    Ok(reserved_bytes)
+    Ok(batch_bytes_read)
 }
 
 fn mark_walk_problem(
@@ -588,15 +667,13 @@ fn scan_search_file(
             truncated: true,
         };
     };
-    let (bytes_limit, byte_limited) = match candidate.bytes_to_read {
-        Some(limit) => (limit, candidate.byte_limited),
-        None => (MAX_SEARCH_BYTES, false),
-    };
+    let bytes_limit = candidate.bytes_to_read;
+    let byte_limited = candidate.byte_limited;
     let mut take_reader = (&mut file).take(bytes_limit);
     if take_reader.read_to_end(buffer).is_err() {
         return SearchFileResult {
             match_count: 0,
-            bytes_read: 0,
+            bytes_read: buffer.len() as u64,
             matches: Vec::new(),
             truncated: true,
         };
@@ -799,7 +876,7 @@ mod tests {
         symlink_file(&outside, &candidate_path).expect("replace candidate with outside symlink");
         let candidate = SearchCandidate {
             path: PathBuf::from("candidate.txt"),
-            bytes_to_read: Some(64),
+            bytes_to_read: 64,
             byte_limited: false,
         };
         let mut directory_cache = SearchDirectoryCache::new(&root_directory);

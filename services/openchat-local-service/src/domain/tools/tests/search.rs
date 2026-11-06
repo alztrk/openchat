@@ -197,6 +197,35 @@ fn direct_search_keeps_pagination_order_across_candidate_batches() {
 }
 
 #[test]
+fn direct_search_enforces_the_total_byte_budget_across_serial_and_parallel_reads() {
+    let directory = TestDirectory::new();
+    directory.write("file_000.txt", "aa");
+    directory.write("file_001.txt", "bb");
+    for file_index in 2..(super::super::search::DIRECT_SEARCH_INITIAL_BATCH_FILES + 2) {
+        directory.write(&format!("file_{file_index:03}.txt"), "12345678");
+    }
+
+    let root = super::super::canonical_root(directory.root()).expect("canonical workspace root");
+    for byte_budget in [3, 20] {
+        let (result, bytes_read) = super::super::search::search_files_direct_with_byte_budget(
+            &root,
+            &root,
+            "needle",
+            false,
+            false,
+            0,
+            1,
+            byte_budget,
+        )
+        .expect("search within the supplied byte budget");
+
+        assert_eq!(bytes_read, byte_budget);
+        assert_eq!(result["matches"], json!([]));
+        assert_eq!(result["truncated"], true);
+    }
+}
+
+#[test]
 fn search_keeps_ascii_case_insensitive_matching_for_unicode_lines() {
     let directory = TestDirectory::new();
     directory.write("unicode.txt", "Kelvin value\n");
