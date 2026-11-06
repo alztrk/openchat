@@ -29,6 +29,7 @@ use uuid::Uuid;
 use zeroize::{Zeroize, Zeroizing};
 
 use crate::{
+    attachment_crypto::{AttachmentCipher, attachment_associated_data},
     attachments::{
         AttachmentMetadata, message_attachment_metadata, validate_portable_attachment_content,
     },
@@ -168,6 +169,7 @@ impl From<io::Error> for ArchiveFailure {
 struct AttachmentSource {
     record: FileRecord,
     path: PathBuf,
+    associated_data: Vec<u8>,
 }
 
 struct TemporaryDirectory {
@@ -299,7 +301,7 @@ pub(crate) fn prepare_restore(
     }
     prepare_restore_inner(
         storage,
-        storage.image_files_root(),
+        storage.root(),
         Path::new(path),
         passphrase.as_str(),
         current_chat_schema_version,
@@ -427,8 +429,13 @@ pub(crate) fn create_broker_test_archive(
         .join(conversation_id)
         .join("broker-archive-message");
     fs::create_dir_all(&attachment_directory)?;
-    fs::write(
-        attachment_directory.join("broker-archive-attachment.data"),
+    let attachment_cipher = AttachmentCipher::from_profile_key(storage.database_key())?;
+    let attachment_context = attachment_associated_data(Path::new(&format!(
+        "{conversation_id}/broker-archive-message/broker-archive-attachment.data"
+    )))?;
+    attachment_cipher.write_new_file(
+        &attachment_directory.join("broker-archive-attachment.data"),
+        &attachment_context,
         attachment_bytes,
     )?;
 
@@ -516,7 +523,7 @@ fn export_inner(
     let conversation_count = count_rows(&database, "conversations")?;
     let message_count = count_rows(&database, "messages")?;
     let database_record = file_record(DATABASE_PATH, &database_snapshot_path, MAX_DATABASE_BYTES)?;
-    let attachments = collect_attachments(&database, storage.image_files_root())?;
+    let attachments = collect_attachments(&database, storage.root(), storage.database_key())?;
     drop(database);
 
     let attachment_bytes = attachments
@@ -576,6 +583,7 @@ fn export_inner(
         &database_record,
         &database_snapshot_path,
         &attachments,
+        storage.database_key(),
         passphrase,
     )?;
     ensure_destination_is_new(&target)?;
@@ -684,6 +692,7 @@ fn prepare_restore_inner(
 fn collect_attachments(
     database: &Connection,
     storage_root: &Path,
+    profile_key: &crate::storage::DatabaseKey,
 ) -> Result<Vec<AttachmentSource>, ArchiveFailure> {
     let attachments_root = storage_root.join("attachments");
     let canonical_root = match fs::canonicalize(&attachments_root) {
@@ -691,6 +700,8 @@ fn collect_attachments(
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
         Err(_) => return Err(ArchiveFailure::Storage),
     };
+    let cipher =
+        AttachmentCipher::from_profile_key(profile_key).map_err(|_| ArchiveFailure::Storage)?;
     let mut statement = database
         .prepare("SELECT conversation_id, id, content FROM messages ORDER BY rowid")
         .map_err(|_| ArchiveFailure::Storage)?;
@@ -726,17 +737,22 @@ fn collect_attachments(
                 return Err(ArchiveFailure::Storage);
             }
             let canonical = fs::canonicalize(&source).map_err(|_| ArchiveFailure::Storage)?;
-            if !canonical.starts_with(&canonical_root)
-                || file_metadata.len() != attachment.size_bytes as u64
-            {
+            if !canonical.starts_with(&canonical_root) {
                 return Err(ArchiveFailure::Storage);
             }
-            let bytes = fs::read(&canonical).map_err(|_| ArchiveFailure::Storage)?;
+            let associated_data = attachment_associated_data(Path::new(&format!(
+                "{conversation_id}/{message_id}/{}.data",
+                attachment.id
+            )))
+            .map_err(|_| ArchiveFailure::Storage)?;
+            let bytes = cipher
+                .read_file(&canonical, &associated_data, attachment.size_bytes)
+                .map_err(|_| ArchiveFailure::Storage)?;
             validate_portable_attachment_content(&attachment, &bytes)
                 .map_err(|_| ArchiveFailure::Storage)?;
             let record = FileRecord {
                 path: archive_path.clone(),
-                size_bytes: file_metadata.len(),
+                size_bytes: bytes.len() as u64,
                 sha256: digest_hex(&Sha256::digest(&bytes)),
             };
             paths.insert(
@@ -744,6 +760,7 @@ fn collect_attachments(
                 AttachmentSource {
                     record,
                     path: canonical,
+                    associated_data,
                 },
             );
             if paths.len() > MAX_ATTACHMENTS {

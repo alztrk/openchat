@@ -376,6 +376,7 @@ fn validate_goal_start(
             crate::attachments::decode_message_content(
                 content,
                 storage.root(),
+                storage.database_key(),
                 conversation_id,
                 &message_id,
             )
@@ -653,6 +654,7 @@ async fn load_project_context(
                 crate::attachments::decode_message_content(
                     content,
                     storage.root(),
+                    storage.database_key(),
                     conversation_id,
                     &message_id,
                 )

@@ -14,8 +14,10 @@ use std::{
 use rusqlite::{OptionalExtension, params};
 use serde_json::{Value, json};
 use tokio::sync::watch;
+use zeroize::Zeroizing;
 
 use crate::{
+    attachment_crypto::{AttachmentCipher, attachment_associated_data},
     conversation_limits::{
         MAXIMUM_ATTACHMENT_FILE_COUNT as MAX_ATTACHMENT_COUNT,
         MAXIMUM_ATTACHMENT_IMAGE_BYTES as MAX_IMAGE_BYTES,
@@ -120,8 +122,7 @@ fn rebuild(
             truncated = true;
             break;
         }
-        let Some(bytes) =
-            read_attachment_bytes(storage.root(), &conversation_id, &message_id, &metadata)?
+        let Some(bytes) = read_attachment_bytes(storage, &conversation_id, &message_id, &metadata)?
         else {
             lease.set_progress(AttachmentIndexProgress::Read {
                 completed_files: index + 1,
@@ -135,7 +136,7 @@ fn rebuild(
             truncated = true;
             break;
         }
-        let content = String::from_utf8(bytes).map_err(|_| storage_unavailable())?;
+        let content = String::from_utf8(bytes.to_vec()).map_err(|_| storage_unavailable())?;
         indexed_bytes += content.len();
         indexed.push((conversation_id, message_id, metadata, content));
         lease.set_progress(AttachmentIndexProgress::Read {
@@ -398,13 +399,13 @@ fn parse_attachment_envelope(content: &str) -> Result<Vec<AttachmentMetadata>, S
 }
 
 fn read_attachment_bytes(
-    storage_root: &Path,
+    storage: &AppStorage,
     conversation_id: &str,
     message_id: &str,
     metadata: &AttachmentMetadata,
-) -> Result<Option<Vec<u8>>, ServiceError> {
+) -> Result<Option<Zeroizing<Vec<u8>>>, ServiceError> {
     let Some(path) = attachment_path(
-        storage_root,
+        storage.root(),
         conversation_id,
         message_id,
         &metadata.id,
@@ -413,7 +414,16 @@ fn read_attachment_bytes(
     else {
         return Ok(None);
     };
-    let bytes = fs::read(path).map_err(|_| storage_unavailable())?;
+    let cipher = AttachmentCipher::from_profile_key(storage.database_key())
+        .map_err(|_| storage_unavailable())?;
+    let context = attachment_associated_data(Path::new(&format!(
+        "{conversation_id}/{message_id}/{}.data",
+        metadata.id
+    )))
+    .map_err(|_| storage_unavailable())?;
+    let bytes = cipher
+        .read_file(&path, &context, metadata.size_bytes)
+        .map_err(|_| storage_unavailable())?;
     validate_stored_attachment(metadata, &bytes)?;
     Ok(Some(bytes))
 }
@@ -449,14 +459,14 @@ fn attachment_path(
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(_) => return Err(storage_unavailable()),
     };
-    if metadata.file_type().is_symlink()
-        || !metadata.is_file()
-        || metadata.len() != expected_size as u64
-    {
+    if metadata.file_type().is_symlink() || !metadata.is_file() {
         return Ok(None);
     }
     let canonical_path = fs::canonicalize(&path).map_err(|_| storage_unavailable())?;
     if canonical_path != path || !canonical_path.starts_with(&message_directory) {
+        return Err(storage_unavailable());
+    }
+    if expected_size == 0 {
         return Err(storage_unavailable());
     }
     Ok(Some(canonical_path))

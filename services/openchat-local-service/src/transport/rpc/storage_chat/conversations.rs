@@ -1,6 +1,7 @@
 //! Conversation and message RPC handlers.
 
 use super::*;
+use crate::attachment_crypto::{AttachmentCipher, attachment_associated_data};
 
 struct StoredMessageRow {
     id: String,
@@ -601,7 +602,7 @@ pub(super) fn save_message(
     let mut staged = if attachments.is_empty() {
         None
     } else {
-        match stage_attachments(storage.root(), conversation_id, id, &attachments) {
+        match stage_attachments(storage, conversation_id, id, &attachments) {
             Ok(staged) => Some(staged),
             Err(error) => {
                 log_message_save_failure(storage, "attachment_staging", &error);
@@ -658,7 +659,7 @@ pub(super) fn save_message(
                 }
                 Ok(_) => {}
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                    *staged = stage_attachments(storage.root(), conversation_id, id, &attachments)?;
+                    *staged = stage_attachments(storage, conversation_id, id, &attachments)?;
                 }
                 Err(_) => return Err(storage_unavailable()),
             }
@@ -729,9 +730,18 @@ pub(super) fn save_message(
         {
             match publish_staged_attachment_directory(staging, &staged.destination) {
                 Ok(()) => published_attachment_directory = true,
-                Err(AttachmentDirectoryPublishError::Rename)
-                    if attachment_directory_matches(&staged.destination, &attachments)? =>
-                {
+                Err(AttachmentDirectoryPublishError::Rename) => {
+                    let cipher = AttachmentCipher::from_profile_key(storage.database_key())
+                        .map_err(|_| storage_unavailable())?;
+                    if !attachment_directory_matches(
+                        &staged.destination,
+                        conversation_id,
+                        id,
+                        &attachments,
+                        &cipher,
+                    )? {
+                        return Err(storage_unavailable());
+                    }
                     let _ = remove_directory_if_present(staging);
                 }
                 Err(_) => return Err(storage_unavailable()),
@@ -1000,23 +1010,44 @@ pub(super) fn read_message_attachment(
         .find(|attachment| attachment.id == attachment_id)
         .ok_or_else(|| not_found("attachment"))?;
     let expected_size = metadata.size_bytes;
-    let path = attachment_path(storage.root(), conversation_id, message_id, attachment_id)
-        .or_else(|_| {
-            let legacy_path = storage
-                .root()
-                .join("attachments")
-                .join(conversation_id)
-                .join(format!("{attachment_id}.data"));
-            let actual_size = fs::metadata(&legacy_path)
-                .map_err(|_| storage_unavailable())?
-                .len();
-            (actual_size == expected_size as u64)
-                .then_some(legacy_path)
-                .ok_or_else(storage_unavailable)
-        })?;
-    let bytes = fs::read(path).map_err(|_| storage_unavailable())?;
+    let cipher = AttachmentCipher::from_profile_key(storage.database_key())
+        .map_err(|_| storage_unavailable())?;
+    let file_name = format!("{attachment_id}.data");
+    let (path, relative_path) =
+        match attachment_path(storage.root(), conversation_id, message_id, attachment_id) {
+            Ok(path) => (
+                path,
+                PathBuf::from(conversation_id)
+                    .join(message_id)
+                    .join(&file_name),
+            ),
+            Err(_) => {
+                let legacy_path = storage
+                    .root()
+                    .join("attachments")
+                    .join(conversation_id)
+                    .join(&file_name);
+                let metadata =
+                    fs::symlink_metadata(&legacy_path).map_err(|_| storage_unavailable())?;
+                if metadata.file_type().is_symlink() || !metadata.is_file() {
+                    return Err(storage_unavailable());
+                }
+                let attachments_root = fs::canonicalize(storage.root().join("attachments"))
+                    .map_err(|_| storage_unavailable())?;
+                let path = fs::canonicalize(&legacy_path).map_err(|_| storage_unavailable())?;
+                if !path.starts_with(&attachments_root) {
+                    return Err(storage_unavailable());
+                }
+                (path, PathBuf::from(conversation_id).join(&file_name))
+            }
+        };
+    let associated_data =
+        attachment_associated_data(&relative_path).map_err(|_| storage_unavailable())?;
+    let bytes = cipher
+        .read_file(&path, &associated_data, expected_size)
+        .map_err(|_| storage_unavailable())?;
     if bytes.len() != metadata.size_bytes {
         return Err(storage_unavailable());
     }
-    Ok(json!({"dataBase64": STANDARD.encode(bytes)}))
+    Ok(json!({"dataBase64": STANDARD.encode(bytes.as_slice())}))
 }

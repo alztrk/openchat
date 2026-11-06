@@ -3,6 +3,8 @@
 //! Transport handlers call these modules to keep RPC parsing separate from
 //! provider, storage, filesystem, and process operations.
 
+#[path = "conversations/attachment_crypto.rs"]
+pub(crate) mod attachment_crypto;
 #[path = "conversations/attachments.rs"]
 pub(crate) mod attachments;
 #[path = "conversations/chat_operation.rs"]

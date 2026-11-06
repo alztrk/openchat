@@ -7,8 +7,7 @@
 
 pub(super) use std::{
     collections::HashSet,
-    fs::{self, OpenOptions},
-    io::{self, Write},
+    fs, io,
     path::{Path, PathBuf},
     time::{SystemTime, UNIX_EPOCH},
 };

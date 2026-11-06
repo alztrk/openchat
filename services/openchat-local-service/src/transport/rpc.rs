@@ -273,6 +273,17 @@ pub(crate) async fn dispatch(context: RpcDispatchContext<'_>) -> Result<Value, S
             if crate::conversation_archive::recover_interrupted_restore_stages(storage).is_err() {
                 eprintln!("conversation_archive_restore_cleanup_recovery_failed");
             }
+            crate::attachment_crypto::migrate_attachment_tree(
+                &storage.root().join("attachments"),
+                storage.database_key(),
+            )
+            .map_err(|_| {
+                ServiceError::new(
+                    "attachment_migration_failed",
+                    "Local attachment encryption could not be completed safely. Profile data was preserved; restart OpenChat to retry.",
+                    false,
+                )
+            })?;
             crate::image_library::recover_incomplete_generations(storage)?;
             service.schedule_pending_credential_cleanup();
             usage_statistics::mark_interrupted_requests(storage).map_err(|_| {
@@ -957,6 +968,7 @@ mod tests {
         fs,
         path::PathBuf,
         sync::{Arc, atomic::AtomicBool},
+        time::Duration,
     };
 
     use rusqlite::params;
@@ -965,6 +977,7 @@ mod tests {
     use uuid::Uuid;
 
     use crate::{
+        attachment_crypto::{AttachmentCipher, attachment_associated_data},
         chatgpt::ChatGptService,
         permissions::ToolPermissionBroker,
         protocol::{EventSink, Request},
@@ -981,6 +994,165 @@ mod tests {
         RpcDispatchContext, conversation_not_found_error, database_initialization_error, dispatch,
         map_question_storage_error, take_optional_api_key,
     };
+
+    #[tokio::test]
+    async fn system_initialization_encrypts_live_legacy_attachments_before_ready() {
+        let directory = TestDirectory::new();
+        let storage = Arc::new(AppStorage::open_at(directory.0.clone()).expect("open storage"));
+        initialize_chat_test_schema(&storage);
+        let attachment = b"legacy attachment bytes";
+        let content = legacy_attachment_message_content(attachment);
+        storage
+            .connect()
+            .expect("connect storage")
+            .execute(
+                "INSERT INTO conversations (id, title) VALUES ('conversation-1', 'Legacy')",
+                [],
+            )
+            .expect("insert conversation");
+        storage
+            .connect()
+            .expect("connect storage")
+            .execute(
+                "INSERT INTO messages (id, conversation_id, role, content)
+                 VALUES ('message-1', 'conversation-1', 'user', ?1)",
+                [content],
+            )
+            .expect("insert message with attachment metadata");
+        let attachment_path = storage
+            .root()
+            .join("attachments/conversation-1/message-1/attachment-1.data");
+        fs::create_dir_all(attachment_path.parent().expect("attachment parent"))
+            .expect("create attachment directory");
+        fs::write(&attachment_path, attachment).expect("write legacy attachment");
+        let service = Arc::new(
+            ChatGptService::new(Arc::clone(&storage)).expect("initialize ChatGPT service"),
+        );
+        let (_sender, cancellation) = watch::channel(false);
+
+        let result = dispatch(RpcDispatchContext {
+            storage: &storage,
+            service: &service,
+            request: Request {
+                id: json!(1),
+                method: "system.initialize".to_owned(),
+                params: json!({"chatSchemaVersion": crate::CHAT_SCHEMA_VERSION}),
+            },
+            cancellation,
+            cancellation_gate: Arc::new(OperationGate::default()),
+            events: EventSink::new(),
+            permission_broker: ToolPermissionBroker::default(),
+            user_question_broker: UserQuestionBroker::default(),
+            shutdown_requested: Arc::new(AtomicBool::new(false)),
+            startup_recovered: Arc::new(AtomicBool::new(false)),
+            startup_attachment_stages_recovered: Arc::new(std::sync::OnceLock::new()),
+        })
+        .await
+        .expect("initialize service and migrate attachments");
+
+        assert_eq!(result["status"], "ready");
+        let cipher = AttachmentCipher::from_profile_key(storage.database_key())
+            .expect("derive attachment key");
+        let context = attachment_associated_data(std::path::Path::new(
+            "conversation-1/message-1/attachment-1.data",
+        ))
+        .expect("build attachment context");
+        assert_eq!(
+            cipher
+                .read_file(&attachment_path, &context, attachment.len())
+                .expect("decrypt migrated attachment")
+                .as_slice(),
+            attachment
+        );
+        assert_ne!(
+            fs::read(attachment_path).expect("read encrypted file"),
+            attachment
+        );
+        drop(service);
+        drop(storage);
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+
+    #[tokio::test]
+    async fn system_initialization_keeps_an_unsupported_attachment_and_fails_closed() {
+        let directory = TestDirectory::new();
+        let storage = Arc::new(AppStorage::open_at(directory.0.clone()).expect("open storage"));
+        initialize_chat_test_schema(&storage);
+        let attachment = b"\0OpenChatAttachment/v2\0unknown";
+        let content = legacy_attachment_message_content(attachment);
+        storage
+            .connect()
+            .expect("connect storage")
+            .execute(
+                "INSERT INTO conversations (id, title) VALUES ('conversation-1', 'Legacy')",
+                [],
+            )
+            .expect("insert conversation");
+        storage
+            .connect()
+            .expect("connect storage")
+            .execute(
+                "INSERT INTO messages (id, conversation_id, role, content)
+                 VALUES ('message-1', 'conversation-1', 'user', ?1)",
+                [content],
+            )
+            .expect("insert message with attachment metadata");
+        let attachment_path = storage
+            .root()
+            .join("attachments/conversation-1/message-1/attachment-1.data");
+        fs::create_dir_all(attachment_path.parent().expect("attachment parent"))
+            .expect("create attachment directory");
+        fs::write(&attachment_path, attachment).expect("write unsupported attachment");
+        let service = Arc::new(
+            ChatGptService::new(Arc::clone(&storage)).expect("initialize ChatGPT service"),
+        );
+        let (_sender, cancellation) = watch::channel(false);
+
+        let error = dispatch(RpcDispatchContext {
+            storage: &storage,
+            service: &service,
+            request: Request {
+                id: json!(1),
+                method: "system.initialize".to_owned(),
+                params: json!({"chatSchemaVersion": crate::CHAT_SCHEMA_VERSION}),
+            },
+            cancellation,
+            cancellation_gate: Arc::new(OperationGate::default()),
+            events: EventSink::new(),
+            permission_broker: ToolPermissionBroker::default(),
+            user_question_broker: UserQuestionBroker::default(),
+            shutdown_requested: Arc::new(AtomicBool::new(false)),
+            startup_recovered: Arc::new(AtomicBool::new(false)),
+            startup_attachment_stages_recovered: Arc::new(std::sync::OnceLock::new()),
+        })
+        .await
+        .expect_err("unsupported data must prevent storage readiness");
+
+        assert_eq!(error.code, "attachment_migration_failed");
+        assert_eq!(
+            fs::read(attachment_path).expect("read preserved attachment"),
+            attachment
+        );
+        drop(service);
+        drop(storage);
+    }
+
+    fn legacy_attachment_message_content(attachment: &[u8]) -> String {
+        format!(
+            "{}{}",
+            crate::conversation_limits::MESSAGE_CONTENT_PREFIX,
+            json!({
+                "content": "legacy",
+                "attachments": [{
+                    "id": "attachment-1",
+                    "name": "notes.txt",
+                    "mimeType": "text/plain",
+                    "sizeBytes": attachment.len(),
+                    "kind": "text"
+                }]
+            })
+        )
+    }
 
     #[test]
     fn missing_conversation_question_error_uses_conversation_contract() {

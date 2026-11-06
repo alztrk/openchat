@@ -627,6 +627,7 @@ async fn plain_messages_starting_with_reserved_prefixes_are_escaped_before_persi
         let (decoded, attachments) = crate::attachments::decode_message_content(
             stored_content,
             storage.root(),
+            storage.database_key(),
             &conversation_id,
             &message_id,
         )
@@ -652,6 +653,7 @@ async fn plain_messages_starting_with_reserved_prefixes_are_escaped_before_persi
     let (decoded, attachments) = crate::attachments::decode_message_content(
         legacy_content.clone(),
         storage.root(),
+        storage.database_key(),
         &conversation_id,
         "legacy-prefix-message",
     )
@@ -669,6 +671,55 @@ fn initialized_chat_storage(directory: &TestDirectory) -> AppStorage {
         .initialize_backend_schema()
         .expect("initialize current backend schema");
     storage
+}
+
+fn read_encrypted_attachment(
+    storage: &AppStorage,
+    conversation_id: &str,
+    message_id: &str,
+    attachment_id: &str,
+    expected_plaintext: &[u8],
+) -> Vec<u8> {
+    let cipher =
+        crate::attachment_crypto::AttachmentCipher::from_profile_key(storage.database_key())
+            .expect("derive test attachment key");
+    let context = crate::attachment_crypto::attachment_associated_data(std::path::Path::new(
+        &format!("{conversation_id}/{message_id}/{attachment_id}.data"),
+    ))
+    .expect("build test attachment context");
+    cipher
+        .read_file(
+            &storage
+                .root()
+                .join("attachments")
+                .join(conversation_id)
+                .join(message_id)
+                .join(format!("{attachment_id}.data")),
+            &context,
+            expected_plaintext.len(),
+        )
+        .expect("decrypt test attachment")
+        .to_vec()
+}
+
+fn write_encrypted_attachment(
+    storage: &AppStorage,
+    conversation_id: &str,
+    message_id: &str,
+    attachment_id: &str,
+    plaintext: &[u8],
+    path: &std::path::Path,
+) {
+    let cipher =
+        crate::attachment_crypto::AttachmentCipher::from_profile_key(storage.database_key())
+            .expect("derive test attachment key");
+    let context = crate::attachment_crypto::attachment_associated_data(std::path::Path::new(
+        &format!("{conversation_id}/{message_id}/{attachment_id}.data"),
+    ))
+    .expect("build test attachment context");
+    cipher
+        .write_new_file(path, &context, plaintext)
+        .expect("write encrypted test attachment");
 }
 
 #[tokio::test]
@@ -827,8 +878,18 @@ async fn message_and_attachment_are_persisted_together_on_success() {
         .join(&conversation_id)
         .join(&message_id)
         .join(format!("{attachment_id}.data"));
+    assert_ne!(
+        fs::read(&attachment_path).expect("read encrypted attachment"),
+        bytes
+    );
     assert_eq!(
-        fs::read(attachment_path).expect("read saved attachment"),
+        read_encrypted_attachment(
+            &storage,
+            &conversation_id,
+            &message_id,
+            &attachment_id,
+            bytes
+        ),
         bytes
     );
     let messages = dispatch(
@@ -885,6 +946,7 @@ async fn prefixed_attachment_envelope_must_match_the_staged_attachment_payload()
     let (content, attachments) = crate::attachments::decode_message_content(
         stored_content,
         storage.root(),
+        storage.database_key(),
         &conversation_id,
         message_id,
     )
@@ -1026,6 +1088,7 @@ async fn saved_gif_attachment_round_trips_through_history_decoder() {
     let (content, attachments) = crate::attachments::decode_message_content(
         stored_content,
         storage.root(),
+        storage.database_key(),
         &conversation_id,
         &message_id,
     )
@@ -1146,14 +1209,14 @@ async fn failed_plain_message_upsert_preserves_the_old_attachment_directory() {
     .expect_err("deferred foreign key must fail the upsert commit");
 
     assert_eq!(error.code, "storage_chat_unavailable");
-    let attachment_path = storage
-        .root()
-        .join("attachments")
-        .join(&conversation_id)
-        .join(&message_id)
-        .join(format!("{attachment_id}.data"));
     assert_eq!(
-        fs::read(attachment_path).expect("read original attachment"),
+        read_encrypted_attachment(
+            &storage,
+            &conversation_id,
+            &message_id,
+            &attachment_id,
+            bytes
+        ),
         bytes
     );
 }
@@ -1252,8 +1315,14 @@ async fn rollback_cleanup_preserves_published_attachments_when_message_exists() 
         .join(&message_id);
     fs::create_dir_all(&destination).expect("create published attachment directory");
     let attachment_path = destination.join("attachment.data");
-    fs::write(&attachment_path, b"preserve committed attachment")
-        .expect("write published attachment");
+    write_encrypted_attachment(
+        &storage,
+        &conversation_id,
+        &message_id,
+        "attachment",
+        b"preserve committed attachment",
+        &attachment_path,
+    );
     let staged = StagedAttachments {
         staging: None,
         destination,
@@ -1269,7 +1338,13 @@ async fn rollback_cleanup_preserves_published_attachments_when_message_exists() 
     );
 
     assert_eq!(
-        fs::read(attachment_path).expect("read preserved attachment"),
+        read_encrypted_attachment(
+            &storage,
+            &conversation_id,
+            &message_id,
+            "attachment",
+            b"preserve committed attachment",
+        ),
         b"preserve committed attachment"
     );
 }
@@ -1558,8 +1633,13 @@ async fn archive_restore_recovers_interrupted_attachment_and_stage_files_before_
     assert_eq!(restored["restoredAttachmentCount"], json!(1));
     assert!(!stale_stage_directory.exists());
     assert_eq!(
-        fs::read(orphan_directory.join(format!("{attachment_id}.data")))
-            .expect("restored attachment should be present"),
+        read_encrypted_attachment(
+            &destination,
+            &conversation_id,
+            message_id,
+            attachment_id,
+            attachment_bytes,
+        ),
         attachment_bytes
     );
 }

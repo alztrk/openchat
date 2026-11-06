@@ -3,20 +3,18 @@
 //! File count, per-kind size, aggregate size, identifiers, and MIME/name consistency are checked
 //! before attachment bytes are exposed to provider requests or stored with a message.
 
-use std::{
-    fs::{self, File, OpenOptions},
-    io::{Read, Write},
-    path::Path,
-};
+use std::{fs, path::Path};
 
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use rusqlite::{Error as SqlError, types::Type};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use uuid::Uuid;
+use zeroize::Zeroizing;
 
 use crate::chatgpt_store::StoredAttachment;
 use crate::{
+    attachment_crypto::{AttachmentCipher, attachment_associated_data},
     conversation_limits::{
         MAXIMUM_ATTACHMENT_FILE_COUNT as MAXIMUM_FILE_COUNT,
         MAXIMUM_ATTACHMENT_IMAGE_BYTES as MAXIMUM_IMAGE_BYTES,
@@ -26,7 +24,7 @@ use crate::{
         MESSAGE_TEXT_PREFIX,
     },
     protocol::ServiceError,
-    storage::AppStorage,
+    storage::{AppStorage, DatabaseKey},
 };
 
 #[derive(Deserialize, Serialize)]
@@ -154,6 +152,7 @@ pub(crate) fn validate_portable_attachment_content(
 /// Validates and writes generated images beneath the conversation's bounded attachment store.
 pub(crate) fn write_generated_images(
     storage_root: &Path,
+    profile_key: &DatabaseKey,
     conversation_id: &str,
     message_id: &str,
     images: &[(&str, &[u8])],
@@ -187,6 +186,8 @@ pub(crate) fn write_generated_images(
     let canonical_directory =
         checked_attachment_subdirectory(&conversation_directory, message_id, true)?
             .ok_or_else(image_storage_unavailable)?;
+    let cipher =
+        AttachmentCipher::from_profile_key(profile_key).map_err(|_| image_storage_unavailable())?;
 
     let mut metadata = Vec::with_capacity(images.len());
     let mut written_ids = Vec::with_capacity(images.len());
@@ -213,14 +214,11 @@ pub(crate) fn write_generated_images(
         let id = Uuid::new_v4().simple().to_string();
         let file_name = format!("{id}.data");
         let path = canonical_directory.join(&file_name);
-        let write_result = (|| -> std::io::Result<()> {
-            let mut file = OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .open(&path)?;
-            file.write_all(bytes)?;
-            file.sync_all()
-        })();
+        let context = attachment_associated_data(Path::new(&format!(
+            "{conversation_id}/{message_id}/{file_name}"
+        )))
+        .map_err(|_| image_storage_unavailable())?;
+        let write_result = cipher.write_new_file(&path, &context, bytes);
         if let Err(error) = write_result {
             let mut cleanup_ids = written_ids.clone();
             if error.kind() != std::io::ErrorKind::AlreadyExists {
@@ -335,6 +333,7 @@ pub(crate) fn encode_plain_message_content(content: &str) -> String {
 /// Converts stored generated images into bounded provider input-image values.
 pub(crate) fn function_call_output_value(
     storage_root: &Path,
+    profile_key: &DatabaseKey,
     conversation_id: &str,
     message_id: &str,
     output: &Value,
@@ -349,15 +348,24 @@ pub(crate) fn function_call_output_value(
             "The generated image metadata exceeds the supported limit.",
         ));
     }
+    let cipher =
+        AttachmentCipher::from_profile_key(profile_key).map_err(|_| image_storage_unavailable())?;
     let mut content = Vec::with_capacity(attachments.len());
     for attachment in attachments {
         validate_generated_image_metadata(&attachment)
             .map_err(|_| image_storage_error("The generated image metadata is invalid."))?;
+        let context = attachment_associated_data(Path::new(&format!(
+            "{conversation_id}/{message_id}/{}.data",
+            attachment.id
+        )))
+        .map_err(|_| image_storage_unavailable())?;
         let Some(bytes) = read_attachment(
+            &cipher,
             storage_root,
             conversation_id,
             message_id,
             &format!("{}.data", attachment.id),
+            &context,
             attachment.size_bytes,
             MAXIMUM_IMAGE_BYTES,
         ) else {
@@ -372,7 +380,7 @@ pub(crate) fn function_call_output_value(
             "image_url": format!(
                 "data:{};base64,{}",
                 attachment.mime_type,
-                STANDARD.encode(bytes),
+                STANDARD.encode(bytes.as_slice()),
             ),
         }));
     }
@@ -519,13 +527,15 @@ fn image_storage_cleanup_unavailable() -> ServiceError {
 
 /// Reads a regular attachment file only when its canonical path stays inside its message root.
 fn read_attachment(
+    cipher: &AttachmentCipher,
     storage_root: &Path,
     conversation_id: &str,
     message_id: &str,
     file_name: &str,
+    associated_data: &[u8],
     expected_size: usize,
     maximum_size: usize,
-) -> Option<Vec<u8>> {
+) -> Option<Zeroizing<Vec<u8>>> {
     if !is_safe_identifier(conversation_id)
         || !is_safe_identifier(message_id)
         || !file_name
@@ -548,16 +558,9 @@ fn read_attachment(
     if canonical_file != expected_file || !canonical_file.starts_with(&message_directory) {
         return None;
     }
-    let file = File::open(canonical_file).ok()?;
-    let metadata = file.metadata().ok()?;
-    if metadata.len() != u64::try_from(expected_size).ok()?
-        || metadata.len() > u64::try_from(maximum_size).ok()?
-    {
-        return None;
-    }
-    let limit = u64::try_from(maximum_size).ok()?.saturating_add(1);
-    let mut bytes = Vec::with_capacity(expected_size);
-    file.take(limit).read_to_end(&mut bytes).ok()?;
+    let bytes = cipher
+        .read_file(&canonical_file, associated_data, maximum_size)
+        .ok()?;
     (bytes.len() == expected_size).then_some(bytes)
 }
 
@@ -678,6 +681,7 @@ pub(crate) fn is_safe_identifier(value: &str) -> bool {
 pub(crate) fn decode_message_content(
     value: String,
     storage_root: &Path,
+    profile_key: &DatabaseKey,
     conversation_id: &str,
     message_id: &str,
 ) -> Result<(String, Vec<StoredAttachment>), SqlError> {
@@ -710,6 +714,8 @@ pub(crate) fn decode_message_content(
     let mut image_count = 0_usize;
     let mut effective_content = envelope.content;
     let mut attachments = Vec::with_capacity(envelope.attachments.len());
+    let cipher = AttachmentCipher::from_profile_key(profile_key)
+        .map_err(|error| SqlError::FromSqlConversionFailure(2, Type::Text, Box::new(error)))?;
     for metadata in envelope.attachments {
         let max_size = match metadata.kind.as_str() {
             "image"
@@ -758,11 +764,18 @@ pub(crate) fn decode_message_content(
                 )),
             ));
         }
+        let context = attachment_associated_data(Path::new(&format!(
+            "{conversation_id}/{message_id}/{}.data",
+            metadata.id
+        )))
+        .map_err(|error| SqlError::FromSqlConversionFailure(2, Type::Text, Box::new(error)))?;
         let mut attachment_content = read_attachment(
+            &cipher,
             storage_root,
             conversation_id,
             message_id,
             &format!("{}.data", metadata.id),
+            &context,
             metadata.size_bytes,
             max_size,
         );
@@ -789,7 +802,7 @@ pub(crate) fn decode_message_content(
             name: metadata.name,
             mime_type: metadata.mime_type,
             kind: metadata.kind,
-            content: attachment_content,
+            content: attachment_content.map(|bytes| bytes.to_vec()),
         });
     }
 
@@ -804,6 +817,10 @@ mod tests {
 
     fn test_root() -> std::path::PathBuf {
         std::env::temp_dir().join(format!("openchat-generated-image-{}", Uuid::new_v4()))
+    }
+
+    fn test_profile_key() -> DatabaseKey {
+        DatabaseKey::from_bytes(&[0x73; 32]).expect("create attachment profile key")
     }
 
     #[cfg(windows)]
@@ -842,6 +859,7 @@ mod tests {
         assert!(
             write_generated_images(
                 &root,
+                &test_profile_key(),
                 "conversation-1",
                 "assistant-1",
                 &[("image/png", PNG)],
@@ -850,10 +868,13 @@ mod tests {
         );
         assert!(
             read_attachment(
+                &AttachmentCipher::from_profile_key(&test_profile_key()).expect("derive key"),
                 &root,
                 "conversation-1",
                 "assistant-1",
                 "image-1.data",
+                &attachment_associated_data(Path::new("conversation-1/assistant-1/image-1.data",))
+                    .expect("build associated data"),
                 PNG.len(),
                 MAXIMUM_IMAGE_BYTES,
             )
@@ -883,6 +904,7 @@ mod tests {
         assert!(
             write_generated_images(
                 &root,
+                &test_profile_key(),
                 "conversation-1",
                 "assistant-1",
                 &[("image/png", PNG)],
@@ -908,10 +930,13 @@ mod tests {
 
         assert!(
             read_attachment(
+                &AttachmentCipher::from_profile_key(&test_profile_key()).expect("derive key"),
                 &root,
                 "conversation-1",
                 "assistant-1",
                 "image-1.data",
+                &attachment_associated_data(Path::new("conversation-1/assistant-1/image-1.data",))
+                    .expect("build associated data"),
                 PNG.len(),
                 MAXIMUM_IMAGE_BYTES,
             )
@@ -926,8 +951,10 @@ mod tests {
     #[test]
     fn generated_images_are_written_before_structured_follow_up_output() {
         let root = test_root();
+        let profile_key = test_profile_key();
         let attachments = write_generated_images(
             &root,
+            &profile_key,
             "conversation-1",
             "assistant-1",
             &[("image/png", PNG)],
@@ -944,23 +971,46 @@ mod tests {
             .join("conversation-1")
             .join("assistant-1")
             .join(format!("{}.data", attachments[0].id));
-        assert_eq!(fs::read(&stored_path).expect("stored bytes"), PNG);
+        let cipher = AttachmentCipher::from_profile_key(&profile_key).expect("derive key");
+        let context = attachment_associated_data(Path::new(&format!(
+            "conversation-1/assistant-1/{}.data",
+            attachments[0].id
+        )))
+        .expect("build associated data");
+        assert_eq!(
+            cipher
+                .read_file(&stored_path, &context, PNG.len())
+                .expect("decrypt stored image")
+                .as_slice(),
+            PNG
+        );
+        assert_ne!(fs::read(&stored_path).expect("encrypted bytes"), PNG);
 
         let envelope = append_attachment_metadata("", &attachments)
             .expect("generated metadata should use the existing envelope");
-        let (content, hydrated) =
-            decode_message_content(envelope, &root, "conversation-1", "assistant-1")
-                .expect("stored attachment metadata should hydrate");
+        let (content, hydrated) = decode_message_content(
+            envelope,
+            &root,
+            &profile_key,
+            "conversation-1",
+            "assistant-1",
+        )
+        .expect("stored attachment metadata should hydrate");
         assert!(content.contains("[Attached image: generated-image.png]"));
         assert_eq!(hydrated.len(), 1);
         assert_eq!(hydrated[0].mime_type, "image/png");
         assert_eq!(hydrated[0].content.as_deref(), Some(PNG));
 
         let tool_output = json!({"attachments": attachments});
-        let follow_up =
-            function_call_output_value(&root, "conversation-1", "assistant-1", &tool_output)
-                .expect("follow-up image should be readable")
-                .expect("image attachment should become input content");
+        let follow_up = function_call_output_value(
+            &root,
+            &profile_key,
+            "conversation-1",
+            "assistant-1",
+            &tool_output,
+        )
+        .expect("follow-up image should be readable")
+        .expect("image attachment should become input content");
         assert_eq!(follow_up[0]["type"], "input_image");
         assert!(
             follow_up[0]["image_url"]
@@ -1011,6 +1061,7 @@ mod tests {
         let (decoded, attachments) = decode_message_content(
             stored.clone(),
             Path::new("unused-storage-root"),
+            &test_profile_key(),
             "conversation-1",
             "assistant-1",
         )

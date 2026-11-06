@@ -213,7 +213,7 @@ pub fn conversation_messages(
             .collect::<rusqlite::Result<Vec<_>>>()?
     };
     rows.into_iter()
-        .map(|row| stored_message_from_values(row, storage.root(), conversation_id))
+        .map(|row| stored_message_from_values(row, storage, conversation_id))
         .collect()
 }
 
@@ -265,7 +265,7 @@ pub fn conversation_messages_from_boundary(
             .collect::<rusqlite::Result<Vec<_>>>()?
     };
     rows.into_iter()
-        .map(|row| stored_message_from_values(row, storage.root(), conversation_id))
+        .map(|row| stored_message_from_values(row, storage, conversation_id))
         .collect::<rusqlite::Result<Vec<_>>>()
         .map(Some)
 }
@@ -285,7 +285,7 @@ fn stored_message_row_from_sql(row: &StorageRow) -> rusqlite::Result<StoredMessa
 
 fn stored_message_from_values(
     row: StoredMessageRow,
-    storage_root: &std::path::Path,
+    storage: &AppStorage,
     conversation_id: &str,
 ) -> rusqlite::Result<StoredMessage> {
     let (id, role, stored_content, status, output_tokens, tool_activities_json) = row;
@@ -294,7 +294,8 @@ fn stored_message_from_values(
     })?;
     let (content, attachments) = crate::attachments::decode_message_content(
         stored_content,
-        storage_root,
+        storage.root(),
+        storage.database_key(),
         conversation_id,
         &id,
     )?;

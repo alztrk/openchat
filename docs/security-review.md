@@ -1,6 +1,6 @@
 # Security Review
 
-**Last review date:** 2026-11-05
+**Last review date:** 2026-11-06
 **Status:** In progress. Records checks and fixes completed in the current review slice.
 
 ## Audit scope
@@ -8,7 +8,7 @@
 | Area | Last recorded result | Current review |
 |------|---------------------|----------------|
 | Rust dependency audit | `cargo-audit` 0.22.2 (RustSec): no advisory findings | Not rerun; `cargo-audit` is unavailable in this environment |
-| Frontend dependency audit | `npm audit` (prod + dev): zero vulnerabilities | Reran 2026-11-05: zero vulnerabilities |
+| Frontend dependency audit | `npm audit` (prod + dev): zero vulnerabilities | Reran 2026-11-06: zero vulnerabilities |
 | Static analysis | Semgrep 1.181.0 (`p/security-audit`, `p/secrets`): zero findings across 296 files | Not rerun; Semgrep is unavailable in this environment |
 | Rust unsafe review | Semgrep `p/rust` + manual: 107 `unsafe` usages, all documented via `clippy::undocumented_unsafe_blocks` | Scoped manual review; not a new exhaustive unsafe scan |
 
@@ -60,9 +60,11 @@ Provider API keys, MCP secrets, and OAuth token pairs are individually DPAPI-pro
 
 Conversation deletion and history clearing affect the active database. Verified migration backups have no automatic expiry or in-app restore flow. Historical filesystem snapshots may retain plaintext blocks from before SQLCipher migration.
 
-### Open — Attachment blobs are outside database encryption (P2, medium)
+### Resolved — Message attachment blobs are outside database encryption
 
-On Windows, `AppStorage::open` keeps the service root at `%LOCALAPPDATA%\OpenChat` (`services/openchat-local-service/src/adapters/storage/mod.rs`), while the SQLCipher database is owned by the AppContainer storage broker (`services/openchat-local-service/src/storage_broker.rs`). `storage_chat::stage_attachments` writes the incoming attachment bytes directly to `.data` files under that service root (`services/openchat-local-service/src/transport/rpc/storage_chat/attachments.rs`), without application-level content encryption. A filesystem disclosure of the current user's profile can therefore expose attachment contents without access to the SQLCipher database or its key. This review found no cross-user filesystem permission bypass; the finding concerns weaker at-rest protection for attachment content.
+Incoming and generated conversation attachments under `%LOCALAPPDATA%\OpenChat\attachments` now use AES-256-GCM with a key derived from the profile database key using HKDF-SHA256. The authenticated data binds ciphertext to its relative attachment path. Startup converts existing `.data` files through verified sibling temporary files and atomic replacement; an interrupted conversion resumes from a verified temporary or retries from the preserved original. Unsupported or invalid envelopes fail startup before the service reports ready. Conversation and profile archive flows decrypt only into their existing encrypted archive format and re-encrypt restored attachments for their destination paths.
+
+This finding is limited to the `attachments` tree. Image-library outputs use the separate `storage.image_files_root()/image-library` location under the broker profile and were not converted by this change; assess that storage boundary separately before making an at-rest encryption claim for those files.
 
 ### Documented — No vulnerability reporting channel
 
@@ -101,3 +103,4 @@ No verified vulnerability-reporting channel is documented. Selection and verific
 | Tool call limits | Applies per-turn limit to every event that can create a call |
 | Task-scoped local environment loading | Only `dev` and `build` load the root `.env`; checks, tests, benchmarks, and maintenance tasks do not inherit those local values |
 | Pending archive marker bounds | Requires the exact expected marker length before reading and rejects oversized marker files |
+| Message attachment encryption | Profile-key-derived AES-256-GCM, path-bound authentication, and crash-recoverable migration for existing conversation attachment files |

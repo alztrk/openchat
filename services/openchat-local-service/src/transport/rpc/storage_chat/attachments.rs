@@ -1,6 +1,7 @@
 //! Attachment storage, library paging, and path validation helpers.
 
 use super::*;
+use crate::attachment_crypto::{AttachmentCipher, attachment_associated_data};
 
 pub(super) fn list_conversation_attachments(
     params: &Value,
@@ -133,7 +134,7 @@ pub(super) fn list_conversation_attachments(
                 continue;
             };
             let available = attachment_is_available(
-                storage.root(),
+                storage,
                 &summary.conversation_id,
                 &summary.message_id,
                 &summary.attachment_id,
@@ -671,11 +672,14 @@ pub(super) fn attachment_spec(name: &str) -> Option<(&'static str, &'static str,
 }
 
 pub(super) fn stage_attachments(
-    storage_root: &Path,
+    storage: &AppStorage,
     conversation_id: &str,
     message_id: &str,
     attachments: &[AttachmentInput],
 ) -> Result<StagedAttachments, ServiceError> {
+    let storage_root = storage.root();
+    let cipher = AttachmentCipher::from_profile_key(storage.database_key())
+        .map_err(|_| storage_unavailable())?;
     #[cfg(unix)]
     let attachments_root_was_missing =
         optional_checked_directory(storage_root, "attachments")?.is_none();
@@ -700,7 +704,13 @@ pub(super) fn stage_attachments(
                 return Err(storage_unavailable());
             }
             let destination = checked_child_directory(&conversation, message_id, false)?;
-            if !attachment_directory_matches(&destination, attachments)? {
+            if !attachment_directory_matches(
+                &destination,
+                conversation_id,
+                message_id,
+                attachments,
+                &cipher,
+            )? {
                 return Err(storage_unavailable());
             }
             return Ok(StagedAttachments {
@@ -715,11 +725,12 @@ pub(super) fn stage_attachments(
     fs::create_dir(&staging).map_err(|_| storage_unavailable())?;
     for attachment in attachments {
         let path = staging.join(format!("{}.data", attachment.id));
-        let write_result = (|| -> std::io::Result<()> {
-            let mut file = OpenOptions::new().write(true).create_new(true).open(path)?;
-            file.write_all(&attachment.bytes)?;
-            file.sync_all()
-        })();
+        let context = attachment_associated_data(Path::new(&format!(
+            "{conversation_id}/{message_id}/{}.data",
+            attachment.id
+        )))
+        .map_err(|_| storage_unavailable())?;
+        let write_result = cipher.write_new_file(&path, &context, &attachment.bytes);
         if write_result.is_err() {
             let _ = remove_directory_if_present(&staging);
             return Err(storage_unavailable());
@@ -804,7 +815,10 @@ fn sync_directory(path: &Path) -> std::io::Result<()> {
 
 pub(super) fn attachment_directory_matches(
     directory: &Path,
+    conversation_id: &str,
+    message_id: &str,
     attachments: &[AttachmentInput],
+    cipher: &AttachmentCipher,
 ) -> Result<bool, ServiceError> {
     let metadata = match fs::symlink_metadata(directory) {
         Ok(metadata) => metadata,
@@ -842,11 +856,15 @@ pub(super) fn attachment_directory_matches(
         else {
             return Ok(false);
         };
-        if metadata.len() != attachment.bytes.len() as u64 {
-            return Ok(false);
-        }
-        let content = fs::read(path).map_err(|_| storage_unavailable())?;
-        if content != attachment.bytes {
+        let context = attachment_associated_data(Path::new(&format!(
+            "{conversation_id}/{message_id}/{}.data",
+            attachment.id
+        )))
+        .map_err(|_| storage_unavailable())?;
+        let content = cipher
+            .read_file(&path, &context, attachment.bytes.len())
+            .map_err(|_| storage_unavailable())?;
+        if content.as_slice() != attachment.bytes {
             return Ok(false);
         }
     }
@@ -871,7 +889,7 @@ pub(super) fn attachment_path(
 }
 
 pub(super) fn attachment_is_available(
-    storage_root: &Path,
+    storage: &AppStorage,
     conversation_id: &str,
     message_id: &str,
     attachment_id: &str,
@@ -884,7 +902,7 @@ pub(super) fn attachment_is_available(
         return Err(invalid_request_params());
     }
     let canonical_storage_root =
-        fs::canonicalize(storage_root).map_err(|_| storage_unavailable())?;
+        fs::canonicalize(storage.root()).map_err(|_| storage_unavailable())?;
     let Some(attachments_root) =
         optional_checked_directory(&canonical_storage_root, "attachments")?
     else {
@@ -908,14 +926,12 @@ pub(super) fn attachment_is_available(
     if metadata.file_type().is_symlink() || !metadata.is_file() {
         return Ok(false);
     }
-    if metadata.len() != expected_size as u64 {
-        return Ok(false);
-    }
     let canonical_path = fs::canonicalize(&path).map_err(|_| storage_unavailable())?;
     if canonical_path != path || !canonical_path.starts_with(&message_directory) {
         return Err(storage_unavailable());
     }
-    Ok(true)
+    AttachmentCipher::has_encrypted_file_shape(&canonical_path, expected_size)
+        .map_err(|_| storage_unavailable())
 }
 
 pub(super) fn optional_checked_directory(

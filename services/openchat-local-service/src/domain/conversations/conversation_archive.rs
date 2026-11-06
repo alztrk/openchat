@@ -24,12 +24,13 @@ use uuid::Uuid;
 use zeroize::Zeroizing;
 
 use crate::{
+    attachment_crypto::{AttachmentCipher, attachment_associated_data},
     attachments::{
         AttachmentMetadata, message_attachment_metadata, validate_portable_attachment_content,
     },
     protocol::ServiceError,
     service::OperationGate,
-    storage::{AppStorage, StorageConnection, StorageTransaction},
+    storage::{AppStorage, DatabaseKey, StorageConnection, StorageTransaction},
 };
 
 const ARCHIVE_FORMAT: &str = "openchat-conversations";
@@ -163,6 +164,7 @@ struct ArchivedMessage {
 struct AttachmentSource {
     record: ArchiveAttachmentRecord,
     path: PathBuf,
+    associated_data: Vec<u8>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -646,6 +648,7 @@ pub(crate) fn restore(
     let (result, mut created_files) = restore_transaction(
         &transaction,
         storage.root(),
+        storage.database_key(),
         &stage,
         &manifest,
         data,
@@ -739,6 +742,7 @@ fn export_inner(
         &manifest_json,
         &conversations_json,
         &sources,
+        storage.database_key(),
         passphrase,
         cancellation,
         lease,
@@ -792,6 +796,7 @@ fn write_archive(
     manifest_json: &[u8],
     conversations_json: &[u8],
     sources: &[AttachmentSource],
+    profile_key: &DatabaseKey,
     passphrase: &str,
     cancellation: &watch::Receiver<bool>,
     lease: &ArchiveOperationLease,
@@ -802,6 +807,8 @@ fn write_archive(
         .wrap_output(output)
         .map_err(|_| ArchiveFailure::Storage)?;
     let mut archive = Builder::new(encrypted);
+    let attachment_cipher =
+        AttachmentCipher::from_profile_key(profile_key).map_err(|_| ArchiveFailure::Storage)?;
     let attachment_bytes = sources
         .iter()
         .try_fold(0_u64, |total, source| {
@@ -846,9 +853,16 @@ fn write_archive(
     completed_bytes = completed_bytes.saturating_add(conversations_json.len() as u64);
     for (index, source) in sources.iter().enumerate() {
         check_cancelled(cancellation)?;
-        let file = File::open(&source.path).map_err(|_| ArchiveFailure::Storage)?;
+        let plaintext = attachment_cipher
+            .read_file(
+                &source.path,
+                &source.associated_data,
+                usize::try_from(source.record.size_bytes)
+                    .map_err(|_| ArchiveFailure::LimitExceeded)?,
+            )
+            .map_err(|_| ArchiveFailure::Storage)?;
         let cancellable_reader = CancellableReader::new(
-            BufReader::new(file),
+            plaintext.as_slice(),
             cancellation,
             lease,
             index + 2,
@@ -1049,6 +1063,8 @@ fn load_conversations(
         return Err(ArchiveFailure::InvalidRequest);
     }
     let mut connection = storage.connect()?;
+    let attachment_cipher = AttachmentCipher::from_profile_key(storage.database_key())
+        .map_err(|_| ArchiveFailure::Storage)?;
     let transaction = connection.transaction()?;
     let mut conversations = Vec::with_capacity(conversation_ids.len());
     let mut sources = Vec::new();
@@ -1125,13 +1141,28 @@ fn load_conversations(
                 check_cancelled(cancellation)?;
                 let path =
                     attachment_path(storage.root(), conversation_id, &message.id, &metadata.id)?;
-                let bytes = read_verified_attachment(&path, &metadata, cancellation)?;
+                let associated_data = attachment_associated_data(Path::new(&format!(
+                    "{conversation_id}/{}/{}.data",
+                    message.id, metadata.id
+                )))
+                .map_err(|_| ArchiveFailure::InvalidArchive)?;
+                let bytes = read_verified_attachment(
+                    &path,
+                    &metadata,
+                    &attachment_cipher,
+                    &associated_data,
+                    cancellation,
+                )?;
                 let record = ArchiveAttachmentRecord {
                     path: archive_attachment_path(conversation_id, &message.id, &metadata.id),
                     size_bytes: bytes.len() as u64,
                     sha256: digest_hex(&Sha256::digest(&bytes)),
                 };
-                sources.push(AttachmentSource { record, path });
+                sources.push(AttachmentSource {
+                    record,
+                    path,
+                    associated_data,
+                });
             }
             conversation.messages.push(message);
             if message_count % 100 == 0 {
@@ -1749,6 +1780,7 @@ fn archive_summary(manifest: &ArchiveManifest, duplicate_count: usize) -> Value 
 fn restore_transaction(
     transaction: &StorageTransaction<'_>,
     storage_root: &Path,
+    profile_key: &DatabaseKey,
     stage: &RestoreStage,
     manifest: &ArchiveManifest,
     data: ArchiveData,
@@ -1799,6 +1831,8 @@ fn restore_transaction(
         .iter()
         .try_fold(0_u64, |total, record| total.checked_add(record.size_bytes))
         .ok_or(ArchiveFailure::LimitExceeded)?;
+    let attachment_cipher =
+        AttachmentCipher::from_profile_key(profile_key).map_err(|_| ArchiveFailure::Storage)?;
     let mut copied_attachment_bytes = 0_u64;
     for (index, record) in manifest.attachments.iter().enumerate() {
         check_cancelled(cancellation)?;
@@ -1820,6 +1854,12 @@ fn restore_transaction(
         copy_new_file(
             &staged_path,
             &target,
+            &attachment_cipher,
+            &attachment_associated_data(Path::new(&format!(
+                "{target_conversation_id}/{message_id}/{file_name}"
+            )))
+            .map_err(|_| ArchiveFailure::InvalidArchive)?,
+            usize::try_from(record.size_bytes).map_err(|_| ArchiveFailure::LimitExceeded)?,
             &mut created_files,
             cancellation,
             lease,
@@ -1991,6 +2031,9 @@ fn ensure_directory(path: &Path) -> Result<(), ArchiveFailure> {
 fn copy_new_file(
     source: &Path,
     destination: &Path,
+    cipher: &AttachmentCipher,
+    associated_data: &[u8],
+    expected_plaintext_bytes: usize,
     created_files: &mut CreatedAttachmentFiles,
     cancellation: &watch::Receiver<bool>,
     lease: &ArchiveOperationLease,
@@ -2005,18 +2048,10 @@ fn copy_new_file(
         .metadata()
         .map_err(|_| ArchiveFailure::Storage)?
         .len();
-    let mut destination_file = OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(destination)
-        .map_err(|error| {
-            if error.kind() == io::ErrorKind::AlreadyExists {
-                ArchiveFailure::Conflict
-            } else {
-                ArchiveFailure::Storage
-            }
-        })?;
-    created_files.push(destination.to_path_buf());
+    if file_bytes != expected_plaintext_bytes as u64 {
+        return Err(ArchiveFailure::InvalidArchive);
+    }
+    let mut plaintext = Zeroizing::new(Vec::with_capacity(expected_plaintext_bytes));
     let mut copied_bytes = 0_u64;
     let mut last_reported_bytes = 0_u64;
     let mut buffer = [0_u8; 64 * 1024];
@@ -2028,12 +2063,13 @@ fn copy_new_file(
         if count == 0 {
             break;
         }
-        destination_file
-            .write_all(&buffer[..count])
-            .map_err(|_| ArchiveFailure::Storage)?;
         copied_bytes = copied_bytes
             .checked_add(count as u64)
             .ok_or(ArchiveFailure::LimitExceeded)?;
+        if copied_bytes > expected_plaintext_bytes as u64 {
+            return Err(ArchiveFailure::InvalidArchive);
+        }
+        plaintext.extend_from_slice(&buffer[..count]);
         if copied_bytes.saturating_sub(last_reported_bytes) >= 1024 * 1024 {
             lease.set_progress(
                 "restoring",
@@ -2049,6 +2085,24 @@ fn copy_new_file(
         return Err(ArchiveFailure::Storage);
     }
     check_cancelled(cancellation)?;
+    let encrypted = cipher
+        .seal(associated_data, &plaintext)
+        .map_err(|_| ArchiveFailure::Storage)?;
+    let mut destination_file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(destination)
+        .map_err(|error| {
+            if error.kind() == io::ErrorKind::AlreadyExists {
+                ArchiveFailure::Conflict
+            } else {
+                ArchiveFailure::Storage
+            }
+        })?;
+    created_files.push(destination.to_path_buf());
+    destination_file
+        .write_all(&encrypted)
+        .map_err(|_| ArchiveFailure::Storage)?;
     destination_file
         .sync_all()
         .map_err(|_| ArchiveFailure::Storage)
@@ -2095,27 +2149,14 @@ fn attachment_path(
 fn read_verified_attachment(
     path: &Path,
     metadata: &AttachmentMetadata,
+    cipher: &AttachmentCipher,
+    associated_data: &[u8],
     cancellation: &watch::Receiver<bool>,
-) -> Result<Vec<u8>, ArchiveFailure> {
+) -> Result<Zeroizing<Vec<u8>>, ArchiveFailure> {
     check_cancelled(cancellation)?;
-    let file = File::open(path).map_err(|_| ArchiveFailure::Storage)?;
-    let file_metadata = file.metadata().map_err(|_| ArchiveFailure::Storage)?;
-    if file_metadata.len() != metadata.size_bytes as u64 {
-        return Err(ArchiveFailure::Storage);
-    }
-    let mut bytes = Vec::with_capacity(metadata.size_bytes);
-    let mut reader = file.take(file_metadata.len().saturating_add(1));
-    let mut buffer = [0_u8; 64 * 1024];
-    loop {
-        check_cancelled(cancellation)?;
-        let count = reader
-            .read(&mut buffer)
-            .map_err(|_| ArchiveFailure::Storage)?;
-        if count == 0 {
-            break;
-        }
-        bytes.extend_from_slice(&buffer[..count]);
-    }
+    let bytes = cipher
+        .read_file(path, associated_data, metadata.size_bytes)
+        .map_err(|_| ArchiveFailure::Storage)?;
     check_cancelled(cancellation)?;
     validate_portable_attachment_content(metadata, &bytes).map_err(|_| ArchiveFailure::Storage)?;
     Ok(bytes)
@@ -2189,15 +2230,21 @@ fn invalid_request() -> ServiceError {
 
 #[cfg(test)]
 mod tests {
-    use std::{fs, path::PathBuf};
+    use std::{
+        fs,
+        path::{Path, PathBuf},
+    };
 
     use serde_json::json;
     use tokio::sync::watch;
     use uuid::Uuid;
     use zeroize::Zeroizing;
 
-    use crate::service::OperationGate;
     use crate::storage::AppStorage;
+    use crate::{
+        attachment_crypto::{AttachmentCipher, attachment_associated_data},
+        service::OperationGate,
+    };
 
     use super::{
         ArchiveFailure, ArchiveOperationKind, RestoreStage, begin_operation, export, export_inner,
@@ -2335,8 +2382,18 @@ mod tests {
             .join("conversation-1")
             .join("message-1");
         fs::create_dir_all(&attachment_directory).expect("attachment directory should be created");
-        fs::write(attachment_directory.join("attachment-1.data"), &attachment)
-            .expect("attachment should be stored");
+        let cipher = AttachmentCipher::from_profile_key(storage.database_key())
+            .expect("derive attachment key");
+        let context =
+            attachment_associated_data(Path::new("conversation-1/message-1/attachment-1.data"))
+                .expect("build attachment context");
+        cipher
+            .write_new_file(
+                &attachment_directory.join("attachment-1.data"),
+                &context,
+                &attachment,
+            )
+            .expect("attachment should be encrypted and stored");
         attachment
     }
 
@@ -2581,13 +2638,23 @@ mod tests {
         assert!(!memory_included);
         assert_eq!(excluded_tool, "web_search");
         assert!(message_content.starts_with("\u{1e}openchat-attachments-v1:"));
+        let restored_path = destination
+            .root()
+            .join("attachments/conversation-1/message-1/attachment-1.data");
+        let cipher = AttachmentCipher::from_profile_key(destination.database_key())
+            .expect("derive destination attachment key");
+        let context =
+            attachment_associated_data(Path::new("conversation-1/message-1/attachment-1.data"))
+                .expect("build attachment context");
         assert_eq!(
-            fs::read(
-                destination
-                    .root()
-                    .join("attachments/conversation-1/message-1/attachment-1.data")
-            )
-            .expect("restored attachment should exist"),
+            cipher
+                .read_file(&restored_path, &context, attachment.len())
+                .expect("decrypt restored attachment")
+                .as_slice(),
+            attachment
+        );
+        assert_ne!(
+            fs::read(&restored_path).expect("read encrypted attachment"),
             attachment
         );
         drop(connection);
@@ -2623,15 +2690,20 @@ mod tests {
             .into_iter()
             .find(|id| id != "conversation-1")
             .expect("the imported copy should have a new id");
+        let copied_path = destination
+            .root()
+            .join("attachments")
+            .join(&copied_id)
+            .join("message-1/attachment-1.data");
+        let copied_context = attachment_associated_data(Path::new(&format!(
+            "{copied_id}/message-1/attachment-1.data"
+        )))
+        .expect("build copied attachment context");
         assert_eq!(
-            fs::read(
-                destination
-                    .root()
-                    .join("attachments")
-                    .join(copied_id)
-                    .join("message-1/attachment-1.data")
-            )
-            .expect("copy attachment should follow the copied conversation"),
+            cipher
+                .read_file(&copied_path, &copied_context, attachment.len())
+                .expect("decrypt copied attachment")
+                .as_slice(),
             attachment
         );
     }
@@ -2743,16 +2815,24 @@ mod tests {
             source.root().join("attachments/conversation-1/message-1");
         fs::create_dir_all(&source_attachment_directory)
             .expect("source attachment directory should be created");
-        fs::write(
-            source_attachment_directory.join("attachment-1.data"),
-            first_attachment,
-        )
-        .expect("first source attachment should be written");
-        fs::write(
-            source_attachment_directory.join("attachment-2.data"),
-            second_attachment,
-        )
-        .expect("second source attachment should be written");
+        let cipher = AttachmentCipher::from_profile_key(source.database_key())
+            .expect("derive source attachment key");
+        for (id, bytes) in [
+            ("attachment-1", first_attachment.as_slice()),
+            ("attachment-2", second_attachment.as_slice()),
+        ] {
+            let context = attachment_associated_data(Path::new(&format!(
+                "conversation-1/message-1/{id}.data"
+            )))
+            .expect("build source attachment context");
+            cipher
+                .write_new_file(
+                    &source_attachment_directory.join(format!("{id}.data")),
+                    &context,
+                    bytes,
+                )
+                .expect("source attachment should be encrypted and written");
+        }
         drop(connection);
 
         let archive_path = temporary.0.join("rollback.openchatbackup");
@@ -2777,11 +2857,18 @@ mod tests {
         fs::create_dir_all(&existing_attachment_directory)
             .expect("conflicting attachment directory should be created");
         let protected_bytes = b"pre-existing user file";
-        fs::write(
-            existing_attachment_directory.join("attachment-2.data"),
-            protected_bytes,
-        )
-        .expect("pre-existing attachment file should be written");
+        let destination_cipher = AttachmentCipher::from_profile_key(destination.database_key())
+            .expect("derive destination attachment key");
+        let protected_context =
+            attachment_associated_data(Path::new("conversation-1/message-1/attachment-2.data"))
+                .expect("build pre-existing attachment context");
+        destination_cipher
+            .write_new_file(
+                &existing_attachment_directory.join("attachment-2.data"),
+                &protected_context,
+                protected_bytes,
+            )
+            .expect("pre-existing attachment should be encrypted and written");
 
         let error = restore(
             &destination,
@@ -2802,8 +2889,14 @@ mod tests {
                 .exists()
         );
         assert_eq!(
-            fs::read(existing_attachment_directory.join("attachment-2.data"))
-                .expect("pre-existing file should remain intact"),
+            destination_cipher
+                .read_file(
+                    &existing_attachment_directory.join("attachment-2.data"),
+                    &protected_context,
+                    protected_bytes.len(),
+                )
+                .expect("decrypt pre-existing file")
+                .as_slice(),
             protected_bytes
         );
     }

@@ -8,6 +8,7 @@ pub(super) fn write_archive(
     database_record: &FileRecord,
     database_snapshot_path: &Path,
     attachments: &[AttachmentSource],
+    profile_key: &crate::storage::DatabaseKey,
     passphrase: &str,
 ) -> Result<(), ArchiveFailure> {
     let secret = SecretString::from(passphrase.to_owned());
@@ -19,10 +20,31 @@ pub(super) fn write_archive(
         .wrap_output(output)
         .map_err(|_| ArchiveFailure::Storage)?;
     let mut archive = Builder::new(encrypted);
+    let attachment_cipher =
+        AttachmentCipher::from_profile_key(profile_key).map_err(|_| ArchiveFailure::Storage)?;
     append_bytes(&mut archive, MANIFEST_PATH, manifest_json)?;
     append_file(&mut archive, database_record, database_snapshot_path)?;
     for attachment in attachments {
-        append_file(&mut archive, &attachment.record, &attachment.path)?;
+        let plaintext = attachment_cipher
+            .read_file(
+                &attachment.path,
+                &attachment.associated_data,
+                usize::try_from(attachment.record.size_bytes)
+                    .map_err(|_| ArchiveFailure::LimitExceeded)?,
+            )
+            .map_err(|_| ArchiveFailure::Storage)?;
+        let mut reader = HashingReader::new(plaintext.as_slice());
+        append_reader(
+            &mut archive,
+            &attachment.record.path,
+            attachment.record.size_bytes,
+            &mut reader,
+        )?;
+        if reader.bytes_read != attachment.record.size_bytes
+            || digest_hex(&reader.hasher.finalize()) != attachment.record.sha256
+        {
+            return Err(ArchiveFailure::Storage);
+        }
     }
     let encrypted = archive.into_inner().map_err(|_| ArchiveFailure::Storage)?;
     let output = encrypted.finish().map_err(|_| ArchiveFailure::Storage)?;
@@ -222,6 +244,11 @@ pub(super) fn read_archive_to_stage(
     }
     manifest.database_key = None;
     manifest.database = file_record(DATABASE_PATH, &database_path, MAX_DATABASE_BYTES)?;
+    crate::attachment_crypto::migrate_attachment_tree(
+        &stage.join("attachments"),
+        local_database_key,
+    )
+    .map_err(|_| ArchiveFailure::Storage)?;
     validate_staged_profile(
         stage,
         &manifest,
@@ -283,15 +310,15 @@ pub(super) fn validate_staged_profile(
     {
         return Err(ArchiveFailure::InvalidArchive);
     }
+    let attachment_cipher = database_key
+        .map(AttachmentCipher::from_profile_key)
+        .transpose()
+        .map_err(|_| ArchiveFailure::Storage)?;
     for record in &manifest.attachments {
         validate_attachment_path(&record.path)?;
         let path = stage.join(record.path.as_str());
         let file_metadata = fs::symlink_metadata(&path).map_err(|_| ArchiveFailure::Storage)?;
-        if file_metadata.file_type().is_symlink()
-            || !file_metadata.is_file()
-            || file_metadata.len() != record.size_bytes
-            || digest_file(&path)? != record.sha256
-        {
+        if file_metadata.file_type().is_symlink() || !file_metadata.is_file() {
             return Err(ArchiveFailure::InvalidArchive);
         }
         let attachment = expected_attachments
@@ -300,7 +327,32 @@ pub(super) fn validate_staged_profile(
         if attachment.size_bytes as u64 != record.size_bytes {
             return Err(ArchiveFailure::InvalidArchive);
         }
-        let bytes = fs::read(&path).map_err(|_| ArchiveFailure::Storage)?;
+        let bytes =
+            if file_metadata.len() == record.size_bytes && digest_file(&path)? == record.sha256 {
+                Zeroizing::new(fs::read(&path).map_err(|_| ArchiveFailure::Storage)?)
+            } else {
+                let relative_path = record
+                    .path
+                    .strip_prefix("attachments/")
+                    .ok_or(ArchiveFailure::InvalidArchive)?;
+                let associated_data = attachment_associated_data(Path::new(relative_path))
+                    .map_err(|_| ArchiveFailure::InvalidArchive)?;
+                attachment_cipher
+                    .as_ref()
+                    .ok_or(ArchiveFailure::InvalidArchive)?
+                    .read_file(
+                        &path,
+                        &associated_data,
+                        usize::try_from(record.size_bytes)
+                            .map_err(|_| ArchiveFailure::LimitExceeded)?,
+                    )
+                    .map_err(|_| ArchiveFailure::InvalidArchive)?
+            };
+        if bytes.len() as u64 != record.size_bytes
+            || digest_hex(&Sha256::digest(&bytes)) != record.sha256
+        {
+            return Err(ArchiveFailure::InvalidArchive);
+        }
         validate_portable_attachment_content(attachment, &bytes)
             .map_err(|_| ArchiveFailure::InvalidArchive)?;
     }

@@ -2,7 +2,7 @@
 
 use std::{
     fs::{self, OpenOptions},
-    path::PathBuf,
+    path::{Path, PathBuf},
 };
 
 use rusqlite::{Connection, params};
@@ -91,8 +91,26 @@ fn encrypted_profile_backup_restores_database_and_attachments_safely() {
     let attachment_path = destination_directory
         .0
         .join("attachments/source-chat/source-message/source-attachment.data");
+    let restored_cipher =
+        crate::attachment_crypto::AttachmentCipher::from_profile_key(restored.database_key())
+            .expect("derive restored attachment key");
+    let attachment_context = crate::attachment_crypto::attachment_associated_data(Path::new(
+        "source-chat/source-message/source-attachment.data",
+    ))
+    .expect("build restored attachment context");
     assert_eq!(
-        fs::read(&attachment_path).expect("read restored attachment"),
+        restored_cipher
+            .read_file(
+                &attachment_path,
+                &attachment_context,
+                b"attachment payload".len(),
+            )
+            .expect("decrypt restored attachment")
+            .as_slice(),
+        b"attachment payload"
+    );
+    assert_ne!(
+        fs::read(&attachment_path).expect("read encrypted attachment"),
         b"attachment payload"
     );
     restored
@@ -243,6 +261,7 @@ fn version_one_archive_is_converted_to_the_destination_key_before_staging() {
         &database_record,
         &legacy_database_path,
         &[],
+        source.database_key(),
         PASSPHRASE,
     )
     .expect("write legacy archive");
@@ -444,11 +463,21 @@ fn seed_profile(
             .join(conversation_id)
             .join("source-message");
         fs::create_dir_all(&attachment_directory).expect("create attachment directory");
-        fs::write(
-            attachment_directory.join("source-attachment.data"),
-            attachment_bytes,
-        )
-        .expect("write attachment fixture");
+        let fixture_key = crate::storage::DatabaseKey::from_bytes(database_key)
+            .expect("create attachment fixture key");
+        let cipher = crate::attachment_crypto::AttachmentCipher::from_profile_key(&fixture_key)
+            .expect("derive attachment fixture key");
+        let context = crate::attachment_crypto::attachment_associated_data(Path::new(
+            "source-chat/source-message/source-attachment.data",
+        ))
+        .expect("build attachment context");
+        cipher
+            .write_new_file(
+                &attachment_directory.join("source-attachment.data"),
+                &context,
+                attachment_bytes,
+            )
+            .expect("write encrypted attachment fixture");
         content
     } else {
         "plain message".to_owned()
