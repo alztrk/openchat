@@ -47,13 +47,21 @@ pub(crate) fn project_tool_permission_rule(
     })
 }
 
-pub(crate) fn project_task_permission_rule<'a>(
-    rules: &'a ToolPermissionRules,
+pub(crate) fn project_task_permission_rule(
+    rules: &ToolPermissionRules,
     task_id: &str,
-) -> Option<&'a ToolPermissionRule> {
-    crate::domain::tools::project_tasks::permission_rule_name(task_id)
-        .and_then(|name| rules.get(&name))
-        .or_else(|| rules.get("run_project_task"))
+    bound_rule_name: Option<&str>,
+) -> Option<ToolPermissionRule> {
+    bound_rule_name
+        .and_then(|name| rules.get(name))
+        .copied()
+        .or_else(|| {
+            crate::domain::tools::project_tasks::legacy_permission_rule_name(task_id)
+                .and_then(|name| rules.get(&name))
+                .copied()
+                .filter(|rule| *rule != ToolPermissionRule::Allow)
+        })
+        .or_else(|| rules.get("run_project_task").copied())
 }
 
 #[cfg(windows)]

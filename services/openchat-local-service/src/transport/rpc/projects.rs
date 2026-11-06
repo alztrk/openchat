@@ -329,12 +329,16 @@ pub(super) async fn dispatch(
             .await
             .map_err(git_worktree_error)?;
             let tasks = crate::tools::project_tasks::load_project_tasks(&task_root)?;
-            Ok(json!({"tasks": tasks}))
+            Ok(json!({
+                "tasks": tasks.iter().map(project_task_response).collect::<Vec<_>>()
+            }))
         }
         "project.tasks.list" => {
             let project_id = required_string(params, "projectId")?;
             let tasks = project_tasks_for_project(storage, project_id)?;
-            Ok(json!({"tasks": tasks}))
+            Ok(json!({
+                "tasks": tasks.iter().map(project_task_response).collect::<Vec<_>>()
+            }))
         }
         "project.tools.list" => {
             let project_id = required_string(params, "projectId")?;
@@ -378,21 +382,24 @@ pub(super) async fn dispatch(
                     tool_permissions::load_mode(&connection)?,
                 )
             };
-            let task_permission_rule =
-                tools::project_task_permission_rule(&permission_rules, task_id);
-            if task_permission_rule == Some(&ToolPermissionRule::Deny) {
-                return Err(ServiceError::new(
-                    "permission_denied",
-                    "The project permission rules deny named task execution.",
-                    false,
-                ));
-            }
             let expected_timeout = params
                 .get("expectedTimeoutSeconds")
                 .and_then(Value::as_u64)
                 .filter(|seconds| (5..=600).contains(seconds))
                 .ok_or_else(invalid_request_params)?;
             let task = crate::tools::project_tasks::load_project_task(&task_root, task_id)?;
+            let task_permission_rule = tools::project_task_permission_rule(
+                &permission_rules,
+                task_id,
+                Some(&task.permission_rule_name()),
+            );
+            if task_permission_rule == Some(ToolPermissionRule::Deny) {
+                return Err(ServiceError::new(
+                    "permission_denied",
+                    "The project permission rules deny named task execution.",
+                    false,
+                ));
+            }
             if task.command != expected_command || task.timeout_seconds != expected_timeout {
                 return Err(ServiceError::new(
                     "project_task_changed",
@@ -648,6 +655,15 @@ pub(super) fn project_tasks_for_project(
     crate::tools::project_tasks::load_project_tasks_if_present(Path::new(&project_root))
 }
 
+fn project_task_response(task: &crate::tools::project_tasks::ProjectTask) -> Value {
+    json!({
+        "id": &task.id,
+        "command": &task.command,
+        "timeoutSeconds": task.timeout_seconds,
+        "permissionRuleName": task.permission_rule_name(),
+    })
+}
+
 fn mcp_credential_error(error: crate::credentials::CredentialStoreError) -> ServiceError {
     use crate::credentials::CredentialStoreError;
 
@@ -764,6 +780,41 @@ mod tests {
 
         assert_eq!(error.code, "project_worktree_limit_reached");
         assert!(!error.retryable);
+    }
+
+    #[tokio::test]
+    async fn project_task_list_returns_the_definition_bound_permission_name() {
+        let (_directory, storage, _worktree_id, _worktree_path) = create_task_test_fixture().await;
+        let (_sender, mut cancellation) = watch::channel(false);
+        let mut params = json!({"projectId": "project-1"});
+
+        let result = dispatch(
+            "project.tasks.list",
+            &mut params,
+            &json!("list-project-tasks"),
+            &storage,
+            &ToolPermissionBroker::default(),
+            &EventSink::new(),
+            &mut cancellation,
+        )
+        .await
+        .expect("list configured tasks");
+        let task = result["tasks"].as_array().expect("task list has an array");
+        let expected_name = crate::tools::project_tasks::ProjectTask {
+            id: "verify".to_owned(),
+            command: "echo verify > must-not-run.txt".to_owned(),
+            timeout_seconds: 30,
+        }
+        .permission_rule_name();
+
+        assert_eq!(task.len(), 1);
+        assert_eq!(task[0]["id"], "verify");
+        assert_eq!(task[0]["permissionRuleName"], expected_name);
+        assert!(
+            task[0]["permissionRuleName"]
+                .as_str()
+                .is_some_and(|name| { crate::tools::project_tasks::is_permission_rule_name(name) })
+        );
     }
 
     #[tokio::test]

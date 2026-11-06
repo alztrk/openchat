@@ -94,6 +94,7 @@ pub(crate) async fn execute_model_tool_with_workspace_roots(
             action,
             timeout_seconds,
             wait_ms,
+            project_task_permission_rule_name: _,
         } => {
             let manager = TerminalSessionManager::global();
             if let Some(cmd) = command {
@@ -352,6 +353,7 @@ mod tests {
                 action: None,
                 timeout_seconds: Some(10),
                 wait_ms: Some(3000),
+                project_task_permission_rule_name: None,
             },
         };
 

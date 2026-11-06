@@ -3,6 +3,7 @@ import { unifiedStorage } from '@shared/lib/platform/storage/unifiedStorage';
 
 import type { ProjectToolPermissionRule, ToolPermissionMode } from './types';
 import { isProjectToolPermissionRuleName } from './projectToolPermissionRules';
+import { isProjectTaskPermissionRuleName } from './projectTaskPermissionRules';
 export type { ProjectToolPermissionRule, ToolPermissionMode };
 
 
@@ -116,9 +117,7 @@ function validateProjectId(projectId: string): string {
 
 function isProjectToolRuleName(name: string): boolean {
   if (projectToolRuleNames.has(name)) return true;
-  if (name.startsWith('run_project_task__')) {
-    return /^[a-z0-9_-]{1,64}$/.test(name.slice('run_project_task__'.length));
-  }
+  if (name.startsWith('run_project_task__')) return isProjectTaskPermissionRuleName(name);
   if (name.startsWith('project_tool__')) {
     return isProjectToolPermissionRuleName(name);
   }

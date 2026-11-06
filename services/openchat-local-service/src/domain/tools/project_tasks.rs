@@ -7,6 +7,7 @@ use std::{collections::HashSet, io, path::Path};
 
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use sha2::{Digest, Sha256};
 
 use crate::{protocol::ServiceError, provider_schema::ToolDefinition};
 
@@ -23,6 +24,23 @@ pub(crate) struct ProjectTask {
     pub(crate) id: String,
     pub(crate) command: String,
     pub(crate) timeout_seconds: u64,
+}
+
+impl ProjectTask {
+    pub(crate) fn permission_rule_name(&self) -> String {
+        let mut fingerprint = Sha256::new();
+        fingerprint.update(b"openchat-project-task-permission-v1\0");
+        fingerprint.update((self.id.len() as u64).to_le_bytes());
+        fingerprint.update(self.id.as_bytes());
+        fingerprint.update((self.command.len() as u64).to_le_bytes());
+        fingerprint.update(self.command.as_bytes());
+        fingerprint.update(self.timeout_seconds.to_le_bytes());
+        format!(
+            "{TASK_PERMISSION_PREFIX}{}__{:x}",
+            self.id,
+            fingerprint.finalize()
+        )
+    }
 }
 
 #[derive(Deserialize)]
@@ -160,15 +178,80 @@ fn is_valid_task_id(id: &str) -> bool {
         })
 }
 
-pub(crate) fn permission_rule_name(task_id: &str) -> Option<String> {
+pub(crate) fn legacy_permission_rule_name(task_id: &str) -> Option<String> {
     is_valid_task_id(task_id).then(|| format!("{TASK_PERMISSION_PREFIX}{task_id}"))
 }
 
 pub(crate) fn is_permission_rule_name(name: &str) -> bool {
-    name.strip_prefix(TASK_PERMISSION_PREFIX)
-        .is_some_and(is_valid_task_id)
+    let Some(suffix) = name.strip_prefix(TASK_PERMISSION_PREFIX) else {
+        return false;
+    };
+    if is_valid_task_id(suffix) {
+        return true;
+    }
+    let Some((task_id, fingerprint)) = suffix.rsplit_once("__") else {
+        return false;
+    };
+    is_valid_task_id(task_id) && valid_permission_fingerprint(fingerprint)
+}
+
+fn valid_permission_fingerprint(value: &str) -> bool {
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
 fn invalid_task(message: &str) -> ServiceError {
     ServiceError::new("invalid_project_task_catalog", message, false)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ProjectTask, is_permission_rule_name};
+
+    fn task() -> ProjectTask {
+        ProjectTask {
+            id: "verify".to_owned(),
+            command: "cargo test".to_owned(),
+            timeout_seconds: 60,
+        }
+    }
+
+    #[test]
+    fn task_permission_name_changes_with_command_and_timeout() {
+        let original = task();
+        let original_name = original.permission_rule_name();
+        let changed_command = ProjectTask {
+            command: "cargo test --all".to_owned(),
+            ..original.clone()
+        };
+        let changed_timeout = ProjectTask {
+            timeout_seconds: 120,
+            ..original.clone()
+        };
+
+        assert_eq!(original_name, original.permission_rule_name());
+        assert_ne!(original_name, changed_command.permission_rule_name());
+        assert_ne!(original_name, changed_timeout.permission_rule_name());
+        assert!(is_permission_rule_name(&original_name));
+    }
+
+    #[test]
+    fn task_permission_name_parser_accepts_legacy_rules_and_rejects_bad_fingerprints() {
+        assert!(is_permission_rule_name("run_project_task__verify"));
+        assert!(is_permission_rule_name(&format!(
+            "run_project_task__verify__{}",
+            "a".repeat(64)
+        )));
+        assert!(!is_permission_rule_name(&format!(
+            "run_project_task__verify__{}",
+            "A".repeat(64)
+        )));
+        assert!(!is_permission_rule_name(&format!(
+            "run_project_task__verify__{}",
+            "a".repeat(63)
+        )));
+        assert!(!is_permission_rule_name("run_project_task__Verify"));
+    }
 }

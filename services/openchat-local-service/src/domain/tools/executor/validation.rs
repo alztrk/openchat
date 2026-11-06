@@ -42,6 +42,7 @@ pub(crate) enum ToolOperation {
         action: Option<String>,
         timeout_seconds: Option<u64>,
         wait_ms: Option<u64>,
+        project_task_permission_rule_name: Option<String>,
     },
     SendTerminalInput {
         terminal_id: String,
@@ -372,6 +373,7 @@ impl ToolExecutor {
                 };
                 let task = crate::tools::project_tasks::load_project_task(&root, requested_task)
                     .map_err(|error| tool_error(error.code, &error.message))?;
+                let permission_rule_name = task.permission_rule_name();
                 let command = task.command;
                 return Ok(PreparedToolCall {
                     root: root.clone(),
@@ -386,6 +388,7 @@ impl ToolExecutor {
                         action: None,
                         timeout_seconds: Some(task.timeout_seconds),
                         wait_ms: None,
+                        project_task_permission_rule_name: Some(permission_rule_name),
                     },
                 });
             }
@@ -435,6 +438,7 @@ impl ToolExecutor {
                         action,
                         timeout_seconds,
                         wait_ms,
+                        project_task_permission_rule_name: None,
                     },
                 });
             }

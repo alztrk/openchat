@@ -803,17 +803,21 @@ impl ToolExecutor {
             }
         }
 
-        let task_rule = (call.name == "run_project_task")
-            .then(|| {
-                call.arguments
-                    .get("task")
-                    .and_then(Value::as_str)
-                    .and_then(|task_id| {
-                        project_task_permission_rule(&self.permission_rules, task_id)
-                    })
+        let task_rule = if call.name == "run_project_task" {
+            let task_id = call.arguments.get("task").and_then(Value::as_str);
+            let bound_rule_name = match operation {
+                ToolOperation::Bash {
+                    project_task_permission_rule_name,
+                    ..
+                } => project_task_permission_rule_name.as_deref(),
+                _ => None,
+            };
+            task_id.and_then(|task_id| {
+                project_task_permission_rule(&self.permission_rules, task_id, bound_rule_name)
             })
-            .flatten()
-            .copied();
+        } else {
+            None
+        };
         let tool_rule = match operation {
             #[cfg(windows)]
             ToolOperation::ProjectTool {

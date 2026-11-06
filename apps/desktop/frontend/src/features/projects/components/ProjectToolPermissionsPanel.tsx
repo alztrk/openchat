@@ -4,6 +4,14 @@ import { useTranslation } from 'react-i18next';
 import { Button, Select } from '@shared/components';
 import type { ChatProject } from '@entities/project';
 import {
+  isBoundProjectTaskPermissionRuleName,
+  legacyProjectTaskPermissionRuleName,
+  normalizeProjectTaskPermissionRules,
+  projectTaskPermissionId,
+  projectTaskPermissionRuleValue,
+  type ProjectTaskPermissionTarget,
+} from '@entities/project/projectTaskPermissionRules';
+import {
   loadProjectToolPermissionRules,
   loadToolPermissionMode,
   saveProjectToolPermissionRules,
@@ -47,7 +55,7 @@ export function ProjectToolPermissionsPanel({ project, onClose }: ProjectToolPer
   const { t } = useTranslation();
   const [rules, setRules] = useState<Record<string, ProjectToolPermissionRule>>({});
   const [projectTools, setProjectTools] = useState<ProjectToolPermissionTarget[]>([]);
-  const [taskIds, setTaskIds] = useState<string[]>([]);
+  const [taskTargets, setTaskTargets] = useState<ProjectTaskPermissionTarget[]>([]);
   const [permissionMode, setPermissionMode] = useState<ToolPermissionMode>('require_approval');
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -61,7 +69,7 @@ export function ProjectToolPermissionsPanel({ project, onClose }: ProjectToolPer
         if (!current) return;
         setRules(loaded.rules);
         setProjectTools(loaded.projectTools);
-        setTaskIds(loaded.taskIds);
+        setTaskTargets(loaded.taskTargets);
         setPermissionMode(loaded.permissionMode);
       })
       .catch(() => {
@@ -82,7 +90,7 @@ export function ProjectToolPermissionsPanel({ project, onClose }: ProjectToolPer
       const loaded = await loadProjectToolSettings(project.id);
       setRules(loaded.rules);
       setProjectTools(loaded.projectTools);
-      setTaskIds(loaded.taskIds);
+      setTaskTargets(loaded.taskTargets);
       setPermissionMode(loaded.permissionMode);
     } catch {
       setLoadFailed(true);
@@ -95,22 +103,27 @@ export function ProjectToolPermissionsPanel({ project, onClose }: ProjectToolPer
     () =>
       [
         ...standardTools,
-        ...taskIds.map((id) => `run_project_task__${id}`),
+        ...taskTargets.map((task) => task.permissionRuleName),
         ...projectTools.map((tool) => tool.permissionRuleName),
         ...Object.keys(rules).filter((name) => name.startsWith('mcp__')),
       ].sort((left, right) => left.localeCompare(right)),
-    [rules, taskIds, projectTools],
+    [rules, taskTargets, projectTools],
   );
 
   const updateRule = (name: string, value: string) => {
     setRules((current) => {
       const next = { ...current };
+      const legacyTaskName = legacyProjectTaskPermissionRuleName(name);
       const legacyName = legacyProjectToolPermissionRuleName(name);
       if (value === 'inherit') {
         delete next[name];
+        if (legacyTaskName !== undefined) delete next[legacyTaskName];
         if (legacyName !== undefined) delete next[legacyName];
       } else if (isPermissionRule(value)) {
-        if (legacyName !== undefined && value !== 'allow') {
+        if (legacyTaskName !== undefined) {
+          delete next[legacyTaskName];
+          next[name] = value;
+        } else if (legacyName !== undefined && value !== 'allow') {
           delete next[name];
           next[legacyName] = value;
         } else {
@@ -183,7 +196,11 @@ export function ProjectToolPermissionsPanel({ project, onClose }: ProjectToolPer
                 { value: 'allow', label: t('projectToolRuleAllow') },
                 { value: 'deny', label: t('projectToolRuleDeny') },
               ]}
-              value={projectToolPermissionRuleValue(rules, name) ?? 'inherit'}
+              value={
+                (projectTaskPermissionId(name) !== undefined
+                  ? projectTaskPermissionRuleValue(rules, name)
+                  : projectToolPermissionRuleValue(rules, name)) ?? 'inherit'
+              }
             />
           ))}
         </div>
@@ -207,7 +224,7 @@ export function ProjectToolPermissionsPanel({ project, onClose }: ProjectToolPer
 
 async function loadProjectToolSettings(projectId: string): Promise<{
   rules: Record<string, ProjectToolPermissionRule>;
-  taskIds: string[];
+  taskTargets: ProjectTaskPermissionTarget[];
   projectTools: ProjectToolPermissionTarget[];
   permissionMode: ToolPermissionMode;
 }> {
@@ -219,11 +236,31 @@ async function loadProjectToolSettings(projectId: string): Promise<{
   ]);
   const projectTools = parseProjectTools(toolResponse.tools);
   return {
-    rules: normalizeProjectToolPermissionRules(rules),
-    taskIds: parseIds(taskResponse.tasks, /^[a-z0-9_-]{1,64}$/, 'The project task list was invalid.'),
+    rules: normalizeProjectTaskPermissionRules(normalizeProjectToolPermissionRules(rules)),
+    taskTargets: parseProjectTasks(taskResponse.tasks),
     projectTools,
     permissionMode,
   };
+}
+
+function parseProjectTasks(value: unknown): ProjectTaskPermissionTarget[] {
+  const error = 'The project task list was invalid.';
+  if (!Array.isArray(value) || value.length > 32) throw new Error(error);
+  const tasks = value.map((entry) => {
+    if (!isObject(entry) || typeof entry.id !== 'string' || !/^[a-z0-9_-]{1,64}$/u.test(entry.id)) {
+      throw new Error(error);
+    }
+    if (
+      typeof entry.permissionRuleName !== 'string' ||
+      !isBoundProjectTaskPermissionRuleName(entry.permissionRuleName) ||
+      !entry.permissionRuleName.startsWith(`run_project_task__${entry.id}__`)
+    ) {
+      throw new Error(error);
+    }
+    return { id: entry.id, permissionRuleName: entry.permissionRuleName };
+  });
+  if (new Set(tasks.map((task) => task.id)).size !== tasks.length) throw new Error(error);
+  return tasks;
 }
 
 function parseProjectTools(value: unknown): ProjectToolPermissionTarget[] {
@@ -247,16 +284,6 @@ function parseProjectTools(value: unknown): ProjectToolPermissionTarget[] {
   return tools;
 }
 
-function parseIds(value: unknown, pattern: RegExp, error: string): string[] {
-  if (!Array.isArray(value) || value.length > 32) throw new Error(error);
-  const ids = value.map((entry) => {
-    if (!isObject(entry) || typeof entry.id !== 'string' || !pattern.test(entry.id)) throw new Error(error);
-    return entry.id;
-  });
-  if (new Set(ids).size !== ids.length) throw new Error(error);
-  return ids;
-}
-
 function toolLabel(
   name: string,
   t: (key: keyof typeof import('@shared/lib/i18n/locales/en.json'), options?: Record<string, unknown>) => string,
@@ -278,9 +305,9 @@ function toolLabel(
     cancel_subagent: 'toolCancelSubagent',
     run_project_task: 'toolRunProjectTask',
   };
-  const taskPrefix = 'run_project_task__';
   const projectToolPrefix = 'project_tool__';
-  if (name.startsWith(taskPrefix)) return `${t('toolRunProjectTask')}: ${name.slice(taskPrefix.length)}`;
+  const taskId = projectTaskPermissionId(name);
+  if (taskId !== undefined) return `${t('toolRunProjectTask')}: ${taskId}`;
   if (name.startsWith(projectToolPrefix)) {
     const suffix = name.slice(projectToolPrefix.length);
     const separator = suffix.lastIndexOf('__');

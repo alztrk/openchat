@@ -5,6 +5,11 @@ import { useTranslation } from 'react-i18next';
 import { Button, Dialog } from '@shared/components';
 import type { ChatProject } from '@entities/project';
 import {
+  isBoundProjectTaskPermissionRuleName,
+  projectTaskPermissionRuleValue,
+  type ProjectTaskPermissionTarget,
+} from '@entities/project/projectTaskPermissionRules';
+import {
   loadProjectToolPermissionRules,
   loadToolPermissionMode,
 } from '@entities/project/projectPermissionSettings';
@@ -29,8 +34,7 @@ interface Worktree {
   changedFileCount: number;
 }
 
-interface ProjectTask {
-  id: string;
+interface ProjectTask extends ProjectTaskPermissionTarget {
   command: string;
   timeoutSeconds: number;
 }
@@ -228,7 +232,8 @@ export function ProjectWorktreesPanel({ project, onClose, onUseWorktree }: Proje
       setWorktreeError('toolPermissionSettingsLoadFailed');
       return;
     }
-    const rule = permissionRules[`run_project_task__${task.id}`] ?? permissionRules.run_project_task;
+    const rule =
+      projectTaskPermissionRuleValue(permissionRules, task.permissionRuleName) ?? permissionRules.run_project_task;
     if (rule === 'deny') {
       setWorktreeError('projectWorktreeTaskDenied');
       return;
@@ -637,6 +642,9 @@ function parseProjectTask(value: unknown): ProjectTask {
     !isObject(value) ||
     typeof value.id !== 'string' ||
     !/^[a-z0-9_-]{1,64}$/.test(value.id) ||
+    typeof value.permissionRuleName !== 'string' ||
+    !isBoundProjectTaskPermissionRuleName(value.permissionRuleName) ||
+    !value.permissionRuleName.startsWith(`run_project_task__${value.id}__`) ||
     typeof value.command !== 'string' ||
     value.command.trim().length === 0 ||
     value.command.length > 4096 ||
@@ -647,7 +655,12 @@ function parseProjectTask(value: unknown): ProjectTask {
   ) {
     throw new Error('A named project task is invalid.');
   }
-  return { id: value.id, command: value.command, timeoutSeconds: value.timeoutSeconds };
+  return {
+    id: value.id,
+    permissionRuleName: value.permissionRuleName,
+    command: value.command,
+    timeoutSeconds: value.timeoutSeconds,
+  };
 }
 
 function worktreeErrorKey(

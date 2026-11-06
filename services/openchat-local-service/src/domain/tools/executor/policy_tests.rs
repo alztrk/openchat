@@ -12,6 +12,7 @@ use super::{
 };
 use crate::storage::AppStorage;
 use crate::tools::executor::{paths::ToolPathScope, validation::ToolOperation};
+use crate::tools::project_tasks::ProjectTask;
 
 struct TestDirectory(PathBuf);
 
@@ -482,48 +483,84 @@ fn plan_mode_denies_every_tool_even_when_project_rules_allow_them() {
 }
 
 #[test]
-fn named_task_rules_override_the_project_wide_task_rule() {
+fn project_task_rules_are_bound_to_the_current_definition() {
+    let task = ProjectTask {
+        id: "verify".to_owned(),
+        command: "cargo test".to_owned(),
+        timeout_seconds: 60,
+    };
+    let bound_name = task.permission_rule_name();
     let operation = ToolOperation::Bash {
-        command: Some("cargo test".to_owned()),
+        command: Some(task.command.clone()),
         terminal_id: None,
         input: None,
         action: None,
-        timeout_seconds: Some(60),
+        timeout_seconds: Some(task.timeout_seconds),
         wait_ms: None,
+        project_task_permission_rule_name: Some(bound_name.clone()),
     };
-    let rules = parse_tool_permission_rules(Some(&json!({
-        "run_project_task": "allow",
-        "run_project_task__verify": "deny"
-    })))
-    .expect("valid named task rules");
-    let executor = ToolExecutor::with_permission_rules(
-        None,
-        Path::new("."),
-        ToolPermissionMode::FullAccess,
-        ["run_project_task".to_owned()],
-        rules,
-    );
     let call = ToolCall {
         id: "call_verify".to_owned(),
         name: "run_project_task".to_owned(),
         arguments: json!({"task": "verify"}),
     };
-    assert_eq!(
-        executor.permission_rule(&call, &operation, None),
-        ToolPermissionRule::Deny
+
+    let stale_allow = ToolExecutor::with_permission_rules(
+        None,
+        Path::new("."),
+        ToolPermissionMode::RequireApproval,
+        ["run_project_task".to_owned()],
+        parse_tool_permission_rules(Some(&json!({"run_project_task__verify": "allow"})))
+            .expect("valid legacy task allow"),
     );
-    let other_call = ToolCall {
-        id: "call_lint".to_owned(),
-        name: "run_project_task".to_owned(),
-        arguments: json!({"task": "lint"}),
-    };
     assert_eq!(
-        executor.permission_rule(&other_call, &operation, None),
+        stale_allow.permission_rule(&call, &operation, None),
+        ToolPermissionRule::Ask
+    );
+
+    let current_allow = ToolExecutor::with_permission_rules(
+        None,
+        Path::new("."),
+        ToolPermissionMode::RequireApproval,
+        ["run_project_task".to_owned()],
+        parse_tool_permission_rules(Some(&json!({(bound_name.clone()): "allow"})))
+            .expect("valid bound task allow"),
+    );
+    assert_eq!(
+        current_allow.permission_rule(&call, &operation, None),
         ToolPermissionRule::Allow
     );
+
+    let changed_task = ProjectTask {
+        command: "cargo test --all".to_owned(),
+        ..task
+    };
+    let changed_operation = ToolOperation::Bash {
+        command: Some(changed_task.command.clone()),
+        terminal_id: None,
+        input: None,
+        action: None,
+        timeout_seconds: Some(changed_task.timeout_seconds),
+        wait_ms: None,
+        project_task_permission_rule_name: Some(changed_task.permission_rule_name()),
+    };
     assert_eq!(
-        super::project_task_permission_rule(&executor.permission_rules, "verify"),
-        Some(&ToolPermissionRule::Deny)
+        current_allow.permission_rule(&call, &changed_operation, None),
+        ToolPermissionRule::Ask
+    );
+
+    let legacy_deny =
+        parse_tool_permission_rules(Some(&json!({"run_project_task__verify": "deny"})))
+            .expect("valid legacy task deny");
+    assert_eq!(
+        super::project_task_permission_rule(&legacy_deny, "verify", Some(&bound_name)),
+        Some(ToolPermissionRule::Deny)
+    );
+    let legacy_ask = parse_tool_permission_rules(Some(&json!({"run_project_task__verify": "ask"})))
+        .expect("valid legacy task ask");
+    assert_eq!(
+        super::project_task_permission_rule(&legacy_ask, "verify", Some(&bound_name)),
+        Some(ToolPermissionRule::Ask)
     );
 }
 
