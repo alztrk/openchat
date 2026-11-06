@@ -144,7 +144,6 @@ async fn benchmarks_debug_service_startup_and_health_rpc() -> Result<(), Box<dyn
     const RPC_WARMUP_SAMPLES: usize = 20;
     const RPC_SAMPLES: usize = 200;
 
-    let profile = TemporaryProfile::new()?;
     let mut cold_start_samples = Vec::with_capacity(STARTUP_SAMPLES);
     let mut cold_spawn_and_pipe_samples = Vec::with_capacity(STARTUP_SAMPLES);
     let mut cold_ready_after_spawn_samples = Vec::with_capacity(STARTUP_SAMPLES);
@@ -155,8 +154,8 @@ async fn benchmarks_debug_service_startup_and_health_rpc() -> Result<(), Box<dyn
     #[cfg(windows)]
     let mut cold_private_commit_samples = Vec::with_capacity(STARTUP_SAMPLES);
     for sample in 0..STARTUP_SAMPLES {
-        let data_root = profile.path().join(format!("cold-{sample}"));
-        fs::create_dir(&data_root)?;
+        let profile = DesktopTestProfile::new()?;
+        let data_root = profile.path().join("storage");
 
         let started = Instant::now();
         let mut service = RunningService::start(&data_root)?;
@@ -175,8 +174,8 @@ async fn benchmarks_debug_service_startup_and_health_rpc() -> Result<(), Box<dyn
         service.shutdown().await?;
     }
 
-    let warm_root = profile.path().join("warm");
-    fs::create_dir(&warm_root)?;
+    let warm_profile = DesktopTestProfile::new()?;
+    let warm_root = warm_profile.path().join("storage");
     let mut warm_service = RunningService::start(&warm_root)?;
     warm_service.health_check("warm-prime").await?;
     warm_service.shutdown().await?;
