@@ -1919,6 +1919,7 @@
   "assistantResponseNotificationReplyTooLong": "Diese Antwort ist zu lang, um sie über eine Benachrichtigung zu senden. Verwende dafür das Chat-Eingabefeld.",
   "assistantResponseNotificationReplyUnavailable": "Diese Benachrichtigung ist veraltet oder der Chat ist nicht verfügbar. Öffne den Chat und sende eine neue Nachricht.",
   "assistantResponseNotificationReplyNotSent": "Die Schnellantwort konnte gerade nicht gesendet werden. Überprüfe den Chat und versuche es erneut.",
+  "assistantResponseNotificationReplyRequiresReview": "Die Benachrichtigungsantwort wurde nicht automatisch gesendet. Prüfe den Chatentwurf und sende sie selbst.",
   "fileChangesSummary": "{count, plural, one{# Datei geändert} other{# Dateien geändert}}",
   "fileChangesLineCounts": "+{added} / -{removed}",
   "fileChangesSomeCountsUnavailable": "Zeilenzahl nicht verfügbar",

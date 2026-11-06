@@ -3,7 +3,7 @@
 use super::{
     activation::{
         activation_arguments, notification_reply_input, parse_activation_arguments,
-        NotificationActivation, MAXIMUM_REPLY_CHARACTERS,
+        require_reply_confirmation, NotificationActivation, MAXIMUM_REPLY_CHARACTERS,
     },
     commands::{AssistantResponseNotification, MAXIMUM_NOTIFICATION_CONTENT_BYTES},
 };
@@ -13,6 +13,7 @@ fn reply_activation_arguments() -> String {
         &NotificationActivation::ReplyToAssistant {
             conversation_id: "conv_1".to_owned(),
             assistant_message_id: "msg_1".to_owned(),
+            confirmation_required: false,
             reply_text: None,
             reply_input_too_long: false,
         },
@@ -54,6 +55,24 @@ fn over_limit_reply_is_reported_without_copying_text() {
             reply_input_too_long: true,
             ..
         }
+    ));
+}
+
+#[test]
+fn externally_delivered_reply_requires_in_app_confirmation() {
+    let mut activation =
+        parse_activation_arguments(&reply_activation_arguments(), Some("reply"), false)
+            .expect("the activation target should remain valid");
+
+    require_reply_confirmation(&mut activation);
+
+    assert!(matches!(
+        activation,
+        NotificationActivation::ReplyToAssistant {
+            confirmation_required: true,
+            reply_text: Some(ref text),
+            ..
+        } if text == "reply"
     ));
 }
 

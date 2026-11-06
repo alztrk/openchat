@@ -1919,6 +1919,7 @@
   "assistantResponseNotificationReplyTooLong": "This reply is too long to send from a notification. Use the chat composer to send it.",
   "assistantResponseNotificationReplyUnavailable": "This notification is out of date or the chat is unavailable. Open the chat and send a new message.",
   "assistantResponseNotificationReplyNotSent": "The quick reply could not be sent right now. Review the chat and try again.",
+  "assistantResponseNotificationReplyRequiresReview": "The notification reply was not sent automatically. Review the chat draft before sending it yourself.",
   "fileChangesSummary": "{count, plural, one{# file changed} other{# files changed}}",
   "fileChangesLineCounts": "+{added} / -{removed}",
   "fileChangesSomeCountsUnavailable": "Line counts unavailable",

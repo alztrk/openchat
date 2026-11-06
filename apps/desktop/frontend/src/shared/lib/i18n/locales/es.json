@@ -1919,6 +1919,7 @@
   "assistantResponseNotificationReplyTooLong": "Esta respuesta es demasiado larga para enviarla desde una notificación. Usa el campo de mensaje del chat.",
   "assistantResponseNotificationReplyUnavailable": "La notificación ya no está actualizada o el chat no está disponible. Abre el chat y envía un mensaje nuevo.",
   "assistantResponseNotificationReplyNotSent": "No se pudo enviar la respuesta rápida. Revisa el chat e inténtalo de nuevo.",
+  "assistantResponseNotificationReplyRequiresReview": "La respuesta de la notificación no se envió automáticamente. Revisa el borrador del chat y envíala tú.",
   "fileChangesSummary": "{count, plural, one{# archivo cambiado} other{# archivos cambiados}}",
   "fileChangesLineCounts": "+{added} / -{removed}",
   "fileChangesSomeCountsUnavailable": "No se pudo calcular el número de líneas",

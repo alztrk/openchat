@@ -49,9 +49,9 @@ use windows::UI::Notifications::NotificationSetting;
 use super::{
     activation::{
         activation_arguments, activation_setup_result, dispatch_activation,
-        notification_reply_input, parse_activation_arguments, NotificationActivation,
-        MAXIMUM_ACTIVATION_ARGUMENT_UTF16_UNITS, MAXIMUM_NOTIFICATION_INPUT_KEY_UTF16_UNITS,
-        MAXIMUM_REPLY_UTF16_UNITS,
+        notification_reply_input, parse_activation_arguments, require_reply_confirmation,
+        NotificationActivation, MAXIMUM_ACTIVATION_ARGUMENT_UTF16_UNITS,
+        MAXIMUM_NOTIFICATION_INPUT_KEY_UTF16_UNITS, MAXIMUM_REPLY_UTF16_UNITS,
     },
     commands::{AssistantResponseNotification, UserQuestionNotification},
 };
@@ -230,6 +230,7 @@ pub(crate) fn send_assistant_response(
                 NotificationActivation::ReplyToAssistant {
                     conversation_id: conversation_id.clone(),
                     assistant_message_id: assistant_message_id.clone(),
+                    confirmation_required: false,
                     reply_text,
                     reply_input_too_long,
                 }
@@ -263,6 +264,7 @@ pub(crate) fn send_assistant_response(
             &NotificationActivation::ReplyToAssistant {
                 conversation_id: request.conversation_id.clone(),
                 assistant_message_id: request.assistant_message_id.clone(),
+                confirmation_required: false,
                 reply_text: None,
                 reply_input_too_long: false,
             },
@@ -567,7 +569,7 @@ impl INotificationActivationCallback_Impl for ToastActivationCallback_Impl {
             }
         }
 
-        let activation =
+        let mut activation =
             parse_activation_arguments(&arguments, reply_text.as_deref(), reply_input_too_long)
                 .map_err(|_| {
                     WindowsError::new(
@@ -575,6 +577,7 @@ impl INotificationActivationCallback_Impl for ToastActivationCallback_Impl {
                         "The Windows notification activation data is invalid.",
                     )
                 })?;
+        require_reply_confirmation(&mut activation);
         dispatch_activation(activation).map_err(|_| {
             WindowsError::new(
                 windows::core::HRESULT(0x8000_4005u32 as i32),

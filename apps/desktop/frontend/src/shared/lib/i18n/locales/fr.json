@@ -1919,6 +1919,7 @@
   "assistantResponseNotificationReplyTooLong": "Cette réponse est trop longue pour être envoyée depuis une notification. Utilisez le champ de saisie de la conversation.",
   "assistantResponseNotificationReplyUnavailable": "Cette notification n’est plus à jour ou la conversation est indisponible. Ouvrez la conversation et envoyez un nouveau message.",
   "assistantResponseNotificationReplyNotSent": "La réponse rapide n’a pas pu être envoyée. Vérifiez la conversation et réessayez.",
+  "assistantResponseNotificationReplyRequiresReview": "La réponse de la notification n’a pas été envoyée automatiquement. Vérifiez le brouillon et envoyez-la vous-même.",
   "fileChangesSummary": "{count, plural, one{# fichier modifié} other{# fichiers modifiés}}",
   "fileChangesLineCounts": "+{added} / -{removed}",
   "fileChangesSomeCountsUnavailable": "Nombre de lignes indisponible",

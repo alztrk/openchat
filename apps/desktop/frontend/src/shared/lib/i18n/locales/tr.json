@@ -1919,6 +1919,7 @@
   "assistantResponseNotificationReplyTooLong": "Bu yanıt bildirimden gönderilemeyecek kadar uzun. Göndermek için sohbet alanını kullan.",
   "assistantResponseNotificationReplyUnavailable": "Bu bildirim artık güncel değil veya sohbet kullanılamıyor. Sohbeti açıp yeni bir mesaj gönder.",
   "assistantResponseNotificationReplyNotSent": "Hızlı yanıt şu anda gönderilemedi. Sohbeti kontrol edip tekrar dene.",
+  "assistantResponseNotificationReplyRequiresReview": "Bildirim yanıtı otomatik gönderilmedi. Sohbet taslağını kontrol edip kendin gönder.",
   "fileChangesSummary": "{count} dosya değiştirildi",
   "fileChangesLineCounts": "+{added} / -{removed}",
   "fileChangesSomeCountsUnavailable": "Satır sayısı hesaplanamadı",

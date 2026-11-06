@@ -32,6 +32,9 @@ pub enum NotificationActivation {
         conversation_id: String,
         /// Target assistant message identifier.
         assistant_message_id: String,
+        /// Requires in-app review before a reply can be sent.
+        #[serde(default)]
+        confirmation_required: bool,
         /// Trimmed reply text if within limits.
         reply_text: Option<String>,
         /// Indicates if user input exceeded the maximum allowable reply length.
@@ -44,6 +47,17 @@ pub enum NotificationActivation {
         /// Target question group identifier.
         group_id: String,
     },
+}
+
+/// Requires an explicit in-app review before an externally delivered reply is sent.
+pub(crate) fn require_reply_confirmation(activation: &mut NotificationActivation) {
+    if let NotificationActivation::ReplyToAssistant {
+        confirmation_required,
+        ..
+    } = activation
+    {
+        *confirmation_required = true;
+    }
 }
 
 #[derive(Default)]
@@ -188,6 +202,7 @@ pub(crate) fn activation_arguments(
         NotificationActivation::ReplyToAssistant {
             conversation_id,
             assistant_message_id,
+            confirmation_required: _,
             ..
         } => (
             Some(if reply_action {
@@ -241,6 +256,7 @@ pub(crate) fn parse_activation_arguments(
             Ok(NotificationActivation::ReplyToAssistant {
                 conversation_id: payload.conversation_id,
                 assistant_message_id,
+                confirmation_required: false,
                 reply_text: if reply_input_too_long {
                     None
                 } else {

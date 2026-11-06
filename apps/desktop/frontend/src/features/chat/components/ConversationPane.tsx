@@ -47,6 +47,7 @@ export interface ConversationPaneProps {
     | 'assistantResponseNotificationReplyTooLong'
     | 'assistantResponseNotificationReplyUnavailable'
     | 'assistantResponseNotificationReplyNotSent'
+    | 'assistantResponseNotificationReplyRequiresReview'
     | 'userQuestionUnavailable'
     | 'notificationDeliveryFailed'
     | 'notificationTestFailed'

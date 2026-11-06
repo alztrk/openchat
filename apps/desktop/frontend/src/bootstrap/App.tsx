@@ -108,6 +108,7 @@ type NotificationFeedbackKey =
   | 'assistantResponseNotificationReplyTooLong'
   | 'assistantResponseNotificationReplyUnavailable'
   | 'assistantResponseNotificationReplyNotSent'
+  | 'assistantResponseNotificationReplyRequiresReview'
   | 'userQuestionUnavailable'
   | 'notificationDeliveryFailed'
   | 'notificationTestFailed';
@@ -132,6 +133,7 @@ interface NotificationActivation {
   assistantMessageId?: string;
   replyText?: string | null;
   replyInputTooLong?: boolean;
+  confirmationRequired?: boolean;
 }
 
 function readThemePreference(): ThemePreference {
@@ -730,6 +732,11 @@ export function App() {
         if (questionGroups.length > 0) {
           preserveReply();
           setNotificationFeedback('assistantResponseNotificationReplyNotSent');
+          return;
+        }
+        if (activation.confirmationRequired) {
+          preserveReply();
+          setNotificationFeedback('assistantResponseNotificationReplyRequiresReview');
           return;
         }
         const sent = await useChatStore.getState().sendMessage(reply);
@@ -1374,6 +1381,7 @@ function parseNotificationActivation(value: unknown): NotificationActivation | n
       assistantMessageId: value.assistantMessageId,
       replyText: typeof value.replyText === 'string' ? value.replyText : null,
       replyInputTooLong: value.replyInputTooLong === true,
+      confirmationRequired: value.confirmationRequired === true,
     };
   }
   return null;
@@ -1385,6 +1393,7 @@ function isNotificationFeedbackKey(value: unknown): value is NotificationFeedbac
     value === 'assistantResponseNotificationReplyTooLong' ||
     value === 'assistantResponseNotificationReplyUnavailable' ||
     value === 'assistantResponseNotificationReplyNotSent' ||
+    value === 'assistantResponseNotificationReplyRequiresReview' ||
     value === 'userQuestionUnavailable' ||
     value === 'notificationDeliveryFailed' ||
     value === 'notificationTestFailed'
