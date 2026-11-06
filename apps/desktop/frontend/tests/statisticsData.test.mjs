@@ -235,6 +235,40 @@ test('request statistics preserve nullable first-output latency in CSV export', 
   assert.ok(lines[1].includes('"tool_calls"'));
 });
 
+test('request statistics CSV neutralizes formulas in text cells and preserves numeric negatives', () => {
+  const [request] = parseRequests([
+    {
+      eventKind: 'request',
+      startedAtUnixMs: 10,
+      finishedAtUnixMs: 250,
+      firstOutputLatencyMs: null,
+      providerProcessingMs: null,
+      providerQueueTimeMs: null,
+      providerInputProcessingMs: null,
+      providerOutputProcessingMs: null,
+      inputTokens: null,
+      outputTokens: null,
+      reasoningTokens: null,
+      cachedInputTokens: null,
+      cacheWriteTokens: null,
+      conversationId: 'conversation-1',
+      conversationTitle: '=HYPERLINK("https://example.invalid","open")',
+      projectId: '\t=2+2',
+      operation: 'chat',
+      status: 'completed',
+      usageSource: 'provider_reported',
+      estimatedCostUsd: -1.25,
+    },
+  ]);
+
+  const csv = createStatisticsCsv([request], t, 'en-US');
+  const dataRow = csv.trim().split('\r\n')[1];
+
+  assert.ok(dataRow.includes('"\'=HYPERLINK(""https://example.invalid"",""open"")"'));
+  assert.ok(dataRow.includes('"\'\t=2+2"'));
+  assert.ok(dataRow.includes('"-1.250000000"'));
+});
+
 test('request statistics accept unavailable first-output latency without inventing a value', () => {
   const [request] = parseRequests([
     {

@@ -12,7 +12,7 @@
 | Static analysis | Semgrep 1.181.0 (`p/security-audit`, `p/secrets`): zero findings across 296 files | Not rerun; Semgrep is unavailable in this environment |
 | Rust unsafe review | Semgrep `p/rust` + manual: 107 `unsafe` usages, all documented via `clippy::undocumented_unsafe_blocks` | Scoped manual review; not a new exhaustive unsafe scan |
 
-The latest Codex Security Standard scan covered eight high-risk surfaces at revision `dca1066` and returned zero validated findings. It was partial and predates the current revision. A Deep Security Scan could not run because the security runner required a managed filesystem permission profile unavailable in this environment.
+The latest completed Codex Security Standard scan covered eight high-risk surfaces at revision `dca1066` and returned zero validated findings. It was partial and predates the current revision. A later whole-repository scan started at revision `e04ce12` remains incomplete, so it is not treated as evidence of no findings. A Deep Security Scan could not run because the security runner required a managed filesystem permission profile unavailable in this environment.
 
 ### Rust static analysis notes
 
@@ -74,6 +74,14 @@ No verified security-reporting contact or repository disclosure policy is docume
 
 Project MCP `Allow` rules now use a separate `mcpv1__` namespace with truncated SHA-256 fingerprints. Server fingerprints cover validated configuration; tool fingerprints cover server identity, name, description, and input schema. Changed configuration or tool definitions produce different keys and return to the approval path.
 
+### Resolved — Browser URL inspection SSRF
+
+The `browser.inspect_url` RPC now resolves hostnames once, rejects any non-public destination except explicit `localhost` or `.localhost` names that resolve exclusively to loopback addresses, and pins the validated addresses to the HTTP client. Proxy use and redirects are disabled for inspection. DNS result collection is bounded. The regression tests cover public, loopback, private, and unique-local IPv6 decisions without making external network requests.
+
+### Resolved — Statistics CSV formula injection
+
+Statistics text fields can contain conversation titles, IDs, and provider metadata. CSV quoting alone does not stop spreadsheet formula evaluation. Exported text cells that start with a formula marker after leading whitespace are now prefixed with a text marker; numeric columns remain numeric. The regression test covers formula text, a tab-prefixed formula, and a negative numeric value.
+
 ### Resolved — DPAPI secret-map cross-session coordination
 
 Read-modify-write updates now use a profile-scoped `.lock` file with Windows exclusive file lock (`LockFileEx`). The empty lock file preserves a stable lock target across sessions. Write API requires `SecretMapUpdateLock`, preventing accidental persistence of stale reads.
@@ -96,6 +104,8 @@ No verified vulnerability-reporting channel is documented. Selection and verific
 |--------|--------|
 | Outbound URL policy | Rejects loopback, private, link-local, multicast, reserved, and cloud-metadata destinations |
 | DNS rebinding protection | Validates and pins public DNS results for each redirect |
+| Browser inspection SSRF protection | Pins resolved destinations, blocks private network access, disables redirects and proxies, and permits only explicit loopback URLs |
+| Statistics CSV export | Neutralizes formula markers in untrusted text cells while preserving numeric columns |
 | Archive-bomb protections | ZIP traversal, size limits (4 GiB per entry, 8 GiB total), symlink rejection |
 | SSE event finalization | Processes buffered events at stream end; explicit size limits on compaction state |
 | Schema initialization stops | Stays at every requested target version; aligns user-question validation |

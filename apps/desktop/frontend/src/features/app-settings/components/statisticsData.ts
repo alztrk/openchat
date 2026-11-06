@@ -441,6 +441,7 @@ export function parseFilterOptions(value: unknown): { providers: string[]; model
 }
 
 export function createStatisticsCsv(requests: readonly StatisticsRequest[], t: TFunction, language: string): string {
+  const numericColumns = new Set([1, 2, 3, 4, 5, 6, 7, 8, 22, 23, 24, 25, 26, 27]);
   const rows = [
     [
       t('statisticsRequestTime'),
@@ -517,11 +518,18 @@ export function createStatisticsCsv(requests: readonly StatisticsRequest[], t: T
       request.runId ?? '',
     ]);
   }
-  return `\uFEFF${rows.map((row) => row.map(csvField).join(',')).join('\r\n')}`;
+  return `\uFEFF${rows
+    .map((row, rowIndex) =>
+      row.map((value, columnIndex) => csvField(value, rowIndex > 0 && !numericColumns.has(columnIndex))).join(','),
+    )
+    .join('\r\n')}`;
 }
 
-export function csvField(value: string): string {
-  return `"${value.replaceAll('"', '""')}"`;
+export function csvField(value: string, protectFormula = true): string {
+  const firstNonWhitespace = value.trimStart().charAt(0);
+  const safeValue =
+    protectFormula && firstNonWhitespace !== '' && '=+-@＝＋－＠'.includes(firstNonWhitespace) ? `'${value}` : value;
+  return `"${safeValue.replaceAll('"', '""')}"`;
 }
 
 export function providerLabel(id: string, t: TFunction): string {
