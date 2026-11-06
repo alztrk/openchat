@@ -14,7 +14,8 @@ import { removeTemporaryTestProfile } from '../shared/profile-clean.mjs';
 import { getFrontendDirectory, getTauriDirectory } from '../shared/runner.mjs';
 import { ensureNoArguments } from '../help.mjs';
 
-const STARTUP_BENCHMARK_TIMEOUT_MS = 30_000;
+// `tauri dev` compiles the host before launching the app; the runtime timer is recorded inside the app.
+const STARTUP_BENCHMARK_TIMEOUT_MS = 180_000;
 
 const tauriCliPath = path.join(getFrontendDirectory(), 'node_modules', '@tauri-apps', 'cli', 'tauri.js');
 const tauriShutdownGraceMs = process.platform === 'win32' ? 10_000 : undefined;

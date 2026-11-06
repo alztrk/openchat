@@ -77,7 +77,9 @@ and verifies the temporary active database has no plaintext SQLite header before
 reporting a result. The command removes its UUID-named temporary profile after the
 run, including a confirmed Ctrl+C shutdown. If child-tree shutdown cannot be
 confirmed, it preserves and reports the profile path. This is a debug startup
-measurement, not a release-package result.
+measurement, not a release-package result. Its three-minute watchdog includes the
+Tauri development build and launch; reported startup durations begin in the app
+process and exclude compilation.
 
 `maintain-target` reports Cargo target sizes and previews cleanup by default. Add
 `--apply` only when you want to clean those Cargo target directories.
