@@ -9,6 +9,7 @@ npm run openchat -- dev-test-profile
 npm run openchat -- dev-test-profile --cleanup-profile
 npm run openchat -- dev-test-profile --profile-root "<absolute OS temporary path>"
 npm run openchat -- startup-benchmark
+npm run openchat -- perf-benchmark
 npm run openchat -- build
 npm run openchat -- check
 npm run openchat -- clean
@@ -80,6 +81,14 @@ confirmed, it preserves and reports the profile path. This is a debug startup
 measurement, not a release-package result. Its three-minute watchdog includes the
 Tauri development build and launch; reported startup durations begin in the app
 process and exclude compilation.
+
+`perf-benchmark` runs curated ignored Rust benchmarks for filesystem tools,
+request-context token estimation, archived-memory search, RPC stream payloads,
+and reusable HTTP client construction. It invokes each named local benchmark
+separately with the locked `openchat-local-service` package. It does not run the
+ignored live web-search benchmark or accept arbitrary Cargo arguments. The
+benchmarks use synthetic or in-memory data and clean their temporary fixtures
+when they complete.
 
 `maintain-target` reports Cargo target sizes and previews cleanup by default. Add
 `--apply` only when you want to clean those Cargo target directories.

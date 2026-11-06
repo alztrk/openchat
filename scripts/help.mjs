@@ -23,6 +23,7 @@ export function tryHelp(taskName, description, args, argsList) {
 }
 
 export function printHelp(tasks) {
-  process.stdout.write('Usage: npm run openchat -- <dev|dev-test-profile|startup-benchmark|build|check|check-types|clean|maintain-target> [options]\n');
+  const taskNames = Object.keys(tasks).join('|');
+  process.stdout.write(`Usage: npm run openchat -- <${taskNames}> [options]\n`);
   process.stdout.write('Run from apps/desktop/frontend. Use --help after a task for its options.\n');
 }
