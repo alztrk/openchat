@@ -1,8 +1,8 @@
 //! Connects to configured MCP servers and exposes bounded, permission-checked tools.
 //!
-//! Stdio servers use permission-mode-specific isolation with bounded process resources. Remote
-//! transports use bounded HTTP framing, per-server approval, and explicit response, schema,
-//! tool-count, and execution-time limits.
+//! Windows stdio servers use AppContainer isolation and bounded process resources. Linux enables
+//! remote transports with bounded HTTP framing, per-server approval, and explicit response,
+//! schema, tool-count, and execution-time limits.
 
 use std::{
     collections::{HashMap, HashSet},
@@ -11,13 +11,16 @@ use std::{
     future::Future,
     io::{self, Write},
     path::{Path, PathBuf},
+    time::Duration,
+};
+#[cfg(windows)]
+use std::{
     pin::Pin,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
     },
     task::{Context, Poll},
-    time::Duration,
 };
 
 use cap_std::{
@@ -25,22 +28,26 @@ use cap_std::{
     fs::{Dir, OpenOptions},
 };
 use futures_util::stream::{self, StreamExt};
+#[cfg(windows)]
+use rmcp::transport::Transport;
+#[cfg(windows)]
+use rmcp::transport::async_rw::AsyncRwTransport;
 use rmcp::{
     RoleClient, ServiceExt,
     model::{CallToolRequestParams, CallToolResult, Tool},
     service::RunningService,
     transport::{
-        StreamableHttpClientTransport, Transport, async_rw::AsyncRwTransport,
-        streamable_http_client::StreamableHttpClientTransportConfig,
+        StreamableHttpClientTransport, streamable_http_client::StreamableHttpClientTransportConfig,
     },
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
+use tokio::time::timeout;
+#[cfg(windows)]
 use tokio::{
     fs::File,
     io::{AsyncRead, AsyncReadExt, ReadBuf},
-    time::timeout,
 };
 
 use crate::{
@@ -51,6 +58,7 @@ use crate::{
 
 use crate::provider_schema::ToolDefinition;
 
+#[cfg(windows)]
 use super::terminal::windows_sandbox::{SandboxJobLimits, SandboxOptions, SandboxedProcess};
 
 mod bounded_http;
@@ -66,9 +74,13 @@ const MAX_MCP_ARGUMENT_BYTES: usize = 16 * 1024;
 const MAX_MCP_SCHEMA_BYTES: usize = 16 * 1024;
 const MAX_MCP_DESCRIPTION_BYTES: usize = 4096;
 const MAX_MCP_RESULT_BYTES: usize = 64 * 1024;
+#[cfg(windows)]
 const MAX_MCP_FRAME_BYTES: usize = 1024 * 1024;
+#[cfg(windows)]
 const MCP_ACTIVE_PROCESS_LIMIT: u32 = 32;
+#[cfg(windows)]
 const MCP_PROCESS_MEMORY_LIMIT_BYTES: usize = 1024 * 1024 * 1024;
+#[cfg(windows)]
 const MCP_JOB_MEMORY_LIMIT_BYTES: usize = 2 * 1024 * 1024 * 1024;
 const MAX_PROVIDER_TOOL_NAME_BYTES: usize = 64;
 const MAX_MCP_CALL_TIMEOUT: Duration = Duration::from_secs(120);
@@ -80,6 +92,7 @@ const MCP_PERMISSION_FINGERPRINT_HEX_BYTES: usize = 32;
 
 #[derive(Clone)]
 /// Validated process or remote transport settings for one project MCP server.
+#[cfg_attr(target_os = "linux", allow(dead_code))]
 pub(crate) struct StdioServerConfig {
     pub(crate) id: String,
     pub(crate) permission_fingerprint: String,
@@ -1039,8 +1052,10 @@ impl McpClient {
             };
             start_streamable_http_service(endpoint, client, auth_token).await?
         } else {
-            let credentials = crate::credentials::CredentialStore;
-            let environment = config
+            #[cfg(windows)]
+            {
+                let credentials = crate::credentials::CredentialStore;
+                let environment = config
                 .environment_variables
                 .iter()
                 .map(|name| {
@@ -1058,15 +1073,25 @@ impl McpClient {
                     Ok((name.clone(), secret))
                 })
                 .collect::<Result<Vec<_>, String>>()?;
-            let transport = StdioTransport::spawn(config, &environment, full_access)?;
-            timeout(MCP_STARTUP_TIMEOUT, ().serve(transport))
-                .await
-                .map_err(|_| {
-                    "The MCP server did not initialize before the startup timeout.".to_owned()
-                })?
-                .map_err(|error| {
-                    format!("The MCP server could not complete protocol initialization: {error}")
-                })?
+                let transport = StdioTransport::spawn(config, &environment, full_access)?;
+                timeout(MCP_STARTUP_TIMEOUT, ().serve(transport))
+                    .await
+                    .map_err(|_| {
+                        "The MCP server did not initialize before the startup timeout.".to_owned()
+                    })?
+                    .map_err(|error| {
+                        format!(
+                            "The MCP server could not complete protocol initialization: {error}"
+                        )
+                    })?
+            }
+            #[cfg(target_os = "linux")]
+            {
+                let _ = full_access;
+                return Err(
+                    "Linux currently supports remote HTTP MCP servers; local stdio MCP servers are unavailable.".to_owned(),
+                );
+            }
         };
         Ok(Self { service })
     }
@@ -1135,12 +1160,14 @@ async fn start_streamable_http_service(
         })
 }
 
+#[cfg(windows)]
 struct StdioTransport {
     transport: AsyncRwTransport<RoleClient, BoundedLineReader<File>, File>,
     process: SandboxedProcess,
     frame_limit_exceeded: Arc<AtomicBool>,
 }
 
+#[cfg(windows)]
 impl StdioTransport {
     fn spawn(
         config: &StdioServerConfig,
@@ -1206,12 +1233,14 @@ impl StdioTransport {
     }
 }
 
+#[cfg(windows)]
 struct BoundedLineReader<R> {
     reader: R,
     current_line_bytes: usize,
     frame_limit_exceeded: Arc<AtomicBool>,
 }
 
+#[cfg(windows)]
 impl<R> BoundedLineReader<R> {
     fn new(reader: R, frame_limit_exceeded: Arc<AtomicBool>) -> Self {
         Self {
@@ -1222,6 +1251,7 @@ impl<R> BoundedLineReader<R> {
     }
 }
 
+#[cfg(windows)]
 impl<R: AsyncRead + Unpin> AsyncRead for BoundedLineReader<R> {
     fn poll_read(
         self: Pin<&mut Self>,
@@ -1253,6 +1283,7 @@ impl<R: AsyncRead + Unpin> AsyncRead for BoundedLineReader<R> {
     }
 }
 
+#[cfg(windows)]
 impl Transport<RoleClient> for StdioTransport {
     type Error = io::Error;
 

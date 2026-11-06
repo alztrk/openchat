@@ -3,6 +3,8 @@
 //! Startup checks SQLite compatibility and database integrity before migrations; schema changes
 //! use verified backups, and diagnostic records are size-bounded and credential-redacted.
 
+#[cfg(windows)]
+use std::time::Instant;
 use std::{
     env,
     fs::{self, OpenOptions},
@@ -12,13 +14,14 @@ use std::{
         Arc, Mutex,
         atomic::{AtomicBool, AtomicI64, Ordering},
     },
-    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
+use rusqlite::{Connection, ffi};
+#[cfg(windows)]
 use rusqlite::{
-    Connection, OpenFlags, OptionalExtension,
+    OpenFlags, OptionalExtension,
     backup::{Backup, StepResult},
-    ffi,
 };
 #[cfg(windows)]
 use std::os::windows::fs::MetadataExt;
@@ -282,9 +285,16 @@ impl AppStorage {
         {
             Self::open_brokered(root, false)
         }
-        #[cfg(not(windows))]
+        #[cfg(target_os = "linux")]
         {
-            Self::open_at(root)
+            ensure_private_linux_storage_root(&root)?;
+            let key = database_key::read_or_create_database_key(&root)?;
+            Self::open_at_with_key(root, key)
+        }
+        #[cfg(not(any(windows, target_os = "linux")))]
+        {
+            let _ = root;
+            Err(rusqlite::Error::InvalidQuery)
         }
     }
 
@@ -296,9 +306,16 @@ impl AppStorage {
         {
             Self::open_brokered(root, true)
         }
-        #[cfg(not(windows))]
+        #[cfg(target_os = "linux")]
         {
-            Self::open_at(root)
+            ensure_private_linux_storage_root(&root)?;
+            let key = database_key::read_or_create_database_key(&root)?;
+            Self::open_at_with_key(root, key)
+        }
+        #[cfg(not(any(windows, target_os = "linux")))]
+        {
+            let _ = root;
+            Err(rusqlite::Error::InvalidQuery)
         }
     }
 
@@ -483,6 +500,13 @@ impl AppStorage {
             .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
         fs::create_dir_all(&cache_directory)
             .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
+        #[cfg(target_os = "linux")]
+        secure_linux_storage_directories(&[
+            root.as_path(),
+            database_directory.as_path(),
+            logs_directory.as_path(),
+            cache_directory.as_path(),
+        ])?;
         convert_retained_pre_migration_backups(&database_directory, &database_key)?;
 
         let database_path = database_directory.join("openchat.sqlite3");
@@ -1392,6 +1416,7 @@ impl AppStorage {
     }
 
     /// Acquires the concrete SQLite connection for service-owned maintenance and pipe handling.
+    #[cfg_attr(not(windows), allow(dead_code))]
     pub(crate) fn connect_owned_database(&self) -> rusqlite::Result<QueuedConnection<'_>> {
         self.database_queue.connect_local()
     }
@@ -2303,13 +2328,58 @@ fn local_app_data_root() -> rusqlite::Result<PathBuf> {
         Ok(PathBuf::from(local_app_data).join("OpenChat"))
     }
 
-    #[cfg(not(windows))]
+    #[cfg(target_os = "linux")]
     {
-        let _ = env::var_os("LOCALAPPDATA");
-        Err(rusqlite::Error::InvalidPath(
-            "The OpenChat local service currently supports Windows only".into(),
-        ))
+        use std::path::PathBuf;
+
+        let data_home = match env::var_os("XDG_DATA_HOME") {
+            Some(path) => {
+                let path = PathBuf::from(path);
+                if !path.is_absolute() {
+                    return Err(rusqlite::Error::InvalidPath(path));
+                }
+                path
+            }
+            None => {
+                let home = env::var_os("HOME").ok_or_else(|| {
+                    rusqlite::Error::InvalidPath(
+                        "HOME is not available for the current Linux user".into(),
+                    )
+                })?;
+                PathBuf::from(home).join(".local").join("share")
+            }
+        };
+        Ok(data_home.join("openchat"))
     }
+
+    #[cfg(not(any(windows, target_os = "linux")))]
+    {
+        Err(rusqlite::Error::InvalidQuery)
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn ensure_private_linux_storage_root(root: &Path) -> rusqlite::Result<()> {
+    fs::create_dir_all(root).map_err(filesystem_error)?;
+    let metadata = fs::symlink_metadata(root).map_err(filesystem_error)?;
+    if metadata.file_type().is_symlink() || !metadata.is_dir() {
+        return Err(rusqlite::Error::InvalidPath(root.to_path_buf()));
+    }
+    secure_linux_storage_directories(&[root])
+}
+
+#[cfg(target_os = "linux")]
+fn secure_linux_storage_directories(paths: &[&Path]) -> rusqlite::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+
+    for path in paths {
+        let metadata = fs::symlink_metadata(path).map_err(filesystem_error)?;
+        if metadata.file_type().is_symlink() || !metadata.is_dir() {
+            return Err(rusqlite::Error::InvalidPath(path.to_path_buf()));
+        }
+        fs::set_permissions(path, fs::Permissions::from_mode(0o700)).map_err(filesystem_error)?;
+    }
+    Ok(())
 }
 
 #[cfg(windows)]

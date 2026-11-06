@@ -1,3 +1,5 @@
+#![cfg_attr(not(windows), allow(dead_code))]
+
 //! Bounded wire types shared by the desktop storage client and Windows broker.
 
 use base64::{Engine as _, engine::general_purpose::STANDARD};

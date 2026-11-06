@@ -15,6 +15,7 @@ Connect to multiple model ecosystems through standard, secure protocols:
 - **Cloud Providers:** Direct integration with ChatGPT (OAuth), Anthropic Claude, Google Gemini, Mistral, DeepSeek, Groq, Cerebras, OpenRouter, Perplexity, xAI, Together AI, SambaNova, Fireworks AI, and Cohere, alongside custom OpenAI- and Anthropic-compatible endpoints.
 - **Local Inference:** Built-in runtime management for `llama.cpp` supporting CPU and NVIDIA CUDA GPU acceleration, enabling offline GGUF model execution without external services.
 - **Credential Storage:** On Windows, provider API keys, MCP secrets, and OAuth token pairs are DPAPI-protected in the SQLCipher database. Windows Credential Manager stores the database key and can contain legacy credential entries that OpenChat migrates into the protected vault. API keys entered in provider settings pass through the React renderer and Tauri IPC to the native host; credential-status commands return configuration state and redacted suffixes, not saved full keys.
+- **Linux Credential Storage:** The encrypted profile key is stored in the user's Secret Service provider. Provider credentials are stored in the SQLCipher-encrypted database vault.
 
 ### Image Design Workspace
 - **ChatGPT Image Generation:** Create images in the Design workspace with a ChatGPT OAuth account or an OpenAI API key. The chat `generate_image` tool uses the same generation service.
@@ -30,7 +31,7 @@ Run development tasks safely through configurable permission boundaries:
   - **Full access:** Lets file tools use any absolute path allowed to the current account, and runs terminal commands, configured project tools, and project MCP servers used as chat tools without AppContainer or bubblewrap isolation. It does not elevate the process or bypass Windows ACLs or UAC. Global MCP catalog discovery remains sandboxed.
 - **Trust Handoff Protection:** Sensitive repository paths, including `.git/hooks` and IDE configurations, require explicit confirmation (`Ask`) before modifications.
 - **Live Data Loss Prevention (DLP):** Real-time secret and token masking (`[REDACTED]`) sanitizes terminal outputs, tool calls, and file reads to prevent credentials from entering model context.
-- **Model Context Protocol (MCP):** Connect to local stdio and remote Streamable HTTP MCP servers with granular tool-level permissions.
+- **Model Context Protocol (MCP):** Connect to local stdio and remote Streamable HTTP MCP servers with granular tool-level permissions on Windows. Linux currently supports remote Streamable HTTP MCP servers; local stdio MCP servers are unavailable.
 
 ### Context Management and Retrieval
 - **Hybrid Search Engine:** Combines full-text keyword indexing (SQLite FTS5) with local multilingual embeddings (ONNX) for semantic codebase recall.
@@ -46,8 +47,9 @@ Run development tasks safely through configurable permission boundaries:
 ## Getting Started
 
 ### Requirements
-- Windows 10 or 11 (64-bit)
-- Microsoft Edge WebView2 Runtime 111.0.1661.0 or newer
+- Windows 10 or 11 (64-bit), or Linux x86_64 with WebKitGTK 4.1
+- Linux requires a Secret Service provider on the user's D-Bus session for encrypted profile keys; Bubblewrap and unprivileged user namespaces are required for isolated terminal execution
+- Microsoft Edge WebView2 Runtime 111.0.1661.0 or newer on Windows
 - Node.js 22 and npm
 - Rust 1.95 (pinned by `rust-toolchain.toml`)
 
@@ -76,19 +78,19 @@ This check runs Biome, frontend unit tests, locale and import checks, the TypeSc
 
 ### Packaging
 
-To build the standalone installer:
+To build a standalone package for the current operating system:
 ```bash
 cd apps/desktop/frontend
 npm run openchat -- build
 ```
 
-The Windows installer uses Tauri’s default WebView2 download-bootstrapper mode. If the runtime is missing or older than 111.0.1661.0, installation attempts to download or update it and requires an internet connection. See [Tauri’s WebView2 installation options](https://v2.tauri.app/distribute/windows-installer/#webview2-installation-options).
+On Windows, the installer uses Tauri’s default WebView2 download-bootstrapper mode. If the runtime is missing or older than 111.0.1661.0, installation attempts to download or update it and requires an internet connection. See [Tauri’s WebView2 installation options](https://v2.tauri.app/distribute/windows-installer/#webview2-installation-options). On Linux, the build creates Debian and AppImage packages; the Debian package declares Bubblewrap as a dependency.
 
 ---
 
 ## Architecture Principles
 
-- **Local-First Design:** Chat transcripts and vector stores reside in local databases. On Windows, the active database is SQLCipher-encrypted in the storage broker's private AppContainer data folder, with the profile key held in the current user's Windows Credential Manager; packaged broker and restore/export validation is still pending. Cloud-provider requests can include conversation content, attachments, and opt-in project notes or excerpts from prior conversations in the attached project. Design-canvas requests include your design brief and, when revising or reflowing a frame, its title, dimensions, style tokens, and SVG. Security scans send the selected model route the project content they read from the selected roots; queries go to the configured web-search service, and pages read during the scan can also enter the model context. Web searches send their query to the search services used by OpenChat, and page-reading requests contact the selected public URLs. Review the selected provider and search service privacy terms before sending sensitive content. OpenChat does not operate a centralized account or sync service. Conversation deletion and history clearing affect the active database; verified migration backups are retained without automatic expiry and can still contain older copies of deleted content. Those backups do not have an in-app restore flow, and historical filesystem snapshots may retain plaintext blocks from before encryption.
+- **Local-First Design:** Chat transcripts and vector stores reside in local databases. On Windows, the active database is SQLCipher-encrypted in the storage broker's private AppContainer data folder, with the profile key held in the current user's Windows Credential Manager. On Linux, the SQLCipher database resides in the user's XDG data directory with private directory permissions, and its profile key is held by the user's Secret Service provider. Cloud-provider requests can include conversation content, attachments, and opt-in project notes or excerpts from prior conversations in the attached project. Design-canvas requests include your design brief and, when revising or reflowing a frame, its title, dimensions, style tokens, and SVG. Security scans send the selected model route the project content they read from the selected roots; queries go to the configured web-search service, and pages read during the scan can also enter the model context. Web searches send their query to the search services used by OpenChat, and page-reading requests contact the selected public URLs. Review the selected provider and search service privacy terms before sending sensitive content. OpenChat does not operate a centralized account or sync service. Conversation deletion and history clearing affect the active database; verified migration backups are retained without automatic expiry and can still contain older copies of deleted content. Those backups do not have an in-app restore flow, and historical filesystem snapshots may retain plaintext blocks from before encryption.
 - **Chat-Scoped MCP Data Flow:** Project-configured MCP tool arguments go to the configured local or remote server, and returned tool results are included in subsequent requests to the selected model provider as conversation context.
 - **Explicit Authorizations:** `Ask for approval` and `Approve safe operations` retain process isolation. `Full access` disables isolation for agent tool execution and uses the current account's normal OS permissions; it does not grant administrator privileges. The separate global MCP catalog probe remains sandboxed.
 - **Technical Documentation:** Architecture, design, roadmap, and security notes are indexed in [docs/README.md](docs/README.md).

@@ -532,7 +532,7 @@ mod tests {
     fn rejects_duplicate_ids_invalid_program_paths_and_unsupported_schema() {
         for tools in [
             json!([valid_tool(), valid_tool()]),
-            json!([{"id":"bad","description":"Bad","executable":"..\\outside.exe","inputSchema":{"type":"object","properties":{},"additionalProperties":false},"timeoutSeconds":60,"outputLimitBytes":128}]),
+            json!([{"id":"bad","description":"Bad","executable":"../outside.exe","inputSchema":{"type":"object","properties":{},"additionalProperties":false},"timeoutSeconds":60,"outputLimitBytes":128}]),
             json!([{"id":"bad","description":"Bad","executable":"tools/run.exe","inputSchema":{"type":"object","properties":{},"additionalProperties":false,"patternProperties":{}},"timeoutSeconds":60,"outputLimitBytes":128}]),
         ] {
             let directory = TestDirectory::new();

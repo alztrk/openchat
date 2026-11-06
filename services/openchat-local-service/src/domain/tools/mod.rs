@@ -23,9 +23,10 @@ pub use search::search_files;
 
 #[cfg(windows)]
 pub(crate) mod computer_use;
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 pub(crate) mod mcp;
 pub(crate) mod project_tasks;
+#[cfg_attr(not(windows), allow(dead_code))]
 pub(crate) mod project_tools;
 pub mod terminal;
 pub mod web_search;

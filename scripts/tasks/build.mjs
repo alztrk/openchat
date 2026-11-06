@@ -9,6 +9,10 @@ export const task = {
   run() {
     ensureNoArguments('build', []);
     buildLocalService('release', true);
-    runNpm(['run', 'tauri:build']);
+    const args = ['run', 'tauri:build'];
+    if (process.platform === 'linux') {
+      args.push('--', '--config', 'tauri.linux.conf.json');
+    }
+    runNpm(args);
   },
 };

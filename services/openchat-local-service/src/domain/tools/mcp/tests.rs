@@ -1,19 +1,23 @@
+#[cfg(windows)]
+use super::{BoundedLineReader, MAX_MCP_FRAME_BYTES};
 use super::{
-    BoundedLineReader, MAX_MCP_ARGUMENTS_PER_SERVER, MAX_MCP_FRAME_BYTES, McpApprovalContext,
-    McpRegistry, StdioServerSettings, connect_with_approval, load_server_configs,
-    parse_server_config, parse_server_configs, save_server_catalog, server_catalog,
-    server_permission_fingerprint, start_streamable_http_service, tool_definitions,
-    valid_bound_permission_rule_suffix, valid_permission_rule_suffix,
+    MAX_MCP_ARGUMENTS_PER_SERVER, McpApprovalContext, McpRegistry, StdioServerSettings,
+    connect_with_approval, load_server_configs, parse_server_config, parse_server_configs,
+    save_server_catalog, server_catalog, server_permission_fingerprint,
+    start_streamable_http_service, tool_definitions, valid_bound_permission_rule_suffix,
+    valid_permission_rule_suffix,
 };
 use crate::{permissions::ToolPermissionBroker, protocol::EventSink, storage::AppStorage};
 use rmcp::model::Tool;
 use serde_json::{Value, json};
 use std::collections::HashMap;
+#[cfg(windows)]
+use std::sync::atomic::AtomicBool;
 use std::{
     path::{Path, PathBuf},
     sync::{
         Arc,
-        atomic::{AtomicBool, AtomicUsize, Ordering},
+        atomic::{AtomicUsize, Ordering},
     },
     time::{Duration, Instant},
 };
@@ -69,7 +73,24 @@ fn tool_with_description(name: &str, description: &str) -> Tool {
 
 const TEST_SERVER_FINGERPRINT: &str = "0123456789abcdef0123456789abcdef";
 
+fn test_workspace() -> &'static Path {
+    if cfg!(windows) {
+        Path::new(r"C:\workspace")
+    } else {
+        Path::new("/workspace")
+    }
+}
+
+fn test_program(name: &str) -> String {
+    if cfg!(windows) {
+        format!(r"C:\tools\{name}.exe")
+    } else {
+        format!("/usr/bin/{name}")
+    }
+}
+
 #[tokio::test]
+#[cfg(windows)]
 async fn bounded_stdio_reader_accepts_a_frame_at_the_limit() {
     let (mut writer, reader) = tokio::io::duplex(MAX_MCP_FRAME_BYTES + 1);
     let mut frame = vec![b'a'; MAX_MCP_FRAME_BYTES];
@@ -90,6 +111,7 @@ async fn bounded_stdio_reader_accepts_a_frame_at_the_limit() {
 }
 
 #[tokio::test]
+#[cfg(windows)]
 async fn bounded_stdio_reader_rejects_a_frame_over_the_limit() {
     let (mut writer, reader) = tokio::io::duplex(MAX_MCP_FRAME_BYTES + 2);
     let mut frame = vec![b'a'; MAX_MCP_FRAME_BYTES + 1];
@@ -165,19 +187,19 @@ fn rejects_unsafe_names_duplicate_names_and_oversized_tool_catalogs() {
 
 #[test]
 fn validates_enabled_and_disabled_stdio_server_settings() {
-    let working_directory = Path::new(r"C:\workspace");
+    let working_directory = test_workspace();
     let settings = serde_json::json!([
         {
             "id": "local_docs",
             "enabled": true,
-            "program": r"C:\tools\mcp-server.exe",
+            "program": test_program("mcp-server"),
             "arguments": ["--mode", "read-only"],
             "environmentVariables": ["API_TOKEN", "_PRIVATE_KEY"]
         },
         {
             "id": "disabled_server",
             "enabled": false,
-            "program": r"C:\tools\other-server.exe"
+            "program": test_program("other-server")
         }
     ]);
 
@@ -203,7 +225,7 @@ fn validates_enabled_and_disabled_stdio_server_settings() {
             Some(&serde_json::json!([{
                 "id": "invalid_environment",
                 "enabled": true,
-                "program": r"C:\tools\mcp-server.exe",
+                "program": test_program("mcp-server"),
                 "environmentVariables": ["PATH"]
             }])),
             working_directory,
@@ -215,7 +237,7 @@ fn validates_enabled_and_disabled_stdio_server_settings() {
             Some(&serde_json::json!([{
                 "id": "duplicate_environment",
                 "enabled": true,
-                "program": r"C:\tools\mcp-server.exe",
+                "program": test_program("mcp-server"),
                 "environmentVariables": ["API_TOKEN", "API_TOKEN"]
             }])),
             working_directory,
@@ -226,7 +248,7 @@ fn validates_enabled_and_disabled_stdio_server_settings() {
 
 #[test]
 fn validates_remote_streamable_http_endpoints_and_secure_credential_names() {
-    let root = Path::new(r"C:\workspace");
+    let root = test_workspace();
     let config = parse_server_configs(
         Some(&serde_json::json!([{
             "id": "remote_docs",
@@ -299,12 +321,12 @@ fn validates_per_tool_permission_namespaces() {
 
 #[test]
 fn permission_fingerprints_change_with_server_or_tool_definitions() {
-    let root = Path::new(r"C:\workspace");
+    let root = test_workspace();
     let first_server = parse_server_configs(
         Some(&json!([{
             "id": "workspace",
             "enabled": true,
-            "program": r"C:\tools\server.exe",
+            "program": test_program("server"),
             "arguments": ["--read-only"]
         }])),
         root,
@@ -314,7 +336,7 @@ fn permission_fingerprints_change_with_server_or_tool_definitions() {
         Some(&json!([{
             "id": "workspace",
             "enabled": true,
-            "program": r"C:\tools\other-server.exe",
+            "program": test_program("other-server"),
             "arguments": ["--read-only"]
         }])),
         root,
@@ -380,9 +402,9 @@ fn denied_servers_are_not_selected_for_chat_startup() {
         Some(&serde_json::json!([{
             "id": "local_docs",
             "enabled": true,
-            "program": r"C:\tools\mcp-server.exe"
+            "program": test_program("mcp-server")
         }])),
-        Path::new(r"C:\workspace"),
+        test_workspace(),
     )
     .expect("valid MCP server config");
     let rules = HashMap::from([(
@@ -439,9 +461,9 @@ async fn disabled_servers_are_not_started() {
         Some(&serde_json::json!([{
             "id": "disabled_server",
             "enabled": false,
-            "program": r"C:\missing\server.exe"
+            "program": test_program("missing-server")
         }])),
-        Path::new(r"C:\workspace"),
+        test_workspace(),
     )
     .expect("valid disabled server settings");
     let storage = TestStorage::new();
@@ -513,9 +535,9 @@ async fn ask_requests_approval_before_start_and_denial_skips_server() {
         Some(&json!([{
             "id": "local_docs",
             "enabled": true,
-            "program": r"C:\tools\mcp-server.exe"
+            "program": test_program("mcp-server")
         }])),
-        Path::new(r"C:\workspace"),
+        test_workspace(),
     )
     .expect("valid MCP server config");
     let broker = ToolPermissionBroker::default();
@@ -558,7 +580,7 @@ async fn ask_requests_approval_before_start_and_denial_skips_server() {
     assert_eq!(data["toolName"], "mcp_server_start");
     assert_eq!(
         data["targetPath"],
-        format!("local_docs · {}", r"C:\tools\mcp-server.exe")
+        format!("local_docs · {}", test_program("mcp-server"))
     );
     assert_eq!(data["arguments"]["transport"], "stdio");
 
@@ -700,7 +722,7 @@ async fn streamable_http_client_negotiates_lists_tools_and_sends_bearer_auth() {
 
 #[test]
 fn rejects_relative_programs_duplicate_ids_and_excessive_arguments() {
-    let working_directory = Path::new(r"C:\workspace");
+    let working_directory = test_workspace();
     let relative_program = serde_json::json!([{
         "id": "local_docs",
         "enabled": true,
@@ -709,15 +731,15 @@ fn rejects_relative_programs_duplicate_ids_and_excessive_arguments() {
     assert!(parse_server_configs(Some(&relative_program), working_directory).is_err());
 
     let duplicate_ids = serde_json::json!([
-        {"id": "same", "enabled": true, "program": r"C:\one.exe"},
-        {"id": "same", "enabled": false, "program": r"C:\two.exe"}
+        {"id": "same", "enabled": true, "program": test_program("one")},
+        {"id": "same", "enabled": false, "program": test_program("two")}
     ]);
     assert!(parse_server_configs(Some(&duplicate_ids), working_directory).is_err());
 
     let excessive_arguments = serde_json::json!([{
         "id": "local_docs",
         "enabled": true,
-        "program": r"C:\tools\mcp-server.exe",
+        "program": test_program("mcp-server"),
         "arguments": (0..=MAX_MCP_ARGUMENTS_PER_SERVER)
             .map(|index| format!("arg_{index}"))
             .collect::<Vec<_>>()
@@ -754,7 +776,7 @@ fn loads_only_regular_project_catalogs_and_treats_missing_catalog_as_empty() {
             "servers": [{
                 "id": "workspace_docs",
                 "enabled": false,
-                "program": r"C:\tools\mcp-server.exe"
+                "program": test_program("mcp-server")
             }]
         }))
         .expect("serialize catalog"),
@@ -889,6 +911,7 @@ fn catalog_tool_claims_do_not_change_permission_fingerprints() {
 }
 
 #[test]
+#[cfg(windows)]
 fn save_rejects_an_external_symbolic_link_as_the_catalog_directory() {
     use std::os::windows::fs::symlink_dir;
 

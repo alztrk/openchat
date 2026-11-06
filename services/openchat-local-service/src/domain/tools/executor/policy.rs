@@ -34,6 +34,7 @@ pub(crate) type ToolPermissionRules = HashMap<String, ToolPermissionRule>;
 pub(crate) const MAX_TOOL_PERMISSION_RULES: usize = 1080;
 pub(crate) const MAX_PROJECT_RULE_PRECHECKS: usize = 256;
 
+#[cfg(windows)]
 pub(crate) fn project_tool_permission_rule(
     rules: &ToolPermissionRules,
     bound_rule_name: &str,
@@ -64,7 +65,7 @@ pub(crate) fn project_task_permission_rule(
         .or_else(|| rules.get("run_project_task").copied())
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 pub(crate) fn mcp_tool_permission_rule(
     rules: &ToolPermissionRules,
     server_id: &str,
@@ -133,18 +134,18 @@ pub(crate) fn is_permission_rule_tool(name: &str) -> bool {
         return true;
     }
     if let Some(mcp_tool_prefix) = name.strip_prefix("mcpv1__") {
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "linux"))]
         return crate::domain::tools::mcp::valid_bound_permission_rule_suffix(mcp_tool_prefix);
-        #[cfg(not(windows))]
+        #[cfg(not(any(windows, target_os = "linux")))]
         return {
             let _ = mcp_tool_prefix;
             false
         };
     }
     if let Some(mcp_tool_prefix) = name.strip_prefix("mcp__") {
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "linux"))]
         return crate::domain::tools::mcp::valid_permission_rule_suffix(mcp_tool_prefix);
-        #[cfg(not(windows))]
+        #[cfg(not(any(windows, target_os = "linux")))]
         return {
             let _ = mcp_tool_prefix;
             false

@@ -5,10 +5,11 @@ use std::{
 
 use serde_json::json;
 
+#[cfg(windows)]
+use super::project_tool_permission_rule;
 use super::{
     PreparedToolCall, ToolCall, ToolExecutor, ToolPermissionMode, ToolPermissionRule,
-    ToolPermissionRules, parse_tool_permission_rules, project_tool_permission_rule,
-    qualify_citation_source_ids,
+    ToolPermissionRules, parse_tool_permission_rules, qualify_citation_source_ids,
 };
 use crate::storage::AppStorage;
 use crate::tools::executor::{paths::ToolPathScope, validation::ToolOperation};
@@ -679,6 +680,7 @@ fn permission_rule_parser_rejects_unknown_tools_and_values() {
 }
 
 #[test]
+#[cfg(windows)]
 fn project_tool_permission_rules_ignore_legacy_allows_and_keep_legacy_denials() {
     let bound_name = format!("project_tool__lint__{}", "a".repeat(64));
     let mut rules = ToolPermissionRules::new();

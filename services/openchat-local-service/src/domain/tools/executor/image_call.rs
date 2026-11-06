@@ -243,6 +243,7 @@ impl ToolExecutor {
             .collect::<Vec<_>>();
         let attachments = match crate::attachments::write_generated_images(
             storage.root(),
+            storage.database_key(),
             &snapshot.conversation_id,
             &snapshot.message_id,
             &images,

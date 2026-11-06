@@ -21,8 +21,10 @@ use rusqlite::OptionalExtension;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
+#[cfg(windows)]
+use std::collections::HashMap;
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashSet,
     path::{Path, PathBuf},
     sync::Mutex as StdMutex,
     time::{SystemTime, UNIX_EPOCH},
@@ -277,7 +279,7 @@ pub struct ToolExecutor {
     subagent_tool_definitions: Vec<ToolDefinition>,
     #[cfg(windows)]
     project_tools: Vec<super::project_tools::ProjectTool>,
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "linux"))]
     mcp_registry: Option<std::sync::Arc<super::mcp::McpRegistry>>,
 }
 
@@ -384,7 +386,7 @@ impl ToolExecutor {
             subagent_tool_definitions: Vec::new(),
             #[cfg(windows)]
             project_tools: Vec::new(),
-            #[cfg(windows)]
+            #[cfg(any(windows, target_os = "linux"))]
             mcp_registry: None,
         }
     }
@@ -483,11 +485,13 @@ impl ToolExecutor {
         if let Some(service) = self.chat_service.clone() {
             executor = executor.with_chat_service(service);
         }
+        #[cfg(any(windows, target_os = "linux"))]
+        {
+            executor = executor.with_mcp_registry(self.mcp_registry.clone());
+        }
         #[cfg(windows)]
         {
-            executor = executor
-                .with_project_tools(self.project_tools.clone())
-                .with_mcp_registry(self.mcp_registry.clone());
+            executor = executor.with_project_tools(self.project_tools.clone());
         }
         executor
     }
@@ -654,7 +658,7 @@ impl ToolExecutor {
         self
     }
 
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "linux"))]
     pub(crate) fn with_mcp_registry(
         mut self,
         registry: Option<std::sync::Arc<super::mcp::McpRegistry>>,
@@ -1009,7 +1013,7 @@ impl ToolExecutor {
                 )
                 .await;
         }
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "linux"))]
         if call.name.starts_with("mcp__") {
             return self
                 .execute_mcp_call(
@@ -1397,8 +1401,10 @@ impl ToolExecutor {
                     | ToolOperation::SaveMemory { .. }
                     | ToolOperation::SaveProjectMemory { .. }
                     | ToolOperation::DelegateTask { .. }
-                    | ToolOperation::ProjectTool { .. }
             );
+            #[cfg(windows)]
+            let is_non_fs =
+                is_non_fs || matches!(&prepared.operation, ToolOperation::ProjectTool { .. });
             if !is_non_fs {
                 match self.resolve_tool_path(
                     &prepared.requested_path,

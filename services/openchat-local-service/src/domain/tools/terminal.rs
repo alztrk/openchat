@@ -21,10 +21,12 @@ use process_wrap::tokio::{ChildWrapper, CommandWrap, KillOnDrop};
 use serde_json::{Value, json};
 #[cfg(not(windows))]
 use tokio::process::Command;
+#[cfg(windows)]
+use tokio::time::sleep_until;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     sync::{Mutex, OwnedSemaphorePermit, Semaphore},
-    time::{sleep, sleep_until},
+    time::sleep,
 };
 use uuid::Uuid;
 
@@ -42,6 +44,9 @@ const DEFAULT_WAIT_MS: u64 = 2000;
 const MAX_WAIT_MS: u64 = 30000;
 const QUIET_PERIOD_MS: u64 = 50;
 const MAX_BUFFER_BYTES: usize = 128 * 1024;
+const MAX_RETURNED_TERMINAL_BYTES: usize = 16 * 1024;
+const HEAD_TRUNCATE_BYTES: usize = 4 * 1024;
+const TAIL_TRUNCATE_BYTES: usize = 8 * 1024;
 const MAX_ACTIVE_TERMINAL_SESSIONS: usize = 16;
 const MAX_WORKING_DIRECTORY_STATES: usize = 512;
 const INTERNAL_TERMINAL_OWNER: &str = "openchat-internal";
@@ -62,6 +67,7 @@ impl ToolRuntimeError {
         }
     }
 
+    #[cfg(windows)]
     fn process_start(error: io::Error, operation: &str) -> Self {
         let code = match error.kind() {
             io::ErrorKind::NotFound => "process_not_found",
@@ -396,7 +402,13 @@ pub struct TerminalSession {
 #[cfg(not(windows))]
 fn build_shell_command(command_str: &str, state_file: Option<&Path>) -> Command {
     let mut cmd = Command::new("sh");
-    let command = match state_file {
+    cmd.args(["-c", &build_shell_script(command_str, state_file)]);
+    cmd
+}
+
+#[cfg(not(windows))]
+fn build_shell_script(command_str: &str, state_file: Option<&Path>) -> String {
+    match state_file {
         Some(state_file) => {
             let state_file = shell_quote_posix(&state_file.to_string_lossy());
             let exit_trap = format!(
@@ -405,9 +417,7 @@ fn build_shell_command(command_str: &str, state_file: Option<&Path>) -> Command 
             format!("trap {} EXIT\n{command_str}", shell_quote_posix(&exit_trap))
         }
         None => command_str.to_owned(),
-    };
-    cmd.args(["-c", &command]);
-    cmd
+    }
 }
 
 #[cfg(windows)]
@@ -539,9 +549,10 @@ impl TerminalSession {
         } else {
             &[]
         };
-        let text = String::from_utf8_lossy(slice).into_owned();
-        let truncated = total_len >= MAX_BUFFER_BYTES;
-        (text, total_len, truncated)
+        let text = String::from_utf8_lossy(slice);
+        let buffer_truncated = total_len >= MAX_BUFFER_BYTES;
+        let (cleaned, bounded_truncated) = clean_and_bound_terminal_output(&text);
+        (cleaned, total_len, buffer_truncated || bounded_truncated)
     }
 
     pub async fn wait_for_output(
@@ -578,6 +589,79 @@ impl TerminalSession {
 
         Ok(self.read_output_from(start_offset).await)
     }
+}
+
+pub(crate) fn strip_ansi_escapes(input: &str) -> String {
+    let mut output = String::with_capacity(input.len());
+    let mut chars = input.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '\x1b' {
+            if let Some(&next) = chars.peek() {
+                if next == '[' {
+                    chars.next();
+                    while let Some(&c) = chars.peek() {
+                        chars.next();
+                        if ('@'..='~').contains(&c) {
+                            break;
+                        }
+                    }
+                    continue;
+                } else if next == ']' {
+                    chars.next();
+                    while let Some(&c) = chars.peek() {
+                        chars.next();
+                        if c == '\x07' || c == '\x1b' {
+                            break;
+                        }
+                    }
+                    continue;
+                }
+            }
+        }
+        output.push(ch);
+    }
+    output
+}
+
+pub(crate) fn clean_and_bound_terminal_output(text: &str) -> (String, bool) {
+    let cleaned = strip_ansi_escapes(text);
+    if cleaned.len() <= MAX_RETURNED_TERMINAL_BYTES {
+        return (cleaned, false);
+    }
+
+    let head_boundary = floor_char_boundary(&cleaned, HEAD_TRUNCATE_BYTES);
+    let head = &cleaned[..head_boundary];
+    let tail_start =
+        ceil_char_boundary(&cleaned, cleaned.len().saturating_sub(TAIL_TRUNCATE_BYTES));
+    let tail = &cleaned[tail_start..];
+    let omitted = cleaned
+        .len()
+        .saturating_sub(head.len())
+        .saturating_sub(tail.len());
+
+    let formatted =
+        format!("{head}\n\n... [output truncated: {omitted} bytes omitted] ...\n\n{tail}");
+    (formatted, true)
+}
+
+fn floor_char_boundary(s: &str, mut index: usize) -> usize {
+    if index >= s.len() {
+        return s.len();
+    }
+    while index > 0 && !s.is_char_boundary(index) {
+        index -= 1;
+    }
+    index
+}
+
+fn ceil_char_boundary(s: &str, mut index: usize) -> usize {
+    if index >= s.len() {
+        return s.len();
+    }
+    while index < s.len() && !s.is_char_boundary(index) {
+        index += 1;
+    }
+    index
 }
 
 /// Creates and controls process sessions while enforcing conversation ownership.
@@ -970,12 +1054,25 @@ impl TerminalSessionManager {
 
         #[cfg(not(windows))]
         let (child, stdin, stdout, stderr) = {
-            let mut cmd = build_shell_command(
-                command_str,
-                working_directory_capture
-                    .as_ref()
-                    .map(|capture| capture.report_file.as_path()),
-            );
+            let state_file = working_directory_capture
+                .as_ref()
+                .map(|capture| capture.report_file.as_path());
+            #[cfg(target_os = "linux")]
+            let mut cmd = if full_access {
+                build_shell_command(command_str, state_file)
+            } else {
+                build_linux_sandbox_command(
+                    command_str,
+                    workdir,
+                    workspace_roots,
+                    working_directory_capture
+                        .as_ref()
+                        .map(|capture| capture.directory.as_path()),
+                    state_file,
+                )?
+            };
+            #[cfg(not(target_os = "linux"))]
+            let mut cmd = build_shell_command(command_str, state_file);
             cmd.current_dir(workdir)
                 .stdin(std::process::Stdio::piped())
                 .stdout(std::process::Stdio::piped())
@@ -1559,6 +1656,110 @@ impl TerminalSessionManager {
     }
 }
 
+#[cfg(target_os = "linux")]
+fn build_linux_sandbox_command(
+    command: &str,
+    workdir: &Path,
+    workspace_roots: &[PathBuf],
+    capture_root: Option<&Path>,
+    state_file: Option<&Path>,
+) -> Result<Command, ToolRuntimeError> {
+    if !crate::sandbox::SandboxPolicy::is_bubblewrap_available() {
+        return Err(ToolRuntimeError::new(
+            "sandbox_backend_unavailable",
+            "Bubblewrap is required to run this command in the Linux sandbox. Install bubblewrap and ensure unprivileged user namespaces are enabled.",
+        ));
+    }
+
+    let mut args: Vec<std::ffi::OsString> = vec![
+        "--die-with-parent".into(),
+        "--new-session".into(),
+        "--unshare-all".into(),
+        "--clearenv".into(),
+        "--setenv".into(),
+        "PATH".into(),
+        "/usr/local/bin:/usr/bin:/bin".into(),
+        "--setenv".into(),
+        "HOME".into(),
+        "/tmp".into(),
+        "--proc".into(),
+        "/proc".into(),
+        "--dev".into(),
+        "/dev".into(),
+        "--tmpfs".into(),
+        "/tmp".into(),
+    ];
+    for system_path in [
+        "/usr",
+        "/bin",
+        "/sbin",
+        "/lib",
+        "/lib64",
+        "/etc",
+        "/nix/store",
+        "/run/current-system",
+    ] {
+        if Path::new(system_path).exists() {
+            args.extend(["--ro-bind".into(), system_path.into(), system_path.into()]);
+        }
+    }
+
+    let canonical_workdir = workdir.canonicalize().map_err(|_| {
+        ToolRuntimeError::new(
+            "sandbox_workspace_unavailable",
+            "The Linux sandbox working directory is unavailable.",
+        )
+    })?;
+    let mut writable_roots = workspace_roots.to_vec();
+    if let Some(capture_root) = capture_root {
+        writable_roots.push(capture_root.to_path_buf());
+    }
+    writable_roots.push(workdir.to_path_buf());
+    let mut canonical_roots = Vec::with_capacity(writable_roots.len());
+    for root in writable_roots {
+        let canonical_root = root.canonicalize().map_err(|_| {
+            ToolRuntimeError::new(
+                "sandbox_workspace_unavailable",
+                "A Linux sandbox workspace directory is unavailable.",
+            )
+        })?;
+        if !canonical_root.is_dir() || canonical_root.parent().is_none() {
+            return Err(ToolRuntimeError::new(
+                "sandbox_workspace_unavailable",
+                "The Linux sandbox workspace must be a non-root directory.",
+            ));
+        }
+        if !canonical_roots.contains(&canonical_root) {
+            canonical_roots.push(canonical_root);
+        }
+    }
+    if !canonical_roots
+        .iter()
+        .any(|root| canonical_workdir.starts_with(root))
+    {
+        return Err(ToolRuntimeError::new(
+            "sandbox_workspace_unavailable",
+            "The Linux sandbox working directory is outside the granted workspace directories.",
+        ));
+    }
+    for root in canonical_roots {
+        let path = root.as_os_str().to_os_string();
+        args.extend(["--bind".into(), path.clone(), path]);
+    }
+    args.extend([
+        "--chdir".into(),
+        canonical_workdir.as_os_str().to_os_string(),
+        "--".into(),
+        "sh".into(),
+        "-c".into(),
+        build_shell_script(command, state_file).into(),
+    ]);
+
+    let mut command = Command::new("bwrap");
+    command.env_clear().args(args);
+    Ok(command)
+}
+
 #[cfg(windows)]
 struct ProjectToolOutput {
     stdout: Vec<u8>,
@@ -1815,5 +2016,23 @@ mod tests {
             .expect("wslpath output should be UTF-8")
             .trim()
             .to_owned()
+    }
+
+    #[test]
+    fn strips_ansi_escape_sequences() {
+        let input = "\x1b[32mSuccess:\x1b[0m test passed in \x1b[1m2.5s\x1b[0m\x1b[2K\r";
+        assert_eq!(
+            super::strip_ansi_escapes(input),
+            "Success: test passed in 2.5s\r"
+        );
+    }
+
+    #[test]
+    fn bounds_large_terminal_output_with_head_and_tail() {
+        let large_payload = "a".repeat(20 * 1024);
+        let (bounded, truncated) = super::clean_and_bound_terminal_output(&large_payload);
+        assert!(truncated);
+        assert!(bounded.len() < large_payload.len());
+        assert!(bounded.contains("... [output truncated:"));
     }
 }

@@ -640,7 +640,7 @@ pub(crate) async fn dispatch(context: RpcDispatchContext<'_>) -> Result<Value, S
                 )
                 .await;
             }
-            #[cfg(windows)]
+            #[cfg(any(windows, target_os = "linux"))]
             let mcp_configs = if security_scan_scope.is_none()
                 && permission_mode != ToolPermissionMode::Plan
                 && provider_id.as_deref().is_some_and(|provider_id| {
@@ -708,9 +708,9 @@ pub(crate) async fn dispatch(context: RpcDispatchContext<'_>) -> Result<Value, S
                 } else {
                     available_subagent_models
                 },
-                #[cfg(windows)]
+                #[cfg(any(windows, target_os = "linux"))]
                 mcp_configs,
-                #[cfg(windows)]
+                #[cfg(any(windows, target_os = "linux"))]
                 mcp_registry: None,
                 permission_broker: &permission_broker,
                 user_question_broker: &user_question_broker,

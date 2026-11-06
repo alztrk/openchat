@@ -78,6 +78,7 @@ impl DatabaseKey {
         .map(|connection| (connection, false))
     }
 
+    #[cfg(any(test, windows))]
     pub(crate) fn has_recoverable_plaintext_migration(
         database_path: &Path,
     ) -> rusqlite::Result<bool> {
@@ -720,6 +721,45 @@ pub(super) fn store_database_key(key: &DatabaseKey) -> rusqlite::Result<()> {
     match read_stored_database_key()? {
         Some(stored) if stored.as_bytes() == key.as_bytes() => Ok(()),
         _ => Err(encryption_error()),
+    }
+}
+
+#[cfg(target_os = "linux")]
+pub(super) fn read_or_create_database_key(storage_root: &Path) -> rusqlite::Result<DatabaseKey> {
+    use std::os::fd::AsRawFd;
+
+    use keyring::{Entry, Error as KeyringError};
+
+    let lock_path = storage_root.join(".database-key.lock");
+    let mut lock_options = OpenOptions::new();
+    lock_options.read(true).write(true).create(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        lock_options.mode(0o600);
+    }
+    let lock_file = lock_options.open(lock_path).map_err(filesystem_error)?;
+    // SAFETY: The descriptor refers to a live lock file owned by this process.
+    if unsafe { libc::flock(lock_file.as_raw_fd(), libc::LOCK_EX) } != 0 {
+        return Err(filesystem_error(io::Error::last_os_error()));
+    }
+
+    let entry = Entry::new("OpenChat.LocalStorage.DatabaseKey", "profile-v1")
+        .map_err(|_| encryption_error())?;
+    match entry.get_secret() {
+        Ok(bytes) => {
+            let bytes = Zeroizing::new(bytes);
+            DatabaseKey::from_bytes(&bytes)
+        }
+        Err(KeyringError::NoEntry) => {
+            let key = DatabaseKey::generate()?;
+            entry
+                .set_secret(key.as_bytes())
+                .map_err(|_| encryption_error())?;
+            let stored = Zeroizing::new(entry.get_secret().map_err(|_| encryption_error())?);
+            DatabaseKey::from_bytes(&stored)
+        }
+        Err(_) => Err(encryption_error()),
     }
 }
 

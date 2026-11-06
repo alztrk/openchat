@@ -1,7 +1,7 @@
 //! Local OpenChat sidecar services and their process-level RPC entry point.
 //!
 //! The public surface is intentionally limited to starting the service and,
-//! on Windows, accessing credentials stored by the operating system.
+//! on supported desktop platforms, accessing credentials stored by the operating system.
 #![deny(missing_docs)]
 #![deny(clippy::undocumented_unsafe_blocks)]
 
@@ -35,7 +35,7 @@ mod storage;
 #[path = "storage_broker.rs"]
 mod storage_broker;
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 #[path = "adapters/credentials.rs"]
 /// Protected local-vault access for OAuth tokens and scoped MCP secrets, including legacy imports.
 pub mod credentials;

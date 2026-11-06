@@ -85,7 +85,7 @@ impl SandboxPolicy {
         }
         #[cfg(target_os = "linux")]
         {
-            SandboxSupport::Roadmap
+            SandboxSupport::Fallback
         }
         #[cfg(target_os = "macos")]
         {
@@ -111,6 +111,19 @@ impl SandboxPolicy {
                 .unwrap_or(false)
         }
         #[cfg(not(windows))]
+        {
+            false
+        }
+    }
+
+    /// Detects whether Bubblewrap is installed for isolated Linux tool execution.
+    #[must_use]
+    pub fn is_bubblewrap_available() -> bool {
+        #[cfg(target_os = "linux")]
+        {
+            which::which("bwrap").is_ok()
+        }
+        #[cfg(not(target_os = "linux"))]
         {
             false
         }

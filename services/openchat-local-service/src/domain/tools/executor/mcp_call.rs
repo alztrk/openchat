@@ -3,7 +3,7 @@
 use super::*;
 
 impl ToolExecutor {
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "linux"))]
     pub(super) async fn execute_mcp_call(
         &self,
         call: &ToolCall,

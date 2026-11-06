@@ -142,14 +142,17 @@ pub(crate) fn open_mutation_file_from_directory(
     relative_path: &Path,
     options: &OpenOptions,
 ) -> io::Result<(OpenedFile, Metadata)> {
-    let mut options = options.clone();
     #[cfg(windows)]
-    {
+    let options = {
+        let mut options = options.clone();
         use cap_std::fs::OpenOptionsExt;
         use windows_sys::Win32::Storage::FileSystem::FILE_SHARE_READ;
 
         options.share_mode(FILE_SHARE_READ);
-    }
+        options
+    };
+    #[cfg(not(windows))]
+    let options = options.clone();
     open_regular_file_from_directory(directory, relative_path, &options)
 }
 
@@ -410,10 +413,10 @@ fn open_directory_child(directory: &Dir, name: &OsStr) -> io::Result<Dir> {
 pub(crate) fn same_directory_object(left: &Dir, right: &Dir) -> io::Result<bool> {
     #[cfg(unix)]
     {
-        use cap_std::fs::MetadataExt;
+        use std::os::unix::fs::MetadataExt;
 
-        let left = left.metadata()?;
-        let right = right.metadata()?;
+        let left = left.try_clone()?.into_std_file().metadata()?;
+        let right = right.try_clone()?.into_std_file().metadata()?;
         Ok(left.dev() == right.dev() && left.ino() == right.ino())
     }
     #[cfg(windows)]

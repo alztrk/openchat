@@ -41,8 +41,8 @@ The Rust sidecar owns all provider connections, tool execution, storage, and sec
 
 - **Provider adapters** — ChatGPT (OAuth), OpenAI (API key), Anthropic, Gemini, and 15+ compatible providers
 - **Tool execution** — File I/O, terminal, web search, MCP stdio, with sandboxing via Windows AppContainer or Linux bubblewrap
-- **Storage** — SQLCipher (AES-256) encrypted SQLite database managed by an AppContainer child broker
-- **Credentials** — DPAPI-protected vault in the database, with Windows Credential Manager for the profile key
+- **Storage** — SQLCipher (AES-256) encrypted SQLite database, brokered through an AppContainer child on Windows and stored in the private XDG data directory on Linux
+- **Credentials** — Windows Credential Manager or Linux Secret Service for the profile key; provider credentials are held in the encrypted database vault
 
 ### Desktop Host
 
@@ -76,10 +76,10 @@ Tauri v2 wraps the React frontend and spawns the local service. It handles:
 
 | Boundary | Mechanism |
 |----------|-----------|
-| **Process isolation** | Windows AppContainer / Linux bubblewrap for tool processes |
+| **Process isolation** | Windows AppContainer / Linux bubblewrap for isolated terminal processes; Linux requires Bubblewrap and enabled unprivileged user namespaces |
 | **WebView2 GPU process** | WebView2's default GPU, renderer, and AudioService sandbox settings remain enabled |
-| **Storage encryption** | SQLCipher AES-256, broker-owned in AppContainer private folder |
-| **Secrets** | DPAPI-protected vault, zeroized on read, cross-session file-lock |
+| **Storage encryption** | SQLCipher AES-256; broker-owned in the Windows AppContainer private folder, or stored in the Linux user's XDG data directory with mode 0700 |
+| **Secrets** | Profile key in Windows Credential Manager or Linux Secret Service; vault values encrypted by SQLCipher and zeroized on read |
 | **Network** | Outbound URL policy rejects private/reserved/cloud-metadata; DNS rebinding protection |
 | **Capabilities** | Tauri capabilities are scoped; no `fs:*` or `shell:*` in renderer |
 | **File safety** | Hard-link rejection, capability-rooted opens, no path re-resolution after validation |

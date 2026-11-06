@@ -86,3 +86,8 @@ windows-sys = { version = "=0.61.2", features = [
     "Wdk_Foundation",
     "Wdk_Storage_FileSystem",
 ] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+keyring = { version = "=3.6.3", default-features = false, features = ["linux-native-sync-persistent", "crypto-rust"] }
+libc = "0.2"
+rmcp = { version = "=3.7.0", default-features = false, features = ["client", "transport-async-rw", "transport-streamable-http-client-reqwest"] }
