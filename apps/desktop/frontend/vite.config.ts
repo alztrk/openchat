@@ -42,6 +42,10 @@ export default defineConfig(({ command }) => ({
     host: '127.0.0.1',
     port: 5173,
     strictPort: true,
+    warmup: {
+      // Prime the two dynamic imports that gate the first app shell commit.
+      clientFiles: ['./src/bootstrap/App.tsx', './src/widgets/application-error/index.ts'],
+    },
     cors: {
       origin: 'http://127.0.0.1:5173',
     },
