@@ -31,6 +31,24 @@ impl TestDirectory {
         Self(path)
     }
 
+    fn new_on_repository_volume() -> Self {
+        let id = NEXT_DIRECTORY.fetch_add(1, Ordering::Relaxed);
+        let manifest_directory = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let repository_root = manifest_directory
+            .ancestors()
+            .find(|ancestor| ancestor.join(".git").exists())
+            .expect("find repository root for benchmark fixture");
+        let benchmark_parent = repository_root
+            .parent()
+            .expect("repository root has a parent directory");
+        let path = benchmark_parent.join(format!(
+            "openchat-tools-benchmark-{}-{id}",
+            std::process::id()
+        ));
+        fs::create_dir(&path).expect("create isolated benchmark directory");
+        Self(path)
+    }
+
     fn root(&self) -> &str {
         self.0.to_str().expect("temporary path is valid UTF-8")
     }

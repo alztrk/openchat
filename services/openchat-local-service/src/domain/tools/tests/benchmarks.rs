@@ -104,7 +104,8 @@ fn benchmark_search_at_monorepo_scales() {
 }
 
 fn benchmark_search_scale(file_count: usize) {
-    let directory = TestDirectory::new();
+    let directory = TestDirectory::new_on_repository_volume();
+    directory.write(".gitignore", "");
     let mut dataset_bytes = 0usize;
     for file_index in 0..file_count {
         let content = format!("file={file_index:06} {}\n", "content ".repeat(16));
@@ -150,12 +151,31 @@ fn benchmark_search_scale(file_count: usize) {
     let cold = search_files(directory.root(), "", "no-such-marker", false, 0, 40)
         .expect("benchmark cold full search");
     let cold_elapsed = cold_started.elapsed();
-    let canonical_root =
-        super::super::canonical_root(directory.root()).expect("canonical benchmark workspace root");
-    let source_directory = canonical_root.join("src");
-    let direct_listing = measure_iterations("list_files_direct_no_app_cache", 3, 1, || {
+    let (canonical_root, source_directory, root_handle, source_handle, explicit_filter_scope) =
+        super::super::paths::resolve_directory_for_listing(directory.root(), "src")
+            .expect("resolve benchmark listing directory");
+    let ignore_matchers = super::super::listing::load_gitignore_matchers(
+        &canonical_root,
+        &source_directory,
+        &root_handle,
+        &source_handle,
+    )
+    .expect("load benchmark ignore rules");
+    benchmark_listing_phases(directory.root(), &ignore_matchers);
+    let direct_listing = measure_iterations("list_files_entry_scan_same_rules", 3, 1, || {
+        let listing = super::super::listing::read_directory_listing_from_capability(
+            &source_handle,
+            &source_directory,
+            &ignore_matchers,
+            explicit_filter_scope,
+            100,
+        )
+        .expect("benchmark directory entry scan");
+        super::super::directory_listing_response(Path::new("src"), &listing, 0, 100)
+    });
+    let unfiltered_listing = measure_iterations("list_files_entry_scan_empty_rules", 3, 1, || {
         let listing = super::super::read_directory_listing(&source_directory, false, 100)
-            .expect("benchmark direct directory listing");
+            .expect("benchmark entry scan without ignore rules");
         super::super::directory_listing_response(Path::new("src"), &listing, 0, 100)
     });
     let direct_search = measure_iterations("search_files_direct_no_app_cache", 3, 1, || {
@@ -215,6 +235,14 @@ fn benchmark_search_scale(file_count: usize) {
         direct_listing.output_chars.div_ceil(4),
     );
     eprintln!(
+        "scale={file_count} tool={} p50_ms={:.3} p95_ms={:.3} output_bytes={} rough_tokens_chars_div_4={}",
+        unfiltered_listing.name,
+        unfiltered_listing.p50.as_secs_f64() * 1000.0,
+        unfiltered_listing.p95.as_secs_f64() * 1000.0,
+        unfiltered_listing.output_bytes,
+        unfiltered_listing.output_chars.div_ceil(4),
+    );
+    eprintln!(
         "scale={file_count} tool=search_files_cold elapsed_ms={:.3} output_bytes={} truncated={}",
         cold_elapsed.as_secs_f64() * 1000.0,
         serde_json::to_vec(&cold).map_or(0, |output| output.len()),
@@ -250,6 +278,45 @@ fn benchmark_search_scale(file_count: usize) {
         common.p95.as_secs_f64() * 1000.0,
         common.output_bytes,
     );
+}
+
+fn benchmark_listing_phases(root: &str, ignore_matchers: &[ignore::gitignore::Gitignore]) {
+    let (root_path, source_path, root_handle, source_handle, explicit_filter_scope) =
+        super::super::paths::resolve_directory_for_listing(root, "src")
+            .expect("resolve benchmark listing phases");
+
+    measure_duration("list_resolve_and_handle_validation", 7, 1, || {
+        let _ = super::super::paths::resolve_directory_for_listing(root, "src")
+            .expect("benchmark resolve listing directory");
+    });
+    measure_duration("list_load_gitignore_matchers", 7, 1, || {
+        let _ = super::super::listing::load_gitignore_matchers(
+            &root_path,
+            &source_path,
+            &root_handle,
+            &source_handle,
+        )
+        .expect("benchmark load ignore rules");
+    });
+    measure_duration("list_enumerate_filter_and_sort", 7, 1, || {
+        let _ = super::super::listing::read_directory_listing_from_capability(
+            &source_handle,
+            &source_path,
+            ignore_matchers,
+            explicit_filter_scope,
+            100,
+        )
+        .expect("benchmark enumerate directory entries");
+    });
+    measure_duration("list_post_scan_handle_validation", 7, 1, || {
+        super::super::paths::verify_directory_handles(
+            &root_path,
+            &source_path,
+            &root_handle,
+            &source_handle,
+        )
+        .expect("benchmark validate listing handles");
+    });
 }
 
 struct Measurement {
@@ -309,6 +376,29 @@ fn measure_iterations(
 
 fn percentile(durations: &[Duration], percentile: usize) -> Duration {
     durations[(durations.len() - 1) * percentile / 100]
+}
+
+fn measure_duration(
+    name: &str,
+    iterations: usize,
+    warmup_iterations: usize,
+    mut operation: impl FnMut(),
+) {
+    for _ in 0..warmup_iterations {
+        operation();
+    }
+    let mut durations = Vec::with_capacity(iterations);
+    for _ in 0..iterations {
+        let started = Instant::now();
+        operation();
+        durations.push(started.elapsed());
+    }
+    durations.sort_unstable();
+    eprintln!(
+        "benchmark_phase={name} p50_ms={:.3} p95_ms={:.3}",
+        percentile(&durations, 50).as_secs_f64() * 1000.0,
+        percentile(&durations, 95).as_secs_f64() * 1000.0,
+    );
 }
 
 #[test]
