@@ -11,7 +11,7 @@ import {
 import { runInterruptibleCommand } from '../shared/session.mjs';
 import { reserveTemporaryTestProfileRoot, temporaryTestProfilePath } from '../shared/profile.mjs';
 import { removeTemporaryTestProfile } from '../shared/profile-clean.mjs';
-import { getFrontendDirectory, getTauriDirectory } from '../shared/runner.mjs';
+import { getFrontendDirectory, getTauriDirectory, getWorkspaceRoot } from '../shared/runner.mjs';
 import { ensureNoArguments } from '../help.mjs';
 
 // `tauri dev` compiles the host before launching the app; the runtime timer is recorded inside the app.
@@ -19,6 +19,17 @@ const STARTUP_BENCHMARK_TIMEOUT_MS = 180_000;
 
 const tauriCliPath = path.join(getFrontendDirectory(), 'node_modules', '@tauri-apps', 'cli', 'tauri.js');
 const tauriShutdownGraceMs = process.platform === 'win32' ? 10_000 : undefined;
+
+export function parseStartupBenchmarkArgs(args) {
+  if (args.length === 0) return { productionFrontend: false };
+  if (args.length === 1 && args[0] === '--production-frontend') return { productionFrontend: true };
+  throw new Error('Use --production-frontend to benchmark the bundled frontend.');
+}
+
+function getDebugDesktopExecutablePath() {
+  const executable = process.platform === 'win32' ? 'openchat-desktop.exe' : 'openchat-desktop';
+  return path.join(getWorkspaceRoot(), 'target', 'debug', executable);
+}
 
 export function assertDesktopTestProfileExit(status, markerContents, runId) {
   if (markerContents !== runId) {
@@ -153,16 +164,17 @@ export const devTestProfile = {
 
 export const startupBenchmark = {
   name: 'startup-benchmark',
-  description: 'Measures debug startup time to Tauri window show completion and React-ready.',
+  description: 'Measures debug startup time to Tauri window show completion and React-ready',
   args: [
     { name: '--help', short: '-h', description: 'Show this help message' },
+    { name: '--production-frontend', description: 'Run a production Vite bundle in the debug Tauri host' },
   ],
   async run(args) {
     if (args.length === 1 && (args[0] === '--help' || args[0] === '-h')) {
-      process.stdout.write('Usage: npm run openchat -- startup-benchmark\n');
+      process.stdout.write('Usage: npm run openchat -- startup-benchmark [--production-frontend]\n');
       return;
     }
-    ensureNoArguments('startup-benchmark', args);
+    const { productionFrontend } = parseStartupBenchmarkArgs(args);
 
     const fs = await import('node:fs');
     const { runTemporaryProfileSession } = await import('../shared/session.mjs');
@@ -184,15 +196,34 @@ export const startupBenchmark = {
           interruptController.noteSignal('SIGINT');
         }, STARTUP_BENCHMARK_TIMEOUT_MS);
         try {
-          await runInterruptibleCommand(process.execPath, [
-            tauriCliPath, 'dev', '--config', 'tauri.dev.conf.json', '--features', 'startup-benchmark',
-            '--', '--', '--startup-benchmark-root', profileRoot,
-          ], {
-            cwd: getTauriDirectory(),
-            interruptController,
-            shutdownGraceMs: tauriShutdownGraceMs,
-            shutdownMarker: profileRoot,
-          });
+          if (productionFrontend) {
+            await runInterruptibleCommand(
+              process.execPath,
+              [tauriCliPath, 'build', '--debug', '--no-bundle', '--features', 'startup-benchmark'],
+              { cwd: getTauriDirectory(), interruptController },
+            );
+            interruptController.throwIfInterrupted();
+            await runInterruptibleCommand(
+              getDebugDesktopExecutablePath(),
+              ['--startup-benchmark-root', profileRoot],
+              {
+                cwd: getTauriDirectory(),
+                interruptController,
+                shutdownGraceMs: tauriShutdownGraceMs,
+                shutdownMarker: profileRoot,
+              },
+            );
+          } else {
+            await runInterruptibleCommand(process.execPath, [
+              tauriCliPath, 'dev', '--config', 'tauri.dev.conf.json', '--features', 'startup-benchmark',
+              '--', '--', '--startup-benchmark-root', profileRoot,
+            ], {
+              cwd: getTauriDirectory(),
+              interruptController,
+              shutdownGraceMs: tauriShutdownGraceMs,
+              shutdownMarker: profileRoot,
+            });
+          }
         } catch (error) {
           if (startupTimedOut) {
             throw new Error('Desktop startup benchmark timed out before React and storage were ready.', { cause: error });
@@ -258,7 +289,9 @@ export const startupBenchmark = {
         process.stdout.write(
           `Debug startup to Tauri window show() completion: ${processToWindowShowCompletedMs.toFixed(1)} ms; ` +
             `sidecar spawn: ${sidecarSpawnMs.toFixed(1)} ms; first React commit: ${reactReadyMs.toFixed(1)} ms; ` +
-            `storage ready: ${storageReadyMs.toFixed(1)} ms; app shell and encrypted database verified.\n`,
+            `storage ready: ${storageReadyMs.toFixed(1)} ms; ` +
+            `frontend: ${productionFrontend ? 'Vite production bundle' : 'Vite development server'}; ` +
+            `app shell and encrypted database verified.\n`,
         );
         process.stdout.write('Renderer startup milestones (navigation-relative):\n');
         let previousMilestoneTimeMs = 0;

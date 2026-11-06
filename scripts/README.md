@@ -9,6 +9,7 @@ npm run openchat -- dev-test-profile
 npm run openchat -- dev-test-profile --cleanup-profile
 npm run openchat -- dev-test-profile --profile-root "<absolute OS temporary path>"
 npm run openchat -- startup-benchmark
+npm run openchat -- startup-benchmark --production-frontend
 npm run openchat -- perf-benchmark
 npm run openchat -- build
 npm run openchat -- check
@@ -72,15 +73,17 @@ stops successfully. That run-specific marker is required for either exit code
 service shutdown failures, missing markers, and other exit codes remain errors.
 
 `startup-benchmark` builds a debug local-service sidecar with isolated-profile
-support, starts a Tauri debug build with startup timing enabled, and measures the
-process-to-React-ready interval. It requires the normal OpenChat application shell
-and verifies the temporary active database has no plaintext SQLite header before
-reporting a result. The command removes its UUID-named temporary profile after the
-run, including a confirmed Ctrl+C shutdown. If child-tree shutdown cannot be
-confirmed, it preserves and reports the profile path. This is a debug startup
-measurement, not a release-package result. Its three-minute watchdog includes the
-Tauri development build and launch; reported startup durations begin in the app
-process and exclude compilation.
+support and measures process-to-React-ready time while the Tauri app uses Vite's
+development server. Add `--production-frontend` to build and measure the Vite
+production bundle in the debug Tauri host and sidecar without creating an
+installer. Both modes require the normal OpenChat application shell and verify
+the temporary active database has no plaintext SQLite header before reporting a
+result. They remove the UUID-named temporary profile after the run, including a
+confirmed Ctrl+C shutdown. If child-tree shutdown cannot be confirmed, the task
+preserves and reports the profile path. Both are debug-host measurements, not
+release-package results. The three-minute watchdog includes compilation and
+launch; reported startup durations begin in the app process and exclude
+compilation.
 
 `perf-benchmark` runs curated ignored Rust benchmarks for filesystem tools,
 request-context token estimation, archived-memory search, RPC stream payloads,
