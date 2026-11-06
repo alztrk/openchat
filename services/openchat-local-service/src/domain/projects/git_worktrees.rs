@@ -3,6 +3,7 @@
 //! Worktree paths are derived from validated project records and canonical IDs.
 //! Git commands use fixed argument lists, time limits, output limits, and a
 //! temporary hooks directory so repository hooks do not run during management.
+//! Configured checkout filters that apply to tracked paths are rejected before creation.
 
 use std::{
     collections::{BTreeSet, HashMap},
@@ -28,6 +29,7 @@ use crate::{git_inspection, storage::AppStorage};
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(45);
 const LIST_TIMEOUT: Duration = Duration::from_secs(25);
 const MAX_OUTPUT_BYTES: usize = 8 * 1024;
+const MAX_FILTER_INSPECTION_BYTES: usize = 8 * 1024 * 1024;
 const MAX_WORKTREES: usize = 20;
 
 #[derive(Debug)]
@@ -37,6 +39,7 @@ pub(crate) enum GitWorktreeError {
     ProjectUnavailable,
     NotRepository,
     UnsafePath,
+    CheckoutFiltersUnsupported,
     GitFailed,
     Cancelled,
     TimedOut,
@@ -163,6 +166,9 @@ pub(crate) async fn create(
     let _creation_file_guard = acquire_worktree_creation_file_lock(&project.worktree_base).await?;
     if existing_worktree_count(&project.worktree_base)? >= MAX_WORKTREES {
         return Err(GitWorktreeError::LimitReached);
+    }
+    if git_has_checkout_filters(&project.repository_root).await? {
+        return Err(GitWorktreeError::CheckoutFiltersUnsupported);
     }
     let id = Uuid::new_v4().simple().to_string();
     let branch = format!("openchat/{id}");
@@ -516,12 +522,156 @@ async fn git_text(
         .map_err(|_| GitWorktreeError::Unavailable)
 }
 
+async fn git_has_checkout_filters(root: &Path) -> Result<bool, GitWorktreeError> {
+    let (status, configured_keys) = run_git_capture(
+        root,
+        root,
+        &[
+            "config",
+            "--null",
+            "--name-only",
+            "--get-regexp",
+            "^filter\\..*\\.(smudge|process)$",
+        ],
+        None,
+    )
+    .await?;
+
+    let configured_drivers = match status.code() {
+        Some(0) => configured_keys
+            .split(|byte| *byte == 0)
+            .filter_map(|key| std::str::from_utf8(key).ok())
+            .filter_map(configured_checkout_filter_driver)
+            .collect::<BTreeSet<_>>(),
+        Some(1) => return Ok(false),
+        _ => return Err(GitWorktreeError::GitFailed),
+    };
+    if configured_drivers.is_empty() {
+        return Ok(false);
+    }
+
+    let (status, tracked_paths) = run_git_capture_with_limit(
+        root,
+        root,
+        &["ls-tree", "-r", "-z", "--name-only", "HEAD"],
+        None,
+        MAX_FILTER_INSPECTION_BYTES,
+    )
+    .await?;
+    if !status.success() {
+        return Err(GitWorktreeError::GitFailed);
+    }
+    if tracked_paths.is_empty() {
+        return Ok(false);
+    }
+
+    let (status, attributes) = run_git_capture_with_input(
+        root,
+        root,
+        &["check-attr", "--source=HEAD", "-z", "--stdin", "filter"],
+        &tracked_paths,
+        MAX_FILTER_INSPECTION_BYTES,
+    )
+    .await?;
+    if !status.success() {
+        return Err(GitWorktreeError::GitFailed);
+    }
+
+    let fields = attributes
+        .split(|byte| *byte == 0)
+        .filter(|field| !field.is_empty())
+        .collect::<Vec<_>>();
+    if fields.len() % 3 != 0 {
+        return Err(GitWorktreeError::Unavailable);
+    }
+    for attribute in fields.chunks_exact(3) {
+        if attribute[1] != b"filter" {
+            return Err(GitWorktreeError::Unavailable);
+        }
+        let value = std::str::from_utf8(attribute[2]).map_err(|_| GitWorktreeError::Unavailable)?;
+        if configured_drivers.contains(&value.to_ascii_lowercase()) {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+fn configured_checkout_filter_driver(key: &str) -> Option<String> {
+    let key = key.strip_prefix("filter.")?;
+    let (driver, operation) = key.rsplit_once('.')?;
+    matches!(
+        operation.to_ascii_lowercase().as_str(),
+        "smudge" | "process"
+    )
+    .then(|| driver.to_ascii_lowercase())
+}
+
 async fn run_git(
     root: &Path,
     hooks_directory: &Path,
     arguments: &[&str],
-    mut control: Option<&mut ListControl<'_>>,
+    control: Option<&mut ListControl<'_>>,
 ) -> Result<Vec<u8>, GitWorktreeError> {
+    let (status, output) = run_git_capture(root, hooks_directory, arguments, control).await?;
+    if !status.success() {
+        return Err(GitWorktreeError::GitFailed);
+    }
+    Ok(output)
+}
+
+async fn run_git_capture(
+    root: &Path,
+    hooks_directory: &Path,
+    arguments: &[&str],
+    control: Option<&mut ListControl<'_>>,
+) -> Result<(std::process::ExitStatus, Vec<u8>), GitWorktreeError> {
+    run_git_capture_with_limit(root, hooks_directory, arguments, control, MAX_OUTPUT_BYTES).await
+}
+
+async fn run_git_capture_with_limit(
+    root: &Path,
+    hooks_directory: &Path,
+    arguments: &[&str],
+    control: Option<&mut ListControl<'_>>,
+    output_limit: usize,
+) -> Result<(std::process::ExitStatus, Vec<u8>), GitWorktreeError> {
+    run_git_capture_inner(
+        root,
+        hooks_directory,
+        arguments,
+        control,
+        None,
+        output_limit,
+    )
+    .await
+}
+
+async fn run_git_capture_with_input(
+    root: &Path,
+    hooks_directory: &Path,
+    arguments: &[&str],
+    input: &[u8],
+    output_limit: usize,
+) -> Result<(std::process::ExitStatus, Vec<u8>), GitWorktreeError> {
+    run_git_capture_inner(
+        root,
+        hooks_directory,
+        arguments,
+        None,
+        Some(input),
+        output_limit,
+    )
+    .await
+}
+
+async fn run_git_capture_inner(
+    root: &Path,
+    hooks_directory: &Path,
+    arguments: &[&str],
+    mut control: Option<&mut ListControl<'_>>,
+    input: Option<&[u8]>,
+    output_limit: usize,
+) -> Result<(std::process::ExitStatus, Vec<u8>), GitWorktreeError> {
     if let Some(control) = control.as_deref_mut() {
         control.check()?;
     }
@@ -534,7 +684,11 @@ async fn run_git(
         .args(["--no-pager"])
         .args(arguments)
         .current_dir(root)
-        .stdin(Stdio::null())
+        .stdin(if input.is_some() {
+            Stdio::piped()
+        } else {
+            Stdio::null()
+        })
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true)
@@ -542,8 +696,19 @@ async fn run_git(
         .map_err(|_| GitWorktreeError::Unavailable)?;
     let stdout = child.stdout.take().ok_or(GitWorktreeError::Unavailable)?;
     let stderr = child.stderr.take().ok_or(GitWorktreeError::Unavailable)?;
-    let mut stdout_task = tokio::spawn(read_bounded(stdout));
-    let mut stderr_task = tokio::spawn(read_bounded(stderr));
+    let mut stdin_task = match input {
+        Some(input) => {
+            let mut stdin = child.stdin.take().ok_or(GitWorktreeError::Unavailable)?;
+            let input = input.to_vec();
+            Some(tokio::spawn(async move {
+                use tokio::io::AsyncWriteExt;
+                stdin.write_all(&input).await
+            }))
+        }
+        None => None,
+    };
+    let mut stdout_task = tokio::spawn(read_bounded(stdout, output_limit));
+    let mut stderr_task = tokio::spawn(read_bounded(stderr, output_limit));
     let status_result = match control.as_deref_mut() {
         Some(control) => git_inspection::wait_for_git_process_with_cancellation(
             &mut child,
@@ -565,6 +730,10 @@ async fn run_git(
     let status = match status_result {
         Ok(status) => status,
         Err(error) => {
+            if let Some(task) = stdin_task.take() {
+                task.abort();
+                let _ = task.await;
+            }
             stdout_task.abort();
             stderr_task.abort();
             let _ = stdout_task.await;
@@ -572,6 +741,11 @@ async fn run_git(
             return Err(error);
         }
     };
+    if let Some(task) = stdin_task.take() {
+        task.await
+            .map_err(|_| GitWorktreeError::Unavailable)?
+            .map_err(|_| GitWorktreeError::Unavailable)?;
+    }
     let stdout_result = match control.as_deref_mut() {
         Some(control) => wait_for_list_reader(&mut stdout_task, control).await,
         None => (&mut stdout_task)
@@ -607,10 +781,7 @@ async fn run_git(
     if stdout_truncated || stderr_truncated {
         return Err(GitWorktreeError::Unavailable);
     }
-    if !status.success() {
-        return Err(GitWorktreeError::GitFailed);
-    }
-    Ok(stdout)
+    Ok((status, stdout))
 }
 
 async fn wait_for_list_reader<T>(
@@ -645,7 +816,10 @@ fn map_git_inspection_error(error: git_inspection::GitInspectionError) -> GitWor
     }
 }
 
-async fn read_bounded<R: AsyncRead + Unpin>(mut reader: R) -> std::io::Result<(Vec<u8>, bool)> {
+async fn read_bounded<R: AsyncRead + Unpin>(
+    mut reader: R,
+    output_limit: usize,
+) -> std::io::Result<(Vec<u8>, bool)> {
     let mut output = Vec::with_capacity(1024);
     let mut buffer = [0u8; 2048];
     let mut truncated = false;
@@ -654,7 +828,7 @@ async fn read_bounded<R: AsyncRead + Unpin>(mut reader: R) -> std::io::Result<(V
         if read == 0 {
             break;
         }
-        let remaining = MAX_OUTPUT_BYTES.saturating_sub(output.len());
+        let remaining = output_limit.saturating_sub(output.len());
         let retained = read.min(remaining);
         output.extend_from_slice(&buffer[..retained]);
         truncated |= retained < read;
@@ -673,7 +847,8 @@ mod tests {
     };
 
     use super::{
-        MAX_WORKTREES, create, list, project_root_for_worktree, remove, retain_worktree_id, review,
+        GitWorktreeError, MAX_WORKTREES, create, list, project_root_for_worktree, remove,
+        retain_worktree_id, review,
     };
     use crate::{git_inspection, storage::AppStorage};
     use tokio::sync::watch;
@@ -838,6 +1013,59 @@ mod tests {
         .await
         .expect("list after removal");
         assert_eq!(listed["worktrees"].as_array().map(Vec::len), Some(0));
+    }
+
+    #[tokio::test]
+    async fn rejects_repositories_with_configured_checkout_filters() {
+        let fixture = Fixture::new();
+        fs::write(
+            fixture.repository.join(".gitattributes"),
+            "README.md filter=openchat-test-smudge\n",
+        )
+        .expect("write checkout attributes");
+        let status = Command::new(git_inspection::git_program())
+            .args(["add", ".gitattributes"])
+            .current_dir(&fixture.repository)
+            .status()
+            .expect("stage checkout attributes");
+        assert!(status.success());
+        let status = Command::new(git_inspection::git_program())
+            .args([
+                "-c",
+                "user.name=OpenChat Test",
+                "-c",
+                "user.email=test@openchat.invalid",
+                "commit",
+                "--quiet",
+                "-m",
+                "configure checkout attributes",
+            ])
+            .current_dir(&fixture.repository)
+            .status()
+            .expect("commit checkout attributes");
+        assert!(status.success());
+        let status = Command::new(git_inspection::git_program())
+            .args([
+                "config",
+                "--local",
+                "filter.openchat-test-smudge.smudge",
+                "openchat-filter-must-not-run",
+            ])
+            .current_dir(&fixture.repository)
+            .status()
+            .expect("configure test checkout filter");
+        assert!(status.success());
+
+        let project_path = fixture.repository.to_string_lossy();
+        let result = create(&fixture.storage, "project-1", &project_path).await;
+        assert!(matches!(
+            result,
+            Err(GitWorktreeError::CheckoutFiltersUnsupported)
+        ));
+        assert_eq!(
+            direct_worktree_directory_count(&fixture.storage.root().join("worktrees/project-1")),
+            0
+        );
     }
 
     #[tokio::test]

@@ -711,6 +711,11 @@ fn git_worktree_error(error: git_worktrees::GitWorktreeError) -> ServiceError {
             "The project worktree path failed a safety check.",
             false,
         ),
+        GitWorktreeError::CheckoutFiltersUnsupported => ServiceError::new(
+            "project_worktree_checkout_filters_unsupported",
+            "Managed worktrees cannot be created while this repository defines Git checkout filters. Disable the filters or use the repository directly.",
+            false,
+        ),
         GitWorktreeError::GitFailed => ServiceError::new(
             "project_worktree_operation_failed",
             "Git could not complete the worktree operation. Check the repository state and try again.",
@@ -780,6 +785,15 @@ mod tests {
 
         assert_eq!(error.code, "project_worktree_limit_reached");
         assert!(!error.retryable);
+    }
+
+    #[test]
+    fn checkout_filter_error_has_an_actionable_contract() {
+        let error = git_worktree_error(git_worktrees::GitWorktreeError::CheckoutFiltersUnsupported);
+
+        assert_eq!(error.code, "project_worktree_checkout_filters_unsupported");
+        assert!(!error.retryable);
+        assert!(error.message.contains("Disable the filters"));
     }
 
     #[tokio::test]
