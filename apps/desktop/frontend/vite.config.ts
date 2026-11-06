@@ -73,12 +73,6 @@ export default defineConfig(({ command }) => ({
           if (moduleId.includes('node_modules/react-dom') || moduleId.includes('node_modules/react/')) {
             return 'react-vendor';
           }
-          if (moduleId.includes('node_modules/lucide-react')) {
-            return 'icons-vendor';
-          }
-          if (moduleId.includes('node_modules/@radix-ui')) {
-            return 'radix-vendor';
-          }
           return undefined;
         },
       },
