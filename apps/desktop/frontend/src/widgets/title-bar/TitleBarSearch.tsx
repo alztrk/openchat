@@ -116,6 +116,7 @@ export function TitleBarSearch({ onSelectConversation, onSelectProject }: TitleB
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [isSearchingMessages, setIsSearchingMessages] = useState(false);
   const [messageResults, setMessageResults] = useState<StoredSearchMessageResult[]>([]);
+  const [messageSearchLimited, setMessageSearchLimited] = useState(false);
   const [attachmentResults, setAttachmentResults] = useState<
     Awaited<ReturnType<typeof listConversationAttachments>>['items']
   >([]);
@@ -210,6 +211,7 @@ export function TitleBarSearch({ onSelectConversation, onSelectProject }: TitleB
   useEffect(() => {
     if (!shouldSearch) {
       setMessageResults([]);
+      setMessageSearchLimited(false);
       setAttachmentResults([]);
       setIsSearchingMessages(false);
       return;
@@ -228,9 +230,10 @@ export function TitleBarSearch({ onSelectConversation, onSelectProject }: TitleB
           ? listConversationAttachments(0, 30, parsedQuery.cleanQuery, 'all')
           : Promise.resolve({ items: [], nextOffset: null });
       void Promise.all([messageSearch, attachmentSearch])
-        .then(([messages, attachments]) => {
+        .then(([messagePage, attachments]) => {
           if (!isCancelled) {
-            setMessageResults(messages);
+            setMessageResults(messagePage.messages);
+            setMessageSearchLimited(messagePage.limitedByResponseSize);
             setAttachmentResults(attachments.items);
             setIsSearchingMessages(false);
           }
@@ -238,6 +241,7 @@ export function TitleBarSearch({ onSelectConversation, onSelectProject }: TitleB
         .catch(() => {
           if (!isCancelled) {
             setMessageResults([]);
+            setMessageSearchLimited(false);
             setAttachmentResults([]);
             setIsSearchingMessages(false);
           }
@@ -489,6 +493,7 @@ export function TitleBarSearch({ onSelectConversation, onSelectProject }: TitleB
   const handleClear = () => {
     setQuery('');
     setMessageResults([]);
+    setMessageSearchLimited(false);
     inputRef.current?.focus();
   };
 
@@ -690,9 +695,18 @@ export function TitleBarSearch({ onSelectConversation, onSelectProject }: TitleB
       ) : null}
 
       {showSearchResults ? (
-        <div
+        <div className="absolute left-0 right-0 top-full z-50 mt-1 flex w-full flex-col gap-1">
+          {messageSearchLimited ? (
+            <p
+              aria-live="polite"
+              className="border border-border/70 bg-surface-raised px-2.5 py-1.5 text-caption text-secondary-text shadow-sm"
+            >
+              {t('searchMessagesResultsLimited')}
+            </p>
+          ) : null}
+          <div
           aria-label={t('searchChats')}
-          className="openchat-dropdown-surface absolute left-0 right-0 top-full z-50 mt-1 flex w-full origin-top flex-col overflow-hidden transition-all duration-150 ease-out"
+          className="openchat-dropdown-surface flex w-full origin-top flex-col overflow-hidden transition-all duration-150 ease-out"
           id={searchResultsListboxId}
           role="listbox"
         >
@@ -814,6 +828,7 @@ export function TitleBarSearch({ onSelectConversation, onSelectProject }: TitleB
               })
             )}
           </div>
+        </div>
         </div>
       ) : null}
     </div>

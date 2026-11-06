@@ -15,6 +15,9 @@ use zeroize::Zeroize;
 
 use crate::error::{ErrorCategory, is_safe_diagnostic_code};
 
+/// Maximum newline-delimited response frame accepted by the desktop host.
+pub(crate) const MAX_RESPONSE_FRAME_BYTES: usize = 48 * 1024 * 1024;
+
 #[derive(Clone)]
 /// Serializes complete protocol responses to the sidecar's stdout stream.
 pub struct EventSink {
@@ -54,8 +57,7 @@ impl EventSink {
         if let Some(test_events) = &self.test_events {
             return test_events.send(response.clone()).map_err(io::Error::other);
         }
-        let mut encoded = serde_json::to_vec(response).map_err(io::Error::other)?;
-        encoded.push(b'\n');
+        let mut encoded = encode_response_frame(response, MAX_RESPONSE_FRAME_BYTES)?;
         let mut output = self.output.lock().await;
         let result = async {
             output.write_all(&encoded).await?;
@@ -64,6 +66,73 @@ impl EventSink {
         .await;
         encoded.zeroize();
         result
+    }
+}
+
+fn encode_response_frame(response: &Response, max_frame_bytes: usize) -> io::Result<Vec<u8>> {
+    let mut encoder = BoundedFrameEncoder::new(max_frame_bytes.saturating_sub(1));
+    let serialization = serde_json::to_writer(&mut encoder, response);
+    if serialization.is_err() && encoder.exceeded_limit {
+        encoder.encoded.zeroize();
+        let bounded_error = Response::failure(
+            response.id.clone(),
+            ServiceError::new(
+                "rpc_response_too_large",
+                "The local service response exceeded its maximum frame size.",
+                false,
+            ),
+        );
+        encoder = BoundedFrameEncoder::new(max_frame_bytes.saturating_sub(1));
+        if let Err(error) = serde_json::to_writer(&mut encoder, &bounded_error) {
+            encoder.encoded.zeroize();
+            return Err(io::Error::other(error));
+        }
+    } else if let Err(error) = serialization {
+        encoder.encoded.zeroize();
+        return Err(io::Error::other(error));
+    }
+    if encoder.exceeded_limit || encoder.encoded.len().saturating_add(1) > max_frame_bytes {
+        encoder.encoded.zeroize();
+        return Err(io::Error::other(
+            "The bounded RPC error frame is too large.",
+        ));
+    }
+    let mut encoded = encoder.encoded;
+    encoded.push(b'\n');
+    Ok(encoded)
+}
+
+struct BoundedFrameEncoder {
+    encoded: Vec<u8>,
+    max_bytes: usize,
+    exceeded_limit: bool,
+}
+
+impl BoundedFrameEncoder {
+    fn new(max_bytes: usize) -> Self {
+        Self {
+            encoded: Vec::new(),
+            max_bytes,
+            exceeded_limit: false,
+        }
+    }
+}
+
+impl io::Write for BoundedFrameEncoder {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        if bytes.len() > self.max_bytes.saturating_sub(self.encoded.len()) {
+            self.exceeded_limit = true;
+            return Err(io::Error::new(
+                io::ErrorKind::WriteZero,
+                "RPC response frame exceeds its maximum size.",
+            ));
+        }
+        self.encoded.extend_from_slice(bytes);
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
     }
 }
 
@@ -756,6 +825,26 @@ impl Response {
             event: Some(event.into()),
             data: Some(data),
         }
+    }
+}
+
+#[cfg(test)]
+mod response_frame_tests {
+    use super::{Response, encode_response_frame};
+    use serde_json::{Value, json};
+
+    #[test]
+    fn oversized_response_is_replaced_with_a_bounded_error_frame() {
+        let response = Response::success(json!("request-1"), json!({"payload": "x".repeat(2_048)}));
+
+        let frame = encode_response_frame(&response, 512).expect("encode bounded error response");
+        let value: Value = serde_json::from_slice(&frame[..frame.len() - 1])
+            .expect("error response should remain valid JSON");
+
+        assert!(frame.len() <= 512);
+        assert_eq!(value["id"], "request-1");
+        assert_eq!(value["error"]["code"], "rpc_response_too_large");
+        assert!(value.get("result").is_none());
     }
 }
 

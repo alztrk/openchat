@@ -1,7 +1,7 @@
 import { i18n } from '@shared/lib/i18n/i18n';
 import { type JsonObject, LocalServiceError, localServiceClient } from '@shared/lib/platform/local-service';
 import { unifiedStorage } from '@shared/lib/platform/storage/unifiedStorage';
-import { listProjects } from './chatStorage';
+import { listAllProjects } from './chatStorage';
 
 const savedSearchesKey = 'openchat.savedHistorySearches';
 const maximumSavedSearches = 20;
@@ -184,7 +184,7 @@ async function searchLocalLibrary(
 ): Promise<HistorySearchResult[]> {
   const normalizedQuery = query.toLocaleLowerCase(locale);
   const includeProjects = filters.resultType === 'all' || filters.resultType === 'projects';
-  const projects = includeProjects ? await listProjects() : [];
+  const projects = includeProjects ? await listAllProjects() : [];
   const results: HistorySearchResult[] = [];
   if (includeProjects) {
     for (const project of projects) {

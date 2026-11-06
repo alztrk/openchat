@@ -6,7 +6,6 @@ import {
   type ChatMessage,
   createConversation,
   deleteConversation,
-  listConversations,
   saveMessage,
 } from '@features/chat/data';
 import type { ChatModel } from '@entities/model';
@@ -431,11 +430,10 @@ export function createSaveTemporaryChatAction(
         const savedMessage = { ...message, conversationId };
         await saveMessage(savedMessage, session.attachmentsByMessageId[message.id] ?? []);
       }
-      const conversations = await listConversations();
+      await get().refreshConversations();
       set({
         temporaryChat: null,
         activeConversationId: conversationId,
-        conversations,
         messages: state.messages.map((message) => ({ ...message, conversationId })),
         errorCode: null,
         opencodeRetryAtUnixMs: null,

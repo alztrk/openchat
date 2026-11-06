@@ -64,6 +64,11 @@ const ATTACHMENT_TEXT_INDEX_SETTING: &str = "attachment_text_index.enabled";
 const MAX_ATTACHMENT_QUERY_CHARS: usize = 512;
 const MAX_ATTACHMENT_OFFSET: u64 = 1_000_000;
 const ATTACHMENT_LIBRARY_BATCH_SIZE: u64 = 50;
+pub(super) const MAX_CONVERSATION_PAGE: usize = 64;
+pub(super) const MAX_PROJECT_PAGE: usize = 32;
+pub(super) const MAX_LIST_OFFSET: usize = 1_000_000;
+pub(super) const MAX_MESSAGE_PAGE_RESPONSE_BYTES: usize = 12 * 1024 * 1024;
+pub(super) const MAX_MESSAGE_SEARCH_RESPONSE_BYTES: usize = 12 * 1024 * 1024;
 
 macro_rules! conversation_from_row {
     ($row:expr) => {{
@@ -114,6 +119,25 @@ use errors::*;
 use projects::*;
 use validation::*;
 
+pub(super) fn list_offset(params: &Value) -> Result<usize, ServiceError> {
+    if params.is_null() {
+        return Ok(0);
+    }
+    let input = input_object(params)?;
+    let offset = input
+        .get("offset")
+        .map(|value| {
+            value
+                .as_u64()
+                .and_then(|offset| usize::try_from(offset).ok())
+                .filter(|offset| *offset <= MAX_LIST_OFFSET)
+                .ok_or_else(invalid_request_params)
+        })
+        .transpose()?
+        .unwrap_or(0);
+    Ok(offset)
+}
+
 /// Dispatches durable conversation, project, message, favorite, and attachment storage calls.
 #[cfg(test)]
 pub(super) async fn dispatch(
@@ -141,7 +165,7 @@ async fn dispatch_inner(
     cancellation_gate: Option<&OperationGate>,
 ) -> Result<Value, ServiceError> {
     match method {
-        "storage.chat.conversations.list" => list_conversations(storage),
+        "storage.chat.conversations.list" => list_conversations(params, storage),
         "storage.chat.conversations.get" => get_conversation(params, storage),
         "storage.chat.conversations.create" => create_conversation(params, storage),
         "storage.chat.conversations.rename" => rename_conversation(params, storage),
@@ -152,7 +176,7 @@ async fn dispatch_inner(
         "storage.chat.conversations.archived.set" => set_conversations_archived(params, storage),
         "storage.chat.conversations.delete" => delete_conversation(params, storage),
         "storage.chat.conversations.clear" => clear_conversation_history(storage),
-        "storage.chat.projects.list" => list_projects(storage),
+        "storage.chat.projects.list" => list_projects(params, storage),
         "storage.chat.projects.create" => create_project(params, storage),
         "storage.chat.projects.workspace.add" => add_project_workspace_root(params, storage),
         "storage.chat.projects.workspace.remove" => remove_project_workspace_root(params, storage),

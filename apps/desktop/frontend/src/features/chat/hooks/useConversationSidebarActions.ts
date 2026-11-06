@@ -182,7 +182,10 @@ export function useConversationSidebarActions() {
     if (!beginAction()) throw new Error('A sidebar action is already in progress.');
     try {
       const projectId = crypto.randomUUID().replaceAll('-', '');
-      await createProjectStorage(projectId, name, folderSelectionId);
+      const project = await createProjectStorage(projectId, name, folderSelectionId);
+      useChatStore.setState((state) => ({
+        projects: [project, ...state.projects.filter((item) => item.id !== project.id)],
+      }));
       try {
         await refreshProjects();
       } catch {

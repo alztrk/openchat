@@ -264,13 +264,17 @@ const vite = await createServer({
             export function normalizeSearchText(value) { return value.toLowerCase(); }
             export function parseSearchQuery(value) { return { cleanQuery: value.trim() }; }
             export function searchStoredMessages() {
-              return Promise.resolve([{
-                id: 'message-river',
-                conversationId: 'conversation-river',
-                role: 'user',
-                content: 'A river route',
-                createdAt: null,
-              }]);
+              return Promise.resolve({
+                messages: [{
+                  id: 'message-river',
+                  conversationId: 'conversation-river',
+                  role: 'user',
+                  content: 'A river route',
+                  createdAt: null,
+                }],
+                hasMore: false,
+                limitedByResponseSize: false,
+              });
             }
           `;
         }

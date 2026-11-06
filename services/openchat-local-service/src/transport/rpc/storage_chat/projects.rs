@@ -2,16 +2,20 @@
 
 use super::*;
 
-pub(super) fn list_projects(storage: &AppStorage) -> Result<Value, ServiceError> {
+pub(super) fn list_projects(params: &Value, storage: &AppStorage) -> Result<Value, ServiceError> {
+    let offset = list_offset(params)?;
+    let offset = i64::try_from(offset).map_err(|_| invalid_request_params())?;
+    let limit = i64::try_from(MAX_PROJECT_PAGE + 1).map_err(|_| invalid_request_params())?;
     let connection = storage.connect().map_err(storage_error)?;
     let mut statement = connection
         .prepare(
             "SELECT id, name, folder_path, created_at, updated_at
-             FROM projects ORDER BY name COLLATE NOCASE ASC, id ASC",
+             FROM projects ORDER BY name COLLATE NOCASE ASC, id ASC
+             LIMIT ?1 OFFSET ?2",
         )
         .map_err(storage_error)?;
     let rows = statement
-        .query_map([], |row| {
+        .query_map(params![limit, offset], |row| {
             let id = row.get::<_, String>(0)?;
             let name = row.get::<_, String>(1)?;
             let folder_path = row.get::<_, String>(2)?;
@@ -20,8 +24,13 @@ pub(super) fn list_projects(storage: &AppStorage) -> Result<Value, ServiceError>
             Ok((id, name, folder_path, created_at, updated_at))
         })
         .map_err(storage_error)?;
-    let mut projects = Vec::new();
+    let mut projects = Vec::with_capacity(MAX_PROJECT_PAGE);
+    let mut has_more = false;
     for row in rows {
+        if projects.len() == MAX_PROJECT_PAGE {
+            has_more = true;
+            break;
+        }
         let (id, name, folder_path, created_at, updated_at) = row.map_err(storage_error)?;
         let mut roots = connection
             .prepare(
@@ -43,7 +52,12 @@ pub(super) fn list_projects(storage: &AppStorage) -> Result<Value, ServiceError>
             "updatedAt": updated_at,
         }));
     }
-    Ok(json!({"projects": projects}))
+    let next_offset = has_more.then(|| offset + projects.len() as i64);
+    Ok(json!({
+        "projects": projects,
+        "hasMore": has_more,
+        "nextOffset": next_offset,
+    }))
 }
 
 pub(super) fn create_project(params: &Value, storage: &AppStorage) -> Result<Value, ServiceError> {
@@ -79,7 +93,17 @@ pub(super) fn create_project(params: &Value, storage: &AppStorage) -> Result<Val
         .map_err(storage_error)?;
     transaction.commit().map_err(storage_error)?;
     drop(connection);
-    Ok(json!({"saved": true}))
+    Ok(json!({
+        "saved": true,
+        "project": {
+            "id": id,
+            "name": name,
+            "folderPath": &folder_path,
+            "workspaceRoots": [&folder_path],
+            "createdAt": now,
+            "updatedAt": now,
+        }
+    }))
 }
 
 pub(super) fn add_project_workspace_root(

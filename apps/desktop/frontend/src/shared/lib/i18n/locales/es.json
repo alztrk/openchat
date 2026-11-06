@@ -1103,6 +1103,7 @@
   "searchMessagesHeader": "Coincidencias en mensajes",
   "searchMessagesLoading": "Buscando mensajes y conversaciones…",
   "searchMessagesNoResults": "No se encontraron elementos coincidentes.",
+  "searchMessagesResultsLimited": "Se omitieron algunos resultados porque los mensajes coincidentes son grandes. Acota la búsqueda para ver más.",
   "searchMessagesTooShort": "Escribe al menos dos caracteres para buscar.",
   "searchMessagesTooLong": "El texto de búsqueda no puede superar los 512 caracteres.",
   "searchMessagesFailed": "La búsqueda falló. Inténtalo de nuevo.",

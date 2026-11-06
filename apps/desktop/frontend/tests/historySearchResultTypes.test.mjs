@@ -25,8 +25,8 @@ const source = fs
     };`,
   )
   .replace(
-    "import { listProjects } from './chatStorage';",
-    'const listProjects = async () => globalThis.__historySearchTestState.projects;',
+    "import { listAllProjects } from './chatStorage';",
+    'const listAllProjects = async () => globalThis.__historySearchTestState.projects;',
   );
 const compiled = ts.transpileModule(source, {
   compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },

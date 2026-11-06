@@ -130,8 +130,16 @@ export interface ChatState {
   storageInitializationErrorCode: string | null;
   modelStatus: ServiceStatus;
   conversations: ChatConversation[];
+  hasMoreConversations: boolean;
+  conversationListNextOffset: number | null;
+  isLoadingMoreConversations: boolean;
+  conversationListLoadError: boolean;
   projects: ChatProject[];
   projectsStatus: ServiceStatus;
+  hasMoreProjects: boolean;
+  projectListNextOffset: number | null;
+  isLoadingMoreProjects: boolean;
+  projectListLoadError: boolean;
   activeConversationId: string | null;
   temporaryChat: TemporaryChatSession | null;
   isUpdatingConversationModel: boolean;
@@ -190,9 +198,11 @@ export interface ChatState {
   opencodeRetryAtUnixMs: number | null;
   initialize(): Promise<void>;
   refreshConversations(): Promise<void>;
+  loadMoreConversations(): Promise<void>;
   renameConversation(conversationId: string, title: string): Promise<void>;
   applyTitleUpdate(conversationId: string, title: string): void;
   refreshProjects(): Promise<void>;
+  loadMoreProjects(): Promise<void>;
   clearConversationHistory(): Promise<boolean>;
   refreshModels(forceRefresh?: boolean): Promise<void>;
   refreshModelFavorites(): Promise<void>;
@@ -257,8 +267,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
   storageInitializationErrorCode: null,
   modelStatus: 'idle',
   conversations: [],
+  hasMoreConversations: false,
+  conversationListNextOffset: null,
+  isLoadingMoreConversations: false,
+  conversationListLoadError: false,
   projects: [],
   projectsStatus: 'idle',
+  hasMoreProjects: false,
+  projectListNextOffset: null,
+  isLoadingMoreProjects: false,
+  projectListLoadError: false,
   activeConversationId: null,
   temporaryChat: null,
   isUpdatingConversationModel: false,
@@ -322,6 +340,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
       serviceStatus: 'loading',
       storageInitializationErrorCode: null,
       projectsStatus: 'loading',
+      conversationListLoadError: false,
+      projectListLoadError: false,
       errorCode: null,
       errorMessage: null,
       opencodeRetryAtUnixMs: null,
@@ -353,9 +373,17 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }
       const preferences = readModelPreferences();
       set({
-        conversations: conversationResult.value,
+        conversations: conversationResult.value.items,
+        hasMoreConversations: conversationResult.value.hasMore,
+        conversationListNextOffset: conversationResult.value.nextOffset,
+        isLoadingMoreConversations: false,
+        conversationListLoadError: false,
         hasCompletedAssistantResponse: responseResult.value,
-        projects: projectResult.status === 'fulfilled' ? projectResult.value : [],
+        projects: projectResult.status === 'fulfilled' ? projectResult.value.items : [],
+        hasMoreProjects: projectResult.status === 'fulfilled' ? projectResult.value.hasMore : false,
+        projectListNextOffset: projectResult.status === 'fulfilled' ? projectResult.value.nextOffset : null,
+        isLoadingMoreProjects: false,
+        projectListLoadError: false,
         projectsStatus: projectResult.status === 'fulfilled' ? 'ready' : 'error',
         serviceStatus: 'ready',
         storageInitializationErrorCode: null,

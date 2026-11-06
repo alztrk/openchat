@@ -1103,6 +1103,7 @@
   "searchMessagesHeader": "Treffer in Nachrichten",
   "searchMessagesLoading": "Nachrichten und Unterhaltungen werden durchsucht …",
   "searchMessagesNoResults": "Keine passenden Einträge gefunden.",
+  "searchMessagesResultsLimited": "Einige Treffer wurden wegen der Größe der passenden Nachrichten ausgelassen. Grenze die Suche ein, um weitere zu sehen.",
   "searchMessagesTooShort": "Gib mindestens zwei Zeichen für die Suche ein.",
   "searchMessagesTooLong": "Der Suchtext darf höchstens 512 Zeichen enthalten.",
   "searchMessagesFailed": "Die Suche ist fehlgeschlagen. Bitte versuche es erneut.",

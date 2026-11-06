@@ -1,4 +1,5 @@
 import {
+  type ChatConversation,
   type ChatMessage,
   clearConversationHistory as clearConversationHistoryStorage,
   getConversation,
@@ -29,6 +30,17 @@ type StoreGet = () => ChatState;
 type StoreSet = (partial: Partial<ChatState> | ((state: ChatState) => Partial<ChatState>)) => void;
 
 let messageLoadGeneration = 0;
+
+function mergeById<T extends { id: string }>(first: readonly T[], second: readonly T[]): T[] {
+  const merged = [...first];
+  const ids = new Set(first.map((item) => item.id));
+  for (const item of second) {
+    if (ids.has(item.id)) continue;
+    ids.add(item.id);
+    merged.push(item);
+  }
+  return merged;
+}
 
 export function createConversationsActions(set: StoreSet, get: StoreGet) {
   const beginNewChat = (
@@ -121,15 +133,33 @@ export function createConversationsActions(set: StoreSet, get: StoreGet) {
 
   return {
     async refreshConversations(): Promise<void> {
-      const conversations = await listConversations();
-      const currentConversationId = get().activeConversationId;
-      if (
-        currentConversationId !== null &&
-        !conversations.some((conversation) => conversation.id === currentConversationId)
-      ) {
+      const page = await listConversations();
+      const current = get();
+      const pageIds = new Set(page.items.map((conversation) => conversation.id));
+      let activeConversation: ChatConversation | null | undefined;
+      if (current.activeConversationId && !pageIds.has(current.activeConversationId)) {
+        activeConversation = await getConversation(current.activeConversationId);
+      }
+      const olderConversations = page.hasMore
+        ? current.conversations.filter(
+            (conversation) => !pageIds.has(conversation.id) && conversation.id !== current.activeConversationId,
+          )
+        : [];
+      const conversations = mergeById(
+        page.items,
+        [...olderConversations, ...(activeConversation ? [activeConversation] : [])],
+      );
+      const activeConversationWasDeleted =
+        current.activeConversationId !== null && activeConversation === null;
+      set({
+        conversations,
+        hasMoreConversations: page.hasMore,
+        conversationListNextOffset: page.nextOffset,
+        conversationListLoadError: false,
+      });
+      if (activeConversationWasDeleted) {
         messageLoadGeneration += 1;
         set({
-          conversations,
           activeConversationId: null,
           selectedReasoningEffort: null,
           activeGoal: null,
@@ -145,9 +175,26 @@ export function createConversationsActions(set: StoreSet, get: StoreGet) {
           searchHighlightQuery: null,
           isLoadingMessages: false,
         });
-        return;
       }
-      set({ conversations });
+    },
+
+    async loadMoreConversations(): Promise<void> {
+      const current = get();
+      if (current.isLoadingMoreConversations || current.conversationListNextOffset === null) return;
+      set({ isLoadingMoreConversations: true, conversationListLoadError: false });
+      try {
+        const page = await listConversations(current.conversationListNextOffset);
+        set((state) => ({
+          conversations: mergeById(state.conversations, page.items),
+          hasMoreConversations: page.hasMore,
+          conversationListNextOffset: page.nextOffset,
+          isLoadingMoreConversations: false,
+          conversationListLoadError: false,
+        }));
+      } catch (error) {
+        set({ isLoadingMoreConversations: false, conversationListLoadError: true });
+        globalThis.reportError(new Error('The next conversation page could not be loaded.', { cause: error }));
+      }
     },
 
     async renameConversation(conversationId: string, title: string): Promise<void> {
@@ -176,11 +223,42 @@ export function createConversationsActions(set: StoreSet, get: StoreGet) {
     async refreshProjects(): Promise<void> {
       set({ projectsStatus: 'loading' });
       try {
-        const projects = await listProjects();
-        set({ projects, projectsStatus: 'ready' });
+        const page = await listProjects();
+        const currentProjects = get().projects;
+        const pageIds = new Set(page.items.map((project) => project.id));
+        const olderProjects = page.hasMore
+          ? currentProjects.filter((project) => !pageIds.has(project.id))
+          : [];
+        set({
+          projects: mergeById(page.items, olderProjects),
+          projectsStatus: 'ready',
+          hasMoreProjects: page.hasMore,
+          projectListNextOffset: page.nextOffset,
+          isLoadingMoreProjects: false,
+          projectListLoadError: false,
+        });
       } catch (error) {
         set({ projectsStatus: 'error' });
         throw error;
+      }
+    },
+
+    async loadMoreProjects(): Promise<void> {
+      const current = get();
+      if (current.isLoadingMoreProjects || current.projectListNextOffset === null) return;
+      set({ isLoadingMoreProjects: true, projectListLoadError: false });
+      try {
+        const page = await listProjects(current.projectListNextOffset);
+        set((state) => ({
+          projects: mergeById(state.projects, page.items),
+          hasMoreProjects: page.hasMore,
+          projectListNextOffset: page.nextOffset,
+          isLoadingMoreProjects: false,
+          projectListLoadError: false,
+        }));
+      } catch (error) {
+        set({ isLoadingMoreProjects: false, projectListLoadError: true });
+        globalThis.reportError(new Error('The next project page could not be loaded.', { cause: error }));
       }
     },
 
@@ -202,6 +280,10 @@ export function createConversationsActions(set: StoreSet, get: StoreGet) {
       messageLoadGeneration += 1;
       set({
         conversations: [],
+        hasMoreConversations: false,
+        conversationListNextOffset: null,
+        isLoadingMoreConversations: false,
+        conversationListLoadError: false,
         activeConversationId: null,
         pendingToolPermissionRequest: null,
         pendingToolPermissionRequests: [],

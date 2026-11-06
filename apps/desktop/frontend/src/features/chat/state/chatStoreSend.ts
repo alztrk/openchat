@@ -5,7 +5,6 @@ import {
   type ChatConversation,
   type ChatMessage,
   createConversation,
-  listConversations,
   recordChatMessagePersistenceFailure,
   recordChatRequestFailure,
   saveMessage,
@@ -559,7 +558,10 @@ export function createSendMessageAction(
         }
       }
       const conversations = await refreshConversationListAfterResponse(
-        listConversations,
+        async () => {
+          await get().refreshConversations();
+          return get().conversations;
+        },
         (items) => set({ conversations: items }),
         (cause) => {
           globalThis.reportError(

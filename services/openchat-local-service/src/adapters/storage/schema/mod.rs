@@ -13,6 +13,7 @@ pub mod chat_migrations;
 pub(super) mod agent_migrations;
 pub(super) mod legacy_migrations;
 pub(super) mod repair;
+mod search_normalization;
 pub(super) mod triggers;
 
 #[cfg(test)]
@@ -31,6 +32,7 @@ pub(super) fn initialize_schema(
     target_version: i64,
 ) -> rusqlite::Result<i64> {
     super::tool_index_redaction::register_sqlite_function(connection)?;
+    search_normalization::register_sqlite_function(connection)?;
     if !(1..=SCHEMA_VERSION).contains(&target_version) {
         return Err(rusqlite::Error::InvalidQuery);
     }

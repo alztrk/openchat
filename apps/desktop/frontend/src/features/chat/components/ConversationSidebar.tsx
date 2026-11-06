@@ -162,7 +162,15 @@ export function ConversationSidebar({
   }, []);
 
   const conversations = useChatStore((state) => state.conversations);
+  const hasMoreConversations = useChatStore((state) => state.hasMoreConversations);
+  const isLoadingMoreConversations = useChatStore((state) => state.isLoadingMoreConversations);
+  const conversationListLoadError = useChatStore((state) => state.conversationListLoadError);
+  const loadMoreConversations = useChatStore((state) => state.loadMoreConversations);
   const projects = useChatStore((state) => state.projects);
+  const hasMoreProjects = useChatStore((state) => state.hasMoreProjects);
+  const isLoadingMoreProjects = useChatStore((state) => state.isLoadingMoreProjects);
+  const projectListLoadError = useChatStore((state) => state.projectListLoadError);
+  const loadMoreProjects = useChatStore((state) => state.loadMoreProjects);
   const projectsStatus = useChatStore((state) => state.projectsStatus);
   const serviceStatus = useChatStore((state) => state.serviceStatus);
   const serviceErrorMessage = useChatStore((state) => state.errorMessage);
@@ -936,6 +944,10 @@ export function ConversationSidebar({
                     compactSidebar={isCompactSidebar}
                     conversations={filteredProjectConversations}
                     customFolders={customFolders}
+                    hasMore={hasMoreProjects}
+                    isLoadingMore={isLoadingMoreProjects}
+                    loadError={projectListLoadError}
+                    onLoadMore={() => void loadMoreProjects()}
                     isBusy={isBusy || isCustomFolderSaving}
                     isConversationAiWorking={isConversationAiWorking}
                     onArchive={(conversation) => void archiveConversation(conversation)}
@@ -1277,6 +1289,24 @@ export function ConversationSidebar({
                       allowMove: false,
                     })}
                   </ConversationSidebarSection>
+                ) : null}
+                {showChats && hasMoreConversations ? (
+                  <div className="grid gap-1 px-2">
+                    {conversationListLoadError ? (
+                      <p className="text-xs text-destructive" role="alert">
+                        {t('chatHistoryUnavailable')}
+                      </p>
+                    ) : null}
+                    <Button
+                      className="min-h-8 justify-start px-2 text-xs"
+                      disabled={isLoadingMoreConversations}
+                      onClick={() => void loadMoreConversations()}
+                      type="button"
+                      variant="secondary"
+                    >
+                      {isLoadingMoreConversations ? t('historyLoading') : t('loadMoreChats')}
+                    </Button>
+                  </div>
                 ) : null}
               </>
             ) : null}

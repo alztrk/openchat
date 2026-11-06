@@ -117,36 +117,60 @@ export interface AttachmentTextIndexRebuildOperation {
   cancel: ServiceOperation['cancel'];
 }
 
+export interface ChatListPage<T> {
+  items: T[];
+  hasMore: boolean;
+  nextOffset: number | null;
+}
+
 let activeAttachmentTextIndexRebuild: AttachmentTextIndexRebuildOperation | null = null;
 let startingAttachmentTextIndexRebuild: Promise<AttachmentTextIndexRebuildOperation> | null = null;
 
-export async function listConversations(): Promise<ChatConversation[]> {
-  const response = await localServiceClient.call('storage.chat.conversations.list');
-  if (!Array.isArray(response.conversations) || !response.conversations.every(isConversation)) {
-    throw new Error('The stored conversation list is invalid.');
-  }
-  return response.conversations;
+export async function listConversations(offset = 0): Promise<ChatListPage<ChatConversation>> {
+  assertListOffset(offset);
+  const response = await localServiceClient.call('storage.chat.conversations.list', { input: { offset } });
+  return parseChatListPage(response, 'conversations', isConversation, offset, 'conversation');
 }
 
-export async function listProjects(): Promise<ChatProject[]> {
-  const response = await localServiceClient.call('storage.chat.projects.list');
-  if (!Array.isArray(response.projects) || !response.projects.every(isProject)) {
-    throw new Error('The stored project list is invalid.');
+export async function listProjects(offset = 0): Promise<ChatListPage<ChatProject>> {
+  assertListOffset(offset);
+  const response = await localServiceClient.call('storage.chat.projects.list', { input: { offset } });
+  return parseChatListPage(response, 'projects', isProject, offset, 'project');
+}
+
+export async function listAllProjects(): Promise<ChatProject[]> {
+  const projects: ChatProject[] = [];
+  let offset = 0;
+  while (true) {
+    const page = await listProjects(offset);
+    projects.push(...page.items);
+    if (!page.hasMore) return projects;
+    if (page.nextOffset === null || page.nextOffset <= offset) {
+      throw new Error('The stored project pages did not advance.');
+    }
+    offset = page.nextOffset;
   }
-  return response.projects;
 }
 
 /** Persists a project from a one-time native folder selection token. */
-export async function createProject(id: string, name: string, folderSelectionId: string): Promise<void> {
+export async function createProject(
+  id: string,
+  name: string,
+  folderSelectionId: string,
+): Promise<ChatProject> {
   const folderPath: unknown = await invoke('consume_project_folder_selection_command', {
     selectionId: folderSelectionId,
   });
   if (typeof folderPath !== 'string' || folderPath.trim().length === 0) {
     throw new Error('The selected project folder is invalid.');
   }
-  await localServiceClient.call('storage.chat.projects.create', {
+  const response = await localServiceClient.call('storage.chat.projects.create', {
     input: { id, name, folderPath },
   });
+  if (response.saved !== true || !isProject(response.project)) {
+    throw new Error('The created project response is invalid.');
+  }
+  return response.project;
 }
 
 export async function addProjectWorkspaceRoot(projectId: string, folderSelectionId: string): Promise<string> {
@@ -437,6 +461,12 @@ export interface StoredSearchMessageResult {
   createdAt: number | null;
 }
 
+export interface StoredSearchMessagePage {
+  messages: StoredSearchMessageResult[];
+  hasMore: boolean;
+  limitedByResponseSize: boolean;
+}
+
 export interface SearchFilterOptions {
   roleFilter?: 'user' | 'assistant' | null;
   hasCodeOnly?: boolean | null;
@@ -452,7 +482,7 @@ export async function searchStoredMessages(
   query: string,
   limit = 40,
   options?: SearchFilterOptions,
-): Promise<StoredSearchMessageResult[]> {
+): Promise<StoredSearchMessagePage> {
   const response = await localServiceClient.call('storage.chat.messages.search', {
     input: {
       query,
@@ -461,10 +491,19 @@ export async function searchStoredMessages(
       hasCodeOnly: options?.hasCodeOnly ?? null,
     },
   });
-  if (!Array.isArray(response.messages) || !response.messages.every(isStoredSearchMessage)) {
+  if (
+    !Array.isArray(response.messages) ||
+    !response.messages.every(isStoredSearchMessage) ||
+    typeof response.hasMore !== 'boolean' ||
+    typeof response.limitedByResponseSize !== 'boolean'
+  ) {
     throw new Error('The stored message search response is invalid.');
   }
-  return response.messages;
+  return {
+    messages: response.messages,
+    hasMore: response.hasMore,
+    limitedByResponseSize: response.limitedByResponseSize,
+  };
 }
 
 export async function createConversation(
@@ -789,6 +828,45 @@ function isProject(value: unknown): value is ChatProject {
     typeof value.createdAt === 'number' &&
     typeof value.updatedAt === 'number'
   );
+}
+
+function assertListOffset(offset: number): void {
+  if (!Number.isSafeInteger(offset) || offset < 0 || offset > 1_000_000) {
+    throw new Error('The stored list offset is invalid.');
+  }
+}
+
+function parseChatListPage<T>(
+  response: Record<string, unknown>,
+  property: 'conversations' | 'projects',
+  isItem: (value: unknown) => value is T,
+  offset: number,
+  itemName: string,
+): ChatListPage<T> {
+  const items = response[property];
+  const hasMore = response.hasMore;
+  const nextOffset = response.nextOffset;
+  if (!isArrayOf(items, isItem) || typeof hasMore !== 'boolean') {
+    throw new Error(`The stored ${itemName} page is invalid.`);
+  }
+  if (hasMore) {
+    if (
+      typeof nextOffset !== 'number' ||
+      !Number.isSafeInteger(nextOffset) ||
+      nextOffset !== offset + items.length
+    ) {
+      throw new Error(`The stored ${itemName} page cursor is invalid.`);
+    }
+    return { items, hasMore, nextOffset };
+  }
+  if (nextOffset !== null) {
+    throw new Error(`The stored ${itemName} page cursor is invalid.`);
+  }
+  return { items, hasMore, nextOffset: null };
+}
+
+function isArrayOf<T>(value: unknown, isItem: (item: unknown) => item is T): value is T[] {
+  return Array.isArray(value) && value.every(isItem);
 }
 
 function isMessage(value: unknown): value is Omit<ChatMessage, 'attachments'> {

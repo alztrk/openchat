@@ -1,6 +1,7 @@
 //! Frontend-invocable Tauri native commands for local service lifecycle and permissions.
 
 use std::{
+    ffi::{OsStr, OsString},
     fs::{self, OpenOptions},
     io::Write,
     path::{Path, PathBuf},
@@ -8,6 +9,7 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
+use crate::request_bounds::BoundedText;
 use openchat_local_service::StartupFailure;
 use serde_json::{json, Value};
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -22,6 +24,110 @@ use super::types::*;
 use super::writer::ServiceWriter;
 
 const MAX_STARTUP_DIAGNOSTIC_LOG_BYTES: u64 = 1024 * 1024;
+
+fn local_service_environment() -> Vec<(OsString, OsString)> {
+    std::env::vars_os()
+        .filter(|(name, _)| is_local_service_environment_name(name))
+        .collect()
+}
+
+fn is_local_service_environment_name(name: &OsStr) -> bool {
+    let Some(name) = name.to_str() else {
+        return false;
+    };
+
+    #[cfg(windows)]
+    {
+        const ALLOWED: &[&str] = &[
+            "ALL_PROXY",
+            "APPDATA",
+            "COMSPEC",
+            "HOMEDRIVE",
+            "HOMEPATH",
+            "HTTP_PROXY",
+            "HTTPS_PROXY",
+            "LANG",
+            "LC_ALL",
+            "LOCALAPPDATA",
+            "NO_PROXY",
+            "PATH",
+            "PATHEXT",
+            "PROGRAMDATA",
+            "PROGRAMFILES",
+            "PROGRAMFILES(X86)",
+            "PROGRAMW6432",
+            "SSL_CERT_DIR",
+            "SSL_CERT_FILE",
+            "SYSTEMROOT",
+            "TEMP",
+            "TMP",
+            "USERPROFILE",
+            "WINDIR",
+        ];
+        ALLOWED
+            .iter()
+            .any(|allowed| name.eq_ignore_ascii_case(allowed))
+    }
+
+    #[cfg(not(windows))]
+    {
+        matches!(
+            name,
+            "ALL_PROXY"
+                | "DBUS_SESSION_BUS_ADDRESS"
+                | "HOME"
+                | "HTTP_PROXY"
+                | "HTTPS_PROXY"
+                | "LANG"
+                | "LANGUAGE"
+                | "LC_ALL"
+                | "NO_PROXY"
+                | "PATH"
+                | "SSL_CERT_DIR"
+                | "SSL_CERT_FILE"
+                | "TMPDIR"
+                | "TZ"
+                | "USER"
+                | "LOGNAME"
+                | "XDG_CACHE_HOME"
+                | "XDG_CONFIG_HOME"
+                | "XDG_DATA_HOME"
+                | "XDG_RUNTIME_DIR"
+                | "all_proxy"
+                | "http_proxy"
+                | "https_proxy"
+                | "no_proxy"
+        )
+    }
+}
+
+#[cfg(test)]
+mod environment_tests {
+    use std::ffi::OsStr;
+
+    use super::is_local_service_environment_name;
+
+    #[test]
+    fn sidecar_environment_keeps_runtime_settings_and_drops_unrelated_values() {
+        assert!(is_local_service_environment_name(OsStr::new("PATH")));
+        assert!(is_local_service_environment_name(OsStr::new("HTTPS_PROXY")));
+        assert!(!is_local_service_environment_name(OsStr::new(
+            "OPENAI_API_KEY"
+        )));
+        assert!(!is_local_service_environment_name(OsStr::new(
+            "NODE_OPTIONS"
+        )));
+
+        #[cfg(windows)]
+        assert!(is_local_service_environment_name(OsStr::new(
+            "LOCALAPPDATA"
+        )));
+        #[cfg(not(windows))]
+        assert!(is_local_service_environment_name(OsStr::new(
+            "DBUS_SESSION_BUS_ADDRESS"
+        )));
+    }
+}
 
 /// Starts the sidecar during native startup so it can initialize while the WebView loads.
 pub(crate) fn start_local_service_early(app: &AppHandle) -> Result<u64, String> {
@@ -96,6 +202,7 @@ fn start_local_service_process(
         .map(|root| root.to_string_lossy().into_owned());
     let spawn = |sidecar_name: &str| {
         app.shell().sidecar(sidecar_name).and_then(|mut command| {
+            command = command.env_clear().envs(local_service_environment());
             if let Some(root) = storage_root.as_deref() {
                 command = command.args(["--data-root", root]);
             }
@@ -622,9 +729,10 @@ pub(crate) async fn write_local_service(
     app: AppHandle,
     state: State<'_, LocalServiceState>,
     generation: u64,
-    line: String,
+    line: BoundedText<MAX_RPC_FRAME_BYTES>,
     permission_locale: NativeDialogLocale,
 ) -> Result<(), String> {
+    let line = line.into_inner();
     let disposition = renderer_rpc_disposition(&line, MAX_RPC_FRAME_BYTES)
         .ok_or_else(|| "The local service request frame is invalid or too large.".to_owned())?;
     let mut forwarded_line = line;

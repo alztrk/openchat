@@ -20,6 +20,18 @@ struct StoredMessageRow {
     tool_activities: String,
     status: String,
     failure_code: Option<String>,
+    page_number: i64,
+    total_rows: i64,
+}
+
+struct StoredSearchMessageRow {
+    id: String,
+    conversation_id: String,
+    role: String,
+    content: String,
+    created_at: Option<i64>,
+    page_number: i64,
+    total_rows: i64,
 }
 
 fn stored_message_row_from_storage(row: &StorageRow) -> rusqlite::Result<StoredMessageRow> {
@@ -40,6 +52,8 @@ fn stored_message_row_from_storage(row: &StorageRow) -> rusqlite::Result<StoredM
         tool_activities: row.get(13)?,
         status: row.get(14)?,
         failure_code: row.get(15)?,
+        page_number: row.get(16)?,
+        total_rows: row.get(17)?,
     })
 }
 
@@ -74,7 +88,13 @@ fn message_from_stored_row(
     }))
 }
 
-pub(super) fn list_conversations(storage: &AppStorage) -> Result<Value, ServiceError> {
+pub(super) fn list_conversations(
+    params: &Value,
+    storage: &AppStorage,
+) -> Result<Value, ServiceError> {
+    let offset = list_offset(params)?;
+    let offset = i64::try_from(offset).map_err(|_| invalid_request_params())?;
+    let limit = i64::try_from(MAX_CONVERSATION_PAGE + 1).map_err(|_| invalid_request_params())?;
     let connection = storage.connect().map_err(storage_error)?;
     let mut statement = connection
         .prepare(
@@ -85,17 +105,28 @@ pub(super) fn list_conversations(storage: &AppStorage) -> Result<Value, ServiceE
              WHERE NOT EXISTS (
                 SELECT 1 FROM security_scans WHERE security_scans.conversation_id = conversations.id
              )
-             ORDER BY is_pinned DESC, updated_at DESC, id ASC",
+             ORDER BY is_pinned DESC, updated_at DESC, id ASC
+             LIMIT ?1 OFFSET ?2",
         )
         .map_err(storage_error)?;
     let rows = statement
-        .query_map([], |row| conversation_from_row!(row))
+        .query_map(params![limit, offset], |row| conversation_from_row!(row))
         .map_err(storage_error)?;
-    let mut conversations = Vec::new();
+    let mut conversations = Vec::with_capacity(MAX_CONVERSATION_PAGE);
+    let mut has_more = false;
     for row in rows {
+        if conversations.len() == MAX_CONVERSATION_PAGE {
+            has_more = true;
+            break;
+        }
         conversations.push(row.map_err(storage_error)?);
     }
-    Ok(json!({"conversations": conversations}))
+    let next_offset = has_more.then(|| offset + conversations.len() as i64);
+    Ok(json!({
+        "conversations": conversations,
+        "hasMore": has_more,
+        "nextOffset": next_offset,
+    }))
 }
 
 pub(super) fn get_conversation(
@@ -439,19 +470,51 @@ pub(super) fn list_messages(params: &Value, storage: &AppStorage) -> Result<Valu
                 .ok_or_else(invalid_request_params)
         })
         .transpose()?;
-    let limit_with_lookahead = i64::try_from(limit + 1).map_err(|_| invalid_request_params())?;
-    let rows = if let Some(before_created_at) = before_created_at {
+    let candidate_limit = i64::try_from(limit + 1).map_err(|_| invalid_request_params())?;
+    let limit = i64::try_from(limit).map_err(|_| invalid_request_params())?;
+    let page_byte_budget =
+        i64::try_from(MAX_MESSAGE_PAGE_RESPONSE_BYTES).map_err(|_| invalid_request_params())?;
+    let rows = {
         let mut statement = connection
             .prepare(
-                "SELECT id, conversation_id, role, content, created_at, output_tokens,
-                        tokens_per_second, elapsed_microseconds, provider_id, model_id,
-                        citation_sources, personal_memory_fact_ids, reasoning_summaries,
-                        tool_activities, status, failure_code
-                 FROM messages
-                 WHERE conversation_id = ?1
-                   AND (COALESCE(created_at, 0) < ?2
-                        OR (COALESCE(created_at, 0) = ?2 AND id < ?3))
-                 ORDER BY COALESCE(created_at, 0) DESC, id DESC LIMIT ?4",
+                "WITH candidates AS MATERIALIZED (
+                SELECT id, COALESCE(created_at, 0) AS sort_created_at,
+                       6 * length(CAST(content AS BLOB))
+                       + length(CAST(citation_sources AS BLOB))
+                       + length(CAST(personal_memory_fact_ids AS BLOB))
+                       + length(CAST(reasoning_summaries AS BLOB))
+                       + length(CAST(tool_activities AS BLOB))
+                       + 1024 AS estimated_row_bytes
+                FROM messages
+                WHERE conversation_id = ?1
+                  AND (?2 IS NULL OR COALESCE(created_at, 0) < ?2
+                       OR (COALESCE(created_at, 0) = ?2 AND id < ?3))
+                ORDER BY COALESCE(created_at, 0) DESC, id DESC
+                LIMIT ?4
+             ), ordered AS (
+                SELECT id,
+                       ROW_NUMBER() OVER (
+                           ORDER BY sort_created_at DESC, id DESC
+                       ) AS page_number,
+                       COUNT(*) OVER () AS total_rows,
+                       SUM(estimated_row_bytes) OVER (
+                           ORDER BY sort_created_at DESC, id DESC
+                           ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+                       ) AS estimated_page_bytes
+                FROM candidates
+             ), bounded AS (
+                SELECT * FROM ordered
+                WHERE page_number <= ?5
+                  AND (page_number = 1 OR estimated_page_bytes <= ?6)
+             )
+             SELECT m.id, m.conversation_id, m.role, m.content, m.created_at, m.output_tokens,
+                    m.tokens_per_second, m.elapsed_microseconds, m.provider_id, m.model_id,
+                    m.citation_sources, m.personal_memory_fact_ids, m.reasoning_summaries,
+                    m.tool_activities, m.status, m.failure_code,
+                    bounded.page_number, bounded.total_rows
+             FROM bounded
+             JOIN messages AS m ON m.conversation_id = ?1 AND m.id = bounded.id
+             ORDER BY bounded.page_number ASC",
             )
             .map_err(storage_error)?;
         statement
@@ -460,54 +523,47 @@ pub(super) fn list_messages(params: &Value, storage: &AppStorage) -> Result<Valu
                     conversation_id,
                     before_created_at,
                     before_message_id,
-                    limit_with_lookahead
+                    candidate_limit,
+                    limit,
+                    page_byte_budget,
                 ],
                 stored_message_row_from_storage,
             )
             .map_err(storage_error)?
             .collect::<rusqlite::Result<Vec<_>>>()
             .map_err(storage_error)?
-    } else {
-        let mut statement = connection
-            .prepare(
-                "SELECT id, conversation_id, role, content, created_at, output_tokens,
-                        tokens_per_second, elapsed_microseconds, provider_id, model_id,
-                        citation_sources, personal_memory_fact_ids, reasoning_summaries,
-                        tool_activities, status, failure_code
-                 FROM messages WHERE conversation_id = ?1
-                 ORDER BY COALESCE(created_at, 0) DESC, id DESC LIMIT ?2",
-            )
-            .map_err(storage_error)?;
-        statement
-            .query_map(
-                params![conversation_id, limit_with_lookahead],
-                stored_message_row_from_storage,
-            )
-            .map_err(storage_error)?
-            .collect::<rusqlite::Result<Vec<_>>>()
-            .map_err(storage_error)?
     };
+    let (messages, has_more) = collect_message_page(rows)?;
     drop(connection);
 
-    let has_more = rows.len() > limit;
-    let mut rows = rows;
-    rows.truncate(limit);
-    rows.reverse();
     let next_before_message_id = if has_more {
-        rows.first().map(|row| row.id.clone())
+        messages
+            .first()
+            .and_then(|message| message.get("id"))
+            .and_then(Value::as_str)
+            .map(str::to_owned)
     } else {
         None
     };
-    let mut remaining_nodes = MAX_REQUEST_PARAMETER_NODES;
-    let mut messages = Vec::new();
-    for row in rows {
-        messages.push(message_from_stored_row(row, &mut remaining_nodes).map_err(storage_error)?);
-    }
     Ok(json!({
         "messages": messages,
         "hasMore": has_more,
         "nextBeforeMessageId": next_before_message_id,
     }))
+}
+
+fn collect_message_page(rows: Vec<StoredMessageRow>) -> Result<(Vec<Value>, bool), ServiceError> {
+    let has_more = rows
+        .last()
+        .is_some_and(|row| row.page_number < row.total_rows);
+    let mut messages = Vec::with_capacity(rows.len());
+    let mut remaining_nodes = MAX_REQUEST_PARAMETER_NODES;
+    for row in rows {
+        messages.push(message_from_stored_row(row, &mut remaining_nodes).map_err(storage_error)?);
+    }
+
+    messages.reverse();
+    Ok((messages, has_more))
 }
 
 pub(super) fn save_message(
@@ -854,7 +910,11 @@ pub(super) fn search_messages(params: &Value, storage: &AppStorage) -> Result<Va
         .unwrap_or(false);
     let has_query = !query.trim().is_empty();
     if !has_query && role.is_none() && !has_code_only {
-        return Ok(json!({"messages": []}));
+        return Ok(json!({
+            "messages": [],
+            "hasMore": false,
+            "limitedByResponseSize": false,
+        }));
     }
     let limit = input
         .get("limit")
@@ -867,35 +927,92 @@ pub(super) fn search_messages(params: &Value, storage: &AppStorage) -> Result<Va
         })
         .transpose()?
         .unwrap_or(40);
-    let sql = "SELECT id, conversation_id, role, content, created_at
-         FROM messages
-         WHERE (?1 = '' OR instr(openchat_normalize_text(content), ?1) > 0)
-           AND (?2 = '' OR role = ?2)
-           AND (?3 = 0 OR content LIKE '%```%')
-         ORDER BY created_at DESC, id DESC LIMIT ?4";
+    let response_limit = limit;
+    let candidate_limit = i64::try_from(limit + 1).map_err(|_| invalid_request_params())?;
+    let limit = i64::try_from(limit).map_err(|_| invalid_request_params())?;
+    let response_byte_budget =
+        i64::try_from(MAX_MESSAGE_SEARCH_RESPONSE_BYTES).map_err(|_| invalid_request_params())?;
+    let sql = "WITH candidates AS MATERIALIZED (
+             SELECT id, conversation_id, created_at,
+                    6 * length(CAST(content AS BLOB)) + 1024 AS estimated_row_bytes
+             FROM messages
+             WHERE (?1 = '' OR instr(openchat_normalize_text(content), ?1) > 0)
+               AND (?2 = '' OR role = ?2)
+               AND (?3 = 0 OR content LIKE '%```%')
+             ORDER BY created_at DESC, id DESC, conversation_id ASC
+             LIMIT ?4
+         ), ordered AS (
+             SELECT id, conversation_id, created_at,
+                    ROW_NUMBER() OVER (
+                        ORDER BY created_at IS NULL ASC, created_at DESC, id DESC, conversation_id ASC
+                    ) AS page_number,
+                    COUNT(*) OVER () AS total_rows,
+                    SUM(estimated_row_bytes) OVER (
+                        ORDER BY created_at IS NULL ASC, created_at DESC, id DESC, conversation_id ASC
+                        ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+                    ) AS estimated_page_bytes
+             FROM candidates
+         ), bounded AS (
+             SELECT * FROM ordered
+             WHERE page_number <= ?5
+               AND (page_number = 1 OR estimated_page_bytes <= ?6)
+         )
+         SELECT m.id, m.conversation_id, m.role, m.content, m.created_at,
+                bounded.page_number, bounded.total_rows
+         FROM bounded
+         JOIN messages AS m ON m.conversation_id = bounded.conversation_id AND m.id = bounded.id
+         ORDER BY bounded.page_number ASC";
     let connection = storage.connect().map_err(storage_error)?;
     let mut statement = connection.prepare(sql).map_err(storage_error)?;
     let normalized = normalize_search_text(query);
     let role_value = role.unwrap_or("");
     let rows = statement
         .query_map(
-            params![normalized, role_value, has_code_only, limit as i64],
+            params![
+                normalized,
+                role_value,
+                has_code_only,
+                candidate_limit,
+                limit,
+                response_byte_budget,
+            ],
             |row| {
-                Ok(json!({
-                    "id": row.get::<_, String>(0)?,
-                    "conversationId": row.get::<_, String>(1)?,
-                    "role": row.get::<_, String>(2)?,
-                    "content": row.get::<_, String>(3)?,
-                    "createdAt": row.get::<_, Option<i64>>(4)?,
-                }))
+                Ok(StoredSearchMessageRow {
+                    id: row.get(0)?,
+                    conversation_id: row.get(1)?,
+                    role: row.get(2)?,
+                    content: row.get(3)?,
+                    created_at: row.get(4)?,
+                    page_number: row.get(5)?,
+                    total_rows: row.get(6)?,
+                })
             },
         )
         .map_err(storage_error)?;
-    let mut messages = Vec::new();
-    for row in rows {
-        messages.push(row.map_err(storage_error)?);
-    }
-    Ok(json!({"messages": messages}))
+    let rows = rows
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(storage_error)?;
+    let has_more = rows
+        .last()
+        .is_some_and(|row| row.page_number < row.total_rows);
+    let limited_by_response_size = has_more && rows.len() < response_limit;
+    let messages = rows
+        .into_iter()
+        .map(|row| {
+            json!({
+                "id": row.id,
+                "conversationId": row.conversation_id,
+                "role": row.role,
+                "content": row.content,
+                "createdAt": row.created_at,
+            })
+        })
+        .collect::<Vec<_>>();
+    Ok(json!({
+        "messages": messages,
+        "hasMore": has_more,
+        "limitedByResponseSize": limited_by_response_size,
+    }))
 }
 
 pub(super) fn has_completed_assistant_response(

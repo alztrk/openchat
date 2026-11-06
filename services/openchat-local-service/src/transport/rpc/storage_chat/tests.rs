@@ -12,7 +12,8 @@ use super::attachments::{
     AttachmentDirectoryPublishError, StagedAttachments, publish_staged_attachment_directory,
 };
 use super::{
-    MAX_AGENT_METADATA_BYTES, MAX_STRUCTURED_METADATA_JSON_NESTING, dispatch, optional_json_array,
+    MAX_AGENT_METADATA_BYTES, MAX_CONVERSATION_PAGE, MAX_MESSAGE_SEARCH_RESPONSE_BYTES,
+    MAX_PROJECT_PAGE, MAX_STRUCTURED_METADATA_JSON_NESTING, dispatch, optional_json_array,
     parse_stored_agent_json, sanitize_stored_metadata, sanitize_tool_activity_metadata,
     serialize_json_without_sensitive_values,
 };
@@ -845,6 +846,272 @@ async fn message_history_pages_cover_all_rows_in_stable_chronological_order() {
         (0..205)
             .map(|index| format!("message-{index:04}"))
             .collect::<Vec<_>>()
+    );
+}
+
+#[tokio::test]
+async fn message_history_pages_bound_large_stored_payloads_by_encoded_size() {
+    let directory = TestDirectory::new();
+    let storage = initialized_chat_storage(&directory);
+    let conversation_id = create_attachment_test_conversation(&storage).await;
+    let content = "x".repeat(crate::conversation_limits::MAXIMUM_CHAT_MESSAGE_CONTENT_BYTES);
+    {
+        let connection = storage.connect().expect("connect test storage");
+        for index in 0..4 {
+            connection
+                .execute(
+                    "INSERT INTO messages (id, conversation_id, role, content, created_at, status)
+                     VALUES (?1, ?2, 'user', ?3, ?4, 'completed')",
+                    rusqlite::params![
+                        format!("large-message-{index}"),
+                        conversation_id,
+                        &content,
+                        index,
+                    ],
+                )
+                .expect("insert large message fixture");
+        }
+    }
+
+    let mut before_message_id: Option<String> = None;
+    let mut message_ids = Vec::new();
+    loop {
+        let mut input = json!({"conversationId": conversation_id, "limit": 100});
+        if let Some(cursor) = before_message_id.as_deref() {
+            input["beforeMessageId"] = json!(cursor);
+        }
+        let page = dispatch("storage.chat.messages.list", &input, &storage)
+            .await
+            .expect("read bounded large-message page");
+        let messages = page["messages"].as_array().expect("message page array");
+        assert_eq!(messages.len(), 1);
+        message_ids.push(messages[0]["id"].as_str().expect("message ID").to_owned());
+        if page["hasMore"] == false {
+            assert_eq!(page["nextBeforeMessageId"], Value::Null);
+            break;
+        }
+        before_message_id = Some(
+            page["nextBeforeMessageId"]
+                .as_str()
+                .expect("cursor for the next older page")
+                .to_owned(),
+        );
+    }
+
+    assert_eq!(
+        message_ids.into_iter().rev().collect::<Vec<_>>(),
+        (0..4)
+            .map(|index| format!("large-message-{index}"))
+            .collect::<Vec<_>>()
+    );
+}
+
+#[tokio::test]
+async fn message_search_bounds_large_stored_payloads_by_encoded_size() {
+    let directory = TestDirectory::new();
+    let storage = initialized_chat_storage(&directory);
+    let conversation_id = create_attachment_test_conversation(&storage).await;
+    let content = format!("{}needle", "\u{0001}".repeat(2_000_000));
+    {
+        let connection = storage.connect().expect("connect test storage");
+        for index in 0..2 {
+            connection
+                .execute(
+                    "INSERT INTO messages (id, conversation_id, role, content, created_at, status)
+                     VALUES (?1, ?2, 'user', ?3, ?4, 'completed')",
+                    rusqlite::params![
+                        format!("search-large-message-{index}"),
+                        conversation_id,
+                        &content,
+                        index,
+                    ],
+                )
+                .expect("insert large search fixture");
+        }
+    }
+
+    let result = dispatch(
+        "storage.chat.messages.search",
+        &json!({"input": {"query": "needle", "limit": 50}}),
+        &storage,
+    )
+    .await
+    .expect("search bounded large-message results");
+    let messages = result["messages"].as_array().expect("search result array");
+    assert_eq!(messages.len(), 1);
+    assert_eq!(messages[0]["id"], "search-large-message-1");
+    assert_eq!(result["hasMore"], true);
+    assert_eq!(result["limitedByResponseSize"], true);
+
+    let encoded = serde_json::to_vec(&result).expect("encode bounded search response");
+    assert!(encoded.len() <= MAX_MESSAGE_SEARCH_RESPONSE_BYTES + 1_024);
+    assert!(encoded.len() < crate::protocol::MAX_RESPONSE_FRAME_BYTES);
+}
+
+#[tokio::test]
+async fn message_search_matches_turkish_normalized_content() {
+    let directory = TestDirectory::new();
+    let storage = initialized_chat_storage(&directory);
+    let conversation_id = create_attachment_test_conversation(&storage).await;
+    {
+        let connection = storage.connect().expect("connect test storage");
+        connection
+            .execute(
+                "INSERT INTO messages (id, conversation_id, role, content, created_at, status)
+                 VALUES ('turkish-search-message', ?1, 'user', 'İSTANBUL IŞIK', 1, 'completed')",
+                [&conversation_id],
+            )
+            .expect("insert Turkish search fixture");
+    }
+
+    let result = dispatch(
+        "storage.chat.messages.search",
+        &json!({"input": {"query": "istanbul isik", "limit": 10}}),
+        &storage,
+    )
+    .await
+    .expect("search normalized Turkish content");
+
+    let messages = result["messages"].as_array().expect("search result array");
+    assert_eq!(messages.len(), 1);
+    assert_eq!(messages[0]["id"], "turkish-search-message");
+}
+
+#[tokio::test]
+async fn conversation_list_pages_cover_all_rows_without_oversized_frames() {
+    let directory = TestDirectory::new();
+    let storage = initialized_chat_storage(&directory);
+    for index in 0..=MAX_CONVERSATION_PAGE {
+        dispatch(
+            "storage.chat.conversations.create",
+            &json!({
+                "input": {
+                    "id": format!("paged-conversation-{index:03}"),
+                    "title": format!("Conversation {index}"),
+                    "providerId": "test-provider",
+                    "modelId": "test-model"
+                }
+            }),
+            &storage,
+        )
+        .await
+        .expect("create conversation for page test");
+    }
+
+    let first_page = dispatch(
+        "storage.chat.conversations.list",
+        &json!({"input": {"offset": 0}}),
+        &storage,
+    )
+    .await
+    .expect("read first conversation page");
+    assert_eq!(
+        first_page["conversations"].as_array().map(Vec::len),
+        Some(MAX_CONVERSATION_PAGE)
+    );
+    assert_eq!(first_page["hasMore"], true);
+    assert_eq!(first_page["nextOffset"], MAX_CONVERSATION_PAGE);
+
+    let second_page = dispatch(
+        "storage.chat.conversations.list",
+        &json!({"input": {"offset": MAX_CONVERSATION_PAGE}}),
+        &storage,
+    )
+    .await
+    .expect("read second conversation page");
+    assert_eq!(
+        second_page["conversations"].as_array().map(Vec::len),
+        Some(1)
+    );
+    assert_eq!(second_page["hasMore"], false);
+    assert_eq!(second_page["nextOffset"], Value::Null);
+}
+
+#[tokio::test]
+async fn project_list_pages_cover_all_rows() {
+    let directory = TestDirectory::new();
+    let storage = initialized_chat_storage(&directory);
+    let folder_path = fs::canonicalize(&directory.0)
+        .expect("canonicalize test workspace")
+        .to_str()
+        .expect("test path is valid UTF-8")
+        .to_owned();
+    {
+        let connection = storage.connect().expect("connect project fixture storage");
+        for index in 0..=MAX_PROJECT_PAGE {
+            connection
+                .execute(
+                    "INSERT INTO projects (id, name, folder_path, created_at, updated_at)
+                     VALUES (?1, ?2, ?3, ?4, ?4)",
+                    rusqlite::params![
+                        format!("paged-project-{index:03}"),
+                        format!("Project {index:03}"),
+                        &folder_path,
+                        index as i64,
+                    ],
+                )
+                .expect("insert project for page test");
+        }
+    }
+
+    let first_page = dispatch(
+        "storage.chat.projects.list",
+        &json!({"input": {"offset": 0}}),
+        &storage,
+    )
+    .await
+    .expect("read first project page");
+    assert_eq!(
+        first_page["projects"].as_array().map(Vec::len),
+        Some(MAX_PROJECT_PAGE)
+    );
+    assert_eq!(first_page["hasMore"], true);
+    assert_eq!(first_page["nextOffset"], MAX_PROJECT_PAGE);
+
+    let second_page = dispatch(
+        "storage.chat.projects.list",
+        &json!({"input": {"offset": MAX_PROJECT_PAGE}}),
+        &storage,
+    )
+    .await
+    .expect("read second project page");
+    assert_eq!(second_page["projects"].as_array().map(Vec::len), Some(1));
+    assert_eq!(second_page["hasMore"], false);
+    assert_eq!(second_page["nextOffset"], Value::Null);
+}
+
+#[tokio::test]
+async fn project_creation_returns_the_canonical_project_record() {
+    let directory = TestDirectory::new();
+    let storage = initialized_chat_storage(&directory);
+    let folder_path = fs::canonicalize(&directory.0)
+        .expect("canonicalize test workspace")
+        .to_str()
+        .expect("test path is valid UTF-8")
+        .to_owned();
+
+    let created = dispatch(
+        "storage.chat.projects.create",
+        &json!({
+            "input": {
+                "id": "created-project",
+                "name": "Created project",
+                "folderPath": folder_path
+            }
+        }),
+        &storage,
+    )
+    .await
+    .expect("create project");
+
+    assert_eq!(created["saved"], true);
+    assert_eq!(created["project"]["id"], "created-project");
+    assert_eq!(created["project"]["name"], "Created project");
+    assert_eq!(created["project"]["folderPath"], folder_path);
+    assert_eq!(created["project"]["workspaceRoots"], json!([folder_path]));
+    assert_eq!(
+        created["project"]["createdAt"],
+        created["project"]["updatedAt"]
     );
 }
 

@@ -1103,6 +1103,7 @@
   "searchMessagesHeader": "Message matches",
   "searchMessagesLoading": "Searching messages and conversations…",
   "searchMessagesNoResults": "No matching items found.",
+  "searchMessagesResultsLimited": "Some matches were omitted because the matching messages are large. Narrow the search to see more.",
   "searchMessagesTooShort": "Enter at least two characters to search.",
   "searchMessagesTooLong": "Search text must be 512 characters or fewer.",
   "searchMessagesFailed": "Search failed. Try again.",

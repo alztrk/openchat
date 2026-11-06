@@ -1103,6 +1103,7 @@
   "searchMessagesHeader": "Mesaj eşleşmeleri",
   "searchMessagesLoading": "Mesajlar ve sohbetler aranıyor…",
   "searchMessagesNoResults": "Eşleşen öğe bulunamadı.",
+  "searchMessagesResultsLimited": "Eşleşen iletiler büyük olduğu için bazı sonuçlar gösterilmedi. Daha fazlası için aramayı daraltın.",
   "searchMessagesTooShort": "Arama için en az iki karakter girin.",
   "searchMessagesTooLong": "Arama metni en fazla 512 karakter olabilir.",
   "searchMessagesFailed": "Arama yapılamadı. Yeniden deneyin.",

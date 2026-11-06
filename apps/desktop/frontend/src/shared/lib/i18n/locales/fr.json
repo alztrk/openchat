@@ -1103,6 +1103,7 @@
   "searchMessagesHeader": "Résultats dans les messages",
   "searchMessagesLoading": "Recherche dans les messages et les conversations…",
   "searchMessagesNoResults": "Aucun élément correspondant trouvé.",
+  "searchMessagesResultsLimited": "Certains résultats ont été omis car les messages correspondants sont volumineux. Affinez la recherche pour en voir davantage.",
   "searchMessagesTooShort": "Saisissez au moins deux caractères pour rechercher.",
   "searchMessagesTooLong": "Le texte de recherche ne peut pas dépasser 512 caractères.",
   "searchMessagesFailed": "La recherche a échoué. Réessayez.",

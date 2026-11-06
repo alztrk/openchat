@@ -12,6 +12,9 @@ interface ProjectSidebarSectionProps {
   projects: readonly ChatProject[];
   customFolders?: readonly CustomSidebarFolder[];
   conversations: readonly ChatConversation[];
+  hasMore: boolean;
+  isLoadingMore: boolean;
+  loadError: boolean;
   status: 'idle' | 'loading' | 'ready' | 'error';
   collapsed: boolean;
   compactSidebar?: boolean;
@@ -20,6 +23,7 @@ interface ProjectSidebarSectionProps {
   isBusy: boolean;
   isConversationAiWorking?(conversationId: string): boolean;
   onToggleCollapsed(): void;
+  onLoadMore(): void;
   onRetry(): void;
   onCreateProjectChat(projectId: string): void;
   onSelectConversation(id: string): void;
@@ -40,6 +44,9 @@ export function ProjectSidebarSection({
   projects,
   customFolders = [],
   conversations,
+  hasMore,
+  isLoadingMore,
+  loadError,
   status,
   collapsed,
   compactSidebar = false,
@@ -48,6 +55,7 @@ export function ProjectSidebarSection({
   isBusy,
   isConversationAiWorking,
   onToggleCollapsed,
+  onLoadMore,
   onRetry,
   onCreateProjectChat,
   onSelectConversation,
@@ -233,6 +241,24 @@ export function ProjectSidebarSection({
               );
             })
           : null}
+        {status === 'ready' && hasMore ? (
+          <li className="grid gap-1 px-2">
+            {loadError ? (
+              <p className="text-xs text-destructive" role="alert">
+                {t('projectLoadFailed')}
+              </p>
+            ) : null}
+            <Button
+              className="min-h-8 justify-start px-2 text-xs"
+              disabled={isLoadingMore}
+              onClick={onLoadMore}
+              type="button"
+              variant="secondary"
+            >
+              {isLoadingMore ? t('projectLoading') : t('loadMore')}
+            </Button>
+          </li>
+        ) : null}
       </ConversationSidebarSection>
       {!collapsed && status === 'error' ? (
         <div className="flex items-center justify-between gap-2 rounded-control border border-border bg-surface px-2.5 py-1.5">

@@ -522,19 +522,7 @@ pub(super) fn optional_nonnegative_f64(
 }
 
 pub(super) fn normalize_search_text(input: &str) -> String {
-    let mut result = String::with_capacity(input.len());
-    for character in input.chars() {
-        match character {
-            'İ' | 'I' | 'ı' => result.push('i'),
-            'Ç' | 'ç' => result.push('c'),
-            'Ş' | 'ş' => result.push('s'),
-            'Ğ' | 'ğ' => result.push('g'),
-            'Ü' | 'ü' => result.push('u'),
-            'Ö' | 'ö' => result.push('o'),
-            other => result.extend(other.to_lowercase()),
-        }
-    }
-    result
+    crate::chatgpt_store::turkish_search::turkish_to_ascii(input)
 }
 
 pub(super) fn paths_overlap(left: &str, right: &str) -> bool {
