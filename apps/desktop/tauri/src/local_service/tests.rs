@@ -116,6 +116,14 @@ fn restricted_permission_modes_and_unrelated_calls_do_not_need_confirmation() {
 
     assert_eq!(
         renderer_rpc_disposition(
+            "{\"id\":1,\"method\":\"system.shutdown\",\"params\":{}}\n",
+            256
+        ),
+        None
+    );
+
+    assert_eq!(
+        renderer_rpc_disposition(
             "{\"id\":1,\"method\":\"tools.permissions.mode.get\",\"params\":{}}\n",
             256
         ),

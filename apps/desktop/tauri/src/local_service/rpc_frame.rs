@@ -28,7 +28,9 @@ pub(crate) fn renderer_rpc_disposition(
     let Some(method) = request.method.as_deref() else {
         return Some(RendererRpcDisposition::Forward);
     };
-    if method == "chat.tool.permission.respond" || method.starts_with("internal.") {
+    if matches!(method, "chat.tool.permission.respond" | "system.shutdown")
+        || method.starts_with("internal.")
+    {
         return None;
     }
     if matches!(
