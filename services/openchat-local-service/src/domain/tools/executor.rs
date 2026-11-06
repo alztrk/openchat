@@ -812,17 +812,27 @@ impl ToolExecutor {
                         project_task_permission_rule(&self.permission_rules, task_id)
                     })
             })
-            .flatten();
-        task_rule
-            .or_else(|| self.permission_rules.get(&call.name))
-            .copied()
-            .unwrap_or_else(|| {
-                if self.permission_mode.requires_approval(operation) {
-                    ToolPermissionRule::Ask
-                } else {
-                    ToolPermissionRule::Allow
-                }
-            })
+            .flatten()
+            .copied();
+        let tool_rule = match operation {
+            #[cfg(windows)]
+            ToolOperation::ProjectTool {
+                permission_rule_name,
+                ..
+            } => project_tool_permission_rule(
+                &self.permission_rules,
+                permission_rule_name,
+                &call.name,
+            ),
+            _ => self.permission_rules.get(&call.name).copied(),
+        };
+        task_rule.or(tool_rule).unwrap_or_else(|| {
+            if self.permission_mode.requires_approval(operation) {
+                ToolPermissionRule::Ask
+            } else {
+                ToolPermissionRule::Allow
+            }
+        })
     }
 
     pub fn begin_round(&self, calls: &[ToolCall]) {
@@ -1466,14 +1476,25 @@ impl ToolExecutor {
         }
 
         #[cfg(windows)]
-        if let ToolOperation::ProjectTool { executable, .. } = &prepared.operation {
+        if let ToolOperation::ProjectTool {
+            executable,
+            permission_rule_name,
+            ..
+        } = &prepared.operation
+        {
             let current = self
                 .project_tools
                 .iter()
                 .find(|tool| tool.tool_name() == call.name)
-                .and_then(|tool| tool.executable_path(&prepared.root).ok());
-            if current.as_ref() != Some(executable)
-                || current.as_ref() != Some(&prepared.target_path)
+                .and_then(|tool| {
+                    Some((
+                        tool.executable_path(&prepared.root).ok()?,
+                        tool.permission_rule_name(&prepared.root).ok()?,
+                    ))
+                });
+            if current.as_ref().map(|(path, _)| path) != Some(executable)
+                || current.as_ref().map(|(path, _)| path) != Some(&prepared.target_path)
+                || current.as_ref().map(|(_, name)| name) != Some(permission_rule_name)
             {
                 let output = tool_error(
                     "permission_target_changed",
@@ -1659,6 +1680,7 @@ impl ToolExecutor {
                 #[cfg(windows)]
                 ToolOperation::ProjectTool {
                     executable,
+                    permission_rule_name: _,
                     input,
                     timeout_seconds,
                     output_limit_bytes,

@@ -2,6 +2,7 @@ import { type DefaultModelPreference, parseDefaultModelPreference } from '@share
 import { unifiedStorage } from '@shared/lib/platform/storage/unifiedStorage';
 
 import type { ProjectToolPermissionRule, ToolPermissionMode } from './types';
+import { isProjectToolPermissionRuleName } from './projectToolPermissionRules';
 export type { ProjectToolPermissionRule, ToolPermissionMode };
 
 
@@ -119,7 +120,7 @@ function isProjectToolRuleName(name: string): boolean {
     return /^[a-z0-9_-]{1,64}$/.test(name.slice('run_project_task__'.length));
   }
   if (name.startsWith('project_tool__')) {
-    return /^[a-z0-9_-]{1,48}$/.test(name.slice('project_tool__'.length));
+    return isProjectToolPermissionRuleName(name);
   }
   if (name.startsWith('mcpv1__')) {
     if (name.length > 128) return false;

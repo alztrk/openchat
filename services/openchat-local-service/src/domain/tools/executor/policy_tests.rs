@@ -7,7 +7,8 @@ use serde_json::json;
 
 use super::{
     PreparedToolCall, ToolCall, ToolExecutor, ToolPermissionMode, ToolPermissionRule,
-    ToolPermissionRules, parse_tool_permission_rules, qualify_citation_source_ids,
+    ToolPermissionRules, parse_tool_permission_rules, project_tool_permission_rule,
+    qualify_citation_source_ids,
 };
 use crate::storage::AppStorage;
 use crate::tools::executor::{paths::ToolPathScope, validation::ToolOperation};
@@ -526,6 +527,51 @@ fn named_task_rules_override_the_project_wide_task_rule() {
     );
 }
 
+#[cfg(windows)]
+#[test]
+fn configured_project_tool_lookup_requires_the_current_definition_fingerprint() {
+    let bound_name = format!("project_tool__lint__{}", "a".repeat(64));
+    let operation = ToolOperation::ProjectTool {
+        executable: PathBuf::from("project/tools/lint.exe"),
+        permission_rule_name: bound_name.clone(),
+        input: json!({}),
+        timeout_seconds: 60,
+        output_limit_bytes: 1024,
+    };
+    let call = ToolCall {
+        id: "call_lint".to_owned(),
+        name: "project_tool__lint".to_owned(),
+        arguments: json!({}),
+    };
+
+    let legacy_allow = ToolExecutor::with_permission_rules(
+        None,
+        Path::new("."),
+        ToolPermissionMode::RequireApproval,
+        [call.name.clone()],
+        parse_tool_permission_rules(Some(&json!({"project_tool__lint": "allow"})))
+            .expect("valid legacy allow"),
+    );
+    assert_eq!(
+        legacy_allow.permission_rule(&call, &operation, None),
+        ToolPermissionRule::Ask
+    );
+
+    let mut current_rules = ToolPermissionRules::new();
+    current_rules.insert(bound_name, ToolPermissionRule::Allow);
+    let current_allow = ToolExecutor::with_permission_rules(
+        None,
+        Path::new("."),
+        ToolPermissionMode::RequireApproval,
+        [call.name.clone()],
+        current_rules,
+    );
+    assert_eq!(
+        current_allow.permission_rule(&call, &operation, None),
+        ToolPermissionRule::Allow
+    );
+}
+
 #[test]
 fn permission_rule_parser_rejects_unknown_tools_and_values() {
     let valid = json!({
@@ -533,13 +579,18 @@ fn permission_rule_parser_rejects_unknown_tools_and_values() {
         "read_file": "allow",
         "search_files": "ask",
         "git_diff": "allow",
-        "project_tool__lint": "deny"
+        "project_tool__lint": "deny",
+        "project_tool__lint__aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": "allow"
     });
     let rules = parse_tool_permission_rules(Some(&valid)).expect("valid rules");
     assert_eq!(rules["execute_command"], ToolPermissionRule::Ask);
     assert_eq!(rules["read_file"], ToolPermissionRule::Allow);
     assert_eq!(rules["search_files"], ToolPermissionRule::Ask);
     assert_eq!(rules["project_tool__lint"], ToolPermissionRule::Deny);
+    assert_eq!(
+        rules["project_tool__lint__aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],
+        ToolPermissionRule::Allow
+    );
 
     #[cfg(windows)]
     {
@@ -587,6 +638,29 @@ fn permission_rule_parser_rejects_unknown_tools_and_values() {
             .expect_err("task permission ids must use catalog id syntax")
             .code,
         "invalid_tool_permission_rules"
+    );
+}
+
+#[test]
+fn project_tool_permission_rules_ignore_legacy_allows_and_keep_legacy_denials() {
+    let bound_name = format!("project_tool__lint__{}", "a".repeat(64));
+    let mut rules = ToolPermissionRules::new();
+    rules.insert("project_tool__lint".to_owned(), ToolPermissionRule::Allow);
+    assert_eq!(
+        project_tool_permission_rule(&rules, &bound_name, "project_tool__lint"),
+        None
+    );
+
+    rules.insert("project_tool__lint".to_owned(), ToolPermissionRule::Deny);
+    assert_eq!(
+        project_tool_permission_rule(&rules, &bound_name, "project_tool__lint"),
+        Some(ToolPermissionRule::Deny)
+    );
+
+    rules.insert(bound_name.clone(), ToolPermissionRule::Allow);
+    assert_eq!(
+        project_tool_permission_rule(&rules, &bound_name, "project_tool__lint"),
+        Some(ToolPermissionRule::Allow)
     );
 }
 

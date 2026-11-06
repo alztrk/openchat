@@ -340,11 +340,18 @@ pub(super) async fn dispatch(
             let project_id = required_string(params, "projectId")?;
             let root = project_root_for_mcp(storage, project_id)?;
             let tools = crate::tools::project_tools::load_if_present(&root)?;
+            let tools = tools
+                .iter()
+                .map(|tool| {
+                    Ok(json!({
+                        "id": tool.id,
+                        "description": tool.description,
+                        "permissionRuleName": tool.permission_rule_name(&root)?,
+                    }))
+                })
+                .collect::<Result<Vec<_>, ServiceError>>()?;
             Ok(json!({
                 "tools": tools
-                    .iter()
-                    .map(|tool| json!({"id": tool.id, "description": tool.description}))
-                    .collect::<Vec<_>>()
             }))
         }
         "project.worktrees.run_task" => {

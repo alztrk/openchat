@@ -6,11 +6,14 @@
 use std::{
     collections::HashSet,
     fs,
+    io::Read,
     path::{Path, PathBuf},
 };
 
+use cap_std::fs::OpenOptions;
 use serde::Deserialize;
-use serde_json::Value;
+use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
 
 use crate::{protocol::ServiceError, provider_schema::ToolDefinition};
 
@@ -74,6 +77,62 @@ impl ProjectTool {
             ));
         }
         Ok(executable)
+    }
+
+    pub(crate) fn permission_rule_name(&self, project_root: &Path) -> Result<String, ServiceError> {
+        let executable_path = self.executable_path(project_root)?;
+        let mut options = OpenOptions::new();
+        options.read(true);
+        let (mut executable, metadata) = crate::filesystem::open_regular_file_under_root(
+            project_root,
+            Path::new(&self.executable),
+            &options,
+        )
+        .map_err(|_| unavailable())?;
+
+        let definition = json!({
+            "id": &self.id,
+            "description": &self.description,
+            "executable": &self.executable,
+            "inputSchema": &self.input_schema,
+            "timeoutSeconds": self.timeout_seconds,
+            "outputLimitBytes": self.output_limit_bytes,
+        });
+        let definition_bytes = serde_json::to_vec(&definition)
+            .map_err(|_| invalid("The configured project tool could not be fingerprinted."))?;
+        let executable_length = metadata.len();
+        let mut fingerprint = Sha256::new();
+        fingerprint.update(b"openchat-project-tool-permission-v1\0");
+        fingerprint.update((definition_bytes.len() as u64).to_le_bytes());
+        fingerprint.update(definition_bytes);
+        fingerprint.update(executable_length.to_le_bytes());
+
+        let mut bytes_read = 0u64;
+        let mut buffer = [0u8; 64 * 1024];
+        loop {
+            let count = executable.read(&mut buffer).map_err(|_| unavailable())?;
+            if count == 0 {
+                break;
+            }
+            bytes_read = bytes_read
+                .checked_add(count as u64)
+                .filter(|length| *length <= executable_length)
+                .ok_or_else(unavailable)?;
+            fingerprint.update(&buffer[..count]);
+        }
+
+        if bytes_read != executable_length
+            || executable.metadata().map_err(|_| unavailable())?.len() != executable_length
+            || self.executable_path(project_root)? != executable_path
+        {
+            return Err(unavailable());
+        }
+
+        Ok(format!(
+            "{PERMISSION_PREFIX}{}__{:x}",
+            self.id,
+            fingerprint.finalize()
+        ))
     }
 
     pub(crate) fn validate_arguments(&self, arguments: &Value) -> Result<(), ServiceError> {
@@ -145,8 +204,23 @@ pub(crate) fn find<'a>(tools: &'a [ProjectTool], tool_name: &str) -> Option<&'a 
 }
 
 pub(crate) fn is_permission_rule_name(name: &str) -> bool {
-    name.strip_prefix(PERMISSION_PREFIX)
-        .is_some_and(is_valid_id)
+    let Some(suffix) = name.strip_prefix(PERMISSION_PREFIX) else {
+        return false;
+    };
+    if is_valid_id(suffix) {
+        return true;
+    }
+    let Some((id, fingerprint)) = suffix.rsplit_once("__") else {
+        return false;
+    };
+    is_valid_id(id) && valid_permission_fingerprint(fingerprint)
+}
+
+fn valid_permission_fingerprint(value: &str) -> bool {
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
 pub(crate) fn is_valid_id(id: &str) -> bool {
@@ -470,7 +544,50 @@ mod tests {
     #[test]
     fn configured_tool_permission_rule_ids_are_stable_and_bounded() {
         assert!(is_permission_rule_name("project_tool__lint"));
+        assert!(is_permission_rule_name(&format!(
+            "project_tool__lint__{}",
+            "a".repeat(64)
+        )));
         assert!(!is_permission_rule_name("project_tool__Upper"));
+        assert!(!is_permission_rule_name(&format!(
+            "project_tool__lint__{}",
+            "A".repeat(64)
+        )));
+        assert!(!is_permission_rule_name(&format!(
+            "project_tool__lint__{}",
+            "a".repeat(63)
+        )));
+    }
+
+    #[test]
+    fn permission_rule_name_changes_with_executable_or_tool_definition() {
+        let directory = TestDirectory::new();
+        fs::create_dir_all(directory.0.join("tools")).expect("create executable folder");
+        fs::write(directory.0.join("tools/lint.exe"), b"first executable")
+            .expect("create executable fixture");
+        directory.write_catalog(json!({"version":1,"tools":[valid_tool()]}));
+        let tool = load(&directory.0).expect("load configured tool").remove(0);
+        let original = tool
+            .permission_rule_name(&directory.0)
+            .expect("fingerprint configured tool");
+
+        fs::write(directory.0.join("tools/lint.exe"), b"changed executable")
+            .expect("replace executable fixture");
+        let changed_executable = tool
+            .permission_rule_name(&directory.0)
+            .expect("fingerprint changed executable");
+        assert_ne!(original, changed_executable);
+
+        fs::write(directory.0.join("tools/lint.exe"), b"first executable")
+            .expect("restore executable fixture");
+        let mut changed_definition = tool.clone();
+        changed_definition.description.push_str(" Updated.");
+        assert_ne!(
+            original,
+            changed_definition
+                .permission_rule_name(&directory.0)
+                .expect("fingerprint changed tool definition")
+        );
     }
 
     #[test]

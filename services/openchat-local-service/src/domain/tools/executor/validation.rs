@@ -60,6 +60,7 @@ pub(crate) enum ToolOperation {
     #[cfg(windows)]
     ProjectTool {
         executable: PathBuf,
+        permission_rule_name: String,
         input: Value,
         timeout_seconds: u64,
         output_limit_bytes: usize,
@@ -148,6 +149,9 @@ impl ToolExecutor {
             let executable = tool
                 .executable_path(&root)
                 .map_err(|error| tool_error(error.code, &error.message))?;
+            let permission_rule_name = tool
+                .permission_rule_name(&root)
+                .map_err(|error| tool_error(error.code, &error.message))?;
             return Ok(PreparedToolCall {
                 root: root.clone(),
                 relative_path: String::new(),
@@ -156,6 +160,7 @@ impl ToolExecutor {
                 scope: ToolPathScope::Project,
                 operation: ToolOperation::ProjectTool {
                     executable,
+                    permission_rule_name,
                     input: call.arguments.clone(),
                     timeout_seconds: tool.timeout_seconds,
                     output_limit_bytes: tool.output_limit_bytes,

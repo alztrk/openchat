@@ -34,6 +34,19 @@ pub(crate) type ToolPermissionRules = HashMap<String, ToolPermissionRule>;
 pub(crate) const MAX_TOOL_PERMISSION_RULES: usize = 1080;
 pub(crate) const MAX_PROJECT_RULE_PRECHECKS: usize = 256;
 
+pub(crate) fn project_tool_permission_rule(
+    rules: &ToolPermissionRules,
+    bound_rule_name: &str,
+    legacy_rule_name: &str,
+) -> Option<ToolPermissionRule> {
+    rules.get(bound_rule_name).copied().or_else(|| {
+        rules
+            .get(legacy_rule_name)
+            .copied()
+            .filter(|rule| *rule != ToolPermissionRule::Allow)
+    })
+}
+
 pub(crate) fn project_task_permission_rule<'a>(
     rules: &'a ToolPermissionRules,
     task_id: &str,

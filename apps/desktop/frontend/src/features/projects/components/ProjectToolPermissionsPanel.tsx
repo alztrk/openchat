@@ -8,7 +8,15 @@ import {
   loadToolPermissionMode,
   saveProjectToolPermissionRules,
 } from '@entities/project/projectPermissionSettings';
-import type { ProjectToolPermissionRule, ToolPermissionMode } from '@entities/project';
+import {
+  isProjectToolPermissionRuleName,
+  legacyProjectToolPermissionRuleName,
+  normalizeProjectToolPermissionRules,
+  projectToolPermissionRuleValue,
+  type ProjectToolPermissionRule,
+  type ProjectToolPermissionTarget,
+  type ToolPermissionMode,
+} from '@entities/project';
 import { localServiceClient } from '@shared/lib/platform/local-service';
 
 const standardTools = [
@@ -38,7 +46,7 @@ interface ProjectToolPermissionsPanelProps {
 export function ProjectToolPermissionsPanel({ project, onClose }: ProjectToolPermissionsPanelProps) {
   const { t } = useTranslation();
   const [rules, setRules] = useState<Record<string, ProjectToolPermissionRule>>({});
-  const [toolIds, setToolIds] = useState<string[]>([]);
+  const [projectTools, setProjectTools] = useState<ProjectToolPermissionTarget[]>([]);
   const [taskIds, setTaskIds] = useState<string[]>([]);
   const [permissionMode, setPermissionMode] = useState<ToolPermissionMode>('require_approval');
   const [isLoading, setIsLoading] = useState(true);
@@ -52,7 +60,7 @@ export function ProjectToolPermissionsPanel({ project, onClose }: ProjectToolPer
       .then((loaded) => {
         if (!current) return;
         setRules(loaded.rules);
-        setToolIds(loaded.toolIds);
+        setProjectTools(loaded.projectTools);
         setTaskIds(loaded.taskIds);
         setPermissionMode(loaded.permissionMode);
       })
@@ -73,7 +81,7 @@ export function ProjectToolPermissionsPanel({ project, onClose }: ProjectToolPer
     try {
       const loaded = await loadProjectToolSettings(project.id);
       setRules(loaded.rules);
-      setToolIds(loaded.toolIds);
+      setProjectTools(loaded.projectTools);
       setTaskIds(loaded.taskIds);
       setPermissionMode(loaded.permissionMode);
     } catch {
@@ -88,17 +96,27 @@ export function ProjectToolPermissionsPanel({ project, onClose }: ProjectToolPer
       [
         ...standardTools,
         ...taskIds.map((id) => `run_project_task__${id}`),
-        ...toolIds.map((id) => `project_tool__${id}`),
+        ...projectTools.map((tool) => tool.permissionRuleName),
         ...Object.keys(rules).filter((name) => name.startsWith('mcp__')),
       ].sort((left, right) => left.localeCompare(right)),
-    [rules, taskIds, toolIds],
+    [rules, taskIds, projectTools],
   );
 
   const updateRule = (name: string, value: string) => {
     setRules((current) => {
       const next = { ...current };
-      if (value === 'inherit') delete next[name];
-      else if (isPermissionRule(value)) next[name] = value;
+      const legacyName = legacyProjectToolPermissionRuleName(name);
+      if (value === 'inherit') {
+        delete next[name];
+        if (legacyName !== undefined) delete next[legacyName];
+      } else if (isPermissionRule(value)) {
+        if (legacyName !== undefined && value !== 'allow') {
+          delete next[name];
+          next[legacyName] = value;
+        } else {
+          next[name] = value;
+        }
+      }
       return next;
     });
     setSaveFailed(false);
@@ -165,7 +183,7 @@ export function ProjectToolPermissionsPanel({ project, onClose }: ProjectToolPer
                 { value: 'allow', label: t('projectToolRuleAllow') },
                 { value: 'deny', label: t('projectToolRuleDeny') },
               ]}
-              value={rules[name] ?? 'inherit'}
+              value={projectToolPermissionRuleValue(rules, name) ?? 'inherit'}
             />
           ))}
         </div>
@@ -190,7 +208,7 @@ export function ProjectToolPermissionsPanel({ project, onClose }: ProjectToolPer
 async function loadProjectToolSettings(projectId: string): Promise<{
   rules: Record<string, ProjectToolPermissionRule>;
   taskIds: string[];
-  toolIds: string[];
+  projectTools: ProjectToolPermissionTarget[];
   permissionMode: ToolPermissionMode;
 }> {
   const [taskResponse, toolResponse, rules, permissionMode] = await Promise.all([
@@ -199,12 +217,34 @@ async function loadProjectToolSettings(projectId: string): Promise<{
     loadProjectToolPermissionRules(projectId),
     loadToolPermissionMode(),
   ]);
+  const projectTools = parseProjectTools(toolResponse.tools);
   return {
-    rules,
+    rules: normalizeProjectToolPermissionRules(rules),
     taskIds: parseIds(taskResponse.tasks, /^[a-z0-9_-]{1,64}$/, 'The project task list was invalid.'),
-    toolIds: parseIds(toolResponse.tools, /^[a-z0-9_-]{1,48}$/, 'The configured project tool list was invalid.'),
+    projectTools,
     permissionMode,
   };
+}
+
+function parseProjectTools(value: unknown): ProjectToolPermissionTarget[] {
+  const error = 'The configured project tool list was invalid.';
+  if (!Array.isArray(value) || value.length > 32) throw new Error(error);
+  const tools = value.map((entry) => {
+    if (!isObject(entry) || typeof entry.id !== 'string' || !/^[a-z0-9_-]{1,48}$/u.test(entry.id)) {
+      throw new Error(error);
+    }
+    if (
+      typeof entry.permissionRuleName !== 'string' ||
+      !isProjectToolPermissionRuleName(entry.permissionRuleName) ||
+      !entry.permissionRuleName.startsWith(`project_tool__${entry.id}__`) ||
+      !/^[a-f0-9]{64}$/u.test(entry.permissionRuleName.slice(`project_tool__${entry.id}__`.length))
+    ) {
+      throw new Error(error);
+    }
+    return { id: entry.id, permissionRuleName: entry.permissionRuleName };
+  });
+  if (new Set(tools.map((tool) => tool.id)).size !== tools.length) throw new Error(error);
+  return tools;
 }
 
 function parseIds(value: unknown, pattern: RegExp, error: string): string[] {
@@ -241,8 +281,13 @@ function toolLabel(
   const taskPrefix = 'run_project_task__';
   const projectToolPrefix = 'project_tool__';
   if (name.startsWith(taskPrefix)) return `${t('toolRunProjectTask')}: ${name.slice(taskPrefix.length)}`;
-  if (name.startsWith(projectToolPrefix))
-    return t('toolConfiguredProjectTool', { name: name.slice(projectToolPrefix.length) });
+  if (name.startsWith(projectToolPrefix)) {
+    const suffix = name.slice(projectToolPrefix.length);
+    const separator = suffix.lastIndexOf('__');
+    const fingerprint = suffix.slice(separator + 2);
+    const id = /^[a-f0-9]{64}$/u.test(fingerprint) ? suffix.slice(0, separator) : suffix;
+    return t('toolConfiguredProjectTool', { name: id });
+  }
   const key = labelKey[name];
   return key ? t(key) : t('toolConfiguredProjectTool', { name });
 }
