@@ -125,6 +125,8 @@ fn start_local_service_process(
             ));
         }
     };
+    #[cfg(feature = "startup-benchmark")]
+    crate::record_startup_benchmark_sidecar_spawned(&app);
     let process_id = child.pid();
     let child = Arc::new(Mutex::new(Some(child)));
     let interrupt = match ProcessInterrupt::new(process_id) {

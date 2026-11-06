@@ -14,6 +14,8 @@ import { removeTemporaryTestProfile } from '../shared/profile-clean.mjs';
 import { getFrontendDirectory, getTauriDirectory } from '../shared/runner.mjs';
 import { ensureNoArguments } from '../help.mjs';
 
+const STARTUP_BENCHMARK_TIMEOUT_MS = 30_000;
+
 const tauriCliPath = path.join(getFrontendDirectory(), 'node_modules', '@tauri-apps', 'cli', 'tauri.js');
 const tauriShutdownGraceMs = process.platform === 'win32' ? 10_000 : undefined;
 
@@ -175,38 +177,69 @@ export const startupBenchmark = {
         await ensureFrontendDependenciesInterruptibly(interruptController);
         interruptController.throwIfInterrupted();
 
-        await runInterruptibleCommand(process.execPath, [
-          tauriCliPath, 'dev', '--config', 'tauri.dev.conf.json', '--features', 'startup-benchmark',
-          '--', '--', '--startup-benchmark-root', profileRoot,
-        ], {
-          cwd: getTauriDirectory(),
-          interruptController,
-          shutdownGraceMs: tauriShutdownGraceMs,
-          shutdownMarker: profileRoot,
-        });
+        let startupTimedOut = false;
+        const startupTimeout = setTimeout(() => {
+          startupTimedOut = true;
+          interruptController.noteSignal('SIGINT');
+        }, STARTUP_BENCHMARK_TIMEOUT_MS);
+        try {
+          await runInterruptibleCommand(process.execPath, [
+            tauriCliPath, 'dev', '--config', 'tauri.dev.conf.json', '--features', 'startup-benchmark',
+            '--', '--', '--startup-benchmark-root', profileRoot,
+          ], {
+            cwd: getTauriDirectory(),
+            interruptController,
+            shutdownGraceMs: tauriShutdownGraceMs,
+            shutdownMarker: profileRoot,
+          });
+        } catch (error) {
+          if (startupTimedOut) {
+            throw new Error('Desktop startup benchmark timed out before React and storage were ready.', { cause: error });
+          }
+          throw error;
+        } finally {
+          clearTimeout(startupTimeout);
+        }
         interruptController.throwIfInterrupted();
 
         const result = JSON.parse(fs.readFileSync(resultPath, 'utf8'));
         const processToWindowShowCompletedMs = result?.processToWindowVisibleMs;
-        const elapsedMs = result?.processToReactReadyMs;
+        const reactReadyMs = result?.processToReactReadyMs;
+        const storageReadyMs = result?.processToStorageReadyMs;
+        const sidecarSpawnMs = result?.processToSidecarSpawnMs;
         const performanceSnapshot = result?.performanceSnapshot;
         const renderedRootClass = performanceSnapshot?.renderedRootClass;
         const startupMilestones = performanceSnapshot?.startupMilestones;
+        const hasStartupFailure = Array.isArray(startupMilestones) &&
+          startupMilestones.some((milestone) => milestone?.name === 'startup-failed');
+        if (hasStartupFailure) {
+          throw new Error('The desktop startup entered its error flow before storage became ready.');
+        }
         if (
           typeof processToWindowShowCompletedMs !== 'number' ||
           !Number.isFinite(processToWindowShowCompletedMs) ||
           processToWindowShowCompletedMs <= 0 ||
-          typeof elapsedMs !== 'number' ||
-          !Number.isFinite(elapsedMs) ||
-          elapsedMs <= 0 ||
-          processToWindowShowCompletedMs > elapsedMs ||
+          typeof reactReadyMs !== 'number' ||
+          !Number.isFinite(reactReadyMs) ||
+          reactReadyMs <= 0 ||
+          typeof storageReadyMs !== 'number' ||
+          !Number.isFinite(storageReadyMs) ||
+          storageReadyMs <= 0 ||
+          typeof sidecarSpawnMs !== 'number' ||
+          !Number.isFinite(sidecarSpawnMs) ||
+          sidecarSpawnMs <= 0 ||
+          processToWindowShowCompletedMs > storageReadyMs ||
+          reactReadyMs > storageReadyMs ||
           typeof renderedRootClass !== 'string' ||
           !renderedRootClass.split(/\s+/u).includes('app-shell') ||
           renderedRootClass.includes('startup-error-page') ||
           !Array.isArray(startupMilestones) ||
-          !startupMilestones.some((milestone) => milestone?.name === 'react-first-commit-complete')
+          !startupMilestones.some((milestone) => milestone?.name === 'react-first-commit-complete') ||
+          !startupMilestones.some((milestone) => milestone?.name === 'local-service-initialize-ready') ||
+          !startupMilestones.some((milestone) => milestone?.name === 'unified-storage-initialize-ready') ||
+          !startupMilestones.some((milestone) => milestone?.name === 'storage-ready-event')
         ) {
-          throw new Error('The desktop did not reach the OpenChat application shell with startup milestones.');
+          throw new Error('The desktop did not reach the OpenChat application shell and ready storage with startup milestones.');
         }
 
         const databasePath = path.join(profileRoot, 'storage', 'db', 'openchat.sqlite3');
@@ -223,7 +256,8 @@ export const startupBenchmark = {
 
         process.stdout.write(
           `Debug startup to Tauri window show() completion: ${processToWindowShowCompletedMs.toFixed(1)} ms; ` +
-            `React ready: ${elapsedMs.toFixed(1)} ms; app shell and encrypted database verified.\n`,
+            `sidecar spawn: ${sidecarSpawnMs.toFixed(1)} ms; first React commit: ${reactReadyMs.toFixed(1)} ms; ` +
+            `storage ready: ${storageReadyMs.toFixed(1)} ms; app shell and encrypted database verified.\n`,
         );
         process.stdout.write('Renderer startup milestones (navigation-relative):\n');
         let previousMilestoneTimeMs = 0;

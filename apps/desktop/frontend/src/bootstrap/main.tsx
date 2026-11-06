@@ -6,6 +6,7 @@ declare global {
   interface Window {
     __OPENCHAT_STARTUP_BENCHMARK__?: {
       mark: (milestone: string) => void;
+      reportReactReady?: () => Promise<void>;
       reportWindowVisible: () => Promise<void>;
     };
   }
@@ -36,6 +37,12 @@ function StartupCommitMarker({ React }: { React: typeof import('react') }): null
     if (reactFirstCommitMarked) return;
     reactFirstCommitMarked = true;
     markStartupMilestone('react-first-commit-complete');
+    const reportReactReady = window.__OPENCHAT_STARTUP_BENCHMARK__?.reportReactReady;
+    if (reportReactReady) {
+      void reportReactReady().catch((cause: unknown) => {
+        globalThis.reportError(new Error('The startup benchmark could not record the first React commit.', { cause }));
+      });
+    }
   }, []);
   return null;
 }
@@ -186,11 +193,14 @@ async function startApplication(options: { startWithEmptyStorage?: boolean } = {
   );
 
   await storageInitialization;
+  markStartupMilestone('unified-storage-initialize-ready');
   await i18nModule.changeSupportedLocale(i18nModule.getInitialLocale());
+  markStartupMilestone('openchat-storage-ready');
   window.dispatchEvent(new Event('openchat-storage-ready'));
 }
 
 void startApplication().catch(async (error: unknown) => {
+  markStartupMilestone('startup-failed');
   try {
     await loadAppStyles();
   } catch (stylesError) {

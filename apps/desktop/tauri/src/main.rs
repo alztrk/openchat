@@ -30,13 +30,22 @@ struct StartupBenchmarkState {
     started_at: std::time::Instant,
     result_path: std::path::PathBuf,
     reported: AtomicBool,
+    sidecar_spawned_at_ms: Mutex<Option<f64>>,
+    react_ready_at_ms: Mutex<Option<f64>>,
+    storage_ready_at_ms: Mutex<Option<f64>>,
     window_visible_at_ms: Mutex<Option<f64>>,
 }
 
 #[cfg(feature = "startup-benchmark")]
 macro_rules! app_invoke_handler {
     ($($command:path),* $(,)?) => {
-        tauri::generate_handler![$($command,)* startup_benchmark_ready, startup_benchmark_window_visible]
+        tauri::generate_handler![
+            $($command,)*
+            startup_benchmark_ready,
+            startup_benchmark_react_ready,
+            startup_benchmark_storage_ready,
+            startup_benchmark_window_visible
+        ]
     };
 }
 
@@ -126,6 +135,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             started_at: startup_started_at,
             result_path,
             reported: AtomicBool::new(false),
+            sidecar_spawned_at_ms: Mutex::new(None),
+            react_ready_at_ms: Mutex::new(None),
+            storage_ready_at_ms: Mutex::new(None),
             window_visible_at_ms: Mutex::new(None),
         })
     };
@@ -203,15 +215,33 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 main_window_builder = main_window_builder.initialization_script(
                     r#"(() => {
                       window.__OPENCHAT_STARTUP_BENCHMARK__ = {
-                        mark: (milestone) => performance.mark(`openchat-startup:${milestone}`),
+                        mark: (milestone) => {
+                          performance.mark(`openchat-startup:${milestone}`);
+                          if (milestone === 'startup-failed') {
+                            startupFailed = true;
+                            reportReactReady();
+                          }
+                        },
+                        reportReactReady: () => window.__TAURI_INTERNALS__.invoke('startup_benchmark_react_ready'),
                         reportWindowVisible: () => window.__TAURI_INTERNALS__.invoke('startup_benchmark_window_visible'),
                       };
                       let windowVisible = false;
+                      let storageReadyRecorded = false;
+                      let startupFailed = false;
                       let reportReactReady = () => {};
                       window.addEventListener('openchat-startup-window-visible', () => {
                         windowVisible = true;
                         performance.mark('openchat-startup:window-visible-event');
                         reportReactReady();
+                      }, { once: true });
+                      window.addEventListener('openchat-storage-ready', () => {
+                        performance.mark('openchat-startup:storage-ready-event');
+                        void window.__TAURI_INTERNALS__.invoke('startup_benchmark_storage_ready')
+                          .then(() => {
+                            storageReadyRecorded = true;
+                            reportReactReady();
+                          })
+                          .catch((error) => globalThis.reportError(error));
                       }, { once: true });
                       const observeReactRoot = () => {
                         const root = document.getElementById('root');
@@ -220,7 +250,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let reactRootReady = false;
                         let observer;
                         const reportReady = () => {
-                          if (!reactRootReady || !windowVisible) return;
+                          if (!reactRootReady || !windowVisible || (!storageReadyRecorded && !startupFailed)) return;
                           observer.disconnect();
                           const navigation = performance.getEntriesByType('navigation')[0];
                           const resources = performance.getEntriesByType('resource')
@@ -837,6 +867,36 @@ fn startup_benchmark_window_visible(app: tauri::AppHandle) -> Result<(), String>
 
 #[cfg(feature = "startup-benchmark")]
 #[tauri::command]
+fn startup_benchmark_react_ready(app: tauri::AppHandle) -> Result<(), String> {
+    let benchmark = app.state::<StartupBenchmarkState>();
+    let elapsed_ms = benchmark.started_at.elapsed().as_secs_f64() * 1000.0;
+    let mut react_ready_at_ms = benchmark
+        .react_ready_at_ms
+        .lock()
+        .map_err(|_| "The startup benchmark state is unavailable.")?;
+    if react_ready_at_ms.is_none() {
+        *react_ready_at_ms = Some(elapsed_ms);
+    }
+    Ok(())
+}
+
+#[cfg(feature = "startup-benchmark")]
+#[tauri::command]
+fn startup_benchmark_storage_ready(app: tauri::AppHandle) -> Result<(), String> {
+    let benchmark = app.state::<StartupBenchmarkState>();
+    let elapsed_ms = benchmark.started_at.elapsed().as_secs_f64() * 1000.0;
+    let mut storage_ready_at_ms = benchmark
+        .storage_ready_at_ms
+        .lock()
+        .map_err(|_| "The startup benchmark state is unavailable.")?;
+    if storage_ready_at_ms.is_none() {
+        *storage_ready_at_ms = Some(elapsed_ms);
+    }
+    Ok(())
+}
+
+#[cfg(feature = "startup-benchmark")]
+#[tauri::command]
 fn startup_benchmark_ready(
     app: tauri::AppHandle,
     performance_snapshot: serde_json::Value,
@@ -845,7 +905,18 @@ fn startup_benchmark_ready(
     if benchmark.reported.swap(true, Ordering::AcqRel) {
         return Ok(());
     }
-    let elapsed_ms = benchmark.started_at.elapsed().as_secs_f64() * 1000.0;
+    let storage_ready_at_ms = *benchmark
+        .storage_ready_at_ms
+        .lock()
+        .map_err(|_| "The startup benchmark state is unavailable.")?;
+    let react_ready_at_ms = *benchmark
+        .react_ready_at_ms
+        .lock()
+        .map_err(|_| "The startup benchmark state is unavailable.")?;
+    let sidecar_spawned_at_ms = *benchmark
+        .sidecar_spawned_at_ms
+        .lock()
+        .map_err(|_| "The startup benchmark state is unavailable.")?;
     let window_visible_at_ms = benchmark
         .window_visible_at_ms
         .lock()
@@ -853,13 +924,26 @@ fn startup_benchmark_ready(
         .ok_or("The benchmark did not record the first visible window.")?;
     let result = serde_json::json!({
         "processToWindowVisibleMs": window_visible_at_ms,
-        "processToReactReadyMs": elapsed_ms,
+        "processToSidecarSpawnMs": sidecar_spawned_at_ms,
+        "processToReactReadyMs": react_ready_at_ms,
+        "processToStorageReadyMs": storage_ready_at_ms,
         "performanceSnapshot": performance_snapshot,
     });
     std::fs::write(&benchmark.result_path, result.to_string())
         .map_err(|_| "The startup benchmark result could not be written.")?;
     app.exit(0);
     Ok(())
+}
+
+#[cfg(feature = "startup-benchmark")]
+pub(crate) fn record_startup_benchmark_sidecar_spawned(app: &tauri::AppHandle) {
+    let benchmark = app.state::<StartupBenchmarkState>();
+    let elapsed_ms = benchmark.started_at.elapsed().as_secs_f64() * 1000.0;
+    if let Ok(mut sidecar_spawned_at_ms) = benchmark.sidecar_spawned_at_ms.lock() {
+        if sidecar_spawned_at_ms.is_none() {
+            *sidecar_spawned_at_ms = Some(elapsed_ms);
+        }
+    };
 }
 
 #[cfg(feature = "startup-benchmark")]

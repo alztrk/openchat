@@ -242,6 +242,12 @@ interface PendingOperation {
   onEvent?: (event: ServiceEvent) => void;
 }
 
+function markStartupMilestone(milestone: string): void {
+  if (typeof window !== 'undefined') {
+    window.__OPENCHAT_STARTUP_BENCHMARK__?.mark(milestone);
+  }
+}
+
 /** Handle returned for long-running RPC work, allowing progress observation and cancellation. */
 export interface ServiceOperation {
   id: number;
@@ -498,9 +504,13 @@ export class LocalServiceClient {
 
   /** Performs the one-time storage preparation and application initialization handshake. */
   private async initializeOnce(startWithEmptyStorage: boolean): Promise<void> {
+    markStartupMilestone('local-service-startup-start');
     const [chatSchemaVersion] = await Promise.all([getChatSchemaVersion(), this.startProcess(startWithEmptyStorage)]);
+    markStartupMilestone('local-service-process-registered');
 
+    markStartupMilestone('local-service-initialize-request');
     const initialization = await this.callRaw('system.initialize', { chatSchemaVersion }, requestTimeoutMs);
+    markStartupMilestone('local-service-initialize-ready');
     if (initialization.status !== 'ready') {
       throw new LocalServiceError(
         'storage_initialization_failed',
