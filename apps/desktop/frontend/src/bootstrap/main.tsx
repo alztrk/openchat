@@ -29,6 +29,16 @@ let appStylesPromise: Promise<unknown> | undefined;
 let startupWindowShowPromise: Promise<void> | undefined;
 let startupWindowShowFailureReported = false;
 let languageChangeListenerRegistered = false;
+let reactFirstCommitMarked = false;
+
+function StartupCommitMarker({ React }: { React: typeof import('react') }): null {
+  React.useLayoutEffect(() => {
+    if (reactFirstCommitMarked) return;
+    reactFirstCommitMarked = true;
+    markStartupMilestone('react-first-commit-complete');
+  }, []);
+  return null;
+}
 
 function loadAppStyles(): Promise<unknown> {
   if (!appStylesPromise) {
@@ -76,7 +86,7 @@ function renderAndRevealWindow(render: () => void): void {
   }
 
   flushSync(render);
-  markStartupMilestone('react-first-commit-complete');
+  markStartupMilestone('react-flushSync-complete');
   markStartupMilestone('window-show-requested');
   void showStartupWindow()
     .then(() => {
@@ -169,6 +179,7 @@ async function startApplication(options: { startWithEmptyStorage?: boolean } = {
       React.createElement(
         React.StrictMode,
         null,
+        React.createElement(StartupCommitMarker, { React }),
         React.createElement(ApplicationErrorBoundary, null, React.createElement(App)),
       ),
     ),
