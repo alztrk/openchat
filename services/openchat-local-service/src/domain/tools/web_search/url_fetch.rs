@@ -20,6 +20,35 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(3);
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(8);
 const DNS_TIMEOUT: Duration = Duration::from_secs(3);
 const MAX_REDIRECTS: usize = 5;
+const MAX_RESOLVED_ADDRESSES: usize = 64;
+
+#[derive(Debug)]
+pub(crate) enum PinnedClientError {
+    InvalidHost,
+    UnsupportedPort,
+    ResolutionTimedOut,
+    ResolutionFailed,
+    NoAddresses,
+    TooManyAddresses,
+    RestrictedAddress,
+    ClientUnavailable,
+}
+
+impl std::fmt::Display for PinnedClientError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let message = match self {
+            Self::InvalidHost => "The URL must include a host name.",
+            Self::UnsupportedPort => "The URL contains an unsupported port.",
+            Self::ResolutionTimedOut => "The URL host name could not be resolved in time.",
+            Self::ResolutionFailed => "The URL host name could not be resolved.",
+            Self::NoAddresses => "The URL host name has no network addresses.",
+            Self::TooManyAddresses => "The URL host name returned too many network addresses.",
+            Self::RestrictedAddress => "The URL host resolves to a restricted network address.",
+            Self::ClientUnavailable => "The web request could not be prepared.",
+        };
+        formatter.write_str(message)
+    }
+}
 
 /// Bounded page bytes and response metadata after the URL passes destination checks.
 pub(crate) struct FetchedPage {
@@ -165,35 +194,48 @@ pub(crate) async fn pinned_public_http_client(
     url: &Url,
     request_timeout: Option<Duration>,
 ) -> Result<Client, String> {
-    let host = url
-        .host()
-        .ok_or_else(|| "The URL must include a host name.".to_owned())?;
+    pinned_http_client(url, request_timeout, false)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+/// Builds a no-proxy client for browser inspection, preserving explicit localhost access.
+///
+/// Hostnames are resolved once, every result is checked, and the approved addresses are pinned
+/// to prevent DNS rebinding between validation and connection.
+pub(crate) async fn pinned_browser_http_client(
+    url: &Url,
+    request_timeout: Option<Duration>,
+) -> Result<Client, PinnedClientError> {
+    pinned_http_client(url, request_timeout, true).await
+}
+
+async fn pinned_http_client(
+    url: &Url,
+    request_timeout: Option<Duration>,
+    allow_loopback: bool,
+) -> Result<Client, PinnedClientError> {
+    let host = url.host().ok_or(PinnedClientError::InvalidHost)?;
     let port = url
         .port_or_known_default()
-        .ok_or_else(|| "The URL contains an unsupported port.".to_owned())?;
+        .ok_or(PinnedClientError::UnsupportedPort)?;
     let addresses = match host {
         Host::Ipv4(address) => vec![SocketAddr::new(IpAddr::V4(address), 0)],
         Host::Ipv6(address) => vec![SocketAddr::new(IpAddr::V6(address), 0)],
         Host::Domain(domain) => {
             let resolved = timeout(DNS_TIMEOUT, lookup_host((domain, port)))
                 .await
-                .map_err(|_| "The URL host name could not be resolved in time.".to_owned())?
-                .map_err(|_| "The URL host name could not be resolved.".to_owned())?;
-            let addresses = resolved
-                .map(|address| SocketAddr::new(address.ip(), 0))
-                .collect::<Vec<_>>();
-            if addresses.is_empty() {
-                return Err("The URL host name has no network addresses.".to_owned());
-            }
-            addresses
+                .map_err(|_| PinnedClientError::ResolutionTimedOut)?
+                .map_err(|_| PinnedClientError::ResolutionFailed)?;
+            collect_resolved_addresses(resolved.map(|address| SocketAddr::new(address.ip(), 0)))?
         }
     };
 
     if addresses
         .iter()
-        .any(|address| !is_public_address(address.ip()))
+        .any(|address| !is_allowed_destination(&host, address.ip(), allow_loopback))
     {
-        return Err("The URL host resolves to a restricted network address.".to_owned());
+        return Err(PinnedClientError::RestrictedAddress);
     }
 
     let mut default_headers = HeaderMap::new();
@@ -212,7 +254,11 @@ pub(crate) async fn pinned_public_http_client(
         .no_proxy()
         .redirect(reqwest::redirect::Policy::none())
         .connect_timeout(CONNECT_TIMEOUT)
-        .user_agent(concat!("OpenChat/", env!("CARGO_PKG_VERSION")))
+        .user_agent(if allow_loopback {
+            "OpenChat-IsolatedBrowser/1.0"
+        } else {
+            concat!("OpenChat/", env!("CARGO_PKG_VERSION"))
+        })
         .default_headers(default_headers);
     if let Some(request_timeout) = request_timeout {
         builder = builder.timeout(request_timeout);
@@ -222,7 +268,40 @@ pub(crate) async fn pinned_public_http_client(
     }
     builder
         .build()
-        .map_err(|_| "The web request could not be prepared.".to_owned())
+        .map_err(|_| PinnedClientError::ClientUnavailable)
+}
+
+fn collect_resolved_addresses(
+    addresses: impl Iterator<Item = SocketAddr>,
+) -> Result<Vec<SocketAddr>, PinnedClientError> {
+    let addresses = addresses
+        .take(MAX_RESOLVED_ADDRESSES + 1)
+        .collect::<Vec<_>>();
+    if addresses.is_empty() {
+        return Err(PinnedClientError::NoAddresses);
+    }
+    if addresses.len() > MAX_RESOLVED_ADDRESSES {
+        return Err(PinnedClientError::TooManyAddresses);
+    }
+    Ok(addresses)
+}
+
+fn is_allowed_destination(host: &Host<&str>, address: IpAddr, allow_loopback: bool) -> bool {
+    if allow_loopback && is_loopback_host(host) {
+        return address.is_loopback();
+    }
+    is_public_address(address)
+}
+
+fn is_loopback_host(host: &Host<&str>) -> bool {
+    match host {
+        Host::Ipv4(address) => address.is_loopback(),
+        Host::Ipv6(address) => address.is_loopback(),
+        Host::Domain(domain) => {
+            domain.eq_ignore_ascii_case("localhost")
+                || domain.to_ascii_lowercase().ends_with(".localhost")
+        }
+    }
 }
 
 /// Identifies the redirect response codes supported by the bounded fetch loop.
@@ -344,10 +423,14 @@ mod tests {
         net::TcpListener,
     };
 
-    use std::net::{IpAddr, Ipv4Addr};
+    use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
-    use super::{is_public_address, read_bounded_body, redirect_url, validate_http_url};
-    use url::Url;
+    use super::{
+        MAX_RESOLVED_ADDRESSES, PinnedClientError, collect_resolved_addresses,
+        is_allowed_destination, is_public_address, read_bounded_body, redirect_url,
+        validate_http_url,
+    };
+    use url::{Host, Url};
 
     async fn response_for_body(body: Vec<u8>, content_length: Option<usize>) -> reqwest::Response {
         let listener = TcpListener::bind("127.0.0.1:0")
@@ -433,6 +516,69 @@ mod tests {
                 "expected restricted address {address}"
             );
         }
+    }
+
+    #[test]
+    fn browser_destinations_allow_only_explicit_loopback_and_public_addresses() {
+        let localhost = Host::Domain("localhost");
+        let development_host = Host::Domain("preview.localhost");
+        let public_host = Host::Domain("example.com");
+        let loopback_v4 = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
+        let loopback_v6 = IpAddr::V6("::1".parse().expect("valid loopback IPv6"));
+
+        assert!(is_allowed_destination(&localhost, loopback_v4, true));
+        assert!(is_allowed_destination(&development_host, loopback_v6, true));
+        assert!(!is_allowed_destination(&localhost, loopback_v4, false));
+        assert!(!is_allowed_destination(
+            &localhost,
+            IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8)),
+            true
+        ));
+        assert!(!is_allowed_destination(&public_host, loopback_v4, true));
+        assert!(!is_allowed_destination(
+            &public_host,
+            IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1)),
+            true
+        ));
+        assert!(!is_allowed_destination(
+            &public_host,
+            IpAddr::V6("fc00::1".parse().expect("valid unique-local IPv6")),
+            true
+        ));
+        assert!(is_allowed_destination(
+            &public_host,
+            IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8)),
+            true
+        ));
+    }
+
+    #[test]
+    fn resolved_address_collection_is_bounded_before_allocating_the_full_result() {
+        let address = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0);
+        let too_many = (0..=MAX_RESOLVED_ADDRESSES).map(|_| address);
+
+        assert!(matches!(
+            collect_resolved_addresses(too_many),
+            Err(PinnedClientError::TooManyAddresses)
+        ));
+        assert!(matches!(
+            collect_resolved_addresses(std::iter::empty()),
+            Err(PinnedClientError::NoAddresses)
+        ));
+    }
+
+    #[tokio::test]
+    async fn browser_client_keeps_explicit_localhost_available_without_network_access() {
+        let local_url = Url::parse("http://127.0.0.1:3210/").expect("valid localhost URL");
+        let private_url = Url::parse("http://10.0.0.1:3210/").expect("valid private URL");
+
+        super::pinned_browser_http_client(&local_url, None)
+            .await
+            .expect("the browser client should allow explicit localhost URLs");
+        assert!(matches!(
+            super::pinned_browser_http_client(&private_url, None).await,
+            Err(super::PinnedClientError::RestrictedAddress)
+        ));
     }
 
     #[test]

@@ -1065,18 +1065,41 @@ fn validate_browser_panel_url(raw: &str) -> Result<url::Url, ServiceError> {
 async fn inspect_browser_panel_url(parsed: &url::Url) -> Result<Value, ServiceError> {
     use futures_util::StreamExt;
     const MAX_INSPECT_BYTES: usize = 256 * 1024;
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(10))
-        .redirect(reqwest::redirect::Policy::none())
-        .user_agent("OpenChat-IsolatedBrowser/1.0")
-        .build()
-        .map_err(|_| {
-            ServiceError::new(
+    let client = crate::tools::web_search::url_fetch::pinned_browser_http_client(
+        parsed,
+        Some(std::time::Duration::from_secs(10)),
+    )
+    .await
+    .map_err(|error| {
+        use crate::tools::web_search::url_fetch::PinnedClientError;
+        match error {
+            PinnedClientError::RestrictedAddress => ServiceError::new(
+                "browser_url_blocked",
+                "Private network and metadata addresses are blocked by outbound security policy.",
+                false,
+            ),
+            PinnedClientError::InvalidHost | PinnedClientError::UnsupportedPort => {
+                ServiceError::new(
+                    "invalid_browser_url",
+                    "Enter a valid http:// or https:// URL.",
+                    false,
+                )
+            }
+            PinnedClientError::ResolutionTimedOut
+            | PinnedClientError::ResolutionFailed
+            | PinnedClientError::NoAddresses
+            | PinnedClientError::TooManyAddresses => ServiceError::new(
+                "browser_inspect_failed",
+                "The target host could not be resolved safely.",
+                true,
+            ),
+            PinnedClientError::ClientUnavailable => ServiceError::new(
                 "browser_inspect_failed",
                 "The isolated browser client could not be initialized.",
                 true,
-            )
-        })?;
+            ),
+        }
+    })?;
     let response = client.get(parsed.as_str()).send().await.map_err(|_| {
         ServiceError::new(
             "browser_inspect_failed",
