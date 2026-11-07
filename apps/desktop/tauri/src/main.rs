@@ -68,6 +68,7 @@ mod mcp_storage;
 mod notifications;
 mod project_folder;
 mod provider_storage;
+#[cfg_attr(not(windows), allow(dead_code))]
 mod renderer_recovery;
 mod request_bounds;
 mod save_dialog;

@@ -642,6 +642,27 @@ fn record_local_service_startup_failure(
 ) -> std::io::Result<()> {
     let root = match storage_root {
         Some(root) => root.to_path_buf(),
+        #[cfg(target_os = "linux")]
+        None => {
+            let state_home = match std::env::var_os("XDG_STATE_HOME") {
+                Some(path) if Path::new(&path).is_absolute() => PathBuf::from(path),
+                Some(_) => {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        "the XDG state directory is invalid",
+                    ))
+                }
+                None => PathBuf::from(std::env::var_os("HOME").ok_or_else(|| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::NotFound,
+                        "the user home directory is unavailable",
+                    )
+                })?)
+                .join(".local/state"),
+            };
+            state_home.join("openchat")
+        }
+        #[cfg(not(target_os = "linux"))]
         None => PathBuf::from(std::env::var_os("LOCALAPPDATA").ok_or_else(|| {
             std::io::Error::new(
                 std::io::ErrorKind::NotFound,

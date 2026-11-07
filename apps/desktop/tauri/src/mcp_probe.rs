@@ -1,7 +1,9 @@
 //! Discovers tools from installed global MCP servers under bounded AppContainer isolation.
 
+#[cfg(windows)]
 use serde_json::{json, Value};
 use tauri::State;
+#[cfg(windows)]
 use zeroize::Zeroizing;
 
 #[cfg(windows)]
@@ -20,11 +22,12 @@ use tokio::io::AsyncReadExt;
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncWrite, AsyncWriteExt, BufReader};
 
 use crate::local_service::LocalServiceState;
+#[cfg(windows)]
 use crate::mcp_storage::{
     all_environment_names, mcp_directory, read_secret_map, require_server,
-    validate_environment_name, write_server_config, GlobalMcpServer, McpStorageError,
-    MAXIMUM_SERVER_ID_BYTES,
+    validate_environment_name, write_server_config,
 };
+use crate::mcp_storage::{GlobalMcpServer, McpStorageError, MAXIMUM_SERVER_ID_BYTES};
 use crate::request_bounds::BoundedText;
 
 #[cfg(windows)]
@@ -87,7 +90,7 @@ pub async fn probe_global_mcp_server(
     }
     #[cfg(not(windows))]
     {
-        let _ = server_id;
+        let _ = (server_id, state);
         Err(McpStorageError::probe_failed())
     }
 }

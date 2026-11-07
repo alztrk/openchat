@@ -184,6 +184,7 @@ impl McpStorageError {
         }
     }
 
+    #[cfg(windows)]
     pub(crate) fn missing_credentials() -> Self {
         Self {
             code: "mcp_required_credentials_missing",
@@ -678,21 +679,40 @@ fn secret_key(server_id: &str, environment_name: &str) -> String {
 
 /// Resolves the per-user directory containing MCP metadata and managed installations.
 pub(crate) fn mcp_directory() -> Result<PathBuf, McpStorageError> {
-    let local_app_data = env::var_os("LOCALAPPDATA")
-        .or_else(|| {
-            env::var_os("USERPROFILE").map(|path| {
-                PathBuf::from(path)
-                    .join("AppData")
-                    .join("Local")
-                    .into_os_string()
+    #[cfg(target_os = "linux")]
+    {
+        let config_home = match env::var_os("XDG_CONFIG_HOME") {
+            Some(path) => {
+                let path = PathBuf::from(path);
+                if !path.is_absolute() {
+                    return Err(McpStorageError::unavailable());
+                }
+                path
+            }
+            None => PathBuf::from(env::var_os("HOME").ok_or_else(McpStorageError::unavailable)?)
+                .join(".config"),
+        };
+        return Ok(config_home.join("openchat").join("mcp"));
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    {
+        let local_app_data = env::var_os("LOCALAPPDATA")
+            .or_else(|| {
+                env::var_os("USERPROFILE").map(|path| {
+                    PathBuf::from(path)
+                        .join("AppData")
+                        .join("Local")
+                        .into_os_string()
+                })
             })
-        })
-        .ok_or_else(|| {
-            McpStorageError::unavailable_with_details(
-                "Neither LOCALAPPDATA nor USERPROFILE is configured for this process.",
-            )
-        })?;
-    Ok(PathBuf::from(local_app_data).join("OpenChat").join("mcp"))
+            .ok_or_else(|| {
+                McpStorageError::unavailable_with_details(
+                    "Neither LOCALAPPDATA nor USERPROFILE is configured for this process.",
+                )
+            })?;
+        Ok(PathBuf::from(local_app_data).join("OpenChat").join("mcp"))
+    }
 }
 
 /// Builds the managed install path from an already validated server ID.

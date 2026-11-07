@@ -20,6 +20,12 @@ const STARTUP_BENCHMARK_TIMEOUT_MS = 180_000;
 const tauriCliPath = path.join(getFrontendDirectory(), 'node_modules', '@tauri-apps', 'cli', 'tauri.js');
 const tauriShutdownGraceMs = process.platform === 'win32' ? 10_000 : undefined;
 
+function tauriDevConfigArgs() {
+  const args = ['--config', 'tauri.dev.conf.json'];
+  if (process.platform === 'linux') args.push('--config', 'tauri.linux.dev.conf.json');
+  return args;
+}
+
 export function parseStartupBenchmarkArgs(args) {
   if (args.length === 0) return { productionFrontend: false };
   if (args.length === 1 && args[0] === '--production-frontend') return { productionFrontend: true };
@@ -62,7 +68,7 @@ export const dev = {
     ensureNoArguments('dev', []);
     buildLocalService('debug', false);
     ensureFrontendDependencies();
-    runCommand(process.execPath, [tauriCliPath, 'dev', '--config', 'tauri.dev.conf.json'], { cwd: getTauriDirectory() });
+    runCommand(process.execPath, [tauriCliPath, 'dev', ...tauriDevConfigArgs()], { cwd: getTauriDirectory() });
   },
 };
 
@@ -132,7 +138,7 @@ export const devTestProfile = {
         let markerContents;
         try {
           result = await runInterruptibleCommand(process.execPath, [
-            tauriCliPath, 'dev', '--config', 'tauri.dev.conf.json', '--features', 'desktop-profile-test-support',
+            tauriCliPath, 'dev', ...tauriDevConfigArgs(), '--features', 'desktop-profile-test-support',
             '--', '--', '--desktop-test-profile-root', profileRoot,
             '--desktop-test-run-id', runId,
           ], {
@@ -215,7 +221,7 @@ export const startupBenchmark = {
             );
           } else {
             await runInterruptibleCommand(process.execPath, [
-              tauriCliPath, 'dev', '--config', 'tauri.dev.conf.json', '--features', 'startup-benchmark',
+              tauriCliPath, 'dev', ...tauriDevConfigArgs(), '--features', 'startup-benchmark',
               '--', '--', '--startup-benchmark-root', profileRoot,
             ], {
               cwd: getTauriDirectory(),

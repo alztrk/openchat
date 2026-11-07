@@ -1,4 +1,5 @@
 import { runNpm, runCommand, getFrontendDirectory, getWorkspaceRoot } from '../shared/runner.mjs';
+import { buildLocalService } from '../shared/rust.mjs';
 import { ensureNoArguments } from '../help.mjs';
 
 const profileTestFeature = 'openchat-local-service/desktop-profile-test-support';
@@ -30,6 +31,7 @@ export async function runCheck({
   workspaceRoot = getWorkspaceRoot(),
   write = (message) => process.stdout.write(message),
 } = {}) {
+  prepareLinuxTauriSidecar();
   await runValidationTasks('check', [
     {
       name: 'Biome lint',
@@ -64,6 +66,7 @@ export async function runCheckTypes({
   workspaceRoot = getWorkspaceRoot(),
   write = (message) => process.stdout.write(message),
 } = {}) {
+  prepareLinuxTauriSidecar();
   await runValidationTasks('check-types', [
     {
       name: 'Biome lint',
@@ -77,6 +80,10 @@ export async function runCheckTypes({
     { name: 'Rust formatting', run: () => runCommandFn('cargo', ['fmt', '--all', '--', '--check'], { cwd: workspaceRoot }) },
     { name: 'Rust compilation check', run: () => runCommandFn('cargo', ['check', '--workspace', '--locked'], { cwd: workspaceRoot }) },
   ], write);
+}
+
+function prepareLinuxTauriSidecar() {
+  if (process.platform === 'linux') buildLocalService('debug', true);
 }
 
 export async function runValidationTasks(taskName, tasks, write = (message) => process.stdout.write(message)) {

@@ -181,8 +181,12 @@ fn pending_export_directory(
             fs::canonicalize(storage_root).map_err(|_| ArchiveExportError::unavailable())?
         }
         None => {
+            #[cfg(target_os = "linux")]
+            let app_data_root = linux_data_home()?.join("openchat");
+            #[cfg(not(target_os = "linux"))]
             let local_app_data =
                 env::var_os("LOCALAPPDATA").ok_or_else(ArchiveExportError::unavailable)?;
+            #[cfg(not(target_os = "linux"))]
             let app_data_root = PathBuf::from(local_app_data).join("OpenChat");
             fs::canonicalize(app_data_root).map_err(|_| ArchiveExportError::unavailable())?
         }
@@ -197,6 +201,18 @@ fn pending_export_directory(
         return Err(ArchiveExportError::invalid());
     }
     Ok(canonical_directory)
+}
+
+#[cfg(target_os = "linux")]
+fn linux_data_home() -> Result<PathBuf, ArchiveExportError> {
+    match env::var_os("XDG_DATA_HOME") {
+        Some(path) if Path::new(&path).is_absolute() => Ok(PathBuf::from(path)),
+        Some(_) => Err(ArchiveExportError::unavailable()),
+        None => Ok(
+            PathBuf::from(env::var_os("HOME").ok_or_else(ArchiveExportError::unavailable)?)
+                .join(".local/share"),
+        ),
+    }
 }
 
 /// Requires an existing real directory rather than a symlink or reparse-backed directory.

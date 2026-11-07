@@ -102,6 +102,7 @@ pub fn set_computer_use_overlay(
     Ok(())
 }
 
+#[cfg(windows)]
 fn close_created(windows: &[WebviewWindow]) -> Vec<String> {
     let mut errors = Vec::new();
     for window in windows {
@@ -112,6 +113,7 @@ fn close_created(windows: &[WebviewWindow]) -> Vec<String> {
     errors
 }
 
+#[cfg(windows)]
 fn append_cleanup_errors(message: String, errors: Vec<String>) -> String {
     if errors.is_empty() {
         message

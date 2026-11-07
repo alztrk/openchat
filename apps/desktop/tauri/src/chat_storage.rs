@@ -246,8 +246,13 @@ fn append_diagnostic(
     code: &str,
     detail_code: Option<&str>,
 ) -> Result<(), ChatStorageError> {
-    let local_app_data = env::var_os("LOCALAPPDATA").ok_or_else(ChatStorageError::unavailable)?;
-    let logs_directory = PathBuf::from(local_app_data).join("OpenChat").join("logs");
+    #[cfg(target_os = "linux")]
+    let logs_directory = linux_state_home()?.join("openchat").join("logs");
+    #[cfg(not(target_os = "linux"))]
+    let logs_directory =
+        PathBuf::from(env::var_os("LOCALAPPDATA").ok_or_else(ChatStorageError::unavailable)?)
+            .join("OpenChat")
+            .join("logs");
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_err(|_| ChatStorageError::unavailable())?
@@ -273,8 +278,13 @@ fn append_diagnostic_with_message_metrics(
     detail_code: Option<&str>,
     metrics: &ChatMessagePersistenceMetrics,
 ) -> Result<(), ChatStorageError> {
-    let local_app_data = env::var_os("LOCALAPPDATA").ok_or_else(ChatStorageError::unavailable)?;
-    let logs_directory = PathBuf::from(local_app_data).join("OpenChat").join("logs");
+    #[cfg(target_os = "linux")]
+    let logs_directory = linux_state_home()?.join("openchat").join("logs");
+    #[cfg(not(target_os = "linux"))]
+    let logs_directory =
+        PathBuf::from(env::var_os("LOCALAPPDATA").ok_or_else(ChatStorageError::unavailable)?)
+            .join("OpenChat")
+            .join("logs");
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_err(|_| ChatStorageError::unavailable())?
@@ -290,6 +300,18 @@ fn append_diagnostic_with_message_metrics(
         detail_code,
         Some(metrics),
     )
+}
+
+#[cfg(target_os = "linux")]
+fn linux_state_home() -> Result<PathBuf, ChatStorageError> {
+    match env::var_os("XDG_STATE_HOME") {
+        Some(path) if Path::new(&path).is_absolute() => Ok(PathBuf::from(path)),
+        Some(_) => Err(ChatStorageError::unavailable()),
+        None => Ok(
+            PathBuf::from(env::var_os("HOME").ok_or_else(ChatStorageError::unavailable)?)
+                .join(".local/state"),
+        ),
+    }
 }
 
 fn append_diagnostic_at(
