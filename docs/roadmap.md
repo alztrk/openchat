@@ -114,7 +114,7 @@ These items are from static review. Treat them as open until focused runtime or 
 - **Microsoft AI Foundry** — deployment identifiers and per-model API compatibility
 
 ### Priority 3 — Local inference
-- **Linux/macOS llama.cpp** — packaging, installation, model management, runtime lifecycle
+- **macOS llama.cpp** — packaging, installation, model management, runtime lifecycle
 - **Local model catalog** — file size, progress, integrity verification, interrupted download recovery
 - **Context-window metadata** — per-model capabilities (image, reasoning, tools)
 

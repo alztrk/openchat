@@ -102,6 +102,7 @@ name and process ID. `clean` and `maintain-target --apply` also check for an
 external Cargo or rustc process before deleting artifacts.
 
 Cargo target selection and sidecar naming use the Rust host target triple, so the
-same task commands can prepare a sidecar on Windows or Linux. Linux packaging still
-requires enabling a Linux Tauri bundle target, adding its build dependencies and CI
-job, and implementing the platform-specific sandbox support.
+same task commands can prepare a sidecar on Windows or Linux. On Linux, `build`
+selects the Linux Tauri configuration and produces Debian and AppImage bundles.
+The CI Linux job installs the native build dependencies, runs the validation
+harness, builds both bundles, and uploads them as workflow artifacts.
