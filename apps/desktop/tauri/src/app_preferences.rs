@@ -45,7 +45,12 @@ pub fn set_windows_startup_enabled(enabled: bool) -> Result<(), String> {
         set_windows_startup_entry(enabled)
     }
 
-    #[cfg(not(windows))]
+    #[cfg(target_os = "linux")]
+    {
+        set_linux_startup_entry(enabled)
+    }
+
+    #[cfg(not(any(windows, target_os = "linux")))]
     {
         let _ = enabled;
         Err(
@@ -53,6 +58,104 @@ pub fn set_windows_startup_enabled(enabled: bool) -> Result<(), String> {
                 .to_owned(),
         )
     }
+}
+
+#[cfg(target_os = "linux")]
+fn set_linux_startup_entry(enabled: bool) -> Result<(), String> {
+    use std::{
+        fs::{self, OpenOptions},
+        io::Write,
+        path::PathBuf,
+    };
+
+    let config_home = std::env::var_os("XDG_CONFIG_HOME")
+        .filter(|path| std::path::Path::new(path).is_absolute())
+        .map(PathBuf::from)
+        .or_else(|| {
+            std::env::var_os("HOME")
+                .map(|home| PathBuf::from(home).join(".config"))
+                .filter(|path| path.is_absolute())
+        })
+        .ok_or_else(|| "The Linux user configuration directory is unavailable.".to_owned())?;
+    let autostart_directory = config_home.join("autostart");
+    let entry_path = autostart_directory.join("openchat.desktop");
+
+    match fs::symlink_metadata(&entry_path) {
+        Ok(metadata) if metadata.file_type().is_symlink() || !metadata.is_file() => {
+            return Err("The OpenChat startup entry is not a regular file.".to_owned());
+        }
+        Ok(_) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(_) => return Err("The OpenChat startup entry could not be inspected.".to_owned()),
+    }
+
+    if !enabled {
+        match fs::remove_file(entry_path) {
+            Ok(()) => return Ok(()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(_) => return Err("The OpenChat startup entry could not be removed.".to_owned()),
+        }
+    }
+
+    let executable = std::env::current_exe()
+        .map_err(|_| "Linux could not locate the OpenChat application.".to_owned())?;
+    let executable = executable
+        .to_str()
+        .ok_or_else(|| "The OpenChat application path is not valid UTF-8.".to_owned())?;
+    let desktop_entry = format!(
+        "[Desktop Entry]\nType=Application\nName=OpenChat\nExec={}\nX-GNOME-Autostart-enabled=true\n",
+        escape_desktop_exec_argument(executable)
+    );
+
+    fs::create_dir_all(&autostart_directory)
+        .map_err(|_| "The Linux autostart directory could not be created.".to_owned())?;
+    let temporary_path =
+        autostart_directory.join(format!(".openchat-{}.tmp", uuid::Uuid::new_v4()));
+    let write_result = (|| {
+        let mut options = OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        let mut file = options
+            .open(&temporary_path)
+            .map_err(|_| "The OpenChat startup entry could not be written.".to_owned())?;
+        file.write_all(desktop_entry.as_bytes())
+            .and_then(|()| file.sync_all())
+            .map_err(|_| "The OpenChat startup entry could not be written.".to_owned())?;
+        fs::rename(&temporary_path, &entry_path)
+            .map_err(|_| "The OpenChat startup entry could not be installed.".to_owned())
+    })();
+    if let Err(error) = write_result {
+        match fs::remove_file(temporary_path) {
+            Ok(()) => return Err(error),
+            Err(cleanup_error) if cleanup_error.kind() == std::io::ErrorKind::NotFound => {
+                return Err(error);
+            }
+            Err(_) => {
+                return Err(format!(
+                    "{error} The temporary startup file could not be removed."
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+fn escape_desktop_exec_argument(argument: &str) -> String {
+    let mut escaped = String::with_capacity(argument.len() + 2);
+    escaped.push('"');
+    for character in argument.chars() {
+        if matches!(character, '\\' | '"' | '`' | '$') {
+            escaped.push('\\');
+        }
+        escaped.push(character);
+    }
+    escaped.push('"');
+    escaped
 }
 
 #[cfg(windows)]
@@ -169,4 +272,17 @@ fn set_windows_startup_entry(enabled: bool) -> Result<(), String> {
 #[cfg(windows)]
 fn encode_wide(value: &str) -> Vec<u16> {
     value.encode_utf16().chain(std::iter::once(0)).collect()
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod linux_tests {
+    use super::escape_desktop_exec_argument;
+
+    #[test]
+    fn desktop_exec_argument_quotes_spaces_and_escapes_reserved_characters() {
+        assert_eq!(
+            escape_desktop_exec_argument("/opt/Open Chat/$app\\name`\""),
+            "\"/opt/Open Chat/\\$app\\\\name\\`\\\"\""
+        );
+    }
 }
