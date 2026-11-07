@@ -2514,7 +2514,7 @@
   "applicationRenderErrorDescription": "An unexpected interface error occurred. Reload the application to try again.",
   "applicationRenderErrorReload": "Reload application",
   "startupErrorTitle": "OpenChat could not start",
-  "startupErrorDescription": "OpenChat couldn’t load its startup screen. Try again. If the problem continues, close and reopen the app.",
+  "startupErrorDescription": "Try again. If OpenChat still won’t start, close the app and open it again.",
   "startupErrorLocalServiceConflictDescription": "The local service already has a request with this identifier. Close and reopen OpenChat, then try again.",
   "startupErrorLegacyProfileDescription": "A previous Windows storage service may still hold newer chats. OpenChat cannot read that protected database without the old service.",
   "startupErrorLegacyProfileWarning": "A separate, empty profile will be created. Existing chats, settings, and saved credentials will remain untouched in the old profile and will not appear here.",

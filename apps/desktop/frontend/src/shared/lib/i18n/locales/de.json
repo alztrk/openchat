@@ -2514,7 +2514,7 @@
   "applicationRenderErrorDescription": "Ein unerwarteter Fehler ist aufgetreten. Lade die Anwendung neu und versuche es erneut.",
   "applicationRenderErrorReload": "Anwendung neu laden",
   "startupErrorTitle": "OpenChat konnte nicht gestartet werden",
-  "startupErrorDescription": "Der Startbildschirm von OpenChat konnte nicht geladen werden. Versuche es erneut. Wenn das Problem bleibt, schließe die App und öffne sie noch einmal.",
+  "startupErrorDescription": "Versuche es erneut. Wenn OpenChat weiterhin nicht startet, schließe die App und öffne sie wieder.",
   "startupErrorLocalServiceConflictDescription": "Der lokale Dienst verwendet diese Anforderungskennung bereits. Schließe OpenChat, starte es neu und versuche es erneut.",
   "startupErrorLegacyProfileDescription": "Der frühere Windows-Speicherdienst enthält möglicherweise neuere Chats. Ohne diesen Dienst kann OpenChat die geschützte Datenbank nicht lesen.",
   "startupErrorLegacyProfileWarning": "Es wird ein separates, leeres Profil erstellt. Chats, Einstellungen und gespeicherte Zugangsdaten im alten Profil bleiben unverändert und sind hier nicht verfügbar.",

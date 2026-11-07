@@ -2514,7 +2514,7 @@
   "applicationRenderErrorDescription": "Se produjo un error inesperado en la interfaz. Recarga la aplicación para volver a intentarlo.",
   "applicationRenderErrorReload": "Recargar la aplicación",
   "startupErrorTitle": "No se pudo iniciar OpenChat",
-  "startupErrorDescription": "OpenChat no pudo cargar la pantalla de inicio. Inténtalo de nuevo. Si el problema continúa, cierra y vuelve a abrir la aplicación.",
+  "startupErrorDescription": "Inténtalo de nuevo. Si OpenChat sigue sin iniciarse, cierra la aplicación y vuelve a abrirla.",
   "startupErrorLocalServiceConflictDescription": "El servicio local ya tiene una solicitud con este identificador. Cierra y vuelve a abrir OpenChat, y después inténtalo de nuevo.",
   "startupErrorLegacyProfileDescription": "El servicio de almacenamiento anterior de Windows podría conservar chats más recientes. OpenChat no puede leer esa base de datos protegida sin el servicio anterior.",
   "startupErrorLegacyProfileWarning": "Se creará un perfil vacío separado. Los chats, ajustes y credenciales guardadas del perfil anterior permanecerán intactos y no aparecerán aquí.",

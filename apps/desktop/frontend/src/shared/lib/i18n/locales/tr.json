@@ -2514,7 +2514,7 @@
   "applicationRenderErrorDescription": "Beklenmeyen bir arayüz hatası oluştu. Yeniden yükleyerek tekrar deneyin.",
   "applicationRenderErrorReload": "Uygulamayı yeniden yükle",
   "startupErrorTitle": "OpenChat başlatılamadı",
-  "startupErrorDescription": "OpenChat başlangıç ekranını yükleyemedi. Yeniden deneyin. Sorun sürerse uygulamayı kapatıp yeniden açın.",
+  "startupErrorDescription": "Yeniden deneyin. OpenChat yine başlamazsa uygulamayı kapatıp tekrar açın.",
   "startupErrorLocalServiceConflictDescription": "Yerel serviste bu istek kimliği zaten kullanımda. OpenChat’i kapatıp yeniden açın ve tekrar deneyin.",
   "startupErrorLegacyProfileDescription": "Önceki Windows depolama hizmetinde daha yeni sohbetler bulunabilir. OpenChat, eski hizmet olmadan korumalı veritabanını okuyamaz.",
   "startupErrorLegacyProfileWarning": "Ayrı ve boş bir profil oluşturulacak. Eski profildeki sohbetler, ayarlar ve kayıtlı kimlik bilgileri yerinde kalacak ve bu profilde görünmeyecek.",

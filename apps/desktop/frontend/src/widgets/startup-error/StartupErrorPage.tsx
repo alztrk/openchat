@@ -1,4 +1,4 @@
-import { AlertTriangle, Copy, LoaderCircle, Minus, RotateCw, Square, X } from 'lucide-react';
+import { Copy, LoaderCircle, Minus, Square, X } from 'lucide-react';
 import { type MouseEvent, useEffect, useLayoutEffect, useState } from 'react';
 import { Button, Tooltip } from '@shared/components';
 import english from '@shared/lib/i18n/locales/en.json';
@@ -213,7 +213,6 @@ export function StartupErrorPage({ error, onRetry, onStartWithEmptyProfile }: St
     <div className="startup-error-page">
       {/* biome-ignore lint/a11y/noStaticElementInteractions: Tauri uses the native title-bar drag gesture to move this window. */}
       <header className="startup-error-titlebar" onMouseDown={handleTitleBarMouseDown}>
-        <span className="startup-error-titlebar__brand">OpenChat</span>
         <div aria-hidden="true" className="startup-error-titlebar__drag-region" />
         {desktop ? (
           <div className="startup-error-titlebar__controls">
@@ -258,7 +257,6 @@ export function StartupErrorPage({ error, onRetry, onStartWithEmptyProfile }: St
         <section aria-labelledby="startup-error-title" className="startup-error-card">
           <div className="startup-error-card__copy">
             <div className="startup-error-card__heading">
-              <AlertTriangle aria-hidden="true" className="startup-error-card__icon" size={18} />
               <h1 className="startup-error-card__title" id="startup-error-title">
                 {copy.startupErrorTitle}
               </h1>
@@ -280,11 +278,7 @@ export function StartupErrorPage({ error, onRetry, onStartWithEmptyProfile }: St
           <div className="startup-error-card__actions">
             {!confirmingEmptyProfile ? (
               <Button disabled={isRetrying} onClick={() => void retryStartup()} variant="primary">
-                {isRetrying ? (
-                  <LoaderCircle aria-hidden="true" className="animate-spin" size={16} />
-                ) : (
-                  <RotateCw aria-hidden="true" size={16} />
-                )}
+                {isRetrying ? <LoaderCircle aria-hidden="true" className="animate-spin" size={16} /> : null}
                 {isRetrying ? copy.startupErrorRetrying : copy.startupErrorRetry}
               </Button>
             ) : null}
@@ -300,7 +294,7 @@ export function StartupErrorPage({ error, onRetry, onStartWithEmptyProfile }: St
                   onClick={() => void retryStartup(onStartWithEmptyProfile)}
                   variant="primary"
                 >
-                  <LoaderCircle aria-hidden="true" className={isRetrying ? 'animate-spin' : ''} size={16} />
+                  {isRetrying ? <LoaderCircle aria-hidden="true" className="animate-spin" size={16} /> : null}
                   {copy.startupErrorConfirmEmptyProfile}
                 </Button>
                 <Button disabled={isRetrying} onClick={() => setConfirmingEmptyProfile(false)} variant="secondary">
