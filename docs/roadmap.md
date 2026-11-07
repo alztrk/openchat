@@ -47,7 +47,7 @@ OpenChat is a local-first desktop AI workspace. This roadmap captures planned wo
 
 ### Linux desktop support
 - Linux x86_64 Debian and AppImage packaging with Secret Service profile-key storage, Bubblewrap terminal isolation, desktop notifications, and XDG autostart integration
-- Linux project MCP currently supports remote Streamable HTTP only; local stdio servers and desktop computer-use automation remain unavailable
+- Linux project MCP supports local stdio servers sandboxed with Bubblewrap and remote Streamable HTTP; desktop computer-use automation remains unavailable
 - Linux llama.cpp lifecycle and model management remain planned
 
 ## In progress

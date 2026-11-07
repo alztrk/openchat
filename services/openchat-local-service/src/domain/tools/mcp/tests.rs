@@ -1,4 +1,6 @@
-#[cfg(windows)]
+#[cfg(target_os = "linux")]
+use super::StdioServerConfig;
+#[cfg(any(windows, target_os = "linux"))]
 use super::{BoundedLineReader, MAX_MCP_FRAME_BYTES};
 use super::{
     MAX_MCP_ARGUMENTS_PER_SERVER, McpApprovalContext, McpRegistry, StdioServerSettings,
@@ -11,7 +13,7 @@ use crate::{permissions::ToolPermissionBroker, protocol::EventSink, storage::App
 use rmcp::model::Tool;
 use serde_json::{Value, json};
 use std::collections::HashMap;
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 use std::sync::atomic::AtomicBool;
 use std::{
     path::{Path, PathBuf},
@@ -90,7 +92,7 @@ fn test_program(name: &str) -> String {
 }
 
 #[tokio::test]
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 async fn bounded_stdio_reader_accepts_a_frame_at_the_limit() {
     let (mut writer, reader) = tokio::io::duplex(MAX_MCP_FRAME_BYTES + 1);
     let mut frame = vec![b'a'; MAX_MCP_FRAME_BYTES];
@@ -111,7 +113,7 @@ async fn bounded_stdio_reader_accepts_a_frame_at_the_limit() {
 }
 
 #[tokio::test]
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 async fn bounded_stdio_reader_rejects_a_frame_over_the_limit() {
     let (mut writer, reader) = tokio::io::duplex(MAX_MCP_FRAME_BYTES + 2);
     let mut frame = vec![b'a'; MAX_MCP_FRAME_BYTES + 1];
@@ -132,6 +134,61 @@ async fn bounded_stdio_reader_rejects_a_frame_over_the_limit() {
 
     assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
     assert!(exceeded.load(Ordering::Acquire));
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_stdio_sandbox_disables_network_and_keeps_server_arguments_after_the_command_boundary() {
+    let workspace = TestDirectory(std::env::temp_dir().join(format!(
+        "openchat-mcp-sandbox-test-{}",
+        uuid::Uuid::new_v4()
+    )));
+    std::fs::create_dir_all(&workspace.0).expect("create isolated workspace");
+    let program = workspace.0.join("mcp-server");
+    std::fs::write(&program, "test executable").expect("create test executable");
+    let config = StdioServerConfig {
+        id: "workspace".to_owned(),
+        permission_fingerprint: TEST_SERVER_FINGERPRINT.to_owned(),
+        enabled: true,
+        program,
+        package: None,
+        package_directory: None,
+        arguments: vec!["--unshare-net".into()],
+        environment_variables: Vec::new(),
+        endpoint: None,
+        auth_environment_variable: None,
+        project_id: "test-project".to_owned(),
+        working_directory: workspace.0.clone(),
+    };
+
+    let command =
+        super::build_linux_mcp_sandbox_command(&config, &[]).expect("build Bubblewrap command");
+    let args = command
+        .as_std()
+        .get_args()
+        .map(|argument| argument.to_string_lossy().into_owned())
+        .collect::<Vec<_>>();
+    let command_boundary = args
+        .iter()
+        .position(|argument| argument == "--")
+        .expect("command boundary");
+
+    assert!(
+        args[..command_boundary]
+            .iter()
+            .any(|argument| argument == "--unshare-all")
+    );
+    assert!(
+        args[..command_boundary]
+            .iter()
+            .any(|argument| argument == "--bind")
+    );
+    assert!(
+        !args[..command_boundary]
+            .iter()
+            .any(|argument| argument == "--share-net")
+    );
+    assert_eq!(args[command_boundary + 2], "--unshare-net");
 }
 
 #[test]

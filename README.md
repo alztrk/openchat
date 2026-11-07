@@ -28,10 +28,10 @@ Run development tasks safely through configurable permission boundaries:
 - **Process Isolation:**
   - **Windows AppContainer (Default):** Isolates local tool processes in approval and safe-operation modes with filesystem and network boundaries.
   - **WSL2 Container Sandbox (Opt-in):** Uses `bubblewrap` (`bwrap --unshare-all`) for local tool processes in approval and safe-operation modes.
-  - **Full access:** Lets file tools use any absolute path allowed to the current account, and runs terminal commands, configured project tools, and project MCP servers used as chat tools without AppContainer or bubblewrap isolation. It does not elevate the process or bypass Windows ACLs or UAC. Global MCP catalog discovery remains sandboxed.
+  - **Full access:** Lets file tools use any absolute path allowed to the current account, and runs terminal commands, configured project tools, and project MCP servers used as chat tools without AppContainer or bubblewrap isolation. It does not elevate the process or bypass operating-system permissions. Global MCP catalog discovery remains sandboxed.
 - **Trust Handoff Protection:** Sensitive repository paths, including `.git/hooks` and IDE configurations, require explicit confirmation (`Ask`) before modifications.
 - **Live Data Loss Prevention (DLP):** Real-time secret and token masking (`[REDACTED]`) sanitizes terminal outputs, tool calls, and file reads to prevent credentials from entering model context.
-- **Model Context Protocol (MCP):** Connect to local stdio and remote Streamable HTTP MCP servers with granular tool-level permissions on Windows. Linux currently supports remote Streamable HTTP MCP servers; local stdio MCP servers are unavailable.
+- **Model Context Protocol (MCP):** Connect to local stdio and remote Streamable HTTP MCP servers with granular tool-level permissions on Windows and Linux. Linux local stdio servers use Bubblewrap isolation in approval and safe-operation modes, with no network access and write access limited to the project directory and sandbox `/tmp`. Full access runs them without Bubblewrap.
 
 ### Context Management and Retrieval
 - **Hybrid Search Engine:** Combines full-text keyword indexing (SQLite FTS5) with local multilingual embeddings (ONNX) for semantic codebase recall.
@@ -48,7 +48,7 @@ Run development tasks safely through configurable permission boundaries:
 
 ### Requirements
 - Windows 10 or 11 (64-bit), or Linux x86_64 with WebKitGTK 4.1
-- Linux requires a Secret Service provider on the user's D-Bus session for encrypted profile keys; Bubblewrap and unprivileged user namespaces are required for isolated terminal execution
+- Linux requires a Secret Service provider on the user's D-Bus session for encrypted profile keys; Bubblewrap and unprivileged user namespaces are required for isolated terminal and local stdio MCP execution
 - Microsoft Edge WebView2 Runtime 111.0.1661.0 or newer on Windows
 - Node.js 22 and npm
 - Rust 1.95 (pinned by `rust-toolchain.toml`)

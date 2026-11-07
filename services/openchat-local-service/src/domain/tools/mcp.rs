@@ -1,8 +1,9 @@
 //! Connects to configured MCP servers and exposes bounded, permission-checked tools.
 //!
-//! Windows stdio servers use AppContainer isolation and bounded process resources. Linux enables
-//! remote transports with bounded HTTP framing, per-server approval, and explicit response,
-//! schema, tool-count, and execution-time limits.
+//! Windows stdio servers use AppContainer isolation and bounded process resources. Linux project
+//! stdio servers use Bubblewrap isolation; both platforms bound local protocol framing. Remote
+//! transports use bounded HTTP framing, per-server approval, and explicit response, schema,
+//! tool-count, and execution-time limits.
 
 use std::{
     collections::{HashMap, HashSet},
@@ -13,7 +14,7 @@ use std::{
     path::{Path, PathBuf},
     time::Duration,
 };
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 use std::{
     pin::Pin,
     sync::{
@@ -28,9 +29,9 @@ use cap_std::{
     fs::{Dir, OpenOptions},
 };
 use futures_util::stream::{self, StreamExt};
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 use rmcp::transport::Transport;
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 use rmcp::transport::async_rw::AsyncRwTransport;
 use rmcp::{
     RoleClient, ServiceExt,
@@ -43,12 +44,11 @@ use rmcp::{
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
-use tokio::time::timeout;
 #[cfg(windows)]
-use tokio::{
-    fs::File,
-    io::{AsyncRead, AsyncReadExt, ReadBuf},
-};
+use tokio::fs::File;
+#[cfg(any(windows, target_os = "linux"))]
+use tokio::io::{AsyncRead, AsyncReadExt, ReadBuf};
+use tokio::time::timeout;
 
 use crate::{
     connector_packages::{self, InstalledPackageReference},
@@ -60,6 +60,10 @@ use crate::provider_schema::ToolDefinition;
 
 #[cfg(windows)]
 use super::terminal::windows_sandbox::{SandboxJobLimits, SandboxOptions, SandboxedProcess};
+#[cfg(target_os = "linux")]
+use process_wrap::tokio::{ChildWrapper, CommandWrap, KillOnDrop, ProcessGroup};
+#[cfg(target_os = "linux")]
+use tokio::process::Command;
 
 mod bounded_http;
 
@@ -74,7 +78,7 @@ const MAX_MCP_ARGUMENT_BYTES: usize = 16 * 1024;
 const MAX_MCP_SCHEMA_BYTES: usize = 16 * 1024;
 const MAX_MCP_DESCRIPTION_BYTES: usize = 4096;
 const MAX_MCP_RESULT_BYTES: usize = 64 * 1024;
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 const MAX_MCP_FRAME_BYTES: usize = 1024 * 1024;
 #[cfg(windows)]
 const MCP_ACTIVE_PROCESS_LIMIT: u32 = 32;
@@ -1087,10 +1091,36 @@ impl McpClient {
             }
             #[cfg(target_os = "linux")]
             {
-                let _ = full_access;
-                return Err(
-                    "Linux currently supports remote HTTP MCP servers; local stdio MCP servers are unavailable.".to_owned(),
-                );
+                let credentials = crate::credentials::CredentialStore;
+                let environment = config
+                    .environment_variables
+                    .iter()
+                    .map(|name| {
+                        let reference = crate::credentials::McpCredentialReference::new(
+                            config.project_id.clone(),
+                            config.id.clone(),
+                            name.clone(),
+                        )
+                        .map_err(|_| "An MCP environment variable name is invalid.".to_owned())?;
+                        let secret = credentials.load_mcp_secret(storage, &reference).map_err(|error| {
+                            format!(
+                                "The MCP credential for environment variable {name} is unavailable: {error}"
+                            )
+                        })?;
+                        Ok((name.clone(), secret))
+                    })
+                    .collect::<Result<Vec<_>, String>>()?;
+                let transport = StdioTransport::spawn(config, &environment, full_access)?;
+                timeout(MCP_STARTUP_TIMEOUT, ().serve(transport))
+                    .await
+                    .map_err(|_| {
+                        "The MCP server did not initialize before the startup timeout.".to_owned()
+                    })?
+                    .map_err(|error| {
+                        format!(
+                            "The MCP server could not complete protocol initialization: {error}"
+                        )
+                    })?
             }
         };
         Ok(Self { service })
@@ -1233,14 +1263,217 @@ impl StdioTransport {
     }
 }
 
-#[cfg(windows)]
+#[cfg(target_os = "linux")]
+struct StdioTransport {
+    transport: AsyncRwTransport<
+        RoleClient,
+        BoundedLineReader<tokio::process::ChildStdout>,
+        tokio::process::ChildStdin,
+    >,
+    process: Box<dyn ChildWrapper>,
+    frame_limit_exceeded: Arc<AtomicBool>,
+}
+
+#[cfg(target_os = "linux")]
+impl StdioTransport {
+    fn spawn(
+        config: &StdioServerConfig,
+        environment: &[(String, zeroize::Zeroizing<String>)],
+        full_access: bool,
+    ) -> Result<Self, String> {
+        let mut command = if full_access {
+            let mut command = Command::new(&config.program);
+            command
+                .args(&config.arguments)
+                .current_dir(&config.working_directory);
+            command.envs(
+                environment
+                    .iter()
+                    .map(|(name, value)| (name, value.as_str())),
+            );
+            command
+        } else {
+            build_linux_mcp_sandbox_command(config, environment)?
+        };
+        command.stdin(std::process::Stdio::piped());
+        command.stdout(std::process::Stdio::piped());
+        command.stderr(std::process::Stdio::piped());
+
+        let mut wrapped_command = CommandWrap::from(command);
+        wrapped_command.wrap(KillOnDrop);
+        wrapped_command.wrap(ProcessGroup::leader());
+        let mut process = wrapped_command
+            .spawn()
+            .map_err(|error| format!("The MCP server could not start: {error}"))?;
+        let stdin = process
+            .stdin()
+            .take()
+            .ok_or_else(|| "The MCP server stdin pipe is unavailable.".to_owned())?;
+        let stdout = process
+            .stdout()
+            .take()
+            .ok_or_else(|| "The MCP server stdout pipe is unavailable.".to_owned())?;
+        let frame_limit_exceeded = Arc::new(AtomicBool::new(false));
+        let bounded_stdout = BoundedLineReader::new(stdout, Arc::clone(&frame_limit_exceeded));
+        if let Some(mut stderr) = process.stderr().take() {
+            tokio::spawn(async move {
+                let mut buffer = [0_u8; 4096];
+                while matches!(stderr.read(&mut buffer).await, Ok(count) if count > 0) {}
+            });
+        }
+        Ok(Self {
+            transport: AsyncRwTransport::new_client(bounded_stdout, stdin),
+            process,
+            frame_limit_exceeded,
+        })
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn build_linux_mcp_sandbox_command(
+    config: &StdioServerConfig,
+    environment: &[(String, zeroize::Zeroizing<String>)],
+) -> Result<Command, String> {
+    if !crate::sandbox::SandboxPolicy::is_bubblewrap_available() {
+        return Err(
+            "Bubblewrap is required to run a local MCP server in the Linux sandbox. Install bubblewrap and ensure unprivileged user namespaces are enabled.".to_owned(),
+        );
+    }
+    let program = config
+        .program
+        .canonicalize()
+        .map_err(|_| "The configured MCP executable is unavailable.".to_owned())?;
+    if !program.is_file() {
+        return Err("The configured MCP executable is not a file.".to_owned());
+    }
+    let working_directory = config
+        .working_directory
+        .canonicalize()
+        .map_err(|_| "The MCP project working directory is unavailable.".to_owned())?;
+    if !working_directory.is_dir() || working_directory.parent().is_none() {
+        return Err("The MCP project working directory is invalid.".to_owned());
+    }
+
+    let mut args: Vec<OsString> = vec![
+        "--die-with-parent".into(),
+        "--new-session".into(),
+        "--unshare-all".into(),
+        "--proc".into(),
+        "/proc".into(),
+        "--dev".into(),
+        "/dev".into(),
+        "--tmpfs".into(),
+        "/tmp".into(),
+    ];
+    for system_path in [
+        "/usr",
+        "/bin",
+        "/sbin",
+        "/lib",
+        "/lib64",
+        "/etc",
+        "/nix/store",
+        "/run/current-system",
+    ] {
+        if Path::new(system_path).exists() {
+            args.extend(["--ro-bind".into(), system_path.into(), system_path.into()]);
+        }
+    }
+    args.extend([
+        "--bind".into(),
+        working_directory.as_os_str().into(),
+        working_directory.as_os_str().into(),
+    ]);
+    if let Some(package_directory) = &config.package_directory {
+        let package_directory = package_directory
+            .canonicalize()
+            .map_err(|_| "The installed MCP package directory is unavailable.".to_owned())?;
+        if !package_directory.is_dir() {
+            return Err("The installed MCP package directory is invalid.".to_owned());
+        }
+        args.extend([
+            "--ro-bind".into(),
+            package_directory.as_os_str().into(),
+            package_directory.as_os_str().into(),
+        ]);
+    } else if !program.starts_with(&working_directory)
+        && !["/usr", "/bin", "/sbin", "/lib", "/lib64", "/nix/store"]
+            .iter()
+            .any(|root| program.starts_with(root))
+    {
+        let parent = program
+            .parent()
+            .ok_or_else(|| "The configured MCP executable path is invalid.".to_owned())?;
+        args.extend([
+            "--ro-bind".into(),
+            parent.as_os_str().into(),
+            parent.as_os_str().into(),
+        ]);
+    }
+    args.extend([
+        "--chdir".into(),
+        working_directory.as_os_str().into(),
+        "--".into(),
+        program.as_os_str().into(),
+    ]);
+    args.extend(config.arguments.iter().cloned());
+
+    let mut command = Command::new("bwrap");
+    command
+        .env_clear()
+        .env("PATH", "/usr/local/bin:/usr/bin:/bin")
+        .env("HOME", "/tmp")
+        .envs(
+            environment
+                .iter()
+                .map(|(name, value)| (name, value.as_str())),
+        )
+        .args(args);
+    Ok(command)
+}
+
+#[cfg(target_os = "linux")]
+impl Transport<RoleClient> for StdioTransport {
+    type Error = io::Error;
+
+    fn send(
+        &mut self,
+        item: rmcp::service::TxJsonRpcMessage<RoleClient>,
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send + 'static {
+        self.transport.send(item)
+    }
+
+    async fn receive(&mut self) -> Option<rmcp::service::RxJsonRpcMessage<RoleClient>> {
+        let message = self.transport.receive().await;
+        if self.frame_limit_exceeded.load(Ordering::Acquire) {
+            if self.process.start_kill().is_err() {
+                eprintln!("mcp_frame_limit_process_termination_failed");
+            }
+            return None;
+        }
+        message
+    }
+
+    fn close(&mut self) -> impl Future<Output = Result<(), Self::Error>> + Send {
+        let result = self.process.start_kill();
+        let process = self.process.wait();
+        let close = self.transport.close();
+        async move {
+            result?;
+            process.await?;
+            close.await
+        }
+    }
+}
+
+#[cfg(any(windows, target_os = "linux"))]
 struct BoundedLineReader<R> {
     reader: R,
     current_line_bytes: usize,
     frame_limit_exceeded: Arc<AtomicBool>,
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 impl<R> BoundedLineReader<R> {
     fn new(reader: R, frame_limit_exceeded: Arc<AtomicBool>) -> Self {
         Self {
@@ -1251,7 +1484,7 @@ impl<R> BoundedLineReader<R> {
     }
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 impl<R: AsyncRead + Unpin> AsyncRead for BoundedLineReader<R> {
     fn poll_read(
         self: Pin<&mut Self>,
