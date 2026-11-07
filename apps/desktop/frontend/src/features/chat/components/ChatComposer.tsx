@@ -1,4 +1,4 @@
-import { ArrowUp, Brain, FolderOpen, Paperclip, Play, Square, X } from 'lucide-react';
+import { ArrowUp, Brain, Paperclip, Play, Square, X } from 'lucide-react';
 import { useCallback, useRef, useState } from 'react';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -11,7 +11,6 @@ import { ToolPermissionModeSelector } from '@features/projects/components';
 import { modelRouteKey } from '@entities/model/modelPreferences';
 import { rateLimitForModel, useOAuthRateLimits } from '@features/provider-settings/data';
 import { formatKeyboardShortcut, useKeyboardShortcutsStore } from '@shared/lib/preferences/keyboardShortcutsStore';
-import { AttachmentLibraryDialog } from './AttachmentLibraryDialog';
 import { ChatSlashCommandMenu } from './ChatSlashCommandMenu';
 import { ChatSlashModelMenu } from './ChatSlashModelMenu';
 import { ComposerFeedbackList, ComposerModelBanner } from './ComposerAlerts';
@@ -94,7 +93,6 @@ export function ChatComposer({
     fastModePreferenceState,
     toggleFastMode,
     addAttachments,
-    addExistingAttachments,
     removeAttachment,
     selectSlashCommand,
     selectSlashModel,
@@ -192,7 +190,6 @@ export function ChatComposer({
   );
 
   const [isComposerDraggingOver, setIsComposerDraggingOver] = useState(false);
-  const [isAttachmentLibraryOpen, setIsAttachmentLibraryOpen] = useState(false);
   const composerDragDepthRef = useRef(0);
 
   // Memoize drag handlers to prevent unnecessary re-renders
@@ -461,17 +458,6 @@ export function ChatComposer({
               >
                 <Paperclip aria-hidden="true" size={18} />
               </Button>
-              <Button
-                aria-label={t('attachmentChooseFromLibrary')}
-                disabled={isAttachmentSelectionDisabled}
-                onClick={() => setIsAttachmentLibraryOpen(true)}
-                size="icon"
-                title={t('attachmentChooseFromLibrary')}
-                type="button"
-                variant="ghost"
-              >
-                <FolderOpen aria-hidden="true" size={18} />
-              </Button>
               <ModelPicker
                 canSelectProvider
                 showFastModeControl={!isTemporaryChat}
@@ -591,13 +577,6 @@ export function ChatComposer({
             )}
           </div>
         </form>
-
-        <AttachmentLibraryDialog
-          disabled={isAttachmentSelectionDisabled}
-          onOpenChange={setIsAttachmentLibraryOpen}
-          onSelect={(item) => addExistingAttachments([item])}
-          open={isAttachmentLibraryOpen}
-        />
 
       </div>
     </div>
