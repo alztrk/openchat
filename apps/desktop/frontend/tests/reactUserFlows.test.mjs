@@ -13,16 +13,10 @@ const vite = await createServer({
   mode: 'development',
   plugins: [
     {
-      name: 'openchat-test-attachment-library-data',
+      name: 'openchat-test-ui-data',
       enforce: 'pre',
       resolveId(source, importer) {
         const normalizedSource = source.replaceAll('\\', '/');
-        if (
-          (normalizedSource === '@features/chat/data' || normalizedSource.endsWith('/src/features/chat/data')) &&
-          importer?.replaceAll('\\', '/').endsWith('/src/features/chat/components/AttachmentLibraryDialog.tsx')
-        ) {
-          return '\0openchat-test-attachment-library-data';
-        }
         if (
           normalizedSource.endsWith('/src/features/app-settings/data/appPreferences') &&
           importer?.replaceAll('\\', '/').endsWith('/src/features/app-settings/components/AppWindowSettingsSection.tsx')
@@ -54,6 +48,14 @@ const vite = await createServer({
           normalizedImporter.endsWith('/src/shared/lib/preferences/sidebarPreferences.ts')
         ) {
           return '\0openchat-test-sidebar-preference-storage';
+        }
+        if (
+          (normalizedSource === '@shared/lib/platform/storage/unifiedStorage' ||
+            normalizedSource.endsWith('/src/shared/lib/platform/storage/unifiedStorage')) &&
+          (normalizedImporter.endsWith('/src/features/chat/components/ConversationSidebar.tsx') ||
+            normalizedImporter.endsWith('/src/features/app-settings/components/AppWindowSettingsSection.tsx'))
+        ) {
+          return '\0openchat-test-ui-unified-storage';
         }
         if (
           normalizedSource.endsWith('/src/shared/lib/preferences/assistantProfilesStore') &&
@@ -126,14 +128,6 @@ const vite = await createServer({
         return null;
       },
       load(id) {
-        if (id === '\0openchat-test-attachment-library-data') {
-          return `
-            import process from 'node:process';
-            export function listConversationAttachments(...args) {
-              return process.__openchatAttachmentLibraryHarness.list(...args);
-            }
-          `;
-        }
         if (id === '\0openchat-test-app-preferences') {
           return `
             import process from 'node:process';
@@ -221,6 +215,20 @@ const vite = await createServer({
               },
               setItem() {},
             };
+          `;
+        }
+        if (id === '\0openchat-test-ui-unified-storage') {
+          return `
+            export const unifiedStorage = {
+              isInitialized: true,
+              getItem() { return null; },
+              setPersistedItem() { return Promise.resolve(); },
+              removePersistedItem() { return Promise.resolve(); },
+            };
+            export function whenUnifiedStorageReady(callback) {
+              callback();
+              return () => undefined;
+            }
           `;
         }
         if (id === '\0openchat-test-assistant-profiles') {
@@ -362,7 +370,6 @@ const React = await import('react');
 const { I18nextProvider } = await import('react-i18next');
 const { cleanup, fireEvent, render, screen, waitFor, within } = await import('@testing-library/react');
 const { ConversationEmptyState } = await vite.ssrLoadModule('/src/features/chat/components/ConversationEmptyState.tsx');
-const { AttachmentLibraryDialog } = await vite.ssrLoadModule('/src/features/chat/components/AttachmentLibraryDialog.tsx');
 const { NavigationRail } = await vite.ssrLoadModule('/src/widgets/navigation-rail/NavigationRail.tsx');
 const { AppWindowSettingsSection } = await vite.ssrLoadModule(
   '/src/features/app-settings/components/AppWindowSettingsSection.tsx',
@@ -376,15 +383,11 @@ const localeDirectory = path.resolve('src/shared/lib/i18n/locales');
 const supportedLocales = ['de', 'en', 'es', 'fr', 'tr'];
 const translationsByLocale = new Map();
 const i18nByLocale = new Map();
-const originalAttachmentLibraryHarness = Object.getOwnPropertyDescriptor(process, '__openchatAttachmentLibraryHarness');
 const originalAppPreferencesHarness = Object.getOwnPropertyDescriptor(process, '__openchatAppPreferencesHarness');
 const originalSidebarHarness = Object.getOwnPropertyDescriptor(process, '__openchatSidebarHarness');
 const originalMcpHarness = Object.getOwnPropertyDescriptor(process, '__openchatMcpHarness');
 const originalRecentSearchHarness = Object.getOwnPropertyDescriptor(process, '__openchatRecentSearchHarness');
 const originalTitlebarSearchHarness = Object.getOwnPropertyDescriptor(process, '__openchatTitlebarSearchHarness');
-const attachmentLibraryHarness = {
-  list: async () => ({ items: [], nextOffset: null }),
-};
 const appPreferencesHarness = {
   startupSurface: 'last',
   writeStartupSurface: async (value) => {
@@ -414,11 +417,6 @@ const recentSearchHarness = {
 };
 const titlebarSearchHarness = { historyDialogModuleLoads: 0 };
 
-Object.defineProperty(process, '__openchatAttachmentLibraryHarness', {
-  configurable: true,
-  value: attachmentLibraryHarness,
-  writable: true,
-});
 Object.defineProperty(process, '__openchatAppPreferencesHarness', {
   configurable: true,
   value: appPreferencesHarness,
@@ -480,7 +478,6 @@ function emptyStateProps(overrides = {}) {
 
 afterEach(() => {
   cleanup();
-  attachmentLibraryHarness.list = async () => ({ items: [], nextOffset: null });
   appPreferencesHarness.startupSurface = 'last';
   appPreferencesHarness.writeStartupSurface = async (value) => {
     appPreferencesHarness.startupSurface = value;
@@ -517,11 +514,6 @@ after(async () => {
     }
   }
 
-  if (originalAttachmentLibraryHarness) {
-    Object.defineProperty(process, '__openchatAttachmentLibraryHarness', originalAttachmentLibraryHarness);
-  } else {
-    Reflect.deleteProperty(process, '__openchatAttachmentLibraryHarness');
-  }
   if (originalAppPreferencesHarness) {
     Object.defineProperty(process, '__openchatAppPreferencesHarness', originalAppPreferencesHarness);
   } else {
@@ -611,160 +603,6 @@ test('the empty chat connection action invokes its callback when setup is requir
 
   fireEvent.click(screen.getByRole('button', { name: translations.connections }));
   assert.equal(openConnectionsCount, 1);
-});
-
-test('the attachment library loads available files and closes after a successful selection', async () => {
-  const translations = translationsByLocale.get('en');
-  assert.ok(translations);
-  const item = {
-    attachmentId: 'attachment-1',
-    conversationId: 'conversation-1',
-    conversationTitle: 'A saved conversation',
-    createdAt: 1,
-    fileName: 'notes.txt',
-    generationId: null,
-    isAvailable: true,
-    isFavorite: false,
-    messageId: 'message-1',
-    mimeType: 'text/plain',
-    model: null,
-    projectId: null,
-    prompt: null,
-    providerRoute: null,
-    sizeBytes: 12,
-    tags: [],
-  };
-  const listCalls = [];
-  const selectedItems = [];
-  const openChanges = [];
-  attachmentLibraryHarness.list = async (...args) => {
-    listCalls.push(args);
-    return { items: [item], nextOffset: null };
-  };
-
-  render(
-    localized(
-      'en',
-      React.createElement(AttachmentLibraryDialog, {
-        disabled: false,
-        onOpenChange: (open) => openChanges.push(open),
-        onSelect: async (selected) => {
-          selectedItems.push(selected);
-          return true;
-        },
-        open: true,
-      }),
-    ),
-  );
-
-  assert.ok(await screen.findByRole('dialog', { name: translations.attachmentLibraryTitle }));
-  assert.ok(await screen.findByText(item.fileName));
-  assert.deepEqual(listCalls, [[0, 30, '', 'available']]);
-
-  fireEvent.click(screen.getByRole('button', { name: translations.attachmentLibraryUseFile }));
-  await waitFor(() => {
-    assert.deepEqual(selectedItems, [item]);
-    assert.deepEqual(openChanges, [false]);
-  });
-});
-
-test('the attachment library keeps the dialog open and reports a failed selection', async () => {
-  const translations = translationsByLocale.get('en');
-  assert.ok(translations);
-  attachmentLibraryHarness.list = async () => ({
-    items: [
-      {
-        attachmentId: 'attachment-2',
-        conversationId: 'conversation-2',
-        conversationTitle: 'Another conversation',
-        createdAt: 2,
-        fileName: 'report.pdf',
-        generationId: null,
-        isAvailable: true,
-        isFavorite: false,
-        messageId: 'message-2',
-        mimeType: 'application/pdf',
-        model: null,
-        projectId: null,
-        prompt: null,
-        providerRoute: null,
-        sizeBytes: 42,
-        tags: [],
-      },
-    ],
-    nextOffset: null,
-  });
-  const openChanges = [];
-
-  render(
-    localized(
-      'en',
-      React.createElement(AttachmentLibraryDialog, {
-        disabled: false,
-        onOpenChange: (open) => openChanges.push(open),
-        onSelect: async () => false,
-        open: true,
-      }),
-    ),
-  );
-
-  await screen.findByText('report.pdf');
-  fireEvent.click(screen.getByRole('button', { name: translations.attachmentLibraryUseFile }));
-
-  assert.equal((await screen.findByRole('alert')).textContent, translations.attachmentLibraryAddFailed);
-  assert.deepEqual(openChanges, []);
-  assert.ok(screen.getByRole('dialog', { name: translations.attachmentLibraryTitle }));
-});
-
-test('the attachment library retry action reloads after a failed request', async () => {
-  const translations = translationsByLocale.get('en');
-  assert.ok(translations);
-  let attempts = 0;
-  attachmentLibraryHarness.list = async () => {
-    attempts += 1;
-    if (attempts === 1) throw new Error('test-only unavailable attachment library');
-    return {
-      items: [
-        {
-          attachmentId: 'attachment-3',
-          conversationId: 'conversation-3',
-          conversationTitle: 'Recovered conversation',
-          createdAt: 3,
-          fileName: 'recovered.txt',
-          generationId: null,
-          isAvailable: true,
-          isFavorite: false,
-          messageId: 'message-3',
-          mimeType: 'text/plain',
-          model: null,
-          projectId: null,
-          prompt: null,
-          providerRoute: null,
-          sizeBytes: 24,
-          tags: [],
-        },
-      ],
-      nextOffset: null,
-    };
-  };
-
-  render(
-    localized(
-      'en',
-      React.createElement(AttachmentLibraryDialog, {
-        disabled: false,
-        onOpenChange: () => undefined,
-        onSelect: async () => true,
-        open: true,
-      }),
-    ),
-  );
-
-  assert.ok(await screen.findByText(translations.attachmentLibraryLoadFailed));
-  fireEvent.click(screen.getByRole('button', { name: translations.retry }));
-
-  assert.ok(await screen.findByText('recovered.txt'));
-  assert.equal(attempts, 2);
 });
 
 test('the startup surface selector reflects the persisted choice after saving', async () => {

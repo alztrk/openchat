@@ -568,7 +568,7 @@ async fn git_has_checkout_filters(root: &Path) -> Result<bool, GitWorktreeError>
     let (status, attributes) = run_git_capture_with_input(
         root,
         root,
-        &["check-attr", "--source=HEAD", "-z", "--stdin", "filter"],
+        &["check-attr", "--cached", "-z", "--stdin", "filter"],
         &tracked_paths,
         MAX_FILTER_INSPECTION_BYTES,
     )

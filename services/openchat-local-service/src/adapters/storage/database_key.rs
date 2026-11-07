@@ -544,7 +544,7 @@ fn is_reparse_point(metadata: &fs::Metadata) -> bool {
 }
 
 #[cfg(feature = "desktop-profile-test-support")]
-fn is_hard_link(path: &Path, _metadata: &fs::Metadata) -> bool {
+fn is_hard_link(_path: &Path, _metadata: &fs::Metadata) -> bool {
     #[cfg(windows)]
     {
         use std::{mem::MaybeUninit, os::windows::io::AsRawHandle};
@@ -552,7 +552,7 @@ fn is_hard_link(path: &Path, _metadata: &fs::Metadata) -> bool {
             BY_HANDLE_FILE_INFORMATION, GetFileInformationByHandle,
         };
 
-        let Ok(file) = File::open(path) else {
+        let Ok(file) = File::open(_path) else {
             return true;
         };
         let mut information = MaybeUninit::<BY_HANDLE_FILE_INFORMATION>::uninit();

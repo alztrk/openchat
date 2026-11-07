@@ -346,7 +346,7 @@ test('maintain-target previews stale artifacts and verifies the same candidates 
     });
 
     assert.deepEqual(applyPaths, [stalePath]);
-    assert.match(output.join(''), /Will prune stale Cargo artifact target\\debug\\deps\\old\.rlib/u);
+    assert.match(output.join(''), /Will prune stale Cargo artifact target[/\\]debug[/\\]deps[/\\]old\.rlib/u);
     assert.match(output.join(''), /Target usage after stale-artifact cleanup/u);
   } finally {
     rmSync(fixture.root, { recursive: true, force: true });

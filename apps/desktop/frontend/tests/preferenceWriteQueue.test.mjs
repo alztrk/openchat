@@ -23,6 +23,7 @@ const storageState = {
 };
 
 const storage = {
+  isInitialized: true,
   getItem: (key) => storageState.values.get(key) ?? null,
   setPersistedItem(key, value) {
     const write = storageState.pendingWrite.then(async () => {
