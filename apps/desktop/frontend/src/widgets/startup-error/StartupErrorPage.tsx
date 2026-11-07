@@ -1,6 +1,6 @@
-import { AlertTriangle, Copy, LoaderCircle, Minus, Square, X } from 'lucide-react';
+import { AlertTriangle, Copy, LoaderCircle, Minus, RotateCw, Square, X } from 'lucide-react';
 import { type MouseEvent, useEffect, useLayoutEffect, useState } from 'react';
-import { BrandMark, Button, Tooltip } from '@shared/components';
+import { Button, Tooltip } from '@shared/components';
 import english from '@shared/lib/i18n/locales/en.json';
 import { LocalServiceError, localServiceErrorDetails } from '@shared/lib/platform/local-service';
 import { unifiedStorage } from '@shared/lib/platform/storage/unifiedStorage';
@@ -22,7 +22,6 @@ type StartupErrorCopy = Pick<
   | 'startupErrorStartEmptyProfile'
   | 'startupErrorConfirmEmptyProfile'
   | 'startupErrorCancel'
-  | 'startupErrorCloseApp'
   | 'startupErrorMinimize'
   | 'startupErrorMaximize'
   | 'startupErrorRestore'
@@ -214,6 +213,7 @@ export function StartupErrorPage({ error, onRetry, onStartWithEmptyProfile }: St
     <div className="startup-error-page">
       {/* biome-ignore lint/a11y/noStaticElementInteractions: Tauri uses the native title-bar drag gesture to move this window. */}
       <header className="startup-error-titlebar" onMouseDown={handleTitleBarMouseDown}>
+        <span className="startup-error-titlebar__brand">OpenChat</span>
         <div aria-hidden="true" className="startup-error-titlebar__drag-region" />
         {desktop ? (
           <div className="startup-error-titlebar__controls">
@@ -275,18 +275,16 @@ export function StartupErrorPage({ error, onRetry, onStartWithEmptyProfile }: St
                 {copy.startupErrorLegacyProfileWarning}
               </p>
             ) : null}
-            {errorDetails && !legacyProfileConflict ? (
-              <details className="startup-error-details">
-                <summary>{copy.startupErrorDetails}</summary>
-                <pre>{errorDetails}</pre>
-              </details>
-            ) : null}
           </div>
 
           <div className="startup-error-card__actions">
             {!confirmingEmptyProfile ? (
               <Button disabled={isRetrying} onClick={() => void retryStartup()} variant="primary">
-                <LoaderCircle aria-hidden="true" className={isRetrying ? 'animate-spin' : ''} size={16} />
+                {isRetrying ? (
+                  <LoaderCircle aria-hidden="true" className="animate-spin" size={16} />
+                ) : (
+                  <RotateCw aria-hidden="true" size={16} />
+                )}
                 {isRetrying ? copy.startupErrorRetrying : copy.startupErrorRetry}
               </Button>
             ) : null}
@@ -310,22 +308,16 @@ export function StartupErrorPage({ error, onRetry, onStartWithEmptyProfile }: St
                 </Button>
               </>
             ) : null}
-            {desktop ? (
-              <Button
-                onClick={() => runWindowAction(() => getCurrentWindow().close(), 'close the window')}
-                variant="secondary"
-              >
-                {copy.startupErrorCloseApp}
-              </Button>
-            ) : null}
           </div>
+
+          {errorDetails && !legacyProfileConflict ? (
+            <details className="startup-error-details">
+              <summary>{copy.startupErrorDetails}</summary>
+              <pre>{errorDetails}</pre>
+            </details>
+          ) : null}
         </section>
       </main>
-
-      <footer className="startup-error-footer">
-        <span>OpenChat</span>
-        <BrandMark size="footer" />
-      </footer>
     </div>
   );
 }

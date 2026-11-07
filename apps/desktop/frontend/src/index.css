@@ -1433,7 +1433,7 @@ html[data-motion-input='keyboard'] .openchat-popover-enter[data-state='closed'] 
   height: 100%;
   min-height: 100dvh;
   min-width: 0;
-  grid-template-rows: 48px minmax(0, 1fr) 30px;
+  grid-template-rows: 40px minmax(0, 1fr);
   overflow: hidden;
   border: 1px solid rgb(var(--border) / var(--border-alpha, 0.1));
   border-radius: 10px;
@@ -1447,6 +1447,14 @@ html[data-motion-input='keyboard'] .openchat-popover-enter[data-state='closed'] 
   align-items: center;
   border-bottom: 1px solid rgb(var(--border) / var(--border-alpha, 0.1));
   background: rgb(var(--surface) / 0.72);
+}
+
+.startup-error-titlebar__brand {
+  flex: none;
+  padding-left: 16px;
+  color: rgb(var(--secondary-text));
+  font-size: var(--text-sm);
+  font-weight: 500;
 }
 
 .startup-error-titlebar__drag-region {
@@ -1476,43 +1484,40 @@ html[data-motion-input='keyboard'] .openchat-popover-enter[data-state='closed'] 
 
 .startup-error-card {
   display: grid;
-  width: min(100%, 680px);
-  gap: 18px;
-  border-left: 2px solid rgb(var(--accent) / 0.75);
-  padding: 4px 0 4px 20px;
+  width: min(100%, 520px);
+  gap: 20px;
 }
 
 .startup-error-card__icon {
   flex: none;
-  color: rgb(var(--accent));
+  color: rgb(var(--secondary-icon));
 }
 
 .startup-error-card__copy {
   display: grid;
   align-content: center;
-  gap: 12px;
+  gap: 10px;
 }
 
 .startup-error-card__heading {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
 }
 
 .startup-error-card__title {
   margin: 0;
   color: rgb(var(--text));
-  font-size: var(--text-2xl);
-  font-weight: 700;
-  line-height: 1.2;
-  letter-spacing: -0.025em;
+  font-size: var(--text-xl);
+  font-weight: 600;
+  line-height: 1.3;
 }
 
 .startup-error-card__copy p {
   margin: 0;
   color: rgb(var(--secondary-text));
   font-size: var(--text-body);
-  line-height: 1.65;
+  line-height: 1.55;
 }
 
 .startup-error-card__copy .startup-error-card__diagnostic {
@@ -1523,8 +1528,7 @@ html[data-motion-input='keyboard'] .openchat-popover-enter[data-state='closed'] 
 .startup-error-details {
   grid-column: 1 / -1;
   min-width: 0;
-  border-top: 1px solid rgb(var(--border) / var(--border-alpha, 0.1));
-  padding-top: 4px;
+  padding-top: 2px;
   color: rgb(var(--secondary-text));
   font-size: var(--text-settings-description);
 }
@@ -1564,6 +1568,7 @@ html[data-motion-input='keyboard'] .openchat-popover-enter[data-state='closed'] 
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
+  margin-top: -4px;
 }
 
 .startup-error-footer {
@@ -1584,10 +1589,6 @@ html[data-motion-input='keyboard'] .openchat-popover-enter[data-state='closed'] 
   .startup-error-content {
     align-items: flex-start;
     padding: 20px 16px;
-  }
-
-  .startup-error-card {
-    padding-left: 14px;
   }
 
   .startup-error-card__copy {
