@@ -97,8 +97,12 @@ fn set_linux_startup_entry(enabled: bool) -> Result<(), String> {
         }
     }
 
-    let executable = std::env::current_exe()
+    let current_executable = std::env::current_exe()
         .map_err(|_| "Linux could not locate the OpenChat application.".to_owned())?;
+    let appimage = std::env::var_os("APPIMAGE");
+    let appdir = std::env::var_os("APPDIR");
+    let executable =
+        linux_startup_executable(&current_executable, appimage.as_deref(), appdir.as_deref())?;
     let executable = executable
         .to_str()
         .ok_or_else(|| "The OpenChat application path is not valid UTF-8.".to_owned())?;
@@ -145,12 +149,50 @@ fn set_linux_startup_entry(enabled: bool) -> Result<(), String> {
 }
 
 #[cfg(target_os = "linux")]
+fn linux_startup_executable(
+    current_executable: &std::path::Path,
+    appimage: Option<&std::ffi::OsStr>,
+    appdir: Option<&std::ffi::OsStr>,
+) -> Result<std::path::PathBuf, String> {
+    use std::{fs, os::unix::fs::PermissionsExt, path::Path};
+
+    let Some(appimage) = appimage else {
+        return Ok(current_executable.to_path_buf());
+    };
+    let appdir =
+        appdir.ok_or_else(|| "The AppImage startup path could not be verified.".to_owned())?;
+    let appimage = Path::new(appimage);
+    let appdir = Path::new(appdir);
+    if !appimage.is_absolute() || !appdir.is_absolute() {
+        return Err("The AppImage startup path could not be verified.".to_owned());
+    }
+    let current_executable = fs::canonicalize(current_executable)
+        .map_err(|_| "The AppImage startup path could not be verified.".to_owned())?;
+    let appdir = fs::canonicalize(appdir)
+        .map_err(|_| "The AppImage startup path could not be verified.".to_owned())?;
+    if !current_executable.starts_with(appdir) {
+        return Err("The AppImage startup path could not be verified.".to_owned());
+    }
+    let appimage = fs::canonicalize(appimage)
+        .map_err(|_| "The AppImage startup path could not be verified.".to_owned())?;
+    let metadata = fs::metadata(&appimage)
+        .map_err(|_| "The AppImage startup path could not be verified.".to_owned())?;
+    if !metadata.is_file() || metadata.permissions().mode() & 0o111 == 0 {
+        return Err("The AppImage startup path could not be verified.".to_owned());
+    }
+    Ok(appimage)
+}
+
+#[cfg(target_os = "linux")]
 fn escape_desktop_exec_argument(argument: &str) -> String {
     let mut escaped = String::with_capacity(argument.len() + 2);
     escaped.push('"');
     for character in argument.chars() {
         if matches!(character, '\\' | '"' | '`' | '$') {
             escaped.push('\\');
+        }
+        if character == '%' {
+            escaped.push('%');
         }
         escaped.push(character);
     }
@@ -276,13 +318,44 @@ fn encode_wide(value: &str) -> Vec<u16> {
 
 #[cfg(all(test, target_os = "linux"))]
 mod linux_tests {
-    use super::escape_desktop_exec_argument;
+    use std::ffi::OsStr;
+
+    use super::{escape_desktop_exec_argument, linux_startup_executable};
 
     #[test]
     fn desktop_exec_argument_quotes_spaces_and_escapes_reserved_characters() {
         assert_eq!(
-            escape_desktop_exec_argument("/opt/Open Chat/$app\\name`\""),
-            "\"/opt/Open Chat/\\$app\\\\name\\`\\\"\""
+            escape_desktop_exec_argument("/opt/Open Chat/%app/$name\\path`\""),
+            "\"/opt/Open Chat/%%app/\\$name\\\\path\\`\\\"\""
         );
+    }
+
+    #[test]
+    fn appimage_startup_uses_the_persistent_bundle_path() {
+        let executable = std::env::current_exe().expect("test executable path");
+        let appdir = executable.parent().expect("test executable directory");
+        let startup_path = linux_startup_executable(
+            &executable,
+            Some(executable.as_os_str()),
+            Some(appdir.as_os_str()),
+        )
+        .expect("verified AppImage path");
+
+        assert_eq!(
+            startup_path,
+            executable.canonicalize().expect("canonical executable")
+        );
+    }
+
+    #[test]
+    fn appimage_startup_rejects_an_executable_outside_the_mount() {
+        let executable = std::env::current_exe().expect("test executable path");
+        let startup_path = linux_startup_executable(
+            &executable,
+            Some(executable.as_os_str()),
+            Some(OsStr::new("/proc")),
+        );
+
+        assert!(startup_path.is_err());
     }
 }
