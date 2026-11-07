@@ -84,6 +84,11 @@ mod window_broadcast;
 mod window_state;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    #[cfg(windows)]
+    if let Err(error) = notifications::set_process_app_user_model_id() {
+        eprintln!("OpenChat Windows application identity setup failed: {error}");
+    }
+
     #[cfg(feature = "startup-benchmark")]
     let startup_started_at = std::time::Instant::now();
     #[cfg(feature = "startup-benchmark")]

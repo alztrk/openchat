@@ -84,6 +84,7 @@ const AssistantExecutionSettingsSection = lazy(loadAssistantExecution);
 const DesignSettingsSection = lazy(loadDesignSettings);
 const ProjectSettingsSection = lazy(loadProjectSettings);
 import type { AppearancePreferences } from '@features/app-settings/data/appearancePreferences';
+import { whenUnifiedStorageReady } from '@shared/lib/platform/storage/unifiedStorage';
 import {
   clampSettingsSidebarWidth,
   readSettingsSidebarWidth,
@@ -413,12 +414,17 @@ export function SettingsPage({
   const appliedSectionRequestId = useRef(sectionRequest?.requestId ?? 0);
   const [search, setSearch] = useState('');
   const [pendingFieldId, setPendingFieldId] = useState<string | null>(null);
-  const [settingsSidebarWidth, setSettingsSidebarWidth] = useState(readSettingsSidebarWidth);
+  const [settingsSidebarWidth, setSettingsSidebarWidth] = useState(SETTINGS_SIDEBAR_DEFAULT_WIDTH);
   const [settingsPageWidth, setSettingsPageWidth] = useState(0);
   const [isResizingSidebar, setIsResizingSidebar] = useState(false);
   const settingsPageRef = useRef<HTMLDivElement>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
   const shouldFocusHeading = useRef(false);
+
+  useEffect(
+    () => whenUnifiedStorageReady(() => setSettingsSidebarWidth(readSettingsSidebarWidth())),
+    [],
+  );
 
   const clearPendingFieldFocus = useCallback(() => setPendingFieldId(null), []);
 

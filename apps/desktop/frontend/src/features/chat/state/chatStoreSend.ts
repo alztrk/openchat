@@ -8,6 +8,7 @@ import {
   recordChatMessagePersistenceFailure,
   recordChatRequestFailure,
   saveMessage,
+  setConversationUnread,
 } from '@features/chat/data';
 import { notifyAssistantResponse, notifyPendingQuestion } from '@features/notifications/data';
 import {
@@ -32,6 +33,7 @@ import { type LocalServiceClient, LocalServiceError } from '@shared/lib/platform
 import { getAudioContext, playAssistantResponseAudio } from '@shared/lib/preferences/audioFeedback';
 import type { ChatState } from './chatStore';
 import { getOpenCodeRetryAtUnixMs, serviceErrorCategoryMessageKey } from './chatStoreErrorDetails';
+import { isAppWindowVisibleAndFocused } from '@shared/lib/platform/windowFocus';
 import { chatStorageRetryDelay } from '../data/chatStorageRetry';
 import { refreshConversationListAfterResponse } from './chatStorePostResponse';
 import { loadTitleGenerationRequest } from './chatStoreTitleGeneration';
@@ -289,6 +291,7 @@ export function createSendMessageAction(
           reasoningEffort: state.selectedReasoningEffort,
           isPinned: false,
           isArchived: false,
+          unreadMessageId: null,
           createdAt: now,
           updatedAt: now,
         };
@@ -557,6 +560,43 @@ export function createSendMessageAction(
           }));
         }
       }
+      if (finalStatus === 'completed' && streamedMessage) {
+        const completedMessage = assistantMessage.current;
+        const responseIsVisible =
+          get().activeConversationId === targetConversationId &&
+          !get().isLoadingMessages &&
+          isAppWindowVisibleAndFocused();
+        if (completedMessage && !responseIsVisible) {
+          try {
+            await setConversationUnread(targetConversationId, completedMessage.id);
+            set((state) => ({
+              conversations: state.conversations.map((conversation) =>
+                conversation.id === targetConversationId
+                  ? { ...conversation, unreadMessageId: completedMessage.id }
+                  : conversation,
+              ),
+            }));
+            if (
+              get().activeConversationId === targetConversationId &&
+              !get().isLoadingMessages &&
+              isAppWindowVisibleAndFocused()
+            ) {
+              await get().markConversationRead(targetConversationId, completedMessage.id);
+            }
+          } catch (cause) {
+            globalThis.reportError(new Error('The completed assistant response could not be marked unread.', { cause }));
+          }
+        } else if (completedMessage) {
+          const currentConversation = get().conversations.find((item) => item.id === targetConversationId);
+          if (currentConversation?.unreadMessageId) {
+            try {
+              await get().markConversationRead(targetConversationId, currentConversation.unreadMessageId);
+            } catch (cause) {
+              globalThis.reportError(new Error('The visible conversation unread state could not be cleared.', { cause }));
+            }
+          }
+        }
+      }
       const conversations = await refreshConversationListAfterResponse(
         async () => {
           await get().refreshConversations();
@@ -571,9 +611,9 @@ export function createSendMessageAction(
       );
       if (finalStatus === 'completed' && streamedMessage) {
         void playAssistantResponseAudio('completed', projectId);
+        const completedMessage = assistantMessage.current;
         const conversation = conversations?.find((item) => item.id === targetConversationId);
         if (conversation) {
-          const completedMessage = assistantMessage.current;
           if (completedMessage) {
             void notifyAssistantResponse(conversation, completedMessage).catch(() => {
               window.dispatchEvent(new CustomEvent('openchat-notification-error'));

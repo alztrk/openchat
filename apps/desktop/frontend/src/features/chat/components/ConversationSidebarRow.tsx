@@ -4,6 +4,7 @@ import {
   ArchiveRestore,
   Check,
   Copy,
+  CircleDot,
   Download,
   Folder,
   FolderInput,
@@ -559,6 +560,16 @@ export function ConversationSidebarRow({
                   <circle className="opacity-25" cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="2" />
                   <circle className="openchat-ai-ring-arc" cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="2" />
                 </svg>
+              </span>
+            ) : null}
+            {conversation.unreadMessageId ? (
+              <span
+                aria-label={t('unreadConversationReply')}
+                className="flex size-4 shrink-0 items-center justify-center text-accent"
+                role="img"
+                title={t('unreadConversationReply')}
+              >
+                <CircleDot aria-hidden="true" size={14} />
               </span>
             ) : null}
             <span className="min-w-0 flex-1">

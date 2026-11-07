@@ -43,6 +43,7 @@ export function useComposerGhostText({
   onFeedbackKey,
 }: UseComposerGhostTextOptions): UseComposerGhostTextReturn {
   const ghostTextEnabled = useComposerPreferencesStore((state) => state.ghostTextEnabled);
+  const composerPreferencesReady = useComposerPreferencesStore((state) => state.loadState === 'ready');
   const ghostTextModelKey = useComposerPreferencesStore((state) => state.ghostTextModelKey);
   const [ghostTextDismissed, setGhostTextDismissed] = useState(false);
   const [generatedGhostText, setGeneratedGhostText] = useState<{ requestKey: string; text: string } | null>(null);
@@ -73,6 +74,7 @@ export function useComposerGhostText({
   useEffect(() => {
     if (
       !ghostTextEnabled ||
+      !composerPreferencesReady ||
       !ghostTextContext ||
       !ghostTextModel ||
       !ghostTextRequestKey ||
@@ -163,6 +165,7 @@ export function useComposerGhostText({
     ghostTextContext,
     ghostTextConversationId,
     ghostTextEnabled,
+    composerPreferencesReady,
     ghostTextModel,
     ghostTextRequestKey,
     isAnyConversationSending,
@@ -176,6 +179,7 @@ export function useComposerGhostText({
   const ghostTextSuggestion = useMemo(() => {
     if (
       !ghostTextEnabled ||
+      !composerPreferencesReady ||
       ghostTextDismissed ||
       messageDraft.length > 0 ||
       isAnyConversationSending ||
@@ -189,6 +193,7 @@ export function useComposerGhostText({
     generatedGhostText,
     ghostTextDismissed,
     ghostTextEnabled,
+    composerPreferencesReady,
     ghostTextRequestKey,
     isAnyConversationSending,
     messageDraft.length,

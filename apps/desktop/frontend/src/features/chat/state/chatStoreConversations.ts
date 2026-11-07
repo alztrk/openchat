@@ -2,6 +2,7 @@ import {
   type ChatConversation,
   type ChatMessage,
   clearConversationHistory as clearConversationHistoryStorage,
+  clearConversationUnread as clearConversationUnreadStorage,
   getConversation,
   getMessagePage,
   getMessages,
@@ -25,6 +26,7 @@ import {
 import { LocalServiceError, localServiceClient } from '@shared/lib/platform/local-service';
 import type { ChatState } from './chatStore';
 import { isSameRoute, upsertMessage } from './chatStoreUtils';
+import { isAppWindowVisibleAndFocused } from '@shared/lib/platform/windowFocus';
 
 type StoreGet = () => ChatState;
 type StoreSet = (partial: Partial<ChatState> | ((state: ChatState) => Partial<ChatState>)) => void;
@@ -132,6 +134,25 @@ export function createConversationsActions(set: StoreSet, get: StoreGet) {
   };
 
   return {
+    async markConversationRead(conversationId: string, expectedMessageId: string): Promise<void> {
+      const unreadMessageId = await clearConversationUnreadStorage(conversationId, expectedMessageId);
+      set((state) => ({
+        conversations: state.conversations.map((conversation) =>
+          conversation.id === conversationId ? { ...conversation, unreadMessageId } : conversation,
+        ),
+      }));
+    },
+
+    async markActiveConversationReadIfVisible(): Promise<void> {
+      if (!isAppWindowVisibleAndFocused()) return;
+      const current = get();
+      if (!current.activeConversationId || current.isLoadingMessages) return;
+      const conversation = current.conversations.find((item) => item.id === current.activeConversationId);
+      if (conversation?.unreadMessageId) {
+        await get().markConversationRead(conversation.id, conversation.unreadMessageId);
+      }
+    },
+
     async refreshConversations(): Promise<void> {
       const page = await listConversations();
       const current = get();
@@ -459,6 +480,11 @@ export function createConversationsActions(set: StoreSet, get: StoreGet) {
           errorMessage: null,
           opencodeRetryAtUnixMs: null,
         });
+        if (isAppWindowVisibleAndFocused()) {
+          void get().markActiveConversationReadIfVisible().catch((cause) => {
+            globalThis.reportError(new Error('The active conversation unread state could not be cleared.', { cause }));
+          });
+        }
         void get().refreshActiveGoal(id);
         void get().refreshInterruptedRun(id);
       } catch {

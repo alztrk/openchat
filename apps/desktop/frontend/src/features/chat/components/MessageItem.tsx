@@ -513,6 +513,7 @@ function FailureCard({
       className="mt-3 flex items-start gap-3 rounded-card border border-destructive/50 bg-destructive/5 px-3 py-3 text-sm"
       role="alert"
     >
+      {/* TODO: think removing this card. */}
       <CircleAlert aria-hidden="true" className="mt-0.5 shrink-0 text-destructive" size={18} />
       <div className="min-w-0 flex-1">
         <p className="font-semibold text-destructive">{t('responseFailed')}</p>

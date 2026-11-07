@@ -1,6 +1,7 @@
 import { Brain, LoaderCircle, RefreshCw, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { whenUnifiedStorageReady } from '@shared/lib/platform/storage/unifiedStorage';
 
 import { Button, Card, Dialog, Switch } from '@shared/components';
 import { SettingsSectionSkeleton } from './SettingsSectionSkeleton';
@@ -37,7 +38,7 @@ export function PersonalMemorySettingsSection() {
   }, []);
 
   useEffect(() => {
-    void load();
+    return whenUnifiedStorageReady(() => void load());
   }, [load]);
 
   const setEnabled = async (enabled: boolean) => {

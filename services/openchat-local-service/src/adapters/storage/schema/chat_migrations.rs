@@ -33,6 +33,7 @@ pub(crate) fn needs_repair(connection: &Connection) -> rusqlite::Result<bool> {
         ("conversations", "product_workspace_id"),
         ("conversations", "agent_json"),
         ("conversations", "reasoning_effort"),
+        ("conversations", "unread_message_id"),
         ("messages", "id"),
         ("messages", "conversation_id"),
         ("messages", "role"),
@@ -407,6 +408,11 @@ pub fn migrate_chat_schema(connection: &mut Connection) -> rusqlite::Result<()> 
     if version < 24 {
         add_column(&transaction, "conversations", "reasoning_effort", "TEXT")?;
         transaction.pragma_update(None, "user_version", 24)?;
+        version = 24;
+    }
+    if version < 25 {
+        add_column(&transaction, "conversations", "unread_message_id", "TEXT")?;
+        transaction.pragma_update(None, "user_version", 25)?;
     }
     transaction.commit()?;
     repair_chat_schema(connection)
@@ -458,6 +464,7 @@ fn repair_chat_schema(connection: &Connection) -> rusqlite::Result<()> {
             "TEXT REFERENCES workspaces(id) ON DELETE SET NULL",
         ),
         ("conversations", "agent_json", "TEXT"),
+        ("conversations", "unread_message_id", "TEXT"),
         (
             "messages",
             "reasoning_summaries",
@@ -495,6 +502,7 @@ fn validate_chat_schema(connection: &Connection) -> rusqlite::Result<()> {
         ("conversations", "updated_at"),
         ("conversations", "model_id"),
         ("conversations", "reasoning_effort"),
+        ("conversations", "unread_message_id"),
         ("messages", "id"),
         ("messages", "conversation_id"),
         ("messages", "role"),

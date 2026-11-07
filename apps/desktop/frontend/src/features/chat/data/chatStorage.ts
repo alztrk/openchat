@@ -390,6 +390,29 @@ export async function getConversation(conversationId: string): Promise<ChatConve
   return response.conversation;
 }
 
+export async function setConversationUnread(conversationId: string, messageId: string): Promise<void> {
+  const response = await localServiceClient.call('storage.chat.conversations.unread.set', {
+    input: { conversationId, messageId },
+  });
+  if (response.unreadMessageId !== messageId) {
+    throw new Error('The unread conversation response is invalid.');
+  }
+}
+
+export async function clearConversationUnread(
+  conversationId: string,
+  expectedMessageId: string,
+): Promise<string | null> {
+  const response = await localServiceClient.call('storage.chat.conversations.unread.clear', {
+    input: { conversationId, expectedMessageId },
+  });
+  const unreadMessageId = response.unreadMessageId;
+  if (unreadMessageId !== null && typeof unreadMessageId !== 'string') {
+    throw new Error('The unread conversation response is invalid.');
+  }
+  return unreadMessageId;
+}
+
 export interface ChatMessagePage {
   messages: ChatMessage[];
   hasMore: boolean;
@@ -812,6 +835,7 @@ function isConversation(value: unknown): value is ChatConversation {
     (value.agent === null || isAssistantAgentSnapshot(value.agent)) &&
     typeof value.isPinned === 'boolean' &&
     typeof value.isArchived === 'boolean' &&
+    isNullableString(value.unreadMessageId) &&
     typeof value.createdAt === 'number' &&
     typeof value.updatedAt === 'number'
   );

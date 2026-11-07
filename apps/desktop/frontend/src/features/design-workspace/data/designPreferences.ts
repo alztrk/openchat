@@ -123,7 +123,7 @@ export const useDesignPreferencesStore = create<DesignPreferencesState>((set, ge
   saveState: 'idle',
 
   initialize() {
-    if (get().loadState === 'ready') return;
+    if (!unifiedStorage.isInitialized || get().loadState === 'ready') return;
     try {
       set({ preferences: readDesignPreferences(), loadState: 'ready', saveState: 'idle' });
     } catch {

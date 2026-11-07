@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { unifiedStorage } from '@shared/lib/platform/storage/unifiedStorage';
 import { useAssistantExecutionPreferencesStore } from '@shared/lib/preferences/assistantExecutionPreferences';
 import {
   type AssistantProfile,
@@ -33,7 +34,7 @@ export const useAssistantProfilesStore = create<AssistantProfilesState>((set, ge
   errorKey: null,
 
   initialize() {
-    if (get().loadState === 'loading' || get().loadState === 'ready') return;
+    if (!unifiedStorage.isInitialized || get().loadState === 'loading' || get().loadState === 'ready') return;
     set({ loadState: 'loading', errorKey: null });
     try {
       const snapshot = readAssistantProfiles();

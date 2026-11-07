@@ -604,6 +604,8 @@ export function TitleGenerationSettings({
         return t('dashScopeProvider');
       case 'cohere':
         return t('cohereProvider');
+      case 'nvidia':
+        return t('providerNameNvidia');
       case 'llama_cpp':
         return 'llama.cpp';
       default:

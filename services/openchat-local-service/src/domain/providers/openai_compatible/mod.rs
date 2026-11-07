@@ -340,7 +340,7 @@ impl ApiCompatibleProvider {
     }
 }
 
-const API_COMPATIBLE_PROVIDERS: [ApiCompatibleProvider; 16] = [
+const API_COMPATIBLE_PROVIDERS: [ApiCompatibleProvider; 17] = [
     ApiCompatibleProvider {
         id: "gemini",
         name: "Gemini",
@@ -429,6 +429,12 @@ const API_COMPATIBLE_PROVIDERS: [ApiCompatibleProvider; 16] = [
         id: "cohere",
         name: "Cohere",
         base_url: "https://api.cohere.ai/compatibility/v1",
+        protocol: CustomProviderProtocol::OpenAi,
+    },
+    ApiCompatibleProvider {
+        id: "nvidia",
+        name: "NVIDIA",
+        base_url: "https://integrate.api.nvidia.com/v1",
         protocol: CustomProviderProtocol::OpenAi,
     },
     ApiCompatibleProvider {

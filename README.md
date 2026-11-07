@@ -44,6 +44,17 @@ Run development tasks safely through configurable permission boundaries:
 
 ---
 
+## Screenshots
+
+<p align="center">
+  <img src="docs/images/openchat-chat.png" alt="OpenChat chat" width="49%" />
+  <img src="docs/images/openchat-library.png" alt="OpenChat model library" width="49%" />
+</p>
+<p align="center">
+  <img src="docs/images/openchat-security-scans.png" alt="OpenChat security scans" width="49%" />
+  <img src="docs/images/openchat-conversation.png" alt="OpenChat conversation" width="49%" />
+</p>
+
 ## Getting Started
 
 ### Requirements
@@ -87,13 +98,6 @@ npm run openchat -- build
 On Windows, the installer uses Tauri’s default WebView2 download-bootstrapper mode. If the runtime is missing or older than 111.0.1661.0, installation attempts to download or update it and requires an internet connection. See [Tauri’s WebView2 installation options](https://v2.tauri.app/distribute/windows-installer/#webview2-installation-options). On Linux, the build creates Debian and AppImage packages; the Debian package declares Bubblewrap as a dependency.
 
 ---
-
-## Architecture Principles
-
-- **Local-First Design:** Chat transcripts and vector stores reside in local databases. On Windows, the active database is SQLCipher-encrypted in the storage broker's private AppContainer data folder, with the profile key held in the current user's Windows Credential Manager. On Linux, the SQLCipher database resides in the user's XDG data directory with private directory permissions, and its profile key is held by the user's Secret Service provider. Cloud-provider requests can include conversation content, attachments, and opt-in project notes or excerpts from prior conversations in the attached project. Design-canvas requests include your design brief and, when revising or reflowing a frame, its title, dimensions, style tokens, and SVG. Security scans send the selected model route the project content they read from the selected roots; queries go to the configured web-search service, and pages read during the scan can also enter the model context. Web searches send their query to the search services used by OpenChat, and page-reading requests contact the selected public URLs. Review the selected provider and search service privacy terms before sending sensitive content. OpenChat does not operate a centralized account or sync service. Conversation deletion and history clearing affect the active database; verified migration backups are retained without automatic expiry and can still contain older copies of deleted content. Those backups do not have an in-app restore flow, and historical filesystem snapshots may retain plaintext blocks from before encryption.
-- **Chat-Scoped MCP Data Flow:** Project-configured MCP tool arguments go to the configured local or remote server, and returned tool results are included in subsequent requests to the selected model provider as conversation context.
-- **Explicit Authorizations:** `Ask for approval` and `Approve safe operations` retain process isolation. `Full access` disables isolation for agent tool execution and uses the current account's normal OS permissions; it does not grant administrator privileges. The separate global MCP catalog probe remains sandboxed.
-- **Technical Documentation:** Architecture, design, roadmap, and security notes are indexed in [docs/README.md](docs/README.md).
 
 ---
 

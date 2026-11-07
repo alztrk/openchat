@@ -269,9 +269,9 @@ impl ChatGptService {
             security_scan_public_web_research,
             tool_permission_rules,
             available_subagent_models,
-            #[cfg(windows)]
+            #[cfg(any(windows, target_os = "linux"))]
                 mcp_configs: _,
-            #[cfg(windows)]
+            #[cfg(any(windows, target_os = "linux"))]
             mcp_registry,
             permission_broker,
             user_question_broker,
@@ -363,7 +363,7 @@ impl ChatGptService {
         .with_chat_service(self.as_ref().clone())
         .with_subagent_models(available_subagent_models)
         .with_subagent_tool_definitions(tool_definitions);
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "linux"))]
         {
             tool_executor = tool_executor.with_mcp_registry(mcp_registry);
         }
@@ -1294,6 +1294,7 @@ impl ChatGptService {
                 for result in results {
                     let output = match crate::attachments::function_call_output_value(
                         storage.root(),
+                        storage.database_key(),
                         conversation_id,
                         &message_id,
                         &result.output,
@@ -1533,6 +1534,7 @@ impl ChatGptService {
                     };
                     let output = match crate::attachments::function_call_output_value(
                         storage.root(),
+                        storage.database_key(),
                         conversation_id,
                         &message_id,
                         &result,

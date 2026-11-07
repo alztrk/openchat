@@ -43,6 +43,13 @@ export type WindowsNotificationStatus =
   | 'unavailable'
   | 'notSupported';
 
+export function shouldSkipWindowsNotificationDelivery(status: WindowsNotificationStatus): boolean {
+  return (
+    status === 'notSupported' ||
+    (status !== 'enabled' && status !== 'unavailable')
+  );
+}
+
 export interface AssistantResponseNotificationInput {
   conversationId: string;
   assistantMessageId: string;

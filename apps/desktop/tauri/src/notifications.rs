@@ -18,3 +18,8 @@ mod tests;
 
 pub use activation::*;
 pub use commands::*;
+
+#[cfg(target_os = "windows")]
+pub(crate) fn set_process_app_user_model_id() -> Result<(), String> {
+    windows_backend::set_process_app_user_model_id()
+}

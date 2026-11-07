@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { whenUnifiedStorageReady } from '@shared/lib/platform/storage/unifiedStorage';
 import { useChatStore } from '@features/chat/state';
 import {
   findLightweightModel,
@@ -20,6 +21,7 @@ export function TitleGenerationSettingsSection() {
   const modelError = useChatStore((state) => state.modelError);
   const refreshModels = useChatStore((state) => state.refreshModels);
   const [preference, setPreference] = useState<TitleGenerationPreference>({ mode: 'conversation', model: null });
+  const [preferenceLoaded, setPreferenceLoaded] = useState(false);
   const [preferenceLoadFailed, setPreferenceLoadFailed] = useState(false);
   const [error, setError] = useState<'titlePreferenceSaveFailed' | null>(null);
   const [saving, setSaving] = useState(false);
@@ -28,12 +30,13 @@ export function TitleGenerationSettingsSection() {
     try {
       setPreference(readTitleGenerationPreference());
       setPreferenceLoadFailed(false);
+      setPreferenceLoaded(true);
     } catch {
       setPreferenceLoadFailed(true);
     }
   }, []);
 
-  useEffect(() => loadPreference(), [loadPreference]);
+  useEffect(() => whenUnifiedStorageReady(loadPreference), [loadPreference]);
 
   const savePreference = (nextPreference: TitleGenerationPreference) => {
     setSaving(true);
@@ -85,7 +88,7 @@ export function TitleGenerationSettingsSection() {
         onRetry={() => void refreshModels(true)}
         preference={preference}
         preferenceLoadFailed={preferenceLoadFailed}
-        saving={saving}
+        saving={saving || !preferenceLoaded}
       />
     </section>
   );

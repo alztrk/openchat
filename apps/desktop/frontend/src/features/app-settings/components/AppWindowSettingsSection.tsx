@@ -1,5 +1,5 @@
 import { FolderOpen } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Button, Select, Switch } from '@shared/components';
@@ -17,7 +17,7 @@ import {
   writeStartupSurfacePreference,
 } from '@features/app-settings/data/appPreferences';
 import { localServiceClient } from '@shared/lib/platform/local-service';
-import { unifiedStorage } from '@shared/lib/platform/storage/unifiedStorage';
+import { unifiedStorage, whenUnifiedStorageReady } from '@shared/lib/platform/storage/unifiedStorage';
 import { isTauri, open } from '@shared/lib/platform/tauri';
 
 const defaultWorkspaceSettingKey = 'openchat.defaultWorkspacePath';
@@ -30,10 +30,23 @@ export function AppWindowSettingsSection() {
   const [workspaceSaveState, setWorkspaceSaveState] = useState<SettingsSaveState>('idle');
   const [workspaceError, setWorkspaceError] = useState<string | null>(null);
   const [choosingFolder, setChoosingFolder] = useState(false);
-  const [startupSurface, setStartupSurface] = useState<StartupSurfacePreference>(readStartupSurfacePreference);
-  const [closeBehavior, setCloseBehavior] = useState<CloseWindowBehavior>(readCloseWindowBehavior);
-  const [launchOnStartup, setLaunchOnStartup] = useState(readLaunchOnStartup);
+  const [startupSurface, setStartupSurface] = useState<StartupSurfacePreference>('last');
+  const [closeBehavior, setCloseBehavior] = useState<CloseWindowBehavior>('exit');
+  const [launchOnStartup, setLaunchOnStartup] = useState(false);
   const [appSaveState, setAppSaveState] = useState<SettingsSaveState>('idle');
+  const [preferencesReady, setPreferencesReady] = useState(unifiedStorage.isInitialized);
+
+  useEffect(
+    () =>
+      whenUnifiedStorageReady(() => {
+        setDefaultWorkspacePath(unifiedStorage.getItem(defaultWorkspaceSettingKey) ?? '');
+        setStartupSurface(readStartupSurfacePreference());
+        setCloseBehavior(readCloseWindowBehavior());
+        setLaunchOnStartup(readLaunchOnStartup());
+        setPreferencesReady(true);
+      }),
+    [],
+  );
 
   const saveDefaultWorkspace = async (value: string) => {
     setWorkspaceSaveState('saving');
@@ -109,7 +122,7 @@ export function AppWindowSettingsSection() {
     }
   };
 
-  const appControlsDisabled = appSaveState === 'saving';
+  const appControlsDisabled = !preferencesReady || appSaveState === 'saving';
 
   return (
     <section aria-labelledby="settings-page-heading" className="settings-section grid content-start gap-6">
@@ -126,6 +139,7 @@ export function AppWindowSettingsSection() {
                 <Button
                   aria-describedby={descriptionId}
                   className="min-w-0 w-full justify-start gap-3 rounded-control border-control-border bg-surface px-3 text-left"
+                  disabled={!preferencesReady || workspaceSaveState === 'saving' || choosingFolder}
                   loading={choosingFolder}
                   loadingContent={t('defaultWorkspaceChooseFolder')}
                   onClick={() => void chooseDefaultWorkspace()}
@@ -146,7 +160,7 @@ export function AppWindowSettingsSection() {
                 </Button>
                 {defaultWorkspacePath ? (
                   <Button
-                    disabled={workspaceSaveState === 'saving' || choosingFolder}
+                    disabled={!preferencesReady || workspaceSaveState === 'saving' || choosingFolder}
                     loading={workspaceSaveState === 'saving'}
                     loadingContent={t('settingsSaving')}
                     onClick={() => void saveDefaultWorkspace('')}

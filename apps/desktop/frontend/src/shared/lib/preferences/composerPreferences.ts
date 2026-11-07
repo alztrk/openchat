@@ -86,21 +86,36 @@ export interface ComposerPreferencesState {
   setGhostTextEnabled(enabled: boolean): Promise<void>;
   ghostTextModelKey: string;
   setGhostTextModelKey(modelKey: string): void;
+  loadState: 'idle' | 'ready';
+  initialize(): void;
 }
 
-export const useComposerPreferencesStore = create<ComposerPreferencesState>((set) => ({
-  submissionMode: readComposerSubmissionMode(),
-  ghostTextEnabled: readComposerGhostTextEnabled(),
-  ghostTextModelKey: readComposerGhostTextModel(),
+export const useComposerPreferencesStore = create<ComposerPreferencesState>((set, get) => ({
+  submissionMode: defaultComposerSubmissionMode,
+  ghostTextEnabled: defaultComposerGhostTextEnabled,
+  ghostTextModelKey: defaultComposerGhostTextModel,
+  loadState: 'idle',
+  initialize() {
+    if (!unifiedStorage.isInitialized || get().loadState === 'ready') return;
+    set({
+      submissionMode: readComposerSubmissionMode(),
+      ghostTextEnabled: readComposerGhostTextEnabled(),
+      ghostTextModelKey: readComposerGhostTextModel(),
+      loadState: 'ready',
+    });
+  },
   setSubmissionMode(mode) {
+    if (get().loadState !== 'ready') return;
     writeComposerSubmissionMode(mode);
     set({ submissionMode: mode });
   },
   async setGhostTextEnabled(enabled) {
+    if (get().loadState !== 'ready') throw new Error('Composer preferences are not loaded.');
     await writeComposerGhostTextEnabled(enabled);
     set({ ghostTextEnabled: enabled });
   },
   setGhostTextModelKey(modelKey) {
+    if (get().loadState !== 'ready') return;
     writeComposerGhostTextModel(modelKey);
     set({ ghostTextModelKey: modelKey });
   },

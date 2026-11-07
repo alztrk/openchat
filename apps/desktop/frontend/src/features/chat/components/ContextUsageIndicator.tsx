@@ -433,21 +433,6 @@ export function ContextUsageIndicator({
             {t('contextUsageOverLimit')}
           </p>
         ) : null}
-        <p className="mt-3 text-secondary-text" role="status">
-          {t('contextUsageEstimateSource', {
-            source: t(
-              snapshot.estimateSource === 'model_tokenizer'
-                ? 'contextUsageModelTokenizer'
-                : 'contextUsageApproximateFallback',
-            ),
-          })}
-        </p>
-        {snapshot.providerInputTokens !== null ? (
-          <p className="mt-3 border-t border-border pt-2 text-secondary-text" role="status">
-            {t('contextUsageProviderMeasurement', { count: formatCount(snapshot.providerInputTokens) })}{' '}
-            {t('contextUsageProviderPlusEstimate')}
-          </p>
-        ) : null}
       </section>
     </details>
   );

@@ -20,7 +20,6 @@ pub(crate) const REQUEST_CONTEXT_BUDGET_PERCENT: i64 = COMPACTION_TRIGGER_PERCEN
 pub(crate) const MAX_RETAINED_CONTEXT_TOKENS: i64 = 15_000;
 pub(crate) const MIN_CONTEXT_WINDOW: i64 = 2048;
 const OPAQUE_CHECKPOINT_TOKEN_ESTIMATE: i64 = 4096;
-const IMAGE_TOKEN_ESTIMATE: i64 = 2048;
 const MAX_LOCAL_SUMMARY_TOKENS: i64 = 4096;
 const LOCAL_SUMMARY_OUTPUT_BUDGET_DIVISOR: i64 = 16;
 const LOCAL_EXCERPT_BYTES: usize = 1024;
@@ -189,7 +188,17 @@ pub(crate) fn request_context_token_estimate(model_id: &str, value: &serde_json:
                 Some("input_image" | "image_url")
             ) =>
         {
-            IMAGE_TOKEN_ESTIMATE
+            let width = object
+                .get("width")
+                .and_then(serde_json::Value::as_u64)
+                .map(|v| v as u32)
+                .unwrap_or(0);
+            let height = object
+                .get("height")
+                .and_then(serde_json::Value::as_u64)
+                .map(|v| v as u32)
+                .unwrap_or(0);
+            token_estimator::estimate_image(model_id, width, height)
         }
         serde_json::Value::Object(object) => object
             .iter()
@@ -535,14 +544,23 @@ pub(crate) fn message_token_estimate(model_id: &str, message: &StoredMessage) ->
         })
         .fold(0, i64::saturating_add);
     let image_tokens = if message.role == "user" {
-        let image_count = message
+        message
             .attachments
             .iter()
             .filter(|attachment| attachment.kind == "image")
-            .count();
-        i64::try_from(image_count)
-            .unwrap_or(i64::MAX)
-            .saturating_mul(IMAGE_TOKEN_ESTIMATE)
+            .map(|attachment| {
+                let dimensions = attachment
+                    .content
+                    .as_deref()
+                    .and_then(token_estimator::image_dimensions);
+                match dimensions {
+                    Some((width, height)) => {
+                        token_estimator::estimate_image(model_id, width, height)
+                    }
+                    None => token_estimator::default_image_tokens(model_id),
+                }
+            })
+            .fold(0, i64::saturating_add)
     } else {
         0
     };
@@ -769,7 +787,7 @@ mod tests {
 
         assert_eq!(
             message_token_estimate(TEST_MODEL, &user_message).saturating_sub(text_only_tokens),
-            2 * super::IMAGE_TOKEN_ESTIMATE
+            2 * super::token_estimator::default_image_tokens(TEST_MODEL)
         );
 
         let previous_prompt = message("last", "user", "");

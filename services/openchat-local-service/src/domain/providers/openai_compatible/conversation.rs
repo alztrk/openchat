@@ -303,9 +303,9 @@ pub async fn send_message(
         is_security_scan,
         security_scan_public_web_research,
         available_subagent_models,
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "linux"))]
         mcp_configs,
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "linux"))]
             mcp_registry: _,
         permission_broker,
         user_question_broker,
@@ -362,7 +362,7 @@ pub async fn send_message(
             )
         })
         .flatten();
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "linux"))]
     let mcp_registry = if !is_security_scan
         && route.supports_tool_calls != Some(false)
         && permission_mode != crate::tools::ToolPermissionMode::Plan
@@ -507,7 +507,7 @@ pub async fn send_message(
             goal_objective: goal.as_ref().map(|goal| goal.objective.as_str()),
         },
     )?;
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "linux"))]
     if route.supports_tool_calls != Some(false)
         && let Some(registry) = mcp_registry.as_ref()
     {
@@ -619,14 +619,14 @@ pub async fn send_message(
             context_window,
             &route.model_id,
         )
-        && let estimated_tokens = context_compaction::estimated_history_tokens(
+    {
+        let estimated_tokens = context_compaction::estimated_history_tokens(
             &route.model_id,
             &included_messages,
             &provider_request.instructions,
-        )
-        && let prune_level =
-            context_compaction::PruneLevel::for_estimate(estimated_tokens, context_window)
-    {
+        );
+        let prune_level =
+            context_compaction::PruneLevel::for_estimate(estimated_tokens, context_window);
         let prior_summary = context_state
             .as_ref()
             .and_then(|state| {
@@ -1048,11 +1048,13 @@ pub async fn send_message(
     .with_chat_service(image_service.as_ref().clone())
     .with_subagent_models(available_subagent_models)
     .with_subagent_tool_definitions(provider_request.tools.clone());
+    #[cfg(any(windows, target_os = "linux"))]
+    {
+        tool_executor = tool_executor.with_mcp_registry(mcp_registry);
+    }
     #[cfg(windows)]
     {
-        tool_executor = tool_executor
-            .with_mcp_registry(mcp_registry)
-            .with_project_tools(project_tools);
+        tool_executor = tool_executor.with_project_tools(project_tools);
     }
     let result = stream_conversation(StreamConversationContext {
         route: &route,

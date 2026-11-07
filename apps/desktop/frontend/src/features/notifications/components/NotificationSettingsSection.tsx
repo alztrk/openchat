@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { Button, Input, Skeleton, Slider, Switch } from '@shared/components';
 import type en from '@shared/lib/i18n/locales/en.json';
 import type { ChatProject } from '@entities/project';
-import { listProjects } from '@features/chat/data';
+import { listAllProjects } from '@features/chat/data';
 import {
   type NotificationPreferences,
   commitNotificationTimeDraft,
@@ -19,6 +19,7 @@ import {
 } from '@shared/lib/preferences/notificationPreferences';
 import { playTestChime } from '@shared/lib/preferences/audioFeedback';
 import { UsageAlertPreferencesPanel } from './UsageAlertPreferencesPanel';
+import { whenUnifiedStorageReady } from '@shared/lib/platform/storage/unifiedStorage';
 
 type LoadState = 'loading' | 'loaded' | 'failed';
 type TranslationKey = keyof typeof en;
@@ -83,11 +84,11 @@ export function NotificationSettingsSection() {
   }, []);
 
   useEffect(() => {
-    loadPreferences();
+    return whenUnifiedStorageReady(loadPreferences);
   }, [loadPreferences]);
   useEffect(() => {
     let active = true;
-    void listProjects()
+    void listAllProjects()
       .then((nextProjects) => {
         if (active) setProjects(nextProjects);
       })
@@ -164,6 +165,7 @@ export function NotificationSettingsSection() {
     try {
       const requested = await sendTestNotification(t('notificationTestTitle'), t('notificationTestBody'));
       setTestResult(requested ? 'requested' : 'failed');
+      if (requested) await loadDeliveryStatus();
     } catch {
       setTestResult('failed');
     } finally {
@@ -247,7 +249,7 @@ export function NotificationSettingsSection() {
                   {t('notificationSettingsUnavailable')}
                 </p>
               ) : null}
-              {status === 'enabled' ? (
+              {status === 'enabled' || status === 'unavailable' ? (
                 <div className="grid justify-items-start gap-1">
                   <Button disabled={isSendingTest} onClick={() => void sendTest()} size="small" variant="ghost">
                     {isSendingTest ? (

@@ -251,3 +251,17 @@ function assertServiceBoolean(value: unknown, field: 'deleted', operation: strin
 }
 
 export const unifiedStorage = new UnifiedStorage();
+
+export function whenUnifiedStorageReady(onReady: () => void): () => void {
+  if (unifiedStorage.isInitialized) {
+    onReady();
+    return () => undefined;
+  }
+
+  const handleStorageReady = () => {
+    if (!unifiedStorage.isInitialized) return;
+    onReady();
+  };
+  window.addEventListener('openchat-storage-ready', handleStorageReady, { once: true });
+  return () => window.removeEventListener('openchat-storage-ready', handleStorageReady);
+}

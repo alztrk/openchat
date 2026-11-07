@@ -13,7 +13,7 @@ use crate::{openai_compatible::CustomProviderConfig, protocol::ServiceError};
 
 const CUSTOM_PROVIDER_CONFIG_PREFIX: &str = "openchat.custom_provider.config.";
 
-/// Provides request-scoped access to credentials saved in the Windows user profile.
+/// Provides request-scoped access to credentials saved in the protected user profile.
 pub(crate) struct ProviderCredentials {
     values: SecretMap,
 }

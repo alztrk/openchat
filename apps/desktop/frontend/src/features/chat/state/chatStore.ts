@@ -232,6 +232,8 @@ export interface ChatState {
   selectConversationModel(key: string, conversationId?: string): Promise<boolean>;
   selectReasoningEffort(effort: string | null): Promise<void>;
   selectConversation(id: string, targetMessageId?: string | null, targetQuery?: string | null): Promise<void>;
+  markConversationRead(conversationId: string, expectedMessageId: string): Promise<void>;
+  markActiveConversationReadIfVisible(): Promise<void>;
   loadOlderMessages(): Promise<void>;
   refreshActiveGoal(conversationId: string): Promise<void>;
   refreshInterruptedRun(conversationId: string): Promise<void>;

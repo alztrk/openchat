@@ -103,11 +103,11 @@ pub(super) async fn prepare_input(
             context_window,
             &model.id,
         )
-        && let estimated_tokens =
-            context_compaction::estimated_history_tokens(&model.id, messages, instructions)
-        && let prune_level =
-            context_compaction::PruneLevel::for_estimate(estimated_tokens, context_window)
     {
+        let estimated_tokens =
+            context_compaction::estimated_history_tokens(&model.id, messages, instructions);
+        let prune_level =
+            context_compaction::PruneLevel::for_estimate(estimated_tokens, context_window);
         events
             .send(
                 &ChatStreamEvent::CompactionStarted {

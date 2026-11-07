@@ -1,6 +1,7 @@
 //! App-managed local inference engine releases.
 
 mod catalog;
+#[cfg_attr(not(windows), allow(dead_code))]
 mod external_server;
 mod gguf;
 pub(crate) mod installer;

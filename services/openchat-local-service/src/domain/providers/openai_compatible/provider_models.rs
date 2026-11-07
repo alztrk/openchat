@@ -388,6 +388,7 @@ fn parse_models(
                             })
                         });
                     if id.is_empty()
+                        || (provider_id == "nvidia" && is_non_chat_nvidia_model(id))
                         || (provider_id == "mistral"
                             && (item.get("archived").and_then(Value::as_bool) == Some(true)
                                 || item
@@ -504,6 +505,24 @@ fn parse_models(
                 .collect()
         })
         .ok_or_else(invalid_response_error)
+}
+
+fn is_non_chat_nvidia_model(model_id: &str) -> bool {
+    let model_id = model_id.to_ascii_lowercase();
+    model_id.split(['/', '-', '_', '.']).any(|part| {
+        matches!(
+            part,
+            "embed"
+                | "embedding"
+                | "embeddings"
+                | "rerank"
+                | "reranker"
+                | "parse"
+                | "detector"
+                | "reward"
+                | "nvclip"
+        )
+    })
 }
 
 fn model_matches_id(provider_id: &str, model: &Value, model_id: &str) -> bool {
@@ -1151,6 +1170,28 @@ mod tests {
             Some(false)
         );
         assert_eq!(provider_tool_support("mistral", &json!({})), None);
+    }
+
+    #[test]
+    fn nvidia_catalog_omits_models_for_non_chat_tasks() {
+        let catalog = parse_models(
+            "nvidia",
+            &json!({
+                "data": [
+                    {"id": "nvidia/nemotron-3.5-bolt-e4b"},
+                    {"id": "nvidia/embed-qa-4"},
+                    {"id": "nvidia/nvclip"},
+                    {"id": "nvidia/nemotron-parse-2.0"},
+                    {"id": "nvidia/ai-synthetic-video-detector"},
+                    {"id": "nvidia/nemotron-4-340b-reward"}
+                ]
+            }),
+            None,
+        )
+        .expect("parse NVIDIA model catalog");
+
+        assert_eq!(catalog.len(), 1);
+        assert_eq!(catalog[0]["id"], "nvidia/nemotron-3.5-bolt-e4b");
     }
 
     #[test]

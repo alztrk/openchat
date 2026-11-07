@@ -151,6 +151,9 @@ pub(super) fn build_provider_request(
     if !is_security_scan && !crate::tools::model_supports_image_generation(provider_id, &model_id) {
         tools.retain(|tool| tool.name != "generate_image");
     }
+    if !is_security_scan && !has_project {
+        tools.retain(|tool| tool.name != "save_project_memory");
+    }
     if !is_security_scan
         && cfg!(windows)
         && has_project

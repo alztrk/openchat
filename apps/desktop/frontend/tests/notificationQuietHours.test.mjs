@@ -15,7 +15,7 @@ const source = fs
 const compiled = ts.transpileModule(source, {
   compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
 }).outputText;
-const { commitNotificationTimeDraft, isValidNotificationTime } = await import(
+const { commitNotificationTimeDraft, isValidNotificationTime, shouldSkipWindowsNotificationDelivery } = await import(
   `data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`
 );
 
@@ -26,6 +26,16 @@ test('quiet-hours time validation accepts only complete 24-hour HH:mm values', (
   for (const value of ['', '0', '09:', '24:00', '12:60', '9:05']) {
     assert.equal(isValidNotificationTime(value), false);
   }
+});
+
+test('notification delivery continues when Windows cannot read the current status', () => {
+  assert.equal(shouldSkipWindowsNotificationDelivery('unavailable'), false);
+  assert.equal(shouldSkipWindowsNotificationDelivery('enabled'), false);
+  assert.equal(shouldSkipWindowsNotificationDelivery('disabledForApplication'), true);
+  assert.equal(shouldSkipWindowsNotificationDelivery('disabledForUser'), true);
+  assert.equal(shouldSkipWindowsNotificationDelivery('disabledByGroupPolicy'), true);
+  assert.equal(shouldSkipWindowsNotificationDelivery('disabledByManifest'), true);
+  assert.equal(shouldSkipWindowsNotificationDelivery('notSupported'), true);
 });
 
 test('an incomplete quiet-hours draft never reaches persistence', async () => {

@@ -34,7 +34,7 @@ use windows::Win32::System::Com::{
     CLSCTX_LOCAL_SERVER, COINIT_APARTMENTTHREADED, COINIT_MULTITHREADED, REGCLS_MULTIPLEUSE,
 };
 use windows::Win32::System::Variant::VT_LPWSTR;
-use windows::Win32::System::WinRT::{RoInitialize, RoUninitialize, RO_INIT_SINGLETHREADED};
+use windows::Win32::System::WinRT::{RoInitialize, RoUninitialize, RO_INIT_MULTITHREADED};
 use windows::Win32::UI::Notifications::{
     INotificationActivationCallback, INotificationActivationCallback_Impl,
     NOTIFICATION_USER_INPUT_DATA,
@@ -83,6 +83,10 @@ const MAXIMUM_RETAINED_NOTIFICATIONS: usize = 64;
 
 static APP_IDENTITY: OnceLock<Result<(), String>> = OnceLock::new();
 static TOAST_IDENTITY: OnceLock<Result<(), String>> = OnceLock::new();
+static PROCESS_APP_USER_MODEL_ID: OnceLock<Result<(), String>> = OnceLock::new();
+type NotificationJob = Box<dyn FnOnce() + Send + 'static>;
+static NOTIFICATION_WORKER: OnceLock<Result<mpsc::Sender<NotificationJob>, String>> =
+    OnceLock::new();
 static NOTIFIER: OnceLock<Result<ToastsNotifier, String>> = OnceLock::new();
 static ACTIVE_NOTIFICATIONS: OnceLock<Mutex<Vec<Notification<'static>>>> = OnceLock::new();
 
@@ -110,30 +114,12 @@ pub(crate) fn read_status() -> String {
         return "unavailable".to_owned();
     }
 
-    let (status_sender, status_receiver) = mpsc::sync_channel(1);
-    let worker = thread::Builder::new()
-        .name("openchat-notification-status".to_owned())
-        .spawn(move || {
-            // WinRT toast APIs require WinRT initialization on the calling thread.
-            // SAFETY: This worker is new and owns its WinRT apartment for this call.
-            if unsafe { RoInitialize(RO_INIT_SINGLETHREADED) }.is_err() {
-                let _ = status_sender.send("unavailable".to_owned());
-                return;
-            }
-            let _apartment = WinRtApartmentGuard;
-            let _ = status_sender.send(read_status_on_current_thread());
-        });
-    if worker.is_err() {
-        return "unavailable".to_owned();
-    }
-
-    status_receiver
-        .recv()
+    run_on_notification_thread(|| Ok(read_status_on_current_thread()))
         .unwrap_or_else(|_| "unavailable".to_owned())
 }
 
 fn read_status_on_current_thread() -> String {
-    let Ok(notifier) = ToastsNotifier::new(Some(current_toast_identity().app_user_model_id)) else {
+    let Ok(notifier) = notifier_instance() else {
         return "unavailable".to_owned();
     };
     // SAFETY: The notifier owns a live COM interface for the duration of this call.
@@ -148,6 +134,64 @@ fn read_status_on_current_thread() -> String {
         Err(_) => "unavailable",
     }
     .to_owned()
+}
+
+fn run_on_notification_thread<T, F>(operation: F) -> Result<T, String>
+where
+    T: Send + 'static,
+    F: FnOnce() -> Result<T, String> + Send + 'static,
+{
+    let sender = NOTIFICATION_WORKER
+        .get_or_init(start_notification_worker)
+        .as_ref()
+        .map_err(Clone::clone)?;
+    let (response_sender, response_receiver) = mpsc::sync_channel(1);
+    sender
+        .send(Box::new(move || {
+            let _ = response_sender.send(operation());
+        }))
+        .map_err(|_| "Windows notification delivery is unavailable.".to_owned())?;
+    response_receiver
+        .recv()
+        .map_err(|_| "Windows notification delivery is unavailable.".to_owned())?
+}
+
+fn start_notification_worker() -> Result<mpsc::Sender<NotificationJob>, String> {
+    let (job_sender, job_receiver) = mpsc::channel::<NotificationJob>();
+    let (startup_sender, startup_receiver) = mpsc::sync_channel(1);
+    thread::Builder::new()
+        .name("openchat-windows-notifications".to_owned())
+        .spawn(move || {
+            // SAFETY: This dedicated thread owns one WinRT MTA for its full lifetime.
+            if unsafe { RoInitialize(RO_INIT_MULTITHREADED) }.is_err() {
+                let _ = startup_sender.send(Err(
+                    "Windows could not initialize notification delivery.".to_owned(),
+                ));
+                return;
+            }
+            let _apartment = WinRtApartmentGuard;
+            if startup_sender.send(Ok(())).is_err() {
+                return;
+            }
+            while let Ok(job) = job_receiver.recv() {
+                job();
+            }
+        })
+        .map_err(|_| "Windows could not start notification delivery.".to_owned())?;
+    startup_receiver
+        .recv()
+        .map_err(|_| "Windows could not start notification delivery.".to_owned())??;
+    Ok(job_sender)
+}
+
+fn is_delivery_blocked(status: &str) -> bool {
+    matches!(
+        status,
+        "disabledForApplication"
+            | "disabledForUser"
+            | "disabledByGroupPolicy"
+            | "disabledByManifest"
+    )
 }
 
 pub(crate) fn open_settings() -> Result<(), String> {
@@ -186,28 +230,38 @@ pub(crate) fn register_activation_server() -> Result<(), String> {
 }
 
 pub(crate) fn send_test(title: &str, body: &str) -> Result<bool, String> {
-    if read_status() != "enabled" {
+    if is_delivery_blocked(&read_status()) {
         return Ok(false);
     }
-    let notifier = notifier()?;
-    let notification = NotificationBuilder::new()
-        .visual(Text::create(0, title).with_style(HintStyle::Title))
-        .visual(Text::create(1, body).with_style(HintStyle::Body))
-        .build(1, notifier, "openchat-test", "openchat-test")
-        .map_err(|_| "The Windows test notification could not be created.".to_owned())?;
-    notification
-        .show()
-        .map_err(|_| "The Windows test notification could not be sent.".to_owned())?;
-    Ok(true)
+    let title = title.to_owned();
+    let body = body.to_owned();
+    run_on_notification_thread(move || {
+        let notifier = delivery_notifier()?;
+        let notification = NotificationBuilder::new()
+            .visual(Text::create(0, &title).with_style(HintStyle::Title))
+            .visual(Text::create(1, &body).with_style(HintStyle::Body))
+            .build(1, notifier, "openchat-test", "openchat-test")
+            .map_err(|_| "The Windows test notification could not be created.".to_owned())?;
+        notification
+            .show()
+            .map_err(|_| "The Windows test notification could not be sent.".to_owned())?;
+        Ok(true)
+    })
 }
 
 pub(crate) fn send_assistant_response(
     _app: &AppHandle,
     request: AssistantResponseNotification,
 ) -> Result<bool, String> {
-    if read_status() != "enabled" {
+    if is_delivery_blocked(&read_status()) {
         return Ok(false);
     }
+    run_on_notification_thread(move || send_assistant_response_on_notification_thread(request))
+}
+
+fn send_assistant_response_on_notification_thread(
+    request: AssistantResponseNotification,
+) -> Result<bool, String> {
     let body = if request.show_preview {
         assistant_response_preview(&request.content)
     } else {
@@ -253,7 +307,7 @@ pub(crate) fn send_assistant_response(
         })
     });
 
-    let notifier = notifier()?;
+    let notifier = activation_notifier()?;
     let mut builder = NotificationBuilder::new()
         .visual(Text::create(0, &request.title).with_style(HintStyle::Title))
         .visual(Text::create(1, &body).with_style(HintStyle::Body))
@@ -307,9 +361,15 @@ pub(crate) fn send_user_question(
     _app: &AppHandle,
     request: UserQuestionNotification,
 ) -> Result<bool, String> {
-    if read_status() != "enabled" {
+    if is_delivery_blocked(&read_status()) {
         return Ok(false);
     }
+    run_on_notification_thread(move || send_user_question_on_notification_thread(request))
+}
+
+fn send_user_question_on_notification_thread(
+    request: UserQuestionNotification,
+) -> Result<bool, String> {
     let conversation_id = request.conversation_id.clone();
     let group_id = request.group_id.clone();
     let handler = NotificationActivatedEventHandler::new(move |_notification, _args| {
@@ -320,7 +380,7 @@ pub(crate) fn send_user_question(
         .map_err(|error| WindowsError::new(windows::core::HRESULT(0x8000_4005u32 as i32), error))
     });
 
-    let notifier = notifier()?;
+    let notifier = activation_notifier()?;
     let notification = NotificationBuilder::new()
         .visual(Text::create(0, &request.title).with_style(HintStyle::Title))
         .visual(Text::create(1, &request.body).with_style(HintStyle::Body))
@@ -350,9 +410,17 @@ pub(crate) fn send_user_question(
     Ok(true)
 }
 
-fn notifier() -> Result<&'static ToastsNotifier, String> {
+fn activation_notifier() -> Result<&'static ToastsNotifier, String> {
     activation_setup_result()?;
     APP_IDENTITY.get_or_init(register_app_identity).clone()?;
+    delivery_notifier()
+}
+
+// Test toasts only verify delivery, so they must not depend on COM activation setup.
+fn delivery_notifier() -> Result<&'static ToastsNotifier, String> {
+    TOAST_IDENTITY
+        .get_or_init(register_toast_identity)
+        .clone()?;
     notifier_instance()
 }
 
@@ -374,14 +442,25 @@ fn register_app_identity() -> Result<(), String> {
     start_activation_class_server()
 }
 
+pub(crate) fn set_process_app_user_model_id() -> Result<(), String> {
+    PROCESS_APP_USER_MODEL_ID
+        .get_or_init(|| {
+            let app_user_model_id = encode_wide(current_toast_identity().app_user_model_id);
+            // SAFETY: The identity buffer is NUL-terminated and remains live through the API call.
+            unsafe {
+                SetCurrentProcessExplicitAppUserModelID(PCWSTR::from_raw(
+                    app_user_model_id.as_ptr(),
+                ))
+            }
+            .map_err(|_| {
+                "Windows could not register the OpenChat notification identity.".to_owned()
+            })
+        })
+        .clone()
+}
+
 fn register_toast_identity() -> Result<(), String> {
-    let identity = current_toast_identity();
-    let app_user_model_id = encode_wide(identity.app_user_model_id);
-    // SAFETY: The identity buffer is NUL-terminated and remains live through the API call.
-    unsafe {
-        SetCurrentProcessExplicitAppUserModelID(PCWSTR::from_raw(app_user_model_id.as_ptr()))
-    }
-    .map_err(|_| "Windows could not register the OpenChat notification identity.".to_owned())?;
+    set_process_app_user_model_id()?;
     ensure_toast_shortcut()
 }
 
@@ -862,7 +941,17 @@ unsafe fn bounded_wide_string(
 
 #[cfg(test)]
 mod tests {
-    use super::{bounded_wide_string, toast_identity, BoundedWideStringError};
+    use super::{bounded_wide_string, is_delivery_blocked, toast_identity, BoundedWideStringError};
+
+    #[test]
+    fn unknown_notification_status_allows_delivery_attempts() {
+        assert!(!is_delivery_blocked("enabled"));
+        assert!(!is_delivery_blocked("unavailable"));
+        assert!(is_delivery_blocked("disabledForApplication"));
+        assert!(is_delivery_blocked("disabledForUser"));
+        assert!(is_delivery_blocked("disabledByGroupPolicy"));
+        assert!(is_delivery_blocked("disabledByManifest"));
+    }
 
     #[test]
     fn development_notifications_use_separate_search_and_activation_registration() {

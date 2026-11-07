@@ -2,6 +2,7 @@ import type { TFunction } from 'i18next';
 import { ChartNoAxesCombined, CircleAlert, LoaderCircle, RefreshCw, RotateCcw } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { whenUnifiedStorageReady } from '@shared/lib/platform/storage/unifiedStorage';
 import { Button, Card, Dialog } from '@shared/components';
 import { ProviderIcon } from '@shared/components';
 import { subscribeToOAuthPlanUpdates } from '@features/provider-settings/data';
@@ -238,8 +239,15 @@ export function UsageQuotasSection({ onNavigateToConnections }: UsageQuotasSecti
   }, []);
 
   useEffect(() => {
-    loadAlertPreferences();
-    return subscribeToUsageAlertPreferences(loadAlertPreferences);
+    let unsubscribePreferences: (() => void) | undefined;
+    const unsubscribeStorageReady = whenUnifiedStorageReady(() => {
+      loadAlertPreferences();
+      unsubscribePreferences = subscribeToUsageAlertPreferences(loadAlertPreferences);
+    });
+    return () => {
+      unsubscribeStorageReady();
+      unsubscribePreferences?.();
+    };
   }, [loadAlertPreferences]);
 
   useEffect(() => {

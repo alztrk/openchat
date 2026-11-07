@@ -12,6 +12,7 @@ import geminiIconUrl from '@assets/icons/providers/gemini.svg?no-inline';
 import groqIconUrl from '@assets/icons/providers/groq.svg?no-inline';
 import kiloIconUrl from '@assets/icons/providers/kilo.svg?no-inline';
 import mistralIconUrl from '@assets/icons/providers/mistral.svg?no-inline';
+import nvidiaIconUrl from '@assets/icons/providers/nvidia.svg?no-inline';
 import perplexityIconUrl from '@assets/icons/providers/perplexity.svg?no-inline';
 import sambaNovaIconUrl from '@assets/icons/providers/sambanova.svg?no-inline';
 import togetherIconUrl from '@assets/icons/providers/together.svg?no-inline';
@@ -39,6 +40,7 @@ export const providerIconUrls: Record<string, string> = {
   deepinfra: deepInfraIconUrl,
   dashscope: dashScopeIconUrl,
   cohere: cohereIconUrl,
+  nvidia: nvidiaIconUrl,
   kilo: kiloIconUrl,
 };
 

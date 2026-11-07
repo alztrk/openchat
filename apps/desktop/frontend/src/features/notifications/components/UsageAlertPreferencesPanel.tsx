@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { whenUnifiedStorageReady } from '@shared/lib/platform/storage/unifiedStorage';
 
 import { Button, Card, Input, Select } from '@shared/components';
 import {
@@ -33,7 +34,7 @@ export function UsageAlertPreferencesPanel() {
   }, []);
 
   useEffect(() => {
-    load();
+    return whenUnifiedStorageReady(load);
   }, [load]);
 
   const save = async (next: UsageAlertPreferences, allowLoadFailure = false) => {

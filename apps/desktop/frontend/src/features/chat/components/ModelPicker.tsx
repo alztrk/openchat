@@ -657,6 +657,7 @@ const providerOrder = [
   'deepinfra',
   'dashscope',
   'cohere',
+  'nvidia',
   'llama_cpp',
 ];
 
@@ -878,6 +879,7 @@ const providerTranslationKeys: Partial<Record<string, TranslationKey>> = {
   deepinfra: 'deepInfraProvider',
   dashscope: 'dashScopeProvider',
   cohere: 'cohereProvider',
+  nvidia: 'providerNameNvidia',
   llama_cpp: 'localEngines',
 };
 

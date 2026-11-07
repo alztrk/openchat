@@ -2,32 +2,30 @@ import { i18n } from '@shared/lib/i18n/i18n';
 import { parseAgentQuestionGroup } from '@shared/lib/preferences/agentQuestions';
 import type { ChatConversation, ChatMessage } from '@entities/conversation';
 import { getConversation } from '@features/chat/data';
+import { isAppWindowBackgrounded, resetAppWindowFocus, setAppWindowFocus } from '@shared/lib/platform/windowFocus';
 import {
   readNotificationPreferences,
   readWindowsNotificationStatus,
+  shouldSkipWindowsNotificationDelivery,
   sendAssistantResponseNotification,
   sendUserQuestionNotification,
   shouldSuppressNotification,
 } from '@shared/lib/preferences/notificationPreferences';
 
-type WindowFocusState = 'unknown' | 'focused' | 'backgrounded';
-
-let windowFocusState: WindowFocusState = 'unknown';
-
 export function setNotificationWindowFocus(focused: boolean): void {
-  windowFocusState = focused ? 'focused' : 'backgrounded';
+  setAppWindowFocus(focused);
 }
 
 export function resetNotificationWindowFocus(): void {
-  windowFocusState = 'unknown';
+  resetAppWindowFocus();
 }
 
 export async function notifyAssistantResponse(conversation: ChatConversation, message: ChatMessage): Promise<boolean> {
-  if (windowFocusState !== 'backgrounded') return false;
+  if (!isAppWindowBackgrounded()) return false;
   const preferences = readNotificationPreferences();
   if (!preferences.responses) return false;
   if (shouldSuppressNotification(preferences, conversation.projectId)) return false;
-  if ((await readWindowsNotificationStatus()) !== 'enabled') return false;
+  if (shouldSkipWindowsNotificationDelivery(await readWindowsNotificationStatus())) return false;
   const title = conversation.title.trim();
   const content = message.content.trim();
   if (!title || !content) return false;
@@ -59,7 +57,7 @@ export async function notifyPendingQuestion(rawGroup: unknown): Promise<boolean>
     }
   }
   if (shouldSuppressNotification(preferences, projectId)) return false;
-  if ((await readWindowsNotificationStatus()) !== 'enabled') return false;
+  if (shouldSkipWindowsNotificationDelivery(await readWindowsNotificationStatus())) return false;
   return sendUserQuestionNotification({
     groupId: group.id,
     conversationId: group.conversationId,

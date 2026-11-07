@@ -67,6 +67,7 @@ type CompatibleProviderNameKey =
   | 'providerNameDeepInfra'
   | 'providerNameDashScope'
   | 'providerNameCohere'
+  | 'providerNameNvidia'
   | 'providerNameKilo';
 
 const providerNameKeys: Partial<Record<CompatibleProviderId, CompatibleProviderNameKey>> = {
@@ -85,6 +86,7 @@ const providerNameKeys: Partial<Record<CompatibleProviderId, CompatibleProviderN
   deepinfra: 'providerNameDeepInfra',
   dashscope: 'providerNameDashScope',
   cohere: 'providerNameCohere',
+  nvidia: 'providerNameNvidia',
   kilo: 'providerNameKilo',
 };
 
@@ -104,6 +106,7 @@ const providerDocumentationUrls: Partial<Record<CompatibleProviderId, string>> =
   deepinfra: 'https://docs.deepinfra.com/',
   dashscope: 'https://www.alibabacloud.com/help/en/model-studio/',
   cohere: 'https://docs.cohere.com/',
+  nvidia: 'https://docs.api.nvidia.com/nim/docs/api-quickstart',
   kilo: 'https://kilo.ai/docs',
 };
 

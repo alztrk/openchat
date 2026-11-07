@@ -100,7 +100,8 @@ pub(super) fn list_conversations(
         .prepare(
             "SELECT id, title, title_source, provider_id, model_id, connection_id,
                     workspace_id, api_key_connection_id, project_id,
-                    is_pinned, is_archived, created_at, updated_at, agent_json, reasoning_effort
+                    is_pinned, is_archived, created_at, updated_at, agent_json, reasoning_effort,
+                    unread_message_id
              FROM conversations
              WHERE NOT EXISTS (
                 SELECT 1 FROM security_scans WHERE security_scans.conversation_id = conversations.id
@@ -140,7 +141,8 @@ pub(super) fn get_conversation(
         .query_row(
             "SELECT id, title, title_source, provider_id, model_id, connection_id,
                     workspace_id, api_key_connection_id, project_id,
-                    is_pinned, is_archived, created_at, updated_at, agent_json, reasoning_effort
+                    is_pinned, is_archived, created_at, updated_at, agent_json, reasoning_effort,
+                    unread_message_id
              FROM conversations WHERE id = ?1",
             [id],
             |row| conversation_from_row!(row),
@@ -148,6 +150,62 @@ pub(super) fn get_conversation(
         .optional()
         .map_err(storage_error)?;
     Ok(json!({"conversation": conversation}))
+}
+
+pub(super) fn set_conversation_unread(
+    params: &Value,
+    storage: &AppStorage,
+) -> Result<Value, ServiceError> {
+    let input = input_object(params)?;
+    let conversation_id = required_safe_id(input, "conversationId")?;
+    let message_id = required_safe_id(input, "messageId")?;
+    let connection = storage.connect().map_err(storage_error)?;
+    let changed = connection
+        .execute(
+            "UPDATE conversations
+             SET unread_message_id = ?1
+             WHERE id = ?2
+               AND EXISTS (
+                   SELECT 1 FROM messages
+                   WHERE messages.conversation_id = conversations.id
+                     AND messages.id = ?1
+                     AND messages.role = 'assistant'
+                     AND messages.status = 'completed'
+               )",
+            params![message_id, conversation_id],
+        )
+        .map_err(storage_error)?;
+    if changed != 1 {
+        return Err(not_found("completed assistant message"));
+    }
+    Ok(json!({"unreadMessageId": message_id}))
+}
+
+pub(super) fn clear_conversation_unread(
+    params: &Value,
+    storage: &AppStorage,
+) -> Result<Value, ServiceError> {
+    let input = input_object(params)?;
+    let conversation_id = required_safe_id(input, "conversationId")?;
+    let expected_message_id = required_safe_id(input, "expectedMessageId")?;
+    let connection = storage.connect().map_err(storage_error)?;
+    connection
+        .execute(
+            "UPDATE conversations SET unread_message_id = NULL
+             WHERE id = ?1 AND unread_message_id = ?2",
+            params![conversation_id, expected_message_id],
+        )
+        .map_err(storage_error)?;
+    let unread_message_id = connection
+        .query_row(
+            "SELECT unread_message_id FROM conversations WHERE id = ?1",
+            [conversation_id],
+            |row| row.get::<_, Option<String>>(0),
+        )
+        .optional()
+        .map_err(storage_error)?
+        .ok_or_else(|| not_found("conversation"))?;
+    Ok(json!({"unreadMessageId": unread_message_id}))
 }
 
 pub(super) fn create_conversation(

@@ -28,7 +28,7 @@ mod tests {
     fn compatible_provider_catalog_is_unique_and_used_for_validation() {
         let provider_ids = compatible_provider_ids().collect::<Vec<_>>();
 
-        assert_eq!(provider_ids.len(), 16);
+        assert_eq!(provider_ids.len(), 17);
         assert_eq!(
             provider_ids.iter().copied().collect::<HashSet<_>>().len(),
             provider_ids.len()

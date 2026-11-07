@@ -93,10 +93,10 @@ pub struct ChatSendContext<'a> {
     pub security_scan_public_web_research: bool,
     /// User-visible model routes the primary agent may select for child runs.
     pub available_subagent_models: Vec<SubagentModelOption>,
-    #[cfg(windows)]
-    /// Validated project MCP configurations for the Windows tool runtime.
+    #[cfg(any(windows, target_os = "linux"))]
+    /// Validated project MCP configurations for the active platform tool runtime.
     pub mcp_configs: Vec<crate::tools::mcp::StdioServerConfig>,
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "linux"))]
     /// Connected MCP registry, when approval and initialization already succeeded.
     pub mcp_registry: Option<std::sync::Arc<crate::tools::mcp::McpRegistry>>,
     /// Broker that requests permission before protected tools execute.

@@ -30,6 +30,7 @@ import { Button, Checkbox, Dialog, Input, TitleTooltip } from '@shared/component
 import type { ChatConversation } from '@features/chat/data';
 import {
   type CustomSidebarFolder,
+  type CustomSidebarFoldersReadResult,
   clampSidebarWidth,
   readCollapsedSidebarSections,
   readCustomSidebarFolders,
@@ -43,6 +44,7 @@ import {
   SIDEBAR_MAX_WIDTH,
   SIDEBAR_MIN_WIDTH,
   type SidebarSectionId,
+  type SidebarPreferencesReadResult,
   type SidebarSortMode,
   type SidebarViewMode,
   sortSidebarConversations,
@@ -63,6 +65,7 @@ import {
 import { ProjectSidebarSection } from '@features/projects/components';
 import { type AssistantAgentSnapshot, snapshotAssistantProfile } from '@shared/lib/preferences/assistantProfiles';
 import { useAssistantProfilesStore } from '@shared/lib/preferences/assistantProfilesStore';
+import { unifiedStorage, whenUnifiedStorageReady } from '@shared/lib/platform/storage/unifiedStorage';
 import { ConversationSidebarEditDialog } from './ConversationSidebarEditDialog';
 import { ConversationSidebarRow } from './ConversationSidebarRow';
 import { ConversationSidebarSection } from './ConversationSidebarSection';
@@ -112,19 +115,23 @@ export function ConversationSidebar({
   const [createProjectOpen, setCreateProjectOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<{ conversation: ChatConversation; mode: 'rename' } | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ChatConversation | null>(null);
-  const [skipDeleteConfirmation, setSkipDeleteConfirmation] = useState(readSkipConversationDeleteConfirmation);
+  const [skipDeleteConfirmation, setSkipDeleteConfirmation] = useState(false);
   const [dontAskBeforeDeleting, setDontAskBeforeDeleting] = useState(false);
   const [deletePreferenceError, setDeletePreferenceError] = useState<string | null>(null);
-  const [sidebarPreferences] = useState(readCollapsedSidebarSections);
-  const [collapsedSections, setCollapsedSections] = useState<ReadonlySet<SidebarSectionId>>(
-    () => sidebarPreferences.collapsedSections,
-  );
-  const [sidebarWidth, setSidebarWidth] = useState(readSidebarWidth);
+  const [sidebarPreferences, setSidebarPreferences] = useState<SidebarPreferencesReadResult>({
+    collapsedSections: new Set<SidebarSectionId>(),
+    error: null,
+  });
+  const [collapsedSections, setCollapsedSections] = useState<ReadonlySet<SidebarSectionId>>(new Set());
+  const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_DEFAULT_WIDTH);
   const [isResizing, setIsResizing] = useState(false);
-  const [sortMode, setSortMode] = useState<SidebarSortMode>(readSidebarSortMode);
-  const [viewMode, setViewMode] = useState<SidebarViewMode>(readSidebarViewMode);
-  const [manualOrder, setManualOrder] = useState<string[]>(readSidebarManualOrder);
-  const [customFoldersState, setCustomFoldersState] = useState(readCustomSidebarFolders);
+  const [sortMode, setSortMode] = useState<SidebarSortMode>('updatedAt');
+  const [viewMode, setViewMode] = useState<SidebarViewMode>('compact');
+  const [manualOrder, setManualOrder] = useState<string[]>([]);
+  const [customFoldersState, setCustomFoldersState] = useState<CustomSidebarFoldersReadResult>({
+    kind: 'ready',
+    folders: [],
+  });
   const customFolders = customFoldersState.folders;
   const customFolderDataIsValid = customFoldersState.kind === 'ready';
   const [isCustomFolderSaving, setIsCustomFolderSaving] = useState(false);
@@ -137,7 +144,7 @@ export function ConversationSidebar({
   const [newFolderName, setNewFolderName] = useState('');
   const [editingFolderId, setEditingFolderId] = useState<string | null>(null);
   const [editingFolderName, setEditingFolderName] = useState('');
-  const [legacyHiddenConversationIds] = useState(readLegacyHiddenConversationIds);
+  const [legacyHiddenConversationIds, setLegacyHiddenConversationIds] = useState<ReadonlySet<string>>(() => new Set());
 
   const drawerRef = useRef<HTMLElement | null>(null);
   const scrollAreaRef = useRef<HTMLDivElement | null>(null);
@@ -145,6 +152,26 @@ export function ConversationSidebar({
   const customFoldersRef = useRef(customFolders);
   const customFolderMutationPendingRef = useRef(false);
   const [isCompactSidebar, setIsCompactSidebar] = useState(() => sidebarWidth <= SIDEBAR_COMPACT_WIDTH);
+
+  useEffect(() => {
+    const initializeSidebarPreferences = () => {
+      if (!unifiedStorage.isInitialized) return;
+      const nextSidebarPreferences = readCollapsedSidebarSections();
+      const nextCustomFolders = readCustomSidebarFolders();
+      setSkipDeleteConfirmation(readSkipConversationDeleteConfirmation());
+      setSidebarPreferences(nextSidebarPreferences);
+      setCollapsedSections(nextSidebarPreferences.collapsedSections);
+      setSidebarWidth(readSidebarWidth());
+      setSortMode(readSidebarSortMode());
+      setViewMode(readSidebarViewMode());
+      setManualOrder(readSidebarManualOrder());
+      setCustomFoldersState(nextCustomFolders);
+      customFoldersRef.current = nextCustomFolders.folders;
+      setLegacyHiddenConversationIds(readLegacyHiddenConversationIds());
+    };
+
+    return whenUnifiedStorageReady(initializeSidebarPreferences);
+  }, []);
 
   useEffect(() => {
     const sidebar = drawerRef.current;

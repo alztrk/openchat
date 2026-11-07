@@ -1028,6 +1028,86 @@ async fn conversation_list_pages_cover_all_rows_without_oversized_frames() {
 }
 
 #[tokio::test]
+async fn unread_conversation_marker_tracks_completed_assistant_messages_and_clears_by_id() {
+    let directory = TestDirectory::new();
+    let storage = initialized_chat_storage(&directory);
+    let conversation_id = create_attachment_test_conversation(&storage).await;
+
+    for message_id in ["unread-assistant-1", "unread-assistant-2"] {
+        dispatch(
+            "storage.chat.messages.save",
+            &json!({
+                "input": {
+                    "id": message_id,
+                    "conversationId": conversation_id,
+                    "role": "assistant",
+                    "content": "Completed response",
+                    "status": "completed"
+                }
+            }),
+            &storage,
+        )
+        .await
+        .expect("save completed assistant response");
+    }
+
+    dispatch(
+        "storage.chat.conversations.unread.set",
+        &json!({"input": {"conversationId": conversation_id, "messageId": "unread-assistant-1"}}),
+        &storage,
+    )
+    .await
+    .expect("mark the first response unread");
+    dispatch(
+        "storage.chat.conversations.unread.set",
+        &json!({"input": {"conversationId": conversation_id, "messageId": "unread-assistant-2"}}),
+        &storage,
+    )
+    .await
+    .expect("advance unread marker to the latest response");
+
+    let stale_clear = dispatch(
+        "storage.chat.conversations.unread.clear",
+        &json!({
+            "input": {
+                "conversationId": conversation_id,
+                "expectedMessageId": "unread-assistant-1"
+            }
+        }),
+        &storage,
+    )
+    .await
+    .expect("ignore a stale read acknowledgement");
+    assert_eq!(stale_clear["unreadMessageId"], "unread-assistant-2");
+
+    let list = dispatch(
+        "storage.chat.conversations.list",
+        &json!({"input": {"offset": 0}}),
+        &storage,
+    )
+    .await
+    .expect("list unread conversations");
+    assert_eq!(
+        list["conversations"][0]["unreadMessageId"],
+        "unread-assistant-2"
+    );
+
+    let cleared = dispatch(
+        "storage.chat.conversations.unread.clear",
+        &json!({
+            "input": {
+                "conversationId": conversation_id,
+                "expectedMessageId": "unread-assistant-2"
+            }
+        }),
+        &storage,
+    )
+    .await
+    .expect("clear the current unread response");
+    assert_eq!(cleared["unreadMessageId"], Value::Null);
+}
+
+#[tokio::test]
 async fn project_list_pages_cover_all_rows() {
     let directory = TestDirectory::new();
     let storage = initialized_chat_storage(&directory);

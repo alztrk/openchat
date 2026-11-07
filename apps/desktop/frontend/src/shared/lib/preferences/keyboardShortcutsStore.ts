@@ -104,7 +104,7 @@ export const useKeyboardShortcutsStore = create<KeyboardShortcutsState>((set, ge
     errorCode: null,
 
     initialize() {
-      if (get().loadState === 'loading' || get().loadState === 'ready') return;
+      if (!unifiedStorage.isInitialized || get().loadState === 'loading' || get().loadState === 'ready') return;
       set({ loadState: 'loading', errorCode: null });
       try {
         const encoded = unifiedStorage.getItem(storageKey);

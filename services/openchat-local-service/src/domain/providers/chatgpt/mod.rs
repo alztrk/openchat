@@ -192,6 +192,7 @@ impl ChatGptService {
         self.copilot_oauth.access_token(&self.storage).await
     }
 
+    #[cfg_attr(target_os = "linux", allow(unused_mut))]
     pub async fn send_message(
         self: &Arc<Self>,
         mut context: ChatSendContext<'_>,
@@ -392,6 +393,9 @@ impl ChatGptService {
             tools.extend(goals::control_tool_definitions());
         }
         tools::apply_profile_tool_allowlist(&mut tools, context.profile_tool_allowlist.as_ref());
+        if !context.is_security_scan && project_root.is_none() {
+            tools.retain(|tool| tool.name != "save_project_memory");
+        }
         if !context.is_security_scan && context.permission_mode == tools::ToolPermissionMode::Plan {
             tools::disable_tools_for_plan_mode(&mut tools);
         }

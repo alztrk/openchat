@@ -11,6 +11,7 @@ export function AssistantWritingSettingsSection() {
   const { t } = useTranslation();
   const models = useChatStore((state) => state.models);
   const ghostTextEnabled = useComposerPreferencesStore((state) => state.ghostTextEnabled);
+  const loadState = useComposerPreferencesStore((state) => state.loadState);
   const setGhostTextEnabled = useComposerPreferencesStore((state) => state.setGhostTextEnabled);
   const ghostTextModelKey = useComposerPreferencesStore((state) => state.ghostTextModelKey);
   const setGhostTextModelKey = useComposerPreferencesStore((state) => state.setGhostTextModelKey);
@@ -57,6 +58,7 @@ export function AssistantWritingSettingsSection() {
             <Switch
               aria-label={t('composerGhostTextEnabled')}
               checked={ghostTextEnabled}
+              disabled={loadState !== 'ready'}
               onCheckedChange={changeEnabled}
             />
           </SettingsPreferenceRow>
@@ -64,6 +66,7 @@ export function AssistantWritingSettingsSection() {
             <SettingsPreferenceRow description={t('composerGhostTextModelDescription')} label={t('composerGhostTextModel')}>
               <Select
                 label={t('composerGhostTextModel')}
+                disabled={loadState !== 'ready'}
                 onChange={(event) => changeModel(event.target.value)}
                 options={modelOptions}
                 value={ghostTextModelKey}

@@ -29,16 +29,17 @@ import {
 } from '@shared/lib/preferences/sidebarPreferences';
 import { useChatStore } from '@app/runtime/chatStore';
 import { useDesignPreferencesStore } from '@app/runtime/designPreferences';
+import { initializeActiveSecurityScans } from '@features/security-scans/data/securityScanRuntime';
 import {
   resetNotificationWindowFocus,
   setNotificationWindowFocus,
 } from '@app/runtime/notificationRuntime';
+import { setChatConversationSurfaceVisible } from '@shared/lib/platform/windowFocus';
 import {
   OAUTH_PLAN_CHECK_INTERVAL_MS,
   refreshOAuthPlans,
   shouldRefreshOAuthPlansOnFocus,
 } from '@app/runtime/oauthPlanMonitor';
-import { initializeActiveSecurityScans } from '@features/security-scans/data/securityScanRuntime';
 import type { ThemePreference } from '@features/app-settings/components/GeneralSettingsSection';
 import type { SettingsSection } from '@features/app-settings/components/SettingsPage';
 import {
@@ -55,7 +56,9 @@ import {
 import { useAssistantExecutionPreferencesStore } from '@shared/lib/preferences/assistantExecutionPreferences';
 import type { AssistantAgentSnapshot } from '@shared/lib/preferences/assistantProfiles';
 import { useChatDisplayPreferencesStore } from '@shared/lib/preferences/chatDisplayPreferences';
+import { useComposerPreferencesStore } from '@shared/lib/preferences/composerPreferences';
 import { useKeyboardShortcutsStore } from '@shared/lib/preferences/keyboardShortcutsStore';
+import { useAssistantProfilesStore } from '@shared/lib/preferences/assistantProfilesStore';
 import { localServiceClient } from '@shared/lib/platform/local-service';
 import { unifiedStorage } from '@shared/lib/platform/storage/unifiedStorage';
 import { getCurrentWindow, getVersion, invoke, isTauri, listen } from '@shared/lib/platform/tauri';
@@ -207,6 +210,17 @@ export function App() {
   }, [activeSurface]);
 
   useEffect(() => {
+    const visible = activeSurface === 'chats';
+    setChatConversationSurfaceVisible(visible);
+    if (visible) {
+      void useChatStore.getState().markActiveConversationReadIfVisible().catch((cause) => {
+        globalThis.reportError(new Error('The active conversation unread state could not be cleared.', { cause }));
+      });
+    }
+    return () => setChatConversationSurfaceVisible(false);
+  }, [activeSurface]);
+
+  useEffect(() => {
     if (!isTauri()) return;
     const activeComputerUseCalls = new Set<string>();
     const activeRequests = new Set<string>();
@@ -311,8 +325,10 @@ export function App() {
       setAppearance(readAppearancePreferences());
       setWorkspaceRatio(readWorkspacePanelRatio());
       initializeKeyboardShortcuts();
+      useComposerPreferencesStore.getState().initialize();
       useChatDisplayPreferencesStore.getState().initialize();
       initializeAssistantExecutionPreferences();
+      useAssistantProfilesStore.getState().initialize();
       useDesignPreferencesStore.getState().initialize();
       void writeCloseWindowBehavior(readCloseWindowBehavior()).catch((cause: unknown) => {
         globalThis.reportError(new Error('The window close behavior could not be applied.', { cause }));
@@ -438,24 +454,40 @@ export function App() {
   useEffect(() => {
     if (!isTauri()) return;
     let disposed = false;
+    let focusEventVersion = 0;
     let unlistenFocus: (() => void) | undefined;
     const currentWindow = getCurrentWindow();
+    const markVisibleConversationRead = () => {
+      void useChatStore.getState().markActiveConversationReadIfVisible().catch((cause) => {
+        globalThis.reportError(new Error('The active conversation unread state could not be cleared.', { cause }));
+      });
+    };
+    window.addEventListener('focus', markVisibleConversationRead);
+    document.addEventListener('visibilitychange', markVisibleConversationRead);
     void currentWindow
       .onFocusChanged(({ payload }) => {
+        focusEventVersion += 1;
         setNotificationWindowFocus(payload);
+        if (payload) markVisibleConversationRead();
       })
       .then((unlisten) => {
         if (disposed) unlisten();
         else unlistenFocus = unlisten;
-        return currentWindow.isFocused();
+        const versionAtQueryStart = focusEventVersion;
+        return currentWindow.isFocused().then((focused) => {
+          if (disposed || focusEventVersion !== versionAtQueryStart) return;
+          setNotificationWindowFocus(focused);
+          if (focused) markVisibleConversationRead();
+        });
       })
-      .then((focused) => {
-        if (!disposed) setNotificationWindowFocus(focused);
-      })
-      .catch(() => resetNotificationWindowFocus());
+      .catch(() => {
+        if (!disposed && focusEventVersion === 0) resetNotificationWindowFocus();
+      });
     return () => {
       disposed = true;
       unlistenFocus?.();
+      window.removeEventListener('focus', markVisibleConversationRead);
+      document.removeEventListener('visibilitychange', markVisibleConversationRead);
       resetNotificationWindowFocus();
     };
   }, []);

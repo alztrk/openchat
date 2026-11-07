@@ -11,7 +11,6 @@ use super::token_estimator;
 use crate::chatgpt_store::{ConversationContextState, StoredMessage};
 use crate::context_compaction::{compaction_payload_matches_route, text_token_estimate};
 
-const IMAGE_TOKEN_ESTIMATE: i64 = 2048;
 const OPAQUE_CHECKPOINT_TOKEN_ESTIMATE: i64 = 4096;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -214,7 +213,16 @@ fn estimate_messages(model_id: &str, messages: &[StoredMessage]) -> MessageBreak
 
         for attachment in &message.attachments {
             let tokens = if attachment.kind == "image" {
-                IMAGE_TOKEN_ESTIMATE
+                let dimensions = attachment
+                    .content
+                    .as_deref()
+                    .and_then(token_estimator::image_dimensions);
+                match dimensions {
+                    Some((width, height)) => {
+                        token_estimator::estimate_image(model_id, width, height)
+                    }
+                    None => token_estimator::default_image_tokens(model_id),
+                }
             } else if let Some(content) = attachment.content.as_deref() {
                 text_token_estimate(model_id, &String::from_utf8_lossy(content))
             } else {
@@ -239,9 +247,25 @@ fn estimate_messages(model_id: &str, messages: &[StoredMessage]) -> MessageBreak
                 .and_then(|value| value.as_str().map(str::to_owned))
                 .or_else(|| activity.output.as_ref().map(ToString::to_string))
                 .unwrap_or_default();
-            let activity_tokens = text_token_estimate(model_id, &activity.name)
+            let mut activity_tokens = text_token_estimate(model_id, &activity.name)
                 .saturating_add(text_token_estimate(model_id, &arguments))
                 .saturating_add(text_token_estimate(model_id, &output));
+
+            if activity.name == "computer_use"
+                && let Some(output_obj) = activity
+                    .output
+                    .as_ref()
+                    .and_then(serde_json::Value::as_object)
+                && let (Some(w), Some(h)) = (
+                    output_obj.get("width").and_then(serde_json::Value::as_u64),
+                    output_obj.get("height").and_then(serde_json::Value::as_u64),
+                )
+            {
+                activity_tokens = activity_tokens.saturating_add(token_estimator::estimate_image(
+                    model_id, w as u32, h as u32,
+                ));
+            }
+
             let total = result.tools.entry(activity.name.clone()).or_default();
             *total = total.saturating_add(activity_tokens);
         }
@@ -251,7 +275,7 @@ fn estimate_messages(model_id: &str, messages: &[StoredMessage]) -> MessageBreak
 
 fn estimate_pending_attachment(model_id: &str, attachment: &PendingAttachmentEstimate) -> i64 {
     if attachment.kind == "image" {
-        return IMAGE_TOKEN_ESTIMATE;
+        return token_estimator::default_image_tokens(model_id);
     }
     let size = usize::try_from(attachment.size_bytes.max(0)).unwrap_or(usize::MAX);
     let size_estimate = i64::try_from(size.div_ceil(4)).unwrap_or(i64::MAX);
@@ -343,10 +367,10 @@ mod tests {
         assert_eq!(estimate.assistant_message_tokens, new_reply_tokens);
         assert_eq!(estimate.memory_tokens, 0);
         assert_eq!(estimate.attachments.len(), 1);
-        assert_eq!(estimate.attachments[0].tokens, 2048);
+        assert_eq!(estimate.attachments[0].tokens, 1105);
         assert_eq!(
             estimate.total_tokens,
-            20 + new_reply_tokens + draft_tokens + 2048
+            20 + new_reply_tokens + draft_tokens + 1105
         );
     }
 

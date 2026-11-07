@@ -39,6 +39,7 @@ export interface ChatConversation {
   agent: AssistantAgentSnapshot | null;
   isPinned: boolean;
   isArchived: boolean;
+  unreadMessageId: string | null;
   createdAt: number;
   updatedAt: number;
 }

@@ -42,7 +42,7 @@ export const useAssistantExecutionPreferencesStore = create<AssistantExecutionPr
   saveState: 'idle',
 
   initialize() {
-    if (get().loadState === 'ready') return;
+    if (!unifiedStorage.isInitialized || get().loadState === 'ready') return;
     try {
       set({ preferences: readAssistantExecutionPreferences(), loadState: 'ready', saveState: 'idle' });
     } catch {

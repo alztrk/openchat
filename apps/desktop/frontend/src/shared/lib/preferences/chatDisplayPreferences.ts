@@ -36,7 +36,7 @@ export const useChatDisplayPreferencesStore = create<ChatDisplayPreferencesState
   saveState: 'idle',
 
   initialize() {
-    if (get().loadState === 'ready') return;
+    if (!unifiedStorage.isInitialized || get().loadState === 'ready') return;
     try {
       set({ preferences: readPreferences(), loadState: 'ready', saveState: 'idle' });
     } catch {

@@ -13,6 +13,7 @@ import {
   writeSharedInstructions,
 } from '@shared/lib/preferences/sharedInstructions';
 import { localServiceClient } from '@shared/lib/platform/local-service';
+import { whenUnifiedStorageReady } from '@shared/lib/platform/storage/unifiedStorage';
 
 type LoadState = 'loading' | 'ready' | 'error';
 type SettingsErrorKey =
@@ -76,9 +77,10 @@ export function SharedInstructionsSection() {
       setLoadState('ready');
     };
 
-    void load();
+    const stopWaitingForStorage = whenUnifiedStorageReady(() => void load());
     return () => {
       cancelled = true;
+      stopWaitingForStorage();
     };
   }, [loadAttempt]);
 

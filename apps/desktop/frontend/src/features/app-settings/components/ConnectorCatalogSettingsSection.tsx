@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 
 import { Button, Card, Input } from '@shared/components';
 import { useChatStore } from '@features/chat/state';
+import { whenUnifiedStorageReady } from '@shared/lib/platform/storage/unifiedStorage';
 import { type ProjectMcpServer, parseProjectMcpCatalog } from '@entities/project/projectMcp';
 import {
   loadProjectToolPermissionRules,
@@ -79,13 +80,15 @@ export function ConnectorCatalogSettingsSection() {
   useEffect(() => {
     setLoadState('loading');
     setErrorKey(null);
-    try {
-      setEntries(readConnectorCatalog());
-      setLoadState('ready');
-    } catch {
-      setLoadState('failed');
-      setErrorKey('connectorCatalogLoadFailed');
-    }
+    return whenUnifiedStorageReady(() => {
+      try {
+        setEntries(readConnectorCatalog());
+        setLoadState('ready');
+      } catch {
+        setLoadState('failed');
+        setErrorKey('connectorCatalogLoadFailed');
+      }
+    });
   }, [loadAttempt]);
 
   const visibleEntries = useMemo(() => {
