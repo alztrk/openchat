@@ -4,7 +4,7 @@ import { ensureNoArguments } from '../help.mjs';
 
 export const task = {
   name: 'build',
-  description: 'Builds the locked release local-service sidecar and Tauri bundle.',
+  description: 'Builds the locked release sidecar and native bundle for the host OS.',
   args: [],
   run() {
     ensureNoArguments('build', []);

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { runCheck, runCheckTypes, runValidationTasks } from '../../../../scripts/tasks/check.mjs';
+import { prepareTauriSidecar, runCheck, runCheckTypes, runValidationTasks } from '../../../../scripts/tasks/check.mjs';
 
 test('validation task runner reports synchronous command failures and still runs remaining tasks', async () => {
   const started = [];
@@ -40,10 +40,15 @@ test('validation task runner reports synchronous command failures and still runs
 
 test('check runs the complete frontend and locked Rust validation set', async () => {
   const calls = [];
+  const sidecarBuilds = [];
+
+  prepareTauriSidecar((profile, locked) => sidecarBuilds.push({ profile, locked }));
+  assert.deepEqual(sidecarBuilds, [{ profile: 'debug', locked: true }]);
 
   await runCheck({
     frontendDirectory: 'frontend',
     workspaceRoot: 'workspace',
+    prepareTauriSidecarFn: () => calls.push({ command: 'sidecar' }),
     runNpmFn: (args, cwd) => calls.push({ command: 'npm', args, cwd }),
     runCommandFn: (command, args, options) =>
       calls.push({ command, args, cwd: options.cwd, testThreads: options.env?.RUST_TEST_THREADS }),
@@ -51,6 +56,7 @@ test('check runs the complete frontend and locked Rust validation set', async ()
   });
 
   assert.deepEqual(calls, [
+    { command: 'sidecar' },
     {
       command: 'npm',
       args: ['exec', '--', 'biome', 'check', '.', '../../../scripts/tasks/check.mjs', '../../../scripts/check-imports.mjs'],
@@ -85,12 +91,14 @@ test('check-types keeps its no-tests type and compilation scope', async () => {
   await runCheckTypes({
     frontendDirectory: 'frontend',
     workspaceRoot: 'workspace',
+    prepareTauriSidecarFn: () => calls.push({ command: 'sidecar' }),
     runNpmFn: (args, cwd) => calls.push({ command: 'npm', args, cwd }),
     runCommandFn: (command, args, options) => calls.push({ command, args, cwd: options.cwd }),
     write: () => undefined,
   });
 
   assert.deepEqual(calls, [
+    { command: 'sidecar' },
     {
       command: 'npm',
       args: ['exec', '--', 'biome', 'check', '.', '../../../scripts/tasks/check.mjs', '../../../scripts/check-imports.mjs'],
@@ -109,6 +117,7 @@ test('check continues all validation tasks after several command runners throw s
     runCheck({
       frontendDirectory: 'frontend',
       workspaceRoot: 'workspace',
+      prepareTauriSidecarFn: () => undefined,
       runNpmFn: (args) => {
         calls.push(args);
         if (args[0] === 'exec') throw new Error('Biome unavailable');

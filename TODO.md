@@ -2,7 +2,7 @@
 
 > **Durum:** Mimari geçiş fazları tamamlandı ✅; hata ve kullanılabilirlik araştırması devam ediyor.
 > **Oluşturulma:** 2026-10-31
-> **Son güncelleme:** 2026-11-05
+> **Son güncelleme:** 2026-11-07
 > **Amaç:** OpenChat frontend ve Rust sidecar'ın endüstri standardına (FSD + Modular Monolith) incremental geçiş  
 
 ---
@@ -78,7 +78,7 @@
 - [x] `package.json` — `check:imports`, `check:locales`, `test` scriptleri
 - [x] `scripts/check-imports.mjs` — intra-feature ayrımı düzeltildi (0 errors)
 - [x] Frontend test paketi (121 test, 28 dosya) FSD yollarına uyarlandı ve tüm testler geçiyor
-- [x] CI/CD pipeline (`.github/workflows/windows-ci.yml`) — linter, test, locales, typecheck ve installer build
+- [x] CI/CD pipeline (`.github/workflows/desktop-ci.yml`) — Linux/Windows doğrulama ve paket build'leri
 - [x] `AGENTS.md` — mimari kurallar, CLI ve FSD standartları güncellendi
 
 ---
@@ -103,7 +103,7 @@
 
 ### Sonraki işler
 - [ ] Ayarlar sayfası yeniden tasarlanırken projeleri yönetmek için özel bir bölüm ekle; proje yapılandırma seçeneklerini bu bölümden sun.
-- [x] Windows bildirim durumu ve test akışı: `OpenChat.Desktop` AppUserModelID, Start Menu shortcut ve WinRT status/activation akışları doğrulandı.
+- [x] Windows bildirim entegrasyonu: `OpenChat.Desktop` AppUserModelID, Start Menu shortcut ve WinRT status/activation akışları doğrulandı.
 
 ### 8.1 Fixed Compilation Errors ✅
 - [x] `services/openchat-local-service/src/domain/conversations/history.rs:368-373` — Missing `summary_text` wrapper function (syntax error from malformed copy-paste)
@@ -237,7 +237,7 @@
 - [x] `CROSS-06` managed llama.cpp kod dilimi: Her yönetilen başlatmada yeni UUIDv4 API anahtarı üret, sabitlenmiş `b11349`'e komut satırı yerine `LLAMA_API_KEY` child environment üzerinden ver, mevcut local-service bearer-auth akışını kullan ve kullanılmayan llama.cpp Web UI'ını kapat. Argüman, child environment, özellik isteği ve sohbet isteği testleri merkezi check'te geçti.
 - [ ] `CROSS-06` runtime kabulü: Gerçek pinned `b11349` ve GGUF modeliyle eksik/yanlış anahtarın inference API'sinden `401` aldığını, OpenChat'in özellik/sohbet isteklerinin çalıştığını ve anahtarın renderer'a sızmadığını doğrula. Testte yalnız `GET /health` endpointinin upstream gereği public kaldığını hesaba kat.
 - [ ] Farklı browser Origin'den aktif model portuna istek, port keşfi, tarayıcının local-network policy davranışı ve boş port seçimi/child başlatma yarışını kontrollü runtime incele.
-- [x] Yerel check kapsamını CI'deki ortak frontend/Rust doğrulama adımlarıyla hizala; Windows CI çalışması henüz gözlenmedi.
+- [x] Yerel check kapsamını Windows ve Linux CI'deki ortak frontend/Rust doğrulama adımlarıyla hizala; Tauri workspace kontrolünden önce host sidecar hazırlanıyor.
 - [x] Araştırmada doğrulanan ve kaynak düzeyinde düzeltilebilen kullanıcı akışı/servis kusurları ilgili kod dilimlerinde regresyon senaryolarına bağlandı; gerçek WebView2, installer, veri içeren profil, güç-kaybı ve dogfooding kabulleri aşağıdaki runtime maddelerinde açık.
 - [ ] NSIS installerı eksik/eski WebView2 runtime ve offline koşullarında kurup aç; sidecar ile ilk profil başlangıcını doğrula.
 - [ ] Temiz dependency ağacında Vite, Görsel stüdyosu entry modülünü HTTP 200 ile dönüştürdü; browser'da lazy route'u gerçekten yürütüp önceki dinamik import hatasını ve paketlenmiş build'i karşılaştır.
@@ -254,6 +254,19 @@
 - [ ] **Runtime doğrulaması bekliyor:** Son salt-okunur kontrolde 5173, 1455, 1457 portlarında listener ve OpenChat/llama süreci görülmedi. Farklı-Origin/PNA/DNS rebinding/HMR/LAN ve aktif llama.cpp portu testleri için uygulama/model süreci gerekir.
 - [ ] **Kurulum doğrulaması bekliyor:** WebView2 eksik/eski/offline senaryoları ile paketlenmiş uygulama ve sidecar ilk açılışı bu araştırmada kurulmadı/çalıştırılmadı; yalnızca installer yapılandırması ve CI akışı kaynakta incelendi.
 - [ ] **Uçtan uca dogfooding bekliyor:** OpenChat sohbetiyle bu depoda dosya/terminal değişikliği yapıp kontrol ve diff/revert döngüsü yürütülmedi; sağlayıcı/model çağrısı ve yazma akışı gerektiriyor.
+
+---
+
+## Linux sürümü ve masaüstü bildirimleri — entegrasyon tamamlandı
+
+- [x] Windows ve Linux için yanıt bildirimi entegrasyonu tamamlandı; Windows WinRT/AppUserModelID akışı ve Linux masaüstü bildirim desteği mevcut.
+- [x] Linux x86_64 için Debian ve AppImage paketleri yerel `build` komutuyla oluşturuluyor; doğrulama öncesinde host sidecar hazırlanıyor.
+- [x] `.github/workflows/desktop-ci.yml` Windows ve Linux üzerinde ortak doğrulamayı, yerel paket build'lerini ve artefakt yüklemelerini çalıştırıyor.
+- [x] `v*` tag release'i iki platform job'ına bağlı; Windows NSIS, Linux `.deb` ve AppImage artefaktlarından biri eksikse release yayınlanmıyor.
+- [x] CI incelemesinde bulunan Windows Tauri workspace hatası düzeltildi: `check` ve `check-types`, Tauri workspace'i doğrulamadan önce host sidecar'ı hazırlar.
+- [x] Dependabot npm güncellemeleri kök workspace ve kök `package-lock.json` üzerinden yürütülecek şekilde hizalandı.
+- [ ] Bu değişiklikler GitHub'a gönderildikten sonraki Desktop CI koşusunda Linux/Windows job sonuçlarını ve oluşturulan release dosyalarını doğrula.
+- [ ] Linux `.deb` ve AppImage paketlerini desteklenen temiz Linux ortamında kurup Secret Service, bildirim, autostart ve ilk sidecar başlangıcını doğrula.
 
 ---
 
@@ -278,7 +291,7 @@
 - [x] `QA-14`: ChatGPT account testlerinin geçici veritabanı dizinleri PID ve süreç içi sayaç yerine UUID ile tekil oluşturuluyor; önceki kesilmiş test koşusundan kalan dizinin yeniden kullanımına bağlı tablo çakışması kapatıldı.
 - [x] Kısmi kabul: check adımları ayrı isimlerle raporlanır ve runner hatasında diğerleri de denenir; local/CI ortak komutları hizalı; frontend build, test, locale/import kontrolleri ve checker testleri geçti.
 - [x] Cargo check/test disk sınırı kabulü: Merkezi Windows `npm run openchat -- check` hedef kullanımı 15.86 GiB / 20 GiB iken başarıyla tamamlandı.
-- [ ] Kalan kabul: desteklenen Windows CI çalışması ve browser'da Görsel stüdyosu lazy route ile paketlenmiş build karşılaştırması.
+- [ ] Kalan kabul: sidecar sırası düzeltmesinden sonraki Windows CI koşusu ve browser'da Görsel stüdyosu lazy route ile paketlenmiş build karşılaştırması.
 
 ### 10.3 CLI, Tauri ve sidecar yaşam döngüsü
 
@@ -370,6 +383,7 @@
 ### 10.7 Paketlenmiş ilk açılış ve release doğrulaması
 
 - [ ] `CROSS-05/QA-10`: NSIS kurulumunu WebView2 güncel, eksik, eski ve çevrimdışı koşullarında; uygulama, sidecar ve ilk profil başlangıcıyla doğrula. Release host Cargo lock davranışını kanıtla.
+- [ ] Linux paket runtime kabulü: CI'den gelen `.deb` ve AppImage paketlerini temiz, desteklenen Linux ortamında kurup Secret Service, bildirim, XDG autostart ve ilk profil/sidecar başlangıcını doğrula.
 - [ ] Paket runtime kabulü: Kurulum gereksinimleri/çevrimdışı davranış açıkça gösterilir; ilk açılış, servis readiness ve hata kurtarma paketten çalıştırılır; desteklenen CI installer için smoke doğrulaması sağlar.
 
 ### 10.8 OpenChat ile OpenChat dogfooding

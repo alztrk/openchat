@@ -42,6 +42,12 @@ locked workspace checking, and locked Rust tests. It reports all task failures
 after attempting every check. `clean` previews generated build and bundle output
 directories by default. Pass `--apply` to remove the listed directories.
 
+`build` targets the current operating system because Tauri packaging uses native
+toolchains and system libraries. A version tag matching `v*` starts Desktop CI;
+the Windows and Linux jobs build independently, and the GitHub release is
+published only after both jobs upload the NSIS installer, Debian package, and
+AppImage. Do not treat a single local `build` as a cross-platform release.
+
 `dev-test-profile` builds both the Tauri host and local-service sidecar with the
 debug-only `desktop-profile-test-support` feature, then starts the app with an
 isolated profile directly under the OS temporary directory. It prints the profile
@@ -102,7 +108,8 @@ name and process ID. `clean` and `maintain-target --apply` also check for an
 external Cargo or rustc process before deleting artifacts.
 
 Cargo target selection and sidecar naming use the Rust host target triple, so the
-same task commands can prepare a sidecar on Windows or Linux. On Linux, `build`
-selects the Linux Tauri configuration and produces Debian and AppImage bundles.
-The CI Linux job installs the native build dependencies, runs the validation
-harness, builds both bundles, and uploads them as workflow artifacts.
+same task commands can prepare a sidecar on Windows or Linux. The validation
+harness prepares that native sidecar before checking the Tauri workspace. On
+Linux, `build` selects the Linux Tauri configuration and produces Debian and
+AppImage bundles. Desktop CI runs native validation and packaging on both
+platforms; version-tag releases require artifacts from both jobs.

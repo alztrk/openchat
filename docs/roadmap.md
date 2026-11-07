@@ -16,6 +16,7 @@ OpenChat is a local-first desktop AI workspace. This roadmap captures planned wo
 - Model catalog, favorites, and per-conversation model selection
 - Conversation history, search, archive, rename, pin, and Markdown export
 - ChatGPT OAuth quota snapshots and usage tracking
+- Desktop notifications for assistant responses on Windows and Linux
 
 ### Local tools and sandboxing
 - File read/write/edit with diff review and revert
@@ -42,11 +43,12 @@ OpenChat is a local-first desktop AI workspace. This roadmap captures planned wo
 ### Developer tooling
 - Cargo workspace (service + domain, transport, adapters crates)
 - Feature-Sliced Design frontend with import validation
-- CI/CD: Biome lint, TypeScript check, Rust formatting, RustSec audit, npm audit, Tauri build
+- Native Windows and Linux CI: shared validation and platform package builds; the Windows job additionally runs dependency audits and native lint/doc checks
 - Modular CLI (`npm run openchat --`) with dev, build, check, maintain-target tasks
 
 ### Linux desktop support
 - Linux x86_64 Debian and AppImage packaging with Secret Service profile-key storage, Bubblewrap terminal isolation, desktop notifications, and XDG autostart integration
+- Desktop CI builds Linux packages alongside the Windows installer; `v*` releases publish only after both platform jobs succeed
 - Linux project MCP supports local stdio servers sandboxed with Bubblewrap and remote Streamable HTTP; desktop computer-use automation remains unavailable
 - Linux llama.cpp installation, model management, and managed runtime lifecycle are supported for cataloged variants; external server discovery is limited to same-user processes with loopback TCP listeners
 
@@ -59,6 +61,7 @@ A static source review identified the following open work. Cleanup safety and np
 #### Priority 1 — Reproducible install and validation
 - The root `package-lock.json` matches the frontend workspace manifest and is the npm workspace authority. The stale nested `apps/desktop/frontend/package-lock.json` was removed, and CI now keys its npm cache to the root lockfile. A real clean install remains to be validated; only an offline `npm ci --dry-run` has run so far.
 - The local `check` task now includes frontend unit tests, locale consistency, FSD import checks, and the TypeScript/Vite asset build. CI uses the central task for this shared validation set; dedicated CI security, Rust lint, documentation, and installer steps remain additional checks.
+- Release builds are native per operating system. The tag release workflow waits for both Windows and Linux packaging jobs before creating a release; Linux package installation and first-run behavior still need runtime acceptance.
 
 #### Priority 2 — Frontend workflow feedback
 - Correct the new-chat welcome state when no model is selected.
@@ -86,6 +89,7 @@ A static source review identified the following open work. Cleanup safety and np
 #### Priority 2 — Windows first-run verification
 - The NSIS installer requires a WebView2 runtime at least `111.0.1661.0`. Tauri defaults to downloading its bootstrapper when the runtime is missing or outdated, so that install path needs network access. Validate missing, outdated, and offline-runtime cases.
 - CI builds and uploads the NSIS installer but does not install or launch it. Add an installed-app smoke path that covers WebView2 startup, sidecar startup, and first-profile initialization.
+- Linux package installation and first-run behavior still need runtime acceptance for Secret Service, notifications, XDG autostart, and the sidecar.
 
 These items are from static review. Treat them as open until focused runtime or regression checks establish the expected behavior.
 

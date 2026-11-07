@@ -29,9 +29,10 @@ export async function runCheck({
   runCommandFn = runCommand,
   frontendDirectory = getFrontendDirectory(),
   workspaceRoot = getWorkspaceRoot(),
+  prepareTauriSidecarFn = prepareTauriSidecar,
   write = (message) => process.stdout.write(message),
 } = {}) {
-  prepareLinuxTauriSidecar();
+  prepareTauriSidecarFn();
   await runValidationTasks('check', [
     {
       name: 'Biome lint',
@@ -64,9 +65,10 @@ export async function runCheckTypes({
   runCommandFn = runCommand,
   frontendDirectory = getFrontendDirectory(),
   workspaceRoot = getWorkspaceRoot(),
+  prepareTauriSidecarFn = prepareTauriSidecar,
   write = (message) => process.stdout.write(message),
 } = {}) {
-  prepareLinuxTauriSidecar();
+  prepareTauriSidecarFn();
   await runValidationTasks('check-types', [
     {
       name: 'Biome lint',
@@ -82,8 +84,8 @@ export async function runCheckTypes({
   ], write);
 }
 
-function prepareLinuxTauriSidecar() {
-  if (process.platform === 'linux') buildLocalService('debug', true);
+export function prepareTauriSidecar(buildLocalServiceFn = buildLocalService) {
+  buildLocalServiceFn('debug', true);
 }
 
 export async function runValidationTasks(taskName, tasks, write = (message) => process.stdout.write(message)) {
