@@ -28,7 +28,7 @@
     "@tauri-apps/plugin-dialog": "^2.4.0",
     "cn": "^0.5.1",
     "i18next": "^26.4.4",
-    "i18next-icu": "^2.4.0",
+    "i18next-icu": "^2.6.1",
     "lucide-react": "^1.59.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
