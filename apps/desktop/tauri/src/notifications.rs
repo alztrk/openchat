@@ -8,6 +8,8 @@ mod activation;
 #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
 mod commands;
 
+#[cfg(target_os = "linux")]
+mod linux_backend;
 #[cfg(target_os = "windows")]
 mod windows_backend;
 

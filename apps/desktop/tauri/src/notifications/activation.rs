@@ -78,6 +78,8 @@ pub fn initialize(app: &AppHandle) -> Result<(), String> {
         .map_err(|_| "Notification activation state is unavailable.".to_owned())?;
     runtime.app = Some(app.clone());
     drop(runtime);
+    #[cfg(target_os = "linux")]
+    super::linux_backend::initialize(app)?;
     #[cfg(target_os = "windows")]
     {
         let started = std::thread::Builder::new()

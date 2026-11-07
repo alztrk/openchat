@@ -145,6 +145,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let app = builder
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_shell::init())
         .manage(local_service_state)
         .manage(app_preferences::AppPreferencesState::default())

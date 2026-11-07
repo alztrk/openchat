@@ -4,7 +4,7 @@ OpenChat is a local-first desktop AI workspace. This roadmap captures planned wo
 
 ## Current state
 
-- **Platform:** Windows 10/11 (64-bit), with Linux/macOS planned
+- **Platform:** Windows 10/11 (64-bit) and Linux x86_64 (WebKitGTK 4.1); macOS remains planned
 - **Stack:** React 19 frontend, Tauri v2 desktop host, Rust local service (SQLite + SQLCipher)
 - **Core experience:** Chat, projects, model discovery, and settings are implemented; the reliability review below has open follow-up work.
 
@@ -44,6 +44,11 @@ OpenChat is a local-first desktop AI workspace. This roadmap captures planned wo
 - Feature-Sliced Design frontend with import validation
 - CI/CD: Biome lint, TypeScript check, Rust formatting, RustSec audit, npm audit, Tauri build
 - Modular CLI (`npm run openchat --`) with dev, build, check, maintain-target tasks
+
+### Linux desktop support
+- Linux x86_64 Debian and AppImage packaging with Secret Service profile-key storage, Bubblewrap terminal isolation, desktop notifications, and XDG autostart integration
+- Linux project MCP currently supports remote Streamable HTTP only; local stdio servers and desktop computer-use automation remain unavailable
+- Linux llama.cpp lifecycle and model management remain planned
 
 ## In progress
 
@@ -116,7 +121,7 @@ These items are from static review. Treat them as open until focused runtime or 
 ### Priority 4 — Sync and distribution
 - **Encrypted sync** — opt-in multi-device sync, device keys, conflict handling, offline behavior
 - **Signed distribution** — Authenticode signing, SBOM, stable/preview channels, update verification
-- **Cross-platform** — Linux/macOS packaging, credential storage, data directories
+- **Cross-platform** — macOS packaging, credential storage, data directories
 
 ### Deferred
 - **Reusable workflows with lifecycle hooks** (after Priority 1 baseline)
@@ -128,5 +133,5 @@ These items are from static review. Treat them as open until focused runtime or 
 
 - Live provider-account validation is a release gate, not current feature work
 - Confirmed Windows baseline is stable; re-check as regression coverage
-- Linux/macOS support follows Windows once the core experience is stable
+- Linux support is available for the documented subset; macOS follows once the core experience is stable
 - Existing audit findings (2026-10-27 source review) are tracked in [security-review.md](./security-review.md)

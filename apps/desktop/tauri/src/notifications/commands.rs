@@ -111,7 +111,11 @@ pub fn read_windows_notification_status() -> String {
     {
         super::windows_backend::read_status()
     }
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os = "linux")]
+    {
+        super::linux_backend::read_status()
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
     {
         "notSupported".to_owned()
     }
@@ -127,7 +131,11 @@ pub fn open_windows_notification_settings() -> Result<(), String> {
     {
         super::windows_backend::open_settings()
     }
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os = "linux")]
+    {
+        super::linux_backend::open_settings()
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
     {
         Err("Windows notification settings are not available on this platform.".to_owned())
     }
@@ -141,6 +149,7 @@ pub fn open_windows_notification_settings() -> Result<(), String> {
 /// # Errors
 /// Returns a validation or platform notification error.
 pub fn send_test_notification(
+    app: AppHandle,
     title: BoundedText<MAXIMUM_TEST_NOTIFICATION_TITLE_BYTES>,
     body: BoundedText<MAXIMUM_NOTIFICATION_BODY_BYTES>,
 ) -> Result<bool, String> {
@@ -150,10 +159,16 @@ pub fn send_test_notification(
     validate_text(&body, 500, "The notification body is invalid.")?;
     #[cfg(target_os = "windows")]
     {
+        let _ = app;
         super::windows_backend::send_test(&title, &body)
     }
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os = "linux")]
     {
+        super::linux_backend::send_test(&app, &title, &body)
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
+    {
+        let _ = (app, title, body);
         Ok(false)
     }
 }
@@ -193,7 +208,11 @@ pub fn send_assistant_response_notification(
     {
         super::windows_backend::send_assistant_response(&app, request)
     }
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os = "linux")]
+    {
+        super::linux_backend::send_assistant_response(&app, request)
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
     {
         let _ = (app, request);
         Ok(false)
@@ -217,7 +236,11 @@ pub fn send_user_question_notification(
     {
         super::windows_backend::send_user_question(&app, request)
     }
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os = "linux")]
+    {
+        super::linux_backend::send_user_question(&app, request)
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
     {
         let _ = (app, request);
         Ok(false)

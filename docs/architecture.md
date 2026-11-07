@@ -40,9 +40,11 @@ Import rules are validated automatically (`npm run check:imports`). Lower layers
 The Rust sidecar owns all provider connections, tool execution, storage, and security. It runs as a stdio process spawned by the Tauri host. Key responsibilities:
 
 - **Provider adapters** — ChatGPT (OAuth), OpenAI (API key), Anthropic, Gemini, and 15+ compatible providers
-- **Tool execution** — File I/O, terminal, web search, MCP stdio, with sandboxing via Windows AppContainer or Linux bubblewrap
+- **Tool execution** — File I/O, terminal, web search, and MCP. Windows local stdio MCP runs in AppContainer; Linux terminal processes use Bubblewrap and Linux MCP currently supports remote Streamable HTTP only.
 - **Storage** — SQLCipher (AES-256) encrypted SQLite database, brokered through an AppContainer child on Windows and stored in the private XDG data directory on Linux
 - **Credentials** — Windows Credential Manager or Linux Secret Service for the profile key; provider credentials are held in the encrypted database vault
+
+The Tauri host also integrates native desktop notifications on Windows and Linux. Linux startup-at-login uses the user's XDG autostart directory. Linux desktop computer-use automation and local stdio MCP are not currently available.
 
 ### Desktop Host
 
