@@ -2,7 +2,7 @@
 
 > **Durum:** Mimari geçiş fazları tamamlandı ✅; hata ve kullanılabilirlik araştırması devam ediyor.
 > **Oluşturulma:** 2026-10-31
-> **Son güncelleme:** 2026-11-07
+> **Son güncelleme:** 2026-11-10
 > **Amaç:** OpenChat frontend ve Rust sidecar'ın endüstri standardına (FSD + Modular Monolith) incremental geçiş  
 
 ---
@@ -488,3 +488,27 @@ Her aşamada değişikliği küçük bir dikey dilim halinde uygula; ilgili regr
 - [ ] Mobil platform desteği (Android ve iOS istemcileri).
 - [ ] Genel soyut yetkilendirilmiş ajan çerçevesi (generalized delegated-agent architecture).
 - [ ] Ek yerel çıkarım motorlarının (MLC-LLM, ONNX Runtime vb.) değerlendirilmesi ve entegrasyonu.
+
+---
+
+## Faz 17 — Yüksek Performans, Akıcılık ve Sistem Mimarisi (Zed Esinli Optimizasyonlar)
+
+### 17.1 Ön Yüz Akış (Streaming) ve Re-render İzolasyonu (React 19 / Zustand)
+- [ ] `useComposerState.ts` aşırı aboneliğinin (`oversubscription`) giderilmesi: Kancada tam `messages` dizisi yerine yalnızca `useChatStore((s) => s.messages.length > 0)` selector'ına abone olunarak akış esnasında composer formunun saniyede 20 kez gereksiz re-render edilmesinin önlenmesi.
+- [ ] `ContextUsageIndicator.tsx` token hesaplama optimizasyonu: Akış (`isSending = true`) sürerken her 50 ms'de tüm mesajlarda baştan sona `estimateContextUsage` çalıştırılması yerine 500-1000 ms debounce veya son mesaj uzunluğuna dayalı artımlı (incremental) tahmin uygulanması.
+- [ ] `MessageMarkdown.tsx` inline parsing optimizasyonu: `renderInline` fonksiyon gövdesinde her blok için sıfırdan derlenen 250 karakterlik `tokenPattern` düzenli ifadesinin modül seviyesinde tekil bir sabit regex haline getirilmesi.
+- [ ] `ConversationSidebarRow.tsx` memoization: Çok sayıda sohbeti olan kullanıcılarda kenar çubuğunun gecikmesiz çalışması için satır bileşeninin `React.memo` ile stabilize edilmesi ve gereksiz re-render'ların kesilmesi.
+
+### 17.2 Arka Uç ve Veri Tabanı İndeks / Veri Akışı Optimizasyonları (Rust / SQLite)
+- [ ] `list_conversations` B-Tree indeks uyuşmazlığının giderilmesi: `idx_conversations_sort_list` indeksi ile SQL `ORDER BY` ifadesinin birebir eşleştirilerek `conversations` tablosundaki geçici bellek içi sıralamanın (`TEMP B-TREE FOR ORDER BY`) kaldırılması.
+- [ ] `list_messages` sorgusundaki `COALESCE(created_at, 0)` fonksiyon çağrısının kaldırılarak mevcut `idx_messages_conversation_sort` indeksinin doğrudan geriye doğru (reverse scan) sıfır sıralama maliyetiyle taranması.
+- [ ] `stream.rs` içerisindeki SSE satır ayrıştırmasında `line.to_vec()` heap tahsisi yerine sıfır kopyalama (`std::str::from_utf8(line)`) ile zero-copy parsing uygulanması.
+- [ ] SQLite WAL eşzamanlılığı: UI okuma sorgularının (`list_messages`, `get_conversation`, arama) yazma işlemlerini beklemesini önlemek için WAL modunun paralel okuyucu avantajından faydalanan ikincil salt-okunur bağlantı havuzunun değerlendirilmesi.
+
+### 17.3 Zed Esinli Akıcılık ve Bellek Mimarisi (Rust Offloading & IPC Batching)
+- [ ] Ağır hesaplamaların Rust'a çekilmesi: Token tahmini, arama indeksleme ve yapısal metin analizi gibi CPU-yoğun işlerin JavaScript V8 motoru yerine Rust tarafında hesaplanarak UI'a hazır metrik olarak iletilmesi.
+- [ ] IPC akış tamponlama ve batching: Yüksek frekanslı token olaylarının 30-50 ms pencerelerde Rust tarafında paketlenerek React'e sabit 60 FPS temposunda beslenmesi.
+- [ ] Rust tarafında bellek içi aktif konuşma önbelleği (`In-Memory Hot Cache`): Aktif konuşma mesajlarının RAM'de tutulup SQLite'a asenkron yazılması (write-through cache) ile anlık arayüz yanıt sürelerine ulaşılması.
+
+### 17.4 Yerel Model Çıkarım Performansı (Llama.cpp Engine)
+- [ ] `support.rs` içerisinde `llama-server` başlatılırken CUDA/harici GPU tespit edildiğinde `-ngl 99` (GPU layer offload) ve `--threads` (fiziksel performans çekirdeği sayısı) parametrelerinin komut satırına eklenmesi.
