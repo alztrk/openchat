@@ -59,19 +59,26 @@ export default defineConfig(({ command }) => ({
   build: {
     target: 'es2022',
     emptyOutDir: true,
-    // The syntax highlighter engine and language grammars are lazy-loaded; the largest measured chunk is 797 kB.
+    // Target chunk budget for lazy-loaded modules and vendor bundles.
     chunkSizeWarningLimit: 1024,
     rollupOptions: {
       output: {
         manualChunks(id) {
           const moduleId = id.replaceAll('\\', '/');
-          const shikiLanguageModule = moduleId.match(/\/node_modules\/@shikijs\/langs\/dist\/([^/]+)\.mjs$/u);
-          if (shikiLanguageModule) {
-            const languageName = shikiLanguageModule[1] === 'bash' ? 'shellscript' : shikiLanguageModule[1];
-            return `shiki-language-${languageName}`;
-          }
           if (moduleId.includes('node_modules/react-dom') || moduleId.includes('node_modules/react/')) {
             return 'react-vendor';
+          }
+          if (moduleId.includes('node_modules/@radix-ui') || moduleId.includes('node_modules/@floating-ui')) {
+            return 'ui-vendor';
+          }
+          if (moduleId.includes('node_modules/lucide-react') || moduleId.includes('node_modules/@icons-pack')) {
+            return 'icons-vendor';
+          }
+          if (moduleId.includes('node_modules/i18next') || moduleId.includes('node_modules/react-i18next')) {
+            return 'i18n-vendor';
+          }
+          if (moduleId.includes('node_modules/@tanstack')) {
+            return 'tanstack-vendor';
           }
           return undefined;
         },

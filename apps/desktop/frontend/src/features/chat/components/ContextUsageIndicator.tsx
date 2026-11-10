@@ -123,10 +123,18 @@ export function ContextUsageIndicator({
     };
   }, [conversationId, isSending]);
 
-  const localSnapshot = useMemo(
-    () => estimateContextUsage(messages, draft, pendingAttachments, model, configuration, memory),
-    [configuration, draft, memory, messages, model, pendingAttachments],
-  );
+  const lastEstimateRef = useRef<ReturnType<typeof estimateContextUsage> | null>(null);
+  const lastEstimateTimeRef = useRef(0);
+  const localSnapshot = useMemo(() => {
+    const now = Date.now();
+    if (isSending && lastEstimateRef.current && now - lastEstimateTimeRef.current < 2000) {
+      return lastEstimateRef.current;
+    }
+    const estimate = estimateContextUsage(messages, draft, pendingAttachments, model, configuration, memory);
+    lastEstimateRef.current = estimate;
+    lastEstimateTimeRef.current = now;
+    return estimate;
+  }, [configuration, draft, isSending, memory, messages, model, pendingAttachments]);
   const [serverSnapshot, setServerSnapshot] = useState<ReturnType<typeof estimateContextUsage> | null>(null);
   const snapshot = serverSnapshot ?? localSnapshot;
 

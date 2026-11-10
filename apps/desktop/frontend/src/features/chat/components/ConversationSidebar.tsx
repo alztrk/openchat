@@ -86,6 +86,7 @@ const CreateProjectDialog = lazy(() =>
   })),
 );
 const SIDEBAR_COMPACT_WIDTH = 256;
+const contentVisibilityAutoStyle = { contentVisibility: 'auto' as const };
 
 export interface ConversationSidebarProps {
   isDrawer?: boolean;
@@ -756,7 +757,7 @@ export function ConversationSidebar({
       <div
         className="min-w-0 w-full"
         key={conversation.id}
-        style={{ contentVisibility: 'auto' }}
+        style={contentVisibilityAutoStyle}
       >
         <ConversationSidebarRow
           active={activeConversationId === conversation.id}

@@ -23,6 +23,7 @@ import {
   type FormEvent,
   type KeyboardEvent,
   type MouseEvent as ReactMouseEvent,
+  memo,
   useCallback,
   useEffect,
   useId,
@@ -70,7 +71,31 @@ export interface ConversationSidebarRowProps {
   onReorderConversation?(draggedConversationId: string, targetConversationId: string): void;
 }
 
-export function ConversationSidebarRow({
+function areSidebarRowPropsEqual(
+  prev: ConversationSidebarRowProps,
+  next: ConversationSidebarRowProps,
+): boolean {
+  return (
+    prev.active === next.active &&
+    prev.archived === next.archived &&
+    prev.isAiWorking === next.isAiWorking &&
+    prev.disabled === next.disabled &&
+    prev.viewMode === next.viewMode &&
+    prev.allowMove === next.allowMove &&
+    prev.currentProjectId === next.currentProjectId &&
+    prev.currentFolderId === next.currentFolderId &&
+    prev.conversation.id === next.conversation.id &&
+    prev.conversation.title === next.conversation.title &&
+    prev.conversation.isPinned === next.conversation.isPinned &&
+    prev.conversation.updatedAt === next.conversation.updatedAt &&
+    prev.conversation.createdAt === next.conversation.createdAt &&
+    prev.conversation.projectId === next.conversation.projectId &&
+    prev.projects === next.projects &&
+    prev.customFolders === next.customFolders
+  );
+}
+
+export const ConversationSidebarRow = memo(function ConversationSidebarRow({
   conversation,
   projects,
   customFolders = [],
@@ -825,7 +850,7 @@ export function ConversationSidebarRow({
         : null}
     </li>
   );
-}
+}, areSidebarRowPropsEqual);
 
 interface MenuActionProps {
   icon: LucideIcon;

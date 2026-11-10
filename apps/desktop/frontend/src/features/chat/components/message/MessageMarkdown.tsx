@@ -77,7 +77,7 @@ function CodeBlock({ code, language }: CodeBlockProps) {
 }
 
 /** Renders conversation Markdown while keeping provider-controlled links constrained to safe targets. */
-export function MessageMarkdown({
+export const MessageMarkdown = memo(function MessageMarkdown({
   allowExternalLinks = true,
   content,
   citationSources,
@@ -120,7 +120,7 @@ export function MessageMarkdown({
       />
     </>
   );
-}
+});
 
 interface MarkdownBlocksProps {
   content: string;
@@ -323,6 +323,9 @@ function MarkdownHeading({ content, headingId, level, options, onCitationSelect,
   }
 }
 
+const INLINE_TOKEN_PATTERN =
+  /(!\[[^\]\n]*\]\((?:<[^>]+>|[^)\s]+)(?:\s+["'][^"']*["'])?\)|`[^`\n]+`|\*\*[^*\n]+\*\*|__[^_\n]+__|~~[^~\n]+~~|\[[^\]\n]+\]\((?:<[^>]+>|[^)\s]+)(?:\s+["'][^"']*["'])?\)|<https?:\/\/[^>\s]+>|https?:\/\/[^\s<>]+|www\.[^\s<>]+|\[[PSU]\d+(?:-[A-Za-z0-9]+)?\]|\*[^*\n]+\*|_[^_\n]+_)/gi;
+
 function renderInline(
   value: string,
   sourceById: ReadonlyMap<string, CitationSource>,
@@ -330,12 +333,10 @@ function renderInline(
   onCitationSelect: (source: CitationSource) => void,
   options: MarkdownRenderOptions,
 ): ReactNode[] {
-  const tokenPattern =
-    /(!\[[^\]\n]*\]\((?:<[^>]+>|[^)\s]+)(?:\s+["'][^"']*["'])?\)|`[^`\n]+`|\*\*[^*\n]+\*\*|__[^_\n]+__|~~[^~\n]+~~|\[[^\]\n]+\]\((?:<[^>]+>|[^)\s]+)(?:\s+["'][^"']*["'])?\)|<https?:\/\/[^>\s]+>|https?:\/\/[^\s<>]+|www\.[^\s<>]+|\[[PSU]\d+(?:-[A-Za-z0-9]+)?\]|\*[^*\n]+\*|_[^_\n]+_)/gi;
   const nodes: ReactNode[] = [];
   let cursor = 0;
   let tokenIndex = 0;
-  for (const match of value.matchAll(tokenPattern)) {
+  for (const match of value.matchAll(INLINE_TOKEN_PATTERN)) {
     const token = match[0];
     const start = match.index ?? cursor;
     if (start > cursor) nodes.push(value.slice(cursor, start));
