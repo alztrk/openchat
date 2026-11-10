@@ -28,5 +28,5 @@ debug = true
 debug = 0
 strip = "debuginfo"
 lto = "thin"
-codegen-units = 1
+codegen-units = 16
 panic = "abort"
