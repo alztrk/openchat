@@ -102,7 +102,7 @@
 ## Faz 8 — Bug Fixes & Test Stabilization (2026-11-01)
 
 ### Sonraki işler
-- [ ] Ayarlar sayfası yeniden tasarlanırken projeleri yönetmek için özel bir bölüm ekle; proje yapılandırma seçeneklerini bu bölümden sun.
+- [x] Ayarlar sayfası yeniden tasarlanırken projeleri yönetmek için özel bir bölüm ekle; proje yapılandırma seçeneklerini bu bölümden sun (`ProjectSettingsSection.tsx` ve `SettingsPage.tsx` entegrasyonu tamamlandı).
 - [x] Windows bildirim entegrasyonu: `OpenChat.Desktop` AppUserModelID, Start Menu shortcut ve WinRT status/activation akışları doğrulandı.
 
 ### 8.1 Fixed Compilation Errors ✅
@@ -238,22 +238,17 @@
 - [ ] `CROSS-06` runtime kabulü: Gerçek pinned `b11349` ve GGUF modeliyle eksik/yanlış anahtarın inference API'sinden `401` aldığını, OpenChat'in özellik/sohbet isteklerinin çalıştığını ve anahtarın renderer'a sızmadığını doğrula. Testte yalnız `GET /health` endpointinin upstream gereği public kaldığını hesaba kat.
 - [ ] Farklı browser Origin'den aktif model portuna istek, port keşfi, tarayıcının local-network policy davranışı ve boş port seçimi/child başlatma yarışını kontrollü runtime incele.
 - [x] Yerel check kapsamını Windows ve Linux CI'deki ortak frontend/Rust doğrulama adımlarıyla hizala; Tauri workspace kontrolünden önce host sidecar hazırlanıyor.
-- [x] Araştırmada doğrulanan ve kaynak düzeyinde düzeltilebilen kullanıcı akışı/servis kusurları ilgili kod dilimlerinde regresyon senaryolarına bağlandı; gerçek WebView2, installer, veri içeren profil, güç-kaybı ve dogfooding kabulleri aşağıdaki runtime maddelerinde açık.
+- [x] Araştırmada doğrulanan ve kaynak düzeyinde düzeltilebilen kullanıcı akışı/servis kusurları ilgili kod dilimlerinde regresyon senaryolarına bağlandı; gerçek WebView2, installer, veri içeren profil ve güç-kaybı kabulleri aşağıdaki runtime maddelerinde açık.
 - [ ] NSIS installerı eksik/eski WebView2 runtime ve offline koşullarında kurup aç; sidecar ile ilk profil başlangıcını doğrula.
 - [ ] Temiz dependency ağacında Vite, Görsel stüdyosu entry modülünü HTTP 200 ile dönüştürdü; browser'da lazy route'u gerçekten yürütüp önceki dinamik import hatasını ve paketlenmiş build'i karşılaştır.
-- [ ] OpenChat'i OpenChat deposuna proje olarak ekleyip bir geliştirme görevini uygulamanın kendi sohbet, dosya araçları, terminal ve diff/revert akışıyla baştan sona yürüt; proje kökünün, izin kararlarının, komut çıktılarının ve oturum yeniden açma davranışının yeterli olduğunu doğrula.
-- [ ] `AGENTS.md` içeriğinin OpenChat oturumuna otomatik aktarılmadığı kaynak bulgusunu gerçek kullanımda doğrula; proje talimatı ve `.openchat/rules/**/*.mdc` ile gerekli repo kurallarının eksiksiz uygulanıp uygulanmadığını belirle.
-- [ ] OpenChat deposu için proje talimatı ve `npm run openchat -- check` gibi doğrulama komutlarını OpenChat'in proje ayarlarına tanımlamanın geliştirici akışını iyileştirip iyileştirmediğini kontrollü dogfooding denemesiyle değerlendir; bu araştırmada proje ayarı oluşturma.
-- [ ] Dogfooding denemesinde seçilen sağlayıcı/modelin tool-calling desteğini, destek kapalıyken dosya ve terminal araçlarının davranışını ve kullanıcıya verilen açıklamayı doğrula.
 
 - [x] Her bulguda önem ve güven düzeyini, etkilenen akışı, dosya/satır kanıtını, tetikleme koşulunu, beklenen ve mevcut davranışı, test kapsamını ve takip önerisini kaydet.
 - [x] Doğrulanmış kusurları olası risklerden ve kullanılabilirlik gözlemlerinden ayrı tut.
 - [x] Araştırma notlarını yalnızca gitignore kapsamındaki `.reports/openchat-deep-review-2026-11-04.md` dosyasında tut.
-- [x] Kaynakta incelenebilir TODO maddelerini rapordaki FE/QA/T-HOST/SVC/CROSS/DOGFOOD bulgularıyla çapraz eşle; kod düzeltmesi ve ayrıca izin gerektiren runtime/kurulum doğrulamaları açık takip işi olarak bırak.
+- [x] Kaynakta incelenebilir TODO maddelerini rapordaki FE/QA/T-HOST/SVC/CROSS bulgularıyla çapraz eşle; kod düzeltmesi ve ayrıca izin gerektiren runtime/kurulum doğrulamaları açık takip işi olarak bırak.
 - [x] Bu turda kaynakta incelenebilen başlıkları ve yeni QA-09/QA-13 import-checker bulgularını rapora ekle; uygulama kodu, test, build, installer ve proje ayarlarına dokunma.
 - [ ] **Runtime doğrulaması bekliyor:** Son salt-okunur kontrolde 5173, 1455, 1457 portlarında listener ve OpenChat/llama süreci görülmedi. Farklı-Origin/PNA/DNS rebinding/HMR/LAN ve aktif llama.cpp portu testleri için uygulama/model süreci gerekir.
 - [ ] **Kurulum doğrulaması bekliyor:** WebView2 eksik/eski/offline senaryoları ile paketlenmiş uygulama ve sidecar ilk açılışı bu araştırmada kurulmadı/çalıştırılmadı; yalnızca installer yapılandırması ve CI akışı kaynakta incelendi.
-- [ ] **Uçtan uca dogfooding bekliyor:** OpenChat sohbetiyle bu depoda dosya/terminal değişikliği yapıp kontrol ve diff/revert döngüsü yürütülmedi; sağlayıcı/model çağrısı ve yazma akışı gerektiriyor.
 
 ---
 
@@ -386,12 +381,6 @@
 - [ ] Linux paket runtime kabulü: CI'den gelen `.deb` ve AppImage paketlerini temiz, desteklenen Linux ortamında kurup Secret Service, bildirim, XDG autostart ve ilk profil/sidecar başlangıcını doğrula.
 - [ ] Paket runtime kabulü: Kurulum gereksinimleri/çevrimdışı davranış açıkça gösterilir; ilk açılış, servis readiness ve hata kurtarma paketten çalıştırılır; desteklenen CI installer için smoke doğrulaması sağlar.
 
-### 10.8 OpenChat ile OpenChat dogfooding
-
-- [ ] `DOGFOOD-01/02`: Repo talimatlarının OpenChat'e aktarım yolunu ve `.openchat/instructions.md`, kurallar ve adlandırılmış doğrulama görevlerinin katkısını değerlendir; seçilen modeli tool-calling desteğiyle doğrula.
-- [ ] İzole bir geliştirme görevinde repo kökünü seçme, talimatı anlama, izinli dosya düzenleme, terminal doğrulaması, diff inceleme/geri alma ve oturumu yeniden açıp devam etme adımlarını OpenChat içinde yürüt.
-- [ ] Dogfooding kabulü: OpenChat oturumunda kullanıcı doğru proje kökünü ve değişiklikleri görebilmeli; araç desteği olmayan model açıkça anlaşılmalı; izinler işlem bazında uygulanmalı; check sonucu/diff aynı oturumda incelenebilmeli; yarıda kesilen görev güvenle devam ettirilebilmeli.
-
 ### Uygulama sırası ve entegrasyon kapısı
 
 1. `10.1` cleanup güvenliği
@@ -401,9 +390,8 @@
 5. `10.5` yerel ağ/model sınırı
 6. `10.6` kullanıcı akışları ve erişilebilirlik
 7. `10.7` paketlenmiş ilk açılış
-8. `10.8` gerçek OpenChat dogfooding
 
-Her aşamada değişikliği küçük bir dikey dilim halinde uygula; ilgili regresyon testini ekle, hedefli kontrolleri çalıştır, ardından merkezi `check`/CI kapsamını doğrula. Aşama ancak kabul maddeleri kanıtlandığında kapanır. Kurulum, WebView2, ağ ve dogfooding kanıtı olmadan statik bulguları runtime çözümü olarak işaretleme.
+Her aşamada değişikliği küçük bir dikey dilim halinde uygula; ilgili regresyon testini ekle, hedefli kontrolleri çalıştır, ardından merkezi `check`/CI kapsamını doğrula. Aşama ancak kabul maddeleri kanıtlandığında kapanır. Kurulum, WebView2 ve ağ kanıtı olmadan statik bulguları runtime çözümü olarak işaretleme.
 
 ---
 
