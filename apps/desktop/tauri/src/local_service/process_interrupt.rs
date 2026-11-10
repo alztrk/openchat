@@ -27,23 +27,29 @@ impl ProcessInterrupt {
     pub(crate) fn new(process_id: u32) -> Result<Self, String> {
         #[cfg(windows)]
         {
+            // SAFETY: Null security attributes request default DACL with no inheritance.
             let job = unsafe { CreateJobObjectW(ptr::null(), ptr::null()) };
             if job.is_null() {
                 return Err(
                     "The local-service process group could not be prepared for shutdown.".into(),
                 );
             }
+            // SAFETY: Opens the process by ID with quota and termination rights; returns a valid handle or null.
             let process =
                 unsafe { OpenProcess(PROCESS_SET_QUOTA | PROCESS_TERMINATE, 0, process_id) };
             if process.is_null() {
+                // SAFETY: `job` is a valid handle owned by this scope.
                 unsafe { CloseHandle(job) };
                 return Err("The local-service process could not be prepared for shutdown.".into());
             }
             // A second job provides an independent kill handle while the shell plugin's child
             // handle is temporarily held by a blocked stdin writer.
+            // SAFETY: Both `job` and `process` are valid open handles.
             let assigned = unsafe { AssignProcessToJobObject(job, process) } != 0;
+            // SAFETY: `process` is an open handle returned by OpenProcess.
             unsafe { CloseHandle(process) };
             if !assigned {
+                // SAFETY: `job` is an open handle returned by CreateJobObjectW.
                 unsafe { CloseHandle(job) };
                 return Err(
                     "The local-service process group could not be prepared for shutdown.".into(),
@@ -65,6 +71,7 @@ impl ProcessInterrupt {
         #[cfg(windows)]
         {
             let job = self.job as HANDLE;
+            // SAFETY: `job` is a valid job handle owned by `ProcessInterrupt`.
             if unsafe { TerminateJobObject(job, 1) } != 0 {
                 return Ok(());
             }
@@ -74,6 +81,7 @@ impl ProcessInterrupt {
         #[cfg(unix)]
         {
             // The sidecar is launched in a process group whose ID is its PID.
+            // SAFETY: `process_group` was verified during initialization.
             if unsafe { libc::killpg(self.process_group, libc::SIGKILL) } == 0 {
                 return Ok(());
             }
@@ -111,9 +119,11 @@ mod tests {
 
     #[cfg(windows)]
     fn assign_to_initial_job(process_id: u32) -> TestJob {
+        // SAFETY: Null security attributes request default DACL with no inheritance.
         let job_handle = unsafe { CreateJobObjectW(ptr::null(), ptr::null()) };
         assert!(!job_handle.is_null(), "initial test job is created");
         let job = TestJob(job_handle);
+        // SAFETY: Opens the process by ID with quota and termination rights.
         let process = unsafe { OpenProcess(PROCESS_SET_QUOTA | PROCESS_TERMINATE, 0, process_id) };
         assert!(!process.is_null(), "test process can be opened");
         // SAFETY: both handles remain open for the duration of assignment.

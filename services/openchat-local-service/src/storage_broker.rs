@@ -57,9 +57,10 @@ impl DatabaseOperationLock {
         // SAFETY: `name` is NUL-terminated UTF-16 and null attributes request the default DACL.
         let handle = unsafe { CreateMutexW(std::ptr::null(), 0, name.as_ptr()) };
         if handle.is_null() {
+            // SAFETY: GetLastError has no preconditions and reads thread-local error state.
+            let error = unsafe { GetLastError() };
             eprintln!(
-                "openchat-storage-broker-diagnostic: database_operation_lock_create_failed stage={stage} win32_error={}",
-                unsafe { GetLastError() }
+                "openchat-storage-broker-diagnostic: database_operation_lock_create_failed stage={stage} win32_error={error}"
             );
             return Err(database_operation_lock_error(rusqlite::ffi::SQLITE_IOERR));
         }
@@ -89,9 +90,10 @@ impl DatabaseOperationLock {
                 ))
             }
             _ => {
+                // SAFETY: GetLastError has no preconditions and reads thread-local error state.
+                let error = unsafe { GetLastError() };
                 eprintln!(
-                    "openchat-storage-broker-diagnostic: database_operation_lock_wait_failed stage={stage} win32_error={}",
-                    unsafe { GetLastError() }
+                    "openchat-storage-broker-diagnostic: database_operation_lock_wait_failed stage={stage} win32_error={error}"
                 );
                 // SAFETY: The mutex was not acquired, so only its owned handle is closed.
                 unsafe { CloseHandle(handle) };

@@ -103,7 +103,7 @@ impl SandboxPolicy {
         #[cfg(windows)]
         {
             std::process::Command::new("wsl.exe")
-                .arg("--status")
+                .args(["--exec", "true"])
                 .stdout(std::process::Stdio::null())
                 .stderr(std::process::Stdio::null())
                 .status()

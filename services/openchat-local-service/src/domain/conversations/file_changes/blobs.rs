@@ -51,10 +51,9 @@ impl SharedFileChangeLock {
         // SAFETY: `name` is NUL-terminated UTF-16 and null attributes request the default DACL.
         let handle = unsafe { CreateMutexW(std::ptr::null(), 0, name.as_ptr()) };
         if handle.is_null() {
-            eprintln!(
-                "openchat-file-change-lock-diagnostic: create_failed win32_error={}",
-                unsafe { GetLastError() }
-            );
+            // SAFETY: GetLastError has no preconditions and reads thread-local error state.
+            let error = unsafe { GetLastError() };
+            eprintln!("openchat-file-change-lock-diagnostic: create_failed win32_error={error}");
             return Err(TrackingError::StorageUnavailable);
         }
 
@@ -67,6 +66,7 @@ impl SharedFileChangeLock {
                 Ok(None)
             }
             _ => {
+                // SAFETY: GetLastError has no preconditions and reads thread-local error state.
                 let error = unsafe { GetLastError() };
                 // SAFETY: The mutex was not acquired, so only its owned handle is closed.
                 unsafe { CloseHandle(handle) };

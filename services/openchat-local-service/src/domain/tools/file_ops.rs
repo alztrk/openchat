@@ -268,7 +268,11 @@ pub(crate) fn edit_opened_file(
     }
 
     // Check for multiple occurrences to avoid ambiguous edits
-    let first_match = content.find(old_string).unwrap();
+    let Some(first_match) = content.find(old_string) else {
+        return Err(invalid(
+            "The target text to replace was not found in the file.",
+        ));
+    };
     let second_match = content[first_match + old_string.len()..].find(old_string);
     if second_match.is_some() {
         return Err(invalid(

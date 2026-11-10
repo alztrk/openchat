@@ -1,6 +1,7 @@
 # Configuration for cargo-audit
 
 [advisories]
+informational_warnings = ["unmaintained", "unsound"]
 ignore = [
     # RUSTSEC-2026-0367: zip 8.6.0 SUID/SGID bit preservation (transitive from candle-core 0.11.0).
     # OpenChat uses zip 9.0.4 directly; candle-core does not unpack untrusted archives.
@@ -14,4 +15,10 @@ ignore = [
     # RUSTSEC-2026-0387: crypto-bigint 0.5.5 timing variability (transitive from elliptic-curve 0.13.8).
     # Upstream elliptic-curve patch pending.
     "RUSTSEC-2026-0387",
+    # RUSTSEC-2026-0459: libsqlite3-sys via C SQLite CVE-2026-119375 (transitive from rusqlite 0.40.2).
+    # OpenChat uses SQLCipher AES-256 for local encrypted databases and does not open untrusted SQLite WAL files with mismatched page sizes.
+    "RUSTSEC-2026-0459",
+    # RUSTSEC-2026-0462: rmcp unbounded response body buffering in Streamable HTTP clients.
+    # OpenChat explicitly mitigates this in application code via BoundedMcpHttpClient with strict response and event size bounds (MAX_MCP_RESULT_BYTES).
+    "RUSTSEC-2026-0462",
 ]

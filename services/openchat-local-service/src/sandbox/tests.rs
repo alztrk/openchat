@@ -176,7 +176,7 @@ async fn failed_job_termination_is_not_success_while_a_child_remains() {
     };
 
     let workspace = TestWorkspace::new();
-    let command = r#"$child = Start-Process -FilePath "$env:SystemRoot\System32\cmd.exe" -ArgumentList '/c timeout /t 15 /nobreak >nul' -PassThru -ErrorAction Stop; exit 0"#;
+    let command = r#"$child = Start-Process -FilePath "powershell.exe" -ArgumentList '-NoProfile -Command Start-Sleep -Seconds 15' -PassThru -ErrorAction Stop; exit 0"#;
     let mut process = SandboxedProcess::spawn(command, workspace.path())
         .expect("start a command that leaves a child in the job");
     tokio::time::timeout(Duration::from_secs(5), async {

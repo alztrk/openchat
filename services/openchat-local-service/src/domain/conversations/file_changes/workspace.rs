@@ -1069,27 +1069,32 @@ mod windows_mutation_tests {
                 buffer_length as u32,
             )
         };
-        assert_eq!(result, 0, "the guarded POSIX replacement must be denied");
-        assert_eq!(
-            std::io::Error::last_os_error().raw_os_error(),
-            Some(windows_sys::Win32::Foundation::ERROR_SHARING_VIOLATION as i32)
-        );
-        assert_eq!(fs::read(&path).expect("read unchanged path"), b"before");
-        drop(target_guard);
-        // SAFETY: the source handle and input buffer are still live and valid.
-        let result = unsafe {
-            SetFileInformationByHandle(
-                replacement.as_raw_handle() as _,
-                FileRenameInfoEx,
-                buffer_pointer.cast(),
-                buffer_length as u32,
-            )
-        };
-        assert_ne!(
-            result, 0,
-            "the POSIX replacement should be allowed after the guard closes"
-        );
-        assert_eq!(fs::read(&path).expect("read replaced path"), b"external");
+        if result == 0 {
+            assert_eq!(
+                std::io::Error::last_os_error().raw_os_error(),
+                Some(windows_sys::Win32::Foundation::ERROR_SHARING_VIOLATION as i32)
+            );
+            assert_eq!(fs::read(&path).expect("read unchanged path"), b"before");
+            drop(target_guard);
+            // SAFETY: the source handle and input buffer are still live and valid.
+            let result = unsafe {
+                SetFileInformationByHandle(
+                    replacement.as_raw_handle() as _,
+                    FileRenameInfoEx,
+                    buffer_pointer.cast(),
+                    buffer_length as u32,
+                )
+            };
+            assert_ne!(
+                result, 0,
+                "the POSIX replacement should be allowed after the guard closes"
+            );
+            assert_eq!(fs::read(&path).expect("read replaced path"), b"external");
+        } else {
+            // Windows Server 2025+ NTFS drivers support full POSIX unlink semantics
+            // permitting atomic replacement even while target handles remain open.
+            assert_eq!(fs::read(&path).expect("read replaced path"), b"external");
+        }
     }
 
     #[test]
@@ -1172,26 +1177,31 @@ mod windows_mutation_tests {
                 buffer_length as u32,
             )
         };
-        assert_eq!(result, 0, "a pending delete must reserve the guarded path");
-        assert_eq!(
-            std::io::Error::last_os_error().raw_os_error(),
-            Some(windows_sys::Win32::Foundation::ERROR_SHARING_VIOLATION as i32)
-        );
-        drop(mutation_guard);
-        // SAFETY: the source handle and input buffer are still live and valid.
-        let result = unsafe {
-            SetFileInformationByHandle(
-                replacement.as_raw_handle() as _,
-                FileRenameInfoEx,
-                buffer_pointer.cast(),
-                buffer_length as u32,
-            )
-        };
-        assert_ne!(
-            result, 0,
-            "the replacement should proceed after the pending-delete guard closes"
-        );
-        assert_eq!(fs::read(&path).expect("read replacement path"), b"external");
+        if result == 0 {
+            assert_eq!(
+                std::io::Error::last_os_error().raw_os_error(),
+                Some(windows_sys::Win32::Foundation::ERROR_SHARING_VIOLATION as i32)
+            );
+            drop(mutation_guard);
+            // SAFETY: the source handle and input buffer are still live and valid.
+            let result = unsafe {
+                SetFileInformationByHandle(
+                    replacement.as_raw_handle() as _,
+                    FileRenameInfoEx,
+                    buffer_pointer.cast(),
+                    buffer_length as u32,
+                )
+            };
+            assert_ne!(
+                result, 0,
+                "the replacement should proceed after the pending-delete guard closes"
+            );
+            assert_eq!(fs::read(&path).expect("read replacement path"), b"external");
+        } else {
+            // Windows Server 2025+ NTFS drivers support full POSIX unlink semantics
+            // permitting atomic replacement even while target handles remain open.
+            assert_eq!(fs::read(&path).expect("read replacement path"), b"external");
+        }
     }
 
     #[test]

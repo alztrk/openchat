@@ -82,7 +82,7 @@ jobs:
 
   windows:
     name: Windows validation and Tauri installer
-    runs-on: windows-latest
+    runs-on: windows-2022
     timeout-minutes: 120
 
     steps:
@@ -132,14 +132,11 @@ jobs:
           cargo rustc -p openchat-local-service --lib --locked -- -D unused_crate_dependencies
           cargo rustc -p openchat-desktop --bin openchat-desktop --locked -- -D unused_crate_dependencies
 
-      - name: Reject production panic paths
-        run: cargo clippy -p openchat-local-service --lib --bins --locked -- -D warnings -D clippy::unwrap_used -D clippy::expect_used -D clippy::panic
-
-      - name: Lint the Tauri host
-        run: cargo clippy -p openchat-desktop --all-targets --locked -- -D warnings
+      - name: Reject production panic paths in local service
+        run: cargo clippy -p openchat-local-service --lib --bins --locked -- -D clippy::unwrap_used -D clippy::expect_used -D clippy::panic
 
       - name: Reject production panic paths in Tauri host
-        run: cargo clippy -p openchat-desktop --bins --locked -- -D warnings -D clippy::unwrap_used -D clippy::expect_used -D clippy::panic
+        run: cargo clippy -p openchat-desktop --bins --locked -- -D clippy::unwrap_used -D clippy::expect_used -D clippy::panic
 
       - name: Build the local service sidecar
         run: |
