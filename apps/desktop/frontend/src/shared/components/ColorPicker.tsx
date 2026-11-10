@@ -96,7 +96,14 @@ export function ColorPicker({ disabled = false, label, onChange, value }: ColorP
     };
 
     updatePosition();
-    const resizeObserver = new ResizeObserver(updatePosition);
+    let pendingResizeFrame: number | null = null;
+    const resizeObserver = new ResizeObserver(() => {
+      if (pendingResizeFrame !== null) cancelAnimationFrame(pendingResizeFrame);
+      pendingResizeFrame = requestAnimationFrame(() => {
+        pendingResizeFrame = null;
+        updatePosition();
+      });
+    });
     const trigger = triggerRef.current;
     const popover = popoverRef.current;
     if (trigger) resizeObserver.observe(trigger);
@@ -104,6 +111,7 @@ export function ColorPicker({ disabled = false, label, onChange, value }: ColorP
     window.addEventListener('resize', updatePosition);
     window.addEventListener('scroll', updatePosition, true);
     return () => {
+      if (pendingResizeFrame !== null) cancelAnimationFrame(pendingResizeFrame);
       resizeObserver.disconnect();
       window.removeEventListener('resize', updatePosition);
       window.removeEventListener('scroll', updatePosition, true);

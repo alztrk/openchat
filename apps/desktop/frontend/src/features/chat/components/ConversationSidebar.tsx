@@ -183,9 +183,19 @@ export function ConversationSidebar({
     };
 
     updateCompactLayout();
-    const observer = new ResizeObserver(updateCompactLayout);
+    let pendingFrame: number | null = null;
+    const observer = new ResizeObserver(() => {
+      if (pendingFrame !== null) cancelAnimationFrame(pendingFrame);
+      pendingFrame = requestAnimationFrame(() => {
+        pendingFrame = null;
+        updateCompactLayout();
+      });
+    });
     observer.observe(sidebar);
-    return () => observer.disconnect();
+    return () => {
+      if (pendingFrame !== null) cancelAnimationFrame(pendingFrame);
+      observer.disconnect();
+    };
   }, []);
 
   const conversations = useChatStore((state) => state.conversations);

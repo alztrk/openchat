@@ -16,6 +16,18 @@ function markStartupMilestone(milestone: string): void {
   window.__OPENCHAT_STARTUP_BENCHMARK__?.mark(milestone);
 }
 
+// Suppress benign non-fatal ResizeObserver loop notifications as defined in the W3C spec.
+window.addEventListener('error', (event) => {
+  if (
+    typeof event.message === 'string' &&
+    (event.message.includes('ResizeObserver loop completed with undelivered notifications') ||
+      event.message.includes('ResizeObserver loop limit exceeded'))
+  ) {
+    event.stopImmediatePropagation();
+    event.preventDefault();
+  }
+});
+
 markStartupMilestone('bootstrap-module-evaluated');
 
 function requireRootElement(): HTMLElement {

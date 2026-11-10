@@ -453,11 +453,21 @@ export function SettingsPage({
   useEffect(() => {
     const settingsPage = settingsPageRef.current;
     if (!settingsPage) return;
+    let pendingFrame: number | null = null;
     const resizeObserver = new ResizeObserver(([entry]) => {
-      if (entry) setSettingsPageWidth(entry.contentRect.width);
+      if (!entry) return;
+      const nextWidth = Math.round(entry.contentRect.width);
+      if (pendingFrame !== null) cancelAnimationFrame(pendingFrame);
+      pendingFrame = requestAnimationFrame(() => {
+        pendingFrame = null;
+        setSettingsPageWidth((current) => (current === nextWidth ? current : nextWidth));
+      });
     });
     resizeObserver.observe(settingsPage);
-    return () => resizeObserver.disconnect();
+    return () => {
+      if (pendingFrame !== null) cancelAnimationFrame(pendingFrame);
+      resizeObserver.disconnect();
+    };
   }, []);
 
   const searchLocale = i18n.resolvedLanguage ?? i18n.language;

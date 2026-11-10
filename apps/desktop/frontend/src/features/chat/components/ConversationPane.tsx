@@ -293,6 +293,7 @@ export function ConversationPane({
   useEffect(() => {
     const pane = paneRef.current;
     if (!pane || typeof ResizeObserver === 'undefined') return;
+    let pendingFrame: number | null = null;
     const observer = new ResizeObserver((entries) => {
       const entry = entries[0];
       if (!entry) return;
@@ -300,12 +301,19 @@ export function ConversationPane({
         width: Math.round(entry.contentRect.width),
         height: Math.round(entry.contentRect.height),
       };
-      setPaneSize((current) =>
-        current.width === nextSize.width && current.height === nextSize.height ? current : nextSize,
-      );
+      if (pendingFrame !== null) cancelAnimationFrame(pendingFrame);
+      pendingFrame = requestAnimationFrame(() => {
+        pendingFrame = null;
+        setPaneSize((current) =>
+          current.width === nextSize.width && current.height === nextSize.height ? current : nextSize,
+        );
+      });
     });
     observer.observe(pane);
-    return () => observer.disconnect();
+    return () => {
+      if (pendingFrame !== null) cancelAnimationFrame(pendingFrame);
+      observer.disconnect();
+    };
   }, []);
   // Build model key → model map for O(1) lookup
   const modelByKey = useMemo(() => {

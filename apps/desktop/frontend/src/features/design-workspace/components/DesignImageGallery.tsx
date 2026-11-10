@@ -122,10 +122,20 @@ export function DesignImageGallery({
     };
 
     updateLayoutMetrics();
-    const observer = new ResizeObserver(updateLayoutMetrics);
+    let pendingFrame: number | null = null;
+    const observer = new ResizeObserver(() => {
+      if (pendingFrame !== null) cancelAnimationFrame(pendingFrame);
+      pendingFrame = requestAnimationFrame(() => {
+        pendingFrame = null;
+        updateLayoutMetrics();
+      });
+    });
     observer.observe(gallery);
     observer.observe(scrollElement);
-    return () => observer.disconnect();
+    return () => {
+      if (pendingFrame !== null) cancelAnimationFrame(pendingFrame);
+      observer.disconnect();
+    };
   }, [entries.length, generationPlaceholderCount, scrollElementRef]);
 
   useLayoutEffect(() => {

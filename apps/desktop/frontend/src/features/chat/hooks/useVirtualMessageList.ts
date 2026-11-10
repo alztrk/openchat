@@ -77,6 +77,7 @@ export function useVirtualMessageList(messages: ChatMessage[], conversationId: s
   }, []);
 
   useEffect(() => {
+    let pendingFrame: number | null = null;
     const observer = new ResizeObserver((entries) => {
       let changed = false;
       for (const entry of entries) {
@@ -91,11 +92,18 @@ export function useVirtualMessageList(messages: ChatMessage[], conversationId: s
           changed = true;
         }
       }
-      if (changed) setLayoutRevision((revision) => revision + 1);
+      if (changed) {
+        if (pendingFrame !== null) cancelAnimationFrame(pendingFrame);
+        pendingFrame = requestAnimationFrame(() => {
+          pendingFrame = null;
+          setLayoutRevision((revision) => revision + 1);
+        });
+      }
     });
     rowObserver.current = observer;
     for (const element of rowElements.current.values()) observer.observe(element);
     return () => {
+      if (pendingFrame !== null) cancelAnimationFrame(pendingFrame);
       observer.disconnect();
       rowObserver.current = null;
     };
@@ -259,15 +267,21 @@ export function useVirtualMessageList(messages: ChatMessage[], conversationId: s
   useEffect(() => {
     const element = containerRef.current;
     if (!element) return;
+    let pendingViewportFrame: number | null = null;
     const viewportObserver = new ResizeObserver(() => {
-      updateViewport();
-      updateVisibleRange();
+      if (pendingViewportFrame !== null) cancelAnimationFrame(pendingViewportFrame);
+      pendingViewportFrame = requestAnimationFrame(() => {
+        pendingViewportFrame = null;
+        updateViewport();
+        updateVisibleRange();
+      });
     });
     viewportObserver.observe(element);
     element.addEventListener('scroll', handleScroll, { passive: true });
     updateViewport();
     updateVisibleRange();
     return () => {
+      if (pendingViewportFrame !== null) cancelAnimationFrame(pendingViewportFrame);
       viewportObserver.disconnect();
       element.removeEventListener('scroll', handleScroll);
     };
