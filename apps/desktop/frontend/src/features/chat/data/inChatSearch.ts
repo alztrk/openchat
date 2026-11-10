@@ -1,4 +1,5 @@
-import type { ChatMessage } from '@features/chat/data';
+import type { ChatMessage } from '@entities/conversation/types';
+import { normalizeSearchText } from './chatSearchUtils';
 
 export type InChatFilterType = 'all' | 'code' | 'error' | 'user';
 
@@ -56,7 +57,7 @@ export function findInChatMatches(
   query: string,
   filter: InChatFilterType = 'all',
 ): InChatMessageMatch[] {
-  const normalizedQuery = query.trim().toLowerCase();
+  const normalizedQuery = normalizeSearchText(query.trim());
   const matches: InChatMessageMatch[] = [];
   let globalMatchIndex = 0;
 
@@ -78,12 +79,12 @@ export function findInChatMatches(
     }
 
     const content = message.content ?? '';
-    const lowerContent = content.toLowerCase();
+    const normalizedContent = normalizeSearchText(content);
     let searchStartIndex = 0;
     let occurrenceInMessage = 0;
 
-    while (searchStartIndex < lowerContent.length) {
-      const matchIndex = lowerContent.indexOf(normalizedQuery, searchStartIndex);
+    while (searchStartIndex < normalizedContent.length) {
+      const matchIndex = normalizedContent.indexOf(normalizedQuery, searchStartIndex);
       if (matchIndex === -1) break;
 
       matches.push({
@@ -100,7 +101,7 @@ export function findInChatMatches(
 
     // If message content didn't match directly, check failureCode or toolActivities fallback
     if (occurrenceInMessage === 0) {
-      const fallbackText = `${message.failureCode ?? ''} ${message.toolActivities ?? ''}`.toLowerCase();
+      const fallbackText = normalizeSearchText(`${message.failureCode ?? ''} ${message.toolActivities ?? ''}`);
       if (fallbackText.includes(normalizedQuery)) {
         matches.push({
           messageId: message.id,

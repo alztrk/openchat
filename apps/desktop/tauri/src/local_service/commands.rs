@@ -287,29 +287,52 @@ fn start_local_service_process(
     let shared_permissions = Arc::clone(&state.permissions);
     let shared_native_responses = Arc::clone(&state.native_responses);
     tauri::async_runtime::spawn(async move {
+        let mut stdout_line = Vec::new();
         let mut stderr_line = Vec::new();
         while let Some(event) = events.recv().await {
             match event {
-                CommandEvent::Stdout(bytes) => match String::from_utf8(bytes) {
-                    Ok(mut line) => {
-                        if deliver_native_response(&shared_native_responses, generation, &line) {
-                            line.zeroize();
-                            continue;
-                        }
-                        observe_service_output(&shared_permissions, generation, &line);
-                        let output = LocalServiceEvent::Output { generation, line };
-                        if app.emit_to("main", LOCAL_SERVICE_EVENT, output).is_err() {
-                            report_local_service_host_error(
-                                "protocol",
-                                "renderer_output_delivery_failed",
-                            );
-                            break;
+                CommandEvent::Stdout(bytes) => {
+                    let mut broken = false;
+                    for byte in bytes {
+                        if byte == b'\n' {
+                            let mut line_bytes = std::mem::take(&mut stdout_line);
+                            if line_bytes.last() == Some(&b'\r') {
+                                line_bytes.pop();
+                            }
+                            match String::from_utf8(line_bytes) {
+                                Ok(mut line) => {
+                                    if deliver_native_response(
+                                        &shared_native_responses,
+                                        generation,
+                                        &line,
+                                    ) {
+                                        line.zeroize();
+                                        continue;
+                                    }
+                                    observe_service_output(&shared_permissions, generation, &line);
+                                    let output = LocalServiceEvent::Output { generation, line };
+                                    if app.emit_to("main", LOCAL_SERVICE_EVENT, output).is_err() {
+                                        report_local_service_host_error(
+                                            "protocol",
+                                            "renderer_output_delivery_failed",
+                                        );
+                                        broken = true;
+                                        break;
+                                    }
+                                }
+                                Err(_) => {
+                                    broken = true;
+                                    break;
+                                }
+                            }
+                        } else if stdout_line.len() < MAX_RPC_FRAME_BYTES {
+                            stdout_line.push(byte);
                         }
                     }
-                    Err(_) => {
+                    if broken {
                         break;
                     }
-                },
+                }
                 CommandEvent::Error(_) => break,
                 CommandEvent::Terminated(_) => break,
                 CommandEvent::Stderr(bytes) => {

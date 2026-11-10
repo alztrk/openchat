@@ -34,7 +34,10 @@ use zeroize::Zeroizing;
 
 use super::{
     job_objects::{create_kill_on_close_job, job_active_process_count},
-    process::{SandboxedProcess, WAIT_INTERVAL, shell_invocation},
+    process::{
+        SandboxedProcess, WAIT_INTERVAL, inherited_environment_block,
+        is_sandboxed_environment_name, shell_invocation,
+    },
     security_acl::{
         AppContainerAclLock, MAX_ACL_ENTRIES, app_container_acl_lock_path, lock_acl_path,
         noninheriting_directory_control_value, require_non_null_acl, schedule_acl_path,
@@ -416,6 +419,42 @@ async fn configured_program_rejects_nul_in_additional_environment_values() {
     .expect("embedded NUL must fail before the child starts");
 
     assert_eq!(error.kind(), ErrorKind::InvalidInput);
+}
+
+#[test]
+fn sandboxed_environment_allowlist_rejects_sensitive_variables() {
+    assert!(!is_sandboxed_environment_name(std::ffi::OsStr::new(
+        "OPENAI_API_KEY"
+    )));
+    assert!(!is_sandboxed_environment_name(std::ffi::OsStr::new(
+        "ANTHROPIC_API_KEY"
+    )));
+    assert!(!is_sandboxed_environment_name(std::ffi::OsStr::new(
+        "GITHUB_TOKEN"
+    )));
+    assert!(!is_sandboxed_environment_name(std::ffi::OsStr::new(
+        "AWS_SECRET_ACCESS_KEY"
+    )));
+    assert!(is_sandboxed_environment_name(std::ffi::OsStr::new("PATH")));
+    assert!(is_sandboxed_environment_name(std::ffi::OsStr::new(
+        "systemroot"
+    )));
+    assert!(is_sandboxed_environment_name(std::ffi::OsStr::new("TEMP")));
+}
+
+#[test]
+fn inherited_environment_block_filters_host_environment() {
+    let block = inherited_environment_block(&[], None).expect("build environment block");
+    let u16_slice = block.as_slice();
+    let text = String::from_utf16_lossy(u16_slice);
+    for entry in text.split('\0').filter(|entry| !entry.is_empty()) {
+        if let Some((name, _)) = entry.split_once('=') {
+            assert!(
+                is_sandboxed_environment_name(std::ffi::OsStr::new(name)),
+                "unauthorized variable {name} found in inherited environment block"
+            );
+        }
+    }
 }
 
 #[tokio::test]

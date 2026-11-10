@@ -809,11 +809,66 @@ fn powershell_command_with_state(
     )
 }
 
-fn inherited_environment_block(
+/// Determines whether an environment variable name is safe to inherit from the host process into sandboxed child processes.
+pub(crate) fn is_sandboxed_environment_name(name: &OsStr) -> bool {
+    let Some(name) = name.to_str() else {
+        return false;
+    };
+
+    const ALLOWED: &[&str] = &[
+        "ALL_PROXY",
+        "ALLUSERSPROFILE",
+        "APPDATA",
+        "COMMONPROGRAMFILES",
+        "COMMONPROGRAMFILES(X86)",
+        "COMMONPROGRAMW6432",
+        "COMSPEC",
+        "DRIVERDATA",
+        "HOMEDRIVE",
+        "HOMEPATH",
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "LANG",
+        "LC_ALL",
+        "LOCALAPPDATA",
+        "NO_PROXY",
+        "NUMBER_OF_PROCESSORS",
+        "OS",
+        "PATH",
+        "PATHEXT",
+        "PROCESSOR_ARCHITECTURE",
+        "PROCESSOR_IDENTIFIER",
+        "PROCESSOR_LEVEL",
+        "PROCESSOR_REVISION",
+        "PROGRAMDATA",
+        "PROGRAMFILES",
+        "PROGRAMFILES(X86)",
+        "PROGRAMW6432",
+        "PSMODULEPATH",
+        "PUBLIC",
+        "SSL_CERT_DIR",
+        "SSL_CERT_FILE",
+        "SYSTEMDRIVE",
+        "SYSTEMROOT",
+        "TEMP",
+        "TMP",
+        "USERNAME",
+        "USERPROFILE",
+        "WINDIR",
+    ];
+
+    ALLOWED
+        .iter()
+        .any(|allowed| name.eq_ignore_ascii_case(allowed))
+}
+
+pub(crate) fn inherited_environment_block(
     additional_environment: &[(String, Zeroizing<String>)],
     path_override: Option<&OsStr>,
 ) -> io::Result<Zeroizing<Vec<u16>>> {
-    let mut variables = std::env::vars_os().collect::<Vec<_>>();
+    let mut variables = std::env::vars_os()
+        .filter(|(name, _)| is_sandboxed_environment_name(name))
+        .collect::<Vec<_>>();
     for (name, value) in additional_environment {
         if name.is_empty() || name.contains('=') || name.contains('\0') || value.contains('\0') {
             return Err(io::Error::new(

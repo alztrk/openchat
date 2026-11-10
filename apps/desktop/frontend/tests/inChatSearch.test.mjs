@@ -1,11 +1,31 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import test from 'node:test';
+import ts from 'typescript';
 
-import {
+const searchUtilsSource = fs.readFileSync(
+  new URL('../src/features/chat/data/chatSearchUtils.ts', import.meta.url),
+  'utf8',
+);
+const inChatSearchSource = fs.readFileSync(
+  new URL('../src/features/chat/data/inChatSearch.ts', import.meta.url),
+  'utf8',
+);
+
+const combinedSource = `${searchUtilsSource}\n${inChatSearchSource.replace(
+  /import\s+[^;]+from\s+['"][^'"]+['"];?/g,
+  '',
+)}`;
+
+const compiled = ts.transpileModule(combinedSource, {
+  compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
+}).outputText;
+
+const {
   findInChatMatches,
   isCodeBlockMessage,
   isErrorMessage,
-} from '../src/features/chat/data/inChatSearch.ts';
+} = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`);
 
 function createMessage(overrides = {}) {
   return {
@@ -146,4 +166,21 @@ test('filter errors / blockers identifies status error, failureCode, and error k
   const messages = [statusError, failureCodeMsg, keywordMsg, normalMsg];
   const matches = findInChatMatches(messages, '', 'error');
   assert.equal(matches.length, 3);
+});
+
+test('findInChatMatches supports Turkish character normalization (İ / i / ı / I)', () => {
+  const messages = [
+    createMessage({ id: 'msg-1', content: 'Bu sistemde IŞIK açma özelliği var.' }),
+    createMessage({ id: 'msg-2', content: 'İstanbul hava durumu raporu.' }),
+  ];
+
+  const matches1 = findInChatMatches(messages, 'isik', 'all');
+  assert.equal(matches1.length, 1);
+  assert.equal(matches1[0]?.messageId, 'msg-1');
+  assert.equal(matches1[0]?.matchedText, 'IŞIK');
+
+  const matches2 = findInChatMatches(messages, 'istanbul', 'all');
+  assert.equal(matches2.length, 1);
+  assert.equal(matches2[0]?.messageId, 'msg-2');
+  assert.equal(matches2[0]?.matchedText, 'İstanbul');
 });
