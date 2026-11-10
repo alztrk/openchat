@@ -81,7 +81,7 @@ pub(super) fn pop_sse_line(pending: &mut Vec<u8>, at_end_of_stream: bool) -> Opt
 }
 
 pub(super) fn parse_sse_line(line: &[u8]) -> Result<SseLine, ()> {
-    let line = String::from_utf8(line.to_vec()).map_err(|_| ())?;
+    let line = std::str::from_utf8(line).map_err(|_| ())?;
     let Some(data) = line.strip_prefix("data:") else {
         return Ok(SseLine::Ignore);
     };

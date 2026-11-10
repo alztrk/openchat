@@ -105,8 +105,8 @@ export function useComposerState({
   const pendingQuestionSendBlock = useChatStore((state) => state.pendingQuestionSendBlock);
   const compactingConversationId = useChatStore((state) => state.compactingConversationId);
   const isCreatingMessageBranch = useChatStore((state) => state.isCreatingMessageBranch);
-  const storeMessages = useChatStore((state) => state.messages);
-  const messages = messagesOverride ?? storeMessages;
+  const storeMessages = useChatStore((state) => (state.isSending ? null : state.messages));
+  const messages = messagesOverride ?? storeMessages ?? [];
   const storeIsLoadingMessages = useChatStore((state) => state.isLoadingMessages);
   const isLoadingMessages = isLoadingMessagesOverride ?? storeIsLoadingMessages;
   const isUpdatingConversationModel = useChatStore((state) => state.isUpdatingConversationModel);

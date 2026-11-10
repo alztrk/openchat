@@ -62,4 +62,4 @@ pub use storage::migrate_chat_schema;
 pub use storage_broker::run_broker_stdio;
 
 /// Chat schema version supported by this service build.
-pub const CHAT_SCHEMA_VERSION: i64 = 25;
+pub const CHAT_SCHEMA_VERSION: i64 = 26;

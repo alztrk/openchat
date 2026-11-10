@@ -58,6 +58,8 @@ pub(crate) fn needs_repair(connection: &Connection) -> rusqlite::Result<bool> {
         }
     }
     for index in [
+        "idx_conversations_list_order",
+        "idx_messages_conversation_page",
         "idx_conversations_sort_list",
         "idx_messages_conversation_sort",
     ] {
@@ -413,6 +415,16 @@ pub fn migrate_chat_schema(connection: &mut Connection) -> rusqlite::Result<()> 
     if version < 25 {
         add_column(&transaction, "conversations", "unread_message_id", "TEXT")?;
         transaction.pragma_update(None, "user_version", 25)?;
+        version = 25;
+    }
+    if version < 26 {
+        transaction.execute_batch(
+            "CREATE INDEX IF NOT EXISTS idx_conversations_list_order
+                ON conversations(is_pinned DESC, updated_at DESC, id ASC);
+             CREATE INDEX IF NOT EXISTS idx_messages_conversation_page
+                ON messages(conversation_id, COALESCE(created_at, 0) DESC, id DESC);",
+        )?;
+        transaction.pragma_update(None, "user_version", 26)?;
     }
     transaction.commit()?;
     repair_chat_schema(connection)
@@ -484,7 +496,11 @@ fn repair_chat_schema(connection: &Connection) -> rusqlite::Result<()> {
         add_column(&transaction, table, name, definition)?;
     }
     transaction.execute_batch(
-        "CREATE INDEX IF NOT EXISTS idx_conversations_sort_list
+        "CREATE INDEX IF NOT EXISTS idx_conversations_list_order
+            ON conversations(is_pinned DESC, updated_at DESC, id ASC);
+         CREATE INDEX IF NOT EXISTS idx_messages_conversation_page
+            ON messages(conversation_id, COALESCE(created_at, 0) DESC, id DESC);
+         CREATE INDEX IF NOT EXISTS idx_conversations_sort_list
             ON conversations(is_bookmarked DESC, is_pinned DESC, updated_at DESC, id ASC);
          CREATE INDEX IF NOT EXISTS idx_messages_conversation_sort
             ON messages(conversation_id, created_at ASC, id ASC);",
