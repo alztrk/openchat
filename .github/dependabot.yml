@@ -15,6 +15,19 @@ updates:
     cooldown:
       default-days: 7
     open-pull-requests-limit: 5
+    ignore:
+      # rmcp v3.7.0 requires sse-stream 0.2.6
+      - dependency-name: "sse-stream"
+        update-types: ["version-update:semver-major"]
+      # age v0.12.1 and tauri require sha2 0.10.x / digest 0.10.x
+      - dependency-name: "sha2"
+        update-types: ["version-update:semver-major"]
+      # candle-core and candle-transformers require tokenizers 0.22.2
+      - dependency-name: "tokenizers"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      # keyring v4 is a major rewrite requiring manual refactoring of credentials.rs
+      - dependency-name: "keyring"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: npm
     directory: /
