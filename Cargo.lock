@@ -4184,7 +4184,7 @@ name = "openchat-local-service"
 version = "0.1.0"
 dependencies = [
  "age",
- "base64 0.22.1",
+ "base64 0.23.1",
  "bytes",
  "candle-core",
  "candle-nn",
