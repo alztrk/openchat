@@ -408,3 +408,83 @@ Her aşamada değişikliği küçük bir dikey dilim halinde uygula; ilgili regr
 - [ ] Model yanıtlarının otomatik veya isteğe bağlı seslendirilmesi (Text-to-Speech / sistem sesi veya yerel ses sentezleme).
 - [ ] Ses kaydı sırasında canlı dalga boyu/görsel geri bildirim, sessizlik algılama (VAD) ve ses kısayolları.
 - [ ] Ses verilerinin yerel gizlilik ilkelerine uygunluğu ve isteğe bağlı açılıp kapatılabilmesi.
+
+---
+
+## Faz 12 — Ajan Kalitesi ve Güvenilirlik (Planlanan)
+
+### 12.1 Dayanıklı Çalıştırmalar (Durable Runs)
+- [ ] Kalıcı çalıştırma durumu (persistent run state) ve SQLite üzerinde durum takibi.
+- [ ] Çalıştırmaları duraklatma (pause), yeniden başlatma (restart) ve kullanıcı iptali (cancellation).
+- [ ] Uygulama veya süreç çökmesinde kesilen çalıştırmaların güvenle kurtarılması (interrupted-run recovery).
+
+### 12.2 Mesaj Dallanması ve Yanıt Sürümleri (Message Branches)
+- [ ] Aynı konuşma içinde mesaj düzenlendiğinde yeni dal oluşturma ve konuşma içi yanıt sürümleri arasında gezinme (1/2 okları).
+- [ ] Farklı dallar arasında aktif dalı seçebilme ve seçilen daldan konuşmaya devam edebilme.
+
+### 12.3 Kapsamlı Alt Ajan Mimarisi (Subagents)
+- [ ] Üst çalıştırmadan alt çalıştırmaya bağlam aktarımı ve izinli araç listesi (tool allowlist) zorlaması.
+- [ ] Alt ajanlar için eşzamanlılık (concurrency), zaman aşımı (timeout) ve token/kullanım bütçesi sınırları.
+- [ ] Alt ajan ilerleme durumunun ana konuşma akışında ve yan panelde eşzamanlı takibi.
+
+### 12.4 Yeniden Kullanılabilir İş Akışları (Reusable Workflows)
+- [ ] Parametrik şablonlar (parameterized recipes): başlangıç istemi, bağlam, sağlayıcı ve araç seti tanımları.
+- [ ] Şablonları kaydetme, düzenleme, dışa/içe aktarma ve tek tıkla yeni konuşmada başlatabilme.
+
+---
+
+## Faz 13 — Sağlayıcı ve Yerel Çıkarım Genişletmeleri (Planlanan)
+
+### 13.1 Ollama ve LM Studio Entegrasyonu
+- [ ] Ollama ve LM Studio için ayrılmış yerel bağlantı sihirbazı.
+- [ ] Yerel portların otomatik tespiti ve sağlık kontrolleri (health checks).
+- [ ] Yerel sunuculardan tek tıkla model listesini çekip kataloğa otomatik ekleme.
+
+### 13.2 Bulut Sağlayıcı Genişletmeleri
+- [ ] Amazon Bedrock: Converse ve ConverseStream API desteği, bölgesel yapılandırma ve AWS kimlik doğrulama.
+- [ ] Microsoft AI Foundry: deployment tanımlayıcıları ve model bazlı API uyumluluk desteği.
+
+### 13.3 Yerel Çıkarım ve Model Yönetimi
+- [ ] macOS için llama.cpp paketleme, kurulum, model yönetimi ve çalışma zamanı yaşam döngüsü.
+- [ ] Yerel model kataloğu geliştirmeleri: dosya boyutu kontrolü, indirme ilerlemesi, SHA-256 bütünlük doğrulaması ve yarıda kalan indirmeleri devam ettirme.
+- [ ] Bağlam penceresi ve model yetenek metaverileri: görsel (vision), akıl yürütme (reasoning) ve araç çağırma (tools) desteklerinin model kartında gösterimi.
+
+---
+
+## Faz 14 — Erişilebilirlik ve Sağlayıcı Kullanım Doğrulamaları
+
+### 14.1 Canlı Hesap Kullanım Takibi (Provider Usage Coverage)
+- [ ] Sağlayıcıların bildirdiği ek kullanım alanlarının (akıl yürütme tokenları, önbellek okuma/yazma) yerel kullanım defterine (`ledger`) eksiksiz eşlenmesi.
+- [ ] Canlı sağlayıcı hesapları (OpenAI, Claude vb.) üzerinden kullanım istatistiklerinin ve maliyet hesaplamalarının uçtan uca doğrulanması (release gate).
+
+### 14.2 Erişilebilirlik ve Klavye Navigasyonu (A-013)
+- [ ] Klavye ile tam gezinme, görünür odak (focus visibility), yüksek kontrast ve azaltılmış hareket (reduced motion) kontrolleri.
+- [ ] Metin ölçekleme (%125–%200), dar ekran düzenleri ve uzun çeviri metinleri uyumluluğu.
+- [ ] Yerel Windows UI Automation ve ekran okuyucu (NVDA/Narrator) doğrulamaları.
+
+---
+
+## Faz 15 — Senkronizasyon, Dağıtım ve Çapraz Platform
+
+### 15.1 Şifreli Senkronizasyon (Encrypted Sync)
+- [ ] Cihazlar arası uçtan uca şifreli veri senkronizasyonu (opt-in).
+- [ ] Cihaz anahtarları yönetimi, çevrimdışı çalışma desteği ve eşitleme çakışma çözümü (conflict resolution).
+
+### 15.2 İmzalı Dağıtım ve Güvenlik (Signed Distribution)
+- [ ] Windows Authenticode kod imzalama entegrasyonu.
+- [ ] Yazılım malzeme listesi (SBOM) üretimi ve yayınlanması.
+- [ ] Kararlı (stable) ve önizleme (preview) güncelleme kanalları; güncelleme paketi bütünlük doğrulaması.
+
+### 15.3 macOS Masaüstü Desteği
+- [ ] macOS x86_64 ve ARM64 (Apple Silicon) derleme ve paketleme (DMG / app bundle).
+- [ ] macOS Keychain üzerinden güvenli kimlik/parola saklama entegrasyonu.
+- [ ] macOS standart uygulama veri dizinleri ve bildirim entegrasyonu.
+
+---
+
+## Faz 16 — Ertelenen Gelecek İşler (Deferred)
+
+- [ ] Yaşam döngüsü kancalarına (lifecycle hooks) sahip gelişmiş iş akışları.
+- [ ] Mobil platform desteği (Android ve iOS istemcileri).
+- [ ] Genel soyut yetkilendirilmiş ajan çerçevesi (generalized delegated-agent architecture).
+- [ ] Ek yerel çıkarım motorlarının (MLC-LLM, ONNX Runtime vb.) değerlendirilmesi ve entegrasyonu.
