@@ -235,6 +235,7 @@ pub(super) fn set_conversation_active_leaf(
     if changed != 1 {
         return Err(not_found("conversation message"));
     }
+    storage.hot_cache().invalidate(conversation_id);
     Ok(json!({"saved": true, "activeLeafMessageId": active_leaf_message_id}))
 }
 
@@ -498,6 +499,7 @@ pub(super) fn delete_conversation(
     if attachment_cleanup_pending {
         eprintln!("conversation_attachment_cleanup_pending");
     }
+    storage.hot_cache().invalidate(id);
     Ok(json!({
         "deleted": true,
         "attachmentCleanupPending": attachment_cleanup_pending,
@@ -522,6 +524,7 @@ pub(super) fn clear_conversation_history(storage: &AppStorage) -> Result<Value, 
     if attachment_cleanup_pending {
         eprintln!("conversation_history_attachment_cleanup_pending");
     }
+    storage.hot_cache().clear();
     Ok(json!({
         "cleared": true,
         "attachmentCleanupPending": attachment_cleanup_pending,
@@ -955,6 +958,7 @@ pub(super) fn save_message(
     } else {
         false
     };
+    storage.hot_cache().invalidate(conversation_id);
     Ok(json!({
         "saved": true,
         "attachmentCleanupPending": attachment_cleanup_pending,

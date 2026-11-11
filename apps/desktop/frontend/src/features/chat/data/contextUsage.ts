@@ -244,14 +244,26 @@ function parseFullContextUsageSnapshot(
   };
 }
 
-export function estimateContextUsage(
+export interface BaseContextUsageEstimate {
+  baseTotalWithoutDraft: number;
+  instructionsTokens: number;
+  toolDefinitionTokens: number;
+  userMessageTokens: number;
+  assistantMessageTokens: number;
+  attachments: ContextUsageAttachment[];
+  toolUsage: { name: string; tokens: number }[];
+  memoryTokens: number;
+  providerInputTokens: number | null;
+  providerAdditions: number;
+}
+
+export function estimateBaseContextUsage(
   messages: readonly ChatMessage[],
-  draft: string,
   pendingAttachments: readonly PendingChatAttachment[],
   model: ChatModel,
   configuration: ContextUsageConfiguration | null,
   memory: ContextUsageMemory | null,
-): ContextUsageSnapshot {
+): BaseContextUsageEstimate {
   const compactionMatchesRoute =
     memory !== null &&
     (memory.compactionKind === 'summary' ||
@@ -277,16 +289,14 @@ export function estimateContextUsage(
       : compactionMatchesRoute && memory.compactionKind === 'responses_checkpoint'
         ? opaqueCheckpointEstimate
         : 0;
-  const draftTokens = estimateText(draft);
   const instructionsTokens = configuration?.instructionsTokens ?? 0;
   const toolDefinitionTokens = configuration?.toolDefinitions.reduce((sum, item) => sum + item.tokens, 0) ?? 0;
-  const baseTotal =
+  const baseTotalWithoutDraft =
     instructionsTokens +
     toolDefinitionTokens +
     messageEstimate.totalTokens +
     pendingAttachmentTokens +
-    memoryTokens +
-    draftTokens;
+    memoryTokens;
 
   const lastPrompt = memory?.lastPrompt ?? null;
   const matchingPrompt =
@@ -305,8 +315,9 @@ export function estimateContextUsage(
   const providerAdditions = providerInputTokens === null
     ? 0
     : postPromptEstimate.totalTokens + pendingAttachmentTokens;
+
   return {
-    totalTokens: providerInputTokens === null ? baseTotal : providerInputTokens + providerAdditions + draftTokens,
+    baseTotalWithoutDraft,
     instructionsTokens,
     toolDefinitionTokens,
     userMessageTokens: messageEstimate.userTokens,
@@ -314,11 +325,47 @@ export function estimateContextUsage(
     attachments,
     toolUsage: messageEstimate.toolUsage,
     memoryTokens,
-    draftTokens,
     providerInputTokens,
-    usageMode: providerInputTokens === null ? 'estimated' : 'provider_reported_plus_estimate',
+    providerAdditions,
+  };
+}
+
+export function estimateContextUsageFromBase(
+  base: BaseContextUsageEstimate,
+  draft: string,
+): ContextUsageSnapshot {
+  const draftTokens = estimateText(draft);
+  const totalTokens =
+    base.providerInputTokens === null
+      ? base.baseTotalWithoutDraft + draftTokens
+      : base.providerInputTokens + base.providerAdditions + draftTokens;
+
+  return {
+    totalTokens,
+    instructionsTokens: base.instructionsTokens,
+    toolDefinitionTokens: base.toolDefinitionTokens,
+    userMessageTokens: base.userMessageTokens,
+    assistantMessageTokens: base.assistantMessageTokens,
+    attachments: base.attachments,
+    toolUsage: base.toolUsage,
+    memoryTokens: base.memoryTokens,
+    draftTokens,
+    providerInputTokens: base.providerInputTokens,
+    usageMode: base.providerInputTokens === null ? 'estimated' : 'provider_reported_plus_estimate',
     estimateSource: 'heuristic',
   };
+}
+
+export function estimateContextUsage(
+  messages: readonly ChatMessage[],
+  draft: string,
+  pendingAttachments: readonly PendingChatAttachment[],
+  model: ChatModel,
+  configuration: ContextUsageConfiguration | null,
+  memory: ContextUsageMemory | null,
+): ContextUsageSnapshot {
+  const base = estimateBaseContextUsage(messages, pendingAttachments, model, configuration, memory);
+  return estimateContextUsageFromBase(base, draft);
 }
 
 function estimateMessages(messages: readonly ChatMessage[]): {

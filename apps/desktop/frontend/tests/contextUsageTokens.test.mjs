@@ -14,8 +14,10 @@ function extractFunction(source, name) {
   const marker = `function ${name}(`;
   const start = source.indexOf(marker);
   if (start < 0) throw new Error(`Could not find ${name} in production source`);
-  const nextFunction = source.indexOf('\nfunction ', start + marker.length);
-  return source.slice(start, nextFunction < 0 ? source.length : nextFunction);
+  const remainder = source.slice(start + marker.length);
+  const match = remainder.match(/\n(?:export\s+)?(?:async\s+)?function\s/);
+  const end = match ? start + marker.length + match.index : source.length;
+  return source.slice(start, end);
 }
 
 const contextUsageSource = fs.readFileSync(
@@ -24,6 +26,8 @@ const contextUsageSource = fs.readFileSync(
 );
 const productionEstimators = await compileTsModule(
   [
+    extractFunction(contextUsageSource, 'estimateBaseContextUsage'),
+    extractFunction(contextUsageSource, 'estimateContextUsageFromBase'),
     extractFunction(contextUsageSource, 'estimateContextUsage'),
     extractFunction(contextUsageSource, 'estimateMessages'),
     extractFunction(contextUsageSource, 'estimateAttachment'),
@@ -31,10 +35,16 @@ const productionEstimators = await compileTsModule(
     extractFunction(contextUsageSource, 'stringifyJson'),
     'const opaqueCheckpointEstimate = 4096;',
     'function parseToolActivities(value) { return Array.isArray(value) ? value : []; }',
-    'export { estimateContextUsage, estimateMessages, estimateText };',
+    'export { estimateBaseContextUsage, estimateContextUsageFromBase, estimateContextUsage, estimateMessages, estimateText };',
   ].join('\n\n'),
 );
-const { estimateContextUsage, estimateMessages, estimateText } = productionEstimators;
+const {
+  estimateBaseContextUsage,
+  estimateContextUsageFromBase,
+  estimateContextUsage,
+  estimateMessages,
+  estimateText,
+} = productionEstimators;
 
 test('assistant context estimate uses visible content, not provider completion usage', () => {
   const estimate = estimateMessages([
@@ -122,4 +132,43 @@ test('provider input baseline adds each post-prompt component exactly once', () 
     100 + postPromptTokens + pendingImageTokens + estimateText('draft'),
   );
   assert.equal(estimate.attachments.filter((attachment) => attachment.isDraft).length, 1);
+});
+
+test('estimateBaseContextUsage and estimateContextUsageFromBase produce matching result and support fast keystroke updates', () => {
+  const model = {
+    providerId: 'provider',
+    modelId: 'model',
+    connectionId: null,
+    workspaceId: null,
+  };
+  const messages = [
+    {
+      id: 'msg-1',
+      role: 'user',
+      content: 'Hello assistant',
+      attachments: [],
+      toolActivities: '',
+    },
+    {
+      id: 'msg-2',
+      role: 'assistant',
+      content: 'Hello user, how can I help?',
+      attachments: [],
+      toolActivities: '',
+    },
+  ];
+  const pendingAttachments = [];
+
+  const base = estimateBaseContextUsage(messages, pendingAttachments, model, null, null);
+  const fastEstimate1 = estimateContextUsageFromBase(base, 'test keystroke');
+  const fullEstimate1 = estimateContextUsage(messages, 'test keystroke', pendingAttachments, model, null, null);
+
+  assert.deepEqual(fastEstimate1, fullEstimate1);
+
+  const fastEstimate2 = estimateContextUsageFromBase(base, 'test keystroke modified');
+  assert.equal(
+    fastEstimate2.totalTokens,
+    base.baseTotalWithoutDraft + estimateText('test keystroke modified'),
+  );
+  assert.equal(fastEstimate2.draftTokens, estimateText('test keystroke modified'));
 });

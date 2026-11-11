@@ -264,6 +264,7 @@ pub struct AppStorage {
     diagnostics_lock: Mutex<()>,
     database_queue: DatabaseQueueHandle,
     profile_restore_pending_validation: bool,
+    hot_cache: Arc<crate::hot_cache::ConversationHotCache>,
 }
 
 /// Applies chat schema migrations through the service-owned storage boundary.
@@ -438,6 +439,7 @@ impl AppStorage {
             diagnostics_lock: Mutex::new(()),
             database_queue,
             profile_restore_pending_validation: false,
+            hot_cache: Arc::new(crate::hot_cache::ConversationHotCache::default()),
         })
     }
 
@@ -560,12 +562,18 @@ impl AppStorage {
             diagnostics_lock: Mutex::new(()),
             database_queue,
             profile_restore_pending_validation: false,
+            hot_cache: Arc::new(crate::hot_cache::ConversationHotCache::default()),
         })
     }
 
     /// Returns the canonical root used for this storage instance.
     pub fn root(&self) -> &Path {
         &self.root
+    }
+
+    /// Returns the in-memory hot cache for active conversations.
+    pub fn hot_cache(&self) -> &Arc<crate::hot_cache::ConversationHotCache> {
+        &self.hot_cache
     }
 
     /// Returns the verified profile root used for persisted image files.

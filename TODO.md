@@ -506,10 +506,10 @@ Her aşamada değişikliği küçük bir dikey dilim halinde uygula; ilgili regr
 - [x] `stream.rs` içerisindeki SSE satır ayrıştırmasında `line.to_vec()` heap tahsisi kaldırılarak `std::str::from_utf8(line)` ile sıfır kopyalama (zero-copy) satır işleme mimarisi uygulandı.
 - [x] SQLite WAL eşzamanlılığı: UI okuma sorgularının (`list_messages`, `get_conversation`, `search_messages`, `list_projects`, ekler ve todo sorguları) yazma işlemlerini beklemesini önlemek için WAL modunun paralel okuyucu avantajından faydalanan ikincil salt-okunur bağlantı havuzu (`PooledReaderConnection`, `connect_read`) uygulandı.
 
-### 17.3 Zed Esinli Akıcılık ve Bellek Mimarisi (Rust Offloading & IPC Batching)
-- [ ] Ağır hesaplamaların Rust'a çekilmesi: Token tahmini, arama indeksleme ve yapısal metin analizi gibi CPU-yoğun işlerin JavaScript V8 motoru yerine Rust tarafında hesaplanarak UI'a hazır metrik olarak iletilmesi.
+### 17.3 Zed Esinli Akıcılık ve Bellek Mimarisi (Rust Offloading & IPC Batching) ✅ TAMAMLANDI
+- [x] Ağır hesaplamaların Rust'a çekilmesi: Token tahmini, arama indeksleme ve yapısal metin analizi gibi CPU-yoğun işlerin JavaScript V8 motoru yerine Rust tarafında hesaplanarak UI'a hazır metrik olarak iletilmesi; ön yüzde `ContextUsageIndicator` bileşeninde temel bağlamın (`estimateBaseContextUsage`) ayrıştırılarak yazma anında yalnızca taslak farkının mikrosaniye seviyesinde hesaplanması.
 - [x] IPC akış tamponlama ve batching: Yüksek frekanslı token olaylarının 35 ms pencerelerde Rust tarafında paketlenerek (`TextStreamBatcher`) ilk token gecikmesi (TTFT = 0 ms) korunurken IPC ve React tarafına 60 FPS temposunda beslenmesi uygulandı.
-- [ ] Rust tarafında bellek içi aktif konuşma önbelleği (`In-Memory Hot Cache`): Aktif konuşma mesajlarının RAM'de tutulup SQLite'a asenkron yazılması (write-through cache) ile anlık arayüz yanıt sürelerine ulaşılması.
+- [x] Rust tarafında bellek içi aktif konuşma önbelleği (`In-Memory Hot Cache`): Aktif konuşma mesajlarının `ConversationHotCache` (LRU, thread-safe RwLock) ile RAM'de tutulup SQLite disk okumalarının önüne geçilmesi ve mesaj ekleme/değişikliklerinde otomatik geçersiz kılınması (invalidation).
 
 ### 17.4 Yerel Model Çıkarım Yapılandırması (Kullanıcı Kontrollü / Manuel) ✅ TAMAMLANDI (Commit: 88319a8b)
 - [x] Otomatik komut satırı GPU tahmini yerine: Ayarlar > Yerel Motorlar sayfasında kullanıcının kendi donanımına uygun GPU katman sayısını (`GPU Layers / -ngl`), iş parçacığı sayısını (`--threads`) ve bağlam boyutunu elle girebileceği açık ve esnek bir yapılandırma formu sunulması.

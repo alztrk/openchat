@@ -35,6 +35,8 @@ pub(crate) mod git_worktrees;
 pub(crate) mod goals;
 #[path = "conversations/history.rs"]
 pub(crate) mod history;
+#[path = "conversations/hot_cache.rs"]
+pub(crate) mod hot_cache;
 pub(crate) mod http_headers;
 #[path = "providers/hugging_face.rs"]
 pub(crate) mod hugging_face;

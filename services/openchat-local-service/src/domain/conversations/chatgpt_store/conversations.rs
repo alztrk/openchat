@@ -201,7 +201,11 @@ pub fn conversation_messages(
     storage: &AppStorage,
     conversation_id: &str,
 ) -> rusqlite::Result<Vec<StoredMessage>> {
-    let rows = {
+    if let Some((cached_messages, _)) = storage.hot_cache().get(conversation_id) {
+        return Ok((*cached_messages).clone());
+    }
+
+    let (rows, active_leaf_message_id) = {
         let database = storage.connect()?;
         let active_leaf_message_id = database
             .query_row(
@@ -212,7 +216,7 @@ pub fn conversation_messages(
             .optional()?
             .flatten();
 
-        let branch_rows = if let Some(leaf_id) = active_leaf_message_id {
+        let branch_rows = if let Some(ref leaf_id) = active_leaf_message_id {
             let mut statement = database.prepare(
                 "WITH RECURSIVE branch AS (
                     SELECT id, parent_message_id, role, content, status, output_tokens, tool_activities, created_at
@@ -242,7 +246,7 @@ pub fn conversation_messages(
             None
         };
 
-        if let Some(rows) = branch_rows {
+        let rows = if let Some(rows) = branch_rows {
             rows
         } else {
             let mut statement = database.prepare(
@@ -253,11 +257,21 @@ pub fn conversation_messages(
             statement
                 .query_map([conversation_id], stored_message_row_from_sql)?
                 .collect::<rusqlite::Result<Vec<_>>>()?
-        }
+        };
+        (rows, active_leaf_message_id)
     };
-    rows.into_iter()
+    let messages: Vec<StoredMessage> = rows
+        .into_iter()
         .map(|row| stored_message_from_values(row, storage, conversation_id))
-        .collect()
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+
+    storage.hot_cache().insert(
+        conversation_id.to_owned(),
+        messages.clone(),
+        active_leaf_message_id,
+    );
+
+    Ok(messages)
 }
 
 pub fn conversation_messages_from_boundary(
@@ -413,7 +427,9 @@ pub fn save_assistant_message(
     message: AssistantMessageWrite<'_>,
 ) -> rusqlite::Result<()> {
     let mut database = storage.connect()?;
-    save_assistant_message_on_connection(&mut database, message)
+    save_assistant_message_on_connection(&mut database, message)?;
+    storage.hot_cache().invalidate(message.conversation_id);
+    Ok(())
 }
 
 pub fn save_assistant_tool_checkpoint(
@@ -477,7 +493,9 @@ pub fn save_assistant_tool_checkpoint(
             activities_json,
         ],
     )?;
-    transaction.commit()
+    transaction.commit()?;
+    storage.hot_cache().invalidate(&snapshot.conversation_id);
+    Ok(())
 }
 
 fn serialize_bounded_tool_activities(

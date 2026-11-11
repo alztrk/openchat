@@ -8,7 +8,9 @@ import type { ChatMessage } from '@features/chat/data';
 import {
   type ContextUsageConfiguration,
   type ContextUsageMemory,
-  estimateContextUsage,
+  type ContextUsageSnapshot,
+  estimateBaseContextUsage,
+  estimateContextUsageFromBase,
   inspectContextUsageMemory,
   loadContextUsageConfiguration,
   loadFullContextUsage,
@@ -123,19 +125,23 @@ export function ContextUsageIndicator({
     };
   }, [conversationId, isSending]);
 
-  const lastEstimateRef = useRef<ReturnType<typeof estimateContextUsage> | null>(null);
-  const lastEstimateTimeRef = useRef(0);
-  const localSnapshot = useMemo(() => {
+  const lastBaseEstimateRef = useRef<ReturnType<typeof estimateBaseContextUsage> | null>(null);
+  const lastBaseTimeRef = useRef(0);
+  const baseEstimate = useMemo(() => {
     const now = Date.now();
-    if (isSending && lastEstimateRef.current && now - lastEstimateTimeRef.current < 2000) {
-      return lastEstimateRef.current;
+    if (isSending && lastBaseEstimateRef.current && now - lastBaseTimeRef.current < 2000) {
+      return lastBaseEstimateRef.current;
     }
-    const estimate = estimateContextUsage(messages, draft, pendingAttachments, model, configuration, memory);
-    lastEstimateRef.current = estimate;
-    lastEstimateTimeRef.current = now;
+    const estimate = estimateBaseContextUsage(messages, pendingAttachments, model, configuration, memory);
+    lastBaseEstimateRef.current = estimate;
+    lastBaseTimeRef.current = now;
     return estimate;
-  }, [configuration, draft, isSending, memory, messages, model, pendingAttachments]);
-  const [serverSnapshot, setServerSnapshot] = useState<ReturnType<typeof estimateContextUsage> | null>(null);
+  }, [configuration, isSending, memory, messages, model, pendingAttachments]);
+
+  const localSnapshot = useMemo(() => {
+    return estimateContextUsageFromBase(baseEstimate, draft);
+  }, [baseEstimate, draft]);
+  const [serverSnapshot, setServerSnapshot] = useState<ContextUsageSnapshot | null>(null);
   const snapshot = serverSnapshot ?? localSnapshot;
 
   useEffect(() => {
