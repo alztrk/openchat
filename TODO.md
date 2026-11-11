@@ -418,9 +418,9 @@ Her aşamada değişikliği küçük bir dikey dilim halinde uygula; ilgili regr
 - [ ] Çalıştırmaları duraklatma (pause), yeniden başlatma (restart) ve kullanıcı iptali (cancellation).
 - [ ] Uygulama veya süreç çökmesinde kesilen çalıştırmaların güvenle kurtarılması (interrupted-run recovery).
 
-### 12.2 Mesaj Dallanması ve Yanıt Sürümleri (Message Branches)
-- [ ] Aynı konuşma içinde mesaj düzenlendiğinde yeni dal oluşturma ve konuşma içi yanıt sürümleri arasında gezinme (1/2 okları).
-- [ ] Farklı dallar arasında aktif dalı seçebilme ve seçilen daldan konuşmaya devam edebilme.
+### 12.2 Mesaj Dallanması ve Yanıt Sürümleri (Message Branches) ✅ TAMAMLANDI (Commit: bf33cc28)
+- [x] Aynı konuşma içinde mesaj düzenlendiğinde yeni dal oluşturma ve konuşma içi yanıt sürümleri arasında gezinme (1/2 okları).
+- [x] Farklı dallar arasında aktif dalı seçebilme ve seçilen daldan konuşmaya devam edebilme.
 
 ### 12.3 Kapsamlı Alt Ajan Mimarisi (Subagents)
 - [ ] Üst çalıştırmadan alt çalıştırmaya bağlam aktarımı ve izinli araç listesi (tool allowlist) zorlaması.
@@ -511,5 +511,5 @@ Her aşamada değişikliği küçük bir dikey dilim halinde uygula; ilgili regr
 - [ ] IPC akış tamponlama ve batching: Yüksek frekanslı token olaylarının 30-50 ms pencerelerde Rust tarafında paketlenerek React'e sabit 60 FPS temposunda beslenmesi.
 - [ ] Rust tarafında bellek içi aktif konuşma önbelleği (`In-Memory Hot Cache`): Aktif konuşma mesajlarının RAM'de tutulup SQLite'a asenkron yazılması (write-through cache) ile anlık arayüz yanıt sürelerine ulaşılması.
 
-### 17.4 Yerel Model Çıkarım Yapılandırması (Kullanıcı Kontrollü / Manuel)
-- [ ] Otomatik komut satırı GPU tahmini yerine: Ayarlar > Yerel Motorlar sayfasında kullanıcının kendi donanımına uygun GPU katman sayısını (`GPU Layers / -ngl`), iş parçacığı sayısını (`--threads`) ve bağlam boyutunu elle girebileceği açık ve esnek bir yapılandırma formu sunulması.
+### 17.4 Yerel Model Çıkarım Yapılandırması (Kullanıcı Kontrollü / Manuel) ✅ TAMAMLANDI (Commit: 88319a8b)
+- [x] Otomatik komut satırı GPU tahmini yerine: Ayarlar > Yerel Motorlar sayfasında kullanıcının kendi donanımına uygun GPU katman sayısını (`GPU Layers / -ngl`), iş parçacığı sayısını (`--threads`) ve bağlam boyutunu elle girebileceği açık ve esnek bir yapılandırma formu sunulması.
