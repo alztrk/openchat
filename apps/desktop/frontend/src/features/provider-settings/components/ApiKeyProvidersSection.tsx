@@ -68,7 +68,38 @@ type CompatibleProviderNameKey =
   | 'providerNameDashScope'
   | 'providerNameCohere'
   | 'providerNameNvidia'
-  | 'providerNameKilo';
+  | 'providerNameKilo'
+  | 'providerNameMoonshot'
+  | 'providerNameZai'
+  | 'providerNameMinimax'
+  | 'providerNameAi21'
+  | 'providerNameUpstage'
+  | 'providerNameHyperbolic'
+  | 'providerNameNovita'
+  | 'providerNameSiliconFlow'
+  | 'providerNameFeatherless'
+  | 'providerNameNebius'
+  | 'providerNameScaleway'
+  | 'providerNameStepFun'
+  | 'providerNameYi'
+  | 'providerNameBaichuan'
+  | 'providerNameVolcengine'
+  | 'providerNameHunyuan'
+  | 'providerNameQianfan'
+  | 'providerNameInflection'
+  | 'providerNameInception'
+  | 'providerNameMimo'
+  | 'providerNameFriendli'
+  | 'providerNameChutes'
+  | 'providerNameRequesty'
+  | 'providerNameVenice'
+  | 'providerNameBaseten'
+  | 'providerNameLambda'
+  | 'providerNameLepton'
+  | 'providerNameKluster'
+  | 'providerNameNscale'
+  | 'providerNameOvhcloud'
+  | 'providerNamePublicAi';
 
 const providerNameKeys: Partial<Record<CompatibleProviderId, CompatibleProviderNameKey>> = {
   gemini: 'providerNameGemini',
@@ -88,6 +119,37 @@ const providerNameKeys: Partial<Record<CompatibleProviderId, CompatibleProviderN
   cohere: 'providerNameCohere',
   nvidia: 'providerNameNvidia',
   kilo: 'providerNameKilo',
+  moonshot: 'providerNameMoonshot',
+  zai: 'providerNameZai',
+  minimax: 'providerNameMinimax',
+  ai21: 'providerNameAi21',
+  upstage: 'providerNameUpstage',
+  hyperbolic: 'providerNameHyperbolic',
+  novita: 'providerNameNovita',
+  siliconflow: 'providerNameSiliconFlow',
+  featherless: 'providerNameFeatherless',
+  nebius: 'providerNameNebius',
+  scaleway: 'providerNameScaleway',
+  stepfun: 'providerNameStepFun',
+  yi: 'providerNameYi',
+  baichuan: 'providerNameBaichuan',
+  volcengine: 'providerNameVolcengine',
+  hunyuan: 'providerNameHunyuan',
+  qianfan: 'providerNameQianfan',
+  inflection: 'providerNameInflection',
+  inception: 'providerNameInception',
+  mimo: 'providerNameMimo',
+  friendli: 'providerNameFriendli',
+  chutes: 'providerNameChutes',
+  requesty: 'providerNameRequesty',
+  venice: 'providerNameVenice',
+  baseten: 'providerNameBaseten',
+  lambda: 'providerNameLambda',
+  lepton: 'providerNameLepton',
+  kluster: 'providerNameKluster',
+  nscale: 'providerNameNscale',
+  ovhcloud: 'providerNameOvhcloud',
+  publicai: 'providerNamePublicAi',
 };
 
 const providerDocumentationUrls: Partial<Record<CompatibleProviderId, string>> = {
@@ -108,6 +170,37 @@ const providerDocumentationUrls: Partial<Record<CompatibleProviderId, string>> =
   cohere: 'https://docs.cohere.com/',
   nvidia: 'https://docs.api.nvidia.com/nim/docs/api-quickstart',
   kilo: 'https://kilo.ai/docs',
+  moonshot: 'https://platform.moonshot.ai/docs',
+  zai: 'https://docs.z.ai/',
+  minimax: 'https://platform.minimax.io/docs',
+  ai21: 'https://docs.ai21.com/',
+  upstage: 'https://console.upstage.ai/docs',
+  hyperbolic: 'https://docs.hyperbolic.xyz/',
+  novita: 'https://novita.ai/docs',
+  siliconflow: 'https://docs.siliconflow.com/',
+  featherless: 'https://featherless.ai/docs',
+  nebius: 'https://docs.nebius.com/studio',
+  scaleway: 'https://www.scaleway.com/en/docs/ai-data/generative-apis/',
+  stepfun: 'https://platform.stepfun.com/docs',
+  yi: 'https://platform.01.ai/docs',
+  baichuan: 'https://platform.baichuan-ai.com/docs',
+  volcengine: 'https://www.volcengine.com/docs/82379',
+  hunyuan: 'https://cloud.tencent.com/document/product/1729',
+  qianfan: 'https://cloud.baidu.com/doc/WENXINWORKSHOP/index.html',
+  inflection: 'https://developers.inflection.ai/',
+  inception: 'https://docs.inceptionlabs.ai/',
+  mimo: 'https://platform.xiaomimimo.com/',
+  friendli: 'https://friendli.ai/docs',
+  chutes: 'https://chutes.ai/docs',
+  requesty: 'https://docs.requesty.ai/',
+  venice: 'https://docs.venice.ai/',
+  baseten: 'https://docs.baseten.co/',
+  lambda: 'https://docs.lambda.ai/',
+  lepton: 'https://www.lepton.ai/docs',
+  kluster: 'https://docs.kluster.ai/',
+  nscale: 'https://docs.nscale.com/',
+  ovhcloud: 'https://help.ovhcloud.com/csm/en-public-cloud-ai-endpoints-getting-started',
+  publicai: 'https://docs.publicai.co/',
 };
 
 type CredentialRoute =

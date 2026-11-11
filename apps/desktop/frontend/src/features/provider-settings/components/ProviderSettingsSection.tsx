@@ -606,6 +606,70 @@ export function TitleGenerationSettings({
         return t('cohereProvider');
       case 'nvidia':
         return t('providerNameNvidia');
+      case 'kilo':
+        return t('providerNameKilo');
+      case 'moonshot':
+        return t('providerNameMoonshot');
+      case 'zai':
+        return t('providerNameZai');
+      case 'minimax':
+        return t('providerNameMinimax');
+      case 'ai21':
+        return t('providerNameAi21');
+      case 'upstage':
+        return t('providerNameUpstage');
+      case 'hyperbolic':
+        return t('providerNameHyperbolic');
+      case 'novita':
+        return t('providerNameNovita');
+      case 'siliconflow':
+        return t('providerNameSiliconFlow');
+      case 'featherless':
+        return t('providerNameFeatherless');
+      case 'nebius':
+        return t('providerNameNebius');
+      case 'scaleway':
+        return t('providerNameScaleway');
+      case 'stepfun':
+        return t('providerNameStepFun');
+      case 'yi':
+        return t('providerNameYi');
+      case 'baichuan':
+        return t('providerNameBaichuan');
+      case 'volcengine':
+        return t('providerNameVolcengine');
+      case 'hunyuan':
+        return t('providerNameHunyuan');
+      case 'qianfan':
+        return t('providerNameQianfan');
+      case 'inflection':
+        return t('providerNameInflection');
+      case 'inception':
+        return t('providerNameInception');
+      case 'mimo':
+        return t('providerNameMimo');
+      case 'friendli':
+        return t('providerNameFriendli');
+      case 'chutes':
+        return t('providerNameChutes');
+      case 'requesty':
+        return t('providerNameRequesty');
+      case 'venice':
+        return t('providerNameVenice');
+      case 'baseten':
+        return t('providerNameBaseten');
+      case 'lambda':
+        return t('providerNameLambda');
+      case 'lepton':
+        return t('providerNameLepton');
+      case 'kluster':
+        return t('providerNameKluster');
+      case 'nscale':
+        return t('providerNameNscale');
+      case 'ovhcloud':
+        return t('providerNameOvhcloud');
+      case 'publicai':
+        return t('providerNamePublicAi');
       case 'llama_cpp':
         return 'llama.cpp';
       default:

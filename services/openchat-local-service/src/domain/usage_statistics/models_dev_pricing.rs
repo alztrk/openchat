@@ -265,6 +265,14 @@ impl PricingCatalog {
                ON price.provider_id = CASE e.provider_id
                     WHEN 'chatgpt_api' THEN 'openai'
                     WHEN 'gemini' THEN 'google'
+                    WHEN 'dashscope' THEN 'alibaba'
+                    WHEN 'moonshot' THEN 'moonshotai'
+                    WHEN 'together' THEN 'togetherai'
+                    WHEN 'fireworks' THEN 'fireworks-ai'
+                    WHEN 'yi' THEN '01-ai'
+                    WHEN 'hunyuan' THEN 'tencent'
+                    WHEN 'qianfan' THEN 'baidu'
+                    WHEN 'mimo' THEN 'xiaomi'
                     ELSE e.provider_id
                   END
               AND price.model_id = e.model_id
@@ -643,6 +651,14 @@ fn catalog_provider_id(provider_id: &str) -> &str {
     match provider_id {
         "chatgpt" | "chatgpt_api" => "openai",
         "gemini" => "google",
+        "dashscope" => "alibaba",
+        "moonshot" => "moonshotai",
+        "together" => "togetherai",
+        "fireworks" => "fireworks-ai",
+        "yi" => "01-ai",
+        "hunyuan" => "tencent",
+        "qianfan" => "baidu",
+        "mimo" => "xiaomi",
         provider => provider,
     }
 }

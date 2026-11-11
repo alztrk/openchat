@@ -366,7 +366,7 @@ impl ApiCompatibleProvider {
     }
 }
 
-const API_COMPATIBLE_PROVIDERS: [ApiCompatibleProvider; 17] = [
+const API_COMPATIBLE_PROVIDERS: [ApiCompatibleProvider; 48] = [
     ApiCompatibleProvider {
         id: "gemini",
         name: "Gemini",
@@ -467,6 +467,192 @@ const API_COMPATIBLE_PROVIDERS: [ApiCompatibleProvider; 17] = [
         id: "kilo",
         name: "Kilo AI",
         base_url: "https://ai-gateway.kilo.ai/api/v1",
+        protocol: CustomProviderProtocol::OpenAi,
+    },
+    ApiCompatibleProvider {
+        id: "moonshot",
+        name: "Moonshot AI",
+        base_url: "https://api.moonshot.ai/v1",
+        protocol: CustomProviderProtocol::OpenAi,
+    },
+    ApiCompatibleProvider {
+        id: "zai",
+        name: "Z.ai (Zhipu GLM)",
+        base_url: "https://api.z.ai/api/paas/v4",
+        protocol: CustomProviderProtocol::OpenAi,
+    },
+    ApiCompatibleProvider {
+        id: "minimax",
+        name: "MiniMax",
+        base_url: "https://api.minimax.io/v1",
+        protocol: CustomProviderProtocol::OpenAi,
+    },
+    ApiCompatibleProvider {
+        id: "ai21",
+        name: "AI21 Labs",
+        base_url: "https://api.ai21.com/studio/v1",
+        protocol: CustomProviderProtocol::OpenAi,
+    },
+    ApiCompatibleProvider {
+        id: "upstage",
+        name: "Upstage",
+        base_url: "https://api.upstage.ai/v1",
+        protocol: CustomProviderProtocol::OpenAi,
+    },
+    ApiCompatibleProvider {
+        id: "hyperbolic",
+        name: "Hyperbolic",
+        base_url: "https://api.hyperbolic.xyz/v1",
+        protocol: CustomProviderProtocol::OpenAi,
+    },
+    ApiCompatibleProvider {
+        id: "novita",
+        name: "Novita AI",
+        base_url: "https://api.novita.ai/openai",
+        protocol: CustomProviderProtocol::OpenAi,
+    },
+    ApiCompatibleProvider {
+        id: "siliconflow",
+        name: "SiliconFlow",
+        base_url: "https://api.siliconflow.com/v1",
+        protocol: CustomProviderProtocol::OpenAi,
+    },
+    ApiCompatibleProvider {
+        id: "featherless",
+        name: "Featherless AI",
+        base_url: "https://api.featherless.ai/v1",
+        protocol: CustomProviderProtocol::OpenAi,
+    },
+    ApiCompatibleProvider {
+        id: "nebius",
+        name: "Nebius AI Studio",
+        base_url: "https://api.studio.nebius.com/v1",
+        protocol: CustomProviderProtocol::OpenAi,
+    },
+    ApiCompatibleProvider {
+        id: "scaleway",
+        name: "Scaleway",
+        base_url: "https://api.scaleway.ai/v1",
+        protocol: CustomProviderProtocol::OpenAi,
+    },
+    ApiCompatibleProvider {
+        id: "stepfun",
+        name: "StepFun",
+        base_url: "https://api.stepfun.com/v1",
+        protocol: CustomProviderProtocol::OpenAi,
+    },
+    ApiCompatibleProvider {
+        id: "yi",
+        name: "01.AI (Yi)",
+        base_url: "https://api.lingyiwanwu.com/v1",
+        protocol: CustomProviderProtocol::OpenAi,
+    },
+    ApiCompatibleProvider {
+        id: "baichuan",
+        name: "Baichuan",
+        base_url: "https://api.baichuan-ai.com/v1",
+        protocol: CustomProviderProtocol::OpenAi,
+    },
+    ApiCompatibleProvider {
+        id: "volcengine",
+        name: "Volcengine Ark",
+        base_url: "https://ark.cn-beijing.volces.com/api/v3",
+        protocol: CustomProviderProtocol::OpenAi,
+    },
+    ApiCompatibleProvider {
+        id: "hunyuan",
+        name: "Tencent Hunyuan",
+        base_url: "https://api.hunyuan.cloud.tencent.com/v1",
+        protocol: CustomProviderProtocol::OpenAi,
+    },
+    ApiCompatibleProvider {
+        id: "qianfan",
+        name: "Baidu Qianfan",
+        base_url: "https://qianfan.baidubce.com/v2",
+        protocol: CustomProviderProtocol::OpenAi,
+    },
+    ApiCompatibleProvider {
+        id: "inflection",
+        name: "Inflection AI",
+        base_url: "https://api.inflection.ai/external/api/inference/openai/v1",
+        protocol: CustomProviderProtocol::OpenAi,
+    },
+    ApiCompatibleProvider {
+        id: "inception",
+        name: "Inception Labs",
+        base_url: "https://api.inceptionlabs.ai/v1",
+        protocol: CustomProviderProtocol::OpenAi,
+    },
+    ApiCompatibleProvider {
+        id: "mimo",
+        name: "Xiaomi MiMo",
+        base_url: "https://api.xiaomimimo.com/v1",
+        protocol: CustomProviderProtocol::OpenAi,
+    },
+    ApiCompatibleProvider {
+        id: "friendli",
+        name: "FriendliAI",
+        base_url: "https://api.friendli.ai/serverless/v1",
+        protocol: CustomProviderProtocol::OpenAi,
+    },
+    ApiCompatibleProvider {
+        id: "chutes",
+        name: "Chutes AI",
+        base_url: "https://llm.chutes.ai/v1",
+        protocol: CustomProviderProtocol::OpenAi,
+    },
+    ApiCompatibleProvider {
+        id: "requesty",
+        name: "Requesty",
+        base_url: "https://router.requesty.ai/v1",
+        protocol: CustomProviderProtocol::OpenAi,
+    },
+    ApiCompatibleProvider {
+        id: "venice",
+        name: "Venice AI",
+        base_url: "https://api.venice.ai/api/v1",
+        protocol: CustomProviderProtocol::OpenAi,
+    },
+    ApiCompatibleProvider {
+        id: "baseten",
+        name: "Baseten",
+        base_url: "https://inference.baseten.co/v1",
+        protocol: CustomProviderProtocol::OpenAi,
+    },
+    ApiCompatibleProvider {
+        id: "lambda",
+        name: "Lambda Inference",
+        base_url: "https://api.lambda.ai/v1",
+        protocol: CustomProviderProtocol::OpenAi,
+    },
+    ApiCompatibleProvider {
+        id: "lepton",
+        name: "Lepton AI",
+        base_url: "https://api.lepton.ai/api/v1",
+        protocol: CustomProviderProtocol::OpenAi,
+    },
+    ApiCompatibleProvider {
+        id: "kluster",
+        name: "Kluster.ai",
+        base_url: "https://api.kluster.ai/v1",
+        protocol: CustomProviderProtocol::OpenAi,
+    },
+    ApiCompatibleProvider {
+        id: "nscale",
+        name: "Nscale",
+        base_url: "https://inference.api.nscale.com/v1",
+        protocol: CustomProviderProtocol::OpenAi,
+    },
+    ApiCompatibleProvider {
+        id: "ovhcloud",
+        name: "OVHcloud AI Endpoints",
+        base_url: "https://oai.endpoints.kepler.ai.cloud.ovh.net/v1",
+        protocol: CustomProviderProtocol::OpenAi,
+    },
+    ApiCompatibleProvider {
+        id: "publicai",
+        name: "PublicAI",
+        base_url: "https://api.publicai.co/v1",
         protocol: CustomProviderProtocol::OpenAi,
     },
 ];
@@ -1285,12 +1471,8 @@ fn provider_name(provider_id: Option<&str>) -> &'static str {
     match provider_id {
         Some("chatgpt_api") => "OpenAI",
         Some("copilot") => "GitHub Copilot",
-        Some("gemini") => "Gemini",
-        Some("groq") => "Groq",
-        Some("cerebras") => "Cerebras",
-        Some("openrouter") => "OpenRouter",
-        Some("mistral") => "Mistral",
-        _ => "OpenCode",
+        Some(id) => api_compatible_provider(id).map_or("OpenCode", |provider| provider.name),
+        None => "OpenCode",
     }
 }
 fn openai_authentication_required_error() -> ServiceError {

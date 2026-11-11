@@ -655,7 +655,20 @@ fn provider_tool_support(provider_id: &str, model: &Value) -> Option<bool> {
             .and_then(Value::as_array)
             .map(|params| params.iter().any(|p| p.as_str() == Some("tools")))
             .or(Some(true)),
-        _ => None,
+        _ => model
+            .pointer("/capabilities/function_calling")
+            .and_then(Value::as_bool)
+            .or_else(|| model.get("tool_call").and_then(Value::as_bool))
+            .or_else(|| {
+                model
+                    .get("supported_parameters")
+                    .and_then(Value::as_array)
+                    .map(|parameters| {
+                        parameters
+                            .iter()
+                            .any(|parameter| parameter.as_str() == Some("tools"))
+                    })
+            }),
     }
 }
 
