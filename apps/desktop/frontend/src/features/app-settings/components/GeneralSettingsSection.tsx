@@ -15,7 +15,8 @@ import {
   type AppDensityPreference,
   type AppearancePreferences,
   type AppFontPreference,
-  type AppScalePreference,
+  isAppScalePreference,
+  isConversationTextSizePreference,
   writeAppDensityPreference,
   writeAppFontPreference,
   writeAppScalePreference,
@@ -185,12 +186,13 @@ export function GeneralSettingsSection({
           label={t('conversationTextSize')}
         >
           {(descriptionId) => (
-            <SegmentedControl
+            <Select
               aria-describedby={descriptionId}
               disabled={controlsDisabled}
               label={t('conversationTextSize')}
-              onValueChange={(value) => {
-                if (value === 'small' || value === 'normal' || value === 'large') {
+              onChange={(event) => {
+                const value = event.target.value;
+                if (isConversationTextSizePreference(value)) {
                   void saveAppearance(() => writeConversationTextSizePreference(value), {
                     conversationTextSize: value,
                   });
@@ -200,8 +202,12 @@ export function GeneralSettingsSection({
                 { value: 'small', label: t('textSizeSmall') },
                 { value: 'normal', label: t('textSizeNormal') },
                 { value: 'large', label: t('textSizeLarge') },
+                { value: '150', label: t('textSize150') },
+                { value: '175', label: t('textSize175') },
+                { value: '200', label: t('textSize200') },
               ]}
               value={appearance.conversationTextSize}
+              visuallyHiddenLabel
             />
           )}
         </SettingsPreferenceRow>
@@ -223,22 +229,27 @@ export function GeneralSettingsSection({
         </SettingsPreferenceRow>
         <SettingsPreferenceRow description={t('appScaleDescription')} id="setting-app-scale" label={t('appScale')}>
           {(descriptionId) => (
-            <SegmentedControl
+            <Select
               aria-describedby={descriptionId}
               disabled={controlsDisabled}
               label={t('appScale')}
-              onValueChange={(value) => {
-                if (value === 'small' || value === 'normal' || value === 'large') {
-                  const scale = value satisfies AppScalePreference;
-                  void saveAppearance(() => writeAppScalePreference(scale), { appScale: scale });
+              onChange={(event) => {
+                const value = event.target.value;
+                if (isAppScalePreference(value)) {
+                  void saveAppearance(() => writeAppScalePreference(value), { appScale: value });
                 }
               }}
               options={[
                 { value: 'small', label: t('appScaleSmall') },
                 { value: 'normal', label: t('appScaleNormal') },
                 { value: 'large', label: t('appScaleLarge') },
+                { value: '125', label: t('appScale125') },
+                { value: '150', label: t('appScale150') },
+                { value: '175', label: t('appScale175') },
+                { value: '200', label: t('appScale200') },
               ]}
               value={appearance.appScale}
+              visuallyHiddenLabel
             />
           )}
         </SettingsPreferenceRow>

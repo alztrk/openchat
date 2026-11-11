@@ -86,7 +86,7 @@ export function RadioGroup({
               value={option.value}
             />
             {variant === 'segmented' ? (
-              <span className="openchat-segment-label flex min-h-9 w-full items-center justify-center rounded-control px-2 text-center text-sm text-secondary-text hover:bg-hover hover:text-text peer-checked:bg-selected peer-checked:text-text peer-focus-visible:ring-2 peer-focus-visible:ring-focus peer-disabled:cursor-not-allowed peer-disabled:opacity-50">
+              <span className="openchat-segment-label flex min-h-9 w-full items-center justify-center rounded-control px-2 py-1 text-center text-sm wrap-anywhere text-secondary-text hover:bg-hover hover:text-text peer-checked:bg-selected peer-checked:text-text peer-focus-visible:ring-2 peer-focus-visible:ring-focus peer-disabled:cursor-not-allowed peer-disabled:opacity-50">
                 {option.label}
               </span>
             ) : (

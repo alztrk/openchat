@@ -1,10 +1,56 @@
 import { unifiedStorage } from '@shared/lib/platform/storage/unifiedStorage';
 
 export type ConversationWidthPreference = 'narrow' | 'normal' | 'wide';
-export type ConversationTextSizePreference = 'small' | 'normal' | 'large';
+export type ConversationTextSizePreference = 'small' | 'normal' | 'large' | '150' | '175' | '200';
 export type AppFontPreference = 'sourceSans3' | 'manrope' | 'segoeUi' | 'georgia';
-export type AppScalePreference = 'small' | 'normal' | 'large';
+export type AppScalePreference = 'small' | 'normal' | 'large' | '125' | '150' | '175' | '200';
 export type AppDensityPreference = 'compact' | 'comfortable';
+
+export const CONVERSATION_TEXT_SIZE_VALUES: readonly ConversationTextSizePreference[] = [
+  'small',
+  'normal',
+  'large',
+  '150',
+  '175',
+  '200',
+];
+
+export const APP_SCALE_VALUES: readonly AppScalePreference[] = [
+  'small',
+  'normal',
+  'large',
+  '125',
+  '150',
+  '175',
+  '200',
+];
+
+export function isConversationTextSizePreference(value: string | null): value is ConversationTextSizePreference {
+  return (
+    value === 'small' ||
+    value === 'normal' ||
+    value === 'large' ||
+    value === '150' ||
+    value === '175' ||
+    value === '200'
+  );
+}
+
+export function isAppScalePreference(value: string | null): value is AppScalePreference {
+  return (
+    value === 'small' ||
+    value === 'normal' ||
+    value === 'large' ||
+    value === '125' ||
+    value === '150' ||
+    value === '175' ||
+    value === '200'
+  );
+}
+
+export function isLargeConversationTextSize(value: ConversationTextSizePreference): boolean {
+  return value === 'large' || value === '150' || value === '175' || value === '200';
+}
 
 export interface AppearancePreferences {
   conversationWidth: ConversationWidthPreference;
@@ -30,9 +76,9 @@ export function readAppearancePreferences(): AppearancePreferences {
   const appDensity = unifiedStorage.getItem('appearance.app_density');
   return {
     conversationWidth: width === 'narrow' || width === 'wide' ? width : 'normal',
-    conversationTextSize: textSize === 'small' || textSize === 'large' ? textSize : 'normal',
+    conversationTextSize: isConversationTextSizePreference(textSize) ? textSize : 'normal',
     appFont: font === 'manrope' || font === 'segoeUi' || font === 'georgia' ? font : 'sourceSans3',
-    appScale: appScale === 'small' || appScale === 'large' ? appScale : 'normal',
+    appScale: isAppScalePreference(appScale) ? appScale : 'normal',
     appDensity: appDensity === 'compact' ? 'compact' : 'comfortable',
   };
 }
@@ -65,8 +111,31 @@ export function getAppearanceCssValues(preferences: AppearancePreferences): Appe
         ? '1120px'
         : '920px';
   const textScale =
-    preferences.conversationTextSize === 'small' ? '0.85' : preferences.conversationTextSize === 'large' ? '1.25' : '1';
-  const appScale = preferences.appScale === 'small' ? '90%' : preferences.appScale === 'large' ? '110%' : '100%';
+    preferences.conversationTextSize === 'small'
+      ? '0.85'
+      : preferences.conversationTextSize === 'large'
+        ? '1.25'
+        : preferences.conversationTextSize === '150'
+          ? '1.5'
+          : preferences.conversationTextSize === '175'
+            ? '1.75'
+            : preferences.conversationTextSize === '200'
+              ? '2'
+              : '1';
+  const appScale =
+    preferences.appScale === 'small'
+      ? '90%'
+      : preferences.appScale === 'large'
+        ? '110%'
+        : preferences.appScale === '125'
+          ? '125%'
+          : preferences.appScale === '150'
+            ? '150%'
+            : preferences.appScale === '175'
+              ? '175%'
+              : preferences.appScale === '200'
+                ? '200%'
+                : '100%';
   const appSpacing = preferences.appDensity === 'compact' ? 'calc(0.25rem * 0.9)' : '0.25rem';
   const fontFamily =
     preferences.appFont === 'sourceSans3'

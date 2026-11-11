@@ -1,6 +1,9 @@
 import { lazy, Suspense, useCallback, useRef, useState } from 'react';
 import type { AppSurface } from '@widgets/navigation-rail';
-import type { AppearancePreferences } from '@features/app-settings/data/appearancePreferences';
+import {
+  type AppearancePreferences,
+  isLargeConversationTextSize,
+} from '@features/app-settings/data/appearancePreferences';
 import type { ThemePreference } from '@features/app-settings/components/GeneralSettingsSection';
 import { readInitialSurface, writeLastSurface } from '@features/app-settings/data/appPreferences';
 import { invoke } from '@shared/lib/platform/tauri';
@@ -64,7 +67,7 @@ export function AppRouter({
         <div className="flex min-h-0 min-w-0 flex-1 flex-row overflow-hidden">
           <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
             <Suspense fallback={null}>
-              <ConversationPane isLargeText={appearance.conversationTextSize === 'large'} notificationFeedbackKey={null} onDismissNotificationFeedback={() => { /* noop */ }} onOpenSettings={onOpenSettings} onQuestionFocusHandled={() => { /* noop */ }} onRequestTemporaryExit={() => { /* noop */ }} questionFocusTarget={null} />
+              <ConversationPane isLargeText={isLargeConversationTextSize(appearance.conversationTextSize)} notificationFeedbackKey={null} onDismissNotificationFeedback={() => { /* noop */ }} onOpenSettings={onOpenSettings} onQuestionFocusHandled={() => { /* noop */ }} onRequestTemporaryExit={() => { /* noop */ }} questionFocusTarget={null} />
             </Suspense>
           </div>
         </div>

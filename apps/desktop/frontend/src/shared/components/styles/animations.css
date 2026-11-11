@@ -224,7 +224,9 @@ section:has([aria-expanded='true']:focus-visible) > .openchat-disclosure-enter,
   }
 
   .library-page-nav-item,
-  .mcp-server-card {
+  .mcp-server-card,
+  .conversation-sidebar-shell,
+  .conversation-sidebar {
     transition: none;
   }
 

@@ -1594,11 +1594,11 @@ html[data-motion-input='keyboard'] .openchat-popover-enter[data-state='closed'] 
   gap: 12px;
 }
 
-@container (min-width: 560px) {
+@container (min-width: 600px) {
   .settings-preference-row {
     align-items: center;
     gap: 24px;
-    grid-template-columns: minmax(0, 1fr) 264px;
+    grid-template-columns: minmax(0, 1fr) minmax(220px, min(100%, 300px));
   }
 }
 
@@ -1762,9 +1762,40 @@ html[data-motion-input='keyboard'] .openchat-popover-enter[data-state='closed'] 
 
 button:focus-visible:not(:disabled),
 [role='button']:focus-visible,
+[role='tab']:focus-visible,
+[role='menuitem']:focus-visible,
+[role='option']:focus-visible,
+[role='treeitem']:focus-visible,
 a:focus-visible,
-summary:focus-visible {
+summary:focus-visible,
+label:has(> input:focus-visible) .openchat-segment-label {
   background-color: rgb(var(--hover));
+}
+
+input:not([type='radio']):not([type='checkbox']):not([type='range']):focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+[role='combobox']:focus-visible,
+[role='spinbutton']:focus-visible {
+  border-color: rgb(var(--focus-ring)) !important;
+}
+
+[role='switch']:focus-visible,
+[role='slider']:focus-visible,
+input[type='checkbox']:focus-visible,
+input[type='radio']:not(.sr-only):focus-visible,
+input[type='range']:focus-visible,
+label:has(> input:focus-visible) .openchat-segment-label {
+  outline: 2px solid rgb(var(--focus-ring)) !important;
+  outline-offset: 2px;
+}
+
+@media (prefers-contrast: more), (forced-colors: active) {
+  :focus-visible,
+  label:has(> input:focus-visible) .openchat-segment-label {
+    outline: 2px solid rgb(var(--focus-ring)) !important;
+    outline-offset: 2px !important;
+  }
 }
 .security-scan-page-container {
   container-name: security-scan-page;

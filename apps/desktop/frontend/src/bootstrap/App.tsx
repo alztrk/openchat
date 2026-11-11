@@ -45,6 +45,7 @@ import type { SettingsSection } from '@features/app-settings/components/Settings
 import {
   type AppearancePreferences,
   getAppearanceCssValues,
+  isLargeConversationTextSize,
   readAppearancePreferences,
 } from '@features/app-settings/data/appearancePreferences';
 import {
@@ -1168,7 +1169,7 @@ export function App() {
                           />
                         )}
                         hideInternalRightPanel
-                        isLargeText={appearance.conversationTextSize === 'large'}
+                        isLargeText={isLargeConversationTextSize(appearance.conversationTextSize)}
                         isRightPanelOpen={isRightPanelOpen}
                         notificationFeedbackKey={notificationFeedback}
                         onDismissNotificationFeedback={() => setNotificationFeedback(null)}
@@ -1234,7 +1235,7 @@ export function App() {
                                 />
                               )}
                               hideInternalRightPanel
-                              isLargeText={appearance.conversationTextSize === 'large'}
+                              isLargeText={isLargeConversationTextSize(appearance.conversationTextSize)}
                               isRightPanelOpen={isRightPanelOpen}
                               notificationFeedbackKey={null}
                               onDismissNotificationFeedback={() => undefined}
@@ -1287,7 +1288,7 @@ export function App() {
             <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-surface">
               <Suspense
                 fallback={
-                  <p aria-live="polite" className="px-6 py-8 text-sm text-secondary-text">
+                  <p aria-live="polite" className="px-6 py-8 text-sm text-secondary-text" role="status">
                     {t('modelsLoading')}
                   </p>
                 }
@@ -1306,7 +1307,7 @@ export function App() {
             <div className="min-w-0 flex-1 overflow-hidden bg-surface">
               <Suspense
                 fallback={
-                  <p aria-live="polite" className="px-6 py-8 text-sm text-secondary-text">
+                  <p aria-live="polite" className="px-6 py-8 text-sm text-secondary-text" role="status">
                     {t('designLoading')}
                   </p>
                 }
@@ -1328,7 +1329,7 @@ export function App() {
             <div className="min-w-0 flex-1 overflow-hidden">
               <Suspense
                 fallback={
-                  <p aria-live="polite" className="px-6 py-8 text-sm text-secondary-text">
+                  <p aria-live="polite" className="px-6 py-8 text-sm text-secondary-text" role="status">
                     {t('settingsSectionLoading')}
                   </p>
                 }
