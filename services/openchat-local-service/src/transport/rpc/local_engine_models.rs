@@ -23,6 +23,8 @@ pub(super) async fn dispatch(
     match method {
         "local.engines.list" => local_engines::list(storage).await,
         "local.engines.runtime.status" => local_engines::runtime_status(storage).await,
+        "local.engines.settings.get" => local_engines::settings(storage),
+        "local.engines.settings.set" => local_engines::update_settings(storage, params),
         "local.engines.llama_server_path.set" => local_engines::set_llama_server_executable_path(
             storage,
             optional_string(params, "path")?,
@@ -247,6 +249,61 @@ mod tests {
         .await
         .expect_err("unknown local model methods are rejected");
         assert_eq!(unknown_method.code, "method_not_found");
+    }
+
+    #[tokio::test]
+    async fn local_engine_settings_rpc_gets_and_updates_configuration() {
+        let directory = TestDirectory::new();
+        let storage = AppStorage::open_at(directory.0.join("data")).expect("open test storage");
+        let (_sender, mut cancellation) = watch::channel(false);
+        let events = EventSink::new();
+
+        let initial = dispatch(
+            "local.engines.settings.get",
+            &json!({}),
+            &json!("req-get-1"),
+            &storage,
+            &events,
+            &mut cancellation,
+        )
+        .await
+        .expect("get settings should succeed");
+        assert_eq!(initial["gpuLayers"], serde_json::Value::Null);
+
+        let updated = dispatch(
+            "local.engines.settings.set",
+            &json!({
+                "gpuLayers": 33,
+                "threads": 8,
+                "contextSize": 8192,
+                "flashAttention": true,
+                "customArguments": "--numa",
+            }),
+            &json!("req-set-1"),
+            &storage,
+            &events,
+            &mut cancellation,
+        )
+        .await
+        .expect("set settings should succeed");
+        assert_eq!(updated["gpuLayers"], 33);
+        assert_eq!(updated["threads"], 8);
+        assert_eq!(updated["contextSize"], 8192);
+        assert_eq!(updated["flashAttention"], true);
+        assert_eq!(updated["customArguments"], "--numa");
+
+        let fetched = dispatch(
+            "local.engines.settings.get",
+            &json!({}),
+            &json!("req-get-2"),
+            &storage,
+            &events,
+            &mut cancellation,
+        )
+        .await
+        .expect("get updated settings should succeed");
+        assert_eq!(fetched["gpuLayers"], 33);
+        assert_eq!(fetched["contextSize"], 8192);
     }
 
     struct TestDirectory(PathBuf);

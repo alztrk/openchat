@@ -295,7 +295,8 @@ fn llama_server_arguments_pass_a_single_matching_vision_projector() {
         created_at_unix_ms: 0,
     };
 
-    let arguments = llama_server_arguments(&model, 12345).expect("arguments should build");
+    let arguments =
+        llama_server_arguments(&temporary.0, &model, 12345).expect("arguments should build");
     let projector_argument = arguments
         .iter()
         .position(|argument| argument == "--mmproj")
@@ -349,9 +350,95 @@ fn llama_server_arguments_omit_projector_for_text_only_models() {
         created_at_unix_ms: 0,
     };
 
-    let arguments = llama_server_arguments(&model, 12345).expect("arguments should build");
+    let arguments =
+        llama_server_arguments(&temporary.0, &model, 12345).expect("arguments should build");
 
     assert!(!arguments.iter().any(|argument| argument == "--mmproj"));
+}
+
+#[test]
+fn llama_server_arguments_include_configured_hardware_options() {
+    let temporary = TestDirectory::new();
+    let model_path = temporary.0.join("text-model.gguf");
+    fs::write(&model_path, b"model").expect("model fixture should be written");
+    let model = crate::local_engines::models::RegisteredModel {
+        id: "model-id".to_owned(),
+        engine_id: "llama_cpp".to_owned(),
+        display_name: "text-model".to_owned(),
+        path: model_path,
+        path_kind: "file".to_owned(),
+        created_at_unix_ms: 0,
+    };
+
+    crate::local_engines::settings::update_settings(
+        &temporary.0,
+        &serde_json::json!({
+            "gpuLayers": 99,
+            "threads": 16,
+            "threadsBatch": 24,
+            "contextSize": 32768,
+            "batchSize": 2048,
+            "ubatchSize": 512,
+            "flashAttention": true,
+            "mlock": true,
+            "noMmap": true,
+            "parallel": 4,
+            "customArguments": "--cache-type-k q8_0 --numa",
+        }),
+    )
+    .expect("settings update should succeed");
+
+    let arguments =
+        llama_server_arguments(&temporary.0, &model, 8080).expect("arguments should build");
+
+    let ngl_pos = arguments
+        .iter()
+        .position(|a| a == "-ngl")
+        .expect("-ngl present");
+    assert_eq!(arguments[ngl_pos + 1], "99");
+
+    let t_pos = arguments
+        .iter()
+        .position(|a| a == "-t")
+        .expect("-t present");
+    assert_eq!(arguments[t_pos + 1], "16");
+
+    let tb_pos = arguments
+        .iter()
+        .position(|a| a == "-tb")
+        .expect("-tb present");
+    assert_eq!(arguments[tb_pos + 1], "24");
+
+    let c_pos = arguments
+        .iter()
+        .position(|a| a == "-c")
+        .expect("-c present");
+    assert_eq!(arguments[c_pos + 1], "32768");
+
+    let b_pos = arguments
+        .iter()
+        .position(|a| a == "-b")
+        .expect("-b present");
+    assert_eq!(arguments[b_pos + 1], "2048");
+
+    let ub_pos = arguments
+        .iter()
+        .position(|a| a == "-ub")
+        .expect("-ub present");
+    assert_eq!(arguments[ub_pos + 1], "512");
+
+    let np_pos = arguments
+        .iter()
+        .position(|a| a == "-np")
+        .expect("-np present");
+    assert_eq!(arguments[np_pos + 1], "4");
+
+    assert!(arguments.iter().any(|a| a == "--flash-attn"));
+    assert!(arguments.iter().any(|a| a == "--mlock"));
+    assert!(arguments.iter().any(|a| a == "--no-mmap"));
+    assert!(arguments.iter().any(|a| a == "--cache-type-k"));
+    assert!(arguments.iter().any(|a| a == "q8_0"));
+    assert!(arguments.iter().any(|a| a == "--numa"));
 }
 
 #[tokio::test]

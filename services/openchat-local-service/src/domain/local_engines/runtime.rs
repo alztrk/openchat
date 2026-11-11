@@ -8,7 +8,7 @@ pub(super) use std::{
     collections::{HashMap, HashSet},
     ffi::OsString,
     net::SocketAddr,
-    path::PathBuf,
+    path::{Path, PathBuf},
     process::Stdio,
     sync::{Arc, OnceLock, Weak},
     time::Duration,
@@ -214,7 +214,7 @@ async fn start_model_in_slot(
     let started_at = Instant::now();
     let launch = match model.engine_id.as_str() {
         "llama_cpp" => RuntimeLaunch {
-            arguments: llama_server_arguments(model, port)?,
+            arguments: llama_server_arguments(storage.root(), model, port)?,
             current_directory: installed.root.clone(),
             initial_capabilities: None,
             provider_model_id: model.id.clone(),

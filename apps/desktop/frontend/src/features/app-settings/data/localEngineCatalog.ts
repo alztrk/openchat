@@ -63,6 +63,36 @@ export interface ExternalCandidate {
   port: number;
 }
 
+export interface LocalEngineSettings {
+  llamaServerExecutablePath: string | null;
+  gpuLayers: number | null;
+  threads: number | null;
+  threadsBatch: number | null;
+  contextSize: number | null;
+  batchSize: number | null;
+  ubatchSize: number | null;
+  flashAttention: boolean | null;
+  mlock: boolean | null;
+  noMmap: boolean | null;
+  parallel: number | null;
+  customArguments: string | null;
+}
+
+export const DEFAULT_LOCAL_ENGINE_SETTINGS: LocalEngineSettings = {
+  llamaServerExecutablePath: null,
+  gpuLayers: null,
+  threads: null,
+  threadsBatch: null,
+  contextSize: null,
+  batchSize: null,
+  ubatchSize: null,
+  flashAttention: null,
+  mlock: null,
+  noMmap: null,
+  parallel: null,
+  customArguments: null,
+};
+
 export interface EngineCatalog {
   engines: LocalEngine[];
   models: LocalModel[];
@@ -70,6 +100,7 @@ export interface EngineCatalog {
   externalServers: ExternalServer[];
   executablePath: string | null;
   executableAvailable: boolean;
+  settings: LocalEngineSettings;
   hostOs: string;
 }
 
@@ -103,7 +134,7 @@ export interface Notice {
 }
 
 export type LoadState = 'loading' | 'ready' | 'error';
-export type BusyAction = 'install' | 'start' | 'scan' | 'register' | 'remove' | 'executable' | 'external';
+export type BusyAction = 'install' | 'start' | 'scan' | 'register' | 'remove' | 'executable' | 'external' | 'settings';
 export type EngineErrorKey =
   | 'localEnginesLoadFailed'
   | 'localEngineInstallFailed'
@@ -156,6 +187,7 @@ export function parseCatalog(value: JsonObject): EngineCatalog {
     externalServers: value.externalLlamaServers.map(parseExternalServer),
     executablePath: optionalString(value.llamaServerExecutablePath),
     executableAvailable: value.llamaServerExecutableAvailable === true,
+    settings: parseLocalEngineSettings(value.settings),
     hostOs: parseHostOs(value.host),
   };
 }
@@ -440,6 +472,32 @@ function optionalString(value: unknown): string | null {
 
 function positiveInteger(value: unknown): value is number {
   return typeof value === 'number' && Number.isSafeInteger(value) && value > 0;
+}
+
+function positiveIntegerOrNull(value: unknown): number | null {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value > 0 ? value : null;
+}
+
+function optionalBoolean(value: unknown): boolean | null {
+  return typeof value === 'boolean' ? value : null;
+}
+
+export function parseLocalEngineSettings(value: unknown): LocalEngineSettings {
+  if (!isObject(value)) return { ...DEFAULT_LOCAL_ENGINE_SETTINGS };
+  return {
+    llamaServerExecutablePath: optionalString(value.llamaServerExecutablePath),
+    gpuLayers: nonNegativeIntegerOrNull(value.gpuLayers),
+    threads: positiveIntegerOrNull(value.threads),
+    threadsBatch: positiveIntegerOrNull(value.threadsBatch),
+    contextSize: positiveIntegerOrNull(value.contextSize),
+    batchSize: positiveIntegerOrNull(value.batchSize),
+    ubatchSize: positiveIntegerOrNull(value.ubatchSize),
+    flashAttention: optionalBoolean(value.flashAttention),
+    mlock: optionalBoolean(value.mlock),
+    noMmap: optionalBoolean(value.noMmap),
+    parallel: positiveIntegerOrNull(value.parallel),
+    customArguments: optionalString(value.customArguments),
+  };
 }
 
 function nonNegativeIntegerOrNull(value: unknown): number | null {

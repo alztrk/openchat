@@ -11,9 +11,11 @@ pub(super) async fn available_loopback_port() -> Result<u16, ServiceError> {
 }
 
 pub(super) fn llama_server_arguments(
+    storage_root: &Path,
     model: &models::RegisteredModel,
     port: u16,
 ) -> Result<Vec<OsString>, ServiceError> {
+    let settings = settings::read_settings(storage_root)?;
     let mut arguments = vec![
         OsString::from("--model"),
         model.path.as_os_str().to_owned(),
@@ -25,6 +27,62 @@ pub(super) fn llama_server_arguments(
         OsString::from(&model.id),
         OsString::from("--no-ui"),
     ];
+
+    if let Some(gpu_layers) = settings.gpu_layers {
+        arguments.push(OsString::from("-ngl"));
+        arguments.push(OsString::from(gpu_layers.to_string()));
+    }
+
+    if let Some(threads) = settings.threads {
+        arguments.push(OsString::from("-t"));
+        arguments.push(OsString::from(threads.to_string()));
+    }
+
+    if let Some(threads_batch) = settings.threads_batch {
+        arguments.push(OsString::from("-tb"));
+        arguments.push(OsString::from(threads_batch.to_string()));
+    }
+
+    if let Some(context_size) = settings.context_size {
+        arguments.push(OsString::from("-c"));
+        arguments.push(OsString::from(context_size.to_string()));
+    }
+
+    if let Some(batch_size) = settings.batch_size {
+        arguments.push(OsString::from("-b"));
+        arguments.push(OsString::from(batch_size.to_string()));
+    }
+
+    if let Some(ubatch_size) = settings.ubatch_size {
+        arguments.push(OsString::from("-ub"));
+        arguments.push(OsString::from(ubatch_size.to_string()));
+    }
+
+    if settings.flash_attention == Some(true) {
+        arguments.push(OsString::from("--flash-attn"));
+    }
+
+    if settings.mlock == Some(true) {
+        arguments.push(OsString::from("--mlock"));
+    }
+
+    if settings.no_mmap == Some(true) {
+        arguments.push(OsString::from("--no-mmap"));
+    }
+
+    if let Some(parallel) = settings.parallel {
+        arguments.push(OsString::from("-np"));
+        arguments.push(OsString::from(parallel.to_string()));
+    }
+
+    if let Some(custom) = settings.custom_arguments.as_deref() {
+        for arg in custom.split_whitespace() {
+            if !arg.is_empty() {
+                arguments.push(OsString::from(arg));
+            }
+        }
+    }
+
     if let Some(projector) = models::vision_projector_path(&model.path)? {
         arguments.push(OsString::from("--mmproj"));
         arguments.push(projector.into_os_string());

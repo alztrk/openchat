@@ -8,6 +8,7 @@ import type {
   ExternalServer,
   InstallProgress,
   LocalEngine,
+  LocalEngineSettings,
   LocalModel,
 } from '@features/app-settings/data/localEngineCatalog';
 import {
@@ -46,11 +47,14 @@ export function EngineCard({
   onDisconnectExternalServer,
   onInstall,
   onRemove,
+  onSaveSettings,
   onStart,
   onStop,
   onToggle,
   onUseDefaultDirectory,
   runningModelIds,
+  settings,
+  settingsActive,
   startingModelId,
   startingModelIsCancelling,
 }: {
@@ -77,11 +81,14 @@ export function EngineCard({
   onDisconnectExternalServer(server: ExternalServer): void;
   onInstall(variant: EngineVariant): void;
   onRemove(model: LocalModel): void;
+  onSaveSettings(updated: LocalEngineSettings): Promise<void>;
   onStart(modelId: string): void;
   onStop(modelId: string): void;
   onToggle(): void;
   onUseDefaultDirectory(): void;
   runningModelIds: string[];
+  settings: LocalEngineSettings;
+  settingsActive: boolean;
   startingModelId: string | null;
   startingModelIsCancelling: boolean;
 }) {
@@ -148,6 +155,9 @@ export function EngineCard({
               onChooseExecutable={onChooseExecutable}
               onClearExecutable={onClearExecutable}
               onDisconnectExternalServer={onDisconnectExternalServer}
+              onSaveSettings={onSaveSettings}
+              settings={settings}
+              settingsActive={settingsActive}
               showExternalCheck={hostOs === 'windows'}
             />
           ) : null}

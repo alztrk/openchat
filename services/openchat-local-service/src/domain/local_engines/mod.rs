@@ -125,6 +125,7 @@ pub(crate) async fn list(storage: &AppStorage) -> Result<Value, ServiceError> {
             .as_ref()
             .and_then(|path| path.to_str()),
         "llamaServerExecutableAvailable": llama_server_executable_available,
+        "settings": settings::settings_json(storage.root())?,
         "host": {
             "os": host_os(),
             "architecture": host_architecture(),
@@ -202,6 +203,14 @@ pub(crate) fn set_llama_server_executable_path(
     path: Option<&str>,
 ) -> Result<Value, ServiceError> {
     settings::set_llama_server_executable_path(storage.root(), path)
+}
+
+pub(crate) fn settings(storage: &AppStorage) -> Result<Value, ServiceError> {
+    settings::settings_json(storage.root())
+}
+
+pub(crate) fn update_settings(storage: &AppStorage, params: &Value) -> Result<Value, ServiceError> {
+    settings::update_settings(storage.root(), params)
 }
 
 pub(crate) async fn detect_external_llama_servers() -> Result<Value, ServiceError> {

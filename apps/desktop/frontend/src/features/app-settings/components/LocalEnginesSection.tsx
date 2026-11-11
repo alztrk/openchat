@@ -13,6 +13,7 @@ import type {
   InstallProgress,
   LoadState,
   LocalEngine,
+  LocalEngineSettings,
   LocalModel,
   Notice,
   PendingRegistration,
@@ -164,6 +165,35 @@ export function LocalEnginesSection() {
       await loadCatalog();
     } catch {
       setErrorKey('localEngineSettingsFailed');
+    } finally {
+      setActiveAction(null);
+    }
+  };
+
+  const saveSettings = async (updatedSettings: LocalEngineSettings) => {
+    if (activeAction !== null) return;
+    setActiveAction('settings');
+    setErrorKey(null);
+    setNotice(null);
+    try {
+      await localServiceClient.call('local.engines.settings.set', {
+        llamaServerExecutablePath: updatedSettings.llamaServerExecutablePath,
+        gpuLayers: updatedSettings.gpuLayers,
+        threads: updatedSettings.threads,
+        threadsBatch: updatedSettings.threadsBatch,
+        contextSize: updatedSettings.contextSize,
+        batchSize: updatedSettings.batchSize,
+        ubatchSize: updatedSettings.ubatchSize,
+        flashAttention: updatedSettings.flashAttention,
+        mlock: updatedSettings.mlock,
+        noMmap: updatedSettings.noMmap,
+        parallel: updatedSettings.parallel,
+        customArguments: updatedSettings.customArguments,
+      });
+      setNotice({ key: 'localEngineSettingsSaved' });
+      await loadCatalog();
+    } catch (error) {
+      setErrorKey(modelActionErrorKey(error));
     } finally {
       setActiveAction(null);
     }
@@ -486,6 +516,7 @@ export function LocalEnginesSection() {
                 )
               }
               onRemove={(model) => setRemoveTarget(model)}
+              onSaveSettings={saveSettings}
               onStart={(modelId) => void startModel(modelId)}
               onStop={(modelId) => void stopModel(modelId)}
               onToggle={() =>
@@ -498,6 +529,8 @@ export function LocalEnginesSection() {
               }
               onUseDefaultDirectory={() => void restoreEngineDefaultDirectory(engine)}
               runningModelIds={catalog.runningModelIds}
+              settings={catalog.settings}
+              settingsActive={activeAction === 'settings'}
               startingModelId={startingModelId}
               startingModelIsCancelling={isCancelling}
             />
