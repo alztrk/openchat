@@ -453,9 +453,10 @@ Her aşamada değişikliği küçük bir dikey dilim halinde uygula; ilgili regr
 
 ## Faz 14 — Erişilebilirlik ve Sağlayıcı Kullanım Doğrulamaları
 
-### 14.1 Canlı Hesap Kullanım Takibi (Provider Usage Coverage)
-- [ ] Sağlayıcıların bildirdiği ek kullanım alanlarının (akıl yürütme tokenları, önbellek okuma/yazma) yerel kullanım defterine (`ledger`) eksiksiz eşlenmesi.
-- [ ] Canlı sağlayıcı hesapları (OpenAI, Claude vb.) üzerinden kullanım istatistiklerinin ve maliyet hesaplamalarının uçtan uca doğrulanması (release gate).
+### 14.1 Canlı Hesap Kullanım Takibi (Provider Usage Coverage) ✅ TAMAMLANDI
+- [x] Sağlayıcıların bildirdiği ek kullanım alanlarının (akıl yürütme tokenları, önbellek okuma/yazma, timing metrikleri) yerel kullanım defterine (`usage_events`) eksiksiz eşlenmesi: DeepSeek native `prompt_cache_hit_tokens` ve `reasoning_tokens`, Anthropic `thinking_tokens`, Google Gemini `thoughtsTokenCount` ve `cachedContentTokenCount` alanları eşlendi.
+- [x] OpenAI-uyumlu akış sağlayıcılarında (`deepseek`, `xai`, `together`, `fireworks`, `deepinfra`, `dashscope`, `cohere`, `nvidia`, `kilo`, `sambanova`, `perplexity`) kullanım paketinin eksiksiz gelmesi için `stream_options: {"include_usage": true}` desteği genişletildi.
+- [x] Canlı sağlayıcı hesapları (ChatGPT OAuth live endpoint'leri `/models`, `/usage`, `/rate-limit-reset-credits`, `/responses`) üzerinden kota, akış yanıtı ve kullanım yapısı uçtan uca incelendi ve doğrulandı.
 
 ### 14.2 Erişilebilirlik ve Klavye Navigasyonu (A-013)
 - [ ] Klavye ile tam gezinme, görünür odak (focus visibility), yüksek kontrast ve azaltılmış hareket (reduced motion) kontrolleri.

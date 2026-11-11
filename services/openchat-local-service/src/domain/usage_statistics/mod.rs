@@ -127,13 +127,16 @@ impl UsageData {
             output_tokens: nonnegative_token(
                 usage.and_then(|usage| usage.get("completion_tokens")),
             ),
-            reasoning_tokens: nonnegative_token(
+            reasoning_tokens: nonnegative_token(usage.and_then(|usage| {
                 usage
-                    .and_then(|usage| usage.pointer("/completion_tokens_details/reasoning_tokens")),
-            ),
-            cached_input_tokens: nonnegative_token(
-                usage.and_then(|usage| usage.pointer("/prompt_tokens_details/cached_tokens")),
-            ),
+                    .pointer("/completion_tokens_details/reasoning_tokens")
+                    .or_else(|| usage.get("reasoning_tokens"))
+            })),
+            cached_input_tokens: nonnegative_token(usage.and_then(|usage| {
+                usage
+                    .pointer("/prompt_tokens_details/cached_tokens")
+                    .or_else(|| usage.get("prompt_cache_hit_tokens"))
+            })),
             cache_write_tokens: nonnegative_token(usage.and_then(|usage| {
                 usage
                     .pointer("/prompt_tokens_details/cache_write_tokens")
@@ -170,7 +173,12 @@ impl UsageData {
                 .as_ref()
                 .and_then(|(_, output, _, _)| *output)
                 .or_else(|| nonnegative_token(usage.and_then(|usage| usage.get("output_tokens")))),
-            reasoning_tokens: None,
+            reasoning_tokens: nonnegative_token(usage.and_then(|usage| {
+                usage
+                    .get("thinking_tokens")
+                    .or_else(|| usage.pointer("/output_tokens_details/thinking_tokens"))
+                    .or_else(|| usage.get("reasoning_tokens"))
+            })),
             cached_input_tokens: iteration_usage
                 .as_ref()
                 .and_then(|(_, _, cached, _)| *cached)

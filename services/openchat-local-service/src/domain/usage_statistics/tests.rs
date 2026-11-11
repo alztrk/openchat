@@ -267,6 +267,51 @@ mod usage_data_tests {
     }
 
     #[test]
+    fn deepseek_native_usage_maps_prompt_cache_hit_and_reasoning_tokens() {
+        let usage = UsageData::from_chat_completion_event(
+            &json!({
+                "usage": {
+                    "prompt_tokens": 1500,
+                    "completion_tokens": 300,
+                    "prompt_cache_hit_tokens": 1200,
+                    "prompt_cache_miss_tokens": 300,
+                    "completion_tokens_details": {
+                        "reasoning_tokens": 180
+                    }
+                }
+            }),
+            "deepseek",
+        );
+
+        assert_eq!(usage.input_tokens, Some(1500));
+        assert_eq!(usage.output_tokens, Some(300));
+        assert_eq!(usage.cached_input_tokens, Some(1200));
+        assert_eq!(usage.reasoning_tokens, Some(180));
+    }
+
+    #[test]
+    fn anthropic_messages_usage_maps_thinking_tokens() {
+        let usage = UsageData::from_messages_event(
+            &json!({
+                "usage": {
+                    "input_tokens": 500,
+                    "output_tokens": 250,
+                    "thinking_tokens": 150,
+                    "cache_read_input_tokens": 300,
+                    "cache_creation_input_tokens": 200
+                }
+            }),
+            "anthropic",
+        );
+
+        assert_eq!(usage.input_tokens, Some(1000));
+        assert_eq!(usage.output_tokens, Some(250));
+        assert_eq!(usage.reasoning_tokens, Some(150));
+        assert_eq!(usage.cached_input_tokens, Some(300));
+        assert_eq!(usage.cache_write_tokens, Some(200));
+    }
+
+    #[test]
     fn gemini_generate_content_usage_maps_prompt_cache_candidates_and_thoughts() {
         let usage = UsageData::from_chat_completion_event(
             &json!({

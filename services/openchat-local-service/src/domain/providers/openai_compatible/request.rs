@@ -323,7 +323,23 @@ pub(super) fn chat_completion_body(
     if provider_id.starts_with("custom_")
         || matches!(
             provider_id,
-            "chatgpt_api" | "opencode" | "gemini" | "groq" | "mistral" | "openrouter"
+            "chatgpt_api"
+                | "opencode"
+                | "gemini"
+                | "groq"
+                | "mistral"
+                | "openrouter"
+                | "deepseek"
+                | "xai"
+                | "together"
+                | "fireworks"
+                | "deepinfra"
+                | "dashscope"
+                | "cohere"
+                | "nvidia"
+                | "kilo"
+                | "sambanova"
+                | "perplexity"
         )
     {
         body["stream_options"] = json!({"include_usage": true});
@@ -1068,6 +1084,17 @@ mod tests {
             "groq",
             "mistral",
             "openrouter",
+            "deepseek",
+            "xai",
+            "together",
+            "fireworks",
+            "deepinfra",
+            "dashscope",
+            "cohere",
+            "nvidia",
+            "kilo",
+            "sambanova",
+            "perplexity",
         ] {
             let body = chat_completion_body(&request(), &[], provider_id, false);
 
