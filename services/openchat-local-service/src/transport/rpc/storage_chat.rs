@@ -91,6 +91,7 @@ macro_rules! conversation_from_row {
             "updatedAt": row.get::<_, i64>(12)?,
             "reasoningEffort": row.get::<_, Option<String>>(14)?,
             "unreadMessageId": row.get::<_, Option<String>>(15)?,
+            "activeLeafMessageId": row.get::<_, Option<String>>(16)?,
             "agent": agent,
         }))
     }};
@@ -170,6 +171,9 @@ async fn dispatch_inner(
         "storage.chat.conversations.get" => get_conversation(params, storage),
         "storage.chat.conversations.unread.set" => set_conversation_unread(params, storage),
         "storage.chat.conversations.unread.clear" => clear_conversation_unread(params, storage),
+        "storage.chat.conversations.active_leaf.set" => {
+            set_conversation_active_leaf(params, storage)
+        }
         "storage.chat.conversations.create" => create_conversation(params, storage),
         "storage.chat.conversations.rename" => rename_conversation(params, storage),
         "storage.chat.conversations.route.set" => set_conversation_route(params, storage),

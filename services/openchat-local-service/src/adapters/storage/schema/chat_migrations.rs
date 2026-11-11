@@ -34,6 +34,7 @@ pub(crate) fn needs_repair(connection: &Connection) -> rusqlite::Result<bool> {
         ("conversations", "agent_json"),
         ("conversations", "reasoning_effort"),
         ("conversations", "unread_message_id"),
+        ("conversations", "active_leaf_message_id"),
         ("messages", "id"),
         ("messages", "conversation_id"),
         ("messages", "role"),
@@ -47,6 +48,7 @@ pub(crate) fn needs_repair(connection: &Connection) -> rusqlite::Result<bool> {
         ("messages", "model_id"),
         ("messages", "citation_sources"),
         ("messages", "personal_memory_fact_ids"),
+        ("messages", "parent_message_id"),
         ("projects", "id"),
         ("projects", "name"),
         ("projects", "folder_path"),
@@ -425,6 +427,40 @@ pub fn migrate_chat_schema(connection: &mut Connection) -> rusqlite::Result<()> 
                 ON messages(conversation_id, COALESCE(created_at, 0) DESC, id DESC);",
         )?;
         transaction.pragma_update(None, "user_version", 26)?;
+        version = 26;
+    }
+    if version < 27 {
+        add_column(
+            &transaction,
+            "conversations",
+            "active_leaf_message_id",
+            "TEXT",
+        )?;
+        add_column(&transaction, "messages", "parent_message_id", "TEXT")?;
+        transaction.execute_batch(
+            "CREATE INDEX IF NOT EXISTS idx_messages_parent
+                ON messages(conversation_id, parent_message_id);
+             UPDATE messages
+             SET parent_message_id = (
+                 SELECT prev.id FROM messages prev
+                 WHERE prev.conversation_id = messages.conversation_id
+                   AND (COALESCE(prev.created_at, 0) < COALESCE(messages.created_at, 0)
+                        OR (COALESCE(prev.created_at, 0) = COALESCE(messages.created_at, 0) AND prev.id < messages.id))
+                 ORDER BY COALESCE(prev.created_at, 0) DESC, prev.id DESC
+                 LIMIT 1
+             )
+             WHERE parent_message_id IS NULL;
+             UPDATE conversations
+             SET active_leaf_message_id = (
+                 SELECT m.id FROM messages m
+                 WHERE m.conversation_id = conversations.id
+                 ORDER BY COALESCE(m.created_at, 0) DESC, m.id DESC
+                 LIMIT 1
+             )
+             WHERE active_leaf_message_id IS NULL;",
+        )?;
+        transaction.pragma_update(None, "user_version", 27)?;
+        let _ = version;
     }
     transaction.commit()?;
     repair_chat_schema(connection)
@@ -477,6 +513,7 @@ fn repair_chat_schema(connection: &Connection) -> rusqlite::Result<()> {
         ),
         ("conversations", "agent_json", "TEXT"),
         ("conversations", "unread_message_id", "TEXT"),
+        ("conversations", "active_leaf_message_id", "TEXT"),
         (
             "messages",
             "reasoning_summaries",
@@ -492,6 +529,7 @@ fn repair_chat_schema(connection: &Connection) -> rusqlite::Result<()> {
             "personal_memory_fact_ids",
             "TEXT NOT NULL DEFAULT '[]'",
         ),
+        ("messages", "parent_message_id", "TEXT"),
     ] {
         add_column(&transaction, table, name, definition)?;
     }
@@ -503,7 +541,9 @@ fn repair_chat_schema(connection: &Connection) -> rusqlite::Result<()> {
          CREATE INDEX IF NOT EXISTS idx_conversations_sort_list
             ON conversations(is_bookmarked DESC, is_pinned DESC, updated_at DESC, id ASC);
          CREATE INDEX IF NOT EXISTS idx_messages_conversation_sort
-            ON messages(conversation_id, created_at ASC, id ASC);",
+            ON messages(conversation_id, created_at ASC, id ASC);
+         CREATE INDEX IF NOT EXISTS idx_messages_parent
+            ON messages(conversation_id, parent_message_id);",
     )?;
     transaction.commit()?;
     validate_chat_schema(connection)
@@ -519,12 +559,14 @@ fn validate_chat_schema(connection: &Connection) -> rusqlite::Result<()> {
         ("conversations", "model_id"),
         ("conversations", "reasoning_effort"),
         ("conversations", "unread_message_id"),
+        ("conversations", "active_leaf_message_id"),
         ("messages", "id"),
         ("messages", "conversation_id"),
         ("messages", "role"),
         ("messages", "content"),
         ("messages", "created_at"),
         ("messages", "status"),
+        ("messages", "parent_message_id"),
         ("projects", "id"),
         ("projects", "name"),
         ("projects", "folder_path"),

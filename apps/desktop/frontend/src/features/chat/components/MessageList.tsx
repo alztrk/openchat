@@ -1,9 +1,9 @@
 import { LoaderCircle } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { ChatFileChange } from '@features/chat/data/chatFileChanges';
-import { groupResponses, startsNewDay, type ResponseGroup } from '@features/chat/data/messageGrouping';
-import type { ChatMessage } from '@features/chat/data';
+import { startsNewDay } from '@features/chat/data/messageGrouping';
+import { type ChatMessage, getActiveBranchMessages, getMessageSiblings } from '@features/chat/data';
 import { useInChatSearchHighlight } from '@features/chat/hooks/useInChatSearchHighlight';
 import { useVirtualMessageList } from '@features/chat/hooks/useVirtualMessageList';
 import { useChatStore } from '@features/chat/state';
@@ -79,34 +79,30 @@ export function MessageList({
     !isOverridden && activeConversationId === storeActiveConversationId && olderMessagesCursor !== null;
   const skipBottomScroll = useRef(false);
   const skippedCompletedResponseScroll = useRef(false);
-  const responseGroups = useMemo(() => groupResponses(messages), [messages]);
-  const [selectedResponseVersions, setSelectedResponseVersions] = useState<Record<string, number>>({});
+  const activeConversation = useChatStore((state) =>
+    state.conversations.find((c) => c.id === activeConversationId),
+  );
+  const switchMessageBranch = useChatStore((state) => state.switchMessageBranch);
 
-  // Build message ID → group map for O(1) lookup instead of O(n*m) .find()
-  const messageIdToGroupMap = useMemo(() => {
-    const map = new Map<string, ResponseGroup<ChatMessage>>();
-    for (const group of responseGroups) {
-      for (const message of group.messages) {
-        map.set(message.id, group);
-      }
-    }
-    return map;
-  }, [responseGroups]);
+  const activeBranchMessages = useMemo(
+    () => getActiveBranchMessages(messages, activeConversation?.activeLeafMessageId),
+    [messages, activeConversation?.activeLeafMessageId],
+  );
+
   const displayRows = useMemo(
     () =>
-      responseGroups.map((group) => {
-        const selectedIndex = normalizeResponseIndex(selectedResponseVersions[group.id], group.messages.length);
-        const message = group.messages[selectedIndex];
-        if (!message) throw new RangeError('Selected response version is outside its message group.');
+      activeBranchMessages.map((message) => {
+        const siblingInfo = getMessageSiblings(messages, message.id);
         return {
-          group,
           message,
-          responseVersionCount: group.messages.length,
-          responseVersionIndex: selectedIndex,
+          responseVersionCount: siblingInfo.count,
+          responseVersionIndex: siblingInfo.index,
+          siblings: siblingInfo.siblings,
         };
       }),
-    [responseGroups, selectedResponseVersions],
+    [activeBranchMessages, messages],
   );
+
   const visibleMessages = useMemo(() => displayRows.map((row) => row.message), [displayRows]);
   const hasStreamingAssistant =
     visibleMessages.at(-1)?.role === 'assistant' && visibleMessages.at(-1)?.status === 'streaming';
@@ -136,42 +132,39 @@ export function MessageList({
 
   const selectResponseVersion = useCallback(
     (message: ChatMessage, versionIndex: number) => {
-      const group = messageIdToGroupMap.get(message.id);
-      if (!group || versionIndex < 0 || versionIndex >= group.messages.length) return;
-      const selectedMessage = group.messages[versionIndex];
-      if (!selectedMessage) return;
-      setSelectedResponseVersions((current) => ({ ...current, [group.id]: versionIndex }));
-      onSelectResponseVersion?.(selectedMessage, versionIndex);
+      const siblingInfo = getMessageSiblings(messages, message.id);
+      if (versionIndex < 0 || versionIndex >= siblingInfo.siblings.length) return;
+      const targetSibling = siblingInfo.siblings[versionIndex];
+      if (!targetSibling) return;
+      void switchMessageBranch(targetSibling.id);
+      onSelectResponseVersion?.(targetSibling, versionIndex);
     },
-    [messageIdToGroupMap, onSelectResponseVersion],
+    [messages, switchMessageBranch, onSelectResponseVersion],
   );
 
   useEffect(() => {
     if (isLoadingMessages || !searchTargetMessageId) return;
-    const group = messageIdToGroupMap.get(searchTargetMessageId);
-    if (!group) return;
-    const selectedIndex = group.messages.findIndex((message) => message.id === searchTargetMessageId);
-    if (selectedIndex < 0) return;
-    setSelectedResponseVersions((current) =>
-      current[group.id] === selectedIndex ? current : { ...current, [group.id]: selectedIndex },
-    );
-  }, [isLoadingMessages, messageIdToGroupMap, searchTargetMessageId]);
+    if (!activeBranchMessages.some((m) => m.id === searchTargetMessageId)) {
+      const exists = messages.some((m) => m.id === searchTargetMessageId);
+      if (exists) {
+        void switchMessageBranch(searchTargetMessageId);
+      }
+    }
+  }, [activeBranchMessages, isLoadingMessages, messages, searchTargetMessageId, switchMessageBranch]);
 
   useEffect(() => {
     if (isLoadingMessages || !inChatTargetMessageId) return;
-    const group = messageIdToGroupMap.get(inChatTargetMessageId);
-    if (!group) return;
-    const selectedIndex = group.messages.findIndex((message) => message.id === inChatTargetMessageId);
-    if (selectedIndex < 0) return;
-    setSelectedResponseVersions((current) =>
-      current[group.id] === selectedIndex ? current : { ...current, [group.id]: selectedIndex },
-    );
-  }, [inChatTargetMessageId, isLoadingMessages, messageIdToGroupMap]);
+    if (!activeBranchMessages.some((m) => m.id === inChatTargetMessageId)) {
+      const exists = messages.some((m) => m.id === inChatTargetMessageId);
+      if (exists) {
+        void switchMessageBranch(inChatTargetMessageId);
+      }
+    }
+  }, [activeBranchMessages, inChatTargetMessageId, isLoadingMessages, messages, switchMessageBranch]);
 
   useEffect(() => {
     if (isLoadingMessages || !searchTargetMessageId) return;
     if (!virtualList.rows.some(({ message }) => message.id === searchTargetMessageId)) {
-      if (messageIdToGroupMap.has(searchTargetMessageId)) return;
       if (!virtualList.scrollToMessage(searchTargetMessageId)) clearSearchTarget(false);
       return;
     }
@@ -184,7 +177,6 @@ export function MessageList({
   }, [
     clearSearchTarget,
     isLoadingMessages,
-    messageIdToGroupMap,
     searchTargetMessageId,
     virtualList.rows,
     virtualList.scrollToMessage,
@@ -307,8 +299,7 @@ export function MessageList({
             message.role === 'assistant' &&
             message.status !== 'streaming' &&
             index === visibleMessages.length - 1 &&
-            visibleMessages[index - 1]?.role === 'user' &&
-            row?.responseVersionCount === 1;
+            visibleMessages[index - 1]?.role === 'user';
           return (
             <div className="min-w-0" key={message.id}>
               {isCompactingConversation && index === compactionInsertionIndex ? compactionStatus : null}
@@ -372,11 +363,6 @@ function CompactionStatusDivider({ label }: { label: string }) {
       <span aria-hidden="true" className="h-px flex-1 bg-border" />
     </div>
   );
-}
-
-function normalizeResponseIndex(index: number | undefined, length: number): number {
-  if (length < 1) return 0;
-  return index !== undefined && index >= 0 && index < length ? index : length - 1;
 }
 
 function messageGap(previous: ChatMessage | null, current: ChatMessage): number {

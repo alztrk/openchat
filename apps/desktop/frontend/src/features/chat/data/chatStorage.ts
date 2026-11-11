@@ -692,7 +692,7 @@ export async function duplicateConversation(
 export async function saveMessage(
   message: ChatMessage,
   attachments: readonly PendingChatAttachment[] = [],
-  options: { preserveToolActivities?: boolean } = {},
+  options: { preserveToolActivities?: boolean; preserveActiveLeaf?: boolean } = {},
 ): Promise<void> {
   const { toolActivities: persistedToolActivities, ...messageWithoutToolActivities } = message;
   const persistedMessage = options.preserveToolActivities ? messageWithoutToolActivities : message;
@@ -717,7 +717,9 @@ export async function saveMessage(
       {
         input: {
           ...persistedMessage,
+          parentMessageId: message.parentMessageId ?? null,
           ...(options.preserveToolActivities ? {} : { toolActivities: persistedToolActivities }),
+          ...(options.preserveActiveLeaf ? { preserveActiveLeaf: true } : {}),
           content: encodeStoredMessageContent(message.content, metadata),
           attachments: payload,
           createdAt: message.createdAt ?? Date.now(),
@@ -725,6 +727,17 @@ export async function saveMessage(
       },
       MESSAGE_SAVE_TIMEOUT_MS,
     ),
+  );
+}
+
+export async function setActiveLeafMessageId(
+  conversationId: string,
+  activeLeafMessageId: string,
+): Promise<void> {
+  expectSaved(
+    await localServiceClient.call('storage.chat.conversations.active_leaf.set', {
+      input: { conversationId, activeLeafMessageId },
+    }),
   );
 }
 
@@ -836,6 +849,7 @@ function isConversation(value: unknown): value is ChatConversation {
     typeof value.isPinned === 'boolean' &&
     typeof value.isArchived === 'boolean' &&
     isNullableString(value.unreadMessageId) &&
+    (value.activeLeafMessageId === undefined || isNullableString(value.activeLeafMessageId)) &&
     typeof value.createdAt === 'number' &&
     typeof value.updatedAt === 'number'
   );
@@ -915,7 +929,8 @@ function isMessage(value: unknown): value is Omit<ChatMessage, 'attachments'> {
     isJsonArray(value.reasoningSummaries) &&
     isJsonArray(value.toolActivities) &&
     isMessageStatus(value.status) &&
-    isNullableString(value.failureCode)
+    isNullableString(value.failureCode) &&
+    (value.parentMessageId === undefined || isNullableString(value.parentMessageId))
   );
 }
 

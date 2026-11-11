@@ -125,12 +125,11 @@ export const MessageItem = memo(function MessageItem({
 
   const hasResponseVersions = useMemo(
     () =>
-      !isUser &&
       onSelectResponseVersion !== undefined &&
       responseVersionIndex !== undefined &&
       responseVersionCount !== undefined &&
       responseVersionCount > 1,
-    [isUser, onSelectResponseVersion, responseVersionIndex, responseVersionCount],
+    [onSelectResponseVersion, responseVersionIndex, responseVersionCount],
   );
 
   // Memoize rendered timeline to prevent re-creating JSX on every render
@@ -260,7 +259,7 @@ export const MessageItem = memo(function MessageItem({
           </div>
         ) : null}
         {hasResponseVersions ? (
-          <div className="max-w-assistant-message">
+          <div className={isUser ? 'mb-2 flex justify-start' : 'max-w-assistant-message'}>
             <ResponseVersionSelector
               count={responseVersionCount ?? 0}
               index={responseVersionIndex ?? 0}

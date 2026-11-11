@@ -1991,6 +1991,170 @@ async fn archive_restore_recovers_interrupted_attachment_and_stage_files_before_
     );
 }
 
+#[tokio::test]
+async fn message_branching_and_active_leaf_selection_works() {
+    let directory = TestDirectory::new();
+    let storage = initialized_chat_storage(&directory);
+    let conversation_id = "branch-test-conversation";
+
+    dispatch(
+        "storage.chat.conversations.create",
+        &json!({
+            "input": {
+                "id": conversation_id,
+                "title": "Branch Test",
+                "providerId": "chatgpt",
+                "modelId": "gpt-4o",
+            }
+        }),
+        &storage,
+    )
+    .await
+    .expect("create conversation");
+
+    // Save initial user message u1
+    dispatch(
+        "storage.chat.messages.save",
+        &json!({
+            "input": {
+                "id": "u1",
+                "conversationId": conversation_id,
+                "role": "user",
+                "content": "Hello",
+                "status": "completed",
+                "parentMessageId": null,
+            }
+        }),
+        &storage,
+    )
+    .await
+    .expect("save u1");
+
+    // Check conversation has activeLeafMessageId = "u1"
+    let conv = dispatch(
+        "storage.chat.conversations.get",
+        &json!({"input": {"conversationId": conversation_id}}),
+        &storage,
+    )
+    .await
+    .expect("get conversation");
+    assert_eq!(conv["conversation"]["activeLeafMessageId"], "u1");
+
+    // Save assistant response a1
+    dispatch(
+        "storage.chat.messages.save",
+        &json!({
+            "input": {
+                "id": "a1",
+                "conversationId": conversation_id,
+                "role": "assistant",
+                "content": "Hi there!",
+                "status": "completed",
+                "parentMessageId": "u1",
+            }
+        }),
+        &storage,
+    )
+    .await
+    .expect("save a1");
+
+    let conv = dispatch(
+        "storage.chat.conversations.get",
+        &json!({"input": {"conversationId": conversation_id}}),
+        &storage,
+    )
+    .await
+    .expect("get conversation");
+    assert_eq!(conv["conversation"]["activeLeafMessageId"], "a1");
+
+    // Save user message branch u2_v1
+    dispatch(
+        "storage.chat.messages.save",
+        &json!({
+            "input": {
+                "id": "u2_v1",
+                "conversationId": conversation_id,
+                "role": "user",
+                "content": "Tell me a joke",
+                "status": "completed",
+                "parentMessageId": "a1",
+            }
+        }),
+        &storage,
+    )
+    .await
+    .expect("save u2_v1");
+
+    // Save user message branch u2_v2 (sibling of u2_v1 with parent a1)
+    dispatch(
+        "storage.chat.messages.save",
+        &json!({
+            "input": {
+                "id": "u2_v2",
+                "conversationId": conversation_id,
+                "role": "user",
+                "content": "Tell me a story",
+                "status": "completed",
+                "parentMessageId": "a1",
+            }
+        }),
+        &storage,
+    )
+    .await
+    .expect("save u2_v2");
+
+    let conv = dispatch(
+        "storage.chat.conversations.get",
+        &json!({"input": {"conversationId": conversation_id}}),
+        &storage,
+    )
+    .await
+    .expect("get conversation");
+    assert_eq!(conv["conversation"]["activeLeafMessageId"], "u2_v2");
+
+    // Switch active leaf back to u2_v1
+    dispatch(
+        "storage.chat.conversations.active_leaf.set",
+        &json!({
+            "input": {
+                "conversationId": conversation_id,
+                "activeLeafMessageId": "u2_v1",
+            }
+        }),
+        &storage,
+    )
+    .await
+    .expect("set active leaf to u2_v1");
+
+    let conv = dispatch(
+        "storage.chat.conversations.get",
+        &json!({"input": {"conversationId": conversation_id}}),
+        &storage,
+    )
+    .await
+    .expect("get conversation");
+    assert_eq!(conv["conversation"]["activeLeafMessageId"], "u2_v1");
+
+    // Check list_messages returns parentMessageId for all messages
+    let messages = dispatch(
+        "storage.chat.messages.list",
+        &json!({"input": {"conversationId": conversation_id}}),
+        &storage,
+    )
+    .await
+    .expect("list messages");
+    let msgs = messages["messages"].as_array().expect("messages array");
+    assert_eq!(msgs.len(), 4);
+    assert_eq!(msgs[0]["id"], "u1");
+    assert_eq!(msgs[0]["parentMessageId"], Value::Null);
+    assert_eq!(msgs[1]["id"], "a1");
+    assert_eq!(msgs[1]["parentMessageId"], "u1");
+    assert_eq!(msgs[2]["id"], "u2_v1");
+    assert_eq!(msgs[2]["parentMessageId"], "a1");
+    assert_eq!(msgs[3]["id"], "u2_v2");
+    assert_eq!(msgs[3]["parentMessageId"], "a1");
+}
+
 struct TestDirectory(PathBuf);
 
 impl TestDirectory {

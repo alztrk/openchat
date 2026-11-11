@@ -1,6 +1,11 @@
-import { createConversationBranchFromUserMessage } from '@features/chat/data';
+import {
+  type ChatMessage,
+  findLeafForMessage,
+  getActiveBranchMessages,
+  saveMessage,
+  setActiveLeafMessageId,
+} from '@features/chat/data';
 import type { ChatState } from './chatStore';
-import { isSameRoute } from './chatStoreUtils';
 
 type StoreGet = () => ChatState;
 type StoreSet = (partial: Partial<ChatState> | ((state: ChatState) => Partial<ChatState>)) => void;
@@ -9,24 +14,19 @@ export function createBranchesActions(set: StoreSet, get: StoreGet) {
   return {
     async retryMessage(messageId: string): Promise<boolean> {
       const current = get();
-      const messageIndex = current.messages.findIndex((message) => message.id === messageId);
-      const message = messageIndex >= 0 ? current.messages[messageIndex] : null;
-      const previousMessage = messageIndex > 0 ? current.messages[messageIndex - 1] : null;
-      const isLatest = messageIndex === current.messages.length - 1;
-      let responseVersionCount = 0;
-      if (message?.role === 'assistant') {
-        for (let index = messageIndex; index >= 0 && current.messages[index]?.role === 'assistant'; index -= 1) {
-          responseVersionCount += 1;
-        }
-      }
+      const activeConversation = current.conversations.find((c) => c.id === current.activeConversationId);
+      const branchMessages = getActiveBranchMessages(
+        current.messages,
+        activeConversation?.activeLeafMessageId ?? null,
+      );
+      const isLatest = branchMessages.at(-1)?.id === messageId;
+      const message = current.messages.find((m) => m.id === messageId);
       if (
         !current.activeConversationId ||
         !message ||
         message.role !== 'assistant' ||
         message.status === 'streaming' ||
-        !isLatest ||
-        previousMessage?.role !== 'user' ||
-        responseVersionCount > 1
+        !isLatest
       ) {
         set({ errorCode: 'responseRetryUnavailable' });
         return false;
@@ -37,7 +37,11 @@ export function createBranchesActions(set: StoreSet, get: StoreGet) {
       });
     },
 
-    async branchFromUserMessage(messageId: string, editedContent: string, branchTitle: string): Promise<boolean> {
+    async branchFromUserMessage(
+      messageId: string,
+      editedContent: string,
+      _branchTitle: string,
+    ): Promise<boolean> {
       const current = get();
       const sourceConversationId = current.activeConversationId;
       const sourceMessage = current.messages.find((message) => message.id === messageId);
@@ -55,35 +59,39 @@ export function createBranchesActions(set: StoreSet, get: StoreGet) {
       }
       set({ errorCode: null, errorMessage: null, opencodeRetryAtUnixMs: null, isCreatingMessageBranch: true });
       try {
-        const branch = await createConversationBranchFromUserMessage(
-          sourceConversationId,
-          messageId,
-          crypto.randomUUID().replaceAll('-', ''),
-          branchTitle,
-          editedContent,
-        );
-        const branchModel = current.models.find((model) => isSameRoute(model, branch.conversation));
+        const newUserMessage: ChatMessage = {
+          id: crypto.randomUUID().replaceAll('-', ''),
+          conversationId: sourceConversationId,
+          role: 'user',
+          content: editedContent,
+          attachments: sourceMessage.attachments,
+          createdAt: Date.now(),
+          outputTokens: null,
+          tokensPerSecond: null,
+          elapsedMicroseconds: null,
+          providerId: sourceMessage.providerId,
+          modelId: sourceMessage.modelId,
+          citationSources: '[]',
+          personalMemoryFactIds: sourceMessage.personalMemoryFactIds ?? '[]',
+          reasoningSummaries: '[]',
+          toolActivities: '[]',
+          status: 'completed',
+          failureCode: null,
+          parentMessageId: sourceMessage.parentMessageId ?? null,
+        };
+
+        await saveMessage(newUserMessage);
+
         set((state) => ({
-          conversations: [
-            branch.conversation,
-            ...state.conversations.filter((conversation) => conversation.id !== branch.conversation.id),
-          ],
-          activeConversationId: branch.conversation.id,
-          pendingProjectId: null,
-          pendingAgentSnapshot: null,
-          messages: branch.messages,
-          olderMessagesCursor: null,
-          isLoadingOlderMessages: false,
-          olderMessagesLoadError: false,
-          selectedModelKey: branchModel?.key ?? state.selectedModelKey,
-          selectedReasoningEffort: null,
-          activeGoal: null,
-          goalStatus: 'ready',
-          searchTargetMessageId: null,
-          searchHighlightMessageId: null,
-          isLoadingMessages: false,
+          messages: [...state.messages, newUserMessage],
+          conversations: state.conversations.map((conversation) =>
+            conversation.id === sourceConversationId
+              ? { ...conversation, activeLeafMessageId: newUserMessage.id }
+              : conversation,
+          ),
           isCreatingMessageBranch: false,
         }));
+
         return await get().sendMessage(editedContent, [], undefined, undefined, {
           userMessageAlreadySaved: true,
         });
@@ -98,6 +106,25 @@ export function createBranchesActions(set: StoreSet, get: StoreGet) {
       } finally {
         set({ isCreatingMessageBranch: false });
       }
+    },
+
+    async switchMessageBranch(targetMessageId: string): Promise<void> {
+      const state = get();
+      const conversationId = state.activeConversationId;
+      if (!conversationId) return;
+
+      const targetLeafId = findLeafForMessage(state.messages, targetMessageId);
+      try {
+        await setActiveLeafMessageId(conversationId, targetLeafId);
+      } catch {
+        // Best effort active leaf persistence
+      }
+
+      set((current) => ({
+        conversations: current.conversations.map((c) =>
+          c.id === conversationId ? { ...c, activeLeafMessageId: targetLeafId } : c,
+        ),
+      }));
     },
 
     async stopResponse(conversationId?: string | null): Promise<void> {

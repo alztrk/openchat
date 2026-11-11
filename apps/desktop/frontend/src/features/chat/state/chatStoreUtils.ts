@@ -8,7 +8,7 @@ export { isObject, numberOrNull } from '@shared/lib/utils/json';
 export function applyStreamEvent(
   event: { name: string; data: JsonObject },
   previous: ChatMessage | null,
-  route: { conversationId: string; providerId: string; modelId: string },
+  route: { conversationId: string; providerId: string; modelId: string; parentMessageId?: string | null },
 ): ChatMessage | null {
   const data = event.data;
   if (
@@ -50,6 +50,7 @@ export function applyStreamEvent(
           toolActivities: '[]',
           status: 'streaming',
           failureCode: null,
+          parentMessageId: route.parentMessageId ?? null,
         };
 
   const nextContent = isTextDelta ? base.content + streamContent : streamContent;

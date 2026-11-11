@@ -203,14 +203,57 @@ pub fn conversation_messages(
 ) -> rusqlite::Result<Vec<StoredMessage>> {
     let rows = {
         let database = storage.connect()?;
-        let mut statement = database.prepare(
-            "SELECT id, role, content, status, output_tokens, tool_activities FROM messages
-             WHERE conversation_id = ?1 AND role IN ('user', 'assistant')
-             ORDER BY created_at ASC, id ASC",
-        )?;
-        statement
-            .query_map([conversation_id], stored_message_row_from_sql)?
-            .collect::<rusqlite::Result<Vec<_>>>()?
+        let active_leaf_message_id = database
+            .query_row(
+                "SELECT active_leaf_message_id FROM conversations WHERE id = ?1",
+                params![conversation_id],
+                |row| row.get::<_, Option<String>>(0),
+            )
+            .optional()?
+            .flatten();
+
+        let branch_rows = if let Some(leaf_id) = active_leaf_message_id {
+            let mut statement = database.prepare(
+                "WITH RECURSIVE branch AS (
+                    SELECT id, parent_message_id, role, content, status, output_tokens, tool_activities, created_at
+                    FROM messages
+                    WHERE conversation_id = ?1 AND id = ?2
+                    UNION ALL
+                    SELECT m.id, m.parent_message_id, m.role, m.content, m.status, m.output_tokens, m.tool_activities, m.created_at
+                    FROM messages m
+                    JOIN branch ON m.conversation_id = ?1 AND m.id = branch.parent_message_id
+                 )
+                 SELECT id, role, content, status, output_tokens, tool_activities FROM branch
+                 WHERE role IN ('user', 'assistant')
+                 ORDER BY created_at ASC, id ASC",
+            )?;
+            let results = statement
+                .query_map(
+                    params![conversation_id, leaf_id],
+                    stored_message_row_from_sql,
+                )?
+                .collect::<rusqlite::Result<Vec<_>>>()?;
+            if results.is_empty() {
+                None
+            } else {
+                Some(results)
+            }
+        } else {
+            None
+        };
+
+        if let Some(rows) = branch_rows {
+            rows
+        } else {
+            let mut statement = database.prepare(
+                "SELECT id, role, content, status, output_tokens, tool_activities FROM messages
+                 WHERE conversation_id = ?1 AND role IN ('user', 'assistant')
+                 ORDER BY created_at ASC, id ASC",
+            )?;
+            statement
+                .query_map([conversation_id], stored_message_row_from_sql)?
+                .collect::<rusqlite::Result<Vec<_>>>()?
+        }
     };
     rows.into_iter()
         .map(|row| stored_message_from_values(row, storage, conversation_id))
@@ -222,52 +265,15 @@ pub fn conversation_messages_from_boundary(
     conversation_id: &str,
     boundary_message_id: &str,
 ) -> rusqlite::Result<Option<Vec<StoredMessage>>> {
-    let rows = {
-        let database = storage.connect()?;
-        let Some(boundary_created_at) = database
-            .query_row(
-                "SELECT COALESCE(created_at, 0) FROM messages
-                 WHERE conversation_id = ?1 AND id = ?2",
-                params![conversation_id, boundary_message_id],
-                |row| row.get::<_, i64>(0),
-            )
-            .optional()?
-        else {
-            return Ok(None);
-        };
-        let previous_message = database
-            .query_row(
-                "SELECT COALESCE(created_at, 0), id FROM messages
-                 WHERE conversation_id = ?1 AND role IN ('user', 'assistant')
-                   AND (COALESCE(created_at, 0) < ?2
-                        OR (COALESCE(created_at, 0) = ?2 AND id < ?3))
-                 ORDER BY COALESCE(created_at, 0) DESC, id DESC
-                 LIMIT 1",
-                params![conversation_id, boundary_created_at, boundary_message_id],
-                |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)),
-            )
-            .optional()?;
-        let (start_created_at, start_message_id) = previous_message
-            .unwrap_or_else(|| (boundary_created_at, boundary_message_id.to_owned()));
-
-        let mut statement = database.prepare(
-            "SELECT id, role, content, status, output_tokens, tool_activities FROM messages
-             WHERE conversation_id = ?1 AND role IN ('user', 'assistant')
-               AND (COALESCE(created_at, 0) > ?2
-                    OR (COALESCE(created_at, 0) = ?2 AND id >= ?3))
-             ORDER BY COALESCE(created_at, 0) ASC, id ASC",
-        )?;
-        statement
-            .query_map(
-                params![conversation_id, start_created_at, start_message_id],
-                stored_message_row_from_sql,
-            )?
-            .collect::<rusqlite::Result<Vec<_>>>()?
+    let all_messages = conversation_messages(storage, conversation_id)?;
+    let Some(boundary_index) = all_messages
+        .iter()
+        .position(|m| m.id == boundary_message_id)
+    else {
+        return Ok(None);
     };
-    rows.into_iter()
-        .map(|row| stored_message_from_values(row, storage, conversation_id))
-        .collect::<rusqlite::Result<Vec<_>>>()
-        .map(Some)
+    let start_index = boundary_index.saturating_sub(1);
+    Ok(Some(all_messages[start_index..].to_vec()))
 }
 
 type StoredMessageRow = (String, String, String, String, Option<i64>, String);
@@ -389,8 +395,14 @@ pub fn save_assistant_message_on_connection(
         ],
     )?;
     transaction.execute(
-        "UPDATE conversations SET updated_at = MAX(updated_at, ?2) WHERE id = ?1",
-        params![message.conversation_id, message.created_at_unix_ms],
+        "UPDATE conversations
+         SET active_leaf_message_id = ?2, updated_at = MAX(updated_at, ?3)
+         WHERE id = ?1",
+        params![
+            message.conversation_id,
+            message.message_id,
+            message.created_at_unix_ms
+        ],
     )?;
     transaction.commit()?;
     Ok(())

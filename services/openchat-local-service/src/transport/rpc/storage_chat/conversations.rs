@@ -20,6 +20,7 @@ struct StoredMessageRow {
     tool_activities: String,
     status: String,
     failure_code: Option<String>,
+    parent_message_id: Option<String>,
     page_number: i64,
     total_rows: i64,
 }
@@ -52,8 +53,9 @@ fn stored_message_row_from_storage(row: &StorageRow) -> rusqlite::Result<StoredM
         tool_activities: row.get(13)?,
         status: row.get(14)?,
         failure_code: row.get(15)?,
-        page_number: row.get(16)?,
-        total_rows: row.get(17)?,
+        parent_message_id: row.get(16)?,
+        page_number: row.get(17)?,
+        total_rows: row.get(18)?,
     })
 }
 
@@ -85,6 +87,7 @@ fn message_from_stored_row(
         "toolActivities": tool_activities,
         "status": row.status,
         "failureCode": row.failure_code,
+        "parentMessageId": row.parent_message_id,
     }))
 }
 
@@ -101,7 +104,7 @@ pub(super) fn list_conversations(
             "SELECT id, title, title_source, provider_id, model_id, connection_id,
                     workspace_id, api_key_connection_id, project_id,
                     is_pinned, is_archived, created_at, updated_at, agent_json, reasoning_effort,
-                    unread_message_id
+                    unread_message_id, active_leaf_message_id
              FROM conversations
              WHERE NOT EXISTS (
                 SELECT 1 FROM security_scans WHERE security_scans.conversation_id = conversations.id
@@ -142,7 +145,7 @@ pub(super) fn get_conversation(
             "SELECT id, title, title_source, provider_id, model_id, connection_id,
                     workspace_id, api_key_connection_id, project_id,
                     is_pinned, is_archived, created_at, updated_at, agent_json, reasoning_effort,
-                    unread_message_id
+                    unread_message_id, active_leaf_message_id
              FROM conversations WHERE id = ?1",
             [id],
             |row| conversation_from_row!(row),
@@ -206,6 +209,33 @@ pub(super) fn clear_conversation_unread(
         .map_err(storage_error)?
         .ok_or_else(|| not_found("conversation"))?;
     Ok(json!({"unreadMessageId": unread_message_id}))
+}
+
+pub(super) fn set_conversation_active_leaf(
+    params: &Value,
+    storage: &AppStorage,
+) -> Result<Value, ServiceError> {
+    let input = input_object(params)?;
+    let conversation_id = required_safe_id(input, "conversationId")?;
+    let active_leaf_message_id = required_safe_id(input, "activeLeafMessageId")?;
+    let connection = storage.connect().map_err(storage_error)?;
+    let changed = connection
+        .execute(
+            "UPDATE conversations
+             SET active_leaf_message_id = ?1, updated_at = MAX(updated_at, ?2)
+             WHERE id = ?3
+               AND EXISTS (
+                   SELECT 1 FROM messages
+                   WHERE messages.conversation_id = conversations.id
+                     AND messages.id = ?1
+               )",
+            params![active_leaf_message_id, unix_time_millis()?, conversation_id],
+        )
+        .map_err(storage_error)?;
+    if changed != 1 {
+        return Err(not_found("conversation message"));
+    }
+    Ok(json!({"saved": true, "activeLeafMessageId": active_leaf_message_id}))
 }
 
 pub(super) fn create_conversation(
@@ -568,7 +598,7 @@ pub(super) fn list_messages(params: &Value, storage: &AppStorage) -> Result<Valu
              SELECT m.id, m.conversation_id, m.role, m.content, m.created_at, m.output_tokens,
                     m.tokens_per_second, m.elapsed_microseconds, m.provider_id, m.model_id,
                     m.citation_sources, m.personal_memory_fact_ids, m.reasoning_summaries,
-                    m.tool_activities, m.status, m.failure_code,
+                    m.tool_activities, m.status, m.failure_code, m.parent_message_id,
                     bounded.page_number, bounded.total_rows
              FROM bounded
              JOIN messages AS m ON m.conversation_id = ?1 AND m.id = bounded.id
@@ -660,6 +690,11 @@ pub(super) fn save_message(
         None
     };
     let failure_code = optional_failure_code(input, "failureCode")?;
+    let parent_message_id = optional_safe_id(input, "parentMessageId")?;
+    let preserve_active_leaf = input
+        .get("preserveActiveLeaf")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
     let created_at = input
         .get("createdAt")
         .map(|value| value.as_i64().ok_or_else(invalid_request_params))
@@ -785,9 +820,9 @@ pub(super) fn save_message(
                     id, conversation_id, role, content, created_at, output_tokens,
                     tokens_per_second, elapsed_microseconds, provider_id, model_id,
                     citation_sources, personal_memory_fact_ids, reasoning_summaries,
-                    tool_activities, status, failure_code
+                    tool_activities, status, failure_code, parent_message_id
                  ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10,
-                            ?11, ?12, ?13, COALESCE(?14, '[]'), ?15, ?16)
+                            ?11, ?12, ?13, COALESCE(?14, '[]'), ?15, ?16, ?17)
                  ON CONFLICT(conversation_id, id) DO UPDATE SET
                     role = excluded.role,
                     content = excluded.content,
@@ -802,7 +837,8 @@ pub(super) fn save_message(
                     reasoning_summaries = excluded.reasoning_summaries,
                     tool_activities = COALESCE(?14, messages.tool_activities),
                     status = excluded.status,
-                    failure_code = excluded.failure_code",
+                    failure_code = excluded.failure_code,
+                    parent_message_id = COALESCE(excluded.parent_message_id, messages.parent_message_id)",
                 params![
                     id,
                     conversation_id,
@@ -820,16 +856,28 @@ pub(super) fn save_message(
                     tool_activities,
                     status,
                     failure_code,
+                    parent_message_id,
                 ],
             )
             .map_err(storage_error)?;
         failure_stage = "conversation_update";
-        transaction
-            .execute(
-                "UPDATE conversations SET updated_at = MAX(updated_at, ?1) WHERE id = ?2",
-                params![created_at, conversation_id],
-            )
-            .map_err(storage_error)?;
+        if !preserve_active_leaf {
+            transaction
+                .execute(
+                    "UPDATE conversations
+                     SET active_leaf_message_id = ?1, updated_at = MAX(updated_at, ?2)
+                     WHERE id = ?3",
+                    params![id, created_at, conversation_id],
+                )
+                .map_err(storage_error)?;
+        } else {
+            transaction
+                .execute(
+                    "UPDATE conversations SET updated_at = MAX(updated_at, ?1) WHERE id = ?2",
+                    params![created_at, conversation_id],
+                )
+                .map_err(storage_error)?;
+        }
         failure_stage = "transaction_commit";
         if cancellation_gate.is_some_and(|gate| !gate.try_begin_commit()) {
             return Err(ServiceError::new(

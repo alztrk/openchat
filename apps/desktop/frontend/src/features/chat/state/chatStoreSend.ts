@@ -336,12 +336,26 @@ export function createSendMessageAction(
         }
       }
 
+      let activeUserMessageId: string | null = null;
+      let assistantParentMessageId: string | null = null;
+      if (isRetry && options?.excludedAssistantMessageId) {
+        assistantParentMessageId =
+          state.messages.find((m) => m.id === options.excludedAssistantMessageId)?.parentMessageId ?? null;
+      }
       if (!resumeRunId && !userMessageAlreadySaved && !isRetry) {
+        const storedConv = get().conversations.find((c) => c.id === targetConversationId);
+        const parentMessageId =
+          storedConv?.activeLeafMessageId ??
+          (state.messages.length > 0 ? state.messages[state.messages.length - 1]?.id ?? null : null);
+        const userMessageId = crypto.randomUUID().replaceAll('-', '');
+        activeUserMessageId = userMessageId;
+        assistantParentMessageId = userMessageId;
         const userMessage: ChatMessage = {
-          id: crypto.randomUUID().replaceAll('-', ''),
+          id: userMessageId,
           conversationId: targetConversationId,
           role: 'user',
           content,
+          parentMessageId,
           attachments: attachments.map(({ id, name, mimeType, sizeBytes, kind }) => ({
             id,
             name,
@@ -372,7 +386,12 @@ export function createSendMessageAction(
         }
         userMessageSaved = true;
         if (get().activeConversationId === targetConversationId) {
-          set((current) => ({ messages: [...current.messages, userMessage] }));
+          set((current) => ({
+            messages: [...current.messages, userMessage],
+            conversations: current.conversations.map((c) =>
+              c.id === targetConversationId ? { ...c, activeLeafMessageId: userMessageId } : c,
+            ),
+          }));
         }
         options?.onUserMessageCommitted?.(targetConversationId);
       }
@@ -474,10 +493,15 @@ export function createSendMessageAction(
             }
           }
         const previousContent = assistantMessage.current?.content ?? '';
+          const effectiveParentMessageId =
+            assistantParentMessageId ??
+            activeUserMessageId ??
+            (state.messages.filter((m) => m.role === 'user').at(-1)?.id ?? null);
           const message = applyStreamEvent(event, assistantMessage.current, {
             conversationId: targetConversationId,
             providerId: selectedModel.providerId,
             modelId: selectedModel.modelId,
+            parentMessageId: effectiveParentMessageId,
           });
           if (!message) return;
           assistantMessage.current = message;
@@ -526,6 +550,7 @@ export function createSendMessageAction(
       if (streamedMessage) {
         const completedMessage: ChatMessage = {
           ...streamedMessage,
+          parentMessageId: streamedMessage.parentMessageId ?? assistantParentMessageId,
           personalMemoryFactIds: resumeRunId
             ? streamedMessage.personalMemoryFactIds
             : JSON.stringify(personalMemoryFactIds),
@@ -555,6 +580,11 @@ export function createSendMessageAction(
           set((current) => ({
             messages:
               finalStatus === 'completed' ? upsertMessage(current.messages, completedMessage) : current.messages,
+            conversations: current.conversations.map((c) =>
+              c.id === targetConversationId && finalStatus === 'completed'
+                ? { ...c, activeLeafMessageId: completedMessage.id }
+                : c,
+            ),
             hasCompletedAssistantResponse:
               finalStatus === 'completed' || current.hasCompletedAssistantResponse === true,
           }));

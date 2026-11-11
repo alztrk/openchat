@@ -40,6 +40,7 @@ export interface ChatConversation {
   isPinned: boolean;
   isArchived: boolean;
   unreadMessageId: string | null;
+  activeLeafMessageId?: string | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -62,6 +63,7 @@ export interface ChatMessage {
   toolActivities: string;
   status: ChatMessageStatus;
   failureCode: string | null;
+  parentMessageId?: string | null;
 }
 
 export interface ChatModelFavorite {

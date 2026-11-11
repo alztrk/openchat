@@ -254,6 +254,7 @@ export interface ChatState {
   ): Promise<boolean>;
   retryMessage(messageId: string): Promise<boolean>;
   branchFromUserMessage(messageId: string, editedContent: string, branchTitle: string): Promise<boolean>;
+  switchMessageBranch(targetMessageId: string): Promise<void>;
   stopResponse(conversationId?: string | null): Promise<void>;
   dismissError(): void;
   setSearchMatchInfo(index: number, count: number): void;
