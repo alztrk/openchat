@@ -38,6 +38,8 @@ export { Slider, type SliderProps } from './Slider';
 export { Switch, type SwitchProps } from './Switch';
 export { Textarea, type TextareaAppearance, type TextareaDensity, type TextareaProps } from './Textarea';
 export { Toast, type ToastProps, type ToastVariant } from './Toast';
+export { ToastContainer } from './ToastContainer';
+export { toast, useToastStore, type ToastAction, type ToastData, type ToastOptions } from '@shared/lib/toast';
 export { TitleTooltip, Tooltip, type TitleTooltipProps, type TooltipProps } from './Tooltip';
 export { ProviderIcon, type ProviderIconProps, providerIconUrls } from './ProviderIcon';
 export { Tabs, TabsContent, TabsList, TabsTrigger } from './tabs';

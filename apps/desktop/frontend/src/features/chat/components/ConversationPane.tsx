@@ -2,7 +2,7 @@ import { ChevronDown, ChevronUp, Clock3, FileUp, MessageSquare, X } from 'lucide
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button, Dialog, Toast } from '@shared/components';
+import { Button, Dialog, toast } from '@shared/components';
 import {
   type ChatFileChange,
   listConversationFileChanges,
@@ -230,22 +230,17 @@ export function ConversationPane({
   const isEmptyConversation = messages.length === 0 && !isLoadingMessages && !isSending;
   const centerEmptyConversation =
     isEmptyConversation && !isLargeText && paneSize.width >= 640 && paneSize.height >= 640;
-  const [historyErrorToastVisible, setHistoryErrorToastVisible] = useState(false);
-
   useEffect(() => {
     if (errorCode === 'messageHistoryLoadFailed') {
-      setHistoryErrorToastVisible(true);
-      return;
+      toast.error(t('messageHistoryLoadFailed'), {
+        id: 'message-history-load-failed',
+        action:
+          !isConversationOverride && activeConversationId
+            ? { label: t('retry'), onClick: () => void selectConversation(activeConversationId) }
+            : undefined,
+      });
     }
-    setHistoryErrorToastVisible(false);
-  }, [errorCode]);
-
-  const handleDismissHistoryErrorToast = useCallback(() => {
-    setHistoryErrorToastVisible(false);
-    if (useChatStore.getState().errorCode === 'messageHistoryLoadFailed') {
-      useChatStore.setState({ errorCode: null });
-    }
-  }, []);
+  }, [errorCode, isConversationOverride, activeConversationId, selectConversation, t]);
   const latestAssistant = useMemo(() => {
     for (let i = messages.length - 1; i >= 0; i--) {
       if (messages[i]?.role === 'assistant') {
@@ -600,20 +595,6 @@ export function ConversationPane({
       onDrop={handleDrop}
       ref={paneRef}
     >
-      {historyErrorToastVisible ? (
-        <div className="fixed top-14 right-6 z-50 max-w-md shadow-lg">
-          <Toast
-            action={
-              !isConversationOverride && activeConversationId
-                ? { label: t('retry'), onClick: () => void selectConversation(activeConversationId) }
-                : undefined
-            }
-            message={t('messageHistoryLoadFailed')}
-            onClose={handleDismissHistoryErrorToast}
-            variant="destructive"
-          />
-        </div>
-      ) : null}
       <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         {typeof header === 'function'
           ? header({

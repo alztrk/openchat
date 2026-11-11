@@ -27,8 +27,8 @@ use crate::{
 use super::super::route::NativeCompaction;
 use super::super::{
     MAX_EVENT_BYTES, MAX_PROVIDER_ERROR_BYTES, apply_opencode_headers, cancelled_error,
-    chat_request_http_error_with_retry_after, client, copilot, invalid_response_error,
-    network_error, opencode_free_headers, opencode_free_transport, opencode_free_usage_limit_error,
+    chat_request_error_from_response, client, copilot, invalid_response_error, network_error,
+    opencode_free_headers, opencode_free_transport, opencode_free_usage_limit_error,
     protocol_error,
     stream::{
         ProviderRequestUsage, ResponsesStreamEffect, SseLine, StreamedToolCall,
@@ -763,32 +763,51 @@ async fn receive_with_client(
     }
     let retry_after_seconds = retry_after_value;
     if !status.is_success() {
+        let error_body = read_error_body(&mut stream, request.cancellation)
+            .await
+            .ok()
+            .flatten();
         if request.route.is_opencode
             && request.route.is_free
             && matches!(
                 status,
                 StatusCode::FORBIDDEN | StatusCode::TOO_MANY_REQUESTS
             )
-            && let Some(error_body) = read_error_body(&mut stream, request.cancellation).await?
+            && let Some(ref body) = error_body
         {
-            if status == StatusCode::FORBIDDEN
-                && super::super::contains_free_tier_error(&error_body)
-            {
+            if status == StatusCode::FORBIDDEN && super::super::contains_free_tier_error(body) {
                 return Err(super::super::opencode_free_tier_restricted_error());
             }
             if status == StatusCode::TOO_MANY_REQUESTS
-                && super::super::contains_free_usage_limit_error(&error_body)
+                && super::super::contains_free_usage_limit_error(body)
             {
                 return Err(opencode_free_usage_limit_error(retry_after_seconds));
             }
         }
         if is_local_runtime(request.route.provider_id.as_deref()) {
+            if let Some(ref body) = error_body {
+                if let Some(msg) = body.pointer("/error/message").and_then(Value::as_str) {
+                    let lower = msg.to_ascii_lowercase();
+                    if lower.contains("context size")
+                        || lower.contains("prompt too long")
+                        || lower.contains("context window")
+                    {
+                        return Err(ServiceError::new(
+                            "context_window_exceeded",
+                            "The request exceeds the local model's context window.",
+                            false,
+                        )
+                        .with_diagnostic_code("context_length_exceeded"));
+                    }
+                }
+            }
             return Err(
                 local_inference_error().with_details(format!("HTTP status {}", status.as_u16()))
             );
         }
-        return Err(chat_request_http_error_with_retry_after(
+        return Err(chat_request_error_from_response(
             status,
+            error_body.as_ref(),
             request.route.provider_id.as_deref(),
             request_contains_tool_payload(request.body),
             retry_after_seconds,
@@ -1049,6 +1068,20 @@ async fn receive_with_client(
                     }
                     "message_stop" => saw_done = true,
                     "error" => {
+                        let error_type = value.pointer("/error/type").and_then(Value::as_str);
+                        let is_overloaded = error_type == Some("overloaded_error")
+                            || value
+                                .pointer("/error/message")
+                                .and_then(Value::as_str)
+                                .is_some_and(|m| m.to_ascii_lowercase().contains("overloaded"));
+                        if is_overloaded {
+                            return Err(ServiceError::new(
+                                "provider_unavailable",
+                                "The provider is temporarily overloaded.",
+                                true,
+                            )
+                            .with_diagnostic_code("provider_overloaded"));
+                        }
                         return Err(ServiceError::new(
                             "model_response_failed",
                             "The provider returned a streaming error.",
@@ -1206,6 +1239,49 @@ async fn receive_with_client(
                     &mut provider_citation_sources,
                     &mut provider_citation_positions,
                 );
+            }
+
+            if let Some(error_obj) = value.get("error").and_then(Value::as_object) {
+                let code_or_type = error_obj
+                    .get("code")
+                    .or_else(|| error_obj.get("type"))
+                    .and_then(Value::as_str)
+                    .unwrap_or("");
+                let message = error_obj
+                    .get("message")
+                    .and_then(Value::as_str)
+                    .unwrap_or("");
+                let lower_msg = message.to_ascii_lowercase();
+                let is_quota = code_or_type == "insufficient_quota"
+                    || code_or_type == "insufficient_balance"
+                    || lower_msg.contains("quota")
+                    || lower_msg.contains("insufficient balance")
+                    || lower_msg.contains("insufficient credits");
+                let is_context = code_or_type == "context_length_exceeded"
+                    || lower_msg.contains("context length")
+                    || lower_msg.contains("prompt too long")
+                    || lower_msg.contains("context size");
+                if is_quota {
+                    return Err(ServiceError::new(
+                        "provider_quota_exhausted",
+                        "The provider reported that account quota or credit balance has been exhausted.",
+                        false,
+                    )
+                    .with_diagnostic_code("quota_exhausted"));
+                }
+                if is_context {
+                    return Err(ServiceError::new(
+                        "context_window_exceeded",
+                        "The request exceeds the model's context window.",
+                        false,
+                    )
+                    .with_diagnostic_code("context_length_exceeded"));
+                }
+                return Err(ServiceError::new(
+                    "model_response_failed",
+                    "The provider returned a streaming error.",
+                    false,
+                ));
             }
 
             saw_finish_reason |= finish_reason(&value).is_some();

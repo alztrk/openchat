@@ -17,6 +17,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Button, Card, Dialog, Select } from '@shared/components';
+import { toast } from '@shared/lib/toast';
 import type { ChatModel } from '@features/provider-settings/data/chatModels';
 import {
   type ChatGptConnectionPlanState,
@@ -89,6 +90,19 @@ export function ProviderSettingsSection({
       if (operation) void cancelOAuthAfterUnmount(operation);
     };
   }, []);
+
+  useEffect(() => {
+    if (errorCode && errorCode !== 'connectionRemoveStatusUnknown' && request !== 'error') {
+      const message = errorDetails ? `${t(errorCode)}: ${errorDetails}` : t(errorCode);
+      toast.error(message);
+    }
+  }, [errorCode, errorDetails, request, t]);
+
+  useEffect(() => {
+    if (notice) {
+      toast.success(t(notice));
+    }
+  }, [notice, t]);
 
   const loadConnections = useCallback(async (): Promise<ChatGptConnectionPlanState[] | null> => {
     setRequest('loading');
@@ -408,20 +422,6 @@ export function ProviderSettingsSection({
               {t('retry')}
             </Button>
           </div>
-        ) : errorCode && request !== 'error' ? (
-          <p className="px-5 pb-4 pt-1 text-sm text-destructive" role="alert">
-            {t(errorCode)}
-            {errorDetails ? (
-              <span className="mt-1 block break-words whitespace-pre-wrap text-xs text-secondary-text">
-                {t('chatErrorDetails')}: {errorDetails}
-              </span>
-            ) : null}
-          </p>
-        ) : null}
-        {notice ? (
-          <p className="px-5 pb-4 pt-1 text-sm text-success" role="status">
-            {t(notice)}
-          </p>
         ) : null}
 
         <ApiKeyProvidersSection

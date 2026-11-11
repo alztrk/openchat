@@ -2,6 +2,7 @@ import { FolderOpen, Link, LoaderCircle, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button, Card, Dialog } from '@shared/components';
+import { toast } from '@shared/lib/toast';
 import { SettingsSectionSkeleton } from './SettingsSectionSkeleton';
 import type {
   BusyAction,
@@ -442,6 +443,18 @@ export function LocalEnginesSection() {
     }
   };
 
+  useEffect(() => {
+    if (errorKey && loadState !== 'error') {
+      toast.error(t(errorKey));
+    }
+  }, [errorKey, loadState, t]);
+
+  useEffect(() => {
+    if (notice) {
+      toast.success(t(notice.key, notice.values));
+    }
+  }, [notice, t]);
+
   return (
     <section aria-labelledby="settings-page-heading" className="grid gap-6">
       {loadState === 'loading' ? (
@@ -454,16 +467,6 @@ export function LocalEnginesSection() {
             {t('retry')}
           </Button>
         </div>
-      ) : null}
-      {errorKey && loadState !== 'error' ? (
-        <p className="text-sm text-destructive" role="alert">
-          {t(errorKey)}
-        </p>
-      ) : null}
-      {notice ? (
-        <p className="text-sm text-secondary-text" role="status">
-          {t(notice.key, notice.values)}
-        </p>
       ) : null}
 
       {loadState === 'ready' && catalog ? (

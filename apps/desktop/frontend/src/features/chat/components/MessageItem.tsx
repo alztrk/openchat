@@ -539,6 +539,14 @@ type TranslationKey = keyof typeof import('@shared/lib/i18n/locales/en.json');
 const failureKeys: Partial<Record<string, TranslationKey>> = {
   opencode_free_tier_restricted: 'openCodeFreeTierRestricted',
   opencode_free_usage_limit: 'openCodeFreeUsageLimit',
+  provider_quota_exhausted: 'providerQuotaExhausted',
+  provider_unavailable: 'providerUnavailable',
+  provider_endpoint_unavailable: 'providerEndpointUnavailable',
+  permission_denied: 'providerPermissionDenied',
+  local_model_out_of_memory: 'localModelOutOfMemory',
+  storage_disk_full: 'storageDiskFull',
+  storage_corrupt: 'storageCorrupt',
+  storage_locked: 'storageLocked',
   authentication_required: 'providerAuthenticationRequired',
   refresh_rejected: 'providerAuthenticationRequired',
   invalid_api_key: 'providerAuthenticationRequired',
@@ -586,7 +594,12 @@ function failureTranslationKey(code: string | null): TranslationKey {
 }
 
 function needsConnectionRecovery(code: string | null): boolean {
-  return code === 'authentication_required' || code === 'refresh_rejected' || code === 'invalid_api_key';
+  return (
+    code === 'authentication_required' ||
+    code === 'refresh_rejected' ||
+    code === 'invalid_api_key' ||
+    code === 'provider_quota_exhausted'
+  );
 }
 
 const providerKeys: Partial<Record<string, TranslationKey>> = {

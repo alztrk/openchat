@@ -26,7 +26,8 @@ All tasks use the modulerized CLI in `scripts/run.mjs`, invoked via npm scripts:
 
 ```bash
 npm run openchat -- dev            # Start dev server with sidecar
-npm run openchat -- build          # Build release
+npm run openchat -- build --preview # Build a uniquely identified preview package
+npm run openchat -- build --stable  # Build stable from a matching vMAJOR.MINOR.PATCH tag
 npm run openchat -- check          # Full check (lint + test + cargo)
 npm run openchat -- check-types    # Type check only (no tests)
 npm run openchat -- clean          # Preview build artifact cleanup
@@ -126,6 +127,20 @@ npm run openchat -- maintain-target --apply
   * Never use `dangerouslySetInnerHTML`.
   * Markdown rendering must use token-based React nodes (`MessageMarkdown.tsx`) with strict URL validation (`isSafeHttpUrl`).
   * Never store credentials or unencrypted chat history in WebView `localStorage`.
+
+### Unified Error Presentation and Toast Standards
+* **Floating Toast Requirement for Transient Operations:**
+  * All transient operation feedback, asynchronous action results (e.g., OAuth sign-in, connection testing, model installation, settings mutations, export/import operations), and generic service RPC errors **MUST** be delivered through the centralized toast notification system (`toast.error()`, `toast.success()`, `toast.warning()`, `toast.info()`).
+  * Floating toasts are rendered globally via `<ToastContainer />` at the root layout (`App.tsx`), ensuring consistent placement (`top-12 right-6`), automatic dismissal (default 5s), accessibility (`role="alert"`, `aria-live="polite"`), and optional actionable recovery buttons.
+* **Strict Ban on Ad-hoc Inline Error Paragraphs:**
+  * Agents **MUST NOT** introduce scattered or arbitrary `<p className="text-destructive">` elements inside card bodies, settings sections, modal footers, or toolbars for transient failures.
+* **Strictly Scoped Inline Error Display:**
+  * Inline error rendering is strictly prohibited except in these 3 specific scenarios:
+    1. **Input Validation:** Validation feedback tied directly to a specific form field, rendered immediately beneath that input control.
+    2. **Message Timeline Failures:** The message-level failure card (`FailureCard`) rendered within the conversation stream for a failed assistant response.
+    3. **Full-Panel Empty / Error States:** When an entire page or panel fails to load its primary content and displays a dedicated full-view retry state.
+* **Zero Duplicate Error Alerts:**
+  * Agents must **NEVER** display duplicate error notifications for the same single failure across multiple UI surfaces (e.g., do not display both an inline banner and a floating toast or composer alert simultaneously for the same action).
 
 ### Read-Only Security Reviews
 * When conducting security reviews or audits, operate in **read-only mode**. Never modify code, commit, or alter branch state during an audit unless explicitly instructed to fix a specific finding.

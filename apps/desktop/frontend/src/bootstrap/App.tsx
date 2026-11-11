@@ -63,6 +63,7 @@ import { localServiceClient } from '@shared/lib/platform/local-service';
 import { unifiedStorage } from '@shared/lib/platform/storage/unifiedStorage';
 import { getCurrentWindow, getVersion, invoke, isTauri, listen } from '@shared/lib/platform/tauri';
 import { BrandMark } from '@shared/components/BrandMark';
+import { ToastContainer } from '@shared/components/ToastContainer';
 import { TitleTooltip } from '@shared/components/Tooltip';
 import { ConversationActionsHeader } from '@widgets/conversation-header/ConversationActionsHeader';
 import { NavigationRail, type AppSurface } from '@widgets/navigation-rail/NavigationRail';
@@ -1385,6 +1386,7 @@ export function App() {
         temporaryExitIntent={temporaryExitIntent}
         toggleTheme={toggleTheme}
       />
+      <ToastContainer />
     </div>
   );
 }

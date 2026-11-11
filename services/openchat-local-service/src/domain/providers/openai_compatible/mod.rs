@@ -976,6 +976,201 @@ pub(super) fn chat_request_http_error_with_retry_after(
     error
 }
 
+pub(super) fn chat_request_error_from_response(
+    status: StatusCode,
+    error_body: Option<&Value>,
+    provider_id: Option<&str>,
+    request_includes_tools: bool,
+    retry_after_seconds: Option<u64>,
+) -> ServiceError {
+    let provider = provider_name(provider_id);
+
+    if let Some(body) = error_body {
+        let (raw_code, raw_type, raw_message) = extract_provider_error_fields(body);
+        let lower_code = raw_code.map(|c| c.to_ascii_lowercase());
+        let lower_type = raw_type.map(|t| t.to_ascii_lowercase());
+        let lower_msg = raw_message.map(|m| m.to_ascii_lowercase());
+
+        let code_ref = lower_code.as_deref().unwrap_or_default();
+        let type_ref = lower_type.as_deref().unwrap_or_default();
+        let msg_ref = lower_msg.as_deref().unwrap_or_default();
+
+        // 1. Quota / balance / billing exhaustion (HTTP 402, or 429 with insufficient_quota)
+        let is_quota_exhausted = status == StatusCode::PAYMENT_REQUIRED
+            || code_ref == "insufficient_quota"
+            || code_ref == "insufficient_balance"
+            || type_ref == "insufficient_quota"
+            || msg_ref.contains("insufficient credits")
+            || msg_ref.contains("insufficient balance")
+            || msg_ref.contains("exceeded your current quota")
+            || msg_ref.contains("credit balance has run out")
+            || msg_ref.contains("weight_exceeds_budget");
+        if is_quota_exhausted {
+            let mut error = ServiceError::new(
+                "provider_quota_exhausted",
+                format!(
+                    "{provider} reported that account quota or credit balance has been exhausted."
+                ),
+                false,
+            )
+            .with_diagnostic_code("quota_exhausted");
+            if let Some(msg) = raw_message {
+                error = error.with_details(msg);
+            }
+            return error;
+        }
+
+        // 2. Context length / prompt size exceeded (HTTP 400 or specific codes)
+        let is_context_exceeded = code_ref == "context_length_exceeded"
+            || code_ref == "string_above_max_length"
+            || msg_ref.contains("context length")
+            || msg_ref.contains("prompt is too long")
+            || msg_ref.contains("context size")
+            || msg_ref.contains("exceeds the available context")
+            || msg_ref.contains("maximum context");
+        if is_context_exceeded {
+            let mut error = ServiceError::new(
+                "context_window_exceeded",
+                format!(
+                    "{provider} rejected the request because it exceeds the model's context window."
+                ),
+                false,
+            )
+            .with_diagnostic_code("context_length_exceeded");
+            if let Some(msg) = raw_message {
+                error = error.with_details(msg);
+            }
+            return error;
+        }
+
+        // 3. Provider overloaded / temporarily unavailable (HTTP 529, 503, or overloaded_error)
+        let is_overloaded = status.as_u16() == 529
+            || type_ref == "overloaded_error"
+            || msg_ref.contains("overloaded")
+            || msg_ref.contains("no available provider");
+        if is_overloaded {
+            let mut error = ServiceError::new(
+                "provider_unavailable",
+                format!("{provider} is temporarily overloaded or unavailable. Try again later."),
+                true,
+            )
+            .with_diagnostic_code("provider_overloaded");
+            if let Some(msg) = raw_message {
+                error = error.with_details(msg);
+            }
+            return error;
+        }
+
+        // 4. Permission denied / license missing / restricted region
+        let is_permission_denied = status == StatusCode::FORBIDDEN
+            || type_ref == "permission_error"
+            || code_ref == "country_unsupported"
+            || code_ref == "permission_denied"
+            || msg_ref.contains("permission")
+            || msg_ref.contains("license")
+            || msg_ref.contains("actor_flagged");
+        if is_permission_denied {
+            let mut error = ServiceError::new(
+                "permission_denied",
+                format!("{provider} denied access to this model or operation."),
+                false,
+            )
+            .with_diagnostic_code("permission_denied");
+            if let Some(msg) = raw_message {
+                error = error.with_details(msg);
+            }
+            return error;
+        }
+
+        // 5. Model not found or unavailable
+        let is_model_missing = status == StatusCode::NOT_FOUND
+            || code_ref == "model_not_found"
+            || code_ref == "unknown_model"
+            || type_ref == "not_found_error";
+        if is_model_missing {
+            let mut error = ServiceError::new(
+                "model_unavailable",
+                format!("The selected model is not available from {provider}."),
+                false,
+            )
+            .with_diagnostic_code("model_unavailable");
+            if let Some(msg) = raw_message {
+                error = error.with_details(msg);
+            }
+            return error;
+        }
+
+        // 6. Authentication failure
+        let is_auth_failure = status == StatusCode::UNAUTHORIZED
+            || type_ref == "authentication_error"
+            || code_ref == "invalid_api_key";
+        if is_auth_failure {
+            let mut error = ServiceError::new(
+                "authentication_required",
+                format!(
+                    "{provider} rejected the API key or token. Check the connection in Settings."
+                ),
+                false,
+            )
+            .with_diagnostic_code("authentication_failed");
+            if let Some(msg) = raw_message {
+                error = error.with_details(msg);
+            }
+            return error;
+        }
+
+        // 7. Rate limit exceeded with custom message
+        if status == StatusCode::TOO_MANY_REQUESTS
+            || type_ref == "rate_limit_error"
+            || code_ref == "rate_limit_exceeded"
+            || code_ref == "resource_exhausted"
+        {
+            let mut error = ServiceError::new(
+                "rate_limited",
+                format!("{provider} reported a usage limit. Try again later."),
+                true,
+            )
+            .with_diagnostic_code("rate_limited");
+            if let Some(seconds) = retry_after_seconds {
+                error = error.with_retry_after_ms(seconds.saturating_mul(1_000));
+            }
+            if let Some(msg) = raw_message {
+                error = error.with_details(msg);
+            }
+            return error;
+        }
+    }
+
+    chat_request_http_error_with_retry_after(
+        status,
+        provider_id,
+        request_includes_tools,
+        retry_after_seconds,
+    )
+}
+
+fn extract_provider_error_fields(body: &Value) -> (Option<&str>, Option<&str>, Option<&str>) {
+    if let Some(error_obj) = body.get("error").and_then(Value::as_object) {
+        let code = error_obj
+            .get("code")
+            .and_then(Value::as_str)
+            .or_else(|| error_obj.get("status").and_then(Value::as_str));
+        let error_type = error_obj.get("type").and_then(Value::as_str);
+        let message = error_obj.get("message").and_then(Value::as_str);
+        return (code, error_type, message);
+    }
+    if body.get("type").and_then(Value::as_str) == Some("error")
+        && let Some(error_obj) = body.get("error").and_then(Value::as_object)
+    {
+        let error_type = error_obj.get("type").and_then(Value::as_str);
+        let message = error_obj.get("message").and_then(Value::as_str);
+        return (None, error_type, message);
+    }
+    let message = body.get("message").and_then(Value::as_str);
+    let code = body.get("code").and_then(Value::as_str);
+    (code, None, message)
+}
+
 pub(super) fn opencode_free_tier_restricted_error() -> ServiceError {
     ServiceError::new(
         "opencode_free_tier_restricted",
@@ -2012,6 +2207,143 @@ mod tests {
         assert_eq!(parsed[0].id, "call_abc");
         assert_eq!(parsed[0].name, "read_file");
         assert_eq!(parsed[0].arguments["filePath"], "a.txt");
+    }
+
+    #[test]
+    fn chat_request_error_from_response_classifies_quota_exhaustion_on_429() {
+        let body = json!({
+            "error": {
+                "message": "You exceeded your current quota, please check your plan and billing details.",
+                "type": "insufficient_quota",
+                "param": null,
+                "code": "insufficient_quota"
+            }
+        });
+        let err = super::chat_request_error_from_response(
+            reqwest::StatusCode::TOO_MANY_REQUESTS,
+            Some(&body),
+            Some("openai"),
+            false,
+            None,
+        );
+        assert_eq!(err.code, "provider_quota_exhausted");
+        assert!(!err.retryable);
+    }
+
+    #[test]
+    fn chat_request_error_from_response_classifies_rate_limit_with_retry_after() {
+        let body = json!({
+            "error": {
+                "message": "Rate limit reached for requests",
+                "type": "requests",
+                "param": null,
+                "code": "rate_limit_exceeded"
+            }
+        });
+        let err = super::chat_request_error_from_response(
+            reqwest::StatusCode::TOO_MANY_REQUESTS,
+            Some(&body),
+            Some("openai"),
+            false,
+            Some(12),
+        );
+        assert_eq!(err.code, "rate_limited");
+        assert!(err.retryable);
+        assert_eq!(err.retry_after_ms, Some(12_000));
+    }
+
+    #[test]
+    fn chat_request_error_from_response_classifies_deepseek_insufficient_balance_402() {
+        let body = json!({
+            "error": {
+                "message": "Insufficient Balance",
+                "type": "invalid_request_error",
+                "param": null,
+                "code": "invalid_request_error"
+            }
+        });
+        let err = super::chat_request_error_from_response(
+            reqwest::StatusCode::PAYMENT_REQUIRED,
+            Some(&body),
+            Some("deepseek"),
+            false,
+            None,
+        );
+        assert_eq!(err.code, "provider_quota_exhausted");
+        assert!(!err.retryable);
+    }
+
+    #[test]
+    fn chat_request_error_from_response_classifies_anthropic_context_length_400() {
+        let body = json!({
+            "type": "error",
+            "error": {
+                "type": "invalid_request_error",
+                "message": "prompt is too long: 215000 tokens > 200000 maximum context length"
+            }
+        });
+        let err = super::chat_request_error_from_response(
+            reqwest::StatusCode::BAD_REQUEST,
+            Some(&body),
+            Some("anthropic"),
+            false,
+            None,
+        );
+        assert_eq!(err.code, "context_window_exceeded");
+        assert!(!err.retryable);
+    }
+
+    #[test]
+    fn chat_request_error_from_response_classifies_anthropic_overloaded_529() {
+        let body = json!({
+            "type": "error",
+            "error": {
+                "type": "overloaded_error",
+                "message": "Overloaded"
+            }
+        });
+        let err = super::chat_request_error_from_response(
+            reqwest::StatusCode::from_u16(529).unwrap(),
+            Some(&body),
+            Some("anthropic"),
+            false,
+            None,
+        );
+        assert_eq!(err.code, "provider_unavailable");
+        assert!(err.retryable);
+    }
+
+    #[test]
+    fn chat_request_error_from_response_classifies_gemini_resource_exhausted() {
+        let body = json!({
+            "error": {
+                "code": 429,
+                "message": "Resource has been exhausted (e.g. check quota).",
+                "status": "RESOURCE_EXHAUSTED"
+            }
+        });
+        let err = super::chat_request_error_from_response(
+            reqwest::StatusCode::TOO_MANY_REQUESTS,
+            Some(&body),
+            Some("gemini"),
+            false,
+            Some(5),
+        );
+        assert_eq!(err.code, "rate_limited");
+        assert!(err.retryable);
+    }
+
+    #[test]
+    fn chat_request_error_from_response_falls_back_when_body_missing() {
+        let err = super::chat_request_error_from_response(
+            reqwest::StatusCode::SERVICE_UNAVAILABLE,
+            None,
+            Some("groq"),
+            false,
+            None,
+        );
+        assert_eq!(err.code, "provider_request_failed");
+        assert!(err.retryable);
     }
 
     #[tokio::test]
