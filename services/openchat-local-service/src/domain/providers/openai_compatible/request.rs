@@ -1095,6 +1095,7 @@ mod tests {
             "kilo",
             "sambanova",
             "perplexity",
+            "custom_my_endpoint",
         ] {
             let body = chat_completion_body(&request(), &[], provider_id, false);
 
