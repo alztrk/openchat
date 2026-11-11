@@ -145,11 +145,19 @@ pub async fn models_for_custom_provider(
             .and_then(Value::as_array)
             .filter(|items| !items.is_empty() && items.len() <= MAX_MODELS)
             .ok_or_else(invalid_response_error)?;
-        let models = items
+        let mut models = items
             .iter()
             .filter_map(|item| {
                 let id = item.get("id")?.as_str()?.trim();
                 if id.is_empty() || id.len() > 256 || id.chars().any(char::is_control) {
+                    return None;
+                }
+                if !provider.selected_models.is_empty()
+                    && !provider
+                        .selected_models
+                        .iter()
+                        .any(|selected| selected == id)
+                {
                     return None;
                 }
                 let display_name = item
@@ -179,6 +187,27 @@ pub async fn models_for_custom_provider(
                 }))
             })
             .collect::<Vec<_>>();
+        for selected_id in &provider.selected_models {
+            if !models
+                .iter()
+                .any(|entry| entry.get("id").and_then(Value::as_str) == Some(selected_id.as_str()))
+            {
+                models.push(json!({
+                    "id": selected_id,
+                    "displayName": selected_id,
+                    "description": Value::Null,
+                    "contextWindow": Value::Null,
+                    "inputTokenLimit": Value::Null,
+                    "maxOutputTokens": Value::Null,
+                    "supportsImages": false,
+                    "supportsTools": Value::Null,
+                    "supportsReasoning": false,
+                    "reasoningLevels": [],
+                    "isAvailable": true,
+                    "groupId": "models"
+                }));
+            }
+        }
         if models.is_empty() {
             return Err(invalid_response_error());
         }
@@ -240,10 +269,11 @@ pub(super) fn custom_context_limits(
 
 fn custom_catalog_key(provider: &CustomProviderConfig, api_key: Option<&str>) -> String {
     api_key_hash(&format!(
-        "{}\0{:?}\0{}",
+        "{}\0{:?}\0{}\0{}",
         provider.base_url,
         provider.protocol,
-        api_key.unwrap_or_default()
+        api_key.unwrap_or_default(),
+        provider.selected_models.join("\x1f")
     ))
 }
 

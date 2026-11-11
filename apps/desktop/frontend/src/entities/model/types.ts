@@ -16,6 +16,7 @@ export interface CustomProviderInfo {
   allowInsecureHttp: boolean;
   reasoningEfforts: string[];
   enableThinking: boolean;
+  selectedModels?: string[];
 }
 
 export interface ChatModel extends ChatRoute {

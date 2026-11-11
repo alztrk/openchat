@@ -5,6 +5,7 @@ mod catalog;
 mod external_server;
 mod gguf;
 pub(crate) mod installer;
+pub(crate) mod local_servers;
 pub(crate) mod models;
 mod runtime;
 mod settings;
@@ -232,6 +233,20 @@ pub(crate) async fn connect_external_llama_server(
 
 pub(crate) async fn disconnect_external_llama_server(process_id: u32, port: u16) -> Value {
     runtime::disconnect_external_server(process_id, port).await
+}
+
+pub(crate) async fn detect_local_servers(
+    ollama_port: Option<u16>,
+    lm_studio_port: Option<u16>,
+) -> Result<Value, ServiceError> {
+    local_servers::detect_local_servers(ollama_port, lm_studio_port).await
+}
+
+pub(crate) async fn fetch_local_server_models(
+    server_kind: &str,
+    port: u16,
+) -> Result<Value, ServiceError> {
+    local_servers::fetch_local_server_models(server_kind, port).await
 }
 
 pub(crate) async fn chat_model_catalog(

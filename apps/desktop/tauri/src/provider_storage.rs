@@ -26,6 +26,8 @@ const MAXIMUM_PROVIDER_NAME_BYTES: usize = 320;
 const MAXIMUM_PROVIDER_URL_BYTES: usize = 2048;
 const MAXIMUM_PROVIDER_PROTOCOL_BYTES: usize = 16;
 const MAXIMUM_REASONING_EFFORTS_BYTES: usize = 1100;
+const MAXIMUM_SELECTED_MODEL_ID_BYTES: usize = 256;
+const MAXIMUM_SELECTED_MODELS_COUNT: usize = 256;
 static HTTP_PROVIDER_CONFIRMATION_ACTIVE: AtomicBool = AtomicBool::new(false);
 
 #[derive(Debug, Serialize)]
@@ -157,6 +159,9 @@ pub struct CustomProviderConfig {
     /// Whether vLLM-style chat template thinking should be enabled.
     #[serde(default)]
     pub enable_thinking: bool,
+    /// Optional explicit subset of model identifiers selected from this provider.
+    #[serde(default)]
+    pub selected_models: Vec<String>,
     /// Legacy field retained to migrate configurations written by older versions.
     #[serde(default, rename = "reasoningMode", skip_serializing)]
     legacy_reasoning_mode: Option<String>,
@@ -177,6 +182,8 @@ pub(crate) struct SaveCustomProviderInput {
     reasoning_efforts: Option<BoundedText<MAXIMUM_REASONING_EFFORTS_BYTES>>,
     #[serde(default)]
     enable_thinking: bool,
+    #[serde(default)]
+    selected_models: Vec<BoundedText<MAXIMUM_SELECTED_MODEL_ID_BYTES>>,
     api_key: Option<BoundedText<MAXIMUM_KEY_BYTES>>,
     dialog_locale: crate::local_service::dialogs::NativeDialogLocale,
 }
@@ -240,6 +247,7 @@ pub struct CustomProviderSummary {
     pub allow_insecure_http: bool,
     pub reasoning_efforts: Vec<String>,
     pub enable_thinking: bool,
+    pub selected_models: Vec<String>,
     pub is_configured: bool,
     pub key_suffix: Option<String>,
 }
@@ -419,6 +427,7 @@ pub async fn save_custom_provider(
         allow_insecure_http,
         reasoning_efforts,
         enable_thinking,
+        selected_models,
         api_key,
         dialog_locale,
     } = input;
@@ -431,6 +440,10 @@ pub async fn save_custom_provider(
         Some(allow_insecure_http),
         reasoning_efforts.map(BoundedText::into_inner),
         enable_thinking,
+        selected_models
+            .into_iter()
+            .map(BoundedText::into_inner)
+            .collect(),
     )?;
     if requires_native_http_approval(&config) {
         let _confirmation_guard = HttpProviderConfirmationGuard::acquire()?;
@@ -647,6 +660,7 @@ fn validated_key(
 }
 
 /// Validates custom provider identity, display name, endpoint, and protocol.
+#[allow(clippy::too_many_arguments)]
 fn validated_custom_provider(
     id: String,
     name: String,
@@ -655,6 +669,7 @@ fn validated_custom_provider(
     allow_insecure_http: Option<bool>,
     reasoning_efforts: Option<String>,
     enable_thinking: bool,
+    selected_models: Vec<String>,
 ) -> Result<CustomProviderConfig, ProviderStorageError> {
     let config = validated_custom_provider_fields(
         id,
@@ -664,6 +679,7 @@ fn validated_custom_provider(
         allow_insecure_http,
         reasoning_efforts,
         enable_thinking,
+        selected_models,
     )?;
     if config.base_url.starts_with("http://") {
         if !http_endpoint_uses_ip_or_loopback(&config.base_url) {
@@ -677,6 +693,7 @@ fn validated_custom_provider(
 }
 
 /// Validates and normalizes persisted provider fields without granting HTTP approval.
+#[allow(clippy::too_many_arguments)]
 fn validated_custom_provider_fields(
     id: String,
     name: String,
@@ -685,6 +702,7 @@ fn validated_custom_provider_fields(
     allow_insecure_http: Option<bool>,
     reasoning_efforts: Option<String>,
     enable_thinking: bool,
+    selected_models: Vec<String>,
 ) -> Result<CustomProviderConfig, ProviderStorageError> {
     let name = name.trim();
     let base_url = normalized_base_url(&base_url).ok_or_else(ProviderStorageError::invalid)?;
@@ -705,6 +723,7 @@ fn validated_custom_provider_fields(
         &protocol,
         reasoning_efforts.as_deref().unwrap_or_default(),
     )?;
+    let selected_models = parse_custom_selected_models(selected_models)?;
     Ok(CustomProviderConfig {
         id,
         name: name.to_owned(),
@@ -718,6 +737,7 @@ fn validated_custom_provider_fields(
         native_http_confirmed: false,
         reasoning_efforts,
         enable_thinking,
+        selected_models,
         legacy_reasoning_mode: None,
         legacy_reasoning_levels: Vec::new(),
     })
@@ -743,6 +763,7 @@ fn validated_stored_custom_provider(
         stored.allow_insecure_http,
         Some(reasoning_efforts.join(",")),
         enable_thinking,
+        stored.selected_models,
     )?;
     if native_http_confirmed
         && (!validated.base_url.starts_with("http://")
@@ -811,6 +832,31 @@ fn parse_custom_reasoning_efforts(
     Ok(values.into_iter().map(str::to_owned).collect())
 }
 
+fn parse_custom_selected_models(
+    selected_models: Vec<String>,
+) -> Result<Vec<String>, ProviderStorageError> {
+    if selected_models.len() > MAXIMUM_SELECTED_MODELS_COUNT {
+        return Err(ProviderStorageError::invalid());
+    }
+    let mut normalized = Vec::with_capacity(selected_models.len());
+    for model_id in selected_models {
+        let trimmed = model_id.trim();
+        if trimmed.is_empty()
+            || trimmed.len() > MAXIMUM_SELECTED_MODEL_ID_BYTES
+            || trimmed.chars().any(char::is_control)
+        {
+            return Err(ProviderStorageError::invalid());
+        }
+        if !normalized
+            .iter()
+            .any(|existing: &String| existing == trimmed)
+        {
+            normalized.push(trimmed.to_owned());
+        }
+    }
+    Ok(normalized)
+}
+
 /// Normalizes an HTTP(S) endpoint while rejecting embedded credentials and URL decorations.
 fn normalized_base_url(value: &str) -> Option<String> {
     let mut url = url::Url::parse(value.trim()).ok()?;
@@ -870,6 +916,7 @@ fn custom_provider_summary(
             && config.native_http_confirmed,
         reasoning_efforts: config.reasoning_efforts.clone(),
         enable_thinking: config.enable_thinking,
+        selected_models: config.selected_models.clone(),
         is_configured: key.is_some_and(|value| !value.trim().is_empty()),
         key_suffix: key.and_then(key_suffix),
     }
@@ -918,6 +965,7 @@ mod tests {
             None,
             None,
             false,
+            Vec::new(),
         )
         .expect("test provider configuration should be valid")
     }
@@ -1072,6 +1120,7 @@ mod tests {
             Some(false),
             None,
             false,
+            Vec::new(),
         )
         .expect_err("new HTTP providers require explicit approval");
         assert_eq!(error.code, "custom_provider_http_approval_required");
@@ -1084,6 +1133,7 @@ mod tests {
             Some(true),
             None,
             false,
+            Vec::new(),
         )
         .expect("explicit HTTP approval should preserve local provider support");
         assert_eq!(allowed.allow_insecure_http, Some(true));
@@ -1113,6 +1163,7 @@ mod tests {
                 Some(true),
                 None,
                 false,
+                Vec::new(),
             )
             .expect_err("domain-based HTTP must be rejected before confirmation");
             assert_eq!(error.code, "custom_provider_http_ip_or_loopback_required");
@@ -1137,6 +1188,7 @@ mod tests {
                     Some(true),
                     None,
                     false,
+                    Vec::new(),
                 )
                 .is_ok(),
                 "IP or loopback provider {base_url} should remain supported"
@@ -1153,6 +1205,7 @@ mod tests {
             native_http_confirmed: true,
             reasoning_efforts: Vec::new(),
             enable_thinking: false,
+            selected_models: Vec::new(),
             legacy_reasoning_mode: None,
             legacy_reasoning_levels: Vec::new(),
         };
@@ -1193,6 +1246,7 @@ mod tests {
             Some(true),
             None,
             false,
+            Vec::new(),
         )
         .expect("a local HTTP provider with user approval should be valid");
         values.insert(
@@ -1230,6 +1284,7 @@ mod tests {
             native_http_confirmed: false,
             reasoning_efforts: Vec::new(),
             enable_thinking: false,
+            selected_models: Vec::new(),
             legacy_reasoning_mode: None,
             legacy_reasoning_levels: Vec::new(),
         })
@@ -1252,5 +1307,53 @@ mod tests {
             assert_eq!(values.get(&key_name), Some("old-secret-key"));
             assert_eq!(values.get(&config_name), stored_config);
         }
+    }
+
+    #[test]
+    fn custom_provider_selected_models_are_normalized_deduplicated_and_persisted() {
+        let mut values = SecretMap::default();
+        let mut config = super::validated_custom_provider(
+            "custom_ollama_local".to_owned(),
+            "Ollama".to_owned(),
+            "http://127.0.0.1:11434/v1".to_owned(),
+            "openAi".to_owned(),
+            Some(true),
+            None,
+            false,
+            vec![
+                " llama3.2:latest ".to_owned(),
+                "qwen2.5:7b".to_owned(),
+                "llama3.2:latest".to_owned(),
+            ],
+        )
+        .expect("local Ollama provider with selected models should validate");
+        config.native_http_confirmed = true;
+
+        let summary = update_custom_provider_values(&mut values, config, None)
+            .expect("local Ollama provider should save without an API key");
+        assert_eq!(
+            summary.selected_models,
+            vec!["llama3.2:latest".to_owned(), "qwen2.5:7b".to_owned()]
+        );
+
+        let loaded =
+            super::load_custom_providers(&values).expect("saved custom providers should reload");
+        assert_eq!(loaded.len(), 1);
+        assert_eq!(
+            loaded[0].selected_models,
+            vec!["llama3.2:latest".to_owned(), "qwen2.5:7b".to_owned()]
+        );
+
+        let invalid = super::validated_custom_provider(
+            "custom_ollama_local".to_owned(),
+            "Ollama".to_owned(),
+            "http://127.0.0.1:11434/v1".to_owned(),
+            "openAi".to_owned(),
+            Some(true),
+            None,
+            false,
+            vec!["bad\nmodel".to_owned()],
+        );
+        assert!(invalid.is_err());
     }
 }

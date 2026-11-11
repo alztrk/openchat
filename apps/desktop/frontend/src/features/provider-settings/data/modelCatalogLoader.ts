@@ -205,10 +205,12 @@ export async function loadApiKeyModels(
   }
   const copilotStatus = await copilotStatusPromise;
   const copilotConnected = copilotStatus.connected;
+  const isCustomProviderUsable = (provider: CustomProviderSummary) =>
+    provider.isConfigured || !provider.baseUrl.startsWith('http://') || provider.allowInsecureHttp;
   const hasConfiguredProvider =
     status.chatgptApiKeys.length > 0 ||
     status.compatibleProviders.some((provider) => provider.isConfigured) ||
-    status.customProviders.some((provider) => provider.isConfigured) ||
+    status.customProviders.some(isCustomProviderUsable) ||
     status.openCodeConfigured;
   const tasks: Array<Promise<{ models: ChatModel[]; failed: boolean }>> = [];
   const kiloConfigured =
@@ -226,7 +228,7 @@ export async function loadApiKeyModels(
         available: provider.isConfigured,
       })),
     ...status.customProviders
-      .filter((provider) => provider.isConfigured)
+      .filter(isCustomProviderUsable)
       .map((provider) => ({
         providerId: provider.id,
         name: provider.name,
@@ -402,6 +404,7 @@ async function loadCustomProviderCatalog(
         allowInsecureHttp: provider.allowInsecureHttp,
         reasoningEfforts: provider.reasoningEfforts,
         enableThinking: provider.enableThinking,
+        selectedModels: provider.selectedModels,
       },
     });
   } catch {

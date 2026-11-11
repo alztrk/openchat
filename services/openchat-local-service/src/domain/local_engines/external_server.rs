@@ -42,16 +42,21 @@ pub(crate) struct ExternalLlamaServerCandidate {
 /// Finds bounded candidates by matching known server processes to loopback listeners.
 pub(crate) async fn find_running_servers() -> Result<Vec<ExternalLlamaServerCandidate>, ServiceError>
 {
+    find_running_servers_for_executables(&["llama-server.exe"], &["llama-server"]).await
+}
+
+/// Finds bounded loopback listeners owned by any of the specified executable names.
+pub(crate) async fn find_running_servers_for_executables(
+    #[allow(unused_variables)] windows_executables: &'static [&'static str],
+    #[allow(unused_variables)] linux_executables: &'static [&'static str],
+) -> Result<Vec<ExternalLlamaServerCandidate>, ServiceError> {
     #[cfg(windows)]
     {
         let (processes, listeners) = tokio::join!(
-            windows_command_output(
-                "tasklist",
-                &["/FI", "IMAGENAME eq llama-server.exe", "/FO", "CSV", "/NH"]
-            ),
+            windows_command_output("tasklist", &["/FO", "CSV", "/NH"]),
             windows_command_output("netstat", &["-ano", "-p", "tcp"]),
         );
-        let process_ids = parse_llama_server_process_ids(&processes?)?;
+        let process_ids = parse_process_ids_for_executables(&processes?, windows_executables)?;
         let listeners = parse_loopback_listeners(&listeners?)?;
         let candidates = listeners
             .into_iter()
@@ -62,7 +67,7 @@ pub(crate) async fn find_running_servers() -> Result<Vec<ExternalLlamaServerCand
     }
     #[cfg(target_os = "linux")]
     {
-        tokio::task::spawn_blocking(scan_linux_processes)
+        tokio::task::spawn_blocking(move || scan_linux_processes_for_executables(linux_executables))
             .await
             .map_err(|_| process_scan_error())?
     }
@@ -73,7 +78,9 @@ pub(crate) async fn find_running_servers() -> Result<Vec<ExternalLlamaServerCand
 }
 
 #[cfg(target_os = "linux")]
-fn scan_linux_processes() -> Result<Vec<ExternalLlamaServerCandidate>, ServiceError> {
+fn scan_linux_processes_for_executables(
+    executables: &[&str],
+) -> Result<Vec<ExternalLlamaServerCandidate>, ServiceError> {
     let proc_root = Path::new("/proc");
     let current_uid = fs::metadata(proc_root.join("self"))
         .map_err(|_| process_scan_error())?
@@ -103,11 +110,17 @@ fn scan_linux_processes() -> Result<Vec<ExternalLlamaServerCandidate>, ServiceEr
         };
         if metadata.uid() != current_uid {
             continue;
-        }
+        };
         let Ok(executable) = fs::read_link(process_directory.join("exe")) else {
             continue;
         };
-        if executable.file_name().and_then(|name| name.to_str()) != Some("llama-server") {
+        let Some(executable_name) = executable.file_name().and_then(|name| name.to_str()) else {
+            continue;
+        };
+        if !executables
+            .iter()
+            .any(|expected| executable_name.eq_ignore_ascii_case(expected))
+        {
             continue;
         }
         let descriptors = match fs::read_dir(process_directory.join("fd")) {
@@ -308,7 +321,15 @@ fn windows_system_command(command: &str) -> Result<std::path::PathBuf, ServiceEr
     }
 }
 
+#[cfg(test)]
 fn parse_llama_server_process_ids(output: &str) -> Result<BTreeSet<u32>, ServiceError> {
+    parse_process_ids_for_executables(output, &["llama-server.exe"])
+}
+
+fn parse_process_ids_for_executables(
+    output: &str,
+    executable_names: &[&str],
+) -> Result<BTreeSet<u32>, ServiceError> {
     if output.len() > MAX_PROCESS_OUTPUT_BYTES {
         return Err(process_scan_error());
     }
@@ -317,7 +338,10 @@ fn parse_llama_server_process_ids(output: &str) -> Result<BTreeSet<u32>, Service
         .filter_map(|line| {
             let mut fields = line.split(',');
             let image_name = fields.next()?.trim().trim_matches('"');
-            if !image_name.eq_ignore_ascii_case("llama-server.exe") {
+            if !executable_names
+                .iter()
+                .any(|expected| image_name.eq_ignore_ascii_case(expected))
+            {
                 return None;
             }
             fields

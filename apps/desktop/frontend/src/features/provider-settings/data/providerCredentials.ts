@@ -27,6 +27,7 @@ export interface CustomProviderSummary {
   allowInsecureHttp: boolean;
   reasoningEfforts: string[];
   enableThinking: boolean;
+  selectedModels: string[];
   isConfigured: boolean;
   keySuffix: string | null;
 }
@@ -90,6 +91,8 @@ export async function loadProviderCredentialStatus(): Promise<ProviderCredential
       !Array.isArray(item.reasoningEfforts) ||
       !item.reasoningEfforts.every((level) => typeof level === 'string') ||
       typeof item.enableThinking !== 'boolean' ||
+      (item.selectedModels !== undefined &&
+        (!Array.isArray(item.selectedModels) || !item.selectedModels.every((modelId) => typeof modelId === 'string'))) ||
       typeof item.isConfigured !== 'boolean' ||
       !isNullableString(item.keySuffix)
     ) {
@@ -104,6 +107,7 @@ export async function loadProviderCredentialStatus(): Promise<ProviderCredential
         allowInsecureHttp: item.allowInsecureHttp,
         reasoningEfforts: item.reasoningEfforts,
         enableThinking: item.enableThinking,
+        selectedModels: Array.isArray(item.selectedModels) ? item.selectedModels : [],
         isConfigured: item.isConfigured,
         keySuffix: item.keySuffix,
       },
@@ -179,12 +183,14 @@ export async function saveCustomProvider(input: {
   allowInsecureHttp: boolean;
   reasoningEfforts: string[];
   enableThinking: boolean;
+  selectedModels?: string[];
   apiKey: string;
 }): Promise<CustomProviderSummary> {
   const value: unknown = await invoke('save_custom_provider', {
     input: {
       ...input,
       reasoningEfforts: input.reasoningEfforts.join(','),
+      selectedModels: input.selectedModels ?? [],
       apiKey: input.apiKey.trim().length > 0 ? input.apiKey : null,
       dialogLocale: await getNativeDialogLocale(),
     },
@@ -200,6 +206,9 @@ export async function saveCustomProvider(input: {
     !Array.isArray(value.reasoningEfforts) ||
     !value.reasoningEfforts.every((level) => typeof level === 'string') ||
     typeof value.enableThinking !== 'boolean' ||
+    (value.selectedModels !== undefined &&
+      (!Array.isArray(value.selectedModels) ||
+        !value.selectedModels.every((modelId) => typeof modelId === 'string'))) ||
     typeof value.isConfigured !== 'boolean' ||
     !isNullableString(value.keySuffix)
   ) {
@@ -213,6 +222,7 @@ export async function saveCustomProvider(input: {
     allowInsecureHttp: value.allowInsecureHttp,
     reasoningEfforts: value.reasoningEfforts,
     enableThinking: value.enableThinking,
+    selectedModels: Array.isArray(value.selectedModels) ? value.selectedModels : [],
     isConfigured: value.isConfigured,
     keySuffix: value.keySuffix,
   };

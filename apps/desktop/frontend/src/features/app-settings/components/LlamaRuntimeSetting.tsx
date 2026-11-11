@@ -8,6 +8,7 @@ import {
   type ExternalServer,
   type LocalEngineSettings,
 } from '@features/app-settings/data/localEngineCatalog';
+import { LocalServerConnectionsSection } from './LocalServerConnectionsSection';
 
 interface LlamaRuntimeSettingProps {
   executableActive: boolean;
@@ -439,6 +440,9 @@ export function LlamaRuntimeSetting({
           </Button>
         </div>
       </section>
+
+      {/* Dedicated Local Server Setup (Ollama, LM Studio) */}
+      <LocalServerConnectionsSection />
 
       {/* Third-party Servers (Ollama, LM Studio) guidance */}
       <section className="flex items-start gap-2.5 rounded-control border border-border bg-raised p-2.5">

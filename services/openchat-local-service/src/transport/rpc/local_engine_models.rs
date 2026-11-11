@@ -46,6 +46,20 @@ pub(super) async fn dispatch(
             )
             .await)
         }
+        "local.engines.local_servers.detect" => {
+            local_engines::detect_local_servers(
+                optional_port(params, "ollamaPort")?,
+                optional_port(params, "lmStudioPort")?,
+            )
+            .await
+        }
+        "local.engines.local_servers.models" => {
+            local_engines::fetch_local_server_models(
+                required_string(params, "serverKind")?,
+                required_port(params, "port")?,
+            )
+            .await
+        }
         "local.engines.chat_models.list" => {
             local_engines::chat_model_catalog(storage, required_string(params, "engineId")?).await
         }
@@ -185,6 +199,18 @@ fn required_port(params: &Value, name: &str) -> Result<u16, ServiceError> {
         .and_then(|value| u16::try_from(value).ok())
         .filter(|value| *value > 0)
         .ok_or_else(invalid_local_engine_request)
+}
+
+fn optional_port(params: &Value, name: &str) -> Result<Option<u16>, ServiceError> {
+    match params.get(name) {
+        None | Some(Value::Null) => Ok(None),
+        Some(value) => value
+            .as_u64()
+            .and_then(|port| u16::try_from(port).ok())
+            .filter(|port| *port > 0)
+            .map(Some)
+            .ok_or_else(invalid_local_engine_request),
+    }
 }
 
 fn invalid_local_engine_request() -> ServiceError {

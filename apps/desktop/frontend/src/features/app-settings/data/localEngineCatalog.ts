@@ -63,6 +63,35 @@ export interface ExternalCandidate {
   port: number;
 }
 
+export type LocalServerKind = 'ollama' | 'lm_studio';
+export type LocalServerHealthStatus = 'healthy' | 'unhealthy' | 'unreachable';
+
+export const OLLAMA_CUSTOM_PROVIDER_ID = 'custom_ollama_local' as const;
+export const LM_STUDIO_CUSTOM_PROVIDER_ID = 'custom_lm_studio_local' as const;
+
+export interface LocalServerModelEntry {
+  id: string;
+  displayName: string;
+}
+
+export interface LocalServerDetection {
+  serverKind: LocalServerKind;
+  defaultPort: number;
+  activePort: number | null;
+  detectedPorts: number[];
+  healthStatus: LocalServerHealthStatus;
+  baseUrl: string;
+  models: LocalServerModelEntry[];
+}
+
+export interface LocalServerModelsResult {
+  serverKind: LocalServerKind;
+  port: number;
+  baseUrl: string;
+  healthStatus: LocalServerHealthStatus;
+  models: LocalServerModelEntry[];
+}
+
 export interface LocalEngineSettings {
   llamaServerExecutablePath: string | null;
   gpuLayers: number | null;
@@ -195,6 +224,70 @@ export function parseCatalog(value: JsonObject): EngineCatalog {
 export function parseExternalCandidate(value: unknown): ExternalCandidate[] {
   if (!isObject(value) || !positiveInteger(value.processId) || !positiveInteger(value.port)) return [];
   return [{ processId: value.processId, port: value.port }];
+}
+
+export function parseLocalServersDetection(value: JsonObject): LocalServerDetection[] {
+  if (!Array.isArray(value.servers)) {
+    throw new Error('The local server detection response is invalid.');
+  }
+  return value.servers.flatMap((entry): LocalServerDetection[] => {
+    if (
+      !isObject(entry) ||
+      !isLocalServerKind(entry.serverKind) ||
+      !positiveInteger(entry.defaultPort) ||
+      !Array.isArray(entry.detectedPorts) ||
+      !isLocalServerHealthStatus(entry.healthStatus) ||
+      typeof entry.baseUrl !== 'string' ||
+      !Array.isArray(entry.models)
+    ) {
+      return [];
+    }
+    const activePort = positiveIntegerOrNull(entry.activePort);
+    const detectedPorts = entry.detectedPorts.filter(positiveInteger);
+    return [
+      {
+        serverKind: entry.serverKind,
+        defaultPort: entry.defaultPort,
+        activePort,
+        detectedPorts,
+        healthStatus: entry.healthStatus,
+        baseUrl: entry.baseUrl,
+        models: entry.models.flatMap(parseLocalServerModelEntry),
+      },
+    ];
+  });
+}
+
+export function parseLocalServerModelsResult(value: JsonObject): LocalServerModelsResult {
+  if (
+    !isLocalServerKind(value.serverKind) ||
+    !positiveInteger(value.port) ||
+    typeof value.baseUrl !== 'string' ||
+    !isLocalServerHealthStatus(value.healthStatus) ||
+    !Array.isArray(value.models)
+  ) {
+    throw new Error('The local server model catalog response is invalid.');
+  }
+  return {
+    serverKind: value.serverKind,
+    port: value.port,
+    baseUrl: value.baseUrl,
+    healthStatus: value.healthStatus,
+    models: value.models.flatMap(parseLocalServerModelEntry),
+  };
+}
+
+export function extractPortFromBaseUrl(baseUrl: string, fallbackPort: number): number {
+  try {
+    const parsed = new URL(baseUrl);
+    const port = Number.parseInt(parsed.port, 10);
+    if (Number.isSafeInteger(port) && port >= 1 && port <= 65535) {
+      return port;
+    }
+  } catch {
+    // Fall back to default port when URL is not parseable.
+  }
+  return fallbackPort;
 }
 
 export function parseDiscovery(value: JsonObject): DiscoveryResult {
@@ -536,4 +629,22 @@ function isVariantStatus(value: unknown): value is VariantStatus {
 
 function isObject(value: unknown): value is JsonObject {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isLocalServerKind(value: unknown): value is LocalServerKind {
+  return value === 'ollama' || value === 'lm_studio';
+}
+
+function isLocalServerHealthStatus(value: unknown): value is LocalServerHealthStatus {
+  return value === 'healthy' || value === 'unhealthy' || value === 'unreachable';
+}
+
+function parseLocalServerModelEntry(value: unknown): LocalServerModelEntry[] {
+  if (!isObject(value) || typeof value.id !== 'string' || value.id.trim().length === 0) {
+    return [];
+  }
+  const id = value.id.trim();
+  const displayName =
+    typeof value.displayName === 'string' && value.displayName.trim().length > 0 ? value.displayName.trim() : id;
+  return [{ id, displayName }];
 }

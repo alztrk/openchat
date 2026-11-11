@@ -105,6 +105,7 @@ pub(crate) struct CustomProviderConfig {
     pub(crate) protocol: CustomProviderProtocol,
     pub(crate) reasoning_efforts: Vec<String>,
     pub(crate) enable_thinking: bool,
+    pub(crate) selected_models: Vec<String>,
 }
 
 /// Token limits verified from the selected provider model's catalog metadata.
@@ -222,12 +223,37 @@ impl CustomProviderConfig {
         {
             return Err(invalid());
         }
+        let selected_models = match value.get("selectedModels") {
+            None | Some(Value::Null) => Vec::new(),
+            Some(Value::Array(items)) => {
+                if items.len() > 256 {
+                    return Err(invalid());
+                }
+                let mut seen = std::collections::BTreeSet::new();
+                let mut result = Vec::with_capacity(items.len());
+                for item in items {
+                    let model_id = item.as_str().map(str::trim).ok_or_else(invalid)?;
+                    if model_id.is_empty()
+                        || model_id.len() > 256
+                        || model_id.chars().any(char::is_control)
+                    {
+                        return Err(invalid());
+                    }
+                    if seen.insert(model_id.to_owned()) {
+                        result.push(model_id.to_owned());
+                    }
+                }
+                result
+            }
+            Some(_) => return Err(invalid()),
+        };
         Ok(Self {
             id: id.to_owned(),
             base_url: base_url.trim_end_matches('/').to_owned(),
             protocol,
             reasoning_efforts,
             enable_thinking,
+            selected_models,
         })
     }
 

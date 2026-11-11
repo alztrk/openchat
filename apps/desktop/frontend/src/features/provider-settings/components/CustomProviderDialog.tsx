@@ -15,6 +15,7 @@ export interface CustomProviderDraft {
   allowInsecureHttp: boolean;
   reasoningEfforts: string[];
   enableThinking: boolean;
+  selectedModels?: string[];
   apiKey: string;
 }
 
@@ -157,6 +158,7 @@ export function CustomProviderDialog({
       allowInsecureHttp: isHttpUrl(normalizedUrl) && allowInsecureHttp,
       reasoningEfforts: protocol === 'openAi' ? reasoningEfforts : [],
       enableThinking: protocol === 'openAi' && enableThinking,
+      selectedModels: provider?.selectedModels ?? [],
       apiKey: normalizedApiKey,
     });
   };
