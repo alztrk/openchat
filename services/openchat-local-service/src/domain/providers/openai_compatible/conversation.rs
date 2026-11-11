@@ -162,7 +162,12 @@ pub(crate) async fn send_temporary_message(
     };
     let provider_messages = request::completion_messages(&provider_request, provider_id);
     let mut body = if route.uses_responses_api {
-        request::responses_api_body(&provider_request, &provider_messages, provider_id)
+        request::responses_api_body(
+            &provider_request,
+            &provider_messages,
+            provider_id,
+            route.supports_reasoning == Some(true),
+        )
     } else if route.is_anthropic() {
         request::anthropic_messages_body(&provider_request, &provider_messages)?
     } else {
@@ -873,7 +878,12 @@ pub async fn send_message(
     if let Some(Some((boundary_id, query))) = archive_query {
         let current_messages = request::completion_messages(&provider_request, provider_id);
         let mut request_body = if route.uses_responses_api {
-            request::responses_api_body(&provider_request, &current_messages, provider_id)
+            request::responses_api_body(
+                &provider_request,
+                &current_messages,
+                provider_id,
+                route.supports_reasoning == Some(true),
+            )
         } else if route.is_anthropic() {
             request::anthropic_messages_body(&provider_request, &current_messages)?
         } else {
@@ -1789,7 +1799,12 @@ fn build_loop_request_body(
     context_state: Option<&ConversationContextState>,
 ) -> Result<Value, ServiceError> {
     let mut body = if route.uses_responses_api {
-        request::responses_api_body(provider_request, messages, provider_id)
+        request::responses_api_body(
+            provider_request,
+            messages,
+            provider_id,
+            route.supports_reasoning == Some(true),
+        )
     } else if route.is_anthropic() {
         request::anthropic_messages_body(provider_request, messages)?
     } else {

@@ -1,10 +1,15 @@
 //! Model-aware token estimation shared by context usage and compaction.
 //!
 //! A supported model name selects its registered tokenizer. Unknown provider
-//! model identifiers use an explicitly approximate, conservative text heuristic
-//! instead of silently assuming a tokenizer family.
+//! model identifiers use universal BPE subword tokenization (`o200k_base`) with
+//! a conservative UTF-8 byte upper bound for dense payloads.
 
-use tiktoken::encoding_for_model;
+use std::sync::LazyLock;
+
+use tiktoken::{encoding_for_model, get_encoding};
+
+static UNIVERSAL_BPE: LazyLock<&'static tiktoken::CoreBpe> =
+    LazyLock::new(|| get_encoding("o200k_base").expect("o200k_base must be available"));
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum TokenEstimateSource {
@@ -45,12 +50,22 @@ pub(crate) fn estimate_text(model_id: &str, text: &str) -> TokenEstimate {
 
 /// Calculates image tokens from visual dimensions and active model family.
 pub(crate) fn estimate_image(model_id: &str, width: u32, height: u32) -> i64 {
+    estimate_image_for_provider(None, model_id, width, height)
+}
+
+/// Calculates image tokens from visual dimensions, provider family, and model identifier.
+pub(crate) fn estimate_image_for_provider(
+    provider_id: Option<&str>,
+    model_id: &str,
+    width: u32,
+    height: u32,
+) -> i64 {
     if width == 0 || height == 0 {
-        return default_image_tokens(model_id);
+        return default_image_tokens_for_provider(provider_id, model_id);
     }
 
     let lower = model_id.to_ascii_lowercase();
-    if lower.contains("gemini") {
+    if matches!(provider_id, Some("gemini" | "google" | "vertex")) || lower.contains("gemini") {
         if width <= 384 && height <= 384 {
             return 258;
         }
@@ -60,7 +75,7 @@ pub(crate) fn estimate_image(model_id: &str, width: u32, height: u32) -> i64 {
             .unwrap_or(i64::MAX);
     }
 
-    if lower.contains("claude") {
+    if matches!(provider_id, Some("anthropic")) || lower.contains("claude") {
         let pixels = u64::from(width).saturating_mul(u64::from(height));
         let tokens = i64::try_from(pixels / 750).unwrap_or(i64::MAX);
         return tokens.clamp(80, 1600);
@@ -94,10 +109,15 @@ pub(crate) fn estimate_image(model_id: &str, width: u32, height: u32) -> i64 {
 
 /// Fallback image token count when dimensions cannot be determined.
 pub(crate) fn default_image_tokens(model_id: &str) -> i64 {
+    default_image_tokens_for_provider(None, model_id)
+}
+
+/// Fallback image token count for a provider and model when dimensions cannot be determined.
+pub(crate) fn default_image_tokens_for_provider(provider_id: Option<&str>, model_id: &str) -> i64 {
     let lower = model_id.to_ascii_lowercase();
-    if lower.contains("gemini") {
+    if matches!(provider_id, Some("gemini" | "google" | "vertex")) || lower.contains("gemini") {
         1032
-    } else if lower.contains("claude") {
+    } else if matches!(provider_id, Some("anthropic")) || lower.contains("claude") {
         1600
     } else {
         1105
@@ -203,26 +223,25 @@ pub(crate) fn supports_model_tokenizer(model_id: &str) -> bool {
     source_for_model(model_id) == TokenEstimateSource::ModelTokenizer
 }
 
-/// Estimates ordinary prose by character class and uses UTF-8 bytes as a
-/// conservative upper bound for long, dense payloads that may tokenize poorly.
+/// Estimates text with universal `o200k_base` BPE subword tokenization and uses
+/// UTF-8 bytes as a conservative upper bound for long, dense payloads that may tokenize poorly.
 fn heuristic_text_tokens(text: &str) -> i64 {
-    let mut ascii_bytes = 0usize;
+    if text.is_empty() {
+        return 0;
+    }
+
     let mut punctuation_count = 0usize;
-    let mut non_ascii_characters = 0usize;
     let mut whitespace_count = 0usize;
     let mut character_count = 0usize;
 
     for character in text.chars() {
         character_count = character_count.saturating_add(1);
         if character.is_ascii() {
-            ascii_bytes = ascii_bytes.saturating_add(1);
             if character.is_ascii_whitespace() {
                 whitespace_count = whitespace_count.saturating_add(1);
             } else if !character.is_ascii_alphanumeric() {
                 punctuation_count = punctuation_count.saturating_add(1);
             }
-        } else {
-            non_ascii_characters = non_ascii_characters.saturating_add(1);
         }
     }
 
@@ -232,15 +251,7 @@ fn heuristic_text_tokens(text: &str) -> i64 {
         return i64::try_from(text.len()).unwrap_or(i64::MAX);
     }
 
-    let ordinary_ascii = ascii_bytes.saturating_sub(punctuation_count);
-    i64::try_from(ordinary_ascii.div_ceil(3))
-        .unwrap_or(i64::MAX)
-        .saturating_add(i64::try_from(punctuation_count).unwrap_or(i64::MAX))
-        .saturating_add(
-            i64::try_from(non_ascii_characters)
-                .unwrap_or(i64::MAX)
-                .saturating_mul(2),
-        )
+    i64::try_from(UNIVERSAL_BPE.count(text)).unwrap_or(i64::MAX)
 }
 
 #[cfg(test)]

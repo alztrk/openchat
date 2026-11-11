@@ -86,7 +86,7 @@ pub(crate) fn temporary_chatgpt_responses_body(
         .into_iter()
         .skip(1)
         .collect::<Vec<_>>();
-    let mut body = request::responses_api_body(&request, &messages, "chatgpt");
+    let mut body = request::responses_api_body(&request, &messages, "chatgpt", false);
     body["instructions"] = json!(instructions);
     body["store"] = json!(false);
     body
@@ -2395,7 +2395,7 @@ mod tests {
             reasoning_effort: None,
         };
         let messages = super::request::completion_messages(&req, "opencode");
-        let body = super::request::responses_api_body(&req, &messages, "opencode");
+        let body = super::request::responses_api_body(&req, &messages, "opencode", false);
 
         let response = client
             .post(super::RESPONSES_URL)

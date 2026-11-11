@@ -1091,6 +1091,7 @@ fn route(provider_id: &str) -> ChatRoute {
         context_limit_override: None,
         supports_images: false,
         supports_tool_calls: None,
+        supports_reasoning: None,
         connection_id: None,
         local_api_key: None,
         project_id: None,

@@ -131,16 +131,26 @@ fn parse_models(value: &Value) -> Result<Vec<Value>, ServiceError> {
         .ok_or_else(invalid_response_error)
 }
 
-pub(crate) fn supports_image_input(
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct OpenAiRouteMetadata {
+    pub(crate) context_window: Option<i64>,
+    pub(crate) input_token_limit: Option<i64>,
+    pub(crate) max_output_tokens: Option<i64>,
+    pub(crate) supports_images: bool,
+    pub(crate) supports_tool_calls: Option<bool>,
+    pub(crate) supports_reasoning: Option<bool>,
+}
+
+pub(crate) fn route_model_metadata(
     storage: &AppStorage,
     api_key: Option<&str>,
     model_id: &str,
-) -> bool {
+) -> OpenAiRouteMetadata {
     let Some(api_key) = api_key else {
-        return false;
+        return OpenAiRouteMetadata::default();
     };
     let key_hash = format!("{:x}", Sha256::digest(api_key.as_bytes()));
-    load_catalog(storage, &key_hash)
+    let Some(model) = load_catalog(storage, &key_hash)
         .ok()
         .flatten()
         .and_then(|(models, _)| {
@@ -148,8 +158,31 @@ pub(crate) fn supports_image_input(
                 .into_iter()
                 .find(|model| model.get("id").and_then(Value::as_str) == Some(model_id))
         })
-        .and_then(|model| model.get("supportsImages").and_then(Value::as_bool))
-        .unwrap_or(false)
+    else {
+        return OpenAiRouteMetadata::default();
+    };
+    let context_window = model
+        .get("contextWindow")
+        .and_then(Value::as_i64)
+        .filter(|limit| *limit > 0);
+    let input_token_limit = model
+        .get("inputTokenLimit")
+        .and_then(Value::as_i64)
+        .filter(|limit| *limit > 0)
+        .map(|limit| context_window.map_or(limit, |context| limit.min(context)))
+        .or(context_window);
+    let max_output_tokens = model
+        .get("maxOutputTokens")
+        .and_then(Value::as_i64)
+        .filter(|limit| *limit > 0);
+    OpenAiRouteMetadata {
+        context_window,
+        input_token_limit,
+        max_output_tokens,
+        supports_images: model.get("supportsImages").and_then(Value::as_bool) == Some(true),
+        supports_tool_calls: model.get("supportsTools").and_then(Value::as_bool),
+        supports_reasoning: model.get("supportsReasoning").and_then(Value::as_bool),
+    }
 }
 
 fn load_catalog(

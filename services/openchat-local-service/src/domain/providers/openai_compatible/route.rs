@@ -39,6 +39,7 @@ pub(super) struct ChatRoute {
     pub(super) context_limit_override: Option<i64>,
     pub(super) supports_images: bool,
     pub(super) supports_tool_calls: Option<bool>,
+    pub(super) supports_reasoning: Option<bool>,
     pub(super) connection_id: Option<String>,
     pub(super) local_api_key: Option<Zeroizing<String>>,
     pub(super) project_id: Option<String>,
@@ -93,6 +94,7 @@ struct ResolvedProviderRoute {
     limits: super::ModelContextLimits,
     supports_images: bool,
     supports_tool_calls: Option<bool>,
+    supports_reasoning: Option<bool>,
     connection_id: Option<String>,
     local_api_key: Option<Zeroizing<String>>,
     reasoning_levels: Vec<String>,
@@ -230,6 +232,7 @@ async fn resolve_chat_route_for_model(
                 limits: metadata.context_limits,
                 supports_images: metadata.supports_images,
                 supports_tool_calls: metadata.supports_tool_calls,
+                supports_reasoning: None,
                 connection_id: None,
                 local_api_key: None,
                 reasoning_levels: Vec::new(),
@@ -256,6 +259,7 @@ async fn resolve_chat_route_for_model(
                 },
                 supports_images: endpoint.capabilities.supports_images,
                 supports_tool_calls: endpoint.capabilities.supports_tool_calls,
+                supports_reasoning: None,
                 connection_id: None,
                 local_api_key: endpoint.api_key,
                 reasoning_levels: Vec::new(),
@@ -268,18 +272,15 @@ async fn resolve_chat_route_for_model(
             if api_key.is_none() {
                 return Err(openai_authentication_required_error());
             }
-            let model_context_limit = openai_responses_compaction_context_limit(&model_id);
-            let native_compaction = model_context_limit
-                .is_some()
-                .then_some(NativeCompaction::OpenAiResponsesThreshold);
-            let limits = model_context_limit.map_or_else(
-                super::ModelContextLimits::default,
-                |context_limit| super::ModelContextLimits {
-                    context_window: Some(context_limit),
-                    input_token_limit: Some(context_limit),
-                    max_output_tokens: Some(128_000),
-                },
-            );
+            let metadata = crate::openai_api::route_model_metadata(storage, api_key, &model_id);
+            let limits = super::ModelContextLimits {
+                context_window: metadata.context_window,
+                input_token_limit: metadata.input_token_limit,
+                max_output_tokens: metadata.max_output_tokens,
+            };
+            let native_compaction = (limits.context_window.is_some()
+                || limits.input_token_limit.is_some())
+            .then_some(NativeCompaction::OpenAiResponsesThreshold);
             ResolvedProviderRoute {
                 provider_model_id: model_id.clone(),
                 chat_url: OPENAI_RESPONSES_URL.to_owned(),
@@ -287,10 +288,9 @@ async fn resolve_chat_route_for_model(
                 uses_responses_api: true,
                 native_compaction,
                 limits,
-                supports_images: crate::openai_api::supports_image_input(
-                    storage, api_key, &model_id,
-                ),
-                supports_tool_calls: None,
+                supports_images: metadata.supports_images,
+                supports_tool_calls: metadata.supports_tool_calls,
+                supports_reasoning: metadata.supports_reasoning,
                 connection_id: stored_api_key_connection_id.map(str::to_owned),
                 local_api_key: None,
                 reasoning_levels: Vec::new(),
@@ -322,6 +322,7 @@ async fn resolve_chat_route_for_model(
                 },
                 supports_images: copilot_route.supports_images,
                 supports_tool_calls: copilot_route.supports_tool_calls,
+                supports_reasoning: Some(!copilot_route.reasoning_levels.is_empty()),
                 connection_id: Some("copilot".to_owned()),
                 local_api_key: None,
                 reasoning_levels: copilot_route.reasoning_levels,
@@ -352,6 +353,7 @@ async fn resolve_chat_route_for_model(
                 limits,
                 supports_images: false,
                 supports_tool_calls: None,
+                supports_reasoning: None,
                 connection_id: Some(id.to_owned()),
                 local_api_key: None,
                 reasoning_levels: provider.reasoning_efforts.clone(),
@@ -377,10 +379,7 @@ async fn resolve_chat_route_for_model(
             let key = api_key.unwrap_or("");
             let metadata =
                 super::provider_models::route_model_metadata(storage, id, key, &model_id)?;
-            let uses_xai_responses = id == "xai" && model_id == "grok-4.7";
-            let native_compaction = if uses_xai_responses {
-                Some(NativeCompaction::XaiResponsesExplicit)
-            } else if provider.is_anthropic()
+            let native_compaction = if provider.is_anthropic()
                 && metadata.supports_threshold_compaction == Some(true)
             {
                 Some(NativeCompaction::AnthropicMessagesThreshold)
@@ -389,19 +388,18 @@ async fn resolve_chat_route_for_model(
             };
             ResolvedProviderRoute {
                 provider_model_id: model_id.clone(),
-                chat_url: if uses_xai_responses {
-                    format!("{}/responses", provider.base_url)
-                } else if provider.is_anthropic() {
+                chat_url: if provider.is_anthropic() {
                     format!("{}/messages", provider.base_url)
                 } else {
                     format!("{}/chat/completions", provider.base_url)
                 },
                 is_free: is_kilo_free,
-                uses_responses_api: uses_xai_responses,
+                uses_responses_api: false,
                 native_compaction,
                 limits: metadata.context_limits,
                 supports_images: metadata.supports_images,
                 supports_tool_calls: metadata.supports_tool_calls,
+                supports_reasoning: metadata.supports_reasoning,
                 connection_id: Some(id.to_owned()),
                 local_api_key: None,
                 reasoning_levels: Vec::new(),
@@ -456,26 +454,11 @@ async fn resolve_chat_route_for_model(
         context_limit_override,
         supports_images: resolved.supports_images,
         supports_tool_calls: resolved.supports_tool_calls,
+        supports_reasoning: resolved.supports_reasoning,
         connection_id: resolved.connection_id,
         local_api_key: resolved.local_api_key,
         project_id: project_id.map(str::to_owned),
     })
-}
-
-fn openai_responses_compaction_context_limit(model_id: &str) -> Option<i64> {
-    if model_id == "gpt-5.3-codex" {
-        Some(400_000)
-    } else if model_id == "gpt-5.4"
-        || model_id.starts_with("gpt-5.4-2026-")
-        || model_id.starts_with("gpt-5.6")
-        || model_id == "gpt-6"
-        || model_id.starts_with("gpt-6-")
-        || model_id.starts_with("gpt-6.")
-    {
-        Some(1_050_000)
-    } else {
-        None
-    }
 }
 
 fn native_compaction_threshold(
@@ -497,10 +480,7 @@ fn native_compaction_threshold(
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        ChatRoute, NativeCompaction, native_compaction_threshold,
-        openai_responses_compaction_context_limit,
-    };
+    use super::{ChatRoute, NativeCompaction, native_compaction_threshold};
 
     fn route(
         context_window: Option<i64>,
@@ -526,6 +506,7 @@ mod tests {
             context_limit_override,
             supports_images: false,
             supports_tool_calls: None,
+            supports_reasoning: None,
             connection_id: None,
             local_api_key: None,
             project_id: None,
@@ -555,48 +536,6 @@ mod tests {
             route(Some(262_144), Some(131_072), Some(180_000)).request_context_limit(),
             Some(131_072)
         );
-    }
-
-    #[test]
-    fn enables_openai_threshold_compaction_only_for_documented_models() {
-        assert_eq!(
-            openai_responses_compaction_context_limit("gpt-5.3-codex"),
-            Some(400_000)
-        );
-        assert_eq!(
-            openai_responses_compaction_context_limit("gpt-5.4"),
-            Some(1_050_000)
-        );
-        assert_eq!(
-            openai_responses_compaction_context_limit("gpt-5.4-2026-03-05"),
-            Some(1_050_000)
-        );
-        assert_eq!(
-            openai_responses_compaction_context_limit("gpt-5.6"),
-            Some(1_050_000)
-        );
-        assert_eq!(
-            openai_responses_compaction_context_limit("gpt-5.6-sol"),
-            Some(1_050_000)
-        );
-        assert_eq!(
-            openai_responses_compaction_context_limit("gpt-6-astra"),
-            Some(1_050_000)
-        );
-        assert_eq!(
-            openai_responses_compaction_context_limit("gpt-6.1-sol"),
-            Some(1_050_000)
-        );
-        assert_eq!(
-            openai_responses_compaction_context_limit("gpt-5.4-mini"),
-            None
-        );
-        assert_eq!(
-            openai_responses_compaction_context_limit("gpt-5.4-pro"),
-            None
-        );
-        assert_eq!(openai_responses_compaction_context_limit("gpt-5.5"), None);
-        assert_eq!(openai_responses_compaction_context_limit("gpt-60"), None);
     }
 
     #[test]

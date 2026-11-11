@@ -5,23 +5,15 @@
 
 use std::sync::LazyLock;
 
-use tiktoken::get_encoding;
+use tiktoken::{encoding_for_model, get_encoding};
 
-/// Cached cl100k_base encoding (used by GPT-3.5, GPT-4, most models).
-static CL100K: LazyLock<&'static tiktoken::CoreBpe> =
-    LazyLock::new(|| get_encoding("cl100k_base").expect("cl100k_base must be available"));
-
-/// Cached o200k_base encoding (used by GPT-4o series).
+/// Cached o200k_base encoding used when a model does not register a custom BPE table.
 static O200K: LazyLock<&'static tiktoken::CoreBpe> =
     LazyLock::new(|| get_encoding("o200k_base").expect("o200k_base must be available"));
 
-/// Selects the appropriate encoding based on model name.
+/// Selects the registered encoding for the model or falls back to `o200k_base`.
 pub(crate) fn model_encoding(model_id: &str) -> &'static tiktoken::CoreBpe {
-    if model_id.contains("gpt-4o") {
-        *O200K
-    } else {
-        *CL100K
-    }
+    encoding_for_model(model_id).unwrap_or(*O200K)
 }
 
 /// Count tokens using the encoding appropriate for the model.
@@ -35,7 +27,7 @@ mod tests {
     fn token_count_initializes_on_a_small_thread_stack() {
         let worker = std::thread::Builder::new()
             .stack_size(512 * 1024)
-            .spawn(|| super::count_tokens("gpt-4", "small stack tokenization"))
+            .spawn(|| super::count_tokens("unknown-model", "small stack tokenization"))
             .expect("spawn small-stack worker");
 
         assert!(

@@ -109,7 +109,7 @@ pub(crate) fn estimate_full_context_usage(
     let accounting_messages = provider_input_tokens.map_or(active_messages, |(_, prompt_index)| {
         &messages[prompt_index.saturating_add(1)..]
     });
-    let breakdown = estimate_messages(model_id, accounting_messages);
+    let breakdown = estimate_messages(provider_id, model_id, accounting_messages);
 
     let mut attachments = breakdown.attachments.clone();
     attachments.extend(
@@ -117,7 +117,7 @@ pub(crate) fn estimate_full_context_usage(
             .iter()
             .map(|attachment| ContextUsageAttachment {
                 name: attachment.name.clone(),
-                tokens: estimate_pending_attachment(model_id, attachment),
+                tokens: estimate_pending_attachment(provider_id, model_id, attachment),
                 is_draft: true,
             }),
     );
@@ -130,7 +130,7 @@ pub(crate) fn estimate_full_context_usage(
     let draft_tokens = text_token_estimate(model_id, draft);
     let pending_tokens = pending_attachments
         .iter()
-        .map(|attachment| estimate_pending_attachment(model_id, attachment))
+        .map(|attachment| estimate_pending_attachment(provider_id, model_id, attachment))
         .fold(0, i64::saturating_add);
 
     let total_tokens = if let Some((input_tokens, _)) = provider_input_tokens {
@@ -200,7 +200,11 @@ fn matching_provider_input_tokens(
     Some((input_tokens, prompt_index))
 }
 
-fn estimate_messages(model_id: &str, messages: &[StoredMessage]) -> MessageBreakdown {
+fn estimate_messages(
+    provider_id: Option<&str>,
+    model_id: &str,
+    messages: &[StoredMessage],
+) -> MessageBreakdown {
     let mut result = MessageBreakdown::default();
     for message in messages {
         let message_tokens = text_token_estimate(model_id, &message.content);
@@ -218,10 +222,15 @@ fn estimate_messages(model_id: &str, messages: &[StoredMessage]) -> MessageBreak
                     .as_deref()
                     .and_then(token_estimator::image_dimensions);
                 match dimensions {
-                    Some((width, height)) => {
-                        token_estimator::estimate_image(model_id, width, height)
+                    Some((width, height)) => token_estimator::estimate_image_for_provider(
+                        provider_id,
+                        model_id,
+                        width,
+                        height,
+                    ),
+                    None => {
+                        token_estimator::default_image_tokens_for_provider(provider_id, model_id)
                     }
-                    None => token_estimator::default_image_tokens(model_id),
                 }
             } else if let Some(content) = attachment.content.as_deref() {
                 text_token_estimate(model_id, &String::from_utf8_lossy(content))
@@ -261,9 +270,13 @@ fn estimate_messages(model_id: &str, messages: &[StoredMessage]) -> MessageBreak
                     output_obj.get("height").and_then(serde_json::Value::as_u64),
                 )
             {
-                activity_tokens = activity_tokens.saturating_add(token_estimator::estimate_image(
-                    model_id, w as u32, h as u32,
-                ));
+                activity_tokens =
+                    activity_tokens.saturating_add(token_estimator::estimate_image_for_provider(
+                        provider_id,
+                        model_id,
+                        w as u32,
+                        h as u32,
+                    ));
             }
 
             let total = result.tools.entry(activity.name.clone()).or_default();
@@ -273,9 +286,13 @@ fn estimate_messages(model_id: &str, messages: &[StoredMessage]) -> MessageBreak
     result
 }
 
-fn estimate_pending_attachment(model_id: &str, attachment: &PendingAttachmentEstimate) -> i64 {
+fn estimate_pending_attachment(
+    provider_id: Option<&str>,
+    model_id: &str,
+    attachment: &PendingAttachmentEstimate,
+) -> i64 {
     if attachment.kind == "image" {
-        return token_estimator::default_image_tokens(model_id);
+        return token_estimator::default_image_tokens_for_provider(provider_id, model_id);
     }
     let size = usize::try_from(attachment.size_bytes.max(0)).unwrap_or(usize::MAX);
     let size_estimate = i64::try_from(size.div_ceil(4)).unwrap_or(i64::MAX);

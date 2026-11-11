@@ -728,6 +728,7 @@ pub(super) fn responses_api_body(
     request: &ProviderChatRequest,
     messages: &[Value],
     provider_id: &str,
+    supports_reasoning: bool,
 ) -> Value {
     let mut body = json!({
         "model": request.model,
@@ -753,7 +754,7 @@ pub(super) fn responses_api_body(
     {
         reasoning.insert("effort".to_owned(), json!(reasoning_effort));
     }
-    if provider_id == "chatgpt_api" && supports_openai_reasoning_summary(&request.model) {
+    if provider_id == "chatgpt_api" && supports_reasoning {
         reasoning.insert("summary".to_owned(), json!("auto"));
     }
     if !reasoning.is_empty() {
@@ -852,10 +853,6 @@ pub(super) fn apply_compaction_checkpoint(
     Ok(())
 }
 
-fn supports_openai_reasoning_summary(model_id: &str) -> bool {
-    model_id.starts_with("gpt-5") || model_id.starts_with("gpt-6")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -892,6 +889,7 @@ mod tests {
             context_limit_override: None,
             supports_images: false,
             supports_tool_calls: None,
+            supports_reasoning: None,
             connection_id: Some(provider_id.to_owned()),
             local_api_key: None,
             project_id: None,
@@ -1139,7 +1137,7 @@ mod tests {
         assert!(body.get("tools").is_none());
         assert!(body.get("tool_choice").is_none());
         assert!(body.get("parallel_tool_calls").is_none());
-        let body = responses_api_body(&request(), &[], "copilot");
+        let body = responses_api_body(&request(), &[], "copilot", false);
         assert!(body.get("tools").is_none());
         assert!(body.get("tool_choice").is_none());
         assert!(body.get("parallel_tool_calls").is_none());
@@ -1160,7 +1158,7 @@ mod tests {
         let mut request = request();
         request.reasoning_effort = Some("high".to_owned());
 
-        let body = responses_api_body(&request, &[], "copilot");
+        let body = responses_api_body(&request, &[], "copilot", true);
 
         assert_eq!(body["reasoning"]["effort"], "high");
         assert_eq!(body["stream"], true);
@@ -1169,21 +1167,21 @@ mod tests {
     #[test]
     fn requests_reasoning_summaries_only_for_supported_openai_api_models() {
         let mut request = request();
-        request.model = "gpt-6-astra".to_owned();
+        request.model = "reasoning-model".to_owned();
         request.reasoning_effort = Some("high".to_owned());
 
-        let body = responses_api_body(&request, &[], "chatgpt_api");
+        let body = responses_api_body(&request, &[], "chatgpt_api", true);
 
         assert_eq!(body["reasoning"]["summary"], "auto");
         assert_eq!(body["reasoning"]["effort"], "high");
         assert_eq!(body["store"], false);
 
-        request.model = "gpt-4.1".to_owned();
-        let body = responses_api_body(&request, &[], "chatgpt_api");
+        request.model = "non-reasoning-model".to_owned();
+        let body = responses_api_body(&request, &[], "chatgpt_api", false);
         assert_eq!(body["reasoning"]["effort"], "high");
         assert!(body["reasoning"].get("summary").is_none());
 
-        let body = responses_api_body(&request, &[], "chatgpt");
+        let body = responses_api_body(&request, &[], "chatgpt", true);
         assert!(body.get("reasoning").is_none());
     }
 

@@ -344,15 +344,14 @@ pub async fn models(
     };
     match fetched {
         Ok(mut models) => {
-            if provider.id != "kilo" {
-                crate::domain::usage_statistics::enrich_model_catalog_capabilities(
-                    storage,
-                    provider.id,
-                    &mut models,
-                    cancellation,
-                )
-                .await?;
-            }
+            crate::domain::usage_statistics::enrich_model_catalog_capabilities(
+                storage,
+                provider.id,
+                &mut models,
+                cancellation,
+            )
+            .await?;
+            apply_provider_limit_fallbacks(provider.id, &mut models);
             save_catalog(storage, provider.id, &key_hash, &models)?;
             Ok(response(&models, "current"))
         }
@@ -364,10 +363,9 @@ pub async fn models(
     }
 }
 
-fn default_provider_context_window(provider_id: &str, model_id: &str) -> Option<i64> {
+fn default_provider_context_window(provider_id: &str) -> Option<i64> {
     match provider_id {
         "deepseek" => Some(64_000),
-        "xai" if model_id == "grok-4.7" => Some(500_000),
         "xai" => Some(131_072),
         "perplexity" => Some(128_000),
         "sambanova" => Some(131_072),
@@ -387,6 +385,33 @@ fn default_provider_max_output_tokens(provider_id: &str) -> Option<i64> {
         "perplexity" | "cohere" => Some(4_096),
         "anthropic" => Some(8_192),
         _ => None,
+    }
+}
+
+fn apply_provider_limit_fallbacks(provider_id: &str, models: &mut [Value]) {
+    let default_context = default_provider_context_window(provider_id);
+    let default_max_output = default_provider_max_output_tokens(provider_id);
+    for model in models {
+        let context_window = model
+            .get("contextWindow")
+            .and_then(Value::as_i64)
+            .filter(|limit| *limit > 0)
+            .or(default_context);
+        if model.get("contextWindow").is_none_or(Value::is_null)
+            && let Some(limit) = context_window
+        {
+            model["contextWindow"] = json!(limit);
+        }
+        if model.get("inputTokenLimit").is_none_or(Value::is_null)
+            && let Some(limit) = context_window
+        {
+            model["inputTokenLimit"] = json!(limit);
+        }
+        if model.get("maxOutputTokens").is_none_or(Value::is_null)
+            && let Some(limit) = default_max_output
+        {
+            model["maxOutputTokens"] = json!(limit);
+        }
     }
 }
 
@@ -454,7 +479,6 @@ fn parse_models(
                                 .and_then(Value::as_i64)
                         })
                         .or(input_token_limit)
-                        .or_else(|| default_provider_context_window(provider_id, id))
                         .filter(|value| *value > 0);
                     let input_token_limit = input_token_limit.or(context_window);
                     let max_output_tokens = [
@@ -466,8 +490,7 @@ fn parse_models(
                     .into_iter()
                     .flatten()
                     .filter_map(Value::as_i64)
-                    .find(|limit| *limit > 0)
-                    .or_else(|| default_provider_max_output_tokens(provider_id));
+                    .find(|limit| *limit > 0);
                     let supports_images = if provider_id == "kilo" {
                         Some(supports_images(item, details).unwrap_or(false))
                     } else {
@@ -482,29 +505,24 @@ fn parse_models(
                             || id.ends_with(":free")
                             || id.contains("/free")
                             || id == "kilo-auto/free");
-                    let is_kilo_reasoning = provider_id == "kilo"
-                        && (id.contains("reasoning")
-                            || id.contains("r1")
-                            || item
-                                .get("supported_parameters")
+                    let supports_reasoning = item
+                        .get("reasoning")
+                        .and_then(Value::as_bool)
+                        .or_else(|| {
+                            details
+                                .and_then(|model| model.get("reasoning"))
+                                .and_then(Value::as_bool)
+                        })
+                        .or_else(|| {
+                            item.get("supported_parameters")
                                 .and_then(Value::as_array)
-                                .is_some_and(|params| {
+                                .map(|params| {
                                     params.iter().any(|p| {
                                         p.as_str() == Some("reasoning")
                                             || p.as_str() == Some("include_reasoning")
                                     })
-                                }));
-                    let supports_reasoning = if provider_id == "kilo" {
-                        Some(is_kilo_reasoning)
-                    } else {
-                        item.get("reasoning")
-                            .and_then(Value::as_bool)
-                            .or_else(|| {
-                                details
-                                    .and_then(|model| model.get("reasoning"))
-                                    .and_then(Value::as_bool)
-                            })
-                    };
+                                })
+                        });
                     let mut model = json!({
                         "id": id,
                         "displayName": item.get("name").or_else(|| details.and_then(|model| model.get("name").or_else(|| model.get("displayName")))).and_then(Value::as_str).filter(|name| !name.trim().is_empty()).unwrap_or(id),
@@ -645,6 +663,7 @@ pub(super) struct RouteModelMetadata {
     pub(super) context_limits: super::ModelContextLimits,
     pub(super) supports_images: bool,
     pub(super) supports_tool_calls: Option<bool>,
+    pub(super) supports_reasoning: Option<bool>,
     pub(super) supports_threshold_compaction: Option<bool>,
 }
 
@@ -660,6 +679,7 @@ pub(super) fn route_model_metadata(
             context_limits: super::ModelContextLimits::default(),
             supports_images: false,
             supports_tool_calls: None,
+            supports_reasoning: None,
             supports_threshold_compaction: None,
         });
     };
@@ -692,6 +712,9 @@ pub(super) fn route_model_metadata(
             == Some(true),
         supports_tool_calls: model
             .and_then(|model| model.get("supportsTools"))
+            .and_then(Value::as_bool),
+        supports_reasoning: model
+            .and_then(|model| model.get("supportsReasoning"))
             .and_then(Value::as_bool),
         supports_threshold_compaction: model
             .and_then(|model| model.get("supportsThresholdCompaction"))
@@ -931,9 +954,9 @@ mod tests {
     use crate::storage::AppStorage;
 
     use super::{
-        api_key_hash, catalog_client, fetch_catalog_pair, has_current_limit_metadata,
-        load_catalog_from_connection, model_context_window, parse_models, provider_tool_support,
-        route_model_metadata,
+        api_key_hash, apply_provider_limit_fallbacks, catalog_client, fetch_catalog_pair,
+        has_current_limit_metadata, load_catalog_from_connection, model_context_window,
+        parse_models, provider_tool_support, route_model_metadata,
     };
 
     struct TestDirectory(PathBuf);
@@ -1415,7 +1438,7 @@ mod tests {
         .expect("parse Cerebras tool models");
         assert_eq!(cerebras[0]["supportsTools"], true);
 
-        let deepseek = parse_models(
+        let mut deepseek = parse_models(
             "deepseek",
             &json!({
                 "data": [
@@ -1427,12 +1450,15 @@ mod tests {
         )
         .expect("parse DeepSeek models");
         assert_eq!(deepseek.len(), 2);
+        assert!(deepseek[0]["contextWindow"].is_null());
+        apply_provider_limit_fallbacks("deepseek", &mut deepseek);
         assert_eq!(deepseek[0]["contextWindow"], 64_000);
+        assert_eq!(deepseek[0]["inputTokenLimit"], 64_000);
         assert!(deepseek[0]["supportsTools"].is_null());
         assert!(deepseek[1]["supportsTools"].is_null());
         assert!(deepseek[1]["supportsReasoning"].is_null());
 
-        let xai = parse_models(
+        let mut xai = parse_models(
             "xai",
             &json!({
                 "data": [
@@ -1443,11 +1469,13 @@ mod tests {
             None,
         )
         .expect("parse xAI models");
+        assert!(xai[0]["contextWindow"].is_null());
+        apply_provider_limit_fallbacks("xai", &mut xai);
         assert_eq!(xai[0]["contextWindow"], 131_072);
         assert!(xai[0]["supportsTools"].is_null());
         assert!(xai[1]["supportsImages"].is_null());
 
-        let perplexity = parse_models(
+        let mut perplexity = parse_models(
             "perplexity",
             &json!({
                 "data": [
@@ -1459,6 +1487,8 @@ mod tests {
             None,
         )
         .expect("parse Perplexity models");
+        assert!(perplexity[0]["contextWindow"].is_null());
+        apply_provider_limit_fallbacks("perplexity", &mut perplexity);
         assert_eq!(perplexity[0]["contextWindow"], 128_000);
         assert_eq!(perplexity[1]["contextWindow"], 128_000);
         assert!(perplexity[2]["supportsReasoning"].is_null());
