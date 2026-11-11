@@ -68,38 +68,68 @@ impl RoundReasoningState {
     }
 }
 
-async fn append_visible_text(
-    request: &mut ResponseStreamRequest<'_>,
-    round_content: &mut String,
+const STREAM_BATCH_WINDOW: Duration = Duration::from_millis(35);
+const MAX_STREAM_BATCH_BYTES: usize = 384;
+
+pub(super) struct TextStreamBatcher {
+    pending: String,
+    last_flush: StdInstant,
+    initial_token_sent: bool,
+}
+
+impl TextStreamBatcher {
+    pub(super) fn new() -> Self {
+        Self {
+            pending: String::new(),
+            last_flush: StdInstant::now(),
+            initial_token_sent: false,
+        }
+    }
+
+    pub(super) async fn push(
+        &mut self,
+        request: &ResponseStreamRequest<'_>,
+        text: &str,
+    ) -> Result<(), ServiceError> {
+        if text.is_empty() {
+            return Ok(());
+        }
+
+        // Guarantee 0 added latency for Time-To-First-Token (TTFT)
+        if !self.initial_token_sent {
+            self.initial_token_sent = true;
+            self.last_flush = StdInstant::now();
+            return send_text_delta(request, text).await;
+        }
+
+        self.pending.push_str(text);
+
+        // Batch rapid subsequent tokens until the 35 ms window expires or buffer threshold is reached
+        if self.last_flush.elapsed() >= STREAM_BATCH_WINDOW
+            || self.pending.len() >= MAX_STREAM_BATCH_BYTES
+        {
+            self.flush(request).await?;
+        }
+        Ok(())
+    }
+
+    pub(super) async fn flush(
+        &mut self,
+        request: &ResponseStreamRequest<'_>,
+    ) -> Result<(), ServiceError> {
+        if self.pending.is_empty() {
+            return Ok(());
+        }
+        let delta = std::mem::take(&mut self.pending);
+        self.last_flush = StdInstant::now();
+        send_text_delta(request, &delta).await
+    }
+}
+
+async fn send_text_delta(
+    request: &ResponseStreamRequest<'_>,
     text: &str,
 ) -> Result<(), ServiceError> {
-    if text.is_empty() {
-        return Ok(());
-    }
-    let needs_round_separator = round_content.is_empty()
-        && !request.content.is_empty()
-        && !request.content.ends_with('\n')
-        && !text.starts_with('\n');
-    if needs_round_separator {
-        let separated = format!("\n\n{text}");
-        request.content.push_str(&separated);
-        round_content.push_str(text);
-        return request
-            .events
-            .send(
-                &ChatStreamEvent::TextAppended(ChatStreamDelta::new(
-                    request.conversation_id,
-                    request.message_id,
-                    &separated,
-                    request.created_at,
-                ))
-                .into_rpc(request.request_id.clone()),
-            )
-            .await
-            .map_err(|_| protocol_error());
-    }
-    request.content.push_str(text);
-    round_content.push_str(text);
     request
         .events
         .send(
@@ -115,14 +145,43 @@ async fn append_visible_text(
         .map_err(|_| protocol_error())
 }
 
+async fn append_visible_text(
+    request: &mut ResponseStreamRequest<'_>,
+    round_content: &mut String,
+    text: &str,
+    batcher: &mut TextStreamBatcher,
+) -> Result<(), ServiceError> {
+    if text.is_empty() {
+        return Ok(());
+    }
+    let needs_round_separator = round_content.is_empty()
+        && !request.content.is_empty()
+        && !request.content.ends_with('\n')
+        && !text.starts_with('\n');
+    if needs_round_separator {
+        batcher.flush(request).await?;
+        let separated = format!("\n\n{text}");
+        request.content.push_str(&separated);
+        round_content.push_str(text);
+        batcher.initial_token_sent = true;
+        batcher.last_flush = StdInstant::now();
+        return send_text_delta(request, &separated).await;
+    }
+    request.content.push_str(text);
+    round_content.push_str(text);
+    batcher.push(request, text).await
+}
+
 async fn append_think_output(
     request: &mut ResponseStreamRequest<'_>,
     round_content: &mut String,
     round_reasoning: &mut RoundReasoningState,
     output: super::think_tag_filter::ThinkTagOutput,
+    batcher: &mut TextStreamBatcher,
 ) -> Result<(), ServiceError> {
-    append_visible_text(request, round_content, &output.visible).await?;
+    append_visible_text(request, round_content, &output.visible, batcher).await?;
     if !output.reasoning.is_empty() {
+        batcher.flush(request).await?;
         append_legacy_reasoning(request, round_reasoning, &output.reasoning).await?;
     }
     Ok(())
@@ -740,6 +799,7 @@ async fn receive_with_client(
     let mut round_reasoning = RoundReasoningState::new();
     let mut tool_calls = BTreeMap::<usize, StreamedToolCall>::new();
     let mut think_filter = ThinkTagFilter::new();
+    let mut text_batcher = TextStreamBatcher::new();
     let supports_provider_citations = matches!(
         request.route.provider_id.as_deref(),
         Some(
@@ -880,6 +940,7 @@ async fn receive_with_client(
                                         &mut round_content,
                                         &mut round_reasoning,
                                         output,
+                                        &mut text_batcher,
                                     )
                                     .await?;
                                 }
@@ -889,6 +950,7 @@ async fn receive_with_client(
                                     .and_then(|delta| delta.get("thinking"))
                                     .and_then(Value::as_str)
                                 {
+                                    text_batcher.flush(&request).await?;
                                     append_legacy_reasoning(
                                         &mut request,
                                         &mut round_reasoning,
@@ -898,6 +960,7 @@ async fn receive_with_client(
                                 }
                             }
                             Some("input_json_delta") => {
+                                text_batcher.flush(&request).await?;
                                 let index = value
                                     .get("index")
                                     .and_then(Value::as_u64)
@@ -1069,10 +1132,12 @@ async fn receive_with_client(
                             &mut round_content,
                             &mut round_reasoning,
                             output,
+                            &mut text_batcher,
                         )
                         .await?;
                     }
                     ResponsesStreamEffect::ReasoningDelta(reasoning) => {
+                        text_batcher.flush(&request).await?;
                         if request.route.provider_id.as_deref() != Some("chatgpt_api") {
                             append_legacy_reasoning(&mut request, &mut round_reasoning, &reasoning)
                                 .await?;
@@ -1083,6 +1148,7 @@ async fn receive_with_client(
                         summary_index,
                         delta,
                     } => {
+                        text_batcher.flush(&request).await?;
                         if request.route.provider_id.as_deref() == Some("chatgpt_api") {
                             update_reasoning_summary(
                                 &mut request,
@@ -1207,8 +1273,15 @@ async fn receive_with_client(
                     visible_delta.push(']');
                 }
             }
-            append_visible_text(&mut request, &mut round_content, &visible_delta).await?;
+            append_visible_text(
+                &mut request,
+                &mut round_content,
+                &visible_delta,
+                &mut text_batcher,
+            )
+            .await?;
             if let Some(reasoning) = reasoning {
+                text_batcher.flush(&request).await?;
                 append_legacy_reasoning(&mut request, &mut round_reasoning, reasoning).await?;
             }
             update_chat_completion_usage(&value, request.input_tokens, request.output_tokens);
@@ -1221,6 +1294,7 @@ async fn receive_with_client(
                 .pointer("/choices/0/delta/tool_calls")
                 .and_then(Value::as_array)
             {
+                text_batcher.flush(&request).await?;
                 append_tool_call_deltas(&mut tool_calls, deltas)?;
             }
         }
@@ -1232,9 +1306,11 @@ async fn receive_with_client(
         &mut round_content,
         &mut round_reasoning,
         trailing_output,
+        &mut text_batcher,
     )
     .await?;
 
+    text_batcher.flush(&request).await?;
     let _ = finish_reasoning_summaries(&mut request, &round_reasoning).await;
     if !stream_is_complete(saw_done, saw_finish_reason) {
         return Err(invalid_response_error());

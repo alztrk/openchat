@@ -18,7 +18,7 @@ use rusqlite::Connection;
 
 use super::{
     database_key::DatabaseKey,
-    database_queue::QueuedConnection,
+    database_queue::{PooledReaderConnection, QueuedConnection},
     ipc_protocol::{MAX_STORAGE_COLUMNS, MAX_STORAGE_ROWS},
 };
 
@@ -33,6 +33,7 @@ pub(crate) struct StorageConnection<'a> {
 
 enum StorageBackend<'a> {
     Local(QueuedConnection<'a>),
+    Reader(PooledReaderConnection<'a>),
     #[cfg(test)]
     Standalone(Connection),
     #[cfg(windows)]
@@ -44,6 +45,17 @@ impl<'a> StorageConnection<'a> {
     pub(crate) fn local(connection: QueuedConnection<'a>, database_key: &'a DatabaseKey) -> Self {
         Self {
             backend: StorageBackend::Local(connection),
+            database_key: Some(database_key),
+        }
+    }
+
+    /// Wraps a pooled secondary read-only connection.
+    pub(crate) fn reader(
+        connection: PooledReaderConnection<'a>,
+        database_key: &'a DatabaseKey,
+    ) -> Self {
+        Self {
+            backend: StorageBackend::Reader(connection),
             database_key: Some(database_key),
         }
     }
@@ -69,6 +81,7 @@ impl<'a> StorageConnection<'a> {
     pub(crate) fn execute<P: Params>(&self, sql: &str, params: P) -> Result<usize> {
         match &self.backend {
             StorageBackend::Local(connection) => connection.execute(sql, params),
+            StorageBackend::Reader(connection) => connection.execute(sql, params),
             #[cfg(test)]
             StorageBackend::Standalone(connection) => connection.execute(sql, params),
             #[cfg(windows)]
@@ -80,6 +93,7 @@ impl<'a> StorageConnection<'a> {
     pub(crate) fn execute_batch(&self, sql: &str) -> Result<()> {
         match &self.backend {
             StorageBackend::Local(connection) => connection.execute_batch(sql),
+            StorageBackend::Reader(connection) => connection.execute_batch(sql),
             #[cfg(test)]
             StorageBackend::Standalone(connection) => connection.execute_batch(sql),
             #[cfg(windows)]
@@ -125,6 +139,9 @@ impl<'a> StorageConnection<'a> {
             StorageBackend::Local(connection) => Ok(StorageStatement {
                 backend: StorageStatementBackend::Local(connection.prepare(sql)?),
             }),
+            StorageBackend::Reader(connection) => Ok(StorageStatement {
+                backend: StorageStatementBackend::Local(connection.prepare(sql)?),
+            }),
             #[cfg(test)]
             StorageBackend::Standalone(connection) => Ok(StorageStatement {
                 backend: StorageStatementBackend::Local(connection.prepare(sql)?),
@@ -152,6 +169,10 @@ impl<'a> StorageConnection<'a> {
                     connection.transaction_with_behavior(behavior)?,
                 ),
             }),
+            StorageBackend::Reader(_) => Err(Error::SqliteFailure(
+                ffi::Error::new(ffi::SQLITE_READONLY),
+                Some("cannot start a transaction on a read-only pooled connection".to_owned()),
+            )),
             #[cfg(test)]
             StorageBackend::Standalone(connection) => Ok(StorageTransaction {
                 backend: StorageTransactionBackend::Local(
@@ -173,6 +194,10 @@ impl<'a> StorageConnection<'a> {
             StorageBackend::Local(connection) => Ok(StorageTransaction {
                 backend: StorageTransactionBackend::Local(connection.unchecked_transaction()?),
             }),
+            StorageBackend::Reader(_) => Err(Error::SqliteFailure(
+                ffi::Error::new(ffi::SQLITE_READONLY),
+                Some("cannot start a transaction on a read-only pooled connection".to_owned()),
+            )),
             #[cfg(test)]
             StorageBackend::Standalone(connection) => Ok(StorageTransaction {
                 backend: StorageTransactionBackend::Local(connection.unchecked_transaction()?),
@@ -246,6 +271,9 @@ impl<'a> StorageConnection<'a> {
             StorageBackend::Local(connection) => {
                 super::tool_index_redaction::register_sqlite_function(connection)
             }
+            StorageBackend::Reader(connection) => {
+                super::tool_index_redaction::register_sqlite_function(connection)
+            }
             #[cfg(test)]
             StorageBackend::Standalone(connection) => {
                 super::tool_index_redaction::register_sqlite_function(connection)
@@ -259,6 +287,9 @@ impl<'a> StorageConnection<'a> {
     pub(crate) fn verify_integrity(&self) -> Result<()> {
         match &self.backend {
             StorageBackend::Local(connection) => {
+                super::database_guard::verify_integrity(connection)
+            }
+            StorageBackend::Reader(connection) => {
                 super::database_guard::verify_integrity(connection)
             }
             #[cfg(test)]
@@ -297,6 +328,7 @@ impl<'a> StorageConnection<'a> {
                     database_key,
                 )
             }
+            StorageBackend::Reader(_) => Err(Error::InvalidQuery),
             #[cfg(test)]
             StorageBackend::Standalone(_) => Err(Error::InvalidQuery),
             #[cfg(windows)]

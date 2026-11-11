@@ -1878,3 +1878,71 @@ async fn consecutive_rounds_separate_visible_text_and_preserve_per_round_reasoni
     );
     assert!(reasoning_summaries[1].is_complete);
 }
+
+#[tokio::test]
+async fn text_stream_batcher_delivers_first_token_immediately_and_batches_subsequent() {
+    let (events, mut rx) = EventSink::test_channel();
+    let turn_route = route("openai");
+    let body = serde_json::json!({});
+    let request_id = serde_json::json!(1);
+    let mut content = String::new();
+    let mut reasoning_content = String::new();
+    let mut reasoning_summaries = Vec::new();
+    let mut output_tokens = None;
+    let mut input_tokens = None;
+    let (_tx, mut cancellation) = tokio::sync::watch::channel(false);
+    let mut response_budget = ProviderResponseBudget::default();
+
+    let request = ResponseStreamRequest {
+        route: &turn_route,
+        api_key: None,
+        session_id: None,
+        body: &body,
+        request_id: &request_id,
+        conversation_id: "conv-1",
+        message_id: "msg-1",
+        created_at: 1000,
+        content: &mut content,
+        reasoning_content: &mut reasoning_content,
+        reasoning_summaries: &mut reasoning_summaries,
+        output_tokens: &mut output_tokens,
+        input_tokens: &mut input_tokens,
+        started: Instant::now(),
+        first_output_recorder: None,
+        rate_limit_observation: None,
+        cancellation: &mut cancellation,
+        events: &events,
+        response_budget: &mut response_budget,
+    };
+
+    let mut batcher = super::TextStreamBatcher::new();
+
+    // First push MUST emit immediately with 0 latency (TTFT guarantee)
+    batcher
+        .push(&request, "Hello")
+        .await
+        .expect("push first token");
+    let first_event = rx
+        .try_recv()
+        .expect("first token must be received immediately");
+    assert_eq!(first_event.event.as_deref(), Some("chat.text.delta"));
+    assert_eq!(first_event.data.as_ref().unwrap()["delta"], "Hello");
+
+    // Subsequent rapid pushes within the batch window MUST be buffered
+    batcher.push(&request, " ").await.expect("push token 2");
+    batcher
+        .push(&request, "world!")
+        .await
+        .expect("push token 3");
+    assert!(
+        rx.try_recv().is_err(),
+        "subsequent rapid tokens should be buffered"
+    );
+
+    // Flush MUST deliver the batched deltas as one coalesced frame
+    batcher.flush(&request).await.expect("flush batch");
+    let batched_event = rx
+        .try_recv()
+        .expect("batched tokens must be received on flush");
+    assert_eq!(batched_event.data.as_ref().unwrap()["delta"], " world!");
+}

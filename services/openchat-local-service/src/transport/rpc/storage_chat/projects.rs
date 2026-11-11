@@ -6,7 +6,7 @@ pub(super) fn list_projects(params: &Value, storage: &AppStorage) -> Result<Valu
     let offset = list_offset(params)?;
     let offset = i64::try_from(offset).map_err(|_| invalid_request_params())?;
     let limit = i64::try_from(MAX_PROJECT_PAGE + 1).map_err(|_| invalid_request_params())?;
-    let connection = storage.connect().map_err(storage_error)?;
+    let connection = storage.connect_read().map_err(storage_error)?;
     let mut statement = connection
         .prepare(
             "SELECT id, name, folder_path, created_at, updated_at

@@ -543,7 +543,11 @@ impl AppStorage {
         )?;
         let schema_version = initialize_schema(&connection, INITIAL_SCHEMA_VERSION)?;
         ensure_service_metadata(&connection)?;
-        let database_queue = DatabaseQueueHandle::new(connection, database_key.clone());
+        let database_queue = DatabaseQueueHandle::new_with_path(
+            connection,
+            database_key.clone(),
+            Some(database_path.clone()),
+        );
         Ok(Self {
             image_files_root: root.clone(),
             root,
@@ -1374,6 +1378,7 @@ impl AppStorage {
             return Ok(false);
         }
 
+        self.database_queue.clear_readers();
         let mut connection = self.database_queue.connect_local()?;
         database_guard::verify_integrity(&connection)?;
         let current_chat_version = database_guard::chat_schema_version(&connection)?;
@@ -1413,6 +1418,14 @@ impl AppStorage {
     /// Returns a SQLite error if the connection or required SQL functions cannot be initialized.
     pub(crate) fn connect(&self) -> rusqlite::Result<StorageConnection<'_>> {
         self.database_queue.connect()
+    }
+
+    /// Acquires a connection for read-only queries.
+    ///
+    /// Uses a pooled secondary connection in WAL mode when available, allowing
+    /// reads to execute concurrently without blocking write operations.
+    pub(crate) fn connect_read(&self) -> rusqlite::Result<StorageConnection<'_>> {
+        self.database_queue.connect_read()
     }
 
     /// Acquires the concrete SQLite connection for service-owned maintenance and pipe handling.

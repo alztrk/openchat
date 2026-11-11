@@ -114,7 +114,7 @@ pub(crate) fn list(
     storage: &AppStorage,
     conversation_id: &str,
 ) -> Result<Vec<ConversationTodo>, ServiceError> {
-    let connection = storage.connect().map_err(|_| storage_error())?;
+    let connection = storage.connect_read().map_err(|_| storage_error())?;
     validate_conversation(&connection, conversation_id)?;
     let mut statement = connection
         .prepare(

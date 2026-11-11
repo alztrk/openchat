@@ -504,11 +504,11 @@ Her aşamada değişikliği küçük bir dikey dilim halinde uygula; ilgili regr
 - [x] `list_conversations` B-Tree indeks uyuşmazlığının giderilmesi: Migration 26 ile `idx_conversations_list_order (is_pinned DESC, updated_at DESC, id ASC)` indeksi eklenerek `conversations` tablosundaki geçici bellek içi sıralama (`TEMP B-TREE FOR ORDER BY`) tamamen kaldırıldı.
 - [x] `list_messages` sorgusu için `idx_messages_conversation_page (conversation_id, COALESCE(created_at, 0) DESC, id DESC)` ifadesel indeksi eklenerek SQLite'ın geriye doğru doğrudan indeks taraması yapması sağlandı.
 - [x] `stream.rs` içerisindeki SSE satır ayrıştırmasında `line.to_vec()` heap tahsisi kaldırılarak `std::str::from_utf8(line)` ile sıfır kopyalama (zero-copy) satır işleme mimarisi uygulandı.
-- [ ] SQLite WAL eşzamanlılığı: UI okuma sorgularının (`list_messages`, `get_conversation`, arama) yazma işlemlerini beklemesini önlemek için WAL modunun paralel okuyucu avantajından faydalanan ikincil salt-okunur bağlantı havuzunun değerlendirilmesi.
+- [x] SQLite WAL eşzamanlılığı: UI okuma sorgularının (`list_messages`, `get_conversation`, `search_messages`, `list_projects`, ekler ve todo sorguları) yazma işlemlerini beklemesini önlemek için WAL modunun paralel okuyucu avantajından faydalanan ikincil salt-okunur bağlantı havuzu (`PooledReaderConnection`, `connect_read`) uygulandı.
 
 ### 17.3 Zed Esinli Akıcılık ve Bellek Mimarisi (Rust Offloading & IPC Batching)
 - [ ] Ağır hesaplamaların Rust'a çekilmesi: Token tahmini, arama indeksleme ve yapısal metin analizi gibi CPU-yoğun işlerin JavaScript V8 motoru yerine Rust tarafında hesaplanarak UI'a hazır metrik olarak iletilmesi.
-- [ ] IPC akış tamponlama ve batching: Yüksek frekanslı token olaylarının 30-50 ms pencerelerde Rust tarafında paketlenerek React'e sabit 60 FPS temposunda beslenmesi.
+- [x] IPC akış tamponlama ve batching: Yüksek frekanslı token olaylarının 35 ms pencerelerde Rust tarafında paketlenerek (`TextStreamBatcher`) ilk token gecikmesi (TTFT = 0 ms) korunurken IPC ve React tarafına 60 FPS temposunda beslenmesi uygulandı.
 - [ ] Rust tarafında bellek içi aktif konuşma önbelleği (`In-Memory Hot Cache`): Aktif konuşma mesajlarının RAM'de tutulup SQLite'a asenkron yazılması (write-through cache) ile anlık arayüz yanıt sürelerine ulaşılması.
 
 ### 17.4 Yerel Model Çıkarım Yapılandırması (Kullanıcı Kontrollü / Manuel) ✅ TAMAMLANDI (Commit: 88319a8b)

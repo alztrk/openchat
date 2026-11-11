@@ -98,7 +98,7 @@ pub(super) fn list_conversations(
     let offset = list_offset(params)?;
     let offset = i64::try_from(offset).map_err(|_| invalid_request_params())?;
     let limit = i64::try_from(MAX_CONVERSATION_PAGE + 1).map_err(|_| invalid_request_params())?;
-    let connection = storage.connect().map_err(storage_error)?;
+    let connection = storage.connect_read().map_err(storage_error)?;
     let mut statement = connection
         .prepare(
             "SELECT id, title, title_source, provider_id, model_id, connection_id,
@@ -139,7 +139,7 @@ pub(super) fn get_conversation(
 ) -> Result<Value, ServiceError> {
     let input = input_object(params)?;
     let id = required_safe_id(input, "conversationId")?;
-    let connection = storage.connect().map_err(storage_error)?;
+    let connection = storage.connect_read().map_err(storage_error)?;
     let conversation = connection
         .query_row(
             "SELECT id, title, title_source, provider_id, model_id, connection_id,
@@ -543,7 +543,7 @@ pub(super) fn list_messages(params: &Value, storage: &AppStorage) -> Result<Valu
         .transpose()?
         .unwrap_or(MAX_MESSAGE_PAGE);
     let before_message_id = optional_safe_id(input, "beforeMessageId")?;
-    let connection = storage.connect().map_err(storage_error)?;
+    let connection = storage.connect_read().map_err(storage_error)?;
     let before_created_at = before_message_id
         .map(|message_id| {
             connection
@@ -1068,7 +1068,7 @@ pub(super) fn search_messages(params: &Value, storage: &AppStorage) -> Result<Va
          FROM bounded
          JOIN messages AS m ON m.conversation_id = bounded.conversation_id AND m.id = bounded.id
          ORDER BY bounded.page_number ASC";
-    let connection = storage.connect().map_err(storage_error)?;
+    let connection = storage.connect_read().map_err(storage_error)?;
     let mut statement = connection.prepare(sql).map_err(storage_error)?;
     let normalized = normalize_search_text(query);
     let role_value = role.unwrap_or("");
@@ -1124,7 +1124,7 @@ pub(super) fn search_messages(params: &Value, storage: &AppStorage) -> Result<Va
 pub(super) fn has_completed_assistant_response(
     storage: &AppStorage,
 ) -> Result<Value, ServiceError> {
-    let connection = storage.connect().map_err(storage_error)?;
+    let connection = storage.connect_read().map_err(storage_error)?;
     let completed = connection
         .query_row(
             "SELECT EXISTS(
@@ -1138,7 +1138,7 @@ pub(super) fn has_completed_assistant_response(
 }
 
 pub(super) fn list_model_favorites(storage: &AppStorage) -> Result<Value, ServiceError> {
-    let connection = storage.connect().map_err(storage_error)?;
+    let connection = storage.connect_read().map_err(storage_error)?;
     let mut statement = connection
         .prepare(
             "SELECT provider_id, model_id, display_name, source_connection_id
@@ -1215,7 +1215,7 @@ pub(super) fn read_message_attachment(
     let conversation_id = required_safe_id(input, "conversationId")?;
     let message_id = required_safe_id(input, "messageId")?;
     let attachment_id = required_safe_id(input, "attachmentId")?;
-    let connection = storage.connect().map_err(storage_error)?;
+    let connection = storage.connect_read().map_err(storage_error)?;
     let content = connection
         .query_row(
             "SELECT content FROM messages WHERE conversation_id = ?1 AND id = ?2",

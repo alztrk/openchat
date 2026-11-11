@@ -102,7 +102,7 @@ pub(super) fn list_conversation_attachments(
         collection_id: collection_id.as_deref(),
     };
 
-    let connection = storage.connect().map_err(storage_error)?;
+    let connection = storage.connect_read().map_err(storage_error)?;
     let index_enabled = attachment_text_index_enabled(&connection)?;
     drop(connection);
     let mut cursor = offset;
@@ -114,7 +114,7 @@ pub(super) fn list_conversation_attachments(
     while items.len() <= limit && scanned < MAX_ATTACHMENT_SCAN as u64 {
         let batch_limit =
             ATTACHMENT_LIBRARY_BATCH_SIZE.min((MAX_ATTACHMENT_SCAN as u64).saturating_sub(scanned));
-        let connection = storage.connect().map_err(storage_error)?;
+        let connection = storage.connect_read().map_err(storage_error)?;
         let batch = query_attachment_library_batch(
             &connection,
             cursor,

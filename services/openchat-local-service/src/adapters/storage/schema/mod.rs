@@ -27,6 +27,10 @@ pub(super) fn unix_time_millis() -> rusqlite::Result<i64> {
     i64::try_from(millis).map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))
 }
 
+pub(crate) fn register_search_normalization(connection: &Connection) -> rusqlite::Result<()> {
+    search_normalization::register_sqlite_function(connection)
+}
+
 pub(super) fn initialize_schema(
     connection: &Connection,
     target_version: i64,

@@ -1,9 +1,11 @@
-//! Serializes primary SQLite operations through a bounded FIFO queue.
+//! Serializes primary SQLite operations through a bounded FIFO queue and provides
+//! a pooled secondary connection mechanism for concurrent read-only WAL operations.
 
 use std::{
     collections::VecDeque,
     marker::PhantomData,
     ops::{Deref, DerefMut},
+    path::{Path, PathBuf},
     rc::Rc,
     sync::{Arc, Condvar, Mutex, MutexGuard},
     time::{Duration, Instant},
@@ -18,6 +20,7 @@ use super::broker_connection::BrokerConnection;
 
 const MAX_QUEUED_OPERATIONS: usize = 64;
 const DATABASE_QUEUE_WAIT_TIMEOUT: Duration = Duration::from_secs(15);
+const MAX_READER_POOL_SIZE: usize = 4;
 
 #[derive(Clone)]
 pub(crate) struct DatabaseQueueHandle {
@@ -37,12 +40,15 @@ struct QueueState {
     active_since: Option<Instant>,
 }
 
-/// Owns the primary database connection and its FIFO operation queue.
+/// Owns the primary database connection, its FIFO operation queue, and
+/// a pooled set of secondary read-only connections for WAL concurrency.
 pub(super) struct DatabaseQueue {
     state: Mutex<QueueState>,
     ready: Condvar,
     connection: Mutex<Connection>,
     key: Arc<DatabaseKey>,
+    database_path: Option<PathBuf>,
+    reader_pool: Mutex<Vec<Connection>>,
 }
 
 /// A database connection lease that owns its FIFO queue slot until dropped.
@@ -53,13 +59,30 @@ pub struct QueuedConnection<'a> {
     _not_send: PhantomData<Rc<()>>,
 }
 
+/// A pooled secondary read-only connection that operates concurrently alongside
+/// active write transactions in SQLite WAL mode.
+pub struct PooledReaderConnection<'a> {
+    queue: &'a DatabaseQueue,
+    connection: Option<Connection>,
+    _not_send: PhantomData<Rc<()>>,
+}
+
 struct DatabaseQueueLease<'a> {
     queue: &'a DatabaseQueue,
     ticket: u64,
 }
 
 impl DatabaseQueue {
-    fn new(connection: Connection, key: Arc<DatabaseKey>) -> Self {
+    #[allow(dead_code)]
+    pub(super) fn new(connection: Connection, key: Arc<DatabaseKey>) -> Self {
+        Self::new_with_path(connection, key, None)
+    }
+
+    pub(super) fn new_with_path(
+        connection: Connection,
+        key: Arc<DatabaseKey>,
+        database_path: Option<PathBuf>,
+    ) -> Self {
         Self {
             state: Mutex::new(QueueState {
                 next_ticket: 0,
@@ -70,7 +93,44 @@ impl DatabaseQueue {
             ready: Condvar::new(),
             connection: Mutex::new(connection),
             key,
+            database_path,
+            reader_pool: Mutex::new(Vec::new()),
         }
+    }
+
+    pub(super) fn has_reader_pool(&self) -> bool {
+        self.database_path.is_some()
+    }
+
+    pub(super) fn connect_read(&self) -> rusqlite::Result<PooledReaderConnection<'_>> {
+        let path = match &self.database_path {
+            Some(path) => path,
+            None => return Err(rusqlite::Error::InvalidQuery),
+        };
+
+        let pooled_connection = {
+            let mut pool = self.reader_pool.lock().unwrap_or_else(|p| p.into_inner());
+            pool.pop()
+        };
+
+        let connection = match pooled_connection {
+            Some(conn) => conn,
+            None => open_reader_connection(path, &self.key)?,
+        };
+
+        Ok(PooledReaderConnection::new(self, connection))
+    }
+
+    fn return_reader(&self, connection: Connection) {
+        let mut pool = self.reader_pool.lock().unwrap_or_else(|p| p.into_inner());
+        if pool.len() < MAX_READER_POOL_SIZE {
+            pool.push(connection);
+        }
+    }
+
+    pub(super) fn clear_readers(&self) {
+        let mut pool = self.reader_pool.lock().unwrap_or_else(|p| p.into_inner());
+        pool.clear();
     }
 
     fn connect(&self) -> rusqlite::Result<QueuedConnection<'_>> {
@@ -156,11 +216,20 @@ impl DatabaseQueue {
 }
 
 impl DatabaseQueueHandle {
+    #[allow(dead_code)]
     pub(crate) fn new(connection: Connection, key: Arc<DatabaseKey>) -> Self {
+        Self::new_with_path(connection, key, None)
+    }
+
+    pub(crate) fn new_with_path(
+        connection: Connection,
+        key: Arc<DatabaseKey>,
+        path: Option<PathBuf>,
+    ) -> Self {
         Self {
-            backend: Arc::new(DatabaseQueueBackend::Local(Arc::new(DatabaseQueue::new(
-                connection, key,
-            )))),
+            backend: Arc::new(DatabaseQueueBackend::Local(Arc::new(
+                DatabaseQueue::new_with_path(connection, key, path),
+            ))),
         }
     }
 
@@ -183,11 +252,37 @@ impl DatabaseQueueHandle {
         }
     }
 
+    pub(crate) fn connect_read(&self) -> rusqlite::Result<StorageConnection<'_>> {
+        match self.backend.as_ref() {
+            DatabaseQueueBackend::Local(queue) => {
+                if queue.has_reader_pool() {
+                    queue
+                        .connect_read()
+                        .map(|connection| StorageConnection::reader(connection, &queue.key))
+                } else {
+                    queue
+                        .connect()
+                        .map(|connection| StorageConnection::local(connection, &queue.key))
+                }
+            }
+            #[cfg(windows)]
+            DatabaseQueueBackend::Remote => {
+                BrokerConnection::connect().map(StorageConnection::remote)
+            }
+        }
+    }
+
     pub(crate) fn connect_local(&self) -> rusqlite::Result<QueuedConnection<'_>> {
         match self.backend.as_ref() {
             DatabaseQueueBackend::Local(queue) => queue.connect(),
             #[cfg(windows)]
             DatabaseQueueBackend::Remote => Err(rusqlite::Error::InvalidQuery),
+        }
+    }
+
+    pub(crate) fn clear_readers(&self) {
+        if let DatabaseQueueBackend::Local(queue) = self.backend.as_ref() {
+            queue.clear_readers();
         }
     }
 
@@ -217,10 +312,64 @@ impl DerefMut for QueuedConnection<'_> {
     }
 }
 
+impl<'a> PooledReaderConnection<'a> {
+    fn new(queue: &'a DatabaseQueue, connection: Connection) -> Self {
+        Self {
+            queue,
+            connection: Some(connection),
+            _not_send: PhantomData,
+        }
+    }
+}
+
+impl Deref for PooledReaderConnection<'_> {
+    type Target = Connection;
+
+    fn deref(&self) -> &Self::Target {
+        self.connection
+            .as_ref()
+            .expect("reader connection exists until dropped")
+    }
+}
+
+impl DerefMut for PooledReaderConnection<'_> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.connection
+            .as_mut()
+            .expect("reader connection exists until dropped")
+    }
+}
+
+impl Drop for PooledReaderConnection<'_> {
+    fn drop(&mut self) {
+        if let Some(connection) = self.connection.take() {
+            self.queue.return_reader(connection);
+        }
+    }
+}
+
 impl Drop for DatabaseQueueLease<'_> {
     fn drop(&mut self) {
         self.queue.release(self.ticket);
     }
+}
+
+fn open_reader_connection(path: &Path, key: &DatabaseKey) -> rusqlite::Result<Connection> {
+    let connection = key.open(
+        path,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_URI,
+    )?;
+    super::disable_trusted_schema(&connection)?;
+    super::tool_index_redaction::register_sqlite_function(&connection)?;
+    super::schema::register_search_normalization(&connection)?;
+    connection.busy_timeout(super::SQLITE_BUSY_TIMEOUT)?;
+    connection.execute_batch(
+        "PRAGMA foreign_keys = ON;
+         PRAGMA synchronous = NORMAL;
+         PRAGMA cache_size = -32000;
+         PRAGMA mmap_size = 268435456;",
+    )?;
+    Ok(connection)
 }
 
 fn queue_full_error() -> rusqlite::Error {
@@ -238,17 +387,77 @@ fn queue_wait_timed_out_error() -> rusqlite::Error {
 }
 
 #[cfg(test)]
-mod benchmark_tests {
+mod tests {
     use std::{
+        fs,
+        path::PathBuf,
         sync::{Arc, Barrier},
         thread,
         time::{Duration, Instant},
     };
 
     use rusqlite::Connection;
+    use uuid::Uuid;
 
     use super::super::database_key::DatabaseKey;
     use super::DatabaseQueueHandle;
+
+    struct TestDirectory(PathBuf);
+
+    impl TestDirectory {
+        fn new() -> Self {
+            let path = std::env::temp_dir().join(format!("openchat-queue-test-{}", Uuid::new_v4()));
+            fs::create_dir_all(&path).expect("create test directory");
+            Self(path)
+        }
+    }
+
+    impl Drop for TestDirectory {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn concurrent_wal_reader_executes_while_writer_is_held() {
+        let directory = TestDirectory::new();
+        let db_path = directory.0.join("test_wal.sqlite3");
+        let key = Arc::new(DatabaseKey::generate().expect("generate test key"));
+
+        let (primary, _) = key.open_or_migrate(&db_path).expect("open primary");
+        primary
+            .execute_batch(
+                "PRAGMA journal_mode = WAL;
+                 CREATE TABLE items (id TEXT PRIMARY KEY, value TEXT NOT NULL);
+                 INSERT INTO items VALUES ('k1', 'v1');",
+            )
+            .expect("init WAL table");
+
+        let queue = DatabaseQueueHandle::new_with_path(primary, key, Some(db_path));
+
+        // Acquire writer connection and intentionally keep it alive without dropping
+        let writer = queue.connect().expect("acquire writer connection");
+
+        // Concurrent connect_read must succeed and query WAL data without being blocked by writer!
+        let reader = queue.connect_read().expect("acquire concurrent reader");
+        let value: String = reader
+            .query_row("SELECT value FROM items WHERE id = 'k1'", [], |row| {
+                row.get(0)
+            })
+            .expect("read from WAL reader");
+        assert_eq!(value, "v1");
+
+        // Subsequent pooled read reuses reader and succeeds
+        let reader2 = queue.connect_read().expect("acquire second reader");
+        let count: i64 = reader2
+            .query_row("SELECT count(*) FROM items", [], |row| row.get(0))
+            .expect("count rows from second reader");
+        assert_eq!(count, 1);
+
+        drop(reader);
+        drop(reader2);
+        drop(writer);
+    }
 
     #[test]
     #[ignore = "manual local database queue contention benchmark"]
