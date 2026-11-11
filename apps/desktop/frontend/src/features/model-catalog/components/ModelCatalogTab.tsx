@@ -258,7 +258,8 @@ export function ModelCatalogTab() {
       isDownloadActive ||
       !modelDirectoryPreferenceAvailable ||
       file.kind === 'model' ||
-      file.sizeBytes === null
+      file.sizeBytes === null ||
+      file.sha256 === null
     ) {
       return;
     }
@@ -298,9 +299,18 @@ export function ModelCatalogTab() {
         <th className="max-w-0 px-3 py-2.5 text-left font-normal" scope="row">
           <span className="flex min-w-0 items-center gap-2">
             <File aria-hidden="true" className="shrink-0 text-secondary-icon" size={15} />
-            <TitleTooltip title={file.path}><span className="min-w-0 truncate font-mono text-xs text-text" >
-              {file.path}
-            </span></TitleTooltip>
+            <span className="min-w-0 flex-1">
+              <TitleTooltip title={file.path}>
+                <span className="block truncate font-mono text-xs text-text">{file.path}</span>
+              </TitleTooltip>
+              {file.sha256 ? (
+                <TitleTooltip title={`SHA-256: ${file.sha256}`}>
+                  <span className="block truncate font-mono text-xs text-secondary-text">
+                    {`SHA-256: ${file.sha256.slice(0, 12)}`}
+                  </span>
+                </TitleTooltip>
+              ) : null}
+            </span>
           </span>
         </th>
         <td className="whitespace-nowrap px-3 py-2.5 text-right text-xs text-secondary-text">
@@ -310,7 +320,7 @@ export function ModelCatalogTab() {
           {isComponent ? (
             <Button
               aria-label={downloaded ? t('modelComponentDownloaded') : t('modelDownloadComponentButton')}
-              disabled={!allowComponentDownload || file.sizeBytes === null || downloaded}
+              disabled={!allowComponentDownload || file.sizeBytes === null || file.sha256 === null || downloaded}
               onClick={() => void downloadComponent(file)}
               size="icon"
               title={downloaded ? t('modelComponentDownloaded') : t('modelDownloadComponentButton')}

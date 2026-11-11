@@ -102,6 +102,7 @@ const explicitServiceErrorCategories: Partial<Record<string, ServiceErrorCategor
   filesystem_file_locked: 'conflict',
   goal_objective_too_long: 'validation',
   goal_state_changed: 'conflict',
+  hugging_face_checksum_mismatch: 'validation',
   hugging_face_download_incomplete: 'network',
   hugging_face_revision_changed: 'conflict',
   image_collection_name_exists: 'conflict',

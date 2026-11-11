@@ -16,6 +16,7 @@ export interface HubFile {
   path: string;
   kind: string;
   sizeBytes: number | null;
+  sha256: string | null;
 }
 
 export interface HubDownloadGroup {
@@ -123,6 +124,8 @@ export function downloadErrorMessageKey(
   code: string | null,
 ):
   | 'modelDownloadAccessNeeded'
+  | 'modelDownloadChecksumMismatch'
+  | 'modelDownloadIncomplete'
   | 'modelRevisionChanged'
   | 'localModelDirectoryUnavailable'
   | 'modelNoCompatibleFiles'
@@ -130,6 +133,10 @@ export function downloadErrorMessageKey(
   switch (code) {
     case 'hugging_face_access_denied':
       return 'modelDownloadAccessNeeded';
+    case 'hugging_face_checksum_mismatch':
+      return 'modelDownloadChecksumMismatch';
+    case 'hugging_face_download_incomplete':
+      return 'modelDownloadIncomplete';
     case 'hugging_face_revision_changed':
       return 'modelRevisionChanged';
     case 'local_model_directory_unavailable':
@@ -234,7 +241,8 @@ function parseHubFile(value: unknown): HubFile {
     throw new HubResponseError();
   }
   const sizeBytes = parseOptionalNonNegativeInteger(value.sizeBytes);
-  return { path: value.path, kind: value.kind, sizeBytes };
+  const sha256 = parseOptionalSha256(value.sha256);
+  return { path: value.path, kind: value.kind, sizeBytes, sha256 };
 }
 
 function parseHubDownloadGroup(value: unknown): HubDownloadGroup {
@@ -253,8 +261,19 @@ function parseHubDownloadGroup(value: unknown): HubDownloadGroup {
     displayName: value.displayName,
     files,
     totalBytes,
-    canDownload: files.length > 0 && totalBytes !== null && files.every((file) => file.sizeBytes !== null),
+    canDownload:
+      files.length > 0 &&
+      totalBytes !== null &&
+      files.every((file) => file.sizeBytes !== null && file.sha256 !== null),
   };
+}
+
+function parseOptionalSha256(value: unknown): string | null {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== 'string' || !/^[0-9a-fA-F]{64}$/u.test(value)) {
+    throw new HubResponseError();
+  }
+  return value.toLowerCase();
 }
 
 function parseOptionalNonNegativeInteger(value: unknown): number | null {

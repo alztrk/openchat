@@ -3,9 +3,27 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 
+import ts from 'typescript';
+
 const readSource = (filePath) => readFileSync(path.resolve(filePath), 'utf8');
 const componentSource = readSource('src/features/model-catalog/components/ModelCatalogTab.tsx');
 const localePaths = ['de', 'en', 'es', 'fr', 'tr'].map((locale) => `src/shared/lib/i18n/locales/${locale}.json`);
+
+const catalogDataSource = readSource('src/features/model-catalog/data/modelCatalogData.ts').replace(
+  /import\s*\{\s*type JsonObject,\s*LocalServiceError\s*\}\s*from '@shared\/lib\/platform\/local-service';/u,
+  `export class LocalServiceError extends Error {
+    constructor(code, message) {
+      super(message);
+      this.code = code;
+    }
+  }`,
+);
+const compiledCatalogData = ts.transpileModule(catalogDataSource, {
+  compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
+}).outputText;
+const { downloadErrorMessageKey, parseHubDetails } = await import(
+  `data:text/javascript;base64,${Buffer.from(compiledCatalogData).toString('base64')}`
+);
 
 test('model download progress has a progress-specific accessible name and localized value text', () => {
   const statusStart = componentSource.indexOf('function ModelDownloadStatus(');
@@ -27,5 +45,70 @@ test('all supported locales describe both model download progress and its byte r
     assert.equal(typeof locale.modelDownloadProgressLabel, 'string', `${localePath} is missing the progress label`);
     assert.match(locale.modelDownloadProgressValue, /\{downloaded\}/u, `${localePath} is missing downloaded bytes`);
     assert.match(locale.modelDownloadProgressValue, /\{total\}/u, `${localePath} is missing total bytes`);
+    assert.equal(
+      typeof locale.modelDownloadChecksumMismatch,
+      'string',
+      `${localePath} is missing the SHA-256 mismatch error label`,
+    );
+    assert.equal(
+      typeof locale.modelDownloadIncomplete,
+      'string',
+      `${localePath} is missing the incomplete download error label`,
+    );
   }
+});
+
+test('model catalog data validates SHA-256 digests and maps integrity errors', () => {
+  const validSha256 = '0123456789ABCDEF0123456789abcdef0123456789abcdef0123456789abcdef';
+  const details = parseHubDetails({
+    repoId: 'openchat/test-gguf',
+    revision: '0123456789abcdef0123456789abcdef01234567',
+    gated: false,
+    private: false,
+    license: 'apache-2.0',
+    readmeStatus: 'missing',
+    readme: null,
+    files: [
+      {
+        path: 'model-Q4_K_M.gguf',
+        kind: 'model',
+        sizeBytes: 4096,
+        sha256: validSha256,
+      },
+    ],
+    downloadGroups: [
+      {
+        id: 'gguf-1',
+        displayName: 'model-Q4_K_M.gguf',
+        totalBytes: 4096,
+        files: [
+          {
+            path: 'model-Q4_K_M.gguf',
+            kind: 'model',
+            sizeBytes: 4096,
+            sha256: validSha256,
+          },
+        ],
+      },
+      {
+        id: 'gguf-missing-sha',
+        displayName: 'unverified.gguf',
+        totalBytes: 4096,
+        files: [
+          {
+            path: 'unverified.gguf',
+            kind: 'model',
+            sizeBytes: 4096,
+            sha256: null,
+          },
+        ],
+      },
+    ],
+  });
+
+  assert.equal(details.files[0].sha256, validSha256.toLowerCase());
+  assert.equal(details.downloadGroups[0].canDownload, true);
+  assert.equal(details.downloadGroups[1].canDownload, false);
+  assert.equal(downloadErrorMessageKey('hugging_face_checksum_mismatch'), 'modelDownloadChecksumMismatch');
+  assert.equal(downloadErrorMessageKey('hugging_face_download_incomplete'), 'modelDownloadIncomplete');
 });

@@ -1906,6 +1906,8 @@
   "modelDownloadComplete": "Modèle téléchargé et ajouté aux modèles locaux.",
   "modelDownloadCancelled": "Téléchargement du modèle annulé. Vous pourrez le reprendre plus tard.",
   "modelDownloadFailed": "Le modèle n'a pas pu être téléchargé.",
+  "modelDownloadChecksumMismatch": "La vérification SHA-256 du fichier de modèle téléchargé a échoué. Réessayez le téléchargement.",
+  "modelDownloadIncomplete": "La taille du fichier téléchargé ne correspondait pas aux métadonnées Hugging Face. Réessayez le téléchargement.",
   "modelDownloadProgressUnavailable": "La progression du téléchargement n'a pas pu être lue.",
   "modelRevisionChanged": "Ce modèle a changé sur Hugging Face. Rechargez ses fichiers et réessayez.",
   "modelDownloadAccessNeeded": "Ce dépôt est restreint ou privé et nécessite un accès Hugging Face.",

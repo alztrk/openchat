@@ -92,6 +92,7 @@ impl ErrorCategory {
             | "conversation_not_routed"
             | "fast_mode_unsupported"
             | "goal_objective_too_long"
+            | "hugging_face_checksum_mismatch"
             | "project_instructions_invalid_encoding"
             | "project_memory_invalid_content"
             | "project_not_git_repository"

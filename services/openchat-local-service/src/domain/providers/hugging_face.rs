@@ -18,7 +18,7 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use tokio::{
     fs::{self, File, OpenOptions},
-    io::AsyncWriteExt,
+    io::{AsyncReadExt, AsyncWriteExt},
     sync::{Mutex, watch},
     task,
 };
@@ -91,10 +91,11 @@ impl ModelFormat {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 struct HubFile {
     path: String,
     size: Option<u64>,
+    sha256: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -275,7 +276,10 @@ pub(crate) async fn download(
         .ok_or_else(unsupported_file_set_error)?;
     if model_group.files.is_empty()
         || model_group.total_size.is_none()
-        || model_group.files.iter().any(|file| file.size.is_none())
+        || model_group
+            .files
+            .iter()
+            .any(|file| file.size.is_none() || file.sha256.is_none())
     {
         return Err(unsupported_file_set_error());
     }
@@ -286,7 +290,7 @@ pub(crate) async fn download(
             .iter()
             .find(|file| file.path == component_path && model_file_kind(&file.path) != "model")
             .ok_or_else(unsupported_file_set_error)?;
-        if file.size.is_none() {
+        if file.size.is_none() || file.sha256.is_none() {
             return Err(unsupported_file_set_error());
         }
         DownloadGroup {
@@ -659,8 +663,37 @@ fn parse_hub_file(value: &Value) -> Result<HubFile, ServiceError> {
         .filter(|path| valid_hub_path(path))
         .ok_or_else(invalid_hub_response_error)?
         .to_owned();
-    let size = object.get("size").and_then(value_as_u64);
-    Ok(HubFile { path, size })
+    let lfs = object.get("lfs").and_then(Value::as_object);
+    let size = object
+        .get("size")
+        .and_then(value_as_u64)
+        .or_else(|| lfs.and_then(|lfs| lfs.get("size")).and_then(value_as_u64));
+    let sha256 = parse_hub_file_sha256(object)?;
+    Ok(HubFile { path, size, sha256 })
+}
+
+fn parse_hub_file_sha256(
+    object: &serde_json::Map<String, Value>,
+) -> Result<Option<String>, ServiceError> {
+    let lfs = object.get("lfs").and_then(Value::as_object);
+    let raw_sha256 = lfs
+        .and_then(|lfs| lfs.get("sha256").or_else(|| lfs.get("oid")))
+        .or_else(|| object.get("sha256"));
+    let Some(raw_sha256) = raw_sha256 else {
+        return Ok(None);
+    };
+    if raw_sha256.is_null() {
+        return Ok(None);
+    }
+    let digest = raw_sha256
+        .as_str()
+        .filter(|value| is_sha256_digest(value))
+        .ok_or_else(invalid_hub_response_error)?;
+    Ok(Some(digest.to_ascii_lowercase()))
+}
+
+fn is_sha256_digest(value: &str) -> bool {
+    value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
 fn compatible_groups(format: ModelFormat, files: &[HubFile]) -> Vec<DownloadGroup> {
@@ -750,6 +783,7 @@ fn file_to_json(file: &HubFile) -> Value {
     json!({
         "path": file.path,
         "sizeBytes": file.size,
+        "sha256": file.sha256,
         "kind": model_file_kind(&file.path),
     })
 }
@@ -789,9 +823,14 @@ async fn download_group_files(
                 .await
                 .is_ok_and(|metadata| metadata.is_file() && metadata.len() == expected_size)
         {
-            completed_bytes = completed_bytes.saturating_add(expected_size);
-            send_progress(progress, completed_bytes).await?;
-            continue;
+            if verify_file_sha256(&target, expected_size, file.sha256.as_deref(), cancellation)
+                .await?
+            {
+                completed_bytes = completed_bytes.saturating_add(expected_size);
+                send_progress(progress, completed_bytes).await?;
+                continue;
+            }
+            let _ = fs::remove_file(&target).await;
         }
 
         let part = partial_path(&target);
@@ -819,6 +858,29 @@ async fn download_file(
 ) -> Result<u64, ServiceError> {
     let file = progress.file;
     let details = progress.details;
+    let url = download_url(&details.repo_id, &details.revision, &file.path)?;
+    download_file_from_url(
+        client,
+        url,
+        part_path,
+        target_path,
+        completed_bytes,
+        progress,
+        cancellation,
+    )
+    .await
+}
+
+async fn download_file_from_url(
+    client: &Client,
+    url: Url,
+    part_path: &Path,
+    target_path: &Path,
+    completed_bytes: u64,
+    progress: DownloadProgressContext<'_>,
+    cancellation: &mut watch::Receiver<bool>,
+) -> Result<u64, ServiceError> {
+    let file = progress.file;
     let mut offset = fs::metadata(part_path)
         .await
         .map(|metadata| metadata.len())
@@ -827,7 +889,6 @@ async fn download_file(
         offset = 0;
     }
 
-    let url = download_url(&details.repo_id, &details.revision, &file.path)?;
     let mut request = client.get(url);
     if offset > 0 {
         request = request.header(RANGE, format!("bytes={offset}-"));
@@ -840,7 +901,19 @@ async fn download_file(
     if response.status() == StatusCode::RANGE_NOT_SATISFIABLE
         && file.size.is_some_and(|size| size == offset)
     {
-        finish_partial(part_path, target_path, file.size)?;
+        let actual_sha256 = if file.sha256.is_some() {
+            let hasher = hash_file_prefix(part_path, offset, cancellation).await?;
+            Some(hex_prefix(&hasher.finalize(), 32))
+        } else {
+            None
+        };
+        finish_partial(
+            part_path,
+            target_path,
+            file.size,
+            file.sha256.as_deref(),
+            actual_sha256.as_deref(),
+        )?;
         return Ok(offset);
     }
     if !response.status().is_success() {
@@ -853,6 +926,13 @@ async fn download_file(
     } else {
         offset = 0;
         false
+    };
+    let mut hasher = if append && file.sha256.is_some() {
+        Some(hash_file_prefix(part_path, offset, cancellation).await?)
+    } else if file.sha256.is_some() {
+        Some(Sha256::new())
+    } else {
+        None
     };
     let mut output = open_partial(part_path, append).await?;
     let mut stream = response.bytes_stream();
@@ -877,6 +957,9 @@ async fn download_file(
         if file.size.is_some_and(|size| current_bytes > size) {
             return Err(invalid_hub_response_error());
         }
+        if let Some(hasher) = hasher.as_mut() {
+            hasher.update(&chunk);
+        }
         output
             .write_all(&chunk)
             .await
@@ -887,8 +970,55 @@ async fn download_file(
     output.flush().await.map_err(|_| model_storage_error())?;
     output.sync_all().await.map_err(|_| model_storage_error())?;
     drop(output);
-    finish_partial(part_path, target_path, file.size)?;
+    let actual_sha256 = hasher.map(|digest| hex_prefix(&digest.finalize(), 32));
+    finish_partial(
+        part_path,
+        target_path,
+        file.size,
+        file.sha256.as_deref(),
+        actual_sha256.as_deref(),
+    )?;
     Ok(current_bytes)
+}
+
+async fn hash_file_prefix(
+    path: &Path,
+    expected_bytes: u64,
+    cancellation: &watch::Receiver<bool>,
+) -> Result<Sha256, ServiceError> {
+    let mut file = File::open(path).await.map_err(|_| model_storage_error())?;
+    let mut hasher = Sha256::new();
+    let mut remaining = expected_bytes;
+    let mut buffer = vec![0_u8; 64 * 1024];
+
+    while remaining > 0 {
+        check_cancelled(cancellation)?;
+        let limit = usize::try_from(remaining.min(buffer.len() as u64)).unwrap_or(buffer.len());
+        let read = file
+            .read(&mut buffer[..limit])
+            .await
+            .map_err(|_| model_storage_error())?;
+        if read == 0 {
+            return Err(incomplete_download_error());
+        }
+        hasher.update(&buffer[..read]);
+        remaining = remaining.saturating_sub(read as u64);
+    }
+    Ok(hasher)
+}
+
+async fn verify_file_sha256(
+    path: &Path,
+    expected_bytes: u64,
+    expected_sha256: Option<&str>,
+    cancellation: &watch::Receiver<bool>,
+) -> Result<bool, ServiceError> {
+    let Some(expected_sha256) = expected_sha256 else {
+        return Ok(true);
+    };
+    let hasher = hash_file_prefix(path, expected_bytes, cancellation).await?;
+    let actual = hex_prefix(&hasher.finalize(), 32);
+    Ok(actual == expected_sha256)
 }
 
 async fn open_partial(path: &Path, append: bool) -> Result<File, ServiceError> {
@@ -906,10 +1036,18 @@ fn finish_partial(
     part_path: &Path,
     target_path: &Path,
     expected_size: Option<u64>,
+    expected_sha256: Option<&str>,
+    actual_sha256: Option<&str>,
 ) -> Result<(), ServiceError> {
     let metadata = std::fs::metadata(part_path).map_err(|_| model_storage_error())?;
     if !metadata.is_file() || expected_size.is_some_and(|size| size != metadata.len()) {
         return Err(incomplete_download_error());
+    }
+    if let Some(expected_sha256) = expected_sha256
+        && actual_sha256 != Some(expected_sha256)
+    {
+        let _ = std::fs::remove_file(part_path);
+        return Err(checksum_mismatch_error());
     }
     std::fs::rename(part_path, target_path).map_err(|_| model_storage_error())
 }
@@ -1408,6 +1546,14 @@ fn incomplete_download_error() -> ServiceError {
     )
 }
 
+fn checksum_mismatch_error() -> ServiceError {
+    ServiceError::new(
+        "hugging_face_checksum_mismatch",
+        "The downloaded file failed SHA-256 integrity verification.",
+        true,
+    )
+}
+
 fn download_size_error() -> ServiceError {
     ServiceError::new(
         "hugging_face_download_size_invalid",
@@ -1426,13 +1572,204 @@ fn cancelled_error() -> ServiceError {
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
+    use serde_json::json;
+    use sha2::{Digest, Sha256};
     use tokio::{
+        fs,
         io::{AsyncReadExt, AsyncWriteExt},
         net::{TcpListener, TcpStream},
+        sync::watch,
     };
     use url::Url;
+    use uuid::Uuid;
 
-    use super::{client, is_approved_hugging_face_redirect};
+    use crate::protocol::EventSink;
+
+    use super::{
+        DownloadProgressContext, HubFile, ModelDetails, client, download_client,
+        download_file_from_url, hex_prefix, is_approved_hugging_face_redirect, parse_hub_file,
+    };
+
+    #[test]
+    fn parse_hub_file_extracts_lfs_sha256_and_rejects_malformed_digests() {
+        let valid_sha = "0123456789ABCDEF0123456789abcdef0123456789abcdef0123456789abcdef";
+        let file = parse_hub_file(&json!({
+            "rfilename": "model-Q4_K_M.gguf",
+            "lfs": {
+                "size": 4096,
+                "sha256": valid_sha
+            }
+        }))
+        .expect("parse valid LFS file");
+        assert_eq!(file.path, "model-Q4_K_M.gguf");
+        assert_eq!(file.size, Some(4096));
+        assert_eq!(
+            file.sha256.as_deref(),
+            Some(valid_sha.to_ascii_lowercase().as_str())
+        );
+
+        let malformed = parse_hub_file(&json!({
+            "rfilename": "model-Q4_K_M.gguf",
+            "size": 4096,
+            "lfs": {
+                "sha256": "not-a-valid-sha256"
+            }
+        }))
+        .expect_err("reject malformed sha256");
+        assert_eq!(malformed.code, "hugging_face_response_invalid");
+    }
+
+    #[tokio::test]
+    async fn download_file_verifies_sha256_across_resumed_partial_content() {
+        let payload = b"GGUF-resumable-verified-payload-bytes";
+        let expected_sha256 = hex_prefix(&Sha256::digest(payload), 32);
+        let prefix_len = 15;
+        let remaining_payload = &payload[prefix_len..];
+        let total_len = payload.len();
+
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind local resume fixture");
+        let address = listener.local_addr().expect("read fixture address");
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.expect("accept resume request");
+            let headers = read_request_headers(&mut stream).await;
+            assert!(
+                headers
+                    .to_ascii_lowercase()
+                    .contains(&format!("range: bytes={prefix_len}-")),
+                "expected Range header in {headers}"
+            );
+            let response_header = format!(
+                "HTTP/1.1 206 Partial Content\r\nContent-Range: bytes {prefix_len}-{}/{total_len}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                total_len - 1,
+                remaining_payload.len()
+            );
+            stream
+                .write_all(response_header.as_bytes())
+                .await
+                .expect("write partial content headers");
+            stream
+                .write_all(remaining_payload)
+                .await
+                .expect("write remaining payload");
+        });
+
+        let temp_dir = TestTempDir::new();
+        let part_path = temp_dir.0.join("model.gguf.openchat-partial");
+        let target_path = temp_dir.0.join("model.gguf");
+        fs::write(&part_path, &payload[..prefix_len])
+            .await
+            .expect("seed partial file");
+
+        let file = HubFile {
+            path: "model.gguf".to_owned(),
+            size: Some(total_len as u64),
+            sha256: Some(expected_sha256),
+        };
+        let details = sample_details(file.clone());
+        let events = EventSink::new();
+        let request_id = json!("req-resume-sha256");
+        let (_tx, mut cancellation) = watch::channel(false);
+        let progress = DownloadProgressContext {
+            events: &events,
+            request_id: &request_id,
+            details: &details,
+            file: &file,
+            total_bytes: total_len as u64,
+            file_index: 1,
+            file_count: 1,
+        };
+
+        let downloaded = download_file_from_url(
+            &download_client().expect("build download client"),
+            Url::parse(&format!("http://{address}/model.gguf")).expect("parse fixture url"),
+            &part_path,
+            &target_path,
+            0,
+            progress,
+            &mut cancellation,
+        )
+        .await
+        .expect("resumed download with matching sha256 should succeed");
+
+        assert_eq!(downloaded, total_len as u64);
+        assert!(
+            !part_path.exists(),
+            "partial file should be moved to target"
+        );
+        let saved = fs::read(&target_path).await.expect("read completed target");
+        assert_eq!(saved, payload);
+        server.await.expect("server task should complete");
+    }
+
+    #[tokio::test]
+    async fn download_file_rejects_sha256_mismatch_and_removes_corrupt_partial_file() {
+        let payload = b"GGUF-corrupted-transfer-bytes";
+        let wrong_sha256 = "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
+
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind local mismatch fixture");
+        let address = listener.local_addr().expect("read fixture address");
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.expect("accept download request");
+            read_request_headers(&mut stream).await;
+            let response_header = format!(
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                payload.len()
+            );
+            stream
+                .write_all(response_header.as_bytes())
+                .await
+                .expect("write response headers");
+            stream.write_all(payload).await.expect("write payload");
+        });
+
+        let temp_dir = TestTempDir::new();
+        let part_path = temp_dir.0.join("corrupt.gguf.openchat-partial");
+        let target_path = temp_dir.0.join("corrupt.gguf");
+        let file = HubFile {
+            path: "corrupt.gguf".to_owned(),
+            size: Some(payload.len() as u64),
+            sha256: Some(wrong_sha256.to_owned()),
+        };
+        let details = sample_details(file.clone());
+        let events = EventSink::new();
+        let request_id = json!("req-mismatch-sha256");
+        let (_tx, mut cancellation) = watch::channel(false);
+        let progress = DownloadProgressContext {
+            events: &events,
+            request_id: &request_id,
+            details: &details,
+            file: &file,
+            total_bytes: payload.len() as u64,
+            file_index: 1,
+            file_count: 1,
+        };
+
+        let error = download_file_from_url(
+            &download_client().expect("build download client"),
+            Url::parse(&format!("http://{address}/corrupt.gguf")).expect("parse fixture url"),
+            &part_path,
+            &target_path,
+            0,
+            progress,
+            &mut cancellation,
+        )
+        .await
+        .expect_err("sha256 mismatch should fail the download");
+
+        assert_eq!(error.code, "hugging_face_checksum_mismatch");
+        assert!(!part_path.exists(), "corrupt partial file must be removed");
+        assert!(
+            !target_path.exists(),
+            "corrupt file must not be promoted to target"
+        );
+        server.await.expect("server task should complete");
+    }
 
     #[test]
     fn redirect_policy_allows_documented_hub_storage_hosts_only_over_https() {
@@ -1495,13 +1832,42 @@ mod tests {
     }
 
     /// Reads the loopback request before writing a deterministic fixture response.
-    async fn read_request_headers(stream: &mut TcpStream) {
+    async fn read_request_headers(stream: &mut TcpStream) -> String {
         let mut request = Vec::new();
         let mut byte = [0; 1];
         while !request.ends_with(b"\r\n\r\n") {
             let read = stream.read(&mut byte).await.expect("read request headers");
             assert_ne!(read, 0, "client closed before sending request headers");
             request.push(byte[0]);
+        }
+        String::from_utf8_lossy(&request).into_owned()
+    }
+
+    fn sample_details(file: HubFile) -> ModelDetails {
+        ModelDetails {
+            repo_id: "openchat/test-model".to_owned(),
+            revision: "0123456789abcdef0123456789abcdef01234567".to_owned(),
+            gated: false,
+            private: false,
+            license: Some("apache-2.0".to_owned()),
+            files: vec![file],
+            groups: Vec::new(),
+        }
+    }
+
+    struct TestTempDir(PathBuf);
+
+    impl TestTempDir {
+        fn new() -> Self {
+            let dir = std::env::temp_dir().join(format!("openchat-hf-test-{}", Uuid::new_v4()));
+            std::fs::create_dir_all(&dir).expect("create temp test dir");
+            Self(dir)
+        }
+    }
+
+    impl Drop for TestTempDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
         }
     }
 }

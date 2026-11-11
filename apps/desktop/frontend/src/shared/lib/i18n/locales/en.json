@@ -1906,6 +1906,8 @@
   "modelDownloadComplete": "Model downloaded and added to Local Models.",
   "modelDownloadCancelled": "Model download cancelled. You can resume it later.",
   "modelDownloadFailed": "The model could not be downloaded.",
+  "modelDownloadChecksumMismatch": "The downloaded model file failed SHA-256 verification. Try downloading again.",
+  "modelDownloadIncomplete": "The downloaded file size did not match Hugging Face metadata. Try downloading again.",
   "modelDownloadProgressUnavailable": "Download progress could not be read.",
   "modelRevisionChanged": "This model changed on Hugging Face. Reload its files and try again.",
   "modelDownloadAccessNeeded": "This repository is gated or private and needs Hugging Face access.",

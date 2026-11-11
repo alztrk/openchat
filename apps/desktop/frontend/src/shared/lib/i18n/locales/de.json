@@ -1906,6 +1906,8 @@
   "modelDownloadComplete": "Modell heruntergeladen und zu den lokalen Modellen hinzugefügt.",
   "modelDownloadCancelled": "Modelldownload abgebrochen. Sie können ihn später fortsetzen.",
   "modelDownloadFailed": "Das Modell konnte nicht heruntergeladen werden.",
+  "modelDownloadChecksumMismatch": "Die SHA-256-Prüfung der heruntergeladenen Modelldatei ist fehlgeschlagen. Versuchen Sie den Download erneut.",
+  "modelDownloadIncomplete": "Die heruntergeladene Dateigröße stimmte nicht mit den Hugging-Face-Metadaten überein. Versuchen Sie den Download erneut.",
   "modelDownloadProgressUnavailable": "Der Downloadfortschritt konnte nicht gelesen werden.",
   "modelRevisionChanged": "Dieses Modell wurde auf Hugging Face geändert. Laden Sie seine Dateien neu und versuchen Sie es erneut.",
   "modelDownloadAccessNeeded": "Dieses Repository ist geschützt oder privat und benötigt Hugging-Face-Zugriff.",

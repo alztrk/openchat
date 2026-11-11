@@ -1906,6 +1906,8 @@
   "modelDownloadComplete": "Model indirildi ve Yerel Modeller’e eklendi.",
   "modelDownloadCancelled": "Model indirmesi iptal edildi. Daha sonra sürdürebilirsin.",
   "modelDownloadFailed": "Model indirilemedi.",
+  "modelDownloadChecksumMismatch": "İndirilen model dosyasının SHA-256 doğrulaması başarısız oldu. Tekrar indirmeyi dene.",
+  "modelDownloadIncomplete": "İndirilen dosya boyutu Hugging Face üst verisiyle eşleşmedi. Tekrar indirmeyi dene.",
   "modelDownloadProgressUnavailable": "İndirme ilerlemesi okunamadı.",
   "modelRevisionChanged": "Model Hugging Face’te değişmiş. Dosyalarını yeniden yükleyip tekrar dene.",
   "modelDownloadAccessNeeded": "Bu model deposu erişim istiyor. Hugging Face hesabı bağlantısı henüz desteklenmiyor.",
