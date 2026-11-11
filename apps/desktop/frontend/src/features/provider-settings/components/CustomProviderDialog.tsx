@@ -11,12 +11,19 @@ export interface CustomProviderDraft {
   id: `custom_${string}`;
   name: string;
   baseUrl: string;
-  protocol: 'openAi' | 'anthropic';
+  protocol: 'openAi' | 'anthropic' | 'azure';
   allowInsecureHttp: boolean;
   reasoningEfforts: string[];
   enableThinking: boolean;
   selectedModels?: string[];
   apiKey: string;
+}
+
+function parseCustomProviderProtocol(value: string): 'openAi' | 'anthropic' | 'azure' {
+  if (value === 'anthropic' || value === 'azure') {
+    return value;
+  }
+  return 'openAi';
 }
 
 /** Controlled state and callbacks supplied by the owner of the custom-provider dialog. */
@@ -62,12 +69,13 @@ export function CustomProviderDialog({
   const { t } = useTranslation();
   const [name, setName] = useState('');
   const [baseUrl, setBaseUrl] = useState('');
-  const [protocol, setProtocol] = useState<'openAi' | 'anthropic'>('openAi');
+  const [protocol, setProtocol] = useState<'openAi' | 'anthropic' | 'azure'>('openAi');
   const [apiKey, setApiKey] = useState('');
   const [errorKey, setErrorKey] = useState<CustomProviderValidationKey | null>(null);
   const [allowInsecureHttp, setAllowInsecureHttp] = useState(false);
   const [reasoningEffortsText, setReasoningEffortsText] = useState('');
   const [enableThinking, setEnableThinking] = useState(false);
+  const [selectedModelsText, setSelectedModelsText] = useState('');
   const nameInputRef = useRef<HTMLInputElement>(null);
   const reasoningEffortsInputRef = useRef<HTMLInputElement>(null);
   const baseUrlInputRef = useRef<HTMLInputElement>(null);
@@ -84,6 +92,7 @@ export function CustomProviderDialog({
     setAllowInsecureHttp(provider?.allowInsecureHttp ?? false);
     setReasoningEffortsText(provider?.reasoningEfforts.join(', ') ?? '');
     setEnableThinking(provider?.enableThinking ?? false);
+    setSelectedModelsText(provider?.selectedModels?.join(', ') ?? '');
     setApiKey('');
     setErrorKey(null);
   }, [open, provider]);
@@ -144,21 +153,29 @@ export function CustomProviderDialog({
       ),
     ];
     if (
-      protocol === 'openAi' &&
+      (protocol === 'openAi' || protocol === 'azure') &&
       (reasoningEfforts.length > 16 || reasoningEfforts.some((value) => !/^[a-zA-Z0-9_-]{1,64}$/.test(value)))
     ) {
       showValidationError('customProviderReasoningLevelRequired', 'reasoningEfforts');
       return;
     }
+    const selectedModels = [
+      ...new Set(
+        selectedModelsText
+          .split(',')
+          .map((value) => value.trim())
+          .filter((value) => Boolean(value) && value.length <= 256),
+      ),
+    ];
     onSave({
       id: provider?.id ?? createCustomProviderId(),
       name: normalizedName,
       baseUrl: normalizedUrl,
       protocol,
       allowInsecureHttp: isHttpUrl(normalizedUrl) && allowInsecureHttp,
-      reasoningEfforts: protocol === 'openAi' ? reasoningEfforts : [],
-      enableThinking: protocol === 'openAi' && enableThinking,
-      selectedModels: provider?.selectedModels ?? [],
+      reasoningEfforts: protocol === 'openAi' || protocol === 'azure' ? reasoningEfforts : [],
+      enableThinking: (protocol === 'openAi' || protocol === 'azure') && enableThinking,
+      selectedModels,
       apiKey: normalizedApiKey,
     });
   };
@@ -201,7 +218,7 @@ export function CustomProviderDialog({
           disabled={saving}
           label={t('customProviderProtocol')}
           onChange={(event) => {
-            const nextProtocol = event.target.value === 'anthropic' ? 'anthropic' : 'openAi';
+            const nextProtocol = parseCustomProviderProtocol(event.target.value);
             setProtocol(nextProtocol);
             if (nextProtocol === 'anthropic') {
               setReasoningEffortsText('');
@@ -212,10 +229,11 @@ export function CustomProviderDialog({
           options={[
             { value: 'openAi', label: t('openAiCompatible') },
             { value: 'anthropic', label: t('anthropicCompatible') },
+            { value: 'azure', label: t('azureFoundryCompatible') },
           ]}
           value={protocol}
         />
-        {protocol === 'openAi' ? (
+        {protocol === 'openAi' || protocol === 'azure' ? (
           <div className="grid gap-3 rounded-card border border-border bg-surface px-3 py-3">
             <div className="grid gap-1">
               <h3 className="text-sm font-semibold text-text">{t('customProviderReasoningMode')}</h3>
@@ -253,17 +271,40 @@ export function CustomProviderDialog({
           autoCorrect="off"
           disabled={saving}
           error={baseUrlError}
-          label={t('customProviderBaseUrl')}
+          label={protocol === 'azure' ? t('customProviderAzureEndpointLabel') : t('customProviderBaseUrl')}
           maxLength={2048}
           onChange={(event) => {
             setBaseUrl(event.target.value);
             setAllowInsecureHttp(false);
             setErrorKey(null);
           }}
+          placeholder={protocol === 'azure' ? 'https://your-resource.openai.azure.com' : undefined}
           ref={baseUrlInputRef}
           type="url"
           value={baseUrl}
         />
+        <div className="grid gap-1">
+          <Input
+            autoCapitalize="none"
+            autoCorrect="off"
+            disabled={saving}
+            label={protocol === 'azure' ? t('customProviderAzureDeployments') : t('customProviderSelectedModels')}
+            maxLength={2048}
+            onChange={(event) => {
+              setSelectedModelsText(event.target.value);
+              setErrorKey(null);
+            }}
+            placeholder={
+              protocol === 'azure'
+                ? t('customProviderAzureDeploymentsPlaceholder')
+                : t('customProviderSelectedModelsPlaceholder')
+            }
+            value={selectedModelsText}
+          />
+          {protocol === 'azure' ? (
+            <p className="text-xs text-secondary-text">{t('customProviderAzureDeploymentsHelp')}</p>
+          ) : null}
+        </div>
         {isHttpUrl(baseUrl) ? (
           <div className="-mt-3 grid gap-2">
             <p className="text-sm text-warning" role="status">

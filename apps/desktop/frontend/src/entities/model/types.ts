@@ -12,7 +12,7 @@ export interface CustomProviderInfo {
   id: `custom_${string}`;
   name: string;
   baseUrl: string;
-  protocol: 'openAi' | 'anthropic';
+  protocol: 'openAi' | 'anthropic' | 'azure';
   allowInsecureHttp: boolean;
   reasoningEfforts: string[];
   enableThinking: boolean;

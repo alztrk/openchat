@@ -730,6 +730,21 @@ async fn receive_with_client(
             {
                 provider_request = provider_request.header("anthropic-beta", "compact-2026-01-12");
             }
+        } else if request.route.is_azure()
+            && let Some(api_key) = request.api_key
+        {
+            provider_request = provider_request
+                .header(
+                    "api-key",
+                    sensitive_api_key_header(api_key).map_err(|_| {
+                        ServiceError::new(
+                            "invalid_provider_credential",
+                            "The configured provider API key is invalid.",
+                            false,
+                        )
+                    })?,
+                )
+                .bearer_auth(api_key);
         } else if let Some(api_key) = request.route.local_api_key.as_deref() {
             provider_request = provider_request.bearer_auth(api_key.as_str());
         } else if !request.route.is_free

@@ -475,8 +475,16 @@ fn model_details_batch_from_catalog(
 
 fn model_from_catalog(catalog: &Value, provider_id: &str, model_id: &str) -> Option<Value> {
     let catalog_provider_id = catalog_provider_id(provider_id);
-    let provider = catalog.get(catalog_provider_id)?;
-    let model = provider.get("models")?.get(model_id)?;
+    let provider = catalog.get(catalog_provider_id).or_else(|| {
+        (provider_id == "azure")
+            .then(|| catalog.get("openai"))
+            .flatten()
+    })?;
+    let model = provider.get("models")?.get(model_id).or_else(|| {
+        (provider_id == "azure")
+            .then(|| catalog.get("openai")?.get("models")?.get(model_id))
+            .flatten()
+    })?;
     let context_window = positive_limit(model, "context");
     let input_token_limit = positive_limit(model, "input");
     let maximum_output = positive_limit(model, "output");

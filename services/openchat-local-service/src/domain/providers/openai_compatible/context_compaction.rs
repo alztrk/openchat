@@ -10,6 +10,7 @@ use tokio::sync::watch;
 use crate::{
     chatgpt_store::StoredMessage,
     context_compaction::{self, MIN_CONTEXT_WINDOW, PruneLevel},
+    domain::http_headers::sensitive_api_key_header,
     protocol::ServiceError,
     storage::AppStorage,
     usage_statistics::{UsageRequestDetails, UsageRequestTracker},
@@ -286,6 +287,12 @@ async fn summarize_transcript_with_storage(
     } else if let Some(local_api_key) = route.local_api_key.as_deref() {
         request = request.bearer_auth(local_api_key.as_str());
     } else if let Some(api_key) = api_key {
+        if route.is_azure() {
+            request = request.header(
+                "api-key",
+                sensitive_api_key_header(api_key).map_err(|_| invalid_response_error())?,
+            );
+        }
         request = request.bearer_auth(api_key);
     }
 

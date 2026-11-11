@@ -57,6 +57,10 @@ impl ChatRoute {
         self.chat_url.ends_with("/messages")
     }
 
+    pub(super) fn is_azure(&self) -> bool {
+        self.chat_url.contains("api-version=") || self.chat_url.contains(".azure.com")
+    }
+
     pub(super) fn request_context_limit(&self) -> Option<i64> {
         self.context_limit_override
             .map(|limit| {
@@ -340,13 +344,16 @@ async fn resolve_chat_route_for_model(
             let limits = super::provider_models::custom_context_limits(
                 storage, provider, api_key, &model_id,
             )?;
+            let chat_url = if provider.is_anthropic() {
+                format!("{}/messages", provider.base_url)
+            } else if provider.is_azure() {
+                azure_chat_url(&provider.base_url, &model_id)
+            } else {
+                format!("{}/chat/completions", provider.base_url)
+            };
             ResolvedProviderRoute {
                 provider_model_id: model_id.clone(),
-                chat_url: if provider.is_anthropic() {
-                    format!("{}/messages", provider.base_url)
-                } else {
-                    format!("{}/chat/completions", provider.base_url)
-                },
+                chat_url,
                 is_free: false,
                 uses_responses_api: false,
                 native_compaction: None,
@@ -478,9 +485,39 @@ fn native_compaction_threshold(
     }
 }
 
+pub(super) fn azure_chat_url(base_url: &str, deployment_id: &str) -> String {
+    let trimmed = base_url.trim_end_matches('/');
+    let (url_without_query, query) = match trimmed.split_once('?') {
+        Some((path, q)) => (path, Some(q)),
+        None => (trimmed, None),
+    };
+    let api_version_query = match query {
+        Some(q) if q.contains("api-version=") => format!("?{q}"),
+        Some(q) => format!("?{q}&api-version=2024-10-21"),
+        None => "?api-version=2024-10-21".to_string(),
+    };
+    if url_without_query.contains("/openai/deployments/") {
+        format!("{url_without_query}/chat/completions{api_version_query}")
+    } else if url_without_query.ends_with("/chat/completions") {
+        format!("{url_without_query}{api_version_query}")
+    } else if url_without_query.contains(".services.ai.azure.com")
+        || url_without_query.contains(".models.ai.azure.com")
+    {
+        format!("{url_without_query}/chat/completions{api_version_query}")
+    } else if url_without_query.ends_with("/openai") {
+        format!(
+            "{url_without_query}/deployments/{deployment_id}/chat/completions{api_version_query}"
+        )
+    } else {
+        format!(
+            "{url_without_query}/openai/deployments/{deployment_id}/chat/completions{api_version_query}"
+        )
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{ChatRoute, NativeCompaction, native_compaction_threshold};
+    use super::{ChatRoute, NativeCompaction, azure_chat_url, native_compaction_threshold};
 
     fn route(
         context_window: Option<i64>,
@@ -567,6 +604,43 @@ mod tests {
                 Some(40_000),
             ),
             None
+        );
+    }
+
+    #[test]
+    fn azure_chat_url_resolves_openai_and_foundry_endpoints() {
+        assert_eq!(
+            azure_chat_url("https://my-resource.openai.azure.com", "gpt-4o"),
+            "https://my-resource.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-10-21"
+        );
+        assert_eq!(
+            azure_chat_url("https://my-resource.openai.azure.com/openai", "gpt-4o-mini"),
+            "https://my-resource.openai.azure.com/openai/deployments/gpt-4o-mini/chat/completions?api-version=2024-10-21"
+        );
+        assert_eq!(
+            azure_chat_url(
+                "https://my-resource.openai.azure.com/openai/deployments/custom-model",
+                "ignored"
+            ),
+            "https://my-resource.openai.azure.com/openai/deployments/custom-model/chat/completions?api-version=2024-10-21"
+        );
+        assert_eq!(
+            azure_chat_url(
+                "https://my-foundry.services.ai.azure.com/models",
+                "deepseek-r1"
+            ),
+            "https://my-foundry.services.ai.azure.com/models/chat/completions?api-version=2024-10-21"
+        );
+        assert_eq!(
+            azure_chat_url("https://my-deployment.eastus2.models.ai.azure.com", "phi-4"),
+            "https://my-deployment.eastus2.models.ai.azure.com/chat/completions?api-version=2024-10-21"
+        );
+        assert_eq!(
+            azure_chat_url(
+                "https://my-resource.openai.azure.com?api-version=2024-06-01",
+                "gpt-4o"
+            ),
+            "https://my-resource.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-06-01"
         );
     }
 }

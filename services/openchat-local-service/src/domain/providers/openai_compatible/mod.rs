@@ -96,6 +96,7 @@ pub(crate) fn temporary_chatgpt_responses_body(
 pub(crate) enum CustomProviderProtocol {
     OpenAi,
     Anthropic,
+    Azure,
 }
 
 #[derive(Clone, Debug)]
@@ -171,6 +172,7 @@ impl CustomProviderConfig {
         let protocol = match value.get("protocol").and_then(Value::as_str) {
             Some("openAi") => CustomProviderProtocol::OpenAi,
             Some("anthropic") => CustomProviderProtocol::Anthropic,
+            Some("azure") => CustomProviderProtocol::Azure,
             _ => return Err(invalid()),
         };
         let legacy_reasoning_mode = value.get("reasoningMode").and_then(Value::as_str);
@@ -259,6 +261,10 @@ impl CustomProviderConfig {
 
     pub(crate) fn is_anthropic(&self) -> bool {
         self.protocol == CustomProviderProtocol::Anthropic
+    }
+
+    pub(crate) fn is_azure(&self) -> bool {
+        self.protocol == CustomProviderProtocol::Azure
     }
 }
 

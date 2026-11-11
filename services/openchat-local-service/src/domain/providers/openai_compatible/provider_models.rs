@@ -114,79 +114,101 @@ pub async fn models_for_custom_provider(
 
     let fetch = async {
         let client = catalog_client("Custom provider")?;
-        let mut request = client.get(format!("{}/models", provider.base_url));
+        let models_url = if provider.protocol == CustomProviderProtocol::Azure {
+            if provider.base_url.contains("openai.azure.com")
+                && !provider.base_url.contains("/openai")
+            {
+                format!(
+                    "{}/openai/models?api-version=2024-10-21",
+                    provider.base_url.trim_end_matches('/')
+                )
+            } else {
+                format!(
+                    "{}/models?api-version=2024-10-21",
+                    provider.base_url.trim_end_matches('/')
+                )
+            }
+        } else {
+            format!("{}/models", provider.base_url)
+        };
+        let mut request = client.get(models_url);
         if provider.protocol == CustomProviderProtocol::Anthropic {
             request = request.query(&[("limit", MAX_MODELS)]);
         }
         request = match (provider.protocol, api_key) {
             (CustomProviderProtocol::OpenAi, Some(api_key)) => request.bearer_auth(api_key),
             (CustomProviderProtocol::OpenAi, None) => request,
+            (CustomProviderProtocol::Azure, Some(api_key)) => request
+                .header(
+                    "api-key",
+                    sensitive_api_key_header(api_key).map_err(|_| invalid_response_error())?,
+                )
+                .bearer_auth(api_key),
+            (CustomProviderProtocol::Azure, None) => request,
             (CustomProviderProtocol::Anthropic, Some(api_key)) => request
                 .header(
                     "x-api-key",
-                    sensitive_api_key_header(api_key).map_err(|_| invalid_request_error())?,
+                    sensitive_api_key_header(api_key).map_err(|_| invalid_response_error())?,
                 )
                 .header("anthropic-version", "2023-06-01"),
             (CustomProviderProtocol::Anthropic, None) => {
                 request.header("anthropic-version", "2023-06-01")
             }
         };
-        let response = request
-            .send()
-            .await
-            .map_err(|_| network_error("Custom provider"))?;
-        if !response.status().is_success() {
-            return Err(http_error(response.status(), Some(&provider.id)));
+        let response = request.send().await;
+        let mut models = Vec::new();
+        if let Ok(response) = response
+            && response.status().is_success()
+            && let Ok(body) =
+                read_bounded_response_body(response, MAX_MODEL_CATALOG_RESPONSE_BYTES).await
+            && let Ok(value) = serde_json::from_slice::<Value>(&body)
+            && let Some(items) = value.get("data").and_then(Value::as_array)
+        {
+            models = items
+                .iter()
+                .filter_map(|item| {
+                    let id = item.get("id")?.as_str()?.trim();
+                    if id.is_empty() || id.len() > 256 || id.chars().any(char::is_control) {
+                        return None;
+                    }
+                    if !provider.selected_models.is_empty()
+                        && !provider
+                            .selected_models
+                            .iter()
+                            .any(|selected| selected == id)
+                    {
+                        return None;
+                    }
+                    let display_name = item
+                        .get("display_name")
+                        .or_else(|| item.get("name"))
+                        .and_then(Value::as_str)
+                        .filter(|name| !name.trim().is_empty())
+                        .unwrap_or(id);
+                    let context_window = item
+                        .get("context_window")
+                        .or_else(|| item.get("input_token_limit"))
+                        .and_then(Value::as_i64)
+                        .filter(|limit| *limit > 0);
+                    Some(json!({
+                        "id": id,
+                        "displayName": display_name,
+                        "description": Value::Null,
+                        "contextWindow": context_window,
+                        "inputTokenLimit": context_window,
+                        "maxOutputTokens": item.get("max_output_tokens").and_then(Value::as_i64),
+                        "supportsImages": false,
+                        "supportsTools": Value::Null,
+                        "supportsReasoning": false,
+                        "reasoningLevels": [],
+                        "isAvailable": true,
+                        "groupId": "models"
+                    }))
+                })
+                .collect::<Vec<_>>();
+        } else if provider.selected_models.is_empty() {
+            return Err(network_error("Custom provider"));
         }
-        let body = read_bounded_response_body(response, MAX_MODEL_CATALOG_RESPONSE_BYTES).await?;
-        let value: Value = serde_json::from_slice(&body).map_err(|_| invalid_response_error())?;
-        let items = value
-            .get("data")
-            .and_then(Value::as_array)
-            .filter(|items| !items.is_empty() && items.len() <= MAX_MODELS)
-            .ok_or_else(invalid_response_error)?;
-        let mut models = items
-            .iter()
-            .filter_map(|item| {
-                let id = item.get("id")?.as_str()?.trim();
-                if id.is_empty() || id.len() > 256 || id.chars().any(char::is_control) {
-                    return None;
-                }
-                if !provider.selected_models.is_empty()
-                    && !provider
-                        .selected_models
-                        .iter()
-                        .any(|selected| selected == id)
-                {
-                    return None;
-                }
-                let display_name = item
-                    .get("display_name")
-                    .or_else(|| item.get("name"))
-                    .and_then(Value::as_str)
-                    .filter(|name| !name.trim().is_empty())
-                    .unwrap_or(id);
-                let context_window = item
-                    .get("context_window")
-                    .or_else(|| item.get("input_token_limit"))
-                    .and_then(Value::as_i64)
-                    .filter(|limit| *limit > 0);
-                Some(json!({
-                    "id": id,
-                    "displayName": display_name,
-                    "description": Value::Null,
-                    "contextWindow": context_window,
-                    "inputTokenLimit": context_window,
-                    "maxOutputTokens": item.get("max_output_tokens").and_then(Value::as_i64),
-                    "supportsImages": false,
-                    "supportsTools": Value::Null,
-                    "supportsReasoning": false,
-                    "reasoningLevels": [],
-                    "isAvailable": true,
-                    "groupId": "models"
-                }))
-            })
-            .collect::<Vec<_>>();
         for selected_id in &provider.selected_models {
             if !models
                 .iter()
@@ -211,7 +233,6 @@ pub async fn models_for_custom_provider(
         if models.is_empty() {
             return Err(invalid_response_error());
         }
-        save_catalog(storage, &provider.id, &cache_key, &models)?;
         Ok::<_, ServiceError>(models)
     };
 
@@ -223,7 +244,22 @@ pub async fn models_for_custom_provider(
         result = fetch => result,
     };
     match fetched {
-        Ok(models) => Ok(response(&models, "current")),
+        Ok(mut models) => {
+            let enrichment_provider = if provider.protocol == CustomProviderProtocol::Azure {
+                "azure"
+            } else {
+                "openai"
+            };
+            crate::domain::usage_statistics::enrich_model_catalog_capabilities(
+                storage,
+                enrichment_provider,
+                &mut models,
+                cancellation,
+            )
+            .await?;
+            save_catalog(storage, &provider.id, &cache_key, &models)?;
+            Ok(response(&models, "current"))
+        }
         Err(error) if error.code == "network_unavailable" || error.retryable => match cached {
             Some((models, _)) => Ok(response(&models, "stale")),
             None => Err(error),

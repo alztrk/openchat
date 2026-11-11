@@ -197,14 +197,16 @@ async fn resolve_target(
                 return Err(());
             }
             let anthropic = provider.is_anthropic();
-            let suffix = if anthropic {
-                "/messages"
+            let url = if anthropic {
+                format!("{}/messages", provider.base_url)
+            } else if provider.is_azure() {
+                super::route::azure_chat_url(&provider.base_url, &target.model_id)
             } else {
-                "/chat/completions"
+                format!("{}/chat/completions", provider.base_url)
             };
             Ok(TitleRoute {
                 model_id: target.model_id,
-                url: format!("{}{suffix}", provider.base_url),
+                url,
                 api_key,
                 anthropic,
                 copilot: false,
@@ -358,6 +360,11 @@ async fn generate_title(
                 request = request.bearer_auth(key);
             }
         } else if let Some(key) = route.api_key.as_deref() {
+            if route.url.contains("api-version=") || route.url.contains(".azure.com") {
+                if let Ok(header) = sensitive_api_key_header(key) {
+                    request = request.header("api-key", header);
+                }
+            }
             request = request.bearer_auth(key);
         }
         request

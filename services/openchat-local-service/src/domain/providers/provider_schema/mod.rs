@@ -166,7 +166,7 @@ pub struct ToolActivity {
     pub output: Option<Value>,
     /// File changes recorded for this activity.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub file_changes: Vec<crate::file_changes::FileChangeSummary>,
+    pub(crate) file_changes: Vec<crate::file_changes::FileChangeSummary>,
     /// Safe display message when file-change details could not be collected.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub file_changes_error: Option<String>,
