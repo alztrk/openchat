@@ -1,10 +1,11 @@
 use std::sync::{
-    atomic::{AtomicU8, Ordering},
+    atomic::{AtomicBool, AtomicU8, Ordering},
     Arc, Mutex,
 };
 use url::{Host, Url};
 
 const MAX_AUTOMATIC_RELOADS: u8 = 2;
+const MAX_AUTOMATIC_BROWSER_RECREATIONS: u8 = 1;
 const MAX_RECOVERY_URL_BYTES: usize = 4 * 1024;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -41,6 +42,9 @@ impl RecoveryLocale {
                 description: "The application view stopped unexpectedly. Try loading OpenChat again. If the problem continues, close OpenChat and start it again later.",
                 retry: "Reload application",
                 missing_url: "The application address could not be verified. Close OpenChat and start it again.",
+                runtime_label: "WebView2 Runtime",
+                exit_code_label: "Process exit code",
+                update_instruction: "Update Windows and the Microsoft Edge WebView2 Runtime, then start OpenChat again. If this continues, contact OpenChat support.",
             },
             Self::German => RecoveryCopy {
                 language: "de",
@@ -48,6 +52,9 @@ impl RecoveryLocale {
                 description: "Die Anwendungsansicht wurde unerwartet beendet. Lade OpenChat erneut. Falls das Problem bleibt, schließe OpenChat und starte es später noch einmal.",
                 retry: "Anwendung neu laden",
                 missing_url: "Die Anwendungsadresse konnte nicht überprüft werden. Schließe OpenChat und starte es erneut.",
+                runtime_label: "WebView2-Runtime",
+                exit_code_label: "Prozess-Exitcode",
+                update_instruction: "Aktualisiere Windows und die Microsoft Edge WebView2-Runtime und starte OpenChat erneut. Wenn das Problem weiterhin auftritt, wende dich an den OpenChat-Support.",
             },
             Self::Spanish => RecoveryCopy {
                 language: "es",
@@ -55,6 +62,9 @@ impl RecoveryLocale {
                 description: "La vista de la aplicación se detuvo inesperadamente. Vuelve a cargar OpenChat. Si el problema continúa, cierra OpenChat y vuelve a abrirlo más tarde.",
                 retry: "Recargar la aplicación",
                 missing_url: "No se pudo verificar la dirección de la aplicación. Cierra OpenChat y vuelve a abrirlo.",
+                runtime_label: "Runtime de WebView2",
+                exit_code_label: "Código de salida del proceso",
+                update_instruction: "Actualiza Windows y Microsoft Edge WebView2 Runtime y vuelve a iniciar OpenChat. Si el problema continúa, contacta con el soporte de OpenChat.",
             },
             Self::French => RecoveryCopy {
                 language: "fr",
@@ -62,6 +72,9 @@ impl RecoveryLocale {
                 description: "La vue de l’application s’est arrêtée de façon inattendue. Rechargez OpenChat. Si le problème persiste, fermez OpenChat et relancez-le plus tard.",
                 retry: "Recharger l’application",
                 missing_url: "L’adresse de l’application n’a pas pu être vérifiée. Fermez OpenChat et relancez-le.",
+                runtime_label: "Runtime WebView2",
+                exit_code_label: "Code de sortie du processus",
+                update_instruction: "Mettez à jour Windows et Microsoft Edge WebView2 Runtime, puis relancez OpenChat. Si le problème persiste, contactez le support OpenChat.",
             },
             Self::Turkish => RecoveryCopy {
                 language: "tr",
@@ -69,6 +82,9 @@ impl RecoveryLocale {
                 description: "Uygulama görünümü beklenmedik şekilde durdu. OpenChat’i yeniden yükleyin. Sorun sürerse OpenChat’i kapatıp daha sonra tekrar açın.",
                 retry: "Uygulamayı yeniden yükle",
                 missing_url: "Uygulama adresi doğrulanamadı. OpenChat’i kapatıp yeniden açın.",
+                runtime_label: "WebView2 çalışma zamanı",
+                exit_code_label: "Süreç çıkış kodu",
+                update_instruction: "Windows’u ve Microsoft Edge WebView2 çalışma zamanını güncelleyip OpenChat’i yeniden başlatın. Sorun sürerse OpenChat desteğine başvurun.",
             },
         }
     }
@@ -80,6 +96,9 @@ struct RecoveryCopy {
     description: &'static str,
     retry: &'static str,
     missing_url: &'static str,
+    runtime_label: &'static str,
+    exit_code_label: &'static str,
+    update_instruction: &'static str,
 }
 
 #[derive(Clone, Default)]
@@ -91,6 +110,8 @@ struct RecoveryContext {
 #[derive(Clone, Default)]
 pub(super) struct RendererRecoveryTracker {
     failures: Arc<AtomicU8>,
+    browser_failures: Arc<AtomicU8>,
+    browser_recreation_pending: Arc<AtomicBool>,
     context: Arc<Mutex<RecoveryContext>>,
 }
 
@@ -98,6 +119,12 @@ pub(super) struct RendererRecoveryTracker {
 pub(super) enum RendererRecoveryAction {
     Reload { attempt: u8 },
     ShowRecovery,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub(super) enum BrowserProcessRecoveryAction {
+    Recreate { attempt: u8 },
+    GiveUp,
 }
 
 impl RendererRecoveryTracker {
@@ -118,6 +145,32 @@ impl RendererRecoveryTracker {
         }
     }
 
+    pub(super) fn record_browser_process_failure(&self) -> BrowserProcessRecoveryAction {
+        let previous_failure_count = self
+            .browser_failures
+            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |count| {
+                Some(count.saturating_add(1))
+            })
+            .unwrap_or_else(|count| count);
+
+        if previous_failure_count < MAX_AUTOMATIC_BROWSER_RECREATIONS {
+            BrowserProcessRecoveryAction::Recreate {
+                attempt: previous_failure_count + 1,
+            }
+        } else {
+            BrowserProcessRecoveryAction::GiveUp
+        }
+    }
+
+    pub(super) fn set_browser_recreation_pending(&self, pending: bool) {
+        self.browser_recreation_pending
+            .store(pending, Ordering::SeqCst);
+    }
+
+    pub(super) fn browser_recreation_pending(&self) -> bool {
+        self.browser_recreation_pending.load(Ordering::SeqCst)
+    }
+
     pub(super) fn renderer_ready(&self, app_url: Option<Url>, language: &str) {
         let mut context = match self.context.lock() {
             Ok(context) => context,
@@ -135,6 +188,7 @@ impl RendererRecoveryTracker {
         }
         context.locale = RecoveryLocale::from_language(language);
         self.failures.store(0, Ordering::SeqCst);
+        self.set_browser_recreation_pending(false);
     }
 
     pub(super) fn has_app_url(&self) -> bool {
@@ -159,6 +213,33 @@ impl RendererRecoveryTracker {
             .app_url
             .or_else(|| current_source.and_then(parse_trusted_app_url));
         build_recovery_page(target_url.as_ref(), context.locale)
+    }
+
+    pub(super) fn browser_process_failure_message(
+        &self,
+        runtime_version: &str,
+        exit_code: &str,
+    ) -> (String, String) {
+        let context = match self.context.lock() {
+            Ok(context) => context.clone(),
+            Err(error) => {
+                eprintln!("OpenChat renderer recovery context was poisoned: {error}");
+                error.into_inner().clone()
+            }
+        };
+        let copy = context.locale.copy();
+        (
+            copy.title.to_owned(),
+            format!(
+                "{}\n\n{}: {}\n{}: {}\n\n{}",
+                copy.description,
+                copy.runtime_label,
+                runtime_version,
+                copy.exit_code_label,
+                exit_code,
+                copy.update_instruction,
+            ),
+        )
     }
 }
 
@@ -236,8 +317,8 @@ fn escape_html(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        build_recovery_page, escape_html, parse_trusted_app_url, RecoveryLocale,
-        RendererRecoveryAction, RendererRecoveryTracker,
+        build_recovery_page, escape_html, parse_trusted_app_url, BrowserProcessRecoveryAction,
+        RecoveryLocale, RendererRecoveryAction, RendererRecoveryTracker,
     };
     use url::Url;
 
@@ -284,6 +365,42 @@ mod tests {
                 RendererRecoveryAction::ShowRecovery
             );
         }
+    }
+
+    #[test]
+    fn recreates_the_webview_once_after_a_browser_process_failure() {
+        let tracker = RendererRecoveryTracker::default();
+
+        assert_eq!(
+            tracker.record_browser_process_failure(),
+            BrowserProcessRecoveryAction::Recreate { attempt: 1 }
+        );
+        assert_eq!(
+            tracker.record_browser_process_failure(),
+            BrowserProcessRecoveryAction::GiveUp
+        );
+    }
+
+    #[test]
+    fn a_ready_renderer_does_not_reset_the_browser_process_recreation_limit() {
+        let tracker = RendererRecoveryTracker::default();
+        tracker.record_browser_process_failure();
+        tracker.renderer_ready(None, "en");
+
+        assert_eq!(
+            tracker.record_browser_process_failure(),
+            BrowserProcessRecoveryAction::GiveUp
+        );
+    }
+
+    #[test]
+    fn renderer_ready_clears_the_pending_browser_recreation_state() {
+        let tracker = RendererRecoveryTracker::default();
+        tracker.set_browser_recreation_pending(true);
+
+        tracker.renderer_ready(None, "en");
+
+        assert!(!tracker.browser_recreation_pending());
     }
 
     #[test]
@@ -371,5 +488,19 @@ mod tests {
             assert!(page.contains(&format!("<html lang=\"{language}\">")));
             assert!(page.contains(&format!("<h1>{title}</h1>")));
         }
+    }
+
+    #[test]
+    fn browser_process_failure_message_uses_the_renderer_language() {
+        let tracker = RendererRecoveryTracker::default();
+        tracker.renderer_ready(None, "tr-TR");
+
+        let (title, message) =
+            tracker.browser_process_failure_message("157.0.4341.46", "0x80000003");
+
+        assert_eq!(title, "OpenChat başlatılamadı");
+        assert!(message.contains("WebView2 çalışma zamanı: 157.0.4341.46"));
+        assert!(message.contains("Süreç çıkış kodu: 0x80000003"));
+        assert!(message.contains("Windows’u"));
     }
 }

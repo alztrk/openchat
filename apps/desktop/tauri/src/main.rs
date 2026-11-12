@@ -11,14 +11,18 @@ use tauri::Manager;
 use webview2_com::{
     CoTaskMemPWSTR,
     Microsoft::Web::WebView2::Win32::{
+        GetAvailableCoreWebView2BrowserVersionString, ICoreWebView2ProcessFailedEventArgs2,
         ICoreWebView2Settings3, COREWEBVIEW2_PROCESS_FAILED_KIND,
+        COREWEBVIEW2_PROCESS_FAILED_KIND_BROWSER_PROCESS_EXITED,
         COREWEBVIEW2_PROCESS_FAILED_KIND_FRAME_RENDER_PROCESS_EXITED,
         COREWEBVIEW2_PROCESS_FAILED_KIND_RENDER_PROCESS_EXITED,
     },
     ProcessFailedEventHandler,
 };
 #[cfg(windows)]
-use windows_core::{Interface, PWSTR};
+use windows_core::{Interface, PCWSTR, PWSTR};
+#[cfg(windows)]
+use windows_sys::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_ICONERROR, MB_OK};
 
 #[cfg(feature = "startup-benchmark")]
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -331,99 +335,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             let main_window = main_window_builder.build()?;
             #[cfg(windows)]
-            let app_handle = app.handle().clone();
-            #[cfg(windows)]
-            let renderer_recovery = app
-                .state::<renderer_recovery::RendererRecoveryTracker>()
-                .inner()
-                .clone();
-            #[cfg(windows)]
-            let recovery_window = main_window.clone();
-            #[cfg(windows)]
-            main_window.with_webview(move |webview| {
-                // SAFETY: Tauri keeps the WebView2 controller alive for this UI-thread callback.
-                // The COM interfaces are obtained from that controller and used on the UI thread.
-                let result = unsafe {
-                    webview
-                        .controller()
-                        .CoreWebView2()
-                        .and_then(|core| {
-                            let settings = core
-                                .Settings()?
-                                .cast::<ICoreWebView2Settings3>()?;
-                            settings.SetAreBrowserAcceleratorKeysEnabled(false)?;
-
-                            let recovery_for_callback = renderer_recovery.clone();
-                            let recovery_window_for_callback = recovery_window.clone();
-                            let handler = ProcessFailedEventHandler::create(Box::new(
-                                move |sender, args| {
-                                    let Some(core) = sender else {
-                                        return Ok(());
-                                    };
-                                    let Some(args) = args else {
-                                        return Ok(());
-                                    };
-                                    let mut kind = COREWEBVIEW2_PROCESS_FAILED_KIND(0);
-                                    if let Err(error) = args.ProcessFailedKind(&mut kind) {
-                                        eprintln!("OpenChat could not read the WebView2 process failure kind: {error}");
-                                        return Ok(());
-                                    }
-                                    if kind != COREWEBVIEW2_PROCESS_FAILED_KIND_RENDER_PROCESS_EXITED
-                                        && kind != COREWEBVIEW2_PROCESS_FAILED_KIND_FRAME_RENDER_PROCESS_EXITED
-                                    {
-                                        return Ok(());
-                                    }
-
-                                    match recovery_for_callback.record_failure() {
-                                        renderer_recovery::RendererRecoveryAction::Reload { attempt } => {
-                                            eprintln!("OpenChat WebView2 renderer exited; reloading the application view (attempt {attempt}).");
-                                            if let Err(error) = core.Reload() {
-                                                eprintln!("OpenChat could not reload the WebView2 renderer: {error}");
-                                            }
-                                        }
-                                        renderer_recovery::RendererRecoveryAction::ShowRecovery => {
-                                            eprintln!("OpenChat WebView2 renderer exited repeatedly; showing recovery screen.");
-                                            if let Err(error) = recovery_window_for_callback.set_decorations(true) {
-                                                eprintln!("OpenChat could not enable the recovery window title bar: {error}");
-                                            }
-                                            let current_source = if recovery_for_callback.has_app_url() {
-                                                None
-                                            } else {
-                                                let mut source = PWSTR::null();
-                                                match core.Source(&mut source) {
-                                                    Ok(()) => Some(CoTaskMemPWSTR::from(source).to_string()),
-                                                    Err(error) => {
-                                                        eprintln!("OpenChat could not read the failed renderer URL: {error}");
-                                                        None
-                                                    }
-                                                }
-                                            };
-                                            let recovery_page = recovery_for_callback
-                                                .recovery_page(current_source.as_deref());
-                                            let recovery_page = CoTaskMemPWSTR::from(recovery_page.as_str());
-                                            if let Err(error) = core.NavigateToString(*recovery_page.as_ref().as_pcwstr()) {
-                                                eprintln!("OpenChat could not show the WebView2 recovery screen: {error}");
-                                            }
-                                            if let Err(error) = recovery_window_for_callback.show() {
-                                                eprintln!("OpenChat could not show the renderer recovery window: {error}");
-                                            }
-                                        }
-                                    }
-                                    Ok(())
-                                },
-                            ));
-                            let mut token = 0;
-                            core.add_ProcessFailed(&handler, &mut token)?;
-                            Ok(())
-                        })
-                };
-                if let Err(error) = result {
-                    eprintln!(
-                        "OpenChat could not disable WebView2 browser accelerator keys; stopping startup: {error}"
-                    );
-                    app_handle.exit(1);
-                }
-            })?;
+            {
+                let renderer_recovery = app
+                    .state::<renderer_recovery::RendererRecoveryTracker>()
+                    .inner()
+                    .clone();
+                let runtime_version = webview2_runtime_version();
+                eprintln!("OpenChat WebView2 Runtime version: {runtime_version}.");
+                attach_webview_process_failed_handler(
+                    &main_window,
+                    app.handle().clone(),
+                    renderer_recovery,
+                    runtime_version,
+                    setup_profile_root.clone(),
+                )?;
+            }
             if setup_profile_root.is_none() || cfg!(feature = "desktop-profile-test-support") {
                 let writer_result = match setup_profile_root.as_ref() {
                     Some(profile_root) => window_state::WindowStateWriter::start_at_path(
@@ -499,6 +425,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             desktop_test_window_close_requested = desktop_test_user_exit_requested(*code);
         }
 
+        #[cfg(windows)]
+        if let tauri::RunEvent::ExitRequested {
+            code: None, api, ..
+        } = &event
+        {
+            if handle
+                .try_state::<renderer_recovery::RendererRecoveryTracker>()
+                .is_some_and(|recovery| recovery.browser_recreation_pending())
+            {
+                api.prevent_exit();
+            }
+        }
+
         if matches!(&event, tauri::RunEvent::Exit) {
             window_state::shutdown_window_state_writer(handle);
             let shutdown_result = handle.state::<local_service::LocalServiceState>().stop();
@@ -521,6 +460,366 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
     Ok(())
+}
+
+#[cfg(windows)]
+fn attach_webview_process_failed_handler(
+    window: &tauri::WebviewWindow,
+    app_handle: tauri::AppHandle,
+    recovery: renderer_recovery::RendererRecoveryTracker,
+    runtime_version: String,
+    profile_root: Option<std::path::PathBuf>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let recovery_window = window.clone();
+    window.with_webview(move |webview| {
+        // SAFETY: Tauri keeps the WebView2 controller alive for this UI-thread callback.
+        // The COM interfaces are obtained from that controller and used on the UI thread.
+        let result = unsafe {
+            webview
+                .controller()
+                .CoreWebView2()
+                .and_then(|core| {
+                    let settings = core.Settings()?.cast::<ICoreWebView2Settings3>()?;
+                    settings.SetAreBrowserAcceleratorKeysEnabled(false)?;
+
+                    let recovery_for_callback = recovery.clone();
+                    let recovery_window_for_callback = recovery_window.clone();
+                    let runtime_version_for_callback = runtime_version.clone();
+                    let app_for_callback = app_handle.clone();
+                    let profile_for_callback = profile_root.clone();
+                    let handler = ProcessFailedEventHandler::create(Box::new(
+                        move |sender, args| {
+                            let Some(core) = sender else {
+                                return Ok(());
+                            };
+                            let Some(args) = args else {
+                                return Ok(());
+                            };
+                            let mut kind = COREWEBVIEW2_PROCESS_FAILED_KIND(0);
+                            if let Err(error) = args.ProcessFailedKind(&mut kind) {
+                                eprintln!("OpenChat could not read the WebView2 process failure kind (runtime version: {}): {error}", runtime_version_for_callback);
+                                return Ok(());
+                            }
+                            let (reason, exit_code) = match args
+                                .cast::<ICoreWebView2ProcessFailedEventArgs2>()
+                            {
+                                Ok(extended_args) => {
+                                    let mut reason =
+                                        webview2_com::Microsoft::Web::WebView2::Win32::COREWEBVIEW2_PROCESS_FAILED_REASON(0);
+                                    let reason = match extended_args.Reason(&mut reason) {
+                                        Ok(()) => process_failed_reason_name(reason),
+                                        Err(_) => "unavailable",
+                                    };
+                                    let mut exit_code = 0;
+                                    let exit_code = match extended_args.ExitCode(&mut exit_code) {
+                                        Ok(()) => format!("0x{:08X}", exit_code as u32),
+                                        Err(_) => "unavailable".to_owned(),
+                                    };
+                                    (reason, exit_code)
+                                }
+                                Err(_) => ("unavailable", "unavailable".to_owned()),
+                            };
+                            eprintln!("OpenChat WebView2 process failed (kind: {}, reason: {}, exit code: {}, runtime version: {}).", process_failed_kind_name(kind), reason, exit_code, runtime_version_for_callback);
+
+                            if kind == COREWEBVIEW2_PROCESS_FAILED_KIND_BROWSER_PROCESS_EXITED {
+                                schedule_browser_process_recovery(
+                                    app_for_callback.clone(),
+                                    recovery_for_callback.clone(),
+                                    runtime_version_for_callback.clone(),
+                                    profile_for_callback.clone(),
+                                    exit_code,
+                                );
+                                return Ok(());
+                            }
+
+                            if kind != COREWEBVIEW2_PROCESS_FAILED_KIND_RENDER_PROCESS_EXITED
+                                && kind != COREWEBVIEW2_PROCESS_FAILED_KIND_FRAME_RENDER_PROCESS_EXITED
+                            {
+                                return Ok(());
+                            }
+
+                            match recovery_for_callback.record_failure() {
+                                renderer_recovery::RendererRecoveryAction::Reload { attempt } => {
+                                    eprintln!("OpenChat WebView2 renderer exited; reloading the application view (attempt {attempt}).");
+                                    if let Err(error) = core.Reload() {
+                                        eprintln!("OpenChat could not reload the WebView2 renderer: {error}");
+                                    }
+                                }
+                                renderer_recovery::RendererRecoveryAction::ShowRecovery => {
+                                    eprintln!("OpenChat WebView2 renderer exited repeatedly; showing recovery screen.");
+                                    if let Err(error) = recovery_window_for_callback.set_decorations(true) {
+                                        eprintln!("OpenChat could not enable the recovery window title bar: {error}");
+                                    }
+                                    let current_source = if recovery_for_callback.has_app_url() {
+                                        None
+                                    } else {
+                                        let mut source = PWSTR::null();
+                                        match core.Source(&mut source) {
+                                            Ok(()) => Some(CoTaskMemPWSTR::from(source).to_string()),
+                                            Err(error) => {
+                                                eprintln!("OpenChat could not read the failed renderer URL: {error}");
+                                                None
+                                            }
+                                        }
+                                    };
+                                    let recovery_page = recovery_for_callback
+                                        .recovery_page(current_source.as_deref());
+                                    let recovery_page = CoTaskMemPWSTR::from(recovery_page.as_str());
+                                    if let Err(error) = core.NavigateToString(*recovery_page.as_ref().as_pcwstr()) {
+                                        eprintln!("OpenChat could not show the WebView2 recovery screen: {error}");
+                                    }
+                                    if let Err(error) = recovery_window_for_callback.show() {
+                                        eprintln!("OpenChat could not show the renderer recovery window: {error}");
+                                    }
+                                }
+                            }
+                            Ok(())
+                        },
+                    ));
+                    let mut token = 0;
+                    core.add_ProcessFailed(&handler, &mut token)?;
+                    Ok(())
+                })
+        };
+        if let Err(error) = result {
+            eprintln!(
+                "OpenChat could not initialize WebView2 process recovery: {error}"
+            );
+            app_handle.exit(1);
+        }
+    })?;
+    Ok(())
+}
+
+#[cfg(windows)]
+fn schedule_browser_process_recovery(
+    app_handle: tauri::AppHandle,
+    recovery: renderer_recovery::RendererRecoveryTracker,
+    runtime_version: String,
+    profile_root: Option<std::path::PathBuf>,
+    exit_code: String,
+) {
+    match recovery.record_browser_process_failure() {
+        renderer_recovery::BrowserProcessRecoveryAction::Recreate { attempt } => {
+            eprintln!(
+                "OpenChat WebView2 browser process exited; recreating the application view (attempt {attempt})."
+            );
+            let (failure_title, failure_message) =
+                recovery.browser_process_failure_message(&runtime_version, &exit_code);
+            let app_for_schedule_failure = app_handle.clone();
+            let app_for_close = app_handle.clone();
+            let runtime_version_for_close = runtime_version.clone();
+            let failure_title_for_close = failure_title.clone();
+            let failure_message_for_close = failure_message.clone();
+            if let Err(error) = app_handle.run_on_main_thread(move || {
+                recovery.set_browser_recreation_pending(true);
+                if let Some(window) = app_for_close.get_webview_window("main") {
+                    if let Err(error) = window.destroy() {
+                        recovery.set_browser_recreation_pending(false);
+                        eprintln!("OpenChat could not close the failed WebView2 window: {error}");
+                        show_native_webview_failure(
+                            &failure_title_for_close,
+                            &failure_message_for_close,
+                        );
+                        app_for_close.exit(1);
+                        return;
+                    }
+                }
+
+                let app_for_recreation = app_for_close.clone();
+                let app_for_thread_failure = app_for_recreation.clone();
+                let recovery_for_thread_failure = recovery.clone();
+                let failure_title_for_thread_failure = failure_title_for_close.clone();
+                let failure_message_for_thread_failure = failure_message_for_close.clone();
+                let thread_result = std::thread::Builder::new()
+                    .name("openchat-webview-recovery".to_owned())
+                    .spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_millis(250));
+                    let app_for_schedule_failure = app_for_recreation.clone();
+                    let app_for_window = app_for_recreation.clone();
+                    let runtime_version_for_recreation = runtime_version_for_close.clone();
+                    let failure_title_for_recreation = failure_title_for_close.clone();
+                    let failure_message_for_recreation = failure_message_for_close.clone();
+                    let failure_title_for_schedule_failure = failure_title_for_recreation.clone();
+                    let failure_message_for_schedule_failure =
+                        failure_message_for_recreation.clone();
+                    let recovery_for_schedule_failure = recovery.clone();
+                    if let Err(error) = app_for_recreation.run_on_main_thread(move || {
+                        if let Err(error) = recreate_main_webview(
+                            &app_for_window,
+                            recovery.clone(),
+                            runtime_version_for_recreation.clone(),
+                            profile_root,
+                        ) {
+                            recovery.set_browser_recreation_pending(false);
+                            eprintln!("OpenChat could not recreate the WebView2 application view: {error}");
+                            show_native_webview_failure(
+                                &failure_title_for_recreation,
+                                &failure_message_for_recreation,
+                            );
+                            app_for_window.exit(1);
+                        }
+                    }) {
+                        recovery_for_schedule_failure.set_browser_recreation_pending(false);
+                        eprintln!("OpenChat could not schedule WebView2 recreation: {error}");
+                        show_native_webview_failure(
+                            &failure_title_for_schedule_failure,
+                            &failure_message_for_schedule_failure,
+                        );
+                        app_for_schedule_failure.exit(1);
+                    }
+                });
+                if let Err(error) = thread_result {
+                    recovery_for_thread_failure.set_browser_recreation_pending(false);
+                    eprintln!("OpenChat could not start the WebView2 recovery task: {error}");
+                    show_native_webview_failure(
+                        &failure_title_for_thread_failure,
+                        &failure_message_for_thread_failure,
+                    );
+                    app_for_thread_failure.exit(1);
+                }
+            }) {
+                eprintln!("OpenChat could not schedule WebView2 recovery: {error}");
+                show_native_webview_failure(&failure_title, &failure_message);
+                app_for_schedule_failure.exit(1);
+            }
+        }
+        renderer_recovery::BrowserProcessRecoveryAction::GiveUp => {
+            eprintln!("OpenChat WebView2 browser process failed again after one recreation; closing the application.");
+            let (failure_title, failure_message) =
+                recovery.browser_process_failure_message(&runtime_version, &exit_code);
+            let app_for_schedule_failure = app_handle.clone();
+            let app_for_exit = app_handle.clone();
+            if let Err(error) = app_handle.run_on_main_thread(move || {
+                show_native_webview_failure(&failure_title, &failure_message);
+                app_for_exit.exit(1);
+            }) {
+                eprintln!("OpenChat could not show the WebView2 failure message: {error}");
+                app_for_schedule_failure.exit(1);
+            }
+        }
+    }
+}
+
+#[cfg(windows)]
+fn recreate_main_webview(
+    app_handle: &tauri::AppHandle,
+    recovery: renderer_recovery::RendererRecoveryTracker,
+    runtime_version: String,
+    profile_root: Option<std::path::PathBuf>,
+) -> Result<(), String> {
+    let window_config = app_handle
+        .config()
+        .app
+        .windows
+        .iter()
+        .find(|window| window.label == "main")
+        .ok_or_else(|| "Main window configuration is unavailable".to_owned())?;
+    let mut builder = tauri::WebviewWindowBuilder::from_config(app_handle, window_config)
+        .map_err(|error| error.to_string())?
+        .visible(false);
+    if let Some(profile_root) = profile_root.as_ref() {
+        let webview_data_directory = ensure_profile_child_directory(profile_root, "webview")
+            .map_err(|error| error.to_string())?;
+        builder = builder.data_directory(webview_data_directory);
+    }
+    let window = builder.build().map_err(|error| error.to_string())?;
+    attach_webview_process_failed_handler(
+        &window,
+        app_handle.clone(),
+        recovery,
+        runtime_version,
+        profile_root.clone(),
+    )
+    .map_err(|error| error.to_string())?;
+
+    let restore_result = match profile_root {
+        Some(profile_root) => window_state::restore_window_state_at_path(
+            &window,
+            &profile_root.join("window-state.json"),
+        ),
+        None => window_state::restore_window_state(&window),
+    };
+    restore_result.map_err(|error| error.to_string())
+}
+
+#[cfg(windows)]
+fn show_native_webview_failure(title: &str, message: &str) {
+    use std::os::windows::ffi::OsStrExt;
+
+    let message = std::ffi::OsStr::new(message)
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect::<Vec<_>>();
+    let title = title
+        .encode_utf16()
+        .chain(std::iter::once(0))
+        .collect::<Vec<_>>();
+    // SAFETY: Both strings are valid null-terminated UTF-16 buffers for the duration of the call.
+    unsafe {
+        MessageBoxW(
+            std::ptr::null_mut(),
+            message.as_ptr(),
+            title.as_ptr(),
+            MB_OK | MB_ICONERROR,
+        );
+    }
+}
+
+#[cfg(windows)]
+fn webview2_runtime_version() -> String {
+    let mut version = PWSTR::null();
+    let result =
+        unsafe { GetAvailableCoreWebView2BrowserVersionString(PCWSTR::null(), &mut version) };
+    let version = CoTaskMemPWSTR::from(version);
+
+    match result {
+        Ok(()) => {
+            let version = version.to_string();
+            if version.is_empty() {
+                "unavailable".to_owned()
+            } else {
+                version
+            }
+        }
+        Err(error) => {
+            eprintln!("OpenChat could not read the WebView2 Runtime version: {error}");
+            "unavailable".to_owned()
+        }
+    }
+}
+
+#[cfg(windows)]
+fn process_failed_kind_name(kind: COREWEBVIEW2_PROCESS_FAILED_KIND) -> &'static str {
+    match kind.0 {
+        0 => "browser_process_exited",
+        1 => "render_process_exited",
+        2 => "render_process_unresponsive",
+        3 => "frame_render_process_exited",
+        4 => "utility_process_exited",
+        5 => "sandbox_helper_process_exited",
+        6 => "gpu_process_exited",
+        7 => "ppapi_plugin_process_exited",
+        8 => "ppapi_broker_process_exited",
+        9 => "unknown_process_exited",
+        _ => "unknown",
+    }
+}
+
+#[cfg(windows)]
+fn process_failed_reason_name(
+    reason: webview2_com::Microsoft::Web::WebView2::Win32::COREWEBVIEW2_PROCESS_FAILED_REASON,
+) -> &'static str {
+    match reason.0 {
+        0 => "unexpected",
+        1 => "unresponsive",
+        2 => "terminated",
+        3 => "crashed",
+        4 => "launch_failed",
+        5 => "out_of_memory",
+        6 => "profile_deleted",
+        _ => "unknown",
+    }
 }
 
 #[cfg(feature = "desktop-profile-test-support")]
