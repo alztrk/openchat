@@ -1337,15 +1337,15 @@ fn aggregate_usage_events(
 
 /// Returns aggregated request usage and costs for the requested filters.
 ///
-/// Statistics use cached pricing only so a remote catalog refresh cannot delay
-/// local usage data. Estimated costs are included only when cached pricing
-/// metadata matches; local storage failures are returned as service errors.
+/// Statistics refresh missing or stale pricing before calculating estimated
+/// costs. If the catalog is unavailable, local usage data remains available
+/// without estimated costs.
 pub(crate) async fn get_statistics(
     storage: &AppStorage,
     query: &StatisticsQuery,
-    _cancellation: &mut watch::Receiver<bool>,
+    cancellation: &mut watch::Receiver<bool>,
 ) -> Result<Value, ServiceError> {
-    let catalog = models_dev_pricing::load_cached(storage)?;
+    let catalog = models_dev_pricing::load(storage, cancellation).await?;
     let mut database = storage.connect().map_err(|_| statistics_storage_error())?;
     catalog
         .install_temporary_prices(&mut database, query, None)
