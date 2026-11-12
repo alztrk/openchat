@@ -61,6 +61,11 @@ impl ChatRoute {
         self.chat_url.contains("api-version=") || self.chat_url.contains(".azure.com")
     }
 
+    pub(super) fn is_bedrock(&self) -> bool {
+        self.chat_url.contains("/model/")
+            && (self.chat_url.ends_with("/converse") || self.chat_url.ends_with("/converse-stream"))
+    }
+
     pub(super) fn request_context_limit(&self) -> Option<i64> {
         self.context_limit_override
             .map(|limit| {
@@ -348,6 +353,8 @@ async fn resolve_chat_route_for_model(
                 format!("{}/messages", provider.base_url)
             } else if provider.is_azure() {
                 azure_chat_url(&provider.base_url, &model_id)
+            } else if provider.is_bedrock() {
+                super::bedrock::bedrock_chat_url(&provider.base_url, &model_id, true)
             } else {
                 format!("{}/chat/completions", provider.base_url)
             };

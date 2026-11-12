@@ -201,6 +201,8 @@ async fn resolve_target(
                 format!("{}/messages", provider.base_url)
             } else if provider.is_azure() {
                 super::route::azure_chat_url(&provider.base_url, &target.model_id)
+            } else if provider.is_bedrock() {
+                super::bedrock::bedrock_chat_url(&provider.base_url, &target.model_id, false)
             } else {
                 format!("{}/chat/completions", provider.base_url)
             };
@@ -305,7 +307,38 @@ async fn generate_title(
         .opencode
         .then(|| opencode_project_id(storage, conversation_id))
         .flatten();
-    let request = if route.responses_api {
+    let request = if route.url.ends_with("/converse") {
+        let payload = json!({
+            "messages": [
+                {"role": "user", "content": [{"text": prompt}]}
+            ],
+            "system": [
+                {"text": "Generate a concise title for the conversation. Return only the title, without quotes."}
+            ],
+            "inferenceConfig": {"maxTokens": 64}
+        });
+        let body_bytes = serde_json::to_vec(&payload).unwrap_or_default();
+        let mut request = client
+            .request(Method::POST, &route.url)
+            .header("content-type", "application/json");
+        if let Some(key) = route.api_key.as_deref() {
+            if let Ok(parsed_url) = url::Url::parse(&route.url) {
+                if let Ok(headers) = super::bedrock::build_signed_bedrock_headers(
+                    &parsed_url,
+                    "POST",
+                    &body_bytes,
+                    key,
+                ) {
+                    for (name, val) in headers {
+                        if let Some(name) = name {
+                            request = request.header(name, val);
+                        }
+                    }
+                }
+            }
+        }
+        request.body(body_bytes)
+    } else if route.responses_api {
         let mut request = client.request(Method::POST, &route.url)
             .json(&json!({"model": route.model_id, "input": prompt, "stream": false, "store": false, "max_output_tokens": 64}));
         if route.copilot {
@@ -531,6 +564,11 @@ fn extract_title(body: &Value, responses_api: bool, anthropic: bool) -> Option<S
             .as_array()?
             .iter()
             .find_map(|part| part.get("text").and_then(Value::as_str).map(str::to_owned))?
+    } else if let Some(text) = body
+        .pointer("/output/message/content/0/text")
+        .and_then(Value::as_str)
+    {
+        text.to_owned()
     } else {
         body.get("choices")?
             .as_array()?

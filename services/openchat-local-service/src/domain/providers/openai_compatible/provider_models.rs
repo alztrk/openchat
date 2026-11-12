@@ -154,6 +154,7 @@ pub async fn models_for_custom_provider(
             (CustomProviderProtocol::Anthropic, None) => {
                 request.header("anthropic-version", "2023-06-01")
             }
+            (CustomProviderProtocol::Bedrock, _) => request,
         };
         let response = request.send().await;
         let mut models = Vec::new();
@@ -207,7 +208,32 @@ pub async fn models_for_custom_provider(
                 })
                 .collect::<Vec<_>>();
         } else if provider.selected_models.is_empty() {
-            return Err(network_error("Custom provider"));
+            if provider.protocol == CustomProviderProtocol::Bedrock {
+                for default_id in &[
+                    "anthropic.claude-3-5-sonnet-20241022-v2:0",
+                    "anthropic.claude-3-5-haiku-20241022-v1:0",
+                    "meta.llama3-3-70b-instruct-v1:0",
+                    "amazon.nova-pro-v1:0",
+                    "amazon.nova-lite-v1:0",
+                ] {
+                    models.push(json!({
+                        "id": default_id,
+                        "displayName": default_id,
+                        "description": Value::Null,
+                        "contextWindow": 200_000,
+                        "inputTokenLimit": 200_000,
+                        "maxOutputTokens": 8192,
+                        "supportsImages": true,
+                        "supportsTools": Value::Null,
+                        "supportsReasoning": false,
+                        "reasoningLevels": [],
+                        "isAvailable": true,
+                        "groupId": "models"
+                    }));
+                }
+            } else {
+                return Err(network_error("Custom provider"));
+            }
         }
         for selected_id in &provider.selected_models {
             if !models

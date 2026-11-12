@@ -22,6 +22,7 @@ use crate::{
     tools,
 };
 
+mod bedrock;
 mod copilot;
 mod models;
 mod native_compaction;
@@ -97,6 +98,7 @@ pub(crate) enum CustomProviderProtocol {
     OpenAi,
     Anthropic,
     Azure,
+    Bedrock,
 }
 
 #[derive(Clone, Debug)]
@@ -173,6 +175,7 @@ impl CustomProviderConfig {
             Some("openAi") => CustomProviderProtocol::OpenAi,
             Some("anthropic") => CustomProviderProtocol::Anthropic,
             Some("azure") => CustomProviderProtocol::Azure,
+            Some("bedrock") => CustomProviderProtocol::Bedrock,
             _ => return Err(invalid()),
         };
         let legacy_reasoning_mode = value.get("reasoningMode").and_then(Value::as_str);
@@ -265,6 +268,10 @@ impl CustomProviderConfig {
 
     pub(crate) fn is_azure(&self) -> bool {
         self.protocol == CustomProviderProtocol::Azure
+    }
+
+    pub(crate) fn is_bedrock(&self) -> bool {
+        self.protocol == CustomProviderProtocol::Bedrock
     }
 }
 

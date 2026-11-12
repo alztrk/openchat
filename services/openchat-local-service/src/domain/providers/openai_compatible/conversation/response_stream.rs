@@ -757,12 +757,45 @@ async fn receive_with_client(
                 let _ = changed;
                 return Err(cancelled_error());
             }
-                response = provider_request
-                .header(ACCEPT, "text/event-stream")
-                .json(request.body)
-                .send() => response.map_err(|error| {
-                    connection_error(request.route, error.without_url().to_string())
-                })?,
+            response = async {
+                if request.route.is_bedrock() {
+                    let bedrock_body = super::super::bedrock::bedrock_converse_payload(
+                        request.body.get("messages").and_then(Value::as_array).map(|a| a.as_slice()).unwrap_or(&[]),
+                        request.body.get("system").and_then(Value::as_str),
+                        request.body.get("max_tokens").and_then(Value::as_i64),
+                        request.body.get("temperature").and_then(Value::as_f64),
+                    );
+                    let body_bytes = serde_json::to_vec(&bedrock_body).unwrap_or_default();
+                    let mut req = provider_request
+                        .header(ACCEPT, "application/vnd.amazon.eventstream")
+                        .header("content-type", "application/json");
+                    if let Some(api_key) = request.api_key {
+                        if let Ok(url) = url::Url::parse(request.route.chat_url.as_str()) {
+                            if let Ok(headers) = super::super::bedrock::build_signed_bedrock_headers(
+                                &url,
+                                "POST",
+                                &body_bytes,
+                                api_key,
+                            ) {
+                                for (name, val) in headers {
+                                    if let Some(name) = name {
+                                        req = req.header(name, val);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    req.body(body_bytes).send().await
+                } else {
+                    provider_request
+                        .header(ACCEPT, "text/event-stream")
+                        .json(request.body)
+                        .send()
+                        .await
+                }
+            } => response.map_err(|error| {
+                connection_error(request.route, error.without_url().to_string())
+            })?,
         };
         ProviderResponse::from_reqwest(response, request.route.provider_id.as_deref())
     };
@@ -873,6 +906,51 @@ async fn receive_with_client(
             }
         } else {
             stream_ended = true;
+        }
+
+        if request.route.is_bedrock() {
+            while let Some(value) = super::super::bedrock::pop_eventstream_frame(&mut pending)? {
+                if first_output_latency.is_none() {
+                    let elapsed = provider_request_started.elapsed();
+                    first_output_latency = Some(elapsed);
+                    if let Some(recorder) = request.first_output_recorder {
+                        recorder.record(elapsed);
+                    }
+                }
+                if let Some(delta_text) = value
+                    .pointer("/contentBlockDelta/delta/text")
+                    .and_then(Value::as_str)
+                {
+                    let output = think_filter.push(delta_text);
+                    append_think_output(
+                        &mut request,
+                        &mut round_content,
+                        &mut round_reasoning,
+                        output,
+                        &mut text_batcher,
+                    )
+                    .await?;
+                }
+                if let Some(reasoning) = value
+                    .pointer("/contentBlockDelta/delta/reasoningContent/text")
+                    .and_then(Value::as_str)
+                {
+                    text_batcher.flush(&request).await?;
+                    append_legacy_reasoning(&mut request, &mut round_reasoning, reasoning).await?;
+                }
+                if let Some(usage) = value.get("metadata").and_then(|m| m.get("usage")) {
+                    if let Some(input) = usage.get("inputTokens").and_then(Value::as_i64) {
+                        *request.input_tokens = Some(input);
+                    }
+                    if let Some(output) = usage.get("outputTokens").and_then(Value::as_i64) {
+                        *request.output_tokens = Some(output);
+                    }
+                }
+                if value.get("messageStop").is_some() {
+                    saw_finish_reason = true;
+                }
+            }
+            continue;
         }
 
         while let Some(line) = pop_sse_line(&mut pending, stream_ended) {

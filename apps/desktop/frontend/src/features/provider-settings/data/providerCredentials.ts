@@ -23,7 +23,7 @@ export interface CustomProviderSummary {
   id: `custom_${string}`;
   name: string;
   baseUrl: string;
-  protocol: 'openAi' | 'anthropic' | 'azure';
+  protocol: 'openAi' | 'anthropic' | 'azure' | 'bedrock';
   allowInsecureHttp: boolean;
   reasoningEfforts: string[];
   enableThinking: boolean;
@@ -86,7 +86,7 @@ export async function loadProviderCredentialStatus(): Promise<ProviderCredential
       !isCustomProviderId(item.id) ||
       typeof item.name !== 'string' ||
       typeof item.baseUrl !== 'string' ||
-      (item.protocol !== 'openAi' && item.protocol !== 'anthropic' && item.protocol !== 'azure') ||
+      (item.protocol !== 'openAi' && item.protocol !== 'anthropic' && item.protocol !== 'azure' && item.protocol !== 'bedrock') ||
       typeof item.allowInsecureHttp !== 'boolean' ||
       !Array.isArray(item.reasoningEfforts) ||
       !item.reasoningEfforts.every((level) => typeof level === 'string') ||
@@ -179,7 +179,7 @@ export async function saveCustomProvider(input: {
   id: `custom_${string}`;
   name: string;
   baseUrl: string;
-  protocol: 'openAi' | 'anthropic' | 'azure';
+  protocol: 'openAi' | 'anthropic' | 'azure' | 'bedrock';
   allowInsecureHttp: boolean;
   reasoningEfforts: string[];
   enableThinking: boolean;
@@ -201,7 +201,7 @@ export async function saveCustomProvider(input: {
     !isCustomProviderId(value.id) ||
     typeof value.name !== 'string' ||
     typeof value.baseUrl !== 'string' ||
-    (value.protocol !== 'openAi' && value.protocol !== 'anthropic' && value.protocol !== 'azure') ||
+    (value.protocol !== 'openAi' && value.protocol !== 'anthropic' && value.protocol !== 'azure' && value.protocol !== 'bedrock') ||
     typeof value.allowInsecureHttp !== 'boolean' ||
     !Array.isArray(value.reasoningEfforts) ||
     !value.reasoningEfforts.every((level) => typeof level === 'string') ||

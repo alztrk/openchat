@@ -710,7 +710,10 @@ fn validated_custom_provider_fields(
     if name.is_empty() || name.chars().count() > 80 || name.chars().any(char::is_control) {
         return Err(ProviderStorageError::invalid());
     }
-    if !matches!(protocol.as_str(), "openAi" | "anthropic" | "azure") {
+    if !matches!(
+        protocol.as_str(),
+        "openAi" | "anthropic" | "azure" | "bedrock"
+    ) {
         return Err(ProviderStorageError::invalid());
     }
     if protocol == "anthropic" && enable_thinking {
@@ -802,7 +805,7 @@ fn parse_custom_reasoning_efforts(
     protocol: &str,
     efforts: &str,
 ) -> Result<Vec<String>, ProviderStorageError> {
-    if protocol != "openAi" && protocol != "azure" {
+    if protocol != "openAi" && protocol != "azure" && protocol != "bedrock" {
         if efforts.trim().is_empty() {
             return Ok(Vec::new());
         }

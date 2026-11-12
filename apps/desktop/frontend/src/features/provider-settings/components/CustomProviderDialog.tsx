@@ -11,7 +11,7 @@ export interface CustomProviderDraft {
   id: `custom_${string}`;
   name: string;
   baseUrl: string;
-  protocol: 'openAi' | 'anthropic' | 'azure';
+  protocol: 'openAi' | 'anthropic' | 'azure' | 'bedrock';
   allowInsecureHttp: boolean;
   reasoningEfforts: string[];
   enableThinking: boolean;
@@ -19,8 +19,8 @@ export interface CustomProviderDraft {
   apiKey: string;
 }
 
-function parseCustomProviderProtocol(value: string): 'openAi' | 'anthropic' | 'azure' {
-  if (value === 'anthropic' || value === 'azure') {
+function parseCustomProviderProtocol(value: string): 'openAi' | 'anthropic' | 'azure' | 'bedrock' {
+  if (value === 'anthropic' || value === 'azure' || value === 'bedrock') {
     return value;
   }
   return 'openAi';
@@ -69,7 +69,7 @@ export function CustomProviderDialog({
   const { t } = useTranslation();
   const [name, setName] = useState('');
   const [baseUrl, setBaseUrl] = useState('');
-  const [protocol, setProtocol] = useState<'openAi' | 'anthropic' | 'azure'>('openAi');
+  const [protocol, setProtocol] = useState<'openAi' | 'anthropic' | 'azure' | 'bedrock'>('openAi');
   const [apiKey, setApiKey] = useState('');
   const [errorKey, setErrorKey] = useState<CustomProviderValidationKey | null>(null);
   const [allowInsecureHttp, setAllowInsecureHttp] = useState(false);
@@ -220,7 +220,7 @@ export function CustomProviderDialog({
           onChange={(event) => {
             const nextProtocol = parseCustomProviderProtocol(event.target.value);
             setProtocol(nextProtocol);
-            if (nextProtocol === 'anthropic') {
+            if (nextProtocol === 'anthropic' || nextProtocol === 'bedrock') {
               setReasoningEffortsText('');
               setEnableThinking(false);
             }
@@ -230,6 +230,7 @@ export function CustomProviderDialog({
             { value: 'openAi', label: t('openAiCompatible') },
             { value: 'anthropic', label: t('anthropicCompatible') },
             { value: 'azure', label: t('azureFoundryCompatible') },
+            { value: 'bedrock', label: t('bedrockCompatible') },
           ]}
           value={protocol}
         />
@@ -271,14 +272,26 @@ export function CustomProviderDialog({
           autoCorrect="off"
           disabled={saving}
           error={baseUrlError}
-          label={protocol === 'azure' ? t('customProviderAzureEndpointLabel') : t('customProviderBaseUrl')}
+          label={
+            protocol === 'azure'
+              ? t('customProviderAzureEndpointLabel')
+              : protocol === 'bedrock'
+                ? t('customProviderBedrockEndpointLabel')
+                : t('customProviderBaseUrl')
+          }
           maxLength={2048}
           onChange={(event) => {
             setBaseUrl(event.target.value);
             setAllowInsecureHttp(false);
             setErrorKey(null);
           }}
-          placeholder={protocol === 'azure' ? 'https://your-resource.openai.azure.com' : undefined}
+          placeholder={
+            protocol === 'azure'
+              ? 'https://your-resource.openai.azure.com'
+              : protocol === 'bedrock'
+                ? 'https://bedrock-runtime.us-east-1.amazonaws.com'
+                : undefined
+          }
           ref={baseUrlInputRef}
           type="url"
           value={baseUrl}
@@ -288,7 +301,13 @@ export function CustomProviderDialog({
             autoCapitalize="none"
             autoCorrect="off"
             disabled={saving}
-            label={protocol === 'azure' ? t('customProviderAzureDeployments') : t('customProviderSelectedModels')}
+            label={
+              protocol === 'azure'
+                ? t('customProviderAzureDeployments')
+                : protocol === 'bedrock'
+                  ? t('customProviderBedrockDeployments')
+                  : t('customProviderSelectedModels')
+            }
             maxLength={2048}
             onChange={(event) => {
               setSelectedModelsText(event.target.value);
@@ -297,12 +316,16 @@ export function CustomProviderDialog({
             placeholder={
               protocol === 'azure'
                 ? t('customProviderAzureDeploymentsPlaceholder')
-                : t('customProviderSelectedModelsPlaceholder')
+                : protocol === 'bedrock'
+                  ? t('customProviderBedrockDeploymentsPlaceholder')
+                  : t('customProviderSelectedModelsPlaceholder')
             }
             value={selectedModelsText}
           />
           {protocol === 'azure' ? (
             <p className="text-xs text-secondary-text">{t('customProviderAzureDeploymentsHelp')}</p>
+          ) : protocol === 'bedrock' ? (
+            <p className="text-xs text-secondary-text">{t('customProviderBedrockDeploymentsHelp')}</p>
           ) : null}
         </div>
         {isHttpUrl(baseUrl) ? (
@@ -339,13 +362,17 @@ export function CustomProviderDialog({
           autoCorrect="off"
           disabled={saving}
           error={apiKeyError}
-          label={t('customProviderApiKey')}
+          label={protocol === 'bedrock' ? t('customProviderBedrockKeyLabel') : t('customProviderApiKey')}
           maxLength={4096}
           onChange={(event) => {
             setApiKey(event.target.value);
             setErrorKey(null);
           }}
-          placeholder={t(provider ? 'customProviderKeyUnchanged' : 'customProviderApiKeyOptional')}
+          placeholder={
+            protocol === 'bedrock'
+              ? 'AKIA...:secretKey[:sessionToken]'
+              : t(provider ? 'customProviderKeyUnchanged' : 'customProviderApiKeyOptional')
+          }
           ref={apiKeyInputRef}
           type="password"
           value={apiKey}
