@@ -6,6 +6,7 @@ Completed work is summarized from repository history and grouped by the relevant
 
 ### Added
 
+- Added reusable parameterized workflow templates with prompt variable expansion, durable persistence, validation, and JSON import/export.
 - Added Amazon Bedrock Converse and ConverseStream protocol support, AWS SigV4 authentication, regional runtime configuration, and EventStream binary decoding.
 - Added Microsoft AI Foundry and Azure OpenAI model routing, deployment identifier configuration, API versioning, and credential headers.
 
