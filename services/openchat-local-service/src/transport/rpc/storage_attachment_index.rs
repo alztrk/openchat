@@ -19,6 +19,7 @@ use zeroize::Zeroizing;
 use crate::{
     attachment_crypto::{AttachmentCipher, attachment_associated_data},
     conversation_limits::{
+        MAXIMUM_ATTACHMENT_DOCUMENT_BYTES as MAX_DOCUMENT_BYTES,
         MAXIMUM_ATTACHMENT_FILE_COUNT as MAX_ATTACHMENT_COUNT,
         MAXIMUM_ATTACHMENT_IMAGE_BYTES as MAX_IMAGE_BYTES,
         MAXIMUM_ATTACHMENT_IMAGE_COUNT as MAX_IMAGE_COUNT, MAXIMUM_ATTACHMENT_KIND_BYTES,
@@ -132,11 +133,19 @@ fn rebuild(
             })?;
             continue;
         };
-        if indexed_bytes.saturating_add(bytes.len()) > MAXIMUM_ATTACHMENT_INDEX_BYTES {
+        let content = if metadata.kind == "document" {
+            match crate::document_parser::extract_document(&metadata.name, &bytes) {
+                Ok(document) => document.text,
+                Err(error) if error.code() == "document_no_extractable_text" => continue,
+                Err(_) => return Err(storage_unavailable()),
+            }
+        } else {
+            String::from_utf8(bytes.to_vec()).map_err(|_| storage_unavailable())?
+        };
+        if indexed_bytes.saturating_add(content.len()) > MAXIMUM_ATTACHMENT_INDEX_BYTES {
             truncated = true;
             break;
         }
-        let content = String::from_utf8(bytes.to_vec()).map_err(|_| storage_unavailable())?;
         indexed_bytes += content.len();
         indexed.push((conversation_id, message_id, metadata, content));
         lease.set_progress(AttachmentIndexProgress::Read {
@@ -302,7 +311,9 @@ fn load_candidates(
         messages_scanned += 1;
         let attachments = parse_attachment_envelope(&content)?;
         for metadata in attachments {
-            if metadata.kind != "text" || !is_indexable_text_attachment(&metadata.name) {
+            if !matches!(metadata.kind.as_str(), "text" | "document")
+                || !is_indexable_text_attachment(&metadata.name)
+            {
                 continue;
             }
             items.push((conversation_id.clone(), message_id.clone(), metadata));
@@ -500,6 +511,9 @@ fn validate_stored_attachment(
     if metadata.kind == "text" && std::str::from_utf8(bytes).is_err() {
         return Err(storage_unavailable());
     }
+    if metadata.kind == "document" && !bytes.starts_with(b"%PDF-") {
+        return Err(storage_unavailable());
+    }
     Ok(())
 }
 
@@ -516,9 +530,13 @@ fn validate_attachment_metadata(metadata: &AttachmentMetadata) -> Result<(), Ser
     let Some((kind, mime_type, maximum_bytes)) = attachment_spec(&metadata.name) else {
         return Err(storage_unavailable());
     };
-    if metadata.kind != kind
+    let legacy_pdf_text = metadata.name.to_ascii_lowercase().ends_with(".pdf")
+        && metadata.kind == "text"
+        && metadata.mime_type == "application/pdf"
+        && metadata.size_bytes <= MAX_TEXT_BYTES;
+    if (!legacy_pdf_text && metadata.kind != kind)
         || metadata.mime_type != mime_type
-        || metadata.size_bytes > maximum_bytes
+        || (!legacy_pdf_text && metadata.size_bytes > maximum_bytes)
     {
         return Err(storage_unavailable());
     }
@@ -538,7 +556,7 @@ fn attachment_spec(name: &str) -> Option<(&'static str, &'static str, usize)> {
         "json" | "jsonl" => ("text", "application/json", MAX_TEXT_BYTES),
         "xml" => ("text", "application/xml", MAX_TEXT_BYTES),
         "html" | "htm" => ("text", "text/html", MAX_TEXT_BYTES),
-        "pdf" => ("text", "application/pdf", MAX_TEXT_BYTES),
+        "pdf" => ("document", "application/pdf", MAX_DOCUMENT_BYTES),
         "docx" => (
             "text",
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document",

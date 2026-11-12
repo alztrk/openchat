@@ -9,6 +9,7 @@ use std::{
     time::{Instant, SystemTime, UNIX_EPOCH},
 };
 
+use base64::Engine as _;
 use serde_json::Value;
 use uuid::Uuid;
 
@@ -79,7 +80,7 @@ pub(crate) async fn send_temporary_message(
         api_key,
         api_key_connection_id,
         custom_provider,
-        provider_messages,
+        mut provider_messages,
         has_attachments,
         cancellation,
         events,
@@ -147,6 +148,9 @@ pub(crate) async fn send_temporary_message(
             "The selected model does not support image attachments.",
             false,
         ));
+    }
+    if provider_id != "chatgpt_api" || !route.supports_images {
+        extract_temporary_pdf_text(&mut provider_messages)?;
     }
     let provider_request = crate::provider_schema::ProviderChatRequest {
         model: route.provider_model_id.clone(),
@@ -273,6 +277,28 @@ pub(crate) async fn send_temporary_message(
         "providerId": provider_id,
         "modelId": route.model_id,
     }))
+}
+
+fn extract_temporary_pdf_text(messages: &mut [ProviderMessage]) -> Result<(), ServiceError> {
+    for message in messages {
+        for document in std::mem::take(&mut message.documents) {
+            let encoded = document
+                .file_data
+                .split_once(',')
+                .map(|(_, data)| data)
+                .ok_or_else(protocol_error)?;
+            let bytes = base64::engine::general_purpose::STANDARD
+                .decode(encoded)
+                .map_err(|_| protocol_error())?;
+            let extracted = crate::document_parser::extract_document(&document.filename, &bytes)
+                .map_err(|error| ServiceError::new(error.code(), error.message(), false))?;
+            message.content.push_str(&format!(
+                "\n\n[Attached PDF: {}]\n{}",
+                document.filename, extracted.text
+            ));
+        }
+    }
+    Ok(())
 }
 
 pub async fn send_message(
@@ -666,7 +692,11 @@ pub async fn send_message(
                 included_messages[history_start..=compacted_through_index]
                     .iter()
                     .map(|message| {
-                        crate::history::provider_messages_for_provider(message, provider_id)
+                        crate::history::provider_messages_for_provider(
+                            message,
+                            provider_id,
+                            provider_id == "chatgpt_api" && route.supports_images,
+                        )
                     })
                     .collect::<Result<Vec<_>, _>>()?
                     .into_iter()
@@ -869,7 +899,13 @@ pub async fn send_message(
     effective_messages.extend(
         included_messages[history_start..]
             .iter()
-            .map(|message| crate::history::provider_messages_for_provider(message, provider_id))
+            .map(|message| {
+                crate::history::provider_messages_for_provider(
+                    message,
+                    provider_id,
+                    provider_id == "chatgpt_api" && route.supports_images,
+                )
+            })
             .collect::<Result<Vec<_>, _>>()?
             .into_iter()
             .flatten(),

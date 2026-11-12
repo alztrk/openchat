@@ -47,7 +47,7 @@ impl MessageRole {
 }
 
 #[derive(Clone, Debug)]
-/// Provider-neutral conversation message with optional image and tool data.
+/// Provider-neutral conversation message with optional media and tool data.
 pub struct ProviderMessage {
     /// Message role.
     pub role: MessageRole,
@@ -55,10 +55,21 @@ pub struct ProviderMessage {
     pub content: String,
     /// Encoded image data associated with a user message.
     pub images: Vec<String>,
+    /// PDF documents associated with a user message for native document inputs.
+    pub documents: Vec<ProviderDocument>,
     /// Tool calls emitted by an assistant message.
     pub tool_calls: Vec<ToolCall>,
     /// Tool-call identifier for a tool response message.
     pub tool_call_id: Option<String>,
+}
+
+#[derive(Clone, Debug)]
+/// A PDF document encoded as a provider data URL.
+pub struct ProviderDocument {
+    /// Original document filename.
+    pub filename: String,
+    /// PDF data URL containing base64-encoded original bytes.
+    pub file_data: String,
 }
 
 impl ProviderMessage {
@@ -68,6 +79,7 @@ impl ProviderMessage {
             role: MessageRole::from_history(role)?,
             content: content.to_owned(),
             images: Vec::new(),
+            documents: Vec::new(),
             tool_calls: Vec::new(),
             tool_call_id: None,
         })

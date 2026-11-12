@@ -127,7 +127,13 @@ pub(super) fn build_provider_request(
     let last_message_id = included_messages.last().map(|message| message.id.clone());
     let messages = included_messages
         .iter()
-        .map(|message| history::provider_messages_for_provider(message, provider_id))
+        .map(|message| {
+            history::provider_messages_for_provider(
+                message,
+                provider_id,
+                provider_id == "chatgpt_api" && supports_images,
+            )
+        })
         .collect::<Result<Vec<_>, _>>()?
         .into_iter()
         .flatten()
@@ -244,16 +250,23 @@ pub(super) fn completion_messages(request: &ProviderChatRequest, provider_id: &s
     messages.extend(request.messages.iter().map(|message| {
         let mut serialized = json!({
             "role": message.role.as_str(),
-            "content": if message.images.is_empty() {
+            "content": if message.images.is_empty() && message.documents.is_empty() {
                 json!(message.content)
             } else {
-                let mut parts = Vec::with_capacity(message.images.len().saturating_add(1));
+                let mut parts = Vec::with_capacity(
+                    message.images.len().saturating_add(message.documents.len()).saturating_add(1),
+                );
                 if !message.content.is_empty() {
                     parts.push(json!({"type": "text", "text": message.content}));
                 }
                 parts.extend(message.images.iter().map(|url| json!({
                     "type": "image_url",
                     "image_url": {"url": url, "detail": "auto"},
+                })));
+                parts.extend(message.documents.iter().map(|document| json!({
+                    "type": "input_file",
+                    "filename": document.filename,
+                    "file_data": document.file_data,
                 })));
                 json!(parts)
             },
@@ -698,6 +711,7 @@ fn response_content(content: Option<&Value>) -> Option<Vec<Value>> {
                                 "detail": "auto",
                             })
                         }),
+                    Some("input_file") => Some(part.clone()),
                     _ => None,
                 })
                 .collect(),
@@ -849,6 +863,34 @@ mod tests {
             tools: Vec::new(),
             reasoning_effort: None,
         }
+    }
+
+    #[test]
+    fn responses_request_preserves_pdf_file_parts() {
+        let mut request = request();
+        request
+            .messages
+            .push(crate::provider_schema::ProviderMessage {
+                role: crate::provider_schema::MessageRole::User,
+                content: "Summarize this report.".to_owned(),
+                images: Vec::new(),
+                documents: vec![crate::provider_schema::ProviderDocument {
+                    filename: "report.pdf".to_owned(),
+                    file_data: "data:application/pdf;base64,JVBERi0=".to_owned(),
+                }],
+                tool_calls: Vec::new(),
+                tool_call_id: None,
+            });
+        let messages = completion_messages(&request, "chatgpt_api");
+        let items = responses_input_items(&messages);
+
+        assert_eq!(items[1]["content"][0]["type"], "input_text");
+        assert_eq!(items[1]["content"][1]["type"], "input_file");
+        assert_eq!(items[1]["content"][1]["filename"], "report.pdf");
+        assert_eq!(
+            items[1]["content"][1]["file_data"],
+            "data:application/pdf;base64,JVBERi0="
+        );
     }
 
     fn route(provider_id: &str, endpoint: &str, native_compaction: NativeCompaction) -> ChatRoute {
@@ -1187,6 +1229,7 @@ mod tests {
                 role: crate::provider_schema::MessageRole::User,
                 content: "Describe this image".to_owned(),
                 images: vec!["data:image/png;base64,aGVsbG8=".to_owned()],
+                documents: Vec::new(),
                 tool_calls: Vec::new(),
                 tool_call_id: None,
             });

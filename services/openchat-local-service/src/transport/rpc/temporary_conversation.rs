@@ -40,7 +40,10 @@ pub(super) async fn dispatch(
     let provider_id = bounded_route_id(params, "providerId")?.to_owned();
     let model_id = bounded_route_id(params, "modelId")?.to_owned();
     let api_key_connection_id = optional_string(params, "apiKeyConnectionId")?.map(str::to_owned);
-    let (messages, has_attachments) = parse_messages(params)?;
+    let (mut messages, has_attachments) = parse_messages(params)?;
+    if !matches!(provider_id.as_str(), "chatgpt" | "chatgpt_api") {
+        extract_temporary_pdf_text(&mut messages)?;
+    }
     let api_key_connection_id = api_key_connection_id.as_deref();
     if provider_id == "chatgpt" {
         if api_key_connection_id.is_some() {
@@ -157,6 +160,7 @@ fn parse_messages(
         }
         let mut content = original_content.to_owned();
         let mut images = Vec::new();
+        let mut documents = Vec::new();
         let mut attachment_ids = HashSet::with_capacity(raw_attachments.len());
         let mut image_count = 0usize;
         for attachment in raw_attachments {
@@ -197,6 +201,11 @@ fn parse_messages(
                     return Err(invalid_request_params());
                 }
                 images.push(format!("data:{};base64,{}", metadata.mime_type, encoded));
+            } else if metadata.kind == "document" {
+                documents.push(crate::provider_schema::ProviderDocument {
+                    filename: metadata.name,
+                    file_data: format!("data:application/pdf;base64,{encoded}"),
+                });
             } else {
                 let attachment_text =
                     String::from_utf8(bytes).map_err(|_| invalid_request_params())?;
@@ -210,6 +219,7 @@ fn parse_messages(
             role,
             content,
             images,
+            documents,
             tool_calls: Vec::new(),
             tool_call_id: None,
         });
@@ -225,6 +235,30 @@ fn parse_messages(
         return Err(invalid_request_params());
     }
     Ok((messages, has_attachments))
+}
+
+fn extract_temporary_pdf_text(
+    messages: &mut [crate::provider_schema::ProviderMessage],
+) -> Result<(), ServiceError> {
+    for message in messages {
+        for document in std::mem::take(&mut message.documents) {
+            let encoded = document
+                .file_data
+                .split_once(",")
+                .map(|(_, data)| data)
+                .ok_or_else(invalid_request_params)?;
+            let bytes = STANDARD
+                .decode(encoded)
+                .map_err(|_| invalid_request_params())?;
+            let extracted = crate::document_parser::extract_document(&document.filename, &bytes)
+                .map_err(|error| ServiceError::new(error.code(), error.message(), false))?;
+            message.content.push_str(&format!(
+                "\n\n[Attached PDF: {}]\n{}",
+                document.filename, extracted.text
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// Extracts bounded attachment metadata without copying the attachment payload.

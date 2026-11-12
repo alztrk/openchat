@@ -13,6 +13,8 @@ pub const MAXIMUM_ATTACHMENT_IMAGE_COUNT: usize = 3;
 pub const MAXIMUM_ATTACHMENT_IMAGE_BYTES: usize = 10 * 1024 * 1024;
 /// Maximum text attachment size in bytes.
 pub const MAXIMUM_ATTACHMENT_TEXT_BYTES: usize = 1024 * 1024;
+/// Maximum PDF attachment size in bytes.
+pub const MAXIMUM_ATTACHMENT_DOCUMENT_BYTES: usize = 10 * 1024 * 1024;
 /// Maximum combined decoded attachment size in bytes.
 pub const MAXIMUM_ATTACHMENT_TOTAL_BYTES: usize = 14 * 1024 * 1024;
 /// Maximum combined base64 attachment size accepted during Tauri deserialization.
@@ -25,7 +27,7 @@ pub const MAXIMUM_ATTACHMENT_NAME_BYTES: usize = MAXIMUM_ATTACHMENT_NAME_CHARS *
 /// Maximum UTF-8 bytes for an attachment MIME type.
 pub const MAXIMUM_ATTACHMENT_MIME_TYPE_BYTES: usize = 128;
 /// Maximum UTF-8 bytes for an attachment kind value.
-pub const MAXIMUM_ATTACHMENT_KIND_BYTES: usize = 5;
+pub const MAXIMUM_ATTACHMENT_KIND_BYTES: usize = 8;
 /// Prefix that separates persisted message text from attachment metadata.
 pub const MESSAGE_CONTENT_PREFIX: &str = "\u{1e}openchat-attachments-v1:";
 /// Prefix that preserves plain text beginning with a reserved message-content prefix.

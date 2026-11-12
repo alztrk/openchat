@@ -122,6 +122,7 @@ pub(super) async fn prepare_input(
             state_ref,
             active_compaction_matches,
             prune_level,
+            model.supports_images,
             &messages[start_index..=compacted_through_index],
         )?;
 
@@ -264,7 +265,12 @@ pub(super) async fn prepare_input(
     input.extend(
         messages[start_index..]
             .iter()
-            .map(crate::history::responses_input_items)
+            .map(|message| {
+                crate::history::responses_input_items_with_pdf_support(
+                    message,
+                    model.supports_images,
+                )
+            })
             .collect::<Result<Vec<_>, _>>()?
             .into_iter()
             .flatten(),
@@ -285,6 +291,7 @@ fn compaction_input(
     state: Option<&ConversationContextState>,
     active_compaction_matches: bool,
     prune_level: context_compaction::PruneLevel,
+    supports_native_pdf: bool,
     messages: &[StoredMessage],
 ) -> Result<Vec<Value>, ServiceError> {
     let mut input = Vec::with_capacity(messages.len().saturating_add(2));
@@ -310,7 +317,13 @@ fn compaction_input(
     input.extend(
         messages
             .iter()
-            .map(|m| crate::history::responses_input_items_with_limit(m, tool_output_limit))
+            .map(|message| {
+                crate::history::responses_input_items_with_limit_and_pdf_support(
+                    message,
+                    tool_output_limit,
+                    supports_native_pdf,
+                )
+            })
             .collect::<Result<Vec<_>, _>>()?
             .into_iter()
             .flatten(),
@@ -856,7 +869,7 @@ mod tests {
             message("new-assistant", "assistant", "I will keep it."),
         ];
 
-        let input = compaction_input(Some(&state), true, PruneLevel::None, &messages)
+        let input = compaction_input(Some(&state), true, PruneLevel::None, true, &messages)
             .expect("build next checkpoint request input");
 
         assert_eq!(input[0], checkpoint);
@@ -886,7 +899,7 @@ mod tests {
                 status: crate::provider_schema::ToolActivityStatus::Completed,
             });
 
-        let input = compaction_input(None, false, PruneLevel::None, &[assistant])
+        let input = compaction_input(None, false, PruneLevel::None, true, &[assistant])
             .expect("build compaction input");
 
         assert_eq!(input[0]["type"], "function_call");
@@ -921,7 +934,7 @@ mod tests {
                 status: crate::provider_schema::ToolActivityStatus::Completed,
             });
         let messages = [assistant];
-        let input = compaction_input(None, false, PruneLevel::None, &messages)
+        let input = compaction_input(None, false, PruneLevel::None, true, &messages)
             .expect("build compaction input");
 
         let request = fit_compaction_request_body(
@@ -1045,7 +1058,7 @@ mod tests {
         );
         let messages = [message("new-user", "user", "Continue.")];
 
-        let input = compaction_input(Some(&state), true, PruneLevel::None, &messages)
+        let input = compaction_input(Some(&state), true, PruneLevel::None, true, &messages)
             .expect("build checkpoint from portable summary");
 
         assert_eq!(input[0]["role"], "user");

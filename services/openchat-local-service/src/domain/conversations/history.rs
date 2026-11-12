@@ -10,7 +10,7 @@ use serde_json::{Value, json};
 use crate::{
     chatgpt_store::StoredMessage,
     protocol::ServiceError,
-    provider_schema::{MessageRole, ProviderMessage, ToolActivity, ToolCall},
+    provider_schema::{MessageRole, ProviderDocument, ProviderMessage, ToolActivity, ToolCall},
 };
 
 const OPENAI_COMPATIBLE_HISTORICAL_TOOL_OUTPUT_MAX_BYTES: usize = 4096;
@@ -27,7 +27,7 @@ const HISTORICAL_TOOL_OUTPUT_OLDEST_BYTES: usize = 512;
 pub(crate) fn provider_messages(
     message: &StoredMessage,
 ) -> Result<Vec<ProviderMessage>, ServiceError> {
-    provider_messages_with_tool_output_limit(message, None)
+    provider_messages_with_tool_output_limit(message, None, false)
 }
 
 /// Builds Chat Completions history for a provider from one stored message.
@@ -38,15 +38,17 @@ pub(crate) fn provider_messages(
 pub(crate) fn provider_messages_for_provider(
     message: &StoredMessage,
     provider_id: &str,
+    supports_native_pdf: bool,
 ) -> Result<Vec<ProviderMessage>, ServiceError> {
     let output_limit = matches!(provider_id, "cerebras" | "mistral" | "openrouter")
         .then_some(OPENAI_COMPATIBLE_HISTORICAL_TOOL_OUTPUT_MAX_BYTES);
-    provider_messages_with_tool_output_limit(message, output_limit)
+    provider_messages_with_tool_output_limit(message, output_limit, supports_native_pdf)
 }
 
 fn provider_messages_with_tool_output_limit(
     message: &StoredMessage,
     tool_output_limit: Option<usize>,
+    supports_native_pdf: bool,
 ) -> Result<Vec<ProviderMessage>, ServiceError> {
     let tool_rounds = completed_tool_rounds(message);
     let mut messages = Vec::with_capacity(1 + tool_rounds.len().saturating_mul(2));
@@ -66,6 +68,7 @@ fn provider_messages_with_tool_output_limit(
                 role: MessageRole::Assistant,
                 content: String::new(),
                 images: Vec::new(),
+                documents: Vec::new(),
                 tool_calls: tool_round
                     .iter()
                     .map(|activity| ToolCall {
@@ -82,6 +85,7 @@ fn provider_messages_with_tool_output_limit(
                     provider_tool_output(output, tool_output_limit)
                 }),
                 images: Vec::new(),
+                documents: Vec::new(),
                 tool_calls: Vec::new(),
                 tool_call_id: Some(activity.call_id.clone()),
             }));
@@ -93,14 +97,21 @@ fn provider_messages_with_tool_output_limit(
             Some(message.content.len()),
         );
     } else {
+        let mut content = message.content.clone();
+        let documents = if message.role == "user" {
+            prepare_pdf_attachments(message, &mut content, supports_native_pdf)?
+        } else {
+            Vec::new()
+        };
         messages.push(ProviderMessage {
             role: MessageRole::from_history(&message.role)?,
-            content: message.content.clone(),
+            content,
             images: if message.role == "user" {
                 image_data_urls(message)?
             } else {
                 Vec::new()
             },
+            documents,
             tool_calls: Vec::new(),
             tool_call_id: None,
         });
@@ -112,20 +123,22 @@ fn provider_messages_with_tool_output_limit(
 /// Builds Responses API input items while preserving text, image, and tool order.
 ///
 /// Returns an error when a referenced attachment is unavailable.
+#[cfg(test)]
 pub(crate) fn responses_input_items(message: &StoredMessage) -> Result<Vec<Value>, ServiceError> {
-    responses_input_items_with_limit(message, None)
+    responses_input_items_with_limit_and_pdf_support(message, None, true)
 }
 
-/// Builds Responses API input items with a global byte limit for old tool outputs.
-///
-/// The age-based policy applies different limits per round:
-/// - Most recent round: full limit (4 KiB)
-/// - 1-2 rounds old: medium limit (1 KiB)
-/// - 3+ rounds old: oldest limit (512 B)
-/// The provided global `tool_output_limit` acts as an additional cap on top of these age-based limits.
-pub(crate) fn responses_input_items_with_limit(
+pub(crate) fn responses_input_items_with_pdf_support(
+    message: &StoredMessage,
+    supports_native_pdf: bool,
+) -> Result<Vec<Value>, ServiceError> {
+    responses_input_items_with_limit_and_pdf_support(message, None, supports_native_pdf)
+}
+
+pub(crate) fn responses_input_items_with_limit_and_pdf_support(
     message: &StoredMessage,
     tool_output_limit: Option<usize>,
+    supports_native_pdf: bool,
 ) -> Result<Vec<Value>, ServiceError> {
     if message.role == "user" {
         let mut content = Vec::with_capacity(1 + message.attachments.len());
@@ -135,11 +148,26 @@ pub(crate) fn responses_input_items_with_limit(
                 "text": message.content,
             }));
         }
+        let mut extracted_text = String::new();
+        let documents = prepare_pdf_attachments(message, &mut extracted_text, supports_native_pdf)?;
+        if !extracted_text.is_empty() {
+            content.push(json!({
+                "type": "input_text",
+                "text": extracted_text,
+            }));
+        }
         for image_url in image_data_urls(message)? {
             content.push(json!({
                 "type": "input_image",
                 "image_url": image_url,
                 "detail": "auto",
+            }));
+        }
+        for document in documents {
+            content.push(json!({
+                "type": "input_file",
+                "filename": document.filename,
+                "file_data": document.file_data,
             }));
         }
         return Ok(vec![json!({
@@ -290,6 +318,46 @@ fn image_data_urls(message: &StoredMessage) -> Result<Vec<String>, ServiceError>
         .collect()
 }
 
+fn prepare_pdf_attachments(
+    message: &StoredMessage,
+    content: &mut String,
+    supports_native_pdf: bool,
+) -> Result<Vec<ProviderDocument>, ServiceError> {
+    let mut documents = Vec::new();
+    for attachment in message
+        .attachments
+        .iter()
+        .filter(|attachment| attachment.kind == "document")
+    {
+        let bytes = attachment
+            .content
+            .as_deref()
+            .ok_or_else(attachment_unavailable)?;
+        if supports_native_pdf {
+            documents.push(ProviderDocument {
+                filename: attachment.name.clone(),
+                file_data: format!("data:application/pdf;base64,{}", STANDARD.encode(bytes)),
+            });
+        } else {
+            let extracted = crate::document_parser::extract_document(&attachment.name, bytes)
+                .map_err(|error| ServiceError::new(error.code(), error.message(), false))?;
+            content.push_str(&format!(
+                "\n\n[Attached PDF: {}]\n{}",
+                attachment.name, extracted.text
+            ));
+        }
+    }
+    Ok(documents)
+}
+
+fn attachment_unavailable() -> ServiceError {
+    ServiceError::new(
+        "attachment_unavailable",
+        "An attached file is unavailable. Reattach it and try again.",
+        false,
+    )
+}
+
 fn append_assistant_text(
     messages: &mut Vec<ProviderMessage>,
     message: &StoredMessage,
@@ -306,6 +374,7 @@ fn append_assistant_text(
             role: MessageRole::Assistant,
             content: text.to_owned(),
             images: Vec::new(),
+            documents: Vec::new(),
             tool_calls: Vec::new(),
             tool_call_id: None,
         });
@@ -506,7 +575,10 @@ mod tests {
         provider_schema::{MessageRole, ToolActivity, ToolActivityStatus},
     };
 
-    use super::{provider_messages, responses_input_items, tool_activity_summary_segments};
+    use super::{
+        provider_messages, provider_messages_for_provider, responses_input_items,
+        tool_activity_summary_segments,
+    };
 
     fn assistant_message() -> StoredMessage {
         StoredMessage {
@@ -530,6 +602,60 @@ mod tests {
             }],
             attachments: Vec::new(),
         }
+    }
+
+    fn pdf_message() -> StoredMessage {
+        StoredMessage {
+            id: "user-pdf".to_owned(),
+            role: "user".to_owned(),
+            content: "Summarize the attached report.".to_owned(),
+            status: "completed".to_owned(),
+            output_tokens: None,
+            tool_activities: Vec::new(),
+            attachments: vec![crate::chatgpt_store::StoredAttachment {
+                id: "pdf-1".to_owned(),
+                name: "report.pdf".to_owned(),
+                mime_type: "application/pdf".to_owned(),
+                kind: "document".to_owned(),
+                content: Some(b"%PDF-1.7\n1 0 obj\n<< /Length 44 >>\nstream\nBT /F1 12 Tf 72 720 Td (Hello OpenChat PDF) Tj ET\nendstream\nendobj\n%%EOF".to_vec()),
+            }],
+        }
+    }
+
+    #[test]
+    fn native_pdf_route_keeps_file_media_while_fallback_extracts_text() {
+        let native = provider_messages_for_provider(&pdf_message(), "chatgpt_api", true)
+            .expect("native PDF route should preserve the document");
+        assert_eq!(native[0].content, "Summarize the attached report.");
+        assert_eq!(native[0].documents.len(), 1);
+        assert_eq!(native[0].documents[0].filename, "report.pdf");
+        assert!(
+            native[0].documents[0]
+                .file_data
+                .starts_with("data:application/pdf;base64,")
+        );
+
+        let fallback = provider_messages_for_provider(&pdf_message(), "mistral", false)
+            .expect("text fallback should extract the PDF");
+        assert!(fallback[0].documents.is_empty());
+        assert!(fallback[0].content.contains("[Page 1]"));
+        assert!(fallback[0].content.contains("Hello OpenChat PDF"));
+    }
+
+    #[test]
+    fn responses_history_includes_native_pdf_file_input() {
+        let items = responses_input_items(&pdf_message()).expect("PDF should become a file input");
+        assert_eq!(
+            items[0]["content"][0]["text"],
+            "Summarize the attached report."
+        );
+        assert_eq!(items[0]["content"][1]["type"], "input_file");
+        assert_eq!(items[0]["content"][1]["filename"], "report.pdf");
+        assert!(
+            items[0]["content"][1]["file_data"]
+                .as_str()
+                .is_some_and(|data| data.starts_with("data:application/pdf;base64,"))
+        );
     }
 
     #[test]

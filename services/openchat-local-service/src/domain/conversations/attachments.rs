@@ -16,6 +16,7 @@ use crate::chatgpt_store::StoredAttachment;
 use crate::{
     attachment_crypto::{AttachmentCipher, attachment_associated_data},
     conversation_limits::{
+        MAXIMUM_ATTACHMENT_DOCUMENT_BYTES as MAXIMUM_DOCUMENT_BYTES,
         MAXIMUM_ATTACHMENT_FILE_COUNT as MAXIMUM_FILE_COUNT,
         MAXIMUM_ATTACHMENT_IMAGE_BYTES as MAXIMUM_IMAGE_BYTES,
         MAXIMUM_ATTACHMENT_IMAGE_COUNT as MAXIMUM_IMAGE_COUNT, MAXIMUM_ATTACHMENT_NAME_CHARS,
@@ -109,6 +110,7 @@ pub(crate) fn validate_attachment_metadata(
     let maximum_size = match (metadata.kind.as_str(), metadata.mime_type.as_str()) {
         ("image", "image/png" | "image/jpeg" | "image/webp" | "image/gif") => MAXIMUM_IMAGE_BYTES,
         ("text", mime_type) if is_text_mime_type(mime_type) => MAXIMUM_TEXT_BYTES,
+        ("document", "application/pdf") => MAXIMUM_DOCUMENT_BYTES,
         _ => {
             return Err(AttachmentMetadataError("The attachment type is invalid."));
         }
@@ -141,6 +143,9 @@ pub(crate) fn validate_portable_attachment_content(
     match metadata.kind.as_str() {
         "image" if has_valid_image_signature(&metadata.mime_type, bytes) => Ok(()),
         "text" if is_text_mime_type(&metadata.mime_type) && std::str::from_utf8(bytes).is_ok() => {
+            Ok(())
+        }
+        "document" if metadata.mime_type == "application/pdf" && bytes.starts_with(b"%PDF-") => {
             Ok(())
         }
         _ => Err(AttachmentMetadataError(
@@ -728,6 +733,7 @@ pub(crate) fn decode_message_content(
                 MAXIMUM_IMAGE_BYTES
             }
             "text" if is_text_mime_type(&metadata.mime_type) => MAXIMUM_TEXT_BYTES,
+            "document" if metadata.mime_type == "application/pdf" => MAXIMUM_DOCUMENT_BYTES,
             _ => {
                 return Err(SqlError::FromSqlConversionFailure(
                     2,

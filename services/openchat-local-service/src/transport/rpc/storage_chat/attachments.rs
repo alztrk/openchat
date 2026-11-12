@@ -525,6 +525,10 @@ pub(super) fn parse_attachment_inputs(
             if !valid_image_signature(&metadata.mime_type, &bytes) {
                 return Err(invalid_request_params());
             }
+        } else if metadata.kind == "document" {
+            if !bytes.starts_with(b"%PDF-") {
+                return Err(invalid_request_params());
+            }
         } else if std::str::from_utf8(&bytes).is_err() {
             return Err(invalid_request_params());
         }
@@ -583,12 +587,16 @@ pub(super) fn parse_attachment_envelope(content: &str) -> Result<AttachmentEnvel
             .and_then(|size| usize::try_from(size).ok())
             .filter(|size| *size > 0)
             .ok_or_else(storage_unavailable)?;
-        if kind != "image" && kind != "text" {
+        if kind != "image" && kind != "text" && kind != "document" {
             return Err(storage_unavailable());
         }
         if kind == "image" {
             image_count += 1;
             if image_count > MAX_IMAGE_COUNT || size_bytes > MAX_IMAGE_BYTES {
+                return Err(storage_unavailable());
+            }
+        } else if kind == "document" {
+            if size_bytes > MAX_DOCUMENT_BYTES {
                 return Err(storage_unavailable());
             }
         } else if size_bytes > MAX_TEXT_BYTES {
@@ -626,9 +634,13 @@ pub(super) fn validate_attachment_metadata(
     let Some((kind, mime_type, maximum_bytes)) = attachment_spec(&metadata.name) else {
         return Err(storage_unavailable());
     };
-    if metadata.kind != kind
+    let legacy_pdf_text = metadata.name.to_ascii_lowercase().ends_with(".pdf")
+        && metadata.kind == "text"
+        && metadata.mime_type == "application/pdf"
+        && metadata.size_bytes <= MAX_TEXT_BYTES;
+    if (!legacy_pdf_text && metadata.kind != kind)
         || metadata.mime_type != mime_type
-        || metadata.size_bytes > maximum_bytes
+        || (!legacy_pdf_text && metadata.size_bytes > maximum_bytes)
     {
         return Err(storage_unavailable());
     }
@@ -648,7 +660,7 @@ pub(super) fn attachment_spec(name: &str) -> Option<(&'static str, &'static str,
         "json" | "jsonl" => ("text", "application/json", MAX_TEXT_BYTES),
         "xml" => ("text", "application/xml", MAX_TEXT_BYTES),
         "html" | "htm" => ("text", "text/html", MAX_TEXT_BYTES),
-        "pdf" => ("text", "application/pdf", MAX_TEXT_BYTES),
+        "pdf" => ("document", "application/pdf", MAX_DOCUMENT_BYTES),
         "docx" => (
             "text",
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document",

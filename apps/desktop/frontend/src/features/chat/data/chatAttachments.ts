@@ -1,5 +1,8 @@
 import { LocalServiceError, localServiceClient } from '@shared/lib/platform/local-service';
 import { containsAsciiControlCharacters } from '@shared/lib/utils/textValidation';
+import type { ChatAttachmentKind, ChatAttachmentMetadata } from '@entities/conversation';
+
+export type { ChatAttachmentKind, ChatAttachmentMetadata } from '@entities/conversation';
 
 const attachmentContentPrefix = '\u001eopenchat-attachments-v1:';
 const plainMessageContentPrefix = '\u001eopenchat-message-text-v1:';
@@ -12,7 +15,7 @@ const maximumImageBytes = 10 * 1024 * 1024;
 const maximumTextBytes = 1024 * 1024;
 const maximumDocumentInputBytes = 10 * 1024 * 1024;
 
-const binaryDocumentExtensions = new Set(['pdf', 'docx', 'xlsx']);
+const binaryDocumentExtensions = new Set(['docx', 'xlsx']);
 
 const attachmentTypes: Record<
   string,
@@ -24,9 +27,9 @@ const attachmentTypes: Record<
   webp: { kind: 'image', mimeType: 'image/webp', maximumBytes: maximumImageBytes },
   gif: { kind: 'image', mimeType: 'image/gif', maximumBytes: maximumImageBytes },
   pdf: {
-    kind: 'text',
+    kind: 'document',
     mimeType: 'application/pdf',
-    maximumBytes: maximumTextBytes,
+    maximumBytes: maximumDocumentInputBytes,
     rawMaximumBytes: maximumDocumentInputBytes,
   },
   docx: {
@@ -76,7 +79,6 @@ const attachmentTypes: Record<
   sql: { kind: 'text', mimeType: 'text/plain', maximumBytes: maximumTextBytes },
 };
 
-export type ChatAttachmentKind = 'image' | 'text';
 export type ChatAttachmentErrorCode =
   | 'attachmentUnsupportedType'
   | 'attachmentFileTooLarge'
@@ -88,14 +90,6 @@ export type ChatAttachmentErrorCode =
   | 'attachmentDocumentEncrypted'
   | 'attachmentDocumentNoText'
   | 'attachmentDocumentMalformed';
-
-export interface ChatAttachmentMetadata {
-  id: string;
-  name: string;
-  mimeType: string;
-  sizeBytes: number;
-  kind: ChatAttachmentKind;
-}
 
 export interface PendingChatAttachment extends ChatAttachmentMetadata {
   file: File;
@@ -170,6 +164,8 @@ export async function readAttachmentFile(file: File): Promise<PendingChatAttachm
     }
   } else if (type.kind === 'image' && !hasValidImageSignature(type.mimeType, bytes)) {
     throw new ChatAttachmentInputError('attachmentInvalidImage');
+  } else if (type.kind === 'document' && !hasValidPdfSignature(bytes)) {
+    throw new ChatAttachmentInputError('attachmentDocumentMalformed');
   } else if (type.kind === 'text') {
     try {
       new TextDecoder('utf-8', { fatal: true }).decode(bytes);
@@ -197,6 +193,9 @@ export function restoreStoredAttachment(metadata: ChatAttachmentMetadata, bytes:
   if (bytes.length !== validated.sizeBytes) throw new ChatAttachmentInputError('attachmentReadFailed');
   if (validated.kind === 'image' && !hasValidImageSignature(validated.mimeType, bytes)) {
     throw new ChatAttachmentInputError('attachmentInvalidImage');
+  }
+  if (validated.kind === 'document' && !hasValidPdfSignature(bytes)) {
+    throw new ChatAttachmentInputError('attachmentDocumentMalformed');
   }
   if (validated.kind === 'text') {
     try {
@@ -303,17 +302,23 @@ function parseAttachmentMetadata(value: unknown): ChatAttachmentMetadata {
     !Number.isSafeInteger(value.sizeBytes) ||
     typeof value.sizeBytes !== 'number' ||
     value.sizeBytes <= 0 ||
-    (value.kind !== 'image' && value.kind !== 'text')
+    (value.kind !== 'image' && value.kind !== 'text' && value.kind !== 'document')
   ) {
     throw new Error('The saved attachment data is invalid.');
   }
   const extension = value.name.split('.').at(-1)?.toLowerCase() ?? '';
   const expectedType = attachmentTypes[extension];
+  const legacyPdfText =
+    extension === 'pdf' &&
+    value.kind === 'text' &&
+    value.mimeType === 'application/pdf' &&
+    value.sizeBytes <= maximumTextBytes;
   if (
     !expectedType ||
-    expectedType.kind !== value.kind ||
-    expectedType.mimeType !== value.mimeType ||
-    value.sizeBytes > expectedType.maximumBytes
+    (!legacyPdfText &&
+      (expectedType.kind !== value.kind ||
+        expectedType.mimeType !== value.mimeType ||
+        value.sizeBytes > expectedType.maximumBytes))
   ) {
     throw new Error('The saved attachment data is invalid.');
   }
@@ -365,6 +370,10 @@ function hasValidImageSignature(mimeType: string, bytes: Uint8Array): boolean {
     bytes[10] === 0x42 &&
     bytes[11] === 0x50
   );
+}
+
+function hasValidPdfSignature(bytes: Uint8Array): boolean {
+  return bytes.length >= 5 && new TextDecoder().decode(bytes.subarray(0, 5)) === '%PDF-';
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {

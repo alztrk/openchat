@@ -19,6 +19,7 @@ pub(super) use zeroize::{Zeroize, Zeroizing};
 
 pub(super) use crate::{
     conversation_limits::{
+        MAXIMUM_ATTACHMENT_DOCUMENT_BYTES as MAX_DOCUMENT_BYTES,
         MAXIMUM_ATTACHMENT_FILE_COUNT as MAX_ATTACHMENT_COUNT,
         MAXIMUM_ATTACHMENT_IMAGE_BYTES as MAX_IMAGE_BYTES,
         MAXIMUM_ATTACHMENT_IMAGE_COUNT as MAX_IMAGE_COUNT,

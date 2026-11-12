@@ -5,7 +5,7 @@ import type { ChatProject, ToolPermissionMode } from '../project/types';
 
 export type ChatRole = 'user' | 'assistant';
 export type ChatMessageStatus = 'streaming' | 'completed' | 'failed' | 'stopped';
-export type ChatAttachmentKind = 'image' | 'text';
+export type ChatAttachmentKind = 'image' | 'text' | 'document';
 export type ExportFormat = 'md' | 'html' | 'json';
 export type AssistantResponseStyle = 'concise' | 'balanced' | 'detailed';
 
