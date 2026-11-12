@@ -237,6 +237,7 @@ impl PricingCatalog {
                 "models_dev_event_costs",
             ),
         };
+        let provider_id_expression = catalog_provider_id_sql("e.provider_id");
         let cost_sql = format!(
             "{selected_events}
              INSERT INTO {event_cost_table} (event_id, cost_usd)
@@ -262,19 +263,7 @@ impl PricingCatalog {
                 )
              FROM {event_source}
              JOIN models_dev_prices AS price
-               ON price.provider_id = CASE e.provider_id
-                    WHEN 'chatgpt_api' THEN 'openai'
-                    WHEN 'gemini' THEN 'google'
-                    WHEN 'dashscope' THEN 'alibaba'
-                    WHEN 'moonshot' THEN 'moonshotai'
-                    WHEN 'together' THEN 'togetherai'
-                    WHEN 'fireworks' THEN 'fireworks-ai'
-                    WHEN 'yi' THEN '01-ai'
-                    WHEN 'hunyuan' THEN 'tencent'
-                    WHEN 'qianfan' THEN 'baidu'
-                    WHEN 'mimo' THEN 'xiaomi'
-                    ELSE e.provider_id
-                  END
+               ON price.provider_id = {provider_id_expression}
               AND price.model_id = e.model_id
               AND price.context_size = (
                     SELECT MAX(tier.context_size)
@@ -655,20 +644,34 @@ fn model_image_support_for_ids(
         .collect()
 }
 
+const CATALOG_PROVIDER_ID_ALIASES: &[(&str, &str)] = &[
+    ("chatgpt", "openai"),
+    ("chatgpt_api", "openai"),
+    ("gemini", "google"),
+    ("dashscope", "alibaba"),
+    ("moonshot", "moonshotai"),
+    ("together", "togetherai"),
+    ("fireworks", "fireworks-ai"),
+    ("yi", "01-ai"),
+    ("hunyuan", "tencent"),
+    ("qianfan", "baidu"),
+    ("mimo", "xiaomi"),
+];
+
 fn catalog_provider_id(provider_id: &str) -> &str {
-    match provider_id {
-        "chatgpt" | "chatgpt_api" => "openai",
-        "gemini" => "google",
-        "dashscope" => "alibaba",
-        "moonshot" => "moonshotai",
-        "together" => "togetherai",
-        "fireworks" => "fireworks-ai",
-        "yi" => "01-ai",
-        "hunyuan" => "tencent",
-        "qianfan" => "baidu",
-        "mimo" => "xiaomi",
-        provider => provider,
-    }
+    CATALOG_PROVIDER_ID_ALIASES
+        .iter()
+        .find_map(|(alias, catalog_id)| (*alias == provider_id).then_some(*catalog_id))
+        .unwrap_or(provider_id)
+}
+
+fn catalog_provider_id_sql(provider_expression: &str) -> String {
+    let aliases = CATALOG_PROVIDER_ID_ALIASES
+        .iter()
+        .map(|(alias, catalog_id)| format!("WHEN '{alias}' THEN '{catalog_id}'"))
+        .collect::<Vec<_>>()
+        .join(" ");
+    format!("CASE {provider_expression} {aliases} ELSE {provider_expression} END")
 }
 
 fn positive_limit(model: &Value, field: &str) -> Option<i64> {
@@ -962,10 +965,11 @@ mod tests {
 
     use super::{
         PricingCatalog, build_catalog_http_client, cached_model_details_batch,
-        cached_model_supports_images, cached_models_support_images, model_from_catalog,
+        cached_model_supports_images, cached_models_support_images, catalog_provider_id,
+        catalog_provider_id_sql, model_from_catalog,
     };
     use crate::storage::AppStorage;
-    use rusqlite::params;
+    use rusqlite::{Connection, params};
     use serde_json::json;
     use tokio::{
         io::{AsyncReadExt, AsyncWriteExt},
@@ -973,6 +977,29 @@ mod tests {
     };
 
     use super::super::StatisticsQuery;
+
+    #[test]
+    fn chatgpt_oauth_provider_matches_openai_pricing_catalog() {
+        let database = Connection::open_in_memory().expect("open SQLite test database");
+        let expression = catalog_provider_id_sql("?1");
+
+        for (provider_id, expected_catalog_id) in [
+            ("chatgpt", "openai"),
+            ("chatgpt_api", "openai"),
+            ("openai", "openai"),
+        ] {
+            let catalog_id = database
+                .query_row(
+                    &format!("SELECT {expression}"),
+                    params![provider_id],
+                    |row| row.get::<_, String>(0),
+                )
+                .expect("resolve catalog provider id");
+
+            assert_eq!(catalog_id, expected_catalog_id);
+            assert_eq!(catalog_provider_id(provider_id), expected_catalog_id);
+        }
+    }
 
     struct TestDirectory(PathBuf);
 
