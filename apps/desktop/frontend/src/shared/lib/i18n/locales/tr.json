@@ -3380,6 +3380,8 @@
   "designEditorPageNameInvalid": "Sayfa adı boş olamaz ve 128 karakteri aşamaz",
   "designEditorNewDocument": "Yeni belge",
   "designEditorGroup": "Seçili katmanları çerçevede grupla",
+  "designEditorGroupName": "Grup",
+  "designEditorGroupFailed": "Seçili katmanlar gruplanamadı. Uyumlu katmanlar seçip tekrar deneyin.",
   "designEditorBringForward": "Seçili katmanları öne getir",
   "designEditorSendBackward": "Seçili katmanları arkaya gönder",
   "designEditorRenameLayer": "Katmanı yeniden adlandır",

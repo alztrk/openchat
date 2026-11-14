@@ -19,6 +19,7 @@ Completed work is summarized from repository history and grouped by the relevant
 - Added an editable Design workspace with structured documents, reusable components and styles, prototype interactions and transitions, revision comparison, alignment guides, portable archives, and SVG, PNG, PDF, and HTML export.
 - Added Design text typography controls, reusable text and color styles, component variants and instances, plus canvas alignment and distribution actions.
 - Added reusable parameterized workflow templates with prompt variable expansion, durable persistence, validation, and JSON import/export.
+- Added grouping for selected Design layers, keeping their positions while wrapping them in a frame.
 - Added Amazon Bedrock Converse and ConverseStream protocol support, AWS SigV4 authentication, regional runtime configuration, and EventStream binary decoding.
 - Added user-triggered local text-to-speech playback for completed assistant responses.
 - Added Microsoft AI Foundry and Azure OpenAI model routing, deployment identifier configuration, API versioning, and credential headers.

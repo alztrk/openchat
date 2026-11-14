@@ -24,20 +24,46 @@ const compiledDocument = ts.transpileModule(documentSource, {
 const documentModule = await import(`data:text/javascript;base64,${Buffer.from(compiledDocument).toString('base64')}`);
 globalThis.__openChatDesignOperationValidator = documentModule.validateDesignDocument;
 globalThis.__openChatDesignPathPointParser = documentModule.parseDesignPathPoints;
+globalThis.__openChatDesignNodeFactory = documentModule.createDesignNode;
 const operationsSource = fs.readFileSync(path.resolve('src/features/design-workspace/data/designOperations.ts'), 'utf8')
   .replace(
     /import \{[\s\S]*?\} from '\.\/designDocument';/,
-    'const validateDesignDocument = globalThis.__openChatDesignOperationValidator; const parseDesignPathPoints = globalThis.__openChatDesignPathPointParser;',
+    'const validateDesignDocument = globalThis.__openChatDesignOperationValidator; const parseDesignPathPoints = globalThis.__openChatDesignPathPointParser; const createDesignNode = globalThis.__openChatDesignNodeFactory; const maximumDesignNodeCount = 10_000;',
   );
 const compiledOperations = ts.transpileModule(operationsSource, {
   compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
 }).outputText;
-const { applyDesignTextStyle, arrangeDesignSelection, createDesignComponent, createDesignComponentInstance, createDesignComponentVariant, createDesignTextStyle, designNodesForResponsiveBreakpoint, expandDesignMoveSelection, importSharedDesignTextStyle, removeDesignNodes, removeDesignMotionTrack, removeDesignTextStyle, renameDesignNode, reorderDesignSelection, reflowDesignFrameConstraints, rotateDesignSelection, saveDesignResponsiveOverrides, setDesignFrameAutoLayout, setDesignPrototypeFlow, setDesignPrototypeInteraction, removeDesignPrototypeInteraction, setDesignMotionTrack, setDesignSelectionShadow, setDesignSelectionConstraints, snapDesignMove, synchronizeDesignComponentDependents, updateDesignImageSelection, updateDesignPathPoints, updateDesignResponsiveGeometry, updateDesignTextSelection, updateDesignTextStyle } = await import(`data:text/javascript;base64,${Buffer.from(compiledOperations).toString('base64')}`);
+const { applyDesignTextStyle, arrangeDesignSelection, createDesignComponent, createDesignComponentInstance, createDesignComponentVariant, createDesignTextStyle, designNodesForResponsiveBreakpoint, expandDesignMoveSelection, groupDesignSelection, importSharedDesignTextStyle, removeDesignNodes, removeDesignMotionTrack, removeDesignTextStyle, renameDesignNode, reorderDesignSelection, reflowDesignFrameConstraints, rotateDesignSelection, saveDesignResponsiveOverrides, setDesignFrameAutoLayout, setDesignPrototypeFlow, setDesignPrototypeInteraction, removeDesignPrototypeInteraction, setDesignMotionTrack, setDesignSelectionShadow, setDesignSelectionConstraints, snapDesignMove, synchronizeDesignComponentDependents, updateDesignImageSelection, updateDesignPathPoints, updateDesignResponsiveGeometry, updateDesignTextSelection, updateDesignTextStyle } = await import(`data:text/javascript;base64,${Buffer.from(compiledOperations).toString('base64')}`);
 const { createDesignNode } = documentModule;
 
 function documentWith(nodes, selectedNodeIds) {
   return { version: 9, id: 'document-1', name: 'Design', projectId: null, pages: [{ id: 'page-1', name: 'Page 1' }], activePageId: 'page-1', nodes, selectedNodeIds, variables: [], textStyles: [], comments: [], prototypeFlows: [], prototypeInteractions: [], motionTracks: [], components: [] };
 }
+
+test('grouping selected layers creates a frame without changing their canvas positions', () => {
+  const first = { ...createDesignNode('rectangle', 40, 60, 'First', ''), id: 'first', width: 80, height: 40 };
+  const second = { ...createDesignNode('text', 160, 100, 'Second', 'Text'), id: 'second', width: 100, height: 24 };
+  const source = documentWith([first, second], [first.id, second.id]);
+
+  const grouped = groupDesignSelection(source, 'Group');
+  const frame = grouped.nodes.find((node) => node.id === grouped.selectedNodeIds[0]);
+
+  assert.equal(frame?.type, 'frame');
+  assert.deepEqual([frame?.x, frame?.y, frame?.width, frame?.height], [24, 44, 252, 96]);
+  assert.deepEqual(grouped.nodes.filter((node) => node.id === 'first' || node.id === 'second').map((node) => [node.x, node.y, node.parentId]), [
+    [40, 60, frame?.id], [160, 100, frame?.id],
+  ]);
+  assert.deepEqual(expandDesignMoveSelection(grouped, [frame.id]).map((node) => node.id), [frame.id, 'first', 'second']);
+});
+
+test('grouping refuses locked layers and preserves the source document', () => {
+  const first = { ...createDesignNode('rectangle', 0, 0, 'First', ''), id: 'first', locked: true };
+  const second = { ...createDesignNode('rectangle', 80, 0, 'Second', ''), id: 'second' };
+  const source = documentWith([first, second], [first.id, second.id]);
+
+  assert.throws(() => groupDesignSelection(source, 'Group'));
+  assert.deepEqual(source.nodes.map((node) => node.parentId), [null, null]);
+});
 
 test('moving selection snaps matching edges and centers to visible peer nodes', () => {
   const moving = { ...createDesignNode('rectangle', 0, 0), id: 'moving', width: 40, height: 20 };

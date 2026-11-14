@@ -24,7 +24,7 @@ import { type PendingChatAttachment, ChatAttachmentInputError, readAttachmentFil
 import type { ChatModelFavorite } from '@features/chat/data';
 import { CanvasZoomControls } from '@features/design-workspace/components/CanvasZoomControls';
 import { applyDesignOperations, startDesignGeneration, type DesignCanvasOperation, type DesignGenerationOperation, type DesignGenerationReference } from '@features/design-workspace/data/designGeneration';
-import { applyDesignTextStyle, arrangeDesignSelection, createDesignComponent, createDesignComponentInstance, createDesignComponentVariant, createDesignTextStyle, designNodesForResponsiveBreakpoint, expandDesignMoveSelection, reflowDesignFrameChildren, reflowDesignFrameConstraints, removeDesignNodes, renameDesignNode, snapDesignMove, synchronizeDesignComponentDependents, type DesignSnapGuides } from '@features/design-workspace/data/designOperations';
+import { applyDesignTextStyle, arrangeDesignSelection, createDesignComponent, createDesignComponentInstance, createDesignComponentVariant, createDesignTextStyle, designNodesForResponsiveBreakpoint, expandDesignMoveSelection, groupDesignSelection, reflowDesignFrameChildren, reflowDesignFrameConstraints, removeDesignNodes, renameDesignNode, snapDesignMove, synchronizeDesignComponentDependents, type DesignSnapGuides } from '@features/design-workspace/data/designOperations';
 import { listSharedDesignTextStyles, type SharedDesignTextStyle } from '@features/design-workspace/data/designStyleLibrary';
 import {
   addDesignPage,
@@ -2392,6 +2392,14 @@ export function DesignCanvas() {
                       <Button aria-label={t('designEditorArrange')} size="small" title={t('designEditorArrange')} variant="ghost"><Move aria-hidden="true" size={15} /><ChevronDown aria-hidden="true" size={13} /></Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="start" side="top">
+                      <DropdownMenuItem onSelect={() => {
+                        try {
+                          void publish(groupDesignSelection(document, t('designEditorGroupName')));
+                        } catch {
+                          toast.error(t('designEditorGroupFailed'));
+                        }
+                      }}>{t('designEditorGroup')}</DropdownMenuItem>
+                      <DropdownMenuSeparator />
                       {([
                         ['align-left', 'designEditorAlignLeft'], ['align-center-x', 'designEditorAlignCenterX'], ['align-right', 'designEditorAlignRight'],
                         ['align-top', 'designEditorAlignTop'], ['align-center-y', 'designEditorAlignCenterY'], ['align-bottom', 'designEditorAlignBottom'],

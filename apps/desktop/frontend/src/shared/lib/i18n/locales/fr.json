@@ -3380,6 +3380,8 @@
   "designEditorPageNameInvalid": "Saisissez un nom de page de 128 caractères maximum",
   "designEditorNewDocument": "Nouveau document",
   "designEditorGroup": "Grouper les calques sélectionnés dans un cadre",
+  "designEditorGroupName": "Groupe",
+  "designEditorGroupFailed": "Impossible de grouper les calques sélectionnés. Sélectionnez des calques compatibles, puis réessayez.",
   "designEditorBringForward": "Mettre les calques sélectionnés au premier plan",
   "designEditorSendBackward": "Mettre les calques sélectionnés à l’arrière-plan",
   "designEditorRenameLayer": "Renommer le calque",

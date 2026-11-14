@@ -1,4 +1,56 @@
-import { parseDesignPathPoints, validateDesignDocument, type DesignComponent, type DesignConstraints, type DesignDocument, type DesignFrameAutoLayout, type DesignMotionEasing, type DesignMotionProperty, type DesignNode, type DesignPrototypeFlow, type DesignPrototypeInteraction, type DesignResponsiveBreakpoint, type DesignResponsiveGeometry, type DesignShadowEffect, type DesignTextNode, type DesignTextStyle } from './designDocument';
+import { createDesignNode, maximumDesignNodeCount, parseDesignPathPoints, validateDesignDocument, type DesignComponent, type DesignConstraints, type DesignDocument, type DesignFrameAutoLayout, type DesignMotionEasing, type DesignMotionProperty, type DesignNode, type DesignPrototypeFlow, type DesignPrototypeInteraction, type DesignResponsiveBreakpoint, type DesignResponsiveGeometry, type DesignShadowEffect, type DesignTextNode, type DesignTextStyle } from './designDocument';
+
+export function groupDesignSelection(document: DesignDocument, name: string): DesignDocument {
+  const validated = validateDesignDocument(document);
+  const selected = new Set(validated.selectedNodeIds);
+  const selectedNodes = validated.nodes.filter((node) => selected.has(node.id));
+  if (selectedNodes.length < 2 || validated.nodes.length >= maximumDesignNodeCount) {
+    throw new Error('Select at least two layers to group.');
+  }
+
+  const selectedRoots = selectedNodes.filter((node) => {
+    let parentId = node.parentId;
+    while (parentId !== null) {
+      if (selected.has(parentId)) return false;
+      parentId = validated.nodes.find((candidate) => candidate.id === parentId)?.parentId ?? null;
+    }
+    return true;
+  });
+  const groupedNodes = expandDesignMoveSelection(validated, selectedRoots.map((node) => node.id));
+  if (selectedRoots.some((node) => node.locked || node.pageId !== validated.activePageId) || groupedNodes.some((node) => node.componentRef)) {
+    throw new Error('Locked or component layers cannot be grouped.');
+  }
+
+  const minX = Math.min(...selectedRoots.map((node) => node.x));
+  const minY = Math.min(...selectedRoots.map((node) => node.y));
+  const maxX = Math.max(...selectedRoots.map((node) => node.x + node.width));
+  const maxY = Math.max(...selectedRoots.map((node) => node.y + node.height));
+  const padding = 16;
+  const width = maxX - minX + padding * 2;
+  const height = maxY - minY + padding * 2;
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width > 1_000_000 || height > 1_000_000) {
+    throw new Error('The selected layers exceed the supported frame size.');
+  }
+
+  const group = createDesignNode('frame', minX - padding, minY - padding, name, '', validated.activePageId);
+  if (group.type !== 'frame') throw new Error('The group frame could not be created.');
+  const parentIds = new Set(selectedRoots.map((node) => node.parentId));
+  const groupFrame: DesignNode = {
+    ...group,
+    width,
+    height,
+    parentId: parentIds.size === 1 ? selectedRoots[0]?.parentId ?? null : null,
+  };
+  const rootIds = new Set(selectedRoots.map((node) => node.id));
+  const insertionIndex = Math.min(...selectedRoots.map((node) => validated.nodes.indexOf(node)));
+  const nodes = validated.nodes.map((node): DesignNode => {
+    if (!rootIds.has(node.id)) return node;
+    const { constraints: _constraints, ...unconstrained } = node;
+    return { ...unconstrained, parentId: groupFrame.id };
+  });
+  nodes.splice(insertionIndex, 0, groupFrame);
+  return validateDesignDocument({ ...validated, nodes, selectedNodeIds: [groupFrame.id] });
+}
 
 export function createDesignTextStyle(document: DesignDocument, name: string): DesignDocument {
   const validated = validateDesignDocument(document);

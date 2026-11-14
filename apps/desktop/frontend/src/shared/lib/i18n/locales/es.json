@@ -3380,6 +3380,8 @@
   "designEditorPageNameInvalid": "Introduce un nombre de página de hasta 128 caracteres",
   "designEditorNewDocument": "Nuevo documento",
   "designEditorGroup": "Agrupar capas seleccionadas en un marco",
+  "designEditorGroupName": "Grupo",
+  "designEditorGroupFailed": "No se pudieron agrupar las capas seleccionadas. Selecciona capas compatibles e inténtalo de nuevo.",
   "designEditorBringForward": "Traer las capas seleccionadas al frente",
   "designEditorSendBackward": "Enviar las capas seleccionadas al fondo",
   "designEditorRenameLayer": "Cambiar nombre de capa",

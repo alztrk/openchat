@@ -3380,6 +3380,8 @@
   "designEditorPageNameInvalid": "Enter a page name with up to 128 characters",
   "designEditorNewDocument": "New document",
   "designEditorGroup": "Group selected layers into a frame",
+  "designEditorGroupName": "Group",
+  "designEditorGroupFailed": "The selected layers could not be grouped. Select compatible layers and try again.",
   "designEditorBringForward": "Bring selected layers to front",
   "designEditorSendBackward": "Send selected layers to back",
   "designEditorRenameLayer": "Rename layer",
