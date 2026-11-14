@@ -95,14 +95,12 @@ import {
   type ImageCollection,
   type ImageGenerationOptions,
   type ImageGenerationResponse,
-  type ImageGenerationRun,
   type ImageModeration,
   type ImageOutputFormat,
   type ImagePromptTemplate,
   type ImageQuality,
   listDesignImages,
   listImageCollections,
-  listImageGenerationRuns,
   listImagePromptTemplates,
   loadDesignImageTargets,
   removeImageFromLibrary,
@@ -186,7 +184,6 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
   const [dateTo, setDateTo] = useState('');
   const [collections, setCollections] = useState<ImageCollection[]>([]);
   const [templates, setTemplates] = useState<ImagePromptTemplate[]>([]);
-  const [failedRuns, setFailedRuns] = useState<ImageGenerationRun[]>([]);
   const [libraryMetadataError, setLibraryMetadataError] = useState(false);
   const [libraryMetadataLoading, setLibraryMetadataLoading] = useState(true);
   const [templateName, setTemplateName] = useState('');
@@ -393,10 +390,9 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
     const results = await Promise.allSettled([
       listImageCollections(),
       listImagePromptTemplates(),
-      listImageGenerationRuns(),
     ]);
     if (!mountedRef.current) return;
-    const [collectionResult, templateResult, runResult] = results;
+    const [collectionResult, templateResult] = results;
     if (collectionResult.status === 'fulfilled') {
       setCollections(collectionResult.value);
       const defaultCollectionId = useDesignPreferencesStore.getState().preferences.defaultCollectionId;
@@ -406,9 +402,6 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
       }
     }
     if (templateResult.status === 'fulfilled') setTemplates(templateResult.value);
-    if (runResult.status === 'fulfilled') {
-      setFailedRuns(runResult.value.filter((run) => run.status === 'failed' || run.status === 'cancelled'));
-    }
     setLibraryMetadataError(results.some((result) => result.status === 'rejected'));
     setLibraryMetadataLoading(false);
   }, []);
@@ -895,57 +888,6 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
     } finally {
       setLibraryActionBusy(false);
     }
-  };
-
-  const retryGeneration = async (run: ImageGenerationRun) => {
-    const target = targets.find(
-      (item) =>
-        item.kind === run.providerRoute &&
-        item.connectionId === run.connectionId &&
-        item.workspaceId === run.workspaceId,
-    );
-    if (!target) {
-      setGenerationError(t('designRetryTargetUnavailable'));
-      return;
-    }
-    if (target.kind === 'oauth') {
-      const latestQuota =
-        target.workspaceId === null
-          ? { state: 'unavailable' as const, usedPercent: null, resetAtUnixMs: null }
-          : await refreshChatGptAccountQuota(target.connectionId, target.workspaceId);
-      setAccountQuota(latestQuota);
-      if (latestQuota.state === 'exhausted') {
-        setGenerationError(t('designQuotaExhausted'));
-        return;
-      }
-    }
-    const savedQuality = run.quality ?? '';
-    const savedBackground = run.background ?? '';
-    const savedModeration = run.moderation ?? '';
-    const savedFormat = run.outputFormat ?? '';
-    const options: ImageGenerationOptions = {
-      prompt: extractUserPrompt(run.prompt),
-      model: run.model,
-      size: run.size ?? 'auto',
-      quality: isImageQuality(savedQuality) ? savedQuality : 'auto',
-      background: isImageBackground(savedBackground) ? savedBackground : 'auto',
-      moderation: isImageModeration(savedModeration) ? savedModeration : 'auto',
-      outputFormat: isImageOutputFormat(savedFormat) ? savedFormat : 'png',
-      outputCompression: run.outputCompression ?? 90,
-      count: run.requestedCount,
-      target,
-    };
-    setPrompt(options.prompt);
-    setTargetKey(target.key);
-    setModel(options.model);
-    setSize(options.size);
-    setQuality(options.quality);
-    setBackground(options.background);
-    setModeration(options.moderation);
-    setOutputFormat(options.outputFormat);
-    setOutputCompression(options.outputCompression);
-    setCount(String(options.count));
-    await runGeneration(options);
   };
 
   const openComparison = async (entry: GalleryImage) => {
@@ -1696,44 +1638,6 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
             </p>
           ) : null}
         </header>
-
-        {failedRuns.length > 0 ? (
-          <section
-            aria-label={t('designRecentFailures')}
-            className="grid gap-2 border-b border-border px-5 py-3 sm:px-7"
-          >
-            <h3 className="text-sm font-semibold text-text">{t('designRecentFailures')}</h3>
-            {failedRuns.slice(0, 3).map((run) => (
-              <div
-                className="flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-control bg-raised px-3 py-2"
-                key={run.id}
-              >
-                <div className="min-w-0">
-                  <p className="truncate text-sm text-text">{extractUserPrompt(run.prompt)}</p>
-                  <p className="text-xs text-secondary-text">
-                    {t(run.status === 'failed' ? 'designGenerationFailed' : 'designGenerationCancelled')}
-                  </p>
-                </div>
-                {targets.some(
-                  (target) => target.connectionId === run.connectionId && target.workspaceId === run.workspaceId,
-                ) ? (
-                  <Button
-                    disabled={generationStarting || activeOperation !== null}
-                    onClick={() => void retryGeneration(run)}
-                    size="small"
-                    variant="secondary"
-                  >
-                    {t('designRetryGeneration')}
-                  </Button>
-                ) : (
-                  <Button onClick={() => reusePrompt(run.prompt)} size="small" variant="ghost">
-                    {t('designReusePrompt')}
-                  </Button>
-                )}
-              </div>
-            ))}
-          </section>
-        ) : null}
 
         <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-7" ref={galleryScrollRef}>
           {galleryError !== 'none' && gallery.length === 0 ? (

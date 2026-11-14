@@ -7,6 +7,7 @@ Completed work is summarized from repository history and grouped by the relevant
 ### Changed
 
 - Try official provider website favicons on Connections credential cards, retaining bundled icons when remote favicons are unavailable.
+- Removed the recent unsuccessful generations section from the Design image library.
 
 ### Added
 
