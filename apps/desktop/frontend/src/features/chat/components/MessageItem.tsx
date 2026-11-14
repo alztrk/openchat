@@ -1,18 +1,15 @@
 import {
   Brain,
   Check,
-  ChevronDown,
   ChevronLeft,
   ChevronRight,
   CircleAlert,
   Copy,
   GitBranch,
   Link,
-  LoaderCircle,
   RefreshCw,
   Square,
   Volume2,
-  Wrench,
 } from 'lucide-react';
 import { memo, useEffect, useRef, useState } from 'react';
 import { useMemo } from 'react';
@@ -40,6 +37,7 @@ import {
 } from './message/messageData';
 import { ReasoningSummary } from './message/ReasoningSummary';
 import { ToolActivityAccordion } from './message/ToolActivityAccordion';
+import { ToolActivityGroup } from './message/ToolActivityGroup';
 
 interface PersonalMemorySource {
   id: string;
@@ -234,9 +232,6 @@ export const MessageItem = memo(function MessageItem({
   ]);
 
   const toolActivityElapsedMicroseconds = message.elapsedMicroseconds ?? liveElapsedMicroseconds;
-  const toolActivityStatusLabel =
-    message.status === 'streaming' ? t('toolActivityWorking') : t('toolActivityTitle');
-
   useEffect(
     () => () => {
       if (resetTimer.current !== undefined) window.clearTimeout(resetTimer.current);
@@ -333,51 +328,29 @@ export const MessageItem = memo(function MessageItem({
             />
           </div>
         ) : null}
-        {!isUser && toolActivities.length > 0 ? (
-          <details
-            className="openchat-tool-accordion openchat-native-disclosure mb-2 max-w-assistant-message overflow-hidden rounded-card border border-border bg-surface"
-            onToggle={(event) => setIsToolActivityPanelOpen(event.currentTarget.open)}
-            open={isToolActivityPanelOpen}
+        {!isUser ? (
+          <ToolActivityGroup
+            activityCount={toolActivities.length}
+            elapsedTimeLabel={
+              toolActivityElapsedMicroseconds === null ? null : formatDuration(toolActivityElapsedMicroseconds)
+            }
+            isOpen={isToolActivityPanelOpen}
+            isResponseInProgress={message.status === 'streaming'}
+            onOpenChange={setIsToolActivityPanelOpen}
           >
-            <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-sm text-text [&::-webkit-details-marker]:hidden">
-              {message.status === 'streaming' ? (
-                <LoaderCircle
-                  aria-hidden="true"
-                  className="shrink-0 animate-spin text-accent-icon motion-reduce:animate-none"
-                  size={16}
-                />
-              ) : (
-                <Wrench aria-hidden="true" className="shrink-0 text-accent-icon" size={16} />
-              )}
-              <span aria-live="polite" className="font-semibold">
-                {toolActivityStatusLabel}
-              </span>
-              {toolActivityElapsedMicroseconds !== null ? (
-                <span className="ml-auto shrink-0 text-xs text-secondary-text">
-                  {formatDuration(toolActivityElapsedMicroseconds)}
-                </span>
-              ) : null}
-              <ChevronDown
-                aria-hidden="true"
-                className={`shrink-0 text-secondary-icon transition-transform motion-reduce:transition-none ${isToolActivityPanelOpen ? 'rotate-180' : ''}`}
-                size={15}
+            {toolActivities.map((activity) => (
+              <ToolActivityAccordion
+                activity={activity}
+                conversationId={message.conversationId}
+                isResponseInProgress={message.status === 'streaming'}
+                key={activity.callId}
+                onCheckpointRestored={onCheckpointRestored}
+                onOpenFileChanges={onOpenFileChanges}
+                onOpenFile={(path, content) => onOpenWorkspaceFile?.({ path, content })}
+                onOpenEditedFile={(change) => onOpenWorkspaceFile?.({ path: change.path, changeId: change.id })}
               />
-            </summary>
-            <div className="border-t border-border">
-              {toolActivities.map((activity) => (
-                <ToolActivityAccordion
-                  activity={activity}
-                  conversationId={message.conversationId}
-                  isResponseInProgress={message.status === 'streaming'}
-                  key={activity.callId}
-                  onCheckpointRestored={onCheckpointRestored}
-                  onOpenFileChanges={onOpenFileChanges}
-                  onOpenFile={(path, content) => onOpenWorkspaceFile?.({ path, content })}
-                  onOpenEditedFile={(change) => onOpenWorkspaceFile?.({ path: change.path, changeId: change.id })}
-                />
-              ))}
-            </div>
-          </details>
+            ))}
+          </ToolActivityGroup>
         ) : null}
         {hasResponseVersions ? (
           <div className={isUser ? 'mb-2 flex justify-start' : 'max-w-assistant-message'}>

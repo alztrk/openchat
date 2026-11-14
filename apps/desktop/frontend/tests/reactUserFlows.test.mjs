@@ -396,6 +396,9 @@ const { ConversationSidebar } = await vite.ssrLoadModule('/src/features/chat/com
 const { WorkflowTemplatesDialog } = await vite.ssrLoadModule(
   '/src/features/chat/components/WorkflowTemplatesDialog.tsx',
 );
+const { ToolActivityGroup } = await vite.ssrLoadModule(
+  '/src/features/chat/components/message/ToolActivityGroup.tsx',
+);
 const sidebarPreferencesModule = await vite.ssrLoadModule('/src/shared/lib/preferences/sidebarPreferences.ts');
 const { McpCatalogTab } = await vite.ssrLoadModule('/src/features/model-catalog/components/McpCatalogTab.tsx');
 const { TitleBarSearch } = await vite.ssrLoadModule('/src/widgets/title-bar/TitleBarSearch.tsx');
@@ -1244,6 +1247,67 @@ test('workflow templates can be created, edited, and launched as a new conversat
   assert.equal(startedConversations[0][0], 'Create a brief for OpenChat.');
   assert.equal(startedConversations[0][1].name, 'Project brief');
   assert.ok(screen.getByRole('dialog', { name: translations.workflowTemplatesTitle }));
+});
+
+test('tool activity group stays hidden without tools and exposes live progress and disclosure state', () => {
+  const translations = translationsByLocale.get('en');
+  assert.ok(translations);
+  const openStates = [];
+  const renderToolGroup = (overrides = {}) =>
+    render(
+      localized(
+        'en',
+        React.createElement(
+          ToolActivityGroup,
+          {
+            activityCount: 1,
+            elapsedTimeLabel: '2s',
+            isOpen: false,
+            isResponseInProgress: true,
+            onOpenChange: (open) => openStates.push(open),
+            ...overrides,
+          },
+          React.createElement('button', { type: 'button' }, 'Read file details'),
+          React.createElement('button', { type: 'button' }, 'Search file details'),
+        ),
+      ),
+    );
+
+  const emptyView = renderToolGroup({ activityCount: 0 });
+  assert.equal(screen.queryByText(translations.toolActivityWorking), null);
+  emptyView.unmount();
+
+  const view = renderToolGroup();
+  const disclosure = screen.getByText(translations.toolActivityWorking).closest('details');
+  assert.ok(disclosure);
+  assert.equal(disclosure.open, false);
+  assert.equal(screen.getByText('2s').textContent, '2s');
+  assert.equal(screen.getByRole('button', { name: 'Read file details' }).textContent, 'Read file details');
+  assert.equal(screen.getByRole('button', { name: 'Search file details' }).textContent, 'Search file details');
+
+  fireEvent.click(screen.getByText(translations.toolActivityWorking));
+  assert.deepEqual(openStates, [true]);
+
+  view.rerender(
+    localized(
+      'en',
+      React.createElement(
+        ToolActivityGroup,
+        {
+          activityCount: 1,
+          elapsedTimeLabel: '5s',
+          isOpen: true,
+          isResponseInProgress: false,
+          onOpenChange: (open) => openStates.push(open),
+        },
+        React.createElement('button', { type: 'button' }, 'Read file details'),
+        React.createElement('button', { type: 'button' }, 'Search file details'),
+      ),
+    ),
+  );
+  assert.ok(screen.getByText(translations.toolActivityTitle));
+  assert.equal(screen.queryByText(translations.toolActivityWorking), null);
+  assert.equal(screen.getByText('5s').textContent, '5s');
 });
 
 test('workflow templates can be imported and edited with the saved change persisted', async () => {
