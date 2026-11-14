@@ -4,6 +4,10 @@ Completed work is summarized from repository history and grouped by the relevant
 
 ## Unreleased
 
+### Changed
+
+- Try official provider website favicons on Connections credential cards, retaining bundled icons when remote favicons are unavailable.
+
 ### Added
 
 - Added reusable parameterized workflow templates with prompt variable expansion, durable persistence, validation, and JSON import/export.

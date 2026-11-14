@@ -203,6 +203,57 @@ const providerDocumentationUrls: Partial<Record<CompatibleProviderId, string>> =
   publicai: 'https://docs.publicai.co/',
 };
 
+// Use the icon URL published by each provider site; several providers do not serve an image at /favicon.ico.
+const providerFaviconUrls: Partial<Record<CompatibleProviderId, string>> = {
+  ai21: 'https://docs.ai21.com/mintlify-assets/_mintlify/favicons/ai21-demo/zc4uXZjknsciGHPW/_generated/favicon/android-chrome-192x192.png',
+  anthropic: 'https://platform.claude.com/favicon.ico',
+  baichuan: 'https://platform.baichuan-ai.com/favicon.ico',
+  baseten: 'https://docs.baseten.co/mintlify-assets/_mintlify/favicons/baseten-preview/a_ByDgeELv6J0NXr/_generated/favicon/android-chrome-192x192.png',
+  cerebras: 'https://docs.cerebras.ai/icon.png?icon.0cup_y3abwadv.png',
+  chutes: 'https://chutes.ai/favicon.ico',
+  cohere: 'https://docs.cohere.com/api/fern-docs/favicon.ico?v=242b6ab08315',
+  dashscope: 'https://img.alicdn.com/tfs/TB1ugg7M9zqK1RjSZPxXXc4tVXa-32-32.png',
+  deepinfra: 'https://docs.deepinfra.com/mintlify-assets/_mintlify/favicons/deepinfra/uEBMIHUMawrR4czw/_generated/favicon/android-chrome-192x192.png',
+  deepseek: 'https://api-docs.deepseek.com/img/favicon.svg',
+  featherless: 'https://featherless.ai/favicon.ico',
+  fireworks: 'https://docs.fireworks.ai/mintlify-assets/_mintlify/favicons/fireworksai/nfaajxVV_pUTwC36/_generated/favicon/android-chrome-192x192.png',
+  friendli: 'https://friendli.ai/docs/mintlify-assets/_mintlify/favicons/friendliai/f_6Xi29vsyX4mJlf/_generated/favicon/android-chrome-192x192.png',
+  groq: 'https://console.groq.com/favicon.ico',
+  hunyuan: 'https://cloudcache.tencent-cloud.com/qcloud/favicon.ico',
+  hyperbolic: 'https://www.hyperbolic.ai/favicon.ico',
+  inflection: 'https://framerusercontent.com/images/knot51rbhpixtqNkYngDvKPfaOE.png',
+  inception: 'https://docs.inceptionlabs.ai/mintlify-assets/_mintlify/favicons/inception/CR-PGfA5KwciZhoS/_generated/favicon/android-chrome-192x192.png',
+  kluster: 'https://raw.githubusercontent.com/kluster-ai/docs/main/images/kluster-logo.png',
+  kilo: 'https://kilo.ai/docs/favicon/favicon.ico',
+  lambda: 'https://docs.lambda.com/assets/images/lambda/favicon-48x48.svg',
+  lepton: 'https://www.nvidia.com/favicon.ico',
+  mimo: 'https://platform.xiaomimimo.com/favicon.png',
+  minimax: 'https://platform.minimax.io/favicon.ico',
+  mistral: 'https://docs.mistral.ai/favicons/favicon.ico',
+  moonshot: 'https://platform.kimi.ai/favicon.ico',
+  nebius: 'https://docs.tokenfactory.nebius.com/mintlify-assets/_mintlify/favicons/nebius-723e8b65/c_0s9TotwR1LsmMH/_generated/favicon/android-chrome-192x192.png',
+  novita: 'https://docs.novita.ai/mintlify-assets/_mintlify/favicons/novitaai/zNDiSNVLSMogrpXl/_generated/favicon/android-chrome-192x192.png',
+  nscale: 'https://docs.nscale.com/mintlify-assets/_mintlify/favicons/nscale/KFKbst3Az50PnMGm/_generated/favicon/android-chrome-192x192.png',
+  nvidia: 'https://docs.api.nvidia.com/nim/favicon.ico?v=88c98860c938',
+  openrouter: 'https://openrouter.ai/docs/mintlify-assets/_mintlify/favicons/openrouter-d02e98a0/EmhfYwFO2tvnkuV-/_generated/favicon/android-chrome-192x192.png',
+  ovhcloud: 'https://docs.ovhcloud.com/en/favicon.png',
+  perplexity: 'https://docs.perplexity.ai/mintlify-assets/_mintlify/favicons/perplexity/rSPP83rcZL_iw-xo/_generated/favicon/android-chrome-192x192.png',
+  publicai: 'https://publicai.co/favicon.ico',
+  qianfan: 'https://bce.bdstatic.com/img/newfavicon.ico',
+  requesty: 'https://docs.requesty.ai/mintlify-assets/_mintlify/favicons/requesty/bWQG6e3TK2khNMP8/_generated/favicon/android-chrome-192x192.png',
+  sambanova: 'https://docs.sambanova.ai/docs/mintlify-assets/_mintlify/favicons/sambanova-systems/tCkoeefWRScUtrir/_generated/favicon/android-chrome-192x192.png',
+  scaleway: 'https://www.scaleway.com/en/docs/favicon/favicon.svg',
+  siliconflow: 'https://docs.siliconflow.com/mintlify-assets/_mintlify/favicons/siliconflowcom/lsh-9tnLrL1cRHYi/_generated/favicon/android-chrome-192x192.png',
+  stepfun: 'https://platform.stepfun.com/docs/mintlify-assets/_mintlify/favicons/stepfun/UaFoV5WshQmKd4Yh/_generated/favicon/android-chrome-192x192.png',
+  together: 'https://docs.together.ai/mintlify-assets/_mintlify/favicons/togetherai-52386018/GkjET5UlJhhSwWhA/_generated/favicon/android-chrome-192x192.png',
+  upstage: 'https://console.upstage.ai/assets/images/meta/favicon/favicon-256x256.ico',
+  venice: 'https://docs.venice.ai/mintlify-assets/_mintlify/favicons/veniceai/bx2bxRtmLEf0wvnq/_generated/favicon/android-chrome-192x192.png',
+  volcengine: 'https://portal.volccdn.com/obj/volcfe/misc/favicon.png',
+  xai: 'https://docs.x.ai/favicon.ico',
+  yi: 'https://platform.01.ai/icon.png?f17992d0c17501d7',
+  zai: 'https://z-cdn.chatglm.cn/z-ai/static/logo.svg',
+};
+
 type CredentialRoute =
   | { kind: 'chatgpt'; connectionId: string; label: string }
   | { kind: 'compatible'; providerId: CompatibleProviderId; label: string }
@@ -627,6 +678,7 @@ export function ApiKeyProvidersSection({
               <CredentialCard
                 configured={credential?.isConfigured === true}
                 documentationUrl={providerDocumentationUrls[providerId]}
+                faviconUrl={providerFaviconUrl(providerId)}
                 draft={drafts[key] ?? ''}
                 feedback={feedback?.key === key ? feedback : null}
                 formOpen={openFormKeys[key] === true}
@@ -757,6 +809,10 @@ export function ApiKeyProvidersSection({
       ) : null}
     </>
   );
+}
+
+function providerFaviconUrl(providerId: CompatibleProviderId): string | undefined {
+  return providerFaviconUrls[providerId];
 }
 
 function routeKey(route: CredentialRoute): string {

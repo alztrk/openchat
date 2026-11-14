@@ -26,6 +26,7 @@ export interface ProviderRequestOutcomeView {
 export interface CredentialCardProps {
   configured: boolean;
   documentationUrl?: string;
+  faviconUrl?: string;
   draft: string;
   feedback: CredentialFeedback | null;
   formOpen: boolean;
@@ -49,6 +50,7 @@ export interface CredentialCardProps {
 export function CredentialCard({
   configured,
   documentationUrl,
+  faviconUrl,
   draft,
   feedback,
   formOpen,
@@ -73,7 +75,7 @@ export function CredentialCard({
   return (
     <div className="grid min-w-0 gap-3 rounded-control border border-border bg-surface p-3 sm:flex sm:items-center sm:justify-between sm:gap-5 sm:p-4">
       <div className="flex min-w-0 items-center gap-3 sm:flex-1">
-        <ProviderIcon className="shrink-0" providerId={providerId} />
+        <ProviderFavicon faviconUrl={faviconUrl} providerId={providerId} />
         <div className="grid min-w-0 gap-1">
           <h3 className="truncate text-sm font-medium">{label}</h3>
           <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
@@ -140,6 +142,29 @@ export function CredentialCard({
         </div>
       ) : null}
     </div>
+  );
+}
+
+function ProviderFavicon({ faviconUrl, providerId }: { faviconUrl?: string; providerId: string }) {
+  const [loadedUrl, setLoadedUrl] = useState<string | null>(null);
+
+  if (!faviconUrl) return <ProviderIcon className="shrink-0" providerId={providerId} />;
+
+  const isLoaded = loadedUrl === faviconUrl;
+  return (
+    <span className="relative size-6 shrink-0">
+      {!isLoaded ? <ProviderIcon className="absolute inset-0" providerId={providerId} /> : null}
+      <img
+        alt=""
+        aria-hidden="true"
+        className={`absolute inset-0 size-6 object-contain ${isLoaded ? '' : 'opacity-0'}`}
+        height={24}
+        onError={() => setLoadedUrl(null)}
+        onLoad={() => setLoadedUrl(faviconUrl)}
+        src={faviconUrl}
+        width={24}
+      />
+    </span>
   );
 }
 
