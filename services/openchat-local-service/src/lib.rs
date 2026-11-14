@@ -10,6 +10,10 @@ compile_error!("desktop profile test support is unavailable in optimized builds"
 
 mod domain;
 mod error;
+#[cfg(any(windows, target_os = "linux", target_os = "macos"))]
+#[path = "adapters/sync_key_store.rs"]
+/// Protected operating-system storage for per-device synchronization keys.
+pub mod sync_keys;
 pub(crate) use domain::{
     attachment_crypto, attachments, chat_operation, chatgpt, chatgpt_store, connector_packages,
     connectors, context_compaction, context_usage, conversation_archive, copilot_oauth,

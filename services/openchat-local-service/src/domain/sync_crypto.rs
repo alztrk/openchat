@@ -58,6 +58,10 @@ impl SyncKey {
     pub fn epoch(&self) -> u32 {
         self.epoch
     }
+
+    pub(crate) fn as_bytes(&self) -> &[u8; 32] {
+        &self.bytes
+    }
 }
 
 /// Encrypts and decrypts bounded v1 sync envelopes for one key epoch.
