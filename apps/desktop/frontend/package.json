@@ -11,7 +11,7 @@
     "check:imports": "node ../../../scripts/check-imports.mjs",
     "tauri:dev": "node ../../../scripts/run.mjs dev",
     "tauri:dev:raw": "cd ../tauri && node ../frontend/node_modules/@tauri-apps/cli/tauri.js dev --config tauri.dev.conf.json",
-    "tauri:build": "cd ../tauri && tauri build",
+    "tauri:build": "node ../../../scripts/run.mjs build --preview",
     "openchat": "node ../../../scripts/run.mjs"
   },
   "dependencies": {

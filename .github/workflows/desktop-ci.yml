@@ -78,6 +78,7 @@ jobs:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          fetch-depth: 0
           persist-credentials: false
 
       - name: Set up Node.js
@@ -118,16 +119,21 @@ jobs:
         run: npm ci
 
       - name: Build Linux packages
-        run: npm run openchat -- build
+        run: npm run openchat -- build ${{ startsWith(github.ref, 'refs/tags/v') && '--stable' || '--preview' }}
         working-directory: apps/desktop/frontend
+
+      - name: Prepare and checksum Linux packages
+        run: |
+          mkdir -p release-artifacts/linux
+          cp target/release/bundle/deb/*.deb release-artifacts/linux/
+          cp target/release/bundle/appimage/*.AppImage release-artifacts/linux/
+          node scripts/release-integrity.mjs create release-artifacts/linux
 
       - name: Upload Linux packages
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: OpenChat-Linux-packages
-          path: |
-            target/release/bundle/deb/*.deb
-            target/release/bundle/appimage/*.AppImage
+          path: release-artifacts/linux
           if-no-files-found: error
           retention-days: 14
 
@@ -203,6 +209,7 @@ jobs:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          fetch-depth: 0
           persist-credentials: false
 
       - name: Set up Node.js
@@ -225,28 +232,28 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
-      - name: Build the local service sidecar
-        run: |
-          cargo build --release --locked --target x86_64-pc-windows-msvc -p openchat-local-service --bin openchat-local-service
-          New-Item -ItemType Directory -Force apps/desktop/tauri/binaries | Out-Null
-          Copy-Item -LiteralPath target/x86_64-pc-windows-msvc/release/openchat-local-service.exe -Destination apps/desktop/tauri/binaries/openchat-local-service-x86_64-pc-windows-msvc.exe -Force
-        shell: pwsh
-
       - name: Build the Windows installer
-        run: npm run tauri:build
+        run: npm run openchat -- build ${{ startsWith(github.ref, 'refs/tags/v') && '--stable' || '--preview' }}
         working-directory: apps/desktop/frontend
+
+      - name: Prepare and checksum Windows installer
+        run: |
+          New-Item -ItemType Directory -Force release-artifacts/windows | Out-Null
+          Copy-Item -Path target/release/bundle/nsis/*-setup.exe -Destination release-artifacts/windows/
+          node scripts/release-integrity.mjs create release-artifacts/windows
+        shell: pwsh
 
       - name: Upload Windows installer
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: OpenChat-Windows-installer
-          path: target/release/bundle/nsis/*-setup.exe
+          path: release-artifacts/windows
           if-no-files-found: error
           retention-days: 14
 
   sbom:
     name: Generate source SBOM
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main'
     runs-on: ubuntu-22.04
     timeout-minutes: 15
     permissions:
@@ -291,8 +298,8 @@ jobs:
           retention-days: 14
 
   release:
-    name: Publish Windows, Linux, and SBOM assets
-    if: startsWith(github.ref, 'refs/tags/v')
+    name: Publish stable or preview channel
+    if: startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main'
     needs:
       - linux-validate
       - linux-packages
@@ -323,14 +330,22 @@ jobs:
           name: OpenChat-SBOM
           path: release-artifacts/sbom
 
-      - name: Publish release with both platform packages
+      - name: Verify package integrity and prepare release assets
+        run: |
+          node scripts/release-integrity.mjs verify release-artifacts/linux
+          node scripts/release-integrity.mjs verify release-artifacts/windows
+          mkdir -p release-artifacts/publish
+          find release-artifacts/linux release-artifacts/windows -maxdepth 1 -type f ! -name SHA256SUMS -exec cp {} release-artifacts/publish/ \;
+          cp release-artifacts/sbom/OpenChat-SBOM.spdx.json release-artifacts/publish/
+          node scripts/release-integrity.mjs aggregate release-artifacts/publish
+
+      - name: Publish stable or preview release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: >-
-          gh release create "$GITHUB_REF_NAME"
-          --verify-tag
-          --generate-notes
-          release-artifacts/sbom/OpenChat-SBOM.spdx.json
-          release-artifacts/linux/deb/*.deb
-          release-artifacts/linux/appimage/*.AppImage
-          release-artifacts/windows/*-setup.exe
+        run: |
+          if [ "$GITHUB_REF" = "refs/heads/main" ]; then
+            release_tag="preview-${GITHUB_SHA}"
+            gh release create "$release_tag" --prerelease --target "$GITHUB_SHA" --title "OpenChat Preview ${GITHUB_SHA:0:12}" --generate-notes release-artifacts/publish/*
+          else
+            gh release create "$GITHUB_REF_NAME" --verify-tag --generate-notes release-artifacts/publish/*
+          fi

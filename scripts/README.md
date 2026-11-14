@@ -11,7 +11,8 @@ npm run openchat -- dev-test-profile --profile-root "<absolute OS temporary path
 npm run openchat -- startup-benchmark
 npm run openchat -- startup-benchmark --production-frontend
 npm run openchat -- perf-benchmark
-npm run openchat -- build
+npm run openchat -- build --preview
+npm run openchat -- build --stable
 npm run openchat -- check
 npm run openchat -- clean
 npm run openchat -- clean --apply
@@ -36,17 +37,24 @@ The direct entry point resolves the npm CLI bundled beside `node.exe` for the
 workspace dependency check. If npm is installed separately, use the normal npm
 entry point above. Avoiding the npm script shell keeps it from intercepting
 Ctrl+C; the Tauri and Vite processes also avoid nested `.cmd` shims.
-`build` builds the locked release sidecar and Tauri bundle. `check` runs Biome, frontend unit tests,
+`build --preview` and `build --stable` build the locked release sidecar and Tauri bundle. Preview
+packages use `MAJOR.MINOR.PATCH-preview.<commit-count>.g<commit-sha>`; stable packages use
+`MAJOR.MINOR.PATCH+<commit-count>.g<commit-sha>` build metadata, which keeps stable SemVer precedence
+while identifying the exact build. Both channels require a clean Git working tree and matching
+Tauri, Rust host, and frontend manifest/lockfile versions. Stable packaging also requires the exact matching
+`vMAJOR.MINOR.PATCH` tag. Stable versions follow SemVer: increase major for incompatible changes,
+minor for compatible features, and patch for fixes. `check` runs Biome, frontend unit tests,
 locale and FSD import checks, the TypeScript/Vite asset build, Rust formatting,
 locked workspace checking, and locked Rust tests. It reports all task failures
 after attempting every check. `clean` previews generated build and bundle output
 directories by default. Pass `--apply` to remove the listed directories.
 
 `build` targets the current operating system because Tauri packaging uses native
-toolchains and system libraries. A version tag matching `v*` starts Desktop CI;
-the Windows and Linux jobs build independently, and the GitHub release is
-published only after both jobs upload the NSIS installer, Debian package, and
-AppImage. Do not treat a single local `build` as a cross-platform release.
+toolchains and system libraries. A version tag matching `v*` starts a stable release; pushes to
+`main` publish a preview prerelease, and pull requests only upload preview-channel CI artifacts.
+The Windows and Linux jobs build independently. Each job creates a SHA-256 manifest before upload,
+and the release job verifies both manifests after download before publishing the packages and an
+aggregate `SHA256SUMS` asset. Do not treat a single local `build` as a cross-platform release.
 
 `dev-test-profile` builds both the Tauri host and local-service sidecar with the
 debug-only `desktop-profile-test-support` feature, then starts the app with an
