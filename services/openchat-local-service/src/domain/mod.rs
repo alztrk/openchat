@@ -74,6 +74,7 @@ pub(crate) mod provider_schema;
 pub(crate) mod response_budget;
 #[path = "conversations/security_scan.rs"]
 pub(crate) mod security_scan;
+pub(crate) mod sync_outbox;
 #[path = "conversations/temporary_conversation.rs"]
 pub(crate) mod temporary_conversation;
 #[path = "conversations/todos.rs"]

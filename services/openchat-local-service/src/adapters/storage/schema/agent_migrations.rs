@@ -1731,5 +1731,51 @@ pub(super) fn apply_agent_migrations(
         current_version = 59;
     }
 
+    if current_version < 60 && target_version >= 60 {
+        let transaction = connection.unchecked_transaction()?;
+        transaction.execute_batch(
+            "CREATE TABLE sync_outbox (
+                account_id TEXT NOT NULL CHECK(length(account_id) = 36),
+                device_id TEXT NOT NULL CHECK(length(device_id) = 36),
+                event_id TEXT NOT NULL CHECK(length(event_id) = 36),
+                envelope BLOB NOT NULL CHECK(length(envelope) BETWEEN 1 AND 33554432),
+                created_at_unix_ms INTEGER NOT NULL CHECK(created_at_unix_ms >= 0),
+                attempt_count INTEGER NOT NULL DEFAULT 0 CHECK(attempt_count BETWEEN 0 AND 8),
+                next_attempt_at_unix_ms INTEGER NOT NULL CHECK(next_attempt_at_unix_ms >= 0),
+                lease_id TEXT CHECK(lease_id IS NULL OR length(lease_id) = 36),
+                lease_until_unix_ms INTEGER CHECK(lease_until_unix_ms IS NULL OR lease_until_unix_ms >= 0),
+                exhausted INTEGER NOT NULL DEFAULT 0 CHECK(exhausted IN (0, 1)),
+                PRIMARY KEY(account_id, device_id, event_id)
+            );
+            CREATE INDEX sync_outbox_due
+                ON sync_outbox(account_id, device_id, exhausted, next_attempt_at_unix_ms, created_at_unix_ms);
+
+            CREATE TABLE sync_outbox_receipts (
+                account_id TEXT NOT NULL CHECK(length(account_id) = 36),
+                device_id TEXT NOT NULL CHECK(length(device_id) = 36),
+                event_id TEXT NOT NULL CHECK(length(event_id) = 36),
+                envelope_sha256 BLOB NOT NULL CHECK(length(envelope_sha256) = 32),
+                expires_at_unix_ms INTEGER NOT NULL CHECK(expires_at_unix_ms >= 0),
+                PRIMARY KEY(account_id, device_id, event_id)
+            );
+            CREATE INDEX sync_outbox_receipts_expiry
+                ON sync_outbox_receipts(account_id, device_id, expires_at_unix_ms);
+
+            CREATE TABLE sync_device_cursors (
+                account_id TEXT NOT NULL CHECK(length(account_id) = 36),
+                device_id TEXT NOT NULL CHECK(length(device_id) = 36),
+                server_cursor INTEGER NOT NULL DEFAULT 0 CHECK(server_cursor >= 0),
+                updated_at_unix_ms INTEGER NOT NULL CHECK(updated_at_unix_ms >= 0),
+                PRIMARY KEY(account_id, device_id)
+            );",
+        )?;
+        transaction.execute(
+            "INSERT INTO openchat_backend_migrations (version, applied_at_unix_ms) VALUES (60, ?1)",
+            [unix_time_millis()?],
+        )?;
+        transaction.commit()?;
+        current_version = 60;
+    }
+
     Ok(current_version)
 }

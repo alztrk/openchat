@@ -831,6 +831,43 @@ fn migration_59_adds_profile_scoped_design_text_styles() {
     assert_eq!(style_count, 1);
 }
 
+#[test]
+fn migration_60_adds_bounded_sync_outbox_and_cursor_tables() {
+    let connection = memory_index_repair_fixture(59);
+    assert_eq!(
+        initialize_schema(&connection, 60).expect("create durable sync outbox"),
+        60
+    );
+    connection
+        .execute(
+            "INSERT INTO sync_outbox (
+                account_id, device_id, event_id, envelope, created_at_unix_ms,
+                next_attempt_at_unix_ms
+             ) VALUES (?1, ?2, ?3, X'01', 1, 1)",
+            [
+                "00000000-0000-0000-0000-000000000001",
+                "00000000-0000-0000-0000-000000000002",
+                "00000000-0000-0000-0000-000000000003",
+            ],
+        )
+        .expect("insert valid encrypted envelope");
+    assert!(
+        connection
+            .execute(
+                "INSERT INTO sync_outbox (
+                account_id, device_id, event_id, envelope, created_at_unix_ms,
+                next_attempt_at_unix_ms
+             ) VALUES (?1, ?2, ?3, X'', 1, 1)",
+                [
+                    "00000000-0000-0000-0000-000000000004",
+                    "00000000-0000-0000-0000-000000000005",
+                    "00000000-0000-0000-0000-000000000006",
+                ],
+            )
+            .is_err()
+    );
+}
+
 fn memory_index_repair_fixture(version: i64) -> Connection {
     let connection = Connection::open_in_memory().expect("open in-memory database");
     connection

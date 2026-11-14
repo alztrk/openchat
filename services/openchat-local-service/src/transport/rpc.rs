@@ -63,6 +63,8 @@ mod storage_attachment_index;
 mod storage_chat;
 #[path = "rpc/storage_settings.rs"]
 mod storage_settings;
+#[path = "rpc/sync_outbox.rs"]
+mod sync_outbox;
 #[path = "rpc/temporary_conversation.rs"]
 mod temporary_conversation;
 #[path = "rpc/tool_permissions.rs"]
@@ -117,6 +119,9 @@ pub(crate) async fn dispatch(context: RpcDispatchContext<'_>) -> Result<Value, S
     }
     if method.starts_with("storage.chat.attachments.text_index.") {
         return storage_attachment_index::dispatch(&method, storage, &cancellation);
+    }
+    if method.starts_with("sync.outbox.") {
+        return sync_outbox::dispatch(&method, &request.params, storage);
     }
     if method.starts_with("storage.chat.") {
         return storage_chat::dispatch_with_gate(
