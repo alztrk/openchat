@@ -868,6 +868,62 @@ fn migration_60_adds_bounded_sync_outbox_and_cursor_tables() {
     );
 }
 
+#[test]
+fn migration_61_adds_onnx_genai_models_and_preserves_registered_gguf_models() {
+    let connection = memory_index_repair_fixture(60);
+    connection
+        .execute(
+            "INSERT INTO local_models (
+                id, engine_id, display_name, model_path, path_kind, created_at_unix_ms
+             ) VALUES ('llama-model', 'llama_cpp', 'Existing model', 'C:/models/model.gguf', 'file', 1)",
+            [],
+        )
+        .expect("insert existing GGUF model");
+
+    assert_eq!(
+        initialize_schema(&connection, SCHEMA_VERSION).expect("upgrade local model catalog"),
+        61
+    );
+    connection
+        .execute(
+            "INSERT INTO local_models (
+                id, engine_id, display_name, model_path, path_kind, created_at_unix_ms
+             ) VALUES ('onnx-model', 'onnx_genai', 'ONNX model', 'C:/models/phi', 'directory', 2)",
+            [],
+        )
+        .expect("insert ONNX GenAI model");
+
+    let models = connection
+        .prepare("SELECT id, engine_id, path_kind FROM local_models ORDER BY id")
+        .expect("prepare model migration query")
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+            ))
+        })
+        .expect("read migrated models")
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .expect("collect migrated models");
+
+    assert_eq!(
+        models,
+        [
+            (
+                "llama-model".to_owned(),
+                "llama_cpp".to_owned(),
+                "file".to_owned()
+            ),
+            (
+                "onnx-model".to_owned(),
+                "onnx_genai".to_owned(),
+                "directory".to_owned()
+            ),
+        ]
+    );
+}
+
 fn memory_index_repair_fixture(version: i64) -> Connection {
     let connection = Connection::open_in_memory().expect("open in-memory database");
     connection

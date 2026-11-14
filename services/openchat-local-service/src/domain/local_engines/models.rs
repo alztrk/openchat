@@ -39,7 +39,7 @@ pub(crate) fn list(storage: &AppStorage) -> Result<Vec<RegisteredModel>, Service
     let mut statement = connection
         .prepare(
             "SELECT id, engine_id, display_name, model_path, path_kind, created_at_unix_ms
-             FROM local_models WHERE engine_id = 'llama_cpp'
+             FROM local_models WHERE engine_id IN ('llama_cpp', 'onnx_genai')
              ORDER BY display_name COLLATE NOCASE, id",
         )
         .map_err(|_| database_error())?;
@@ -155,6 +155,24 @@ fn scan_model_directory(
                 continue;
             }
 
+            if engine_id == "onnx_genai"
+                && is_onnx_genai_model_directory(&path)
+                && !registered_paths.contains(&path)
+            {
+                let display_name = path
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .filter(|name| !name.trim().is_empty())
+                    .ok_or_else(model_discovery_error)?
+                    .to_owned();
+                candidates.push(DiscoveredModel {
+                    display_name,
+                    path,
+                    path_kind: "directory",
+                });
+                continue;
+            }
+
             if depth < MAX_MODEL_SCAN_DEPTH {
                 directories.push((path, depth + 1));
             }
@@ -204,6 +222,8 @@ pub(crate) fn find(
 
 pub(crate) fn ensure_storage_directories(root: &Path) -> Result<(), ServiceError> {
     fs::create_dir_all(root.join("models").join("llama"))
+        .map_err(|_| model_storage_path_error())?;
+    fs::create_dir_all(root.join("models").join("onnx-genai"))
         .map_err(|_| model_storage_path_error())?;
     Ok(())
 }
@@ -397,22 +417,33 @@ fn validate_model_path(
     engine_id: &str,
     model_path: &str,
 ) -> Result<(PathBuf, &'static str), ServiceError> {
-    if engine_id != "llama_cpp" {
-        return Err(invalid_model_error());
-    }
-
     let selected_path = selected_entry_path(Path::new(model_path))?;
-    let metadata = fs::metadata(&selected_path).map_err(|_| invalid_model_path_error())?;
-    if !metadata.is_file()
-        || selected_path
-            .extension()
-            .and_then(|extension| extension.to_str())
-            .is_none_or(|extension| !extension.eq_ignore_ascii_case("gguf"))
-        || is_vision_projector(&selected_path)
-    {
+    let metadata = fs::symlink_metadata(&selected_path).map_err(|_| invalid_model_path_error())?;
+    if metadata.file_type().is_symlink() {
         return Err(invalid_model_error());
     }
-    Ok((selected_path, "file"))
+    match engine_id {
+        "llama_cpp"
+            if metadata.is_file()
+                && selected_path
+                    .extension()
+                    .and_then(|extension| extension.to_str())
+                    .is_some_and(|extension| extension.eq_ignore_ascii_case("gguf"))
+                && !is_vision_projector(&selected_path) =>
+        {
+            Ok((selected_path, "file"))
+        }
+        "onnx_genai" if metadata.is_dir() && is_onnx_genai_model_directory(&selected_path) => {
+            Ok((selected_path, "directory"))
+        }
+        _ => Err(invalid_model_error()),
+    }
+}
+
+fn is_onnx_genai_model_directory(path: &Path) -> bool {
+    let config_path = path.join("genai_config.json");
+    fs::symlink_metadata(&config_path)
+        .is_ok_and(|metadata| !metadata.file_type().is_symlink() && metadata.is_file())
 }
 
 fn selected_entry_path(path: &Path) -> Result<PathBuf, ServiceError> {
@@ -511,6 +542,7 @@ struct ModelTransfer {
 fn model_folder_name(engine_id: &str) -> Option<&'static str> {
     match engine_id {
         "llama_cpp" => Some("llama"),
+        "onnx_genai" => Some("onnx-genai"),
         _ => None,
     }
 }
@@ -959,6 +991,63 @@ mod tests {
         assert_eq!(found[0].path_kind, "file");
         assert!(is_vision_projector(&projector));
         assert!(!is_vision_projector(&nested.join("mmprojector-model.gguf")));
+    }
+
+    #[test]
+    fn discovers_onnx_genai_model_directories_without_following_links() {
+        let temporary = TestDirectory::new();
+        let model_directory = temporary.0.join("models");
+        let model = model_directory.join("phi-3.5-cpu");
+        fs::create_dir_all(&model).expect("model directory should be created");
+        fs::write(model.join("genai_config.json"), b"{}")
+            .expect("GenAI config fixture should be written");
+        fs::write(model.join("tokenizer.json"), b"{}")
+            .expect("tokenizer fixture should be written");
+
+        let (found, truncated) =
+            scan_model_directory("onnx_genai", &model_directory, &HashSet::new())
+                .expect("scan should succeed");
+
+        assert!(!truncated);
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].path, model);
+        assert_eq!(found[0].path_kind, "directory");
+        assert_eq!(found[0].display_name, "phi-3.5-cpu");
+    }
+
+    #[test]
+    fn registers_onnx_genai_packages_as_directories() {
+        let temporary = TestDirectory::new();
+        let storage = test_storage(temporary.0.join("app"));
+        let model_directory = temporary.0.join("phi-3.5-cpu");
+        fs::create_dir_all(&model_directory).expect("model directory should be created");
+        fs::write(model_directory.join("genai_config.json"), b"{}")
+            .expect("GenAI config fixture should be written");
+
+        let model = register_with_storage_action(
+            storage.database_queue_handle(),
+            storage.root(),
+            "onnx_genai",
+            model_directory
+                .to_str()
+                .expect("fixture path should be UTF-8"),
+            None,
+            "keep",
+        )
+        .expect("GenAI model directory should be registered");
+
+        assert_eq!(model.engine_id, "onnx_genai");
+        assert_eq!(model.path_kind, "directory");
+        assert_eq!(
+            model.path,
+            model_directory
+                .canonicalize()
+                .expect("model directory should resolve")
+        );
+        assert_eq!(
+            to_json(&model, false).expect("metadata should serialize")["pathExists"],
+            true
+        );
     }
 
     #[test]
