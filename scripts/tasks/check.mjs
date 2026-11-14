@@ -1,8 +1,10 @@
 import { runNpm, runCommand, getFrontendDirectory, getWorkspaceRoot } from '../shared/runner.mjs';
-import { buildLocalService } from '../shared/rust.mjs';
+import { buildLocalService, rustBuildEnvironment } from '../shared/rust.mjs';
 import { ensureNoArguments } from '../help.mjs';
 
 const profileTestFeature = 'openchat-local-service/desktop-profile-test-support';
+// Cap Windows sandbox process concurrency; the host's default worker count was unstable.
+const rustTestThreads = '4';
 
 export const check = {
   name: 'check',
@@ -33,6 +35,7 @@ export async function runCheck({
   write = (message) => process.stdout.write(message),
 } = {}) {
   prepareTauriSidecarFn();
+  const rustEnvironment = rustBuildEnvironment();
   await runValidationTasks('check', [
     {
       name: 'Biome lint',
@@ -47,14 +50,25 @@ export async function runCheck({
     { name: 'FSD import compliance', run: () => runNpmFn(['run', 'check:imports'], frontendDirectory) },
     { name: 'Frontend type and asset build', run: () => runNpmFn(['run', 'build'], frontendDirectory) },
     { name: 'Rust formatting', run: () => runCommandFn('cargo', ['fmt', '--all', '--', '--check'], { cwd: workspaceRoot }) },
-    { name: 'Rust compilation check', run: () => runCommandFn('cargo', ['check', '--workspace', '--locked'], { cwd: workspaceRoot }) },
+    {
+      name: 'Rust compilation check',
+      run: () => runCommandFn('cargo', ['check', '--workspace', '--locked'], { cwd: workspaceRoot, env: rustEnvironment }),
+    },
     {
       name: 'Rust tests',
       run: () =>
         runCommandFn(
           'cargo',
-          ['test', '--workspace', '--features', profileTestFeature, '--locked', '--', '--test-threads=1'],
-          { cwd: workspaceRoot, env: { ...process.env, RUST_TEST_THREADS: '1' } },
+          [
+            'test',
+            '--workspace',
+            '--features',
+            profileTestFeature,
+            '--locked',
+            '--',
+            `--test-threads=${rustTestThreads}`,
+          ],
+          { cwd: workspaceRoot, env: { ...rustEnvironment, RUST_TEST_THREADS: rustTestThreads } },
         ),
     },
   ], write);
@@ -69,6 +83,7 @@ export async function runCheckTypes({
   write = (message) => process.stdout.write(message),
 } = {}) {
   prepareTauriSidecarFn();
+  const rustEnvironment = rustBuildEnvironment();
   await runValidationTasks('check-types', [
     {
       name: 'Biome lint',
@@ -80,7 +95,10 @@ export async function runCheckTypes({
     },
     { name: 'TypeScript type-check', run: () => runNpmFn(['exec', '--', 'tsc', '--noEmit'], frontendDirectory) },
     { name: 'Rust formatting', run: () => runCommandFn('cargo', ['fmt', '--all', '--', '--check'], { cwd: workspaceRoot }) },
-    { name: 'Rust compilation check', run: () => runCommandFn('cargo', ['check', '--workspace', '--locked'], { cwd: workspaceRoot }) },
+    {
+      name: 'Rust compilation check',
+      run: () => runCommandFn('cargo', ['check', '--workspace', '--locked'], { cwd: workspaceRoot, env: rustEnvironment }),
+    },
   ], write);
 }
 

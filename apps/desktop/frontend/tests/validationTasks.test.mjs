@@ -2,6 +2,34 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { prepareTauriSidecar, runCheck, runCheckTypes, runValidationTasks } from '../../../../scripts/tasks/check.mjs';
+import { rustBuildEnvironment } from '../../../../scripts/shared/rust.mjs';
+
+test('Windows Rust builds select the standard CMake install when no executable is configured', () => {
+  const environment = { ProgramFiles: 'C:\\Program Files', PATH: 'existing-path' };
+  const selectedEnvironment = rustBuildEnvironment({
+    environment,
+    platform: 'win32',
+    fileExists: (filePath) => filePath === 'C:\\Program Files\\CMake\\bin\\cmake.exe',
+  });
+
+  assert.equal(selectedEnvironment.CMAKE, 'C:\\Program Files\\CMake\\bin\\cmake.exe');
+  assert.equal(selectedEnvironment.PATH, environment.PATH);
+  assert.equal(environment.CMAKE, undefined);
+});
+
+test('Rust builds preserve a configured CMake executable and other platforms unchanged', () => {
+  const configuredEnvironment = { CMAKE: 'custom-cmake', PATH: 'existing-path' };
+  assert.equal(
+    rustBuildEnvironment({ environment: configuredEnvironment, platform: 'win32', fileExists: () => true }),
+    configuredEnvironment,
+  );
+
+  const linuxEnvironment = { PATH: 'existing-path' };
+  assert.equal(
+    rustBuildEnvironment({ environment: linuxEnvironment, platform: 'linux', fileExists: () => true }),
+    linuxEnvironment,
+  );
+});
 
 test('validation task runner reports synchronous command failures and still runs remaining tasks', async () => {
   const started = [];
@@ -51,7 +79,13 @@ test('check runs the complete frontend and locked Rust validation set', async ()
     prepareTauriSidecarFn: () => calls.push({ command: 'sidecar' }),
     runNpmFn: (args, cwd) => calls.push({ command: 'npm', args, cwd }),
     runCommandFn: (command, args, options) =>
-      calls.push({ command, args, cwd: options.cwd, testThreads: options.env?.RUST_TEST_THREADS }),
+      calls.push({
+        command,
+        args,
+        cwd: options.cwd,
+        testThreads: options.env?.RUST_TEST_THREADS,
+        ...(options.env?.CMAKE ? { cmake: options.env.CMAKE } : {}),
+      }),
     write: () => undefined,
   });
 
@@ -67,7 +101,13 @@ test('check runs the complete frontend and locked Rust validation set', async ()
     { command: 'npm', args: ['run', 'check:imports'], cwd: 'frontend' },
     { command: 'npm', args: ['run', 'build'], cwd: 'frontend' },
     { command: 'cargo', args: ['fmt', '--all', '--', '--check'], cwd: 'workspace', testThreads: undefined },
-    { command: 'cargo', args: ['check', '--workspace', '--locked'], cwd: 'workspace', testThreads: undefined },
+    {
+      command: 'cargo',
+      args: ['check', '--workspace', '--locked'],
+      cwd: 'workspace',
+      testThreads: undefined,
+      ...(rustBuildEnvironment().CMAKE ? { cmake: rustBuildEnvironment().CMAKE } : {}),
+    },
     {
       command: 'cargo',
       args: [
@@ -77,10 +117,11 @@ test('check runs the complete frontend and locked Rust validation set', async ()
         'openchat-local-service/desktop-profile-test-support',
         '--locked',
         '--',
-        '--test-threads=1',
+        '--test-threads=4',
       ],
       cwd: 'workspace',
-      testThreads: '1',
+      testThreads: '4',
+      ...(rustBuildEnvironment().CMAKE ? { cmake: rustBuildEnvironment().CMAKE } : {}),
     },
   ]);
 });

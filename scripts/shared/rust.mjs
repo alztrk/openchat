@@ -1,10 +1,22 @@
 import { getTauriDirectory, getWorkspaceRoot, resolveNpmCliPath, runCommand, runNpm } from './runner.mjs';
 import { runInterruptibleCommand } from './session.mjs';
-import { mkdirSync, copyFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 
 const frontendWorkspaceName = 'openchat-frontend';
 const frontendDependencyCheckArgs = ['ls', '--workspace', frontendWorkspaceName, '--all', '--parseable', '--silent'];
+
+export function rustBuildEnvironment({
+  environment = process.env,
+  platform = process.platform,
+  fileExists = existsSync,
+} = {}) {
+  if (platform !== 'win32' || environment.CMAKE) return environment;
+
+  const programFiles = environment.ProgramFiles ?? 'C:\\Program Files';
+  const cmakeExecutable = path.win32.join(programFiles, 'CMake', 'bin', 'cmake.exe');
+  return fileExists(cmakeExecutable) ? { ...environment, CMAKE: cmakeExecutable } : environment;
+}
 
 export function rustHostTargetTriple() {
   const result = runCommand('rustc', ['-vV'], { captureOutput: true });
@@ -58,7 +70,7 @@ export function localServiceBuildArgs(profile, locked, features = []) {
 export function buildLocalService(profile, locked, features = []) {
   const args = localServiceBuildArgs(profile, locked, features);
   const targetTriple = rustHostTargetTriple();
-  runCommand('cargo', args);
+  runCommand('cargo', args, { env: rustBuildEnvironment() });
   installLocalServiceSidecar(profile, targetTriple);
 }
 
@@ -66,7 +78,10 @@ export async function buildLocalServiceInterruptibly(profile, locked, features, 
   const args = localServiceBuildArgs(profile, locked, features);
   const targetTriple = await rustHostTargetTripleInterruptibly(interruptController);
   interruptController.throwIfInterrupted();
-  await runInterruptibleCommand('cargo', args, { interruptController });
+  await runInterruptibleCommand('cargo', args, {
+    env: rustBuildEnvironment(),
+    interruptController,
+  });
   installLocalServiceSidecar(profile, targetTriple);
 }
 
