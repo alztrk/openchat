@@ -70,9 +70,11 @@ Tauri v2 wraps the React frontend and spawns the local service. It handles:
 └──────────┘                                          └──────────────┘
 ```
 
-- **Renderer → Service:** Bounded RPC frames (max 24 MiB, 64 concurrent operations)
+- **Renderer → Service:** Bounded RPC frames (max 24 MiB per request, 48 MiB per response, with a 64 MiB aggregate in-flight request budget)
 - **Service → Storage:** Broker process with no network capability, bounded FIFO queue
 - **Renderer → Tauri:** Native dialogs, file picker — renderer never sees absolute paths
+
+The service RPC limits do not bound renderer-to-Tauri invoke messages. See [Tauri IPC boundary](./tauri-ipc-boundary.md) for the pinned Tauri/Wry path and the remaining Windows runtime measurement.
 
 ## Security model
 
