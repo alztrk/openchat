@@ -32,6 +32,7 @@ const source = fs
     "import { unifiedStorage } from '@shared/lib/platform/storage/unifiedStorage';",
     'const unifiedStorage = globalThis.__openChatDesignCanvasTestStorage;',
   );
+const canvasComponent = fs.readFileSync(path.resolve('src/features/design-workspace/components/DesignCanvas.tsx'), 'utf8');
 const compiled = ts.transpileModule(source, {
   compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
 }).outputText;
@@ -45,6 +46,11 @@ const {
   saveDesignCanvas,
   settleDesignCanvasRequest,
 } = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`);
+
+test('the empty layer state is announced as an accessible status', () => {
+  assert.match(canvasComponent, /<div aria-live="polite" aria-relevant="additions removals">/);
+  assert.match(canvasComponent, /<p className="design-editor-empty-layers" role="status">\{t\('designEditorEmptyLayers'\)\}<\/p>/);
+});
 
 test('responsive preview selects phone and tablet layouts at their boundaries', () => {
   assert.equal(responsiveBreakpointForWidth(320), 'mobile');
