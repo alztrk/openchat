@@ -212,3 +212,7 @@ async fn dispatch_inner(
 #[path = "storage_chat/tests.rs"]
 #[cfg(test)]
 mod tests;
+
+#[path = "storage_chat/workflow_tests.rs"]
+#[cfg(test)]
+mod workflow_tests;
