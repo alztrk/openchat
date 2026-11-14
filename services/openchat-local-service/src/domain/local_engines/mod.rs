@@ -672,6 +672,36 @@ mod tests {
         }));
     }
 
+    #[test]
+    fn macos_llama_cpp_runtime_is_limited_to_apple_silicon() {
+        let manifest = CATALOGS
+            .iter()
+            .find(|(candidate_id, _)| *candidate_id == "llama_cpp")
+            .and_then(|(_, bytes)| parse_manifest(bytes).ok())
+            .expect("llama.cpp catalog should validate");
+        let metal_variant = manifest
+            .variants
+            .iter()
+            .find(|variant| variant.variant_id == "macos-aarch64-metal")
+            .expect("Apple Silicon Metal runtime should exist");
+
+        assert!(super::can_install_on_host(
+            &manifest,
+            metal_variant,
+            "macos",
+            "aarch64"
+        ));
+        assert!(!super::can_install_on_host(
+            &manifest,
+            metal_variant,
+            "macos",
+            "x86_64"
+        ));
+        assert!(manifest.variants.iter().all(|variant| {
+            super::variant_host_os(variant) != "macos" || variant.architecture == "aarch64"
+        }));
+    }
+
     fn llama_cpp_manifest() -> super::catalog::EngineManifest {
         parse_manifest(CATALOGS[0].1).expect("llama.cpp catalog should validate")
     }
