@@ -6,9 +6,27 @@ use uuid::Uuid;
 use super::{
     AppStorage, CopilotCatalogFilterSummary, MAX_DIAGNOSTIC_LOG_BYTES,
     MINIMUM_SQLITE_VERSION_NUMBER, database_guard, database_key::DatabaseKey,
-    disable_trusted_schema, is_retryable_storage_error_code, sqlite_error_code,
-    validate_sqlite_runtime,
+    disable_trusted_schema, is_retryable_storage_error_code, macos_app_data_root_from_home,
+    sqlite_error_code, validate_sqlite_runtime,
 };
+
+#[test]
+fn macos_database_root_uses_standard_application_support_location() {
+    let home = std::env::temp_dir().join("openchat-macos-home");
+    let root = macos_app_data_root_from_home(&home).expect("resolve macOS application data root");
+
+    assert_eq!(
+        root,
+        home.join("Library")
+            .join("Application Support")
+            .join("com.openchat.desktop")
+    );
+}
+
+#[test]
+fn macos_database_root_rejects_relative_home_directory() {
+    assert!(macos_app_data_root_from_home(PathBuf::from("relative-home").as_path()).is_err());
+}
 
 #[test]
 fn open_rejects_corrupt_existing_database_before_wal_or_schema_writes() {

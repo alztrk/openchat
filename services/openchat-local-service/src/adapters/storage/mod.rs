@@ -2378,20 +2378,24 @@ fn local_app_data_root() -> rusqlite::Result<PathBuf> {
         let home = env::var_os("HOME").ok_or_else(|| {
             rusqlite::Error::InvalidPath("HOME is not available for the current macOS user".into())
         })?;
-        let root = PathBuf::from(home)
-            .join("Library")
-            .join("Application Support")
-            .join("com.openchat.desktop");
-        if !root.is_absolute() {
-            return Err(rusqlite::Error::InvalidPath(root));
-        }
-        Ok(root)
+        macos_app_data_root_from_home(Path::new(&home))
     }
 
     #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
     {
         Err(rusqlite::Error::InvalidQuery)
     }
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn macos_app_data_root_from_home(home: &Path) -> rusqlite::Result<PathBuf> {
+    if !home.is_absolute() {
+        return Err(rusqlite::Error::InvalidPath(home.to_path_buf()));
+    }
+    Ok(home
+        .join("Library")
+        .join("Application Support")
+        .join("com.openchat.desktop"))
 }
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
