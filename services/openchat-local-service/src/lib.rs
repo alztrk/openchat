@@ -35,6 +35,10 @@ mod storage;
 #[path = "storage_broker.rs"]
 mod storage_broker;
 
+#[path = "domain/sync_crypto.rs"]
+/// Versioned end-to-end sync content encryption primitives.
+pub mod sync_crypto;
+
 #[cfg(any(windows, target_os = "linux", target_os = "macos"))]
 #[path = "adapters/credentials.rs"]
 /// Protected local-vault access for OAuth tokens and scoped MCP secrets, including legacy imports.
