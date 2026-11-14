@@ -286,13 +286,13 @@ impl AppStorage {
         {
             Self::open_brokered(root, false)
         }
-        #[cfg(target_os = "linux")]
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
         {
             ensure_private_linux_storage_root(&root)?;
             let key = database_key::read_or_create_database_key(&root)?;
             Self::open_at_with_key(root, key)
         }
-        #[cfg(not(any(windows, target_os = "linux")))]
+        #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
         {
             let _ = root;
             Err(rusqlite::Error::InvalidQuery)
@@ -307,13 +307,13 @@ impl AppStorage {
         {
             Self::open_brokered(root, true)
         }
-        #[cfg(target_os = "linux")]
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
         {
             ensure_private_linux_storage_root(&root)?;
             let key = database_key::read_or_create_database_key(&root)?;
             Self::open_at_with_key(root, key)
         }
-        #[cfg(not(any(windows, target_os = "linux")))]
+        #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
         {
             let _ = root;
             Err(rusqlite::Error::InvalidQuery)
@@ -502,7 +502,7 @@ impl AppStorage {
             .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
         fs::create_dir_all(&cache_directory)
             .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
-        #[cfg(target_os = "linux")]
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
         secure_linux_storage_directories(&[
             root.as_path(),
             database_directory.as_path(),
@@ -2373,13 +2373,28 @@ fn local_app_data_root() -> rusqlite::Result<PathBuf> {
         Ok(data_home.join("openchat"))
     }
 
-    #[cfg(not(any(windows, target_os = "linux")))]
+    #[cfg(target_os = "macos")]
+    {
+        let home = env::var_os("HOME").ok_or_else(|| {
+            rusqlite::Error::InvalidPath("HOME is not available for the current macOS user".into())
+        })?;
+        let root = PathBuf::from(home)
+            .join("Library")
+            .join("Application Support")
+            .join("com.openchat.desktop");
+        if !root.is_absolute() {
+            return Err(rusqlite::Error::InvalidPath(root));
+        }
+        Ok(root)
+    }
+
+    #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
     {
         Err(rusqlite::Error::InvalidQuery)
     }
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 fn ensure_private_linux_storage_root(root: &Path) -> rusqlite::Result<()> {
     fs::create_dir_all(root).map_err(filesystem_error)?;
     let metadata = fs::symlink_metadata(root).map_err(filesystem_error)?;
@@ -2389,7 +2404,7 @@ fn ensure_private_linux_storage_root(root: &Path) -> rusqlite::Result<()> {
     secure_linux_storage_directories(&[root])
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 fn secure_linux_storage_directories(paths: &[&Path]) -> rusqlite::Result<()> {
     use std::os::unix::fs::PermissionsExt;
 

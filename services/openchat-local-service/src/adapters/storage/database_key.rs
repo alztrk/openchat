@@ -724,11 +724,19 @@ pub(super) fn store_database_key(key: &DatabaseKey) -> rusqlite::Result<()> {
     }
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 pub(super) fn read_or_create_database_key(storage_root: &Path) -> rusqlite::Result<DatabaseKey> {
-    use std::os::fd::AsRawFd;
+    use keyring::Entry;
 
-    use keyring::{Entry, Error as KeyringError};
+    let _lock_file = acquire_database_key_lock(storage_root)?;
+    let entry = Entry::new("OpenChat.LocalStorage.DatabaseKey", "profile-v1")
+        .map_err(|_| encryption_error())?;
+    read_or_create_database_key_with_entry(storage_root, &entry)
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn acquire_database_key_lock(storage_root: &Path) -> rusqlite::Result<File> {
+    use std::os::fd::AsRawFd;
 
     let lock_path = storage_root.join(".database-key.lock");
     let mut lock_options = OpenOptions::new();
@@ -743,15 +751,29 @@ pub(super) fn read_or_create_database_key(storage_root: &Path) -> rusqlite::Resu
     if unsafe { libc::flock(lock_file.as_raw_fd(), libc::LOCK_EX) } != 0 {
         return Err(filesystem_error(io::Error::last_os_error()));
     }
+    Ok(lock_file)
+}
 
-    let entry = Entry::new("OpenChat.LocalStorage.DatabaseKey", "profile-v1")
-        .map_err(|_| encryption_error())?;
+#[cfg(any(test, target_os = "linux", target_os = "macos"))]
+fn read_or_create_database_key_with_entry(
+    storage_root: &Path,
+    entry: &keyring::Entry,
+) -> rusqlite::Result<DatabaseKey> {
+    use keyring::Error as KeyringError;
+
     match entry.get_secret() {
         Ok(bytes) => {
             let bytes = Zeroizing::new(bytes);
             DatabaseKey::from_bytes(&bytes)
         }
         Err(KeyringError::NoEntry) => {
+            let database_path = storage_root.join("db").join("openchat.sqlite3");
+            match fs::metadata(&database_path) {
+                Ok(metadata) if metadata.len() > 0 => return Err(encryption_error()),
+                Ok(_) => {}
+                Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+                Err(error) => return Err(filesystem_error(error)),
+            }
             let key = DatabaseKey::generate()?;
             entry
                 .set_secret(key.as_bytes())
@@ -768,6 +790,163 @@ fn encryption_error() -> rusqlite::Error {
         rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_CANTOPEN),
         Some("The encrypted local database could not be opened safely.".to_owned()),
     )
+}
+
+#[cfg(test)]
+mod keyring_key_tests {
+    use std::{
+        any::Any,
+        fs, io,
+        path::PathBuf,
+        sync::{Arc, Mutex},
+    };
+
+    use keyring::{Entry, Error as KeyringError, credential::CredentialApi};
+    use uuid::Uuid;
+
+    use super::read_or_create_database_key_with_entry;
+
+    fn test_entry(value: SharedKey, unavailable: bool) -> Entry {
+        Entry::new_with_credential(Box::new(TestCredential { value, unavailable }))
+    }
+
+    #[test]
+    fn database_key_is_persisted_and_reused_from_the_keychain() {
+        let directory = TestDirectory::new();
+        let value = Arc::new(Mutex::new(None));
+
+        let first_entry = test_entry(Arc::clone(&value), false);
+        let first = read_or_create_database_key_with_entry(&directory.0, &first_entry)
+            .expect("create and persist database key");
+        let persisted = value
+            .lock()
+            .expect("read test key storage")
+            .clone()
+            .expect("persisted database key");
+        let second_entry = test_entry(Arc::clone(&value), false);
+        let second = read_or_create_database_key_with_entry(&directory.0, &second_entry)
+            .expect("reuse persisted database key");
+
+        assert_eq!(persisted.len(), 32);
+        assert_eq!(first.as_bytes(), second.as_bytes());
+        assert_eq!(first.as_bytes().as_slice(), persisted.as_slice());
+    }
+
+    #[test]
+    fn missing_key_does_not_replace_an_existing_database() {
+        let directory = TestDirectory::new();
+        let value = Arc::new(Mutex::new(None));
+        let database_directory = directory.0.join("db");
+        fs::create_dir(&database_directory).expect("create database directory");
+        fs::write(
+            database_directory.join("openchat.sqlite3"),
+            b"encrypted database",
+        )
+        .expect("create existing database");
+
+        assert!(
+            read_or_create_database_key_with_entry(
+                &directory.0,
+                &test_entry(Arc::clone(&value), false)
+            )
+            .is_err()
+        );
+        assert!(value.lock().expect("read test key storage").is_none());
+    }
+
+    #[test]
+    fn malformed_keychain_key_is_rejected_without_replacement() {
+        let directory = TestDirectory::new();
+        let value = Arc::new(Mutex::new(Some(vec![0xA5; 31])));
+
+        assert!(
+            read_or_create_database_key_with_entry(
+                &directory.0,
+                &test_entry(Arc::clone(&value), false)
+            )
+            .is_err()
+        );
+        assert_eq!(
+            value.lock().expect("read test key storage").as_deref(),
+            Some([0xA5; 31].as_slice())
+        );
+    }
+
+    #[test]
+    fn unavailable_keychain_fails_closed_without_creating_a_database_key() {
+        let directory = TestDirectory::new();
+        let value = Arc::new(Mutex::new(None));
+
+        assert!(
+            read_or_create_database_key_with_entry(&directory.0, &test_entry(value, true)).is_err()
+        );
+        assert!(!directory.0.join("db").join("openchat.sqlite3").exists());
+    }
+
+    type SharedKey = Arc<Mutex<Option<Vec<u8>>>>;
+
+    struct TestCredential {
+        value: SharedKey,
+        unavailable: bool,
+    }
+
+    impl CredentialApi for TestCredential {
+        fn set_secret(&self, secret: &[u8]) -> keyring::Result<()> {
+            if self.unavailable {
+                return Err(unavailable_error());
+            }
+            *self.value.lock().map_err(|_| unavailable_error())? = Some(secret.to_vec());
+            Ok(())
+        }
+
+        fn get_secret(&self) -> keyring::Result<Vec<u8>> {
+            if self.unavailable {
+                return Err(unavailable_error());
+            }
+            self.value
+                .lock()
+                .map_err(|_| unavailable_error())?
+                .clone()
+                .ok_or(KeyringError::NoEntry)
+        }
+
+        fn delete_credential(&self) -> keyring::Result<()> {
+            if self.unavailable {
+                return Err(unavailable_error());
+            }
+            self.value
+                .lock()
+                .map_err(|_| unavailable_error())?
+                .take()
+                .map(|_| ())
+                .ok_or(KeyringError::NoEntry)
+        }
+
+        fn as_any(&self) -> &dyn Any {
+            self
+        }
+    }
+
+    fn unavailable_error() -> KeyringError {
+        KeyringError::NoStorageAccess(Box::new(io::Error::other("mock Keychain is unavailable")))
+    }
+
+    struct TestDirectory(PathBuf);
+
+    impl TestDirectory {
+        fn new() -> Self {
+            let path =
+                std::env::temp_dir().join(format!("openchat-keyring-key-{}", Uuid::new_v4()));
+            fs::create_dir(&path).expect("create isolated test storage root");
+            Self(path)
+        }
+    }
+
+    impl Drop for TestDirectory {
+        fn drop(&mut self) {
+            fs::remove_dir_all(&self.0).expect("remove isolated test storage root");
+        }
+    }
 }
 
 #[cfg(test)]

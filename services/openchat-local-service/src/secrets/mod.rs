@@ -19,7 +19,7 @@ use windows_sys::Win32::Storage::FileSystem::FILE_ATTRIBUTE_REPARSE_POINT;
 #[cfg(all(test, windows))]
 use std::io::Write;
 
-#[cfg(any(windows, target_os = "linux"))]
+#[cfg(any(windows, target_os = "linux", target_os = "macos"))]
 use std::{
     thread,
     time::{Duration, Instant},
@@ -29,11 +29,11 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer, de::MapAccess, de:
 use zeroize::{Zeroize, Zeroizing};
 
 const MAXIMUM_SECRET_MAP_BYTES: u64 = 16 * 1024 * 1024;
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 const LINUX_VAULT_VALUE_PREFIX: &[u8; 4] = b"OCS1";
-#[cfg(any(windows, target_os = "linux"))]
+#[cfg(any(windows, target_os = "linux", target_os = "macos"))]
 const SECRET_MAP_LOCK_TIMEOUT: Duration = Duration::from_secs(30);
-#[cfg(any(windows, target_os = "linux"))]
+#[cfg(any(windows, target_os = "linux", target_os = "macos"))]
 const SECRET_MAP_LOCK_RETRY_INTERVAL: Duration = Duration::from_millis(10);
 const CHATGPT_API_KEY_PREFIX: &str = "openchat.chatgpt.api_key.";
 const COMPATIBLE_KEY_PREFIX: &str = "openchat.compatible_provider.api_key.";
@@ -66,7 +66,7 @@ impl std::error::Error for SecretStoreError {}
 /// Holds the current profile's cross-session file lock while updating the shared secret map.
 #[must_use = "the lock must stay alive until the secret-map write completes"]
 pub struct SecretMapUpdateLock {
-    #[cfg(any(windows, target_os = "linux"))]
+    #[cfg(any(windows, target_os = "linux", target_os = "macos"))]
     _lock_file: File,
 }
 
@@ -75,11 +75,11 @@ impl SecretMapUpdateLock {
     ///
     /// The operation fails if another writer does not release the lock within 30 seconds.
     pub fn acquire() -> Result<Self, SecretStoreError> {
-        #[cfg(any(windows, target_os = "linux"))]
+        #[cfg(any(windows, target_os = "linux", target_os = "macos"))]
         {
             Self::acquire_for_path(&database_path()?)
         }
-        #[cfg(not(any(windows, target_os = "linux")))]
+        #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
         {
             Err(SecretStoreError::Unavailable)
         }
@@ -123,7 +123,7 @@ impl SecretMapUpdateLock {
                 }
             }
         }
-        #[cfg(target_os = "linux")]
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
         {
             use std::os::fd::AsRawFd;
             use std::os::unix::fs::OpenOptionsExt;
@@ -166,7 +166,7 @@ impl SecretMapUpdateLock {
                 thread::sleep(remaining.min(SECRET_MAP_LOCK_RETRY_INTERVAL));
             }
         }
-        #[cfg(not(any(windows, target_os = "linux")))]
+        #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
         {
             let _ = path;
             Err(SecretStoreError::Unavailable)
@@ -213,14 +213,14 @@ impl SecretMap {
             migrate_legacy_file_if_present(&mut connection)?;
             read_secret_map_from_connection(&connection)
         }
-        #[cfg(target_os = "linux")]
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
         {
             let connection = storage
                 .connect()
                 .map_err(|_| SecretStoreError::Unavailable)?;
             read_secret_map_from_connection(&connection)
         }
-        #[cfg(not(any(windows, target_os = "linux")))]
+        #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
         {
             let _ = storage;
             Err(SecretStoreError::Unavailable)
@@ -236,7 +236,7 @@ impl SecretMap {
         {
             write_secret_map(&database_path()?, self, update_lock)
         }
-        #[cfg(not(any(windows, target_os = "linux")))]
+        #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
         {
             let _ = update_lock;
             Err(SecretStoreError::Unavailable)
@@ -261,14 +261,14 @@ impl SecretMap {
             }
             write_secret_map_to_connection(&mut connection, self)
         }
-        #[cfg(target_os = "linux")]
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
         {
             let mut connection = storage
                 .connect()
                 .map_err(|_| SecretStoreError::Unavailable)?;
             write_secret_map_to_connection(&mut connection, self)
         }
-        #[cfg(not(any(windows, target_os = "linux")))]
+        #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
         {
             let _ = storage;
             Err(SecretStoreError::Unavailable)
@@ -458,6 +458,21 @@ fn database_path() -> Result<PathBuf, SecretStoreError> {
             .join("openchat.sqlite3"));
     }
 
+    #[cfg(target_os = "macos")]
+    {
+        let home = PathBuf::from(env::var_os("HOME").ok_or(SecretStoreError::Unavailable)?);
+        let path = home
+            .join("Library")
+            .join("Application Support")
+            .join("com.openchat.desktop")
+            .join("db")
+            .join("openchat.sqlite3");
+        if !path.is_absolute() {
+            return Err(SecretStoreError::Unavailable);
+        }
+        return Ok(path);
+    }
+
     #[cfg(windows)]
     {
         let local_app_data = env::var_os("LOCALAPPDATA").ok_or(SecretStoreError::Unavailable)?;
@@ -471,7 +486,7 @@ fn database_path() -> Result<PathBuf, SecretStoreError> {
         Ok(path)
     }
 
-    #[cfg(not(any(windows, target_os = "linux")))]
+    #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
     {
         Err(SecretStoreError::Unavailable)
     }
@@ -553,7 +568,7 @@ fn read_secret_map_from_db(path: &Path) -> Result<SecretMap, SecretStoreError> {
     read_secret_map_from_connection(&connection)
 }
 
-#[cfg(any(windows, target_os = "linux"))]
+#[cfg(any(windows, target_os = "linux", target_os = "macos"))]
 fn read_secret_map_from_connection(
     connection: &crate::storage::StorageConnection<'_>,
 ) -> Result<SecretMap, SecretStoreError> {
@@ -725,7 +740,7 @@ fn write_secret_map_to_db(
     write_secret_map_to_connection(&mut connection, values)
 }
 
-#[cfg(any(windows, target_os = "linux"))]
+#[cfg(any(windows, target_os = "linux", target_os = "macos"))]
 fn write_secret_map_to_connection(
     connection: &mut crate::storage::StorageConnection<'_>,
     values: &SecretMap,
@@ -851,7 +866,7 @@ pub fn get_vault_secret_from_storage(
     storage: &crate::storage::AppStorage,
     key: &str,
 ) -> Result<Option<Zeroizing<String>>, SecretStoreError> {
-    #[cfg(any(windows, target_os = "linux"))]
+    #[cfg(any(windows, target_os = "linux", target_os = "macos"))]
     {
         let connection = storage
             .connect()
@@ -864,7 +879,7 @@ pub fn get_vault_secret_from_storage(
         }
         get_vault_secret_from_connection(&connection, key)
     }
-    #[cfg(not(any(windows, target_os = "linux")))]
+    #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
     {
         let _ = (storage, key);
         Err(SecretStoreError::Unavailable)
@@ -877,7 +892,7 @@ pub fn set_vault_secret_from_storage(
     key: &str,
     value: &str,
 ) -> Result<(), SecretStoreError> {
-    #[cfg(any(windows, target_os = "linux"))]
+    #[cfg(any(windows, target_os = "linux", target_os = "macos"))]
     {
         let connection = storage
             .connect()
@@ -890,7 +905,7 @@ pub fn set_vault_secret_from_storage(
         }
         set_vault_secret_on_connection(&connection, key, value)
     }
-    #[cfg(not(any(windows, target_os = "linux")))]
+    #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
     {
         let _ = (storage, key, value);
         Err(SecretStoreError::Unavailable)
@@ -902,7 +917,7 @@ pub fn delete_vault_secret_from_storage(
     storage: &crate::storage::AppStorage,
     key: &str,
 ) -> Result<(), SecretStoreError> {
-    #[cfg(any(windows, target_os = "linux"))]
+    #[cfg(any(windows, target_os = "linux", target_os = "macos"))]
     {
         let connection = storage
             .connect()
@@ -918,7 +933,7 @@ pub fn delete_vault_secret_from_storage(
             .map_err(|_| SecretStoreError::Unavailable)?;
         Ok(())
     }
-    #[cfg(not(any(windows, target_os = "linux")))]
+    #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
     {
         let _ = (storage, key);
         Err(SecretStoreError::Unavailable)
@@ -930,7 +945,7 @@ pub fn has_vault_secret_from_storage(
     storage: &crate::storage::AppStorage,
     key: &str,
 ) -> Result<bool, SecretStoreError> {
-    #[cfg(any(windows, target_os = "linux"))]
+    #[cfg(any(windows, target_os = "linux", target_os = "macos"))]
     {
         let connection = storage
             .connect()
@@ -948,7 +963,7 @@ pub fn has_vault_secret_from_storage(
             .exists([key])
             .map_err(|_| SecretStoreError::Unavailable)
     }
-    #[cfg(not(any(windows, target_os = "linux")))]
+    #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
     {
         let _ = (storage, key);
         Err(SecretStoreError::Unavailable)
@@ -964,7 +979,7 @@ pub(crate) fn get_vault_secret_for_path(
     get_vault_secret_from_connection(&connection, key)
 }
 
-#[cfg(any(windows, target_os = "linux"))]
+#[cfg(any(windows, target_os = "linux", target_os = "macos"))]
 fn get_vault_secret_from_connection(
     connection: &crate::storage::StorageConnection<'_>,
     key: &str,
@@ -996,7 +1011,7 @@ pub(crate) fn set_vault_secret_for_path(
     set_vault_secret_on_connection(&connection, key, value)
 }
 
-#[cfg(any(windows, target_os = "linux"))]
+#[cfg(any(windows, target_os = "linux", target_os = "macos"))]
 fn set_vault_secret_on_connection(
     connection: &crate::storage::StorageConnection<'_>,
     key: &str,
@@ -1023,7 +1038,7 @@ fn protect_vault_value(value: &[u8]) -> Result<Zeroizing<Vec<u8>>, SecretStoreEr
     Ok(Zeroizing::new(protect_dpapi(value)?))
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 fn protect_vault_value(value: &[u8]) -> Result<Zeroizing<Vec<u8>>, SecretStoreError> {
     if value.len() as u64 + LINUX_VAULT_VALUE_PREFIX.len() as u64 > MAXIMUM_SECRET_MAP_BYTES {
         return Err(SecretStoreError::Unavailable);
@@ -1041,7 +1056,7 @@ fn unprotect_vault_value(value: &[u8]) -> Result<Zeroizing<Vec<u8>>, SecretStore
     unprotect_dpapi(value)
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 fn unprotect_vault_value(value: &[u8]) -> Result<Zeroizing<Vec<u8>>, SecretStoreError> {
     if value.len() as u64 > MAXIMUM_SECRET_MAP_BYTES || !value.starts_with(LINUX_VAULT_VALUE_PREFIX)
     {
@@ -1102,7 +1117,7 @@ fn secret_map_path_from_app_data(app_data: &Path) -> Result<PathBuf, SecretStore
         .join("flutter_secure_storage.dat"))
 }
 
-#[cfg(any(windows, target_os = "linux"))]
+#[cfg(any(windows, target_os = "linux", target_os = "macos"))]
 fn secret_map_lock_path(path: &Path) -> Result<PathBuf, SecretStoreError> {
     let mut lock_file_name = path
         .file_name()
@@ -1372,7 +1387,7 @@ fn is_chatgpt_connection_id(value: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     use std::path::PathBuf;
 
     #[cfg(windows)]
@@ -1393,10 +1408,10 @@ mod tests {
         has_vault_secret_for_path, read_bounded_file, read_secret_map, secret_map_lock_path,
         secret_map_path_from_app_data, set_vault_secret_for_path, write_secret_map,
     };
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     use super::{get_vault_secret_from_storage, set_vault_secret_from_storage};
 
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     #[test]
     fn linux_vault_values_require_the_encrypted_database_format_marker() {
         let protected = super::protect_vault_value(b"provider-secret")
@@ -1408,10 +1423,10 @@ mod tests {
         assert!(super::unprotect_vault_value(b"unmarked-value").is_err());
     }
 
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     struct LinuxTestDirectory(PathBuf);
 
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     impl LinuxTestDirectory {
         fn new() -> Self {
             let path = std::env::temp_dir().join(format!(
@@ -1423,14 +1438,14 @@ mod tests {
         }
     }
 
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     impl Drop for LinuxTestDirectory {
         fn drop(&mut self) {
             let _ = std::fs::remove_dir_all(&self.0);
         }
     }
 
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     #[test]
     fn linux_provider_secrets_round_trip_through_sqlcipher_storage() {
         let directory = LinuxTestDirectory::new();

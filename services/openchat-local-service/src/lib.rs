@@ -35,7 +35,7 @@ mod storage;
 #[path = "storage_broker.rs"]
 mod storage_broker;
 
-#[cfg(any(windows, target_os = "linux"))]
+#[cfg(any(windows, target_os = "linux", target_os = "macos"))]
 #[path = "adapters/credentials.rs"]
 /// Protected local-vault access for OAuth tokens and scoped MCP secrets, including legacy imports.
 pub mod credentials;
