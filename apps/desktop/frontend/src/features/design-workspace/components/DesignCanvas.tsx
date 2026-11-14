@@ -2176,69 +2176,69 @@ export function DesignCanvas() {
               <div className="flex min-w-0 items-center gap-2"><Layers3 aria-hidden="true" size={15} /><span>{t('designEditorLayers')}</span></div>
               <span className="design-editor-layer-count">{pageNodes.length}</span>
             </div>
-            <div aria-live="polite" aria-relevant="additions removals">
-              {pageNodes.length === 0 ? (
-                <p className="design-editor-empty-layers" role="status">{t('designEditorEmptyLayers')}</p>
-              ) : (
-                <ul className="design-editor-layer-list" aria-label={t('designEditorLayers')}>
-                  {orderDesignLayerTree(pageNodes).map(({ node, depth }) => (
-                    <li key={node.id} style={designLayerStyle(depth)}>
-                      <div className="design-editor-layer-row">
-                        {renamingNodeId === node.id ? (
-                          <div className="flex min-w-0 flex-1 items-center gap-1">
-                            <Input
-                              aria-label={t('designEditorRenameLayer')}
-                              autoFocus
-                              className="min-w-0"
-                              density="compact"
-                              maxLength={256}
-                              onChange={(event) => setNodeNameDraft(event.target.value)}
-                              onKeyDown={(event) => {
-                                if (event.key === 'Enter') saveNodeName(node.id);
-                                if (event.key === 'Escape') setRenamingNodeId(null);
-                              }}
-                              value={nodeNameDraft}
-                            />
-                            <Button aria-label={t('designEditorSaveLayerName')} onClick={() => saveNodeName(node.id)} size="icon" title={t('designEditorSaveLayerName')} variant="ghost"><Check aria-hidden="true" size={15} /></Button>
-                          </div>
-                        ) : (
-                          <button
-                            aria-pressed={document.selectedNodeIds.includes(node.id)}
-                            className="design-editor-layer"
-                            onClick={(event) => selectNode(node.id, event.shiftKey)}
-                            type="button"
-                          >
-                            <DesignLayerIcon type={node.type} />
-                            <span className="design-editor-layer-copy">
-                              <span className="truncate">{node.name}</span>
-                            </span>
-                          </button>
-                        )}
-                        {renamingNodeId !== node.id && (
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button aria-label={t('moreOptions')} className="design-editor-layer-action" size="icon" title={t('moreOptions')} variant="ghost"><MoreHorizontal aria-hidden="true" size={15} /></Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem onSelect={() => { setNodeNameDraft(node.name); setRenamingNodeId(node.id); }}><Pencil aria-hidden="true" size={14} />{t('designEditorRenameLayer')}</DropdownMenuItem>
-                              <DropdownMenuSeparator />
-                              <DropdownMenuItem onSelect={() => updateNodeState(node.id, { visible: !node.visible })}>
-                                {node.visible ? <EyeOff aria-hidden="true" size={14} /> : <Eye aria-hidden="true" size={14} />}
-                                {t(node.visible ? 'designEditorHideLayer' : 'designEditorShowLayer', { name: node.name })}
-                              </DropdownMenuItem>
-                              <DropdownMenuItem onSelect={() => updateNodeState(node.id, { locked: !node.locked })}>
-                                {node.locked ? <UnlockKeyhole aria-hidden="true" size={14} /> : <LockKeyhole aria-hidden="true" size={14} />}
-                                {t(node.locked ? 'designEditorUnlockLayer' : 'designEditorLockLayer', { name: node.name })}
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        )}
+            <ul
+              aria-label={t('designEditorLayers')}
+              aria-live="polite"
+              aria-relevant="additions removals"
+              className="design-editor-layer-list"
+            >
+              {orderDesignLayerTree(pageNodes).map(({ node, depth }) => (
+                <li key={node.id} style={designLayerStyle(depth)}>
+                  <div className="design-editor-layer-row">
+                    {renamingNodeId === node.id ? (
+                      <div className="flex min-w-0 flex-1 items-center gap-1">
+                        <Input
+                          aria-label={t('designEditorRenameLayer')}
+                          autoFocus
+                          className="min-w-0"
+                          density="compact"
+                          maxLength={256}
+                          onChange={(event) => setNodeNameDraft(event.target.value)}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter') saveNodeName(node.id);
+                            if (event.key === 'Escape') setRenamingNodeId(null);
+                          }}
+                          value={nodeNameDraft}
+                        />
+                        <Button aria-label={t('designEditorSaveLayerName')} onClick={() => saveNodeName(node.id)} size="icon" title={t('designEditorSaveLayerName')} variant="ghost"><Check aria-hidden="true" size={15} /></Button>
                       </div>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
+                    ) : (
+                      <button
+                        aria-pressed={document.selectedNodeIds.includes(node.id)}
+                        className="design-editor-layer"
+                        onClick={(event) => selectNode(node.id, event.shiftKey)}
+                        type="button"
+                      >
+                        <DesignLayerIcon type={node.type} />
+                        <span className="design-editor-layer-copy">
+                          <span className="truncate">{node.name}</span>
+                        </span>
+                      </button>
+                    )}
+                    {renamingNodeId !== node.id && (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button aria-label={t('moreOptions')} className="design-editor-layer-action" size="icon" title={t('moreOptions')} variant="ghost"><MoreHorizontal aria-hidden="true" size={15} /></Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onSelect={() => { setNodeNameDraft(node.name); setRenamingNodeId(node.id); }}><Pencil aria-hidden="true" size={14} />{t('designEditorRenameLayer')}</DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem onSelect={() => updateNodeState(node.id, { visible: !node.visible })}>
+                            {node.visible ? <EyeOff aria-hidden="true" size={14} /> : <Eye aria-hidden="true" size={14} />}
+                            {t(node.visible ? 'designEditorHideLayer' : 'designEditorShowLayer', { name: node.name })}
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onSelect={() => updateNodeState(node.id, { locked: !node.locked })}>
+                            {node.locked ? <UnlockKeyhole aria-hidden="true" size={14} /> : <LockKeyhole aria-hidden="true" size={14} />}
+                            {t(node.locked ? 'designEditorUnlockLayer' : 'designEditorLockLayer', { name: node.name })}
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    )}
+                  </div>
+                </li>
+              ))}
+              {pageNodes.length === 0 && <li className="design-editor-empty-layers">{t('designEditorEmptyLayers')}</li>}
+            </ul>
           </div>
           {/* biome-ignore lint/a11y/useSemanticElements: Interactive resize separator needs aria-value and keyboard support. */}
           <div

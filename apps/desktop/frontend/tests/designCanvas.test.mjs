@@ -48,8 +48,8 @@ const {
 } = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`);
 
 test('the empty layer state is announced as an accessible status', () => {
-  assert.match(canvasComponent, /<div aria-live="polite" aria-relevant="additions removals">/);
-  assert.match(canvasComponent, /<p className="design-editor-empty-layers" role="status">\{t\('designEditorEmptyLayers'\)\}<\/p>/);
+  assert.match(canvasComponent, /<ul[\s\S]*aria-live="polite"[\s\S]*aria-relevant="additions removals"[\s\S]*className="design-editor-layer-list"/);
+  assert.match(canvasComponent, /<li className="design-editor-empty-layers">\{t\('designEditorEmptyLayers'\)\}<\/li>/);
 });
 
 test('responsive preview selects phone and tablet layouts at their boundaries', () => {
