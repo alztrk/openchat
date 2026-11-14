@@ -5,10 +5,9 @@ import { Button, Select, Textarea, toast } from '@shared/components';
 import type { ChatMessage } from '@features/chat/data';
 import {
   expandWorkflowTemplate,
-  getWorkflowAfterResponseDraft,
-  type WorkflowResponseSnapshot,
   type WorkflowTemplate,
 } from '@features/chat/data/workflowTemplates';
+import { useWorkflowAfterResponsePrompt } from '@features/chat/hooks/useWorkflowAfterResponsePrompt';
 import type { ChatModel } from '@entities/model';
 import { isAssistantAgentSnapshot } from '@shared/lib/preferences/assistantProfiles';
 import { getSidebarDraggingConversationId } from '@shared/lib/preferences/sidebarPreferences';
@@ -158,7 +157,6 @@ export function ChatComposer({
     }
     return null;
   }, [messages]);
-  const previousAssistantResponseRef = useRef<WorkflowResponseSnapshot | null>(null);
   const pendingQuestionSendBlock = useChatStore((state) => state.pendingQuestionSendBlock);
   const isUpdatingConversationModel = useChatStore((state) => state.isUpdatingConversationModel);
   const storeSelectedReasoningEffort = useChatStore((state) => state.selectedReasoningEffort);
@@ -320,36 +318,20 @@ export function ChatComposer({
 
   const workflowAfterResponsePrompt = activeConversation?.agent?.workflowHooks?.afterResponsePrompt ?? null;
 
-  useEffect(() => {
-    const previous = previousAssistantResponseRef.current;
-    previousAssistantResponseRef.current = latestAssistantResponse;
-    const nextDraft = getWorkflowAfterResponseDraft({
-      previous,
-      current: latestAssistantResponse,
-      activeConversationId,
-      afterResponsePrompt: workflowAfterResponsePrompt,
-      draft: messageDraft,
-      pendingAttachmentCount: pendingAttachments.length,
-      isReadingAttachments,
-      responseNeedsInput:
-        latestAssistantResponse !== null &&
-        pendingQuestionSendBlock?.conversationId === latestAssistantResponse.conversationId &&
-        pendingQuestionSendBlock.blocked,
-      disabled: targetConversationId !== undefined || isTemporaryChat,
-    });
-    if (nextDraft !== null) setMessageDraft(nextDraft);
-  }, [
+  useWorkflowAfterResponsePrompt({
+    response: latestAssistantResponse,
     activeConversationId,
+    afterResponsePrompt: workflowAfterResponsePrompt,
+    draft: messageDraft,
+    pendingAttachmentCount: pendingAttachments.length,
     isReadingAttachments,
-    isTemporaryChat,
-    latestAssistantResponse,
-    messageDraft,
-    pendingAttachments.length,
-    pendingQuestionSendBlock,
-    setMessageDraft,
-    targetConversationId,
-    workflowAfterResponsePrompt,
-  ]);
+    responseNeedsInput:
+      latestAssistantResponse !== null &&
+      pendingQuestionSendBlock?.conversationId === latestAssistantResponse.conversationId &&
+      pendingQuestionSendBlock.blocked,
+    disabled: targetConversationId !== undefined || isTemporaryChat,
+    setDraft: setMessageDraft,
+  });
 
   // Memoize drag handlers to prevent unnecessary re-renders
   const handleComposerDragEnter = useCallback(

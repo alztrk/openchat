@@ -386,7 +386,7 @@ for (const [name, value] of globals) {
 
 const React = await import('react');
 const { I18nextProvider } = await import('react-i18next');
-const { act, cleanup, fireEvent, render, screen, waitFor, within } = await import('@testing-library/react');
+const { act, cleanup, fireEvent, render, renderHook, screen, waitFor, within } = await import('@testing-library/react');
 const { ConversationEmptyState } = await vite.ssrLoadModule('/src/features/chat/components/ConversationEmptyState.tsx');
 const { NavigationRail } = await vite.ssrLoadModule('/src/widgets/navigation-rail/NavigationRail.tsx');
 const { AppWindowSettingsSection } = await vite.ssrLoadModule(
@@ -404,6 +404,9 @@ const { McpCatalogTab } = await vite.ssrLoadModule('/src/features/model-catalog/
 const { TitleBarSearch } = await vite.ssrLoadModule('/src/widgets/title-bar/TitleBarSearch.tsx');
 const { isAssistantAgentSnapshot } = await vite.ssrLoadModule(
   '/src/shared/lib/preferences/assistantProfiles.ts',
+);
+const { useWorkflowAfterResponsePrompt } = await vite.ssrLoadModule(
+  '/src/features/chat/hooks/useWorkflowAfterResponsePrompt.ts',
 );
 
 const localeDirectory = path.resolve('src/shared/lib/i18n/locales');
@@ -1351,6 +1354,51 @@ test('workflow lifecycle prompts localize and persist as bounded conversation sn
     isAssistantAgentSnapshot({ ...agent, workflowHooks: { afterResponsePrompt: 'x'.repeat(32 * 1024 + 1) } }),
     false,
   );
+});
+
+test('workflow after-response prompt updates only an empty composer after a successful stream', () => {
+  const setDraftCalls = [];
+  const base = {
+    response: { conversationId: 'conversation-workflow', id: 'message-workflow', status: 'streaming' },
+    activeConversationId: 'conversation-workflow',
+    afterResponsePrompt: 'Review the next step.',
+    draft: '',
+    pendingAttachmentCount: 0,
+    isReadingAttachments: false,
+    responseNeedsInput: false,
+    disabled: false,
+  };
+  const { rerender } = renderHook(
+    (props) => useWorkflowAfterResponsePrompt({ ...props, setDraft: (value) => setDraftCalls.push(value) }),
+    { initialProps: base },
+  );
+
+  act(() => {
+    rerender({ ...base, response: { ...base.response, status: 'completed' } });
+  });
+  assert.deepEqual(setDraftCalls, ['Review the next step.']);
+
+  for (const scenario of [
+    { props: { ...base, draft: 'User text' }, status: 'completed' },
+    { props: { ...base, pendingAttachmentCount: 1 }, status: 'completed' },
+    { props: { ...base, isReadingAttachments: true }, status: 'completed' },
+    { props: { ...base, activeConversationId: 'another-conversation' }, status: 'completed' },
+    { props: { ...base, responseNeedsInput: true }, status: 'completed' },
+    { props: base, status: 'failed' },
+    { props: base, status: 'stopped' },
+  ]) {
+    const rejectedCalls = [];
+    const result = renderHook(
+      (hookProps) => useWorkflowAfterResponsePrompt({ ...hookProps, setDraft: (value) => rejectedCalls.push(value) }),
+      { initialProps: base },
+    );
+    act(() => {
+      result.rerender(scenario.props);
+      result.rerender({ ...scenario.props, response: { ...base.response, status: scenario.status } });
+    });
+    assert.deepEqual(rejectedCalls, []);
+    result.unmount();
+  }
 });
 
 test('workflow templates can be imported and edited with the saved change persisted', async () => {
