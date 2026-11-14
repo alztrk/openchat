@@ -47,15 +47,18 @@ export type {
   ChatModelFavorite,
 };
 
-export interface ConversationAttachmentSummary {
+export interface ConversationAttachmentReference {
   conversationId: string;
-  conversationTitle: string;
-  projectId: string | null;
   messageId: string;
   attachmentId: string;
   fileName: string;
   mimeType: string;
   sizeBytes: number;
+}
+
+export interface ConversationAttachmentSummary extends ConversationAttachmentReference {
+  conversationTitle: string;
+  projectId: string | null;
   createdAt: number;
   isAvailable: boolean;
   generationId: string | null;
@@ -994,19 +997,32 @@ function isString(value: unknown): value is string {
   return typeof value === 'string';
 }
 
-function isConversationAttachmentSummary(value: unknown): value is ConversationAttachmentSummary {
+export function isConversationAttachmentReference(
+  value: unknown,
+): value is Record<string, unknown> & ConversationAttachmentReference {
   return (
     isObject(value) &&
     isString(value.conversationId) &&
-    isString(value.conversationTitle) &&
-    isNullableString(value.projectId) &&
+    value.conversationId.length > 0 &&
     isString(value.messageId) &&
+    value.messageId.length > 0 &&
     isString(value.attachmentId) &&
+    value.attachmentId.length > 0 &&
     isString(value.fileName) &&
+    value.fileName.length > 0 &&
     isString(value.mimeType) &&
+    value.mimeType.length > 0 &&
     Number.isSafeInteger(value.sizeBytes) &&
     typeof value.sizeBytes === 'number' &&
-    value.sizeBytes > 0 &&
+    value.sizeBytes > 0
+  );
+}
+
+function isConversationAttachmentSummary(value: unknown): value is ConversationAttachmentSummary {
+  return (
+    isConversationAttachmentReference(value) &&
+    isString(value.conversationTitle) &&
+    isNullableString(value.projectId) &&
     Number.isSafeInteger(value.createdAt) &&
     typeof value.createdAt === 'number' &&
     value.createdAt >= 0 &&

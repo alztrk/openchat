@@ -9,6 +9,7 @@ import {
   Image,
   Keyboard,
   Link,
+  Mic,
   NotebookPen,
   Palette,
   Plug,
@@ -61,6 +62,10 @@ const loadAssistantExecution = () =>
   import('./AssistantExecutionSettingsSection').then((module) => ({
     default: module.AssistantExecutionSettingsSection,
   }));
+const loadVoiceInputSettings = () =>
+  import('./VoiceInputModelSettingsSection').then((module) => ({
+    default: module.VoiceInputModelSettingsSection,
+  }));
 const loadDesignSettings = () =>
   import('./DesignSettingsSection').then((module) => ({ default: module.DesignSettingsSection }));
 const loadProjectSettings = () =>
@@ -81,6 +86,7 @@ const NotificationSettingsSection = lazy(loadNotifications);
 const ShortcutsSection = lazy(loadShortcuts);
 const ChatBehaviorSettingsSection = lazy(loadChatBehavior);
 const AssistantExecutionSettingsSection = lazy(loadAssistantExecution);
+const VoiceInputModelSettingsSection = lazy(loadVoiceInputSettings);
 const DesignSettingsSection = lazy(loadDesignSettings);
 const ProjectSettingsSection = lazy(loadProjectSettings);
 import type { AppearancePreferences } from '@features/app-settings/data/appearancePreferences';
@@ -105,6 +111,7 @@ export type SettingsSection =
   | 'shortcuts'
   | 'chatBehavior'
   | 'assistantExecution'
+  | 'voice'
   | 'designGeneration'
   | 'usageQuotas'
   | 'statistics'
@@ -130,6 +137,7 @@ const sectionTitleKeys: Record<SettingsSection, TranslationKey> = {
   shortcuts: 'keyboardShortcuts',
   chatBehavior: 'chatBehaviorSettings',
   assistantExecution: 'assistantExecutionSettings',
+  voice: 'voiceInputSettingsTitle',
   designGeneration: 'designSettingsTitle',
   usageQuotas: 'usageQuotas',
   statistics: 'statistics',
@@ -150,6 +158,7 @@ const sectionDescriptionKeys: Record<SettingsSection, TranslationKey> = {
   shortcuts: 'keyboardShortcutsDescription',
   chatBehavior: 'chatBehaviorSettingsDescription',
   assistantExecution: 'assistantExecutionSettingsDescription',
+  voice: 'voiceInputSettingsDescription',
   designGeneration: 'designSettingsDescription',
   usageQuotas: 'usageQuotasDescription',
   statistics: 'statisticsDescription',
@@ -178,6 +187,7 @@ const settingsNavigationGroups: ReadonlyArray<{
     items: [
       { section: 'chatBehavior', icon: <SlidersHorizontal aria-hidden="true" size={18} /> },
       { section: 'assistantExecution', icon: <Bot aria-hidden="true" size={18} /> },
+      { section: 'voice', icon: <Mic aria-hidden="true" size={18} /> },
       { section: 'sharedInstructions', icon: <NotebookPen aria-hidden="true" size={18} /> },
       { section: 'shortcuts', icon: <Keyboard aria-hidden="true" size={18} /> },
     ],
@@ -743,6 +753,14 @@ export function SettingsPage({
               onFieldFocused={clearPendingFieldFocus}
             >
               <AssistantExecutionSettingsSection />
+            </SettingsSectionPage>
+            <SettingsSectionPage
+              active={section === 'voice'}
+              fallback={t('settingsSectionLoading')}
+              visited={visitedSections.has('voice')}
+              focusId={null}
+            >
+              <VoiceInputModelSettingsSection />
             </SettingsSectionPage>
             <SettingsSectionPage
               active={section === 'designGeneration'}

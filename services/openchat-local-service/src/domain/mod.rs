@@ -23,6 +23,8 @@ pub(crate) mod context_usage;
 pub(crate) mod conversation_archive;
 #[path = "providers/copilot_oauth.rs"]
 pub(crate) mod copilot_oauth;
+pub(crate) mod design_documents;
+pub(crate) mod design_tools;
 #[path = "conversations/document_parser.rs"]
 pub(crate) mod document_parser;
 #[path = "conversations/file_changes.rs"]
@@ -87,5 +89,7 @@ pub(crate) mod tools;
 pub(crate) mod usage_statistics;
 #[path = "conversations/user_question_broker.rs"]
 pub(crate) mod user_question_broker;
+#[path = "voice_input/mod.rs"]
+pub(crate) mod voice_input;
 #[path = "settings/workspace.rs"]
 pub(crate) mod workspace_settings;

@@ -182,6 +182,7 @@ export function useComposerState({
   } = useComposerAttachments({
     droppedFiles,
     selectedModel,
+    targetConversationId: activeConversationId,
   });
   const resumableRunId =
     activeGoal?.conversationId === activeConversationId &&
@@ -334,7 +335,12 @@ export function useComposerState({
       if (!approved) return false;
       temporaryDisclosureProviderIdRef.current = selectedModel.providerId;
     }
-    const currentReasoningEffort = useChatStore.getState().selectedReasoningEffort;
+    const currentState = useChatStore.getState();
+    const currentReasoningEffort =
+      targetConversationId === undefined
+        ? currentState.selectedReasoningEffort
+        : (currentState.conversations.find((conversation) => conversation.id === targetConversationId)?.reasoningEffort ??
+          null);
     const options = {
       ...(mode === 'normal' ? {} : { mode }),
       ...(currentReasoningEffort &&
@@ -526,7 +532,7 @@ export function useComposerState({
           return;
         }
         if (args.toLocaleLowerCase('en') === 'default' || args.toLocaleLowerCase('en') === 'auto') {
-          selectReasoningEffort(null);
+          selectReasoningEffort(null, targetConversationId);
           clearDraft();
           return;
         }
@@ -537,7 +543,7 @@ export function useComposerState({
           setCommandFeedbackKey('slashCommandReasoningUnsupported');
           return;
         }
-        selectReasoningEffort(matchingLevel);
+        selectReasoningEffort(matchingLevel, targetConversationId);
         clearDraft();
         return;
       }

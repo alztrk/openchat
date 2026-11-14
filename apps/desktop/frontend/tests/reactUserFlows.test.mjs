@@ -53,7 +53,8 @@ const vite = await createServer({
           (normalizedSource === '@shared/lib/platform/storage/unifiedStorage' ||
             normalizedSource.endsWith('/src/shared/lib/platform/storage/unifiedStorage')) &&
           (normalizedImporter.endsWith('/src/features/chat/components/ConversationSidebar.tsx') ||
-            normalizedImporter.endsWith('/src/features/app-settings/components/AppWindowSettingsSection.tsx'))
+            normalizedImporter.endsWith('/src/features/app-settings/components/AppWindowSettingsSection.tsx') ||
+            normalizedImporter.endsWith('/src/features/chat/data/workflowTemplates.ts'))
         ) {
           return '\0openchat-test-ui-unified-storage';
         }
@@ -219,11 +220,28 @@ const vite = await createServer({
         }
         if (id === '\0openchat-test-ui-unified-storage') {
           return `
+            import process from 'node:process';
             export const unifiedStorage = {
               isInitialized: true,
-              getItem() { return null; },
-              setPersistedItem() { return Promise.resolve(); },
-              removePersistedItem() { return Promise.resolve(); },
+              getItem(key) {
+                if (key === 'library.workflow-templates.v1') {
+                  return process.__openchatWorkflowTemplatesHarness.value;
+                }
+                return null;
+              },
+              setPersistedItem(key, value) {
+                if (key === 'library.workflow-templates.v1') {
+                  process.__openchatWorkflowTemplatesHarness.value = value;
+                  process.__openchatWorkflowTemplatesHarness.writes.push(value);
+                }
+                return Promise.resolve();
+              },
+              removePersistedItem(key) {
+                if (key === 'library.workflow-templates.v1') {
+                  process.__openchatWorkflowTemplatesHarness.value = null;
+                }
+                return Promise.resolve();
+              },
             };
             export function whenUnifiedStorageReady(callback) {
               callback();
@@ -368,13 +386,16 @@ for (const [name, value] of globals) {
 
 const React = await import('react');
 const { I18nextProvider } = await import('react-i18next');
-const { cleanup, fireEvent, render, screen, waitFor, within } = await import('@testing-library/react');
+const { act, cleanup, fireEvent, render, screen, waitFor, within } = await import('@testing-library/react');
 const { ConversationEmptyState } = await vite.ssrLoadModule('/src/features/chat/components/ConversationEmptyState.tsx');
 const { NavigationRail } = await vite.ssrLoadModule('/src/widgets/navigation-rail/NavigationRail.tsx');
 const { AppWindowSettingsSection } = await vite.ssrLoadModule(
   '/src/features/app-settings/components/AppWindowSettingsSection.tsx',
 );
 const { ConversationSidebar } = await vite.ssrLoadModule('/src/features/chat/components/ConversationSidebar.tsx');
+const { WorkflowTemplatesDialog } = await vite.ssrLoadModule(
+  '/src/features/chat/components/WorkflowTemplatesDialog.tsx',
+);
 const sidebarPreferencesModule = await vite.ssrLoadModule('/src/shared/lib/preferences/sidebarPreferences.ts');
 const { McpCatalogTab } = await vite.ssrLoadModule('/src/features/model-catalog/components/McpCatalogTab.tsx');
 const { TitleBarSearch } = await vite.ssrLoadModule('/src/widgets/title-bar/TitleBarSearch.tsx');
@@ -388,6 +409,7 @@ const originalSidebarHarness = Object.getOwnPropertyDescriptor(process, '__openc
 const originalMcpHarness = Object.getOwnPropertyDescriptor(process, '__openchatMcpHarness');
 const originalRecentSearchHarness = Object.getOwnPropertyDescriptor(process, '__openchatRecentSearchHarness');
 const originalTitlebarSearchHarness = Object.getOwnPropertyDescriptor(process, '__openchatTitlebarSearchHarness');
+const originalWorkflowTemplatesHarness = Object.getOwnPropertyDescriptor(process, '__openchatWorkflowTemplatesHarness');
 const appPreferencesHarness = {
   startupSurface: 'last',
   writeStartupSurface: async (value) => {
@@ -416,6 +438,7 @@ const recentSearchHarness = {
   failWrites: false,
 };
 const titlebarSearchHarness = { historyDialogModuleLoads: 0 };
+const workflowTemplatesHarness = { value: null, writes: [] };
 
 Object.defineProperty(process, '__openchatAppPreferencesHarness', {
   configurable: true,
@@ -440,6 +463,11 @@ Object.defineProperty(process, '__openchatRecentSearchHarness', {
 Object.defineProperty(process, '__openchatTitlebarSearchHarness', {
   configurable: true,
   value: titlebarSearchHarness,
+  writable: true,
+});
+Object.defineProperty(process, '__openchatWorkflowTemplatesHarness', {
+  configurable: true,
+  value: workflowTemplatesHarness,
   writable: true,
 });
 
@@ -498,6 +526,8 @@ afterEach(() => {
   recentSearchHarness.terms = ['river', 'ocean'];
   recentSearchHarness.failWrites = false;
   titlebarSearchHarness.historyDialogModuleLoads = 0;
+  workflowTemplatesHarness.value = null;
+  workflowTemplatesHarness.writes = [];
 });
 
 after(async () => {
@@ -538,6 +568,11 @@ after(async () => {
     Object.defineProperty(process, '__openchatTitlebarSearchHarness', originalTitlebarSearchHarness);
   } else {
     Reflect.deleteProperty(process, '__openchatTitlebarSearchHarness');
+  }
+  if (originalWorkflowTemplatesHarness) {
+    Object.defineProperty(process, '__openchatWorkflowTemplatesHarness', originalWorkflowTemplatesHarness);
+  } else {
+    Reflect.deleteProperty(process, '__openchatWorkflowTemplatesHarness');
   }
 });
 
@@ -1158,5 +1193,130 @@ test('the primary navigation landmark and surface action render in every support
     fireEvent.click(screen.getByRole('button', { name: translations.modelLibrary }));
     assert.deepEqual(navigatedSurfaces, ['models']);
     cleanup();
+  }
+});
+
+test('workflow templates can be created, edited, and launched as a new conversation', async () => {
+  const translations = translationsByLocale.get('en');
+  const i18n = i18nByLocale.get('en');
+  assert.ok(translations);
+  assert.ok(i18n);
+  const startedConversations = [];
+  const onOpenChange = (open) => assert.equal(open, false);
+
+  render(
+    localized(
+      'en',
+      React.createElement(WorkflowTemplatesDialog, {
+        onOpenChange,
+        onStartConversation: (...args) => startedConversations.push(args),
+        open: true,
+      }),
+    ),
+  );
+
+  fireEvent.click(screen.getByRole('button', { name: translations.workflowTemplateCreate }));
+  fireEvent.change(screen.getByRole('textbox', { name: translations.workflowTemplateName }), {
+    target: { value: 'Project brief' },
+  });
+  fireEvent.change(screen.getByRole('textbox', { name: translations.workflowTemplateDescription }), {
+    target: { value: 'Create a concise brief.' },
+  });
+  fireEvent.change(screen.getByRole('textbox', { name: translations.workflowTemplatePrompt }), {
+    target: { value: 'Create a brief for {{project}}.' },
+  });
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: translations.save }));
+    await Promise.resolve();
+  });
+  assert.equal(workflowTemplatesHarness.writes.length, 1);
+  const [savedTemplates] = workflowTemplatesHarness.writes.map((value) => JSON.parse(value));
+  assert.equal(savedTemplates[0].name, 'Project brief');
+  assert.equal(savedTemplates[0].parameters[0].name, 'project');
+
+  fireEvent.click(screen.getByRole('button', { name: /Project brief/ }));
+  fireEvent.change(screen.getByRole('textbox', { name: 'project' }), {
+    target: { value: 'OpenChat' },
+  });
+  fireEvent.submit(screen.getByRole('button', { name: translations.workflowTemplateStart }).closest('form'));
+
+  assert.equal(startedConversations.length, 1);
+  assert.equal(startedConversations[0][0], 'Create a brief for OpenChat.');
+  assert.equal(startedConversations[0][1].name, 'Project brief');
+  assert.ok(screen.getByRole('dialog', { name: translations.workflowTemplatesTitle }));
+});
+
+test('workflow templates can be imported and edited with the saved change persisted', async () => {
+  const translations = translationsByLocale.get('en');
+  assert.ok(translations);
+  const importedTemplate = {
+    id: 'a0000000-0000-4000-8000-000000000007',
+    name: 'Release notes',
+    startingPrompt: 'Summarize the release.',
+    parameters: [],
+    createdAt: 1700000000000,
+    updatedAt: 1700000000000,
+  };
+
+  render(
+    localized(
+      'en',
+      React.createElement(WorkflowTemplatesDialog, {
+        onOpenChange: () => undefined,
+        onStartConversation: () => undefined,
+        open: true,
+      }),
+    ),
+  );
+
+  const importFile = new browserWindow.File(
+    [JSON.stringify({ version: 1, templates: [importedTemplate] })],
+    'workflows.json',
+    { type: 'application/json' },
+  );
+  await act(async () => {
+    fireEvent.change(document.querySelector('input[type="file"]'), {
+      target: { files: [importFile] },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+
+  assert.equal(workflowTemplatesHarness.writes.length, 1);
+  assert.equal(JSON.parse(workflowTemplatesHarness.writes[0])[0].name, 'Release notes');
+
+  fireEvent.click(screen.getByRole('button', { name: /Edit/ }));
+  fireEvent.change(screen.getByRole('textbox', { name: translations.workflowTemplateName }), {
+    target: { value: 'Release summary' },
+  });
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: translations.save }));
+    await Promise.resolve();
+  });
+  assert.equal(workflowTemplatesHarness.writes.length, 2);
+  assert.equal(JSON.parse(workflowTemplatesHarness.writes[1])[0].name, 'Release summary');
+  assert.equal(screen.getByRole('button', { name: /Release summary/ }).textContent.includes('Summarize the release.'), true);
+
+  const originalCreateObjectURL = URL.createObjectURL;
+  const originalRevokeObjectURL = URL.revokeObjectURL;
+  const originalAnchorClick = browserWindow.HTMLAnchorElement.prototype.click;
+  let exportedBlob;
+  let downloadedFileName;
+  URL.createObjectURL = (blob) => {
+    exportedBlob = blob;
+    return 'blob:workflow-export';
+  };
+  URL.revokeObjectURL = () => undefined;
+  browserWindow.HTMLAnchorElement.prototype.click = function () {
+    downloadedFileName = this.download;
+  };
+  try {
+    fireEvent.click(screen.getByRole('button', { name: translations.workflowTemplateExport }));
+    assert.ok(exportedBlob instanceof Blob);
+    assert.equal(downloadedFileName, 'openchat-workflows.json');
+    assert.equal(JSON.parse(await exportedBlob.text()).templates[0].name, 'Release summary');
+  } finally {
+    URL.createObjectURL = originalCreateObjectURL;
+    URL.revokeObjectURL = originalRevokeObjectURL;
+    browserWindow.HTMLAnchorElement.prototype.click = originalAnchorClick;
   }
 });

@@ -11,8 +11,12 @@ import { unifiedStorage } from '@shared/lib/platform/storage/unifiedStorage';
 export const DESIGN_PANEL_DEFAULT_WIDTH = 320;
 export const DESIGN_PANEL_MIN_WIDTH = 220;
 export const DESIGN_PANEL_MAX_WIDTH = 420;
+export const DESIGN_INSPECTOR_DEFAULT_WIDTH = 320;
+export const DESIGN_INSPECTOR_MIN_WIDTH = 260;
+export const DESIGN_INSPECTOR_MAX_WIDTH = 480;
 
 const designPanelWidthKey = 'design.control_panel_width';
+const designInspectorWidthKey = 'design.inspector_width';
 const designSettingsKey = 'design.generation_preferences';
 const enqueuePreferenceWrite = createSerialTaskQueue();
 
@@ -212,6 +216,21 @@ export function readDesignPanelWidth(): number {
 
 export function writeDesignPanelWidth(width: number): Promise<void> {
   return unifiedStorage.setPersistedItem(designPanelWidthKey, String(clampDesignPanelWidth(width)));
+}
+
+export function clampDesignInspectorWidth(width: number): number {
+  if (!Number.isFinite(width)) return DESIGN_INSPECTOR_DEFAULT_WIDTH;
+  return Math.round(Math.min(DESIGN_INSPECTOR_MAX_WIDTH, Math.max(DESIGN_INSPECTOR_MIN_WIDTH, width)));
+}
+
+export function readDesignInspectorWidth(): number {
+  const encoded = unifiedStorage.getItem(designInspectorWidthKey);
+  if (encoded === null) return DESIGN_INSPECTOR_DEFAULT_WIDTH;
+  return clampDesignInspectorWidth(Number(encoded));
+}
+
+export function writeDesignInspectorWidth(width: number): Promise<void> {
+  return unifiedStorage.setPersistedItem(designInspectorWidthKey, String(clampDesignInspectorWidth(width)));
 }
 
 async function persistPreferences(

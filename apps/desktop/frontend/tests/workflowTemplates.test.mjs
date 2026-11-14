@@ -11,7 +11,7 @@ import {
   parseWorkflowTemplates,
   workflowParameterNames,
   WorkflowTemplateValidationError,
-} from '../src/features/model-catalog/data/workflowTemplateCore.ts';
+} from '../src/features/chat/data/workflowTemplateCore.ts';
 
 const sampleValidTemplate = {
   id: 'a0000000-0000-4000-8000-000000000001',
@@ -112,7 +112,7 @@ test('import skips duplicate templates when already existing', () => {
 
 test('workflow template storage uses unified durable persistence', () => {
   const storageSource = readFileSync(
-    new URL('../src/features/model-catalog/data/workflowTemplates.ts', import.meta.url),
+    new URL('../src/features/chat/data/workflowTemplates.ts', import.meta.url),
     'utf8',
   );
   assert.match(storageSource, /new WorkflowTemplateReadError\('corrupt', encoded\)/u);

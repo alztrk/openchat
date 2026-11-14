@@ -9,7 +9,11 @@ import {
   restoreStoredAttachment,
   validateAttachmentSelection,
 } from '@features/chat/data/chatAttachments';
-import { type ConversationAttachmentSummary, readMessageAttachment } from '@features/chat/data';
+import {
+  type ConversationAttachmentReference,
+  isConversationAttachmentReference,
+  readMessageAttachment,
+} from '@features/chat/data';
 import { useChatStore } from '@features/chat/state';
 import type { ChatModel } from '@entities/model';
 import { isObject } from '@entities/model/composerUtils';
@@ -17,6 +21,7 @@ import { isObject } from '@entities/model/composerUtils';
 export interface UseComposerAttachmentsOptions {
   droppedFiles?: { id: number; files: File[] } | null;
   selectedModel: ChatModel | undefined;
+  targetConversationId: string | null;
 }
 
 export interface UseComposerAttachmentsReturn {
@@ -25,7 +30,7 @@ export interface UseComposerAttachmentsReturn {
   pendingAttachments: PendingChatAttachment[];
   pendingAttachmentsRef: RefObject<PendingChatAttachment[]>;
   addAttachments: (files: File[]) => Promise<void>;
-  addExistingAttachments: (items: readonly ConversationAttachmentSummary[]) => Promise<boolean>;
+  addExistingAttachments: (items: readonly ConversationAttachmentReference[]) => Promise<boolean>;
   appendAttachments: (attachments: PendingChatAttachment[]) => boolean;
   clearPendingAttachments: () => void;
   removeAttachment: (id: string) => void;
@@ -36,6 +41,7 @@ export interface UseComposerAttachmentsReturn {
 export function useComposerAttachments({
   droppedFiles,
   selectedModel,
+  targetConversationId,
 }: UseComposerAttachmentsOptions): UseComposerAttachmentsReturn {
   const isReadingAttachmentsRef = useRef(false);
   const pendingAttachmentsRef = useRef<PendingChatAttachment[]>([]);
@@ -123,7 +129,7 @@ export function useComposerAttachments({
     }
   };
 
-  const addExistingAttachments = async (items: readonly ConversationAttachmentSummary[]) => {
+  const addExistingAttachments = async (items: readonly ConversationAttachmentReference[]) => {
     if (isReadingAttachmentsRef.current || items.length === 0) return false;
     isReadingAttachmentsRef.current = true;
     setIsReadingAttachments(true);
@@ -135,7 +141,11 @@ export function useComposerAttachments({
         name: item.fileName,
         mimeType: item.mimeType,
         sizeBytes: item.sizeBytes,
-        kind: item.mimeType.startsWith('image/') ? ('image' as const) : ('text' as const),
+        kind: item.mimeType.startsWith('image/')
+          ? ('image' as const)
+          : item.mimeType === 'application/pdf'
+            ? ('document' as const)
+            : ('text' as const),
       }));
       validateAttachmentSelection(existingAttachments, metadata);
       const attachments = await Promise.all(
@@ -162,6 +172,14 @@ export function useComposerAttachments({
   useEffect(() => {
     addAttachmentsRef.current = addAttachments;
   });
+  const addExistingAttachmentsRef = useRef(addExistingAttachments);
+  useEffect(() => {
+    addExistingAttachmentsRef.current = addExistingAttachments;
+  });
+  const targetConversationIdRef = useRef(targetConversationId);
+  useEffect(() => {
+    targetConversationIdRef.current = targetConversationId;
+  }, [targetConversationId]);
 
   const lastHandledDropIdRef = useRef<number | null>(null);
   useEffect(() => {
@@ -173,7 +191,14 @@ export function useComposerAttachments({
 
   useEffect(() => {
     const handleAddAttachmentsEvent = (event: Event) => {
-      if (!(event instanceof CustomEvent) || !isObject(event.detail) || !Array.isArray(event.detail.files)) return;
+      if (!(event instanceof CustomEvent) || !isObject(event.detail)) return;
+      if (Array.isArray(event.detail.attachments)) {
+        if (event.detail.conversationId !== targetConversationIdRef.current) return;
+        if (!event.detail.attachments.every(isConversationAttachmentReference)) return;
+        void addExistingAttachmentsRef.current(event.detail.attachments);
+        return;
+      }
+      if (!Array.isArray(event.detail.files)) return;
       const files = event.detail.files.filter((file): file is File => file instanceof File);
       if (files.length === 0) return;
       void addAttachmentsRef.current(files);

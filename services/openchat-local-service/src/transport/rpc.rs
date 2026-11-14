@@ -37,6 +37,8 @@ mod chat_request;
 mod connector_catalog;
 #[path = "rpc/conversations.rs"]
 mod conversations;
+#[path = "rpc/design_documents.rs"]
+mod design_documents;
 #[path = "rpc/design_images.rs"]
 mod design_images;
 #[path = "rpc/file_changes.rs"]
@@ -65,6 +67,8 @@ mod storage_settings;
 mod temporary_conversation;
 #[path = "rpc/tool_permissions.rs"]
 mod tool_permissions;
+#[path = "rpc/voice_input.rs"]
+mod voice_input;
 
 /// Holds the request-scoped services and state required by the RPC dispatcher.
 pub(crate) struct RpcDispatchContext<'a> {
@@ -147,6 +151,9 @@ pub(crate) async fn dispatch(context: RpcDispatchContext<'_>) -> Result<Value, S
     {
         return design_images::dispatch(&method, &request.params, storage);
     }
+    if method.starts_with("design.documents.") || method.starts_with("design.styles.") {
+        return design_documents::dispatch(&method, &request.params, storage);
+    }
     if method.starts_with("statistics.") || method.starts_with("models.pricing.") {
         return statistics::dispatch(&method, &request.params, storage, &mut cancellation).await;
     }
@@ -164,6 +171,17 @@ pub(crate) async fn dispatch(context: RpcDispatchContext<'_>) -> Result<Value, S
     }
     if method.starts_with("tools.permissions.") {
         return tool_permissions::dispatch_global(&method, &request.params, storage);
+    }
+    if method.starts_with("voice.input.") {
+        return voice_input::dispatch(
+            &method,
+            &request.params,
+            &request.id,
+            storage,
+            &events,
+            &mut cancellation,
+        )
+        .await;
     }
     if method.starts_with("local.engines.")
         || method.starts_with("local.models.")

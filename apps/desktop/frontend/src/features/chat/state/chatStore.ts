@@ -44,7 +44,7 @@ import { createSendMessageAction } from './chatStoreSend';
 import type { TemporaryChatSession } from './chatStoreTemporary';
 import { createTemporaryChatActions } from './chatStoreTemporary';
 import { createRespondToToolPermissionAction } from './chatStoreToolPermissions';
-import { favoriteSourceConnection } from './chatStoreUtils';
+import { favoriteSourceConnection, isSameRoute } from './chatStoreUtils';
 
 type ServiceStatus = 'idle' | 'loading' | 'ready' | 'error';
 type FavoriteStatus = 'idle' | 'loading' | 'ready' | 'error';
@@ -230,7 +230,7 @@ export interface ChatState {
   setPendingAttachmentCount(count: number): void;
   selectModel(key: string | null): void;
   selectConversationModel(key: string, conversationId?: string): Promise<boolean>;
-  selectReasoningEffort(effort: string | null): Promise<void>;
+  selectReasoningEffort(effort: string | null, targetConversationId?: string | null): Promise<void>;
   selectConversation(id: string, targetMessageId?: string | null, targetQuery?: string | null): Promise<void>;
   markConversationRead(conversationId: string, expectedMessageId: string): Promise<void>;
   markActiveConversationReadIfVisible(): Promise<void>;
@@ -506,11 +506,21 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
   },
 
-  async selectReasoningEffort(effort) {
+  async selectReasoningEffort(effort, targetConversationId) {
     const current = get();
-    const model = current.models.find((item) => item.key === current.selectedModelKey);
+    const conversationId =
+      targetConversationId !== undefined
+        ? targetConversationId
+        : current.temporaryChat
+          ? null
+          : current.activeConversationId;
+    const conversation = conversationId
+      ? current.conversations.find((item) => item.id === conversationId)
+      : undefined;
+    const model = conversation
+      ? current.models.find((item) => isSameRoute(item, conversation))
+      : current.models.find((item) => item.key === current.selectedModelKey);
     if (effort !== null && (!model?.supportsReasoning || !model.reasoningLevels.includes(effort))) return;
-    const conversationId = current.temporaryChat ? null : current.activeConversationId;
     if (conversationId !== null) {
       try {
         await setConversationReasoningEffort(conversationId, effort);
@@ -523,9 +533,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
           ),
           errorCode: latest.activeConversationId === conversationId ? null : latest.errorCode,
         }));
-      } catch {
+      } catch (cause) {
         if (get().activeConversationId === conversationId) {
           set({ errorCode: 'conversationReasoningSaveFailed', opencodeRetryAtUnixMs: null });
+        } else {
+          globalThis.reportError(new Error('The conversation reasoning setting could not be saved.', { cause }));
         }
       }
       return;

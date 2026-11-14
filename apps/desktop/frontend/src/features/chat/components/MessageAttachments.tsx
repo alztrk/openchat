@@ -5,16 +5,18 @@ import { useEffect, useId, useRef, useState } from 'react';
 const URL_REVOCATION_DELAY_MS = 1_000;
 import { useTranslation } from 'react-i18next';
 import { Button, Dialog, Slider } from '@shared/components';
-import type { ChatAttachmentMetadata } from '@features/chat/data/chatAttachments';
+import type { ConversationAttachmentReference } from '@features/chat/data';
+import type { ChatAttachmentMetadata } from '@entities/conversation';
 import { readMessageAttachment } from '@features/chat/data';
 
 interface MessageAttachmentsProps {
   conversationId: string;
   messageId: string;
   attachments: readonly ChatAttachmentMetadata[];
+  onAddToComposer?: (attachment: ConversationAttachmentReference) => void;
 }
 
-export function MessageAttachments({ conversationId, messageId, attachments }: MessageAttachmentsProps) {
+export function MessageAttachments({ conversationId, messageId, attachments, onAddToComposer }: MessageAttachmentsProps) {
   const { t } = useTranslation();
   if (attachments.length === 0) return null;
   const isScrollable = attachments.length > 4;
@@ -36,6 +38,7 @@ export function MessageAttachments({ conversationId, messageId, attachments }: M
             conversationId={conversationId}
             messageId={messageId}
             isScrollable={isScrollable}
+            onAddToComposer={onAddToComposer}
           />
         </li>
       ))}
@@ -48,9 +51,10 @@ interface MessageAttachmentProps {
   conversationId: string;
   messageId: string;
   isScrollable: boolean;
+  onAddToComposer?: (attachment: ConversationAttachmentReference) => void;
 }
 
-function MessageAttachment({ attachment, conversationId, isScrollable, messageId }: MessageAttachmentProps) {
+function MessageAttachment({ attachment, conversationId, isScrollable, messageId, onAddToComposer }: MessageAttachmentProps) {
   const { i18n, t } = useTranslation();
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [status, setStatus] = useState<'idle' | 'loading' | 'error'>('idle');
@@ -60,6 +64,29 @@ function MessageAttachment({ attachment, conversationId, isScrollable, messageId
   const downloadTimer = useRef<number | undefined>(undefined);
   const isMountedRef = useRef(false);
   const zoomControlId = useId();
+  const addToComposerAction = onAddToComposer ? (
+    <Button
+      aria-label={`${t('attachmentAddToComposer')}: ${attachment.name}`}
+      className="w-full justify-center"
+      disabled={status !== 'idle'}
+      onClick={() =>
+        onAddToComposer({
+          conversationId,
+          messageId,
+          attachmentId: attachment.id,
+          fileName: attachment.name,
+          mimeType: attachment.mimeType,
+          sizeBytes: attachment.sizeBytes,
+        })
+      }
+      size="small"
+      title={t('attachmentAddToComposer')}
+      type="button"
+      variant="secondary"
+    >
+      {t('attachmentAddToComposer')}
+    </Button>
+  ) : null;
 
   useEffect(() => {
     if (attachment.kind !== 'image') return;
@@ -124,7 +151,7 @@ function MessageAttachment({ attachment, conversationId, isScrollable, messageId
 
   if (attachment.kind === 'image') {
     return (
-      <>
+      <div className="grid min-w-0 w-full gap-1">
         <figure className="grid min-w-0 w-full gap-1">
           {imageUrl ? (
             <Button
@@ -201,7 +228,8 @@ function MessageAttachment({ attachment, conversationId, isScrollable, messageId
             </div>
           ) : null}
         </Dialog>
-      </>
+        {addToComposerAction}
+      </div>
     );
   }
 
@@ -234,6 +262,7 @@ function MessageAttachment({ attachment, conversationId, isScrollable, messageId
           {t('attachmentReadFailed')}
         </span>
       ) : null}
+      {addToComposerAction}
     </div>
   );
 }

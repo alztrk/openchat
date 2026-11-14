@@ -729,7 +729,7 @@ export function createSendMessageAction(
           }
         }
       }
-      return userMessageSaved;
+      return resumeRunId === undefined && !userMessageAlreadySaved && !isRetry && userMessageSaved;
     } finally {
       if (conversationId !== null) get().setProviderCompaction(conversationId, false);
       window.dispatchEvent(new CustomEvent('openchat-chat-request-finished', { detail: { conversationId } }));

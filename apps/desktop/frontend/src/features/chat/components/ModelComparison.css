@@ -1,0 +1,71 @@
+.model-comparison-workspace-dialog {
+  inset: 8px;
+  display: flex;
+  width: auto;
+  max-width: none;
+  height: calc(100dvh - 16px);
+  max-height: none;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 16px 0 0;
+  transform: none;
+}
+
+.model-comparison-workspace-dialog > [data-radix-dialog-title] {
+  flex: none;
+  margin: 0;
+  padding: 0 20px 12px;
+}
+
+.model-comparison-workspace {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+}
+
+.model-comparison-toolbar {
+  display: flex;
+  min-height: 48px;
+  flex: none;
+  align-items: center;
+  gap: 12px;
+  border-block: 1px solid rgb(var(--border) / var(--border-alpha, 0.1));
+  padding: 4px 12px 4px 20px;
+}
+
+.model-comparison-panes {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  gap: 1px;
+  overflow: auto;
+  background: rgb(var(--border) / var(--border-alpha, 0.1));
+}
+
+.model-comparison-panes > .chat-conversation-pane {
+  flex: 1 0 min(26rem, 100%);
+  background: rgb(var(--background));
+}
+
+.model-comparison-panes[data-pane-count='2'] > .chat-conversation-pane {
+  flex-basis: calc(50% - 0.5px);
+}
+
+.model-comparison-panes[data-pane-count='3'] > .chat-conversation-pane {
+  flex-basis: calc(33.333% - 0.66px);
+}
+
+@media (max-width: 720px) {
+  .model-comparison-workspace-dialog {
+    inset: 0;
+    width: 100vw;
+    height: 100dvh;
+    border-radius: 0;
+    padding-top: max(12px, env(safe-area-inset-top));
+  }
+
+  .model-comparison-panes > .chat-conversation-pane {
+    flex-basis: min(26rem, calc(100vw - 24px));
+  }
+}

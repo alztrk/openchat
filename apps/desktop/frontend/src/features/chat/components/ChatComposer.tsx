@@ -1,9 +1,11 @@
-import { ArrowUp, Brain, Paperclip, Play, Square, X } from 'lucide-react';
-import { useCallback, useRef, useState } from 'react';
-import { useMemo } from 'react';
+import { ArrowUp, Brain, Paperclip, Play, Square, Workflow, X } from 'lucide-react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button, Select, Textarea } from '@shared/components';
+import { Button, Select, Textarea, toast } from '@shared/components';
 import type { ChatMessage } from '@features/chat/data';
+import type { WorkflowTemplate } from '@features/chat/data/workflowTemplates';
+import type { ChatModel } from '@entities/model';
+import { isAssistantAgentSnapshot } from '@shared/lib/preferences/assistantProfiles';
 import { getSidebarDraggingConversationId } from '@shared/lib/preferences/sidebarPreferences';
 import { useChatStreaming } from '@features/chat/hooks/useChatStreaming';
 import { useChatStore } from '@features/chat/state';
@@ -11,6 +13,7 @@ import { ToolPermissionModeSelector } from '@features/projects/components';
 import { modelRouteKey } from '@entities/model/modelPreferences';
 import { rateLimitForModel, useOAuthRateLimits } from '@features/provider-settings/data';
 import { formatKeyboardShortcut, useKeyboardShortcutsStore } from '@shared/lib/preferences/keyboardShortcutsStore';
+import { appendVoiceTranscriptToDraft } from '@features/chat/data/voiceInput';
 import { ChatSlashCommandMenu } from './ChatSlashCommandMenu';
 import { ChatSlashModelMenu } from './ChatSlashModelMenu';
 import { ComposerFeedbackList, ComposerModelBanner } from './ComposerAlerts';
@@ -26,7 +29,14 @@ import {
 import { ModelPicker } from './ModelPicker';
 import { PendingAttachmentGallery } from './PendingAttachmentGallery';
 import { UserQuestionPanel } from './UserQuestionPanel';
+import { VoiceInputControl } from './voice';
+import { WorkflowTemplatesDialog } from './WorkflowTemplatesDialog';
 import { useComposerState } from './useComposerState';
+import { toggleComparisonModelSelection } from '@features/chat/data/modelComparison';
+
+const ModelComparison = lazy(() =>
+  import('./ModelComparison').then((module) => ({ default: module.ModelComparison })),
+);
 
 export interface ChatComposerProps {
   onOpenSettings(): void;
@@ -126,6 +136,7 @@ export function ChatComposer({
   const projects = useChatStore((state) => state.projects);
   const projectsStatus = useChatStore((state) => state.projectsStatus);
   const pendingProjectId = useChatStore((state) => state.pendingProjectId);
+  const pendingAgentSnapshot = useChatStore((state) => state.pendingAgentSnapshot);
   const hiddenModelKeys = useChatStore((state) => state.hiddenModelKeys);
   const storeActiveConversationId = useChatStore((state) => state.activeConversationId);
   const temporaryChatId = useChatStore((state) => state.temporaryChat?.id ?? null);
@@ -134,7 +145,7 @@ export function ChatComposer({
   const storeMessages = useChatStore((state) => state.messages);
   const messages = messagesOverride ?? storeMessages;
   const isUpdatingConversationModel = useChatStore((state) => state.isUpdatingConversationModel);
-  const selectedReasoningEffort = useChatStore((state) => state.selectedReasoningEffort);
+  const storeSelectedReasoningEffort = useChatStore((state) => state.selectedReasoningEffort);
   const modelStatus = useChatStore((state) => state.modelStatus);
   const modelFavorites = useChatStore((state) => state.modelFavorites);
   const chatGptWorkspaceSelectionRequired = useChatStore((state) => state.chatGptWorkspaceSelectionRequired);
@@ -143,6 +154,8 @@ export function ChatComposer({
   const selectConversationModel = useChatStore((state) => state.selectConversationModel);
   const selectModel = useChatStore((state) => state.selectModel);
   const setPendingProjectId = useChatStore((state) => state.setPendingProjectId);
+  const startNewChat = useChatStore((state) => state.startNewChat);
+  const startNewChatWithAgent = useChatStore((state) => state.startNewChatWithAgent);
   const selectReasoningEffort = useChatStore((state) => state.selectReasoningEffort);
   const chatErrorCode = useChatStore((state) => state.errorCode);
   const chatErrorMessage = useChatStore((state) => state.errorMessage);
@@ -163,6 +176,8 @@ export function ChatComposer({
     () => conversations.find((conversation) => conversation.id === activeConversationId),
     [conversations, activeConversationId],
   );
+  const selectedReasoningEffort =
+    targetConversationId === undefined ? storeSelectedReasoningEffort : (activeConversation?.reasoningEffort ?? null);
   const contextProjectId = activeConversation?.projectId ?? pendingProjectId;
   const contextToolPermissionMode = composerMode === 'plan' ? 'plan' : selectedPermissionMode;
   const isTargetPlaceholder = targetConversationId === null;
@@ -188,9 +203,96 @@ export function ChatComposer({
         : t('composerSendTooltipShortcut', { shortcut: sendShortcutLabel }),
     [sendMessageBinding, sendShortcutLabel, t],
   );
+  const voiceLanguage = 'auto';
+  const handleVoiceTranscript = useCallback(
+    (transcript: string) => {
+      setMessageDraft((currentDraft) => appendVoiceTranscriptToDraft(currentDraft, transcript));
+      if (typeof window !== 'undefined') {
+        window.requestAnimationFrame(() => {
+          const input = inputRef.current;
+          if (!input) return;
+          input.style.height = 'auto';
+          input.style.height = `${input.scrollHeight}px`;
+        });
+      }
+    },
+    [inputRef, setMessageDraft],
+  );
 
   const [isComposerDraggingOver, setIsComposerDraggingOver] = useState(false);
+  const [isVoiceInputActive, setIsVoiceInputActive] = useState(false);
+  const [isModelComparisonOpen, setIsModelComparisonOpen] = useState(false);
+  const [isWorkflowTemplatesOpen, setIsWorkflowTemplatesOpen] = useState(false);
+  const [comparisonModelKeys, setComparisonModelKeys] = useState<string[]>(() =>
+    selectedModel?.key ? [selectedModel.key] : [],
+  );
   const composerDragDepthRef = useRef(0);
+  const handleVoiceInputExclusiveModeChange = useCallback((active: boolean) => {
+    setIsVoiceInputActive(active);
+  }, []);
+
+  useEffect(() => {
+    const availableModelKeys = new Set(selectableModels.map((model) => model.key));
+    setComparisonModelKeys((current) => {
+      const next = current.filter((key) => availableModelKeys.has(key));
+      if (
+        selectedModel?.key &&
+        availableModelKeys.has(selectedModel.key) &&
+        (next.length === 0 || next[0] !== selectedModel.key)
+      ) {
+        return [selectedModel.key];
+      }
+      return next.length === current.length ? current : next;
+    });
+  }, [selectableModels, selectedModel?.key]);
+
+  const canSelectComparisonModels =
+    !isTemporaryChat && targetConversationId === undefined && selectableModels.length >= 2;
+  const canStartComparison =
+    comparisonModelKeys.length >= 2 &&
+    messageDraft.trim().length > 0 &&
+    pendingAttachments.length === 0 &&
+    !isReadingAttachments &&
+    !isSending &&
+    !isUpdatingConversationModel &&
+    composerMode === 'normal';
+
+  const startWorkflowConversation = (workflowPrompt: string, template: WorkflowTemplate) => {
+    let agentSnapshot = null;
+    if (template.systemPrompt !== undefined || template.tools !== undefined) {
+      const candidate = {
+        id: crypto.randomUUID(),
+        name: template.name,
+        instructions: template.systemPrompt ?? '',
+        responseStyle: 'balanced' as const,
+        toolAllowlist: template.tools ?? null,
+      };
+      if (!isAssistantAgentSnapshot(candidate)) {
+        toast.error(t('workflowTemplateAgentInvalid'));
+        return;
+      }
+      agentSnapshot = candidate;
+    }
+
+    let templateModel: ChatModel | undefined;
+    if (template.providerId && template.modelId) {
+      const matches = selectableModels.filter(
+        (model) => model.providerId === template.providerId && model.modelId === template.modelId,
+      );
+      if (matches.length === 1) templateModel = matches[0];
+      else toast.warning(t('workflowTemplateModelUnavailable'));
+    }
+
+    if (agentSnapshot) {
+      startNewChatWithAgent(agentSnapshot);
+      if (contextProjectId) setPendingProjectId(contextProjectId);
+    } else {
+      startNewChat(contextProjectId);
+    }
+    if (templateModel) selectModel(templateModel.key);
+    setMessageDraft(workflowPrompt);
+    setCommandFeedbackKey(null);
+  };
 
   // Memoize drag handlers to prevent unnecessary re-renders
   const handleComposerDragEnter = useCallback(
@@ -333,7 +435,7 @@ export function ChatComposer({
         />
 
         <form
-          className={`composer-surface rounded-composer transition-colors ${
+          className={`composer-surface relative rounded-composer transition-colors ${
             isComposerDraggingOver ? 'border-accent bg-accent/5 ring-2 ring-accent' : ''
           }`}
           onDragEnter={handleComposerDragEnter}
@@ -343,6 +445,7 @@ export function ChatComposer({
           onSubmit={send}
           ref={formRef}
         >
+          <div hidden={isVoiceInputActive}>
           <input
             accept={
               selectedModel?.supportsImages === true
@@ -458,6 +561,18 @@ export function ChatComposer({
               >
                 <Paperclip aria-hidden="true" size={18} />
               </Button>
+              {!isTemporaryChat ? (
+                <Button
+                  aria-label={t('workflowTemplatesTitle')}
+                  disabled={isTargetPlaceholder || isSending || isUpdatingConversationModel}
+                  onClick={() => setIsWorkflowTemplatesOpen(true)}
+                  size="icon"
+                  title={t('workflowTemplatesTitle')}
+                  variant="ghost"
+                >
+                  <Workflow aria-hidden="true" size={17} />
+                </Button>
+              ) : null}
               <ModelPicker
                 canSelectProvider
                 showFastModeControl={!isTemporaryChat}
@@ -474,6 +589,20 @@ export function ChatComposer({
                 modelProviders={modelProviders}
                 models={pickerModels}
                 disabled={isSending || isUpdatingConversationModel}
+                comparisonSelectionKeys={comparisonModelKeys}
+                canStartComparison={canStartComparison}
+                onToggleComparisonModel={
+                  canSelectComparisonModels
+                    ? (model) => {
+                        setComparisonModelKeys((current) => toggleComparisonModelSelection(current, model.key));
+                      }
+                    : undefined
+                }
+                onStartComparison={() => {
+                  setModelPickerOpen(false);
+                  setCommandFeedbackKey(null);
+                  setIsModelComparisonOpen(true);
+                }}
                 onOpenChange={(open) => {
                   setModelPickerOpen(open);
                 }}
@@ -483,7 +612,10 @@ export function ChatComposer({
                   setCommandFeedbackKey(null);
                   void selectConversationModel(model.key, targetConversationId ?? undefined).then((updated) => {
                     if (!updated) setCommandFeedbackKey('slashCommandModelUnavailable');
-                    else setCommandFeedbackKey(null);
+                    else {
+                      setComparisonModelKeys([model.key]);
+                      setCommandFeedbackKey(null);
+                    }
                   });
                 }}
                 onRemoveFavorite={(favorite) => {
@@ -510,7 +642,7 @@ export function ChatComposer({
                     disabled={isTargetPlaceholder || isSending || isUpdatingConversationModel}
                     label={t('reasoning')}
                     leadingIcon={<Brain aria-hidden="true" size={16} />}
-                    onChange={(event) => void selectReasoningEffort(event.currentTarget.value || null)}
+                    onChange={(event) => void selectReasoningEffort(event.currentTarget.value || null, targetConversationId)}
                     options={[
                       {
                         value: '',
@@ -530,54 +662,88 @@ export function ChatComposer({
               ) : null}
               <ToolPermissionModeSelector onModeChange={setSelectedPermissionMode} />
             </div>
-            {isSending && messageDraft.trim().length === 0 ? (
-              <Button
-                aria-label={t('stop')}
-                className="size-10"
-                onClick={() => void stopResponse(activeConversationId ?? temporaryChatId)}
-                size="icon"
-                variant="secondary"
-              >
-                <Square aria-hidden="true" fill="currentColor" size={14} />
-              </Button>
-            ) : canResumeInterruptedRun ? (
-              <Button
-                aria-label={t('continueLabel')}
-                className="size-10"
-                disabled={isTargetPlaceholder || isReadingAttachments || isUpdatingConversationModel || isSendBlocked}
-                onClick={resumeInterruptedRun}
-                size="icon"
-                title={t('continueLabel')}
-                type="button"
-                variant="primary"
-              >
-                <Play aria-hidden="true" size={18} />
-              </Button>
-            ) : (
-              <Button
-                aria-label={isSending ? t('composerSteerResponse') : sendTooltip}
-                className="size-10"
-                disabled={
-                  isTargetPlaceholder ||
-                  pickerModels.length === 0 ||
-                  !selectedModel?.key ||
-                  messageDraft.trim().length === 0 ||
-                  isReadingAttachments ||
-                  isUpdatingConversationModel ||
-                  isSendBlocked ||
-                  selectedModelRateLimited
-                }
-                size="icon"
-                title={isSending ? t('composerSteerResponse') : sendTooltip}
-                type="submit"
-                variant="primary"
-              >
-                <ArrowUp aria-hidden="true" size={20} />
-              </Button>
-            )}
+            <div className="flex items-center gap-2">
+              <VoiceInputControl
+                className="shrink-0"
+                disabled={isTargetPlaceholder || isSending || isReadingAttachments || isUpdatingConversationModel}
+                language={voiceLanguage}
+                onAppendTranscript={handleVoiceTranscript}
+                onExclusiveModeChange={handleVoiceInputExclusiveModeChange}
+                overlayContainer={formRef.current}
+              />
+              {isSending && messageDraft.trim().length === 0 ? (
+                <Button
+                  aria-label={t('stop')}
+                  className="size-10"
+                  onClick={() => void stopResponse(activeConversationId ?? temporaryChatId)}
+                  size="icon"
+                  variant="secondary"
+                >
+                  <Square aria-hidden="true" fill="currentColor" size={14} />
+                </Button>
+              ) : canResumeInterruptedRun ? (
+                <Button
+                  aria-label={t('continueLabel')}
+                  className="size-10"
+                  disabled={isTargetPlaceholder || isReadingAttachments || isUpdatingConversationModel || isSendBlocked}
+                  onClick={resumeInterruptedRun}
+                  size="icon"
+                  title={t('continueLabel')}
+                  type="button"
+                  variant="primary"
+                >
+                  <Play aria-hidden="true" size={18} />
+                </Button>
+              ) : (
+                <Button
+                  aria-label={isSending ? t('composerSteerResponse') : sendTooltip}
+                  className="size-10"
+                  disabled={
+                    isTargetPlaceholder ||
+                    pickerModels.length === 0 ||
+                    !selectedModel?.key ||
+                    messageDraft.trim().length === 0 ||
+                    isReadingAttachments ||
+                    isUpdatingConversationModel ||
+                    isSendBlocked ||
+                    selectedModelRateLimited
+                  }
+                  size="icon"
+                  title={isSending ? t('composerSteerResponse') : sendTooltip}
+                  type="submit"
+                  variant="primary"
+                >
+                  <ArrowUp aria-hidden="true" size={20} />
+                </Button>
+              )}
+            </div>
+          </div>
           </div>
         </form>
-
+        <WorkflowTemplatesDialog
+          onOpenChange={setIsWorkflowTemplatesOpen}
+          onStartConversation={startWorkflowConversation}
+          open={isWorkflowTemplatesOpen}
+        />
+        {isModelComparisonOpen ? (
+          <Suspense fallback={null}>
+            <ModelComparison
+              agent={activeConversation?.agent ?? pendingAgentSnapshot}
+              initialModelKeys={comparisonModelKeys}
+              models={selectableModels}
+              onClose={() => setIsModelComparisonOpen(false)}
+              onOpenSettings={onOpenSettings}
+              onRequestTemporaryExit={onRequestTemporaryExit}
+              onStarted={() => {
+                setMessageDraft('');
+                setCommandFeedbackKey(null);
+                setComparisonModelKeys([]);
+              }}
+              projectId={contextProjectId}
+              prompt={messageDraft}
+            />
+          </Suspense>
+        ) : null}
       </div>
     </div>
   );

@@ -1,8 +1,8 @@
-import { TitleTooltip } from "@shared/components";
 import { FileText, LoaderCircle, Paperclip } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-
+import { TitleTooltip } from '@shared/components';
+import type { ConversationAttachmentReference } from '@features/chat/data';
 import { getMessages, type ChatMessage } from '@features/chat/data';
 import { useChatStore } from '@features/chat/state';
 import { MessageAttachments } from './MessageAttachments';
@@ -68,6 +68,13 @@ export function ConversationAttachmentsPanel({ conversationId }: { conversationI
   const isLoading =
     !hasConversationMessages || conversationMessages.status === 'loading';
   const hasError = hasConversationMessages && conversationMessages.status === 'error';
+  const addToComposer = (attachment: ConversationAttachmentReference) => {
+    window.dispatchEvent(
+      new CustomEvent('openchat-composer-add-attachments', {
+        detail: { conversationId, attachments: [attachment] },
+      }),
+    );
+  };
 
   if (!conversationId) {
     return <p className="flex min-h-0 flex-1 items-center justify-center px-6 text-center text-sm text-secondary-text">{t('conversationUnavailable')}</p>;
@@ -94,7 +101,12 @@ export function ConversationAttachmentsPanel({ conversationId }: { conversationI
                   {new Intl.NumberFormat(i18n.language, { maximumFractionDigits: 1 }).format(attachment.sizeBytes / 1024)} KB
                 </span>
               </div>
-              <MessageAttachments attachments={[attachment]} conversationId={itemConversationId} messageId={messageId} />
+              <MessageAttachments
+                attachments={[attachment]}
+                conversationId={itemConversationId}
+                messageId={messageId}
+                onAddToComposer={addToComposer}
+              />
             </li>
           ))}
         </ul>

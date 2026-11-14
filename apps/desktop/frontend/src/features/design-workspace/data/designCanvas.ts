@@ -396,6 +396,19 @@ export function designCanvasDataUrl(svg: string): string {
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 }
 
+export function sanitizeDesignCanvasSvg(
+  svg: string,
+  width: number,
+  height: number,
+  tokens: DesignCanvasTokens,
+): string {
+  return sanitizeSvg(svg, width, height, tokens);
+}
+
+export function parseDesignCanvasTokens(value: unknown): DesignCanvasTokens {
+  return parseTokens(value, true);
+}
+
 function exportReactComponent(frame: DesignCanvasFrame): string {
   const document = parseSvgDocument(frame.svg);
   const root = document.documentElement;

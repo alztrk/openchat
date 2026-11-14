@@ -94,6 +94,9 @@ const ChatFileChangesPanel = lazy(() =>
 const DesignPage = lazy(() =>
   import('@features/design-workspace/components/DesignPage').then((module) => ({ default: module.DesignPage })),
 );
+const DesignCanvas = lazy(() =>
+  import('@features/design-workspace/components/DesignCanvas').then((module) => ({ default: module.DesignCanvas })),
+);
 const SecurityScanPage = lazy(() =>
   import('@features/security-scans/components/SecurityScanPage').then((module) => ({
     default: module.SecurityScanPage,
@@ -622,6 +625,13 @@ export function App() {
     [activeSurface, navigateSurface, requestTemporaryChatExit],
   );
 
+  const openVoiceSettings = useCallback(() => {
+    requestTemporaryChatExit(() => {
+      setSettingsSectionRequest((current) => ({ section: 'voice', requestId: current.requestId + 1 }));
+      navigateSurface('settings');
+    });
+  }, [navigateSurface, requestTemporaryChatExit]);
+
   const startWorkspaceChat = useCallback(() => {
     requestTemporaryChatExit(() => {
       navigateSurface('chats');
@@ -867,6 +877,7 @@ export function App() {
   const heading = {
     chats: t('chats'),
     design: t('design'),
+    images: t('imageStudio'),
     models: t('modelLibrary'),
     security: t('securityScansTitle'),
     settings: t('settings'),
@@ -1177,7 +1188,7 @@ export function App() {
                         onOpenWorkspaceFile={(file) =>
                           handleOpenWorkspaceFileForConversation(activeConversationId, file)
                         }
-                        onOpenSettings={() => navigate('settings')}
+                        onOpenSettings={openVoiceSettings}
                         onQuestionFocusHandled={clearQuestionFocusTarget}
                         onRequestTemporaryExit={requestTemporaryChatExit}
                         onToggleRightPanel={handleTogglePrimaryRightPanel}
@@ -1243,7 +1254,7 @@ export function App() {
                               onOpenWorkspaceFile={(file) =>
                                 handleOpenWorkspaceFileForConversation(panelConversationId, file)
                               }
-                              onOpenSettings={() => navigate('settings')}
+                              onOpenSettings={openVoiceSettings}
                               onQuestionFocusHandled={() => undefined}
                               onRequestTemporaryExit={requestTemporaryChatExit}
                               onToggleRightPanel={() => setIsRightPanelOpen(false)}
@@ -1307,11 +1318,15 @@ export function App() {
             <div className="min-w-0 flex-1 overflow-hidden bg-surface">
               <Suspense
                 fallback={
-                  <p aria-live="polite" className="px-6 py-8 text-sm text-secondary-text" role="status">
-                    {t('designLoading')}
-                  </p>
+                  <p aria-live="polite" className="px-6 py-8 text-sm text-secondary-text" role="status">{t('designCanvasLoading')}</p>
                 }
               >
+                <DesignCanvas />
+              </Suspense>
+            </div>
+          ) : activeSurface === 'images' ? (
+            <div className="min-w-0 flex-1 overflow-hidden bg-surface">
+              <Suspense fallback={<p aria-live="polite" className="px-6 py-8 text-sm text-secondary-text" role="status">{t('designLoading')}</p>}>
                 <DesignPage onOpenSettings={() => navigate('settings')} />
               </Suspense>
             </div>

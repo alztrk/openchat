@@ -117,7 +117,7 @@ export function AppLayout({
     setWorkspaceRatio((current) => Math.max(30, Math.min(70, current + delta)));
   };
 
-  const headingMap: Record<AppSurface, string> = { chats: 'chats', design: 'design', models: 'modelLibrary', security: 'securityScansTitle', settings: 'settings' };
+  const headingMap: Record<AppSurface, string> = { chats: 'chats', design: 'design', images: 'imageStudio', models: 'modelLibrary', security: 'securityScansTitle', settings: 'settings' };
   const headingKey = headingMap[activeSurface] ?? 'chats';
 
   return (

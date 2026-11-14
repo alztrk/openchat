@@ -1,6 +1,6 @@
 import type { TFunction } from 'i18next';
-import { Bot, ChevronDown, LoaderCircle, LogIn, LogOut, RefreshCw, Search, Star, Text } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Bot, Check, ChevronDown, LoaderCircle, LogIn, LogOut, RefreshCw, Search, Star, Text } from 'lucide-react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Button, Input, Tooltip, TitleTooltip } from '@shared/components';
@@ -28,6 +28,7 @@ import {
 import { localServiceClient } from '@shared/lib/platform/local-service';
 import { useTransitionPresence } from '@shared/lib/hooks/useTransitionPresence';
 import { FastModeControl } from './FastModeControl';
+import { isComparisonSelectionKeyboardShortcut, maximumComparisonModels } from '@features/chat/data/modelComparison';
 
 export interface ModelPickerProps {
   models: readonly ChatModel[];
@@ -45,6 +46,8 @@ export interface ModelPickerProps {
   emptyModelsLabel: string;
   chatGptWorkspaceSelectionRequired: boolean;
   disabled: boolean;
+  comparisonSelectionKeys?: readonly string[];
+  canStartComparison?: boolean;
   isOpen: boolean;
   query: string;
   onOpenChange(open: boolean): void;
@@ -55,6 +58,8 @@ export interface ModelPickerProps {
   onFastModeToggle(): void;
   onToggleFavorite(model: ChatModel): void;
   onRemoveFavorite(favorite: ChatModelFavorite): void;
+  onToggleComparisonModel?(model: ChatModel): void;
+  onStartComparison?(): void;
 }
 
 export function ModelPicker({
@@ -69,6 +74,8 @@ export function ModelPicker({
   emptyModelsLabel,
   chatGptWorkspaceSelectionRequired,
   hiddenModelKeys,
+  comparisonSelectionKeys = [],
+  canStartComparison = false,
   knownModels,
   modelFavorites,
   modelProviders,
@@ -81,10 +88,13 @@ export function ModelPicker({
   onSelect,
   onSelectProvider,
   onToggleFavorite,
+  onToggleComparisonModel,
+  onStartComparison,
   query,
   selectedModel,
 }: ModelPickerProps) {
   const { i18n, t } = useTranslation();
+  const comparisonInstructionsId = `model-picker-comparison-instructions-${useId()}`;
   const rateLimits = useOAuthRateLimits();
   const [selectedProviderId, setSelectedProviderId] = useState(() =>
     providerFamily(selectedModel?.providerId ?? 'opencode'),
@@ -370,13 +380,20 @@ export function ModelPicker({
                             (provider) => providerFamily(provider.providerId) === providerFamily(favorite.providerId),
                           )?.name ?? providerNameForId(favorite.providerId, t));
                       const favoriteIsSelected = model?.key === selectedModel?.key;
+                      const canCompareFavorite = Boolean(
+                        model && onToggleComparisonModel && models.some((candidate) => candidate.key === model.key),
+                      );
                       const selectionKey = favoriteKey(favorite);
                       return model ? (
                         <ModelOption
                           isFavorite
                           isSelected={favoriteIsSelected}
+                          comparisonSelected={comparisonSelectionKeys.includes(model.key)}
+                          comparisonSelectable={canCompareFavorite}
+                          comparisonInstructionsId={comparisonInstructionsId}
                           key={selectionKey}
                           model={model}
+                          onToggleComparison={canCompareFavorite ? () => onToggleComparisonModel?.(model) : undefined}
                           onRecheck={() => clearOAuthRateLimit(model)}
                           onSelect={() => {
                             setSelectedProviderId(providerFamily(model.providerId));
@@ -452,8 +469,12 @@ export function ModelPicker({
                         <ModelOption
                           isFavorite={isFavorite}
                           isSelected={model.key === selectedModel?.key}
+                          comparisonSelected={comparisonSelectionKeys.includes(model.key)}
+                          comparisonSelectable={onToggleComparisonModel !== undefined}
+                          comparisonInstructionsId={comparisonInstructionsId}
                           key={model.key}
                           model={model}
+                          onToggleComparison={onToggleComparisonModel ? () => onToggleComparisonModel(model) : undefined}
                           onRecheck={() => clearOAuthRateLimit(model)}
                           onSelect={() => {
                             onSelect(model);
@@ -483,6 +504,34 @@ export function ModelPicker({
                 </p>
               )}
             </div>
+            {onToggleComparisonModel ? (
+              <div className="mt-2 border-t border-border pt-3">
+                <p
+                  aria-live="polite"
+                  className="sr-only"
+                  id={comparisonInstructionsId}
+                  role="status"
+                >
+                  {t('comparisonSelectedCount', {
+                    count: comparisonSelectionKeys.length,
+                    maximum: maximumComparisonModels,
+                  })}
+                  {' · '}
+                  {t('comparisonShiftSelectHint')}
+                </p>
+                <div className="flex flex-wrap items-center justify-end gap-2">
+                  <Button
+                    disabled={!canStartComparison}
+                    onClick={onStartComparison}
+                    size="small"
+                    type="button"
+                    variant="primary"
+                  >
+                    {t('comparisonStartSelected', { count: comparisonSelectionKeys.length })}
+                  </Button>
+                </div>
+              </div>
+            ) : null}
           </section>
         </div>
       ) : null}
@@ -494,11 +543,15 @@ interface ModelOptionProps {
   model: ChatModel;
   isSelected: boolean;
   isFavorite: boolean;
+  comparisonSelected: boolean;
+  comparisonSelectable: boolean;
+  comparisonInstructionsId: string;
   pricingLoad: PricingLoadState | undefined;
   rateLimitState: OAuthRateLimitState | null;
   disabledReason: string | null;
   onRecheck(): void;
   onSelect(): void;
+  onToggleComparison?(): void;
   onRemoveFavorite(): void;
 }
 
@@ -506,10 +559,14 @@ function ModelOption({
   disabledReason,
   isFavorite,
   isSelected,
+  comparisonSelected,
+  comparisonSelectable,
+  comparisonInstructionsId,
   model,
   onRecheck,
   onRemoveFavorite,
   onSelect,
+  onToggleComparison,
   pricingLoad,
   rateLimitState,
 }: ModelOptionProps) {
@@ -526,10 +583,24 @@ function ModelOption({
       <Tooltip label={disabledReason ?? ''}>
         <span className="block min-w-0 flex-1" tabIndex={disabledReason ? 0 : undefined}>
           <Button
+            aria-describedby={comparisonSelectable ? comparisonInstructionsId : undefined}
             aria-pressed={isSelected}
             className="min-h-14 min-w-0 w-full justify-start gap-2.5 rounded-control px-2 text-left text-sm text-text disabled:cursor-not-allowed disabled:opacity-50"
             disabled={disabledReason !== null}
-            onClick={onSelect}
+            onClick={(event) => {
+              if (event.shiftKey && onToggleComparison) {
+                event.preventDefault();
+                onToggleComparison();
+                return;
+              }
+              onSelect();
+            }}
+            onKeyDown={(event) => {
+              if (!onToggleComparison || !isComparisonSelectionKeyboardShortcut(event.shiftKey, event.key)) return;
+              event.preventDefault();
+              event.stopPropagation();
+              onToggleComparison();
+            }}
             size="small"
             type="button"
             variant="ghost"
@@ -582,6 +653,8 @@ function ModelOption({
                 </span>
               </span></TitleTooltip>
             </span>
+            {comparisonSelected ? <span className="sr-only">{t('comparisonModelSelected')}</span> : null}
+            {comparisonSelected ? <Check aria-hidden="true" className="shrink-0 text-accent" size={16} /> : null}
           </Button>
         </span>
       </Tooltip>

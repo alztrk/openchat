@@ -1672,5 +1672,64 @@ pub(super) fn apply_agent_migrations(
         current_version = 57;
     }
 
+    if current_version < 58 && target_version >= 58 {
+        let transaction = connection.unchecked_transaction()?;
+        transaction.execute_batch(
+            "CREATE TABLE design_documents (
+                id TEXT PRIMARY KEY NOT NULL CHECK(length(id) BETWEEN 1 AND 128),
+                name TEXT NOT NULL CHECK(length(name) BETWEEN 1 AND 256),
+                project_id TEXT REFERENCES projects(id) ON DELETE SET NULL,
+                document_json TEXT NOT NULL CHECK (
+                    json_valid(document_json) = 1
+                    AND length(CAST(document_json AS BLOB)) <= 8388608
+                ),
+                revision INTEGER NOT NULL CHECK(revision > 0),
+                created_at_unix_ms INTEGER NOT NULL CHECK(created_at_unix_ms >= 0),
+                updated_at_unix_ms INTEGER NOT NULL CHECK(updated_at_unix_ms >= 0),
+                archived_at_unix_ms INTEGER CHECK(archived_at_unix_ms IS NULL OR archived_at_unix_ms >= 0)
+            );
+            CREATE INDEX design_documents_project_updated
+                ON design_documents(project_id, updated_at_unix_ms DESC);
+            CREATE TABLE design_document_revisions (
+                document_id TEXT NOT NULL REFERENCES design_documents(id) ON DELETE CASCADE,
+                revision INTEGER NOT NULL CHECK(revision > 0),
+                document_json TEXT NOT NULL CHECK (
+                    json_valid(document_json) = 1
+                    AND length(CAST(document_json AS BLOB)) <= 8388608
+                ),
+                created_at_unix_ms INTEGER NOT NULL CHECK(created_at_unix_ms >= 0),
+                PRIMARY KEY(document_id, revision)
+            );",
+        )?;
+        transaction.execute(
+            "INSERT INTO openchat_backend_migrations (version, applied_at_unix_ms) VALUES (58, ?1)",
+            [unix_time_millis()?],
+        )?;
+        transaction.commit()?;
+        current_version = 58;
+    }
+
+    if current_version < 59 && target_version >= 59 {
+        let transaction = connection.unchecked_transaction()?;
+        transaction.execute_batch(
+            "CREATE TABLE design_text_styles (
+                id TEXT PRIMARY KEY NOT NULL CHECK(length(id) BETWEEN 1 AND 128),
+                name TEXT NOT NULL CHECK(length(name) BETWEEN 1 AND 128),
+                color TEXT NOT NULL CHECK(length(color) = 7),
+                font_size REAL NOT NULL CHECK(font_size BETWEEN 1 AND 4096),
+                font_weight INTEGER NOT NULL CHECK(font_weight BETWEEN 100 AND 900 AND font_weight % 100 = 0),
+                revision INTEGER NOT NULL CHECK(revision > 0),
+                updated_at_unix_ms INTEGER NOT NULL CHECK(updated_at_unix_ms >= 0)
+            );
+            CREATE INDEX design_text_styles_name ON design_text_styles(name COLLATE NOCASE, id);",
+        )?;
+        transaction.execute(
+            "INSERT INTO openchat_backend_migrations (version, applied_at_unix_ms) VALUES (59, ?1)",
+            [unix_time_millis()?],
+        )?;
+        transaction.commit()?;
+        current_version = 59;
+    }
+
     Ok(current_version)
 }

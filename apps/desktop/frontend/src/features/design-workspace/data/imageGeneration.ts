@@ -381,6 +381,25 @@ export async function readDesignImage(
   return { mimeType, bytes };
 }
 
+export async function importDesignImage(mimeType: string, bytes: Uint8Array): Promise<DesignImageRecord> {
+  if (!['image/png', 'image/jpeg', 'image/webp'].includes(mimeType) || bytes.length < 1 || bytes.length > 16 * 1024 * 1024) {
+    throw new Error('The imported Design image is invalid.');
+  }
+  let binary = '';
+  const chunkSize = 0x8000;
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(offset, Math.min(offset + chunkSize, bytes.length)));
+  }
+  const response = await localServiceClient.call('design.images.import', {
+    mimeType,
+    dataBase64: window.btoa(binary),
+  });
+  if (!isDesignImageRecord(response.image) || response.image.mimeType !== mimeType || response.image.sizeBytes !== bytes.length) {
+    throw new Error('The imported Design image response is invalid.');
+  }
+  return response.image;
+}
+
 function parseAccountQuotaStatus(value: unknown): ChatGptAccountQuotaStatus {
   if (!isObject(value)) {
     return { state: 'unknown', usedPercent: null, resetAtUnixMs: null, reason: 'account_quota_invalid' };

@@ -6,12 +6,16 @@ Completed work is summarized from repository history and grouped by the relevant
 
 ### Changed
 
+- Moved local speech model installation into Voice settings and added microphone selection plus supported output routing for notification sounds. Voice capture now releases microphone resources on stop, app hide, and recorder timeout; it supports pause, audio review before local transcription, automatic speech-language detection, and draft insertion only after user confirmation.
 - Try official provider website favicons on Connections credential cards, retaining bundled icons when remote favicons are unavailable.
 - Removed the recent unsuccessful generations section from the Design image library.
 - Grouped tool activity above assistant responses with expandable per-tool details and elapsed response time.
 
 ### Added
 
+- Added side-by-side comparisons for two or three selected models, independent saved conversations, response streams, follow-up messages, and comparison metrics.
+- Added an editable Design workspace with structured documents, reusable components and styles, prototype interactions and transitions, revision comparison, alignment guides, portable archives, and SVG, PNG, PDF, and HTML export.
+- Added Design text typography controls, reusable text and color styles, component variants and instances, plus canvas alignment and distribution actions.
 - Added reusable parameterized workflow templates with prompt variable expansion, durable persistence, validation, and JSON import/export.
 - Added Amazon Bedrock Converse and ConverseStream protocol support, AWS SigV4 authentication, regional runtime configuration, and EventStream binary decoding.
 - Added user-triggered local text-to-speech playback for completed assistant responses.

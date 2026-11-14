@@ -1,11 +1,11 @@
-import { Library, MessageCircle, Moon, Settings, ShieldCheck, Sun, WandSparkles } from 'lucide-react';
+import { Image, Library, MessageCircle, Moon, PanelsTopLeft, Settings, ShieldCheck, Sun } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Button } from '@shared/components/Button';
 import { Tooltip } from '@shared/components/Tooltip';
 
-export type AppSurface = 'chats' | 'design' | 'models' | 'security' | 'settings';
+export type AppSurface = 'chats' | 'design' | 'images' | 'models' | 'security' | 'settings';
 
 export interface NavigationRailProps {
   activeSurface: AppSurface;
@@ -37,9 +37,15 @@ export function NavigationRail({ activeSurface, isDark, onNavigate, onToggleThem
         />
         <RailButton
           active={activeSurface === 'design'}
-          icon={<WandSparkles aria-hidden="true" size={20} />}
+          icon={<PanelsTopLeft aria-hidden="true" size={20} />}
           label={t('design')}
           onClick={() => onNavigate('design')}
+        />
+        <RailButton
+          active={activeSurface === 'images'}
+          icon={<Image aria-hidden="true" size={20} />}
+          label={t('imageStudio')}
+          onClick={() => onNavigate('images')}
         />
         <RailButton
           active={activeSurface === 'security'}

@@ -55,6 +55,8 @@ export interface ConversationPaneProps {
   questionFocusTarget: { conversationId: string; groupId: string } | null;
   onDismissNotificationFeedback(): void;
   onQuestionFocusHandled(): void;
+  onConversationMessagesReady?(conversationId: string): void;
+  onConversationMessagesLoadFailed?(conversationId: string): void;
   onDropConversation?(conversationId: string): void;
   isRightPanelOpen?: boolean;
   onToggleRightPanel?(): void;
@@ -73,6 +75,8 @@ export function ConversationPane({
   questionFocusTarget,
   onDismissNotificationFeedback,
   onQuestionFocusHandled,
+  onConversationMessagesReady,
+  onConversationMessagesLoadFailed,
   onDropConversation,
   isRightPanelOpen: propIsRightPanelOpen,
   onToggleRightPanel: propOnToggleRightPanel,
@@ -142,16 +146,20 @@ export function ConversationPane({
     setSecondaryLoadError(false);
     void getMessages(resolvedTargetId)
       .then((items) => {
-        if (current) setSecondaryMessages(items);
+        if (!current) return;
+        setSecondaryMessages(items);
+        onConversationMessagesReady?.(resolvedTargetId);
       })
-      .catch((error) => {
-        if (current) {
-          setSecondaryLoadError(true);
-          globalThis.reportError(new Error('Failed to load panel conversation messages.', { cause: error }));
-        }
+      .catch((error: unknown) => {
+        if (!current) return;
+        setSecondaryLoadError(true);
+        globalThis.reportError(new Error('Failed to load panel conversation messages.', { cause: error }));
+        onConversationMessagesLoadFailed?.(resolvedTargetId);
       })
       .finally(() => {
-        if (current) setSecondaryLoading(false);
+        if (current) {
+          setSecondaryLoading(false);
+        }
       });
 
     const onStream = (event: Event) => {
@@ -166,7 +174,14 @@ export function ConversationPane({
       current = false;
       window.removeEventListener('openchat-message-stream', onStream);
     };
-  }, [isConversationOverride, isStoreActive, resolvedTargetId, secondaryLoadRevision]);
+  }, [
+    isConversationOverride,
+    isStoreActive,
+    onConversationMessagesLoadFailed,
+    onConversationMessagesReady,
+    resolvedTargetId,
+    secondaryLoadRevision,
+  ]);
 
   const activeConversationId = isConversationOverride ? resolvedTargetId : storeActiveConversationId;
 

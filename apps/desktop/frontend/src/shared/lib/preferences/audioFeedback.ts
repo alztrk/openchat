@@ -2,6 +2,7 @@ import {
   readNotificationPreferences,
   shouldSuppressNotification,
 } from '@shared/lib/preferences/notificationPreferences';
+import { readPreferredAudioOutputDeviceId } from '@shared/lib/preferences/audioDevicePreferences';
 
 declare global {
   interface Window {
@@ -10,6 +11,19 @@ declare global {
 }
 
 let sharedAudioContext: AudioContext | null = null;
+const audioOutputByContext = new WeakMap<AudioContext, string>();
+
+export function supportsAudioFeedbackOutputRouting(): boolean {
+  if (typeof window === 'undefined') return false;
+  const AudioContextClass = window.AudioContext ?? window.webkitAudioContext;
+  return Boolean(AudioContextClass && typeof Reflect.get(AudioContextClass.prototype, 'setSinkId') === 'function');
+}
+
+export async function configureAudioFeedbackOutput(deviceId: string | null): Promise<boolean> {
+  const ctx = getAudioContext();
+  if (!ctx) return false;
+  return applyAudioOutput(ctx, deviceId);
+}
 
 export function getAudioContext(): AudioContext | null {
   if (typeof window === 'undefined') return null;
@@ -27,6 +41,8 @@ export function getAudioContext(): AudioContext | null {
 }
 
 export async function prepareAudioContext(ctx: AudioContext): Promise<boolean> {
+  const preferredDeviceId = readPreferredAudioOutputDeviceId();
+  if (preferredDeviceId && !(await applyAudioOutput(ctx, preferredDeviceId))) return false;
   if (ctx.state === 'suspended') {
     try {
       await ctx.resume();
@@ -35,6 +51,23 @@ export async function prepareAudioContext(ctx: AudioContext): Promise<boolean> {
     }
   }
   return ctx.state === 'running';
+}
+
+async function applyAudioOutput(ctx: AudioContext, deviceId: string | null): Promise<boolean> {
+  const targetDeviceId = deviceId ?? '';
+  if (audioOutputByContext.get(ctx) === targetDeviceId) return true;
+  if (!hasAudioContextSink(ctx)) return targetDeviceId === '';
+  try {
+    await ctx.setSinkId(targetDeviceId);
+    audioOutputByContext.set(ctx, targetDeviceId);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function hasAudioContextSink(ctx: AudioContext): ctx is AudioContext & { setSinkId(deviceId: string): Promise<void> } {
+  return typeof Reflect.get(ctx, 'setSinkId') === 'function';
 }
 
 /**

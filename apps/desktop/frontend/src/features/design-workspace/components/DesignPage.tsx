@@ -30,7 +30,6 @@ import { useTranslation } from 'react-i18next';
 
 import { Button, Checkbox, ColorPicker, DatePicker, Dialog, Input, Select, Slider, Textarea, TitleTooltip } from '@shared/components';
 import { listConversationAttachments } from '@features/chat/data';
-import { DesignCanvas } from '@features/design-workspace/components/DesignCanvas';
 import { DesignImageGallery } from '@features/design-workspace/components/DesignImageGallery';
 import {
   buildStructuredImagePrompt,
@@ -129,7 +128,6 @@ type DesignServiceOperation = Omit<ServiceOperation, 'result'> & { result: Promi
 
 export function DesignPage({ onOpenSettings }: DesignPageProps) {
   const { i18n, t } = useTranslation();
-  const [workspace, setWorkspace] = useState<'images' | 'canvas'>('images');
   const designPreferences = useDesignPreferencesStore((state) => state.preferences);
   const updateDesignPreferences = useDesignPreferencesStore((state) => state.updatePreferences);
   const [initialGenerationSettings] = useState(() =>
@@ -927,10 +925,6 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
     dateTo !== '',
   ].filter(Boolean).length;
 
-  if (workspace === 'canvas') {
-    return <DesignCanvas onOpenImageStudio={() => setWorkspace('images')} onOpenSettings={onOpenSettings} />;
-  }
-
   return (
     <div
       className="design-workspace flex h-full min-h-0 min-w-0 flex-col overflow-hidden lg:flex-row"
@@ -949,11 +943,6 @@ export function DesignPage({ onOpenSettings }: DesignPageProps) {
           <div className="min-w-0">
             <h1 className="text-section-title font-semibold">{t('designTitle')}</h1>
           </div>
-          <Button className="ml-auto shrink-0" onClick={() => setWorkspace('canvas')} size="small" variant="secondary">
-            <PanelsTopLeft aria-hidden="true" size={15} />
-            <span className="hidden sm:inline">{t('designCanvasOpen')}</span>
-            <span className="sm:hidden">{t('designCanvasShortLabel')}</span>
-          </Button>
         </div>
 
         {targetsLoading ? (

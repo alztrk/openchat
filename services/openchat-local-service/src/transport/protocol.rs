@@ -183,7 +183,7 @@ fn clear_sensitive_json_values_inner(value: &mut Value, clear_argument_text: boo
             for (name, field_value) in fields {
                 if matches!(
                     name.as_str(),
-                    "apiKey" | "secret" | "passphrase" | "secrets" | "credential"
+                    "apiKey" | "pcm16Base64" | "secret" | "passphrase" | "secrets" | "credential"
                 ) {
                     cleared |= zeroize_request_json_strings(field_value);
                 } else if matches!(
@@ -706,6 +706,7 @@ mod tests {
     fn request_cleanup_zeroizes_nested_known_secret_fields_only() {
         let mut params = serde_json::json!({
             "apiKey": "provider-secret",
+            "pcm16Base64": "captured-audio-base64",
             "nested": {
                 "secret": "mcp-secret",
                 "archive": {"passphrase": "archive-secret"},
@@ -720,6 +721,7 @@ mod tests {
         clear_sensitive_request_values(&mut params);
 
         assert_eq!(params["apiKey"], "");
+        assert_eq!(params["pcm16Base64"], "");
         assert_eq!(params["nested"]["secret"], "");
         assert_eq!(params["nested"]["archive"]["passphrase"], "");
         assert_eq!(params["nested"]["credential"]["accessToken"], "");

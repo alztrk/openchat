@@ -430,7 +430,7 @@ function estimateMessages(messages: readonly ChatMessage[]): {
 
 function estimateAttachment(
   name: string,
-  kind: 'image' | 'text',
+  kind: 'image' | 'text' | 'document',
   sizeBytes: number,
   isDraft: boolean,
 ): ContextUsageAttachment {

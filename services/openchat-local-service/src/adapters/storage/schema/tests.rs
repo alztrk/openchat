@@ -755,6 +755,82 @@ fn migration_57_drops_retired_project_index_tables_and_cached_content() {
     assert_eq!(remaining_tables, 0);
 }
 
+#[test]
+fn migration_58_adds_project_scoped_design_documents_and_revisions() {
+    let connection = memory_index_repair_fixture(57);
+    connection
+        .execute_batch(
+            "CREATE TABLE projects (
+                id TEXT PRIMARY KEY NOT NULL,
+                name TEXT NOT NULL
+            );
+            INSERT INTO projects (id, name) VALUES ('project-1', 'Project');",
+        )
+        .expect("create project table fixture");
+
+    assert_eq!(
+        initialize_schema(&connection, 58).expect("create design document tables"),
+        58
+    );
+    connection
+        .execute(
+            "INSERT INTO design_documents
+                (id, name, project_id, document_json, revision, created_at_unix_ms, updated_at_unix_ms)
+             VALUES ('design-1', 'Design', 'project-1', '{\"version\":2}', 1, 1, 1)",
+            [],
+        )
+        .expect("insert project design");
+    connection
+        .execute(
+            "INSERT INTO design_document_revisions (document_id, revision, document_json, created_at_unix_ms)
+             VALUES ('design-1', 1, '{\"version\":2}', 1)",
+            [],
+        )
+        .expect("insert design revision");
+    connection
+        .execute("DELETE FROM projects WHERE id = 'project-1'", [])
+        .expect("delete linked project");
+    let retained_design_project = connection
+        .query_row(
+            "SELECT project_id FROM design_documents WHERE id = 'design-1'",
+            [],
+            |row| row.get::<_, Option<String>>(0),
+        )
+        .expect("read retained design");
+    assert_eq!(retained_design_project, None);
+    let retained_revision_count = connection
+        .query_row(
+            "SELECT COUNT(*) FROM design_document_revisions WHERE document_id = 'design-1'",
+            [],
+            |row| row.get::<_, i64>(0),
+        )
+        .expect("read retained revision count");
+    assert_eq!(retained_revision_count, 1);
+}
+
+#[test]
+fn migration_59_adds_profile_scoped_design_text_styles() {
+    let connection = memory_index_repair_fixture(58);
+    assert_eq!(
+        initialize_schema(&connection, 59).expect("create shared Design text styles"),
+        59
+    );
+    connection
+        .execute(
+            "INSERT INTO design_text_styles
+                (id, name, color, font_size, font_weight, revision, updated_at_unix_ms)
+             VALUES ('style-1', 'Heading', '#123456', 28, 600, 1, 1)",
+            [],
+        )
+        .expect("insert shared text style");
+    let style_count = connection
+        .query_row("SELECT COUNT(*) FROM design_text_styles", [], |row| {
+            row.get::<_, i64>(0)
+        })
+        .expect("read shared text style count");
+    assert_eq!(style_count, 1);
+}
+
 fn memory_index_repair_fixture(version: i64) -> Connection {
     let connection = Connection::open_in_memory().expect("open in-memory database");
     connection

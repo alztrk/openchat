@@ -15,6 +15,7 @@ const ConversationPane = lazy(() => import('@features/chat/components/Conversati
 const ConversationSidebar = lazy(() => import('@features/chat/components/ConversationSidebar').then((m) => ({ default: m.ConversationSidebar })));
 const LibraryPage = lazy(() => import('@features/model-catalog/components/LibraryPage').then((m) => ({ default: m.LibraryPage })));
 const DesignPage = lazy(() => import('@features/design-workspace/components/DesignPage').then((m) => ({ default: m.DesignPage })));
+const DesignCanvas = lazy(() => import('@features/design-workspace/components/DesignCanvas').then((m) => ({ default: m.DesignCanvas })));
 const SecurityScanPage = lazy(() => import('@features/security-scans/components/SecurityScanPage').then((m) => ({ default: m.SecurityScanPage })));
 const SettingsPage = lazy(() => import('@features/app-settings/components/SettingsPage').then((m) => ({ default: m.SettingsPage })));
 // eslint-disable-next-line @typescript-eslint/no-unused-vars -- reserved import, wired by consumer in App.tsx
@@ -76,12 +77,15 @@ export function AppRouter({
         <Suspense fallback={null}><LibraryPage onUsePrompt={onUsePrompt} /></Suspense>
       )}
       {activeSurface === 'design' && (
+        <Suspense fallback={null}><DesignCanvas /></Suspense>
+      )}
+      {activeSurface === 'images' && (
         <Suspense fallback={null}><DesignPage onOpenSettings={onOpenSettings} /></Suspense>
       )}
       {activeSurface === 'security' && (
         <Suspense fallback={null}><SecurityScanPage /></Suspense>
       )}
-      {activeSurface !== 'chats' && activeSurface !== 'models' && activeSurface !== 'design' && activeSurface !== 'security' && (
+      {activeSurface !== 'chats' && activeSurface !== 'models' && activeSurface !== 'design' && activeSurface !== 'images' && activeSurface !== 'security' && (
         <Suspense fallback={null}>
           <SettingsPage appearance={appearance} onAppearanceChange={() => { /* noop */ }} onOpenConversation={() => { /* noop */ }} onThemeChange={() => { /* noop */ }} theme={theme} />
         </Suspense>

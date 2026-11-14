@@ -1,12 +1,16 @@
 import { Check, ChevronDown } from 'lucide-react';
-import { type PointerEvent, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
+import { type CSSProperties, type PointerEvent, type ReactNode, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 
 interface ColorPickerProps {
+  children?: ReactNode;
   disabled?: boolean;
   label: string;
   onChange(value: string): void;
+  showColorControls?: boolean;
+  swatchStyle?: CSSProperties;
+  valueLabel?: string;
   value: string;
 }
 
@@ -44,7 +48,7 @@ const presetColors = [
 ] as const;
 
 /** Renders an in-app color picker with a two-dimensional color field and hex input. */
-export function ColorPicker({ disabled = false, label, onChange, value }: ColorPickerProps) {
+export function ColorPicker({ children, disabled = false, label, onChange, showColorControls = true, swatchStyle, valueLabel, value }: ColorPickerProps) {
   const { t } = useTranslation();
   const id = useId();
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -122,7 +126,8 @@ export function ColorPicker({ disabled = false, label, onChange, value }: ColorP
     if (!isOpen) return;
     const closeOnOutsidePointer = (event: globalThis.PointerEvent) => {
       const target = event.target;
-      if (target instanceof Node && !triggerRef.current?.contains(target) && !popoverRef.current?.contains(target)) {
+      const isNestedSelectSurface = target instanceof Element && target.closest('.openchat-dropdown-surface');
+      if (target instanceof Node && !triggerRef.current?.contains(target) && !popoverRef.current?.contains(target) && !isNestedSelectSurface) {
         setIsOpen(false);
         setPosition(null);
       }
@@ -167,10 +172,10 @@ export function ColorPicker({ disabled = false, label, onChange, value }: ColorP
         <span
           aria-hidden="true"
           className="size-6 shrink-0 rounded border border-control-border"
-          style={{ backgroundColor: value }}
+          style={{ backgroundColor: value, ...swatchStyle }}
         />
-        <span className="min-w-0 flex-1 truncate font-mono text-xs font-normal text-secondary-text">
-          {value.toUpperCase()}
+        <span className={`min-w-0 flex-1 truncate text-xs font-normal text-secondary-text${valueLabel ? '' : ' font-mono'}`}>
+          {valueLabel ?? value.toUpperCase()}
         </span>
         <ChevronDown aria-hidden="true" className="shrink-0 text-secondary-icon" size={15} />
       </button>
@@ -189,6 +194,8 @@ export function ColorPicker({ disabled = false, label, onChange, value }: ColorP
                 visibility: position ? 'visible' : 'hidden',
               }}
             >
+              {children}
+              {showColorControls && <>
               <div
                 aria-hidden="true"
                 className="relative h-36 touch-none cursor-crosshair rounded-control"
@@ -296,6 +303,7 @@ export function ColorPicker({ disabled = false, label, onChange, value }: ColorP
                   value={hexDraft}
                 />
               </label>
+              </>}
             </div>,
             document.body,
           )
