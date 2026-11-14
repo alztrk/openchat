@@ -13,6 +13,7 @@ Completed work is summarized from repository history and grouped by the relevant
 
 ### Added
 
+- Add native macOS DMG packaging for Intel and Apple Silicon, and include checksummed installers in desktop releases.
 - Added separate preview releases and stable tagged releases, with package SHA-256 verification and published checksums.
 - Added a validated SPDX 2.3 source dependency SBOM to tagged desktop releases.
 - Added side-by-side comparisons for two or three selected models, independent saved conversations, response streams, follow-up messages, and comparison metrics.
