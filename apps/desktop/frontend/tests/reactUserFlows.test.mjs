@@ -59,6 +59,21 @@ const vite = await createServer({
           return '\0openchat-test-ui-unified-storage';
         }
         if (
+          (normalizedSource === '@shared/lib/platform/local-service' ||
+            normalizedSource.endsWith('/src/shared/lib/platform/local-service')) &&
+          (normalizedImporter.endsWith('/src/features/chat/data/chatStorage.ts') ||
+            normalizedImporter.endsWith('/src/features/chat/data/chatAttachments.ts'))
+        ) {
+          return '\0openchat-test-workflow-conversation-storage';
+        }
+        if (
+          (normalizedSource === '@shared/lib/platform/tauri' ||
+            normalizedSource.endsWith('/src/shared/lib/platform/tauri')) &&
+          normalizedImporter.endsWith('/src/features/chat/data/chatStorage.ts')
+        ) {
+          return '\0openchat-test-chat-storage-tauri';
+        }
+        if (
           normalizedSource.endsWith('/src/shared/lib/preferences/assistantProfilesStore') &&
           normalizedImporter.endsWith('/src/features/chat/components/ConversationSidebar.tsx')
         ) {
@@ -249,6 +264,22 @@ const vite = await createServer({
             }
           `;
         }
+        if (id === '\0openchat-test-workflow-conversation-storage') {
+          return `
+            import process from 'node:process';
+            export class LocalServiceError extends Error {}
+            export const localServiceClient = {
+              call(method, parameters) {
+                const harness = process.__openchatWorkflowConversationStorageHarness;
+                harness.calls.push({ method, parameters });
+                return Promise.resolve(JSON.parse(JSON.stringify(harness.response)));
+              },
+            };
+          `;
+        }
+        if (id === '\0openchat-test-chat-storage-tauri') {
+          return 'export function invoke() { return Promise.resolve(undefined); }';
+        }
         if (id === '\0openchat-test-assistant-profiles') {
           return `
             export function useAssistantProfilesStore(selector) {
@@ -405,6 +436,7 @@ const { TitleBarSearch } = await vite.ssrLoadModule('/src/widgets/title-bar/Titl
 const { isAssistantAgentSnapshot } = await vite.ssrLoadModule(
   '/src/shared/lib/preferences/assistantProfiles.ts',
 );
+const { listConversations } = await vite.ssrLoadModule('/src/features/chat/data/chatStorage.ts');
 const { useWorkflowAfterResponsePrompt } = await vite.ssrLoadModule(
   '/src/features/chat/hooks/useWorkflowAfterResponsePrompt.ts',
 );
@@ -419,6 +451,10 @@ const originalMcpHarness = Object.getOwnPropertyDescriptor(process, '__openchatM
 const originalRecentSearchHarness = Object.getOwnPropertyDescriptor(process, '__openchatRecentSearchHarness');
 const originalTitlebarSearchHarness = Object.getOwnPropertyDescriptor(process, '__openchatTitlebarSearchHarness');
 const originalWorkflowTemplatesHarness = Object.getOwnPropertyDescriptor(process, '__openchatWorkflowTemplatesHarness');
+const originalWorkflowConversationStorageHarness = Object.getOwnPropertyDescriptor(
+  process,
+  '__openchatWorkflowConversationStorageHarness',
+);
 const appPreferencesHarness = {
   startupSurface: 'last',
   writeStartupSurface: async (value) => {
@@ -448,6 +484,7 @@ const recentSearchHarness = {
 };
 const titlebarSearchHarness = { historyDialogModuleLoads: 0 };
 const workflowTemplatesHarness = { value: null, writes: [] };
+const workflowConversationStorageHarness = { response: null, calls: [] };
 
 Object.defineProperty(process, '__openchatAppPreferencesHarness', {
   configurable: true,
@@ -477,6 +514,11 @@ Object.defineProperty(process, '__openchatTitlebarSearchHarness', {
 Object.defineProperty(process, '__openchatWorkflowTemplatesHarness', {
   configurable: true,
   value: workflowTemplatesHarness,
+  writable: true,
+});
+Object.defineProperty(process, '__openchatWorkflowConversationStorageHarness', {
+  configurable: true,
+  value: workflowConversationStorageHarness,
   writable: true,
 });
 
@@ -537,6 +579,8 @@ afterEach(() => {
   titlebarSearchHarness.historyDialogModuleLoads = 0;
   workflowTemplatesHarness.value = null;
   workflowTemplatesHarness.writes = [];
+  workflowConversationStorageHarness.response = null;
+  workflowConversationStorageHarness.calls = [];
 });
 
 after(async () => {
@@ -582,6 +626,15 @@ after(async () => {
     Object.defineProperty(process, '__openchatWorkflowTemplatesHarness', originalWorkflowTemplatesHarness);
   } else {
     Reflect.deleteProperty(process, '__openchatWorkflowTemplatesHarness');
+  }
+  if (originalWorkflowConversationStorageHarness) {
+    Object.defineProperty(
+      process,
+      '__openchatWorkflowConversationStorageHarness',
+      originalWorkflowConversationStorageHarness,
+    );
+  } else {
+    Reflect.deleteProperty(process, '__openchatWorkflowConversationStorageHarness');
   }
 });
 
@@ -1354,6 +1407,44 @@ test('workflow lifecycle prompts localize and persist as bounded conversation sn
     isAssistantAgentSnapshot({ ...agent, workflowHooks: { afterResponsePrompt: 'x'.repeat(32 * 1024 + 1) } }),
     false,
   );
+});
+
+test('workflow lifecycle prompts survive conversation snapshot serialization and reload validation', async () => {
+  const persistedConversation = {
+    id: 'conversation-workflow-persisted',
+    title: 'Workflow conversation',
+    titleSource: 'manual',
+    providerId: null,
+    modelId: null,
+    reasoningEffort: null,
+    connectionId: null,
+    workspaceId: null,
+    apiKeyConnectionId: null,
+    projectId: null,
+    agent: {
+      id: 'a0000000-0000-4000-8000-000000000001',
+      name: 'Workflow',
+      instructions: '',
+      responseStyle: 'balanced',
+      toolAllowlist: null,
+      workflowHooks: { afterResponsePrompt: 'Review {{project}} next.' },
+    },
+    isPinned: false,
+    isArchived: false,
+    unreadMessageId: null,
+    createdAt: 1,
+    updatedAt: 2,
+  };
+  workflowConversationStorageHarness.response = JSON.parse(
+    JSON.stringify({ conversations: [persistedConversation], hasMore: false, nextOffset: null }),
+  );
+
+  const page = await listConversations(0);
+
+  assert.deepEqual(workflowConversationStorageHarness.calls, [
+    { method: 'storage.chat.conversations.list', parameters: { input: { offset: 0 } } },
+  ]);
+  assert.equal(page.items[0]?.agent?.workflowHooks?.afterResponsePrompt, 'Review {{project}} next.');
 });
 
 test('workflow after-response prompt updates only an empty composer after a successful stream', () => {
