@@ -3,7 +3,7 @@ import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button, Dialog, Input, Textarea, toast } from '@shared/components';
 import {
-  expandWorkflowTemplate,
+  buildWorkflowStartingPrompt,
   exportWorkflowTemplatesJson,
   importWorkflowTemplatesJson,
   isWorkflowTemplateNameAvailable,
@@ -20,7 +20,7 @@ const maximumImportBytes = 4 * 1024 * 1024;
 export interface WorkflowTemplatesDialogProps {
   open: boolean;
   onOpenChange(open: boolean): void;
-  onStartConversation(prompt: string, template: WorkflowTemplate): void;
+  onStartConversation(prompt: string, template: WorkflowTemplate, values: Record<string, string>): void;
 }
 
 type WorkflowView = 'list' | 'edit' | 'launch';
@@ -35,19 +35,28 @@ export function WorkflowTemplatesDialog({ open, onOpenChange, onStartConversatio
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [prompt, setPrompt] = useState('');
+  const [beforeStartPrompt, setBeforeStartPrompt] = useState('');
+  const [afterResponsePrompt, setAfterResponsePrompt] = useState('');
   const [parameterValues, setParameterValues] = useState<Record<string, string>>({});
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<WorkflowTemplateReadError | null>(null);
   const [isBusy, setIsBusy] = useState(false);
 
   const selectedTemplate = templates.find((template) => template.id === selectedId) ?? null;
-  const editingParameters = useMemo(() => workflowParameterNames(prompt), [prompt]);
+  const editingParameters = useMemo(
+    () => workflowParameterNames(prompt, beforeStartPrompt, afterResponsePrompt),
+    [prompt, beforeStartPrompt, afterResponsePrompt],
+  );
   const promptTooLong = new TextEncoder().encode(prompt.trim()).byteLength > 32 * 1024;
+  const hookPromptTooLong = [beforeStartPrompt, afterResponsePrompt].some(
+    (value) => new TextEncoder().encode(value).byteLength > 32 * 1024,
+  );
   const tooManyParameters = editingParameters.length > 16;
   const canSave =
     name.trim().length > 0 &&
     prompt.trim().length > 0 &&
     !promptTooLong &&
+    !hookPromptTooLong &&
     !tooManyParameters &&
     isWorkflowTemplateNameAvailable(templates, name, editingId);
 
@@ -75,6 +84,8 @@ export function WorkflowTemplatesDialog({ open, onOpenChange, onStartConversatio
     setName('');
     setDescription('');
     setPrompt('');
+    setBeforeStartPrompt('');
+    setAfterResponsePrompt('');
     setView('edit');
   };
 
@@ -83,6 +94,8 @@ export function WorkflowTemplatesDialog({ open, onOpenChange, onStartConversatio
     setName(template.name);
     setDescription(template.description ?? '');
     setPrompt(template.startingPrompt);
+    setBeforeStartPrompt(template.beforeStartPrompt ?? '');
+    setAfterResponsePrompt(template.afterResponsePrompt ?? '');
     setView('edit');
   };
 
@@ -96,6 +109,8 @@ export function WorkflowTemplatesDialog({ open, onOpenChange, onStartConversatio
       name: name.trim(),
       description: description.trim() || undefined,
       startingPrompt: prompt.trim(),
+      beforeStartPrompt: beforeStartPrompt.trim() || undefined,
+      afterResponsePrompt: afterResponsePrompt.trim() || undefined,
       parameters: editingParameters.map((parameterName) => previousParameters.get(parameterName) ?? { name: parameterName }),
       providerId: current?.providerId,
       modelId: current?.modelId,
@@ -199,7 +214,15 @@ export function WorkflowTemplatesDialog({ open, onOpenChange, onStartConversatio
       (parameter) => parameter.required !== false && !parameterValues[parameter.name]?.trim(),
     );
     if (missingRequired) return;
-    onStartConversation(expandWorkflowTemplate(selectedTemplate.startingPrompt, parameterValues), selectedTemplate);
+    onStartConversation(
+      buildWorkflowStartingPrompt(
+        selectedTemplate.startingPrompt,
+        selectedTemplate.beforeStartPrompt,
+        parameterValues,
+      ),
+      selectedTemplate,
+      parameterValues,
+    );
     onOpenChange(false);
   };
 
@@ -284,10 +307,26 @@ export function WorkflowTemplatesDialog({ open, onOpenChange, onStartConversatio
             required
             value={prompt}
           />
+          <Textarea
+            description={t('workflowTemplateBeforeStartHint')}
+            label={t('workflowTemplateBeforeStartPrompt')}
+            maxLength={32 * 1024}
+            onChange={(event) => setBeforeStartPrompt(event.currentTarget.value)}
+            value={beforeStartPrompt}
+          />
+          <Textarea
+            description={t('workflowTemplateAfterResponseHint')}
+            label={t('workflowTemplateAfterResponsePrompt')}
+            maxLength={32 * 1024}
+            onChange={(event) => setAfterResponsePrompt(event.currentTarget.value)}
+            value={afterResponsePrompt}
+          />
           {!isWorkflowTemplateNameAvailable(templates, name, editingId) ? (
             <p className="text-sm text-destructive" role="alert">{t('workflowTemplateDuplicateName')}</p>
           ) : promptTooLong ? (
             <p className="text-sm text-destructive" role="alert">{t('workflowTemplatePromptLimit')}</p>
+          ) : hookPromptTooLong ? (
+            <p className="text-sm text-destructive" role="alert">{t('workflowTemplateHookPromptLimit')}</p>
           ) : tooManyParameters ? (
             <p className="text-sm text-destructive" role="alert">{t('workflowTemplateParametersLimit', { count: 16 })}</p>
           ) : null}

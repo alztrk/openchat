@@ -29,6 +29,8 @@ export interface WorkflowTemplate {
   name: string;
   description?: string;
   startingPrompt: string;
+  beforeStartPrompt?: string;
+  afterResponsePrompt?: string;
   parameters: WorkflowParameter[];
   providerId?: string;
   modelId?: string;
@@ -43,6 +45,8 @@ export interface WorkflowTemplateDraft {
   name: string;
   description?: string;
   startingPrompt: string;
+  beforeStartPrompt?: string;
+  afterResponsePrompt?: string;
   parameters?: WorkflowParameter[];
   providerId?: string;
   modelId?: string;
@@ -75,6 +79,8 @@ export function parseWorkflowTemplate(value: unknown): WorkflowTemplate {
     name,
     description,
     startingPrompt,
+    beforeStartPrompt,
+    afterResponsePrompt,
     prompt,
     parameters: rawParams,
     providerId,
@@ -101,6 +107,15 @@ export function parseWorkflowTemplate(value: unknown): WorkflowTemplate {
     !isTimestamp(updatedAt)
   ) {
     throw new WorkflowTemplateValidationError('invalid');
+  }
+
+  for (const hookPrompt of [beforeStartPrompt, afterResponsePrompt]) {
+    if (
+      hookPrompt !== undefined &&
+      (typeof hookPrompt !== 'string' || new TextEncoder().encode(hookPrompt).byteLength > maximumPromptBytes)
+    ) {
+      throw new WorkflowTemplateValidationError('invalid');
+    }
   }
 
   if (
@@ -130,7 +145,11 @@ export function parseWorkflowTemplate(value: unknown): WorkflowTemplate {
     tools = [...rawTools];
   }
 
-  const detectedParamNames = workflowParameterNames(resolvedPrompt);
+  const detectedParamNames = workflowParameterNames(
+    resolvedPrompt,
+    typeof beforeStartPrompt === 'string' ? beforeStartPrompt : '',
+    typeof afterResponsePrompt === 'string' ? afterResponsePrompt : '',
+  );
   if (detectedParamNames.length > maximumParameters) throw new WorkflowTemplateValidationError('invalid');
 
   const parameters: WorkflowParameter[] = [];
@@ -157,6 +176,8 @@ export function parseWorkflowTemplate(value: unknown): WorkflowTemplate {
     name,
     description: description || undefined,
     startingPrompt: resolvedPrompt,
+    beforeStartPrompt: typeof beforeStartPrompt === 'string' && beforeStartPrompt.trim() ? beforeStartPrompt : undefined,
+    afterResponsePrompt: typeof afterResponsePrompt === 'string' && afterResponsePrompt.trim() ? afterResponsePrompt : undefined,
     parameters,
     providerId: providerId || undefined,
     modelId: modelId || undefined,
@@ -167,18 +188,84 @@ export function parseWorkflowTemplate(value: unknown): WorkflowTemplate {
   };
 }
 
-export function workflowParameterNames(prompt: string): string[] {
+export function workflowParameterNames(...prompts: string[]): string[] {
   const names = new Set<string>();
-  for (const match of prompt.matchAll(/\{\{([a-zA-Z][a-zA-Z0-9_]{0,47})\}\}/g)) {
-    const name = match[1];
-    if (name) names.add(name);
-    if (names.size > maximumParameters) break;
+  for (const prompt of prompts) {
+    for (const match of prompt.matchAll(/\{\{([a-zA-Z][a-zA-Z0-9_]{0,47})\}\}/g)) {
+      const name = match[1];
+      if (name) names.add(name);
+      if (names.size > maximumParameters) return [...names];
+    }
   }
   return [...names];
 }
 
 export function expandWorkflowTemplate(prompt: string, values: Record<string, string>): string {
   return prompt.replace(/\{\{([a-zA-Z][a-zA-Z0-9_]{0,47})\}\}/g, (_, name: string) => values[name] ?? '');
+}
+
+export function buildWorkflowStartingPrompt(
+  startingPrompt: string,
+  beforeStartPrompt: string | undefined,
+  values: Record<string, string>,
+): string {
+  return [beforeStartPrompt, startingPrompt]
+    .filter((prompt): prompt is string => prompt !== undefined && prompt.trim().length > 0)
+    .map((prompt) => expandWorkflowTemplate(prompt, values).trim())
+    .filter((prompt) => prompt.length > 0)
+    .join('\n\n');
+}
+
+export interface WorkflowResponseSnapshot {
+  conversationId: string;
+  id: string;
+  status: string;
+}
+
+export function didWorkflowResponseComplete(
+  previous: WorkflowResponseSnapshot | null,
+  current: WorkflowResponseSnapshot | null,
+): boolean {
+  return (
+    previous !== null &&
+    current !== null &&
+    previous.conversationId === current.conversationId &&
+    previous.id === current.id &&
+    previous.status === 'streaming' &&
+    current.status === 'completed'
+  );
+}
+
+export interface WorkflowAfterResponseDraftInput {
+  previous: WorkflowResponseSnapshot | null;
+  current: WorkflowResponseSnapshot | null;
+  activeConversationId: string | null;
+  afterResponsePrompt: string | null;
+  draft: string;
+  pendingAttachmentCount: number;
+  isReadingAttachments: boolean;
+  responseNeedsInput: boolean;
+  disabled: boolean;
+}
+
+export function getWorkflowAfterResponseDraft(input: WorkflowAfterResponseDraftInput): string | null {
+  const current = input.current;
+  const hookPrompt = input.afterResponsePrompt;
+  if (
+    !didWorkflowResponseComplete(input.previous, current) ||
+    current === null ||
+    current.conversationId !== input.activeConversationId ||
+    hookPrompt === null ||
+    hookPrompt.trim().length === 0 ||
+    input.draft.trim().length > 0 ||
+    input.pendingAttachmentCount > 0 ||
+    input.isReadingAttachments ||
+    input.responseNeedsInput ||
+    input.disabled
+  ) {
+    return null;
+  }
+  return hookPrompt;
 }
 
 export function isWorkflowTemplateNameAvailable(

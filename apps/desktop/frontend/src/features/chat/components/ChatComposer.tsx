@@ -3,7 +3,12 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } fro
 import { useTranslation } from 'react-i18next';
 import { Button, Select, Textarea, toast } from '@shared/components';
 import type { ChatMessage } from '@features/chat/data';
-import type { WorkflowTemplate } from '@features/chat/data/workflowTemplates';
+import {
+  expandWorkflowTemplate,
+  getWorkflowAfterResponseDraft,
+  type WorkflowResponseSnapshot,
+  type WorkflowTemplate,
+} from '@features/chat/data/workflowTemplates';
 import type { ChatModel } from '@entities/model';
 import { isAssistantAgentSnapshot } from '@shared/lib/preferences/assistantProfiles';
 import { getSidebarDraggingConversationId } from '@shared/lib/preferences/sidebarPreferences';
@@ -144,6 +149,17 @@ export function ChatComposer({
   const activeConversationId = targetConversationId === undefined ? storeActiveConversationId : targetConversationId;
   const storeMessages = useChatStore((state) => state.messages);
   const messages = messagesOverride ?? storeMessages;
+  const latestAssistantResponse = useMemo(() => {
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      const message = messages[index];
+      if (message?.role === 'assistant') {
+        return { conversationId: message.conversationId, id: message.id, status: message.status };
+      }
+    }
+    return null;
+  }, [messages]);
+  const previousAssistantResponseRef = useRef<WorkflowResponseSnapshot | null>(null);
+  const pendingQuestionSendBlock = useChatStore((state) => state.pendingQuestionSendBlock);
   const isUpdatingConversationModel = useChatStore((state) => state.isUpdatingConversationModel);
   const storeSelectedReasoningEffort = useChatStore((state) => state.selectedReasoningEffort);
   const modelStatus = useChatStore((state) => state.modelStatus);
@@ -257,15 +273,23 @@ export function ChatComposer({
     !isUpdatingConversationModel &&
     composerMode === 'normal';
 
-  const startWorkflowConversation = (workflowPrompt: string, template: WorkflowTemplate) => {
+  const startWorkflowConversation = (
+    workflowPrompt: string,
+    template: WorkflowTemplate,
+    parameterValues: Record<string, string>,
+  ) => {
+    const afterResponsePrompt = template.afterResponsePrompt
+      ? expandWorkflowTemplate(template.afterResponsePrompt, parameterValues).trim()
+      : '';
     let agentSnapshot = null;
-    if (template.systemPrompt !== undefined || template.tools !== undefined) {
+    if (template.systemPrompt !== undefined || template.tools !== undefined || afterResponsePrompt.length > 0) {
       const candidate = {
         id: crypto.randomUUID(),
         name: template.name,
         instructions: template.systemPrompt ?? '',
         responseStyle: 'balanced' as const,
         toolAllowlist: template.tools ?? null,
+        ...(afterResponsePrompt.length > 0 ? { workflowHooks: { afterResponsePrompt } } : {}),
       };
       if (!isAssistantAgentSnapshot(candidate)) {
         toast.error(t('workflowTemplateAgentInvalid'));
@@ -293,6 +317,39 @@ export function ChatComposer({
     setMessageDraft(workflowPrompt);
     setCommandFeedbackKey(null);
   };
+
+  const workflowAfterResponsePrompt = activeConversation?.agent?.workflowHooks?.afterResponsePrompt ?? null;
+
+  useEffect(() => {
+    const previous = previousAssistantResponseRef.current;
+    previousAssistantResponseRef.current = latestAssistantResponse;
+    const nextDraft = getWorkflowAfterResponseDraft({
+      previous,
+      current: latestAssistantResponse,
+      activeConversationId,
+      afterResponsePrompt: workflowAfterResponsePrompt,
+      draft: messageDraft,
+      pendingAttachmentCount: pendingAttachments.length,
+      isReadingAttachments,
+      responseNeedsInput:
+        latestAssistantResponse !== null &&
+        pendingQuestionSendBlock?.conversationId === latestAssistantResponse.conversationId &&
+        pendingQuestionSendBlock.blocked,
+      disabled: targetConversationId !== undefined || isTemporaryChat,
+    });
+    if (nextDraft !== null) setMessageDraft(nextDraft);
+  }, [
+    activeConversationId,
+    isReadingAttachments,
+    isTemporaryChat,
+    latestAssistantResponse,
+    messageDraft,
+    pendingAttachments.length,
+    pendingQuestionSendBlock,
+    setMessageDraft,
+    targetConversationId,
+    workflowAfterResponsePrompt,
+  ]);
 
   // Memoize drag handlers to prevent unnecessary re-renders
   const handleComposerDragEnter = useCallback(

@@ -10,12 +10,17 @@ const maximumAllowedTools = 32;
 export type AssistantResponseStyle = 'concise' | 'balanced' | 'detailed';
 export type AssistantProfileTemplateId = ReadyAssistantAgentTemplateId | 'coding' | 'editor';
 
+export interface AssistantWorkflowLifecycleHooks {
+  afterResponsePrompt: string;
+}
+
 export interface AssistantAgentSnapshot {
   id: string;
   name: string;
   instructions: string;
   responseStyle: AssistantResponseStyle;
   toolAllowlist: string[] | null;
+  workflowHooks?: AssistantWorkflowLifecycleHooks;
 }
 
 export interface AssistantProfile extends AssistantAgentSnapshot {
@@ -104,11 +109,18 @@ export function isAssistantAgentSnapshot(value: unknown): value is AssistantAgen
     typeof instructions !== 'string' ||
     new TextEncoder().encode(instructions).byteLength > maximumInstructionBytes ||
     (responseStyle !== 'concise' && responseStyle !== 'balanced' && responseStyle !== 'detailed') ||
-    !(toolAllowlist === null || isToolAllowlist(toolAllowlist))
+    !(toolAllowlist === null || isToolAllowlist(toolAllowlist)) ||
+    ('workflowHooks' in value && !isAssistantWorkflowLifecycleHooks(value.workflowHooks))
   ) {
     return false;
   }
   return true;
+}
+
+function isAssistantWorkflowLifecycleHooks(value: unknown): value is AssistantWorkflowLifecycleHooks {
+  if (!isRecord(value) || typeof value.afterResponsePrompt !== 'string') return false;
+  const length = new TextEncoder().encode(value.afterResponsePrompt).byteLength;
+  return length > 0 && length <= 32 * 1024;
 }
 
 function isToolAllowlist(value: unknown): value is string[] {

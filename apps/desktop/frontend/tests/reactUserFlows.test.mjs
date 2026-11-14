@@ -402,6 +402,9 @@ const { ToolActivityGroup } = await vite.ssrLoadModule(
 const sidebarPreferencesModule = await vite.ssrLoadModule('/src/shared/lib/preferences/sidebarPreferences.ts');
 const { McpCatalogTab } = await vite.ssrLoadModule('/src/features/model-catalog/components/McpCatalogTab.tsx');
 const { TitleBarSearch } = await vite.ssrLoadModule('/src/widgets/title-bar/TitleBarSearch.tsx');
+const { isAssistantAgentSnapshot } = await vite.ssrLoadModule(
+  '/src/shared/lib/preferences/assistantProfiles.ts',
+);
 
 const localeDirectory = path.resolve('src/shared/lib/i18n/locales');
 const supportedLocales = ['de', 'en', 'es', 'fr', 'tr'];
@@ -1228,6 +1231,12 @@ test('workflow templates can be created, edited, and launched as a new conversat
   fireEvent.change(screen.getByRole('textbox', { name: translations.workflowTemplatePrompt }), {
     target: { value: 'Create a brief for {{project}}.' },
   });
+  fireEvent.change(screen.getByRole('textbox', { name: translations.workflowTemplateBeforeStartPrompt }), {
+    target: { value: 'Use the current project context for {{project}}.' },
+  });
+  fireEvent.change(screen.getByRole('textbox', { name: translations.workflowTemplateAfterResponsePrompt }), {
+    target: { value: 'Suggest next steps for {{project}}.' },
+  });
   await act(async () => {
     fireEvent.click(screen.getByRole('button', { name: translations.save }));
     await Promise.resolve();
@@ -1236,6 +1245,8 @@ test('workflow templates can be created, edited, and launched as a new conversat
   const [savedTemplates] = workflowTemplatesHarness.writes.map((value) => JSON.parse(value));
   assert.equal(savedTemplates[0].name, 'Project brief');
   assert.equal(savedTemplates[0].parameters[0].name, 'project');
+  assert.equal(savedTemplates[0].beforeStartPrompt, 'Use the current project context for {{project}}.');
+  assert.equal(savedTemplates[0].afterResponsePrompt, 'Suggest next steps for {{project}}.');
 
   fireEvent.click(screen.getByRole('button', { name: /Project brief/ }));
   fireEvent.change(screen.getByRole('textbox', { name: 'project' }), {
@@ -1244,8 +1255,12 @@ test('workflow templates can be created, edited, and launched as a new conversat
   fireEvent.submit(screen.getByRole('button', { name: translations.workflowTemplateStart }).closest('form'));
 
   assert.equal(startedConversations.length, 1);
-  assert.equal(startedConversations[0][0], 'Create a brief for OpenChat.');
+  assert.equal(
+    startedConversations[0][0],
+    'Use the current project context for OpenChat.\n\nCreate a brief for OpenChat.',
+  );
   assert.equal(startedConversations[0][1].name, 'Project brief');
+  assert.deepEqual(startedConversations[0][2], { project: 'OpenChat' });
   assert.ok(screen.getByRole('dialog', { name: translations.workflowTemplatesTitle }));
 });
 
@@ -1308,6 +1323,34 @@ test('tool activity group stays hidden without tools and exposes live progress a
   assert.ok(screen.getByText(translations.toolActivityTitle));
   assert.equal(screen.queryByText(translations.toolActivityWorking), null);
   assert.equal(screen.getByText('5s').textContent, '5s');
+});
+
+test('workflow lifecycle prompts localize and persist as bounded conversation snapshot data', () => {
+  for (const locale of supportedLocales) {
+    const translations = translationsByLocale.get(locale);
+    assert.ok(translations);
+    assert.ok(translations.workflowTemplateBeforeStartPrompt);
+    assert.ok(translations.workflowTemplateAfterResponsePrompt);
+    assert.ok(translations.workflowTemplateAfterResponseHint);
+  }
+
+  const agent = {
+    id: 'a0000000-0000-4000-8000-000000000001',
+    name: 'Workflow',
+    instructions: '',
+    responseStyle: 'balanced',
+    toolAllowlist: null,
+    workflowHooks: { afterResponsePrompt: 'Review {{project}} next.' },
+  };
+  assert.equal(isAssistantAgentSnapshot(agent), true);
+  assert.equal(
+    isAssistantAgentSnapshot({ ...agent, workflowHooks: { afterResponsePrompt: '' } }),
+    false,
+  );
+  assert.equal(
+    isAssistantAgentSnapshot({ ...agent, workflowHooks: { afterResponsePrompt: 'x'.repeat(32 * 1024 + 1) } }),
+    false,
+  );
 });
 
 test('workflow templates can be imported and edited with the saved change persisted', async () => {

@@ -9,12 +9,17 @@ export type ChatAttachmentKind = 'image' | 'text' | 'document';
 export type ExportFormat = 'md' | 'html' | 'json';
 export type AssistantResponseStyle = 'concise' | 'balanced' | 'detailed';
 
+export interface AssistantWorkflowLifecycleHooks {
+  afterResponsePrompt: string;
+}
+
 export interface AssistantAgentSnapshot {
   id: string;
   name: string;
   instructions: string;
   responseStyle: AssistantResponseStyle;
   toolAllowlist: string[] | null;
+  workflowHooks?: AssistantWorkflowLifecycleHooks;
 }
 
 export interface ChatAttachmentMetadata {

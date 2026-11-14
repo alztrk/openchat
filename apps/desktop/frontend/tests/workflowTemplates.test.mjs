@@ -3,8 +3,11 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 import {
+  buildWorkflowStartingPrompt,
+  didWorkflowResponseComplete,
   expandWorkflowTemplate,
   exportWorkflowTemplatesJson,
+  getWorkflowAfterResponseDraft,
   importWorkflowTemplatesJson,
   isWorkflowTemplateNameAvailable,
   parseWorkflowTemplate,
@@ -46,6 +49,79 @@ test('parses a valid parameterized workflow template', () => {
 test('extracts parameter names from starting prompt', () => {
   const names = workflowParameterNames('Translate {{sourceText}} from {{sourceLang}} to {{targetLang}}.');
   assert.deepEqual(names, ['sourceText', 'sourceLang', 'targetLang']);
+});
+
+test('workflow lifecycle prompts participate in shared parameter validation and expansion', () => {
+  const names = workflowParameterNames('Start {{project}}.', 'Before {{project}}.', 'After {{format}}.');
+  assert.deepEqual(names, ['project', 'format']);
+  assert.equal(
+    buildWorkflowStartingPrompt('Summarize {{project}}.', 'Use concise language for {{project}}.', { project: 'OpenChat' }),
+    'Use concise language for OpenChat.\n\nSummarize OpenChat.',
+  );
+
+  const parsed = parseWorkflowTemplate({
+    ...sampleValidTemplate,
+    beforeStartPrompt: 'Use the {{language}} style.',
+    afterResponsePrompt: 'Prepare a {{criteria}} follow-up for {{language}}.',
+  });
+  assert.equal(parsed.beforeStartPrompt, 'Use the {{language}} style.');
+  assert.equal(parsed.afterResponsePrompt, 'Prepare a {{criteria}} follow-up for {{language}}.');
+  assert.ok(workflowParameterNames(parsed.startingPrompt, parsed.beforeStartPrompt ?? '', parsed.afterResponsePrompt ?? '').includes('criteria'));
+
+  const roundTrip = importWorkflowTemplatesJson(exportWorkflowTemplatesJson([parsed])).imported[0];
+  assert.equal(roundTrip?.beforeStartPrompt, parsed.beforeStartPrompt);
+  assert.equal(roundTrip?.afterResponsePrompt, parsed.afterResponsePrompt);
+});
+
+test('legacy workflow templates without lifecycle prompts remain readable', () => {
+  const parsed = parseWorkflowTemplate(sampleValidTemplate);
+  assert.equal(parsed.beforeStartPrompt, undefined);
+  assert.equal(parsed.afterResponsePrompt, undefined);
+});
+
+test('lifecycle prompt validation enforces the existing prompt-size bound', () => {
+  assert.throws(
+    () => parseWorkflowTemplate({ ...sampleValidTemplate, beforeStartPrompt: 'x'.repeat(32 * 1024 + 1) }),
+    WorkflowTemplateValidationError,
+  );
+  assert.throws(
+    () => parseWorkflowTemplate({ ...sampleValidTemplate, afterResponsePrompt: 'x'.repeat(32 * 1024 + 1) }),
+    WorkflowTemplateValidationError,
+  );
+});
+
+test('after-response prompt applies only to successful completion and preserves user composer state', () => {
+  const previous = { conversationId: 'conversation_1', id: 'message_1', status: 'streaming' };
+  const completed = { ...previous, status: 'completed' };
+  const base = {
+    previous,
+    current: completed,
+    activeConversationId: 'conversation_1',
+    afterResponsePrompt: 'Continue with {{topic}}.',
+    draft: '',
+    pendingAttachmentCount: 0,
+    isReadingAttachments: false,
+    responseNeedsInput: false,
+    disabled: false,
+  };
+
+  assert.equal(didWorkflowResponseComplete(previous, completed), true);
+  assert.equal(getWorkflowAfterResponseDraft(base), 'Continue with {{topic}}.');
+  assert.equal(getWorkflowAfterResponseDraft({ ...base, draft: 'My draft' }), null);
+  assert.equal(getWorkflowAfterResponseDraft({ ...base, pendingAttachmentCount: 1 }), null);
+  assert.equal(getWorkflowAfterResponseDraft({ ...base, isReadingAttachments: true }), null);
+  assert.equal(getWorkflowAfterResponseDraft({ ...base, responseNeedsInput: true }), null);
+  assert.equal(getWorkflowAfterResponseDraft({ ...base, activeConversationId: 'conversation_2' }), null);
+  assert.equal(getWorkflowAfterResponseDraft({ ...base, disabled: true }), null);
+  assert.equal(
+    getWorkflowAfterResponseDraft({ ...base, current: { ...previous, status: 'stopped' } }),
+    null,
+  );
+  assert.equal(
+    getWorkflowAfterResponseDraft({ ...base, current: { ...previous, status: 'failed' } }),
+    null,
+  );
+  assert.equal(getWorkflowAfterResponseDraft({ ...base, previous: null }), null);
 });
 
 test('expands workflow template variables into the prompt', () => {

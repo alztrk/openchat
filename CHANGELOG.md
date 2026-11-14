@@ -20,6 +20,7 @@ Completed work is summarized from repository history and grouped by the relevant
 - Added prototype preview controls for destination frames, triggers, presentations, and transitions.
 - Added Design text typography controls, reusable text and color styles, component variants and instances, plus canvas alignment and distribution actions.
 - Added reusable parameterized workflow templates with prompt variable expansion, durable persistence, validation, and JSON import/export.
+- Added optional before-start and after-response prompts to reusable workflows; successful responses place the follow-up in the empty composer for review without sending it.
 - Added grouping for selected Design layers, keeping their positions while wrapping them in a frame.
 - Added Amazon Bedrock Converse and ConverseStream protocol support, AWS SigV4 authentication, regional runtime configuration, and EventStream binary decoding.
 - Added user-triggered local text-to-speech playback for completed assistant responses.
