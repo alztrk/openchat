@@ -122,6 +122,35 @@ test('legacy canvas frames retain coordinates beyond the former position limit',
   assert.equal(result.canvas.frames[0]?.y, -120_000);
 });
 
+test('legacy canvas accepts more than sixteen frames and preserves oversized documents for recovery', async () => {
+  const tokens = {
+    background: '#FFFFFF', surface: '#FFFFFF', text: '#000000', primary: '#000000',
+    accent: '#000000', border: '#000000', fontFamily: 'Arial', typeScale: 16, spacingUnit: 4,
+  };
+  const createFrames = (count) => Array.from({ length: count }, (_, index) => createFrame(
+    { title: `Frame ${index + 1}`, width: 390, height: 844, svg: '<svg/>', tokens },
+    'Keep legacy frames',
+    index * 400,
+    0,
+    1,
+  ));
+
+  const frames = createFrames(17);
+  storageState.values.set('design.vector_canvas.v1', JSON.stringify({ version: 1, frames, selectedFrameId: frames[0].id }));
+
+  const result = readDesignCanvas();
+  assert.equal(result.kind, 'ready');
+  if (result.kind !== 'ready') return;
+  assert.equal(result.canvas.frames.length, 17);
+
+  const oversizedFrames = createFrames(257);
+  const rawData = JSON.stringify({ version: 1, frames: oversizedFrames, selectedFrameId: oversizedFrames[0].id });
+  storageState.values.set('design.vector_canvas.v1', rawData);
+
+  assert.deepEqual(readDesignCanvas(), { kind: 'recoveryRequired', rawData, reason: 'invalidStructure' });
+  assert.equal(storageState.values.get('design.vector_canvas.v1'), rawData);
+});
+
 test('invalid JSON remains available for recovery export', () => {
   const rawData = '{"version":';
   storageState.values.set('design.vector_canvas.v1', rawData);

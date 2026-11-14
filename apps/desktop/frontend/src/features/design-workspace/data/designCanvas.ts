@@ -2,7 +2,7 @@ import { unifiedStorage } from '@shared/lib/platform/storage/unifiedStorage';
 
 const storageKey = 'design.vector_canvas.v1';
 const maximumCanvasBytes = 2 * 1024 * 1024;
-const maximumFrameCount = 16;
+const maximumFrameCount = 256;
 const maximumSvgBytes = 32 * 1024;
 const maximumSvgNodeCount = 512;
 const maximumRevisionCount = 3;
