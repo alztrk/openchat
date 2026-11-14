@@ -1,8 +1,23 @@
-import { Brain, Check, ChevronLeft, ChevronRight, CircleAlert, Copy, GitBranch, Link, RefreshCw } from 'lucide-react';
+import {
+  Brain,
+  Check,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  CircleAlert,
+  Copy,
+  GitBranch,
+  Link,
+  LoaderCircle,
+  RefreshCw,
+  Square,
+  Volume2,
+  Wrench,
+} from 'lucide-react';
 import { memo, useEffect, useRef, useState } from 'react';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button, Dialog } from '@shared/components';
+import { Button, Dialog, toast } from '@shared/components';
 import type { ChatFileChange } from '@features/chat/data/chatFileChanges';
 import type { ChatMessage } from '@features/chat/data';
 import { cleanMarkdown, markdownToPlainText } from '@features/chat/data/messageCopyUtils';
@@ -16,6 +31,7 @@ import { FileChangesSummaryCard } from './message/FileChangesSummaryCard';
 import { separateInBandReasoning } from './message/inBandReasoning';
 import { MessageCopyMenu } from './message/MessageCopyMenu';
 import { MessageMarkdown } from './message/MessageMarkdown';
+import { disposeLocalSpeech, startLocalSpeech, stopLocalSpeech } from './message/speechSynthesis';
 import {
   buildAssistantTimeline,
   parseCitationSources,
@@ -70,7 +86,12 @@ export const MessageItem = memo(function MessageItem({
   const [memorySourcesOpen, setMemorySourcesOpen] = useState(false);
   const [memorySources, setMemorySources] = useState<PersonalMemorySource[]>([]);
   const [memorySourcesError, setMemorySourcesError] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [isToolActivityPanelOpen, setIsToolActivityPanelOpen] = useState(false);
+  const [liveElapsedMicroseconds, setLiveElapsedMicroseconds] = useState<number | null>(null);
   const resetTimer = useRef<number | undefined>(undefined);
+  const responseStartedAt = useRef<{ messageId: string; performanceTime: number } | null>(null);
+  const autoOpenedToolActivityPanel = useRef<string | null>(null);
   const isUser = message.role === 'user';
 
   // Memoize all derived data to avoid re-computation on every render
@@ -81,6 +102,12 @@ export const MessageItem = memo(function MessageItem({
         : separateInBandReasoning(message.content),
     [isUser, message.content],
   );
+
+  const speechText = useMemo(
+    () => (isUser || message.status !== 'completed' ? '' : markdownToPlainText(inBandReasoning.visibleContent)),
+    [inBandReasoning.visibleContent, isUser, message.status],
+  );
+  const canReadAloud = speechText.trim().length > 0;
 
   const personalMemoryFactIds = useMemo(
     () => parsePersonalMemoryFactIds(message.personalMemoryFactIds) ?? [],
@@ -118,6 +145,48 @@ export const MessageItem = memo(function MessageItem({
     [isUser, message.content, inBandReasoning, reasoningSummaries, toolActivities],
   );
 
+  useEffect(() => {
+    if (isUser) return;
+
+    if (message.status === 'streaming') {
+      if (responseStartedAt.current?.messageId !== message.id) {
+        responseStartedAt.current = { messageId: message.id, performanceTime: performance.now() };
+        setLiveElapsedMicroseconds(0);
+      }
+
+      if (toolActivities.length === 0) return;
+
+      const updateElapsedTime = () => {
+        const startedAt = responseStartedAt.current;
+        if (startedAt?.messageId === message.id) {
+          setLiveElapsedMicroseconds(Math.floor((performance.now() - startedAt.performanceTime) * 1_000));
+        }
+      };
+
+      updateElapsedTime();
+      const timer = window.setInterval(updateElapsedTime, 1_000);
+      return () => window.clearInterval(timer);
+    }
+
+    const startedAt = responseStartedAt.current;
+    if (startedAt?.messageId === message.id) {
+      setLiveElapsedMicroseconds(Math.floor((performance.now() - startedAt.performanceTime) * 1_000));
+      responseStartedAt.current = null;
+    }
+  }, [isUser, message.id, message.status, toolActivities.length]);
+
+  useEffect(() => {
+    if (
+      !isUser &&
+      message.status === 'streaming' &&
+      toolActivities.length > 0 &&
+      autoOpenedToolActivityPanel.current !== message.id
+    ) {
+      autoOpenedToolActivityPanel.current = message.id;
+      setIsToolActivityPanelOpen(true);
+    }
+  }, [isUser, message.id, message.status, toolActivities.length]);
+
   const canRetry = useMemo(
     () => !isUser && onRetryMessage !== undefined && message.status !== 'streaming',
     [isUser, onRetryMessage, message.status],
@@ -148,26 +217,7 @@ export const MessageItem = memo(function MessageItem({
               </div>
             );
           }
-          if (segment.kind === 'tools') {
-            return (
-              <div className="mt-2 grid w-full gap-2" key={segment.key}>
-                {segment.activities.map((activity) => (
-                  <ToolActivityAccordion
-                    activity={activity}
-                    conversationId={message.conversationId}
-                    isResponseInProgress={message.status === 'streaming'}
-                    key={activity.callId}
-                    onCheckpointRestored={onCheckpointRestored}
-                    onOpenFileChanges={onOpenFileChanges}
-                    onOpenFile={(path, content) => onOpenWorkspaceFile?.({ path, content })}
-                    onOpenEditedFile={(change) =>
-                      onOpenWorkspaceFile?.({ path: change.path, changeId: change.id })
-                    }
-                  />
-                ))}
-              </div>
-            );
-          }
+          if (segment.kind === 'tools') return null;
           return (
             <div className="mt-2 max-w-assistant-message" key={segment.key}>
               <MessageMarkdown citationSources={citationSources} content={segment.content} />
@@ -181,17 +231,18 @@ export const MessageItem = memo(function MessageItem({
     message.status,
     assistantTimeline,
     citationSources,
-    onCheckpointRestored,
-    onOpenFileChanges,
-    onOpenWorkspaceFile,
-    message.conversationId,
   ]);
+
+  const toolActivityElapsedMicroseconds = message.elapsedMicroseconds ?? liveElapsedMicroseconds;
+  const toolActivityStatusLabel =
+    message.status === 'streaming' ? t('toolActivityWorking') : t('toolActivityTitle');
 
   useEffect(
     () => () => {
       if (resetTimer.current !== undefined) window.clearTimeout(resetTimer.current);
+      disposeLocalSpeech(message.id);
     },
-    [],
+    [message.id],
   );
 
   const copyMessage = async () => {
@@ -207,6 +258,30 @@ export const MessageItem = memo(function MessageItem({
     }
     if (resetTimer.current !== undefined) window.clearTimeout(resetTimer.current);
     resetTimer.current = window.setTimeout(() => setCopyResult('idle'), 2000);
+  };
+
+  const handleReadAloud = () => {
+    if (isSpeaking) {
+      stopLocalSpeech(message.id);
+      return;
+    }
+
+    const result = startLocalSpeech(message.id, speechText, locale, {
+      onStart: () => setIsSpeaking(true),
+      onFinish: () => setIsSpeaking(false),
+      onError: () => {
+        setIsSpeaking(false);
+        toast.error(t('speechSynthesisPlaybackFailed'));
+      },
+    });
+
+    if (result === 'unsupported') {
+      toast.error(t('speechSynthesisUnavailable'));
+    } else if (result === 'no-local-voice') {
+      toast.error(t('speechSynthesisLocalVoiceUnavailable'));
+    } else if (result === 'runtime') {
+      toast.error(t('speechSynthesisPlaybackFailed'));
+    }
   };
 
   const viewMemorySources = async () => {
@@ -257,6 +332,52 @@ export const MessageItem = memo(function MessageItem({
               providerId={message.providerId ?? assistantProviderFallback}
             />
           </div>
+        ) : null}
+        {!isUser && toolActivities.length > 0 ? (
+          <details
+            className="openchat-tool-accordion openchat-native-disclosure mb-2 max-w-assistant-message overflow-hidden rounded-card border border-border bg-surface"
+            onToggle={(event) => setIsToolActivityPanelOpen(event.currentTarget.open)}
+            open={isToolActivityPanelOpen}
+          >
+            <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-sm text-text [&::-webkit-details-marker]:hidden">
+              {message.status === 'streaming' ? (
+                <LoaderCircle
+                  aria-hidden="true"
+                  className="shrink-0 animate-spin text-accent-icon motion-reduce:animate-none"
+                  size={16}
+                />
+              ) : (
+                <Wrench aria-hidden="true" className="shrink-0 text-accent-icon" size={16} />
+              )}
+              <span aria-live="polite" className="font-semibold">
+                {toolActivityStatusLabel}
+              </span>
+              {toolActivityElapsedMicroseconds !== null ? (
+                <span className="ml-auto shrink-0 text-xs text-secondary-text">
+                  {formatDuration(toolActivityElapsedMicroseconds)}
+                </span>
+              ) : null}
+              <ChevronDown
+                aria-hidden="true"
+                className={`shrink-0 text-secondary-icon transition-transform motion-reduce:transition-none ${isToolActivityPanelOpen ? 'rotate-180' : ''}`}
+                size={15}
+              />
+            </summary>
+            <div className="border-t border-border">
+              {toolActivities.map((activity) => (
+                <ToolActivityAccordion
+                  activity={activity}
+                  conversationId={message.conversationId}
+                  isResponseInProgress={message.status === 'streaming'}
+                  key={activity.callId}
+                  onCheckpointRestored={onCheckpointRestored}
+                  onOpenFileChanges={onOpenFileChanges}
+                  onOpenFile={(path, content) => onOpenWorkspaceFile?.({ path, content })}
+                  onOpenEditedFile={(change) => onOpenWorkspaceFile?.({ path: change.path, changeId: change.id })}
+                />
+              ))}
+            </div>
+          </details>
         ) : null}
         {hasResponseVersions ? (
           <div className={isUser ? 'mb-2 flex justify-start' : 'max-w-assistant-message'}>
@@ -326,7 +447,22 @@ export const MessageItem = memo(function MessageItem({
           ) : null}
           {message.content ? (
             !isUser ? (
-              <MessageCopyMenu content={message.content} />
+              <>
+                <MessageCopyMenu content={message.content} />
+                {canReadAloud ? (
+                  <Button
+                    aria-label={t(isSpeaking ? 'stopReading' : 'readAloud')}
+                    aria-pressed={isSpeaking}
+                    className="size-8 opacity-70 group-hover:opacity-100"
+                    onClick={handleReadAloud}
+                    size="icon"
+                    title={t(isSpeaking ? 'stopReading' : 'readAloud')}
+                    variant="ghost"
+                  >
+                    {isSpeaking ? <Square aria-hidden="true" size={15} /> : <Volume2 aria-hidden="true" size={16} />}
+                  </Button>
+                ) : null}
+              </>
             ) : (
               <Button
                 aria-label={t(copyResult === 'copied' ? 'messageCopied' : 'copyMessage')}

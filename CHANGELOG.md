@@ -8,11 +8,13 @@ Completed work is summarized from repository history and grouped by the relevant
 
 - Try official provider website favicons on Connections credential cards, retaining bundled icons when remote favicons are unavailable.
 - Removed the recent unsuccessful generations section from the Design image library.
+- Grouped tool activity above assistant responses with expandable per-tool details and elapsed response time.
 
 ### Added
 
 - Added reusable parameterized workflow templates with prompt variable expansion, durable persistence, validation, and JSON import/export.
 - Added Amazon Bedrock Converse and ConverseStream protocol support, AWS SigV4 authentication, regional runtime configuration, and EventStream binary decoding.
+- Added user-triggered local text-to-speech playback for completed assistant responses.
 - Added Microsoft AI Foundry and Azure OpenAI model routing, deployment identifier configuration, API versioning, and credential headers.
 
 ### Fixed

@@ -147,7 +147,8 @@ export function ToolActivityAccordion({
   const isWebSearchTool = activity.name === 'web_search';
   const isReadUrlTool = activity.name === 'read_url_content' || activity.name === 'read_url';
   const isWebTool = isWebSearchTool || isReadUrlTool;
-  const showWebStatus = isWebTool && activity.status !== 'completed';
+  const showActivityStatus =
+    (isFileReadTool || isFileSearchTool || isCommandExecutionTool || isWebTool) && activity.status !== 'completed';
   const webArgs = asRecord(activity.arguments);
   const webOutput = asRecord(activity.output);
   const webSearchQuery = isWebSearchTool
@@ -236,7 +237,7 @@ export function ToolActivityAccordion({
   };
 
   return (
-    <details className="group openchat-tool-accordion openchat-native-disclosure rounded-card border border-border bg-surface" open={isOpen}>
+    <details className="group openchat-tool-accordion openchat-native-disclosure border-b border-border last:border-b-0" open={isOpen}>
       <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-sm text-text [&::-webkit-details-marker]:hidden">
         <span className="flex size-7 shrink-0 items-center justify-center rounded-control bg-composer text-accent-icon">
           <ToolIcon aria-hidden="true" size={15} />
@@ -356,7 +357,7 @@ export function ToolActivityAccordion({
           </span>
         ) : null}
         {(!isFileEditTool && !isFileReadTool && !isFileSearchTool && !isCommandExecutionTool && !isWebTool) ||
-        showWebStatus ? (
+        showActivityStatus ? (
           <span
             className="inline-flex shrink-0 items-center gap-1 rounded-full bg-composer px-2 py-1 text-xs text-secondary-text"
             aria-live="polite"
