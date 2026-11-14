@@ -1,4 +1,4 @@
-import { Blend, Brain, Check, ChevronDown, Circle, CodeXml, Download, Eye, EyeOff, FilePlus2, FileText, Folder, FolderMinus, Frame, Image as ImageIcon, ImageDown, Layers3, LoaderCircle, LockKeyhole, MessageSquare, Minus, MoreHorizontal, MousePointer2, Move, PaintBucket, Paperclip, PenTool, Pencil, Plus, Radius, RectangleHorizontal, Save, Scaling, Send, Square, Trash2, Type, UnlockKeyhole, X } from 'lucide-react';
+import { Blend, Brain, Check, ChevronDown, Circle, CodeXml, Download, Eye, EyeOff, FilePlus2, FileText, Folder, FolderMinus, Frame, Image as ImageIcon, ImageDown, Layers3, LoaderCircle, LockKeyhole, MessageSquare, Minus, MoreHorizontal, MousePointer2, Move, PaintBucket, Paperclip, PenTool, Pencil, Play, Plus, Radius, RectangleHorizontal, Save, Scaling, Send, Square, Trash2, Type, UnlockKeyhole, X } from 'lucide-react';
 import {
   type CSSProperties as ReactCSSProperties,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -24,7 +24,7 @@ import { type PendingChatAttachment, ChatAttachmentInputError, readAttachmentFil
 import type { ChatModelFavorite } from '@features/chat/data';
 import { CanvasZoomControls } from '@features/design-workspace/components/CanvasZoomControls';
 import { applyDesignOperations, startDesignGeneration, type DesignCanvasOperation, type DesignGenerationOperation, type DesignGenerationReference } from '@features/design-workspace/data/designGeneration';
-import { applyDesignTextStyle, arrangeDesignSelection, createDesignComponent, createDesignComponentInstance, createDesignComponentVariant, createDesignTextStyle, designNodesForResponsiveBreakpoint, expandDesignMoveSelection, groupDesignSelection, reflowDesignFrameChildren, reflowDesignFrameConstraints, removeDesignNodes, renameDesignNode, snapDesignMove, synchronizeDesignComponentDependents, type DesignSnapGuides } from '@features/design-workspace/data/designOperations';
+import { applyDesignTextStyle, arrangeDesignSelection, createDesignComponent, createDesignComponentInstance, createDesignComponentVariant, createDesignTextStyle, designNodesForResponsiveBreakpoint, expandDesignMoveSelection, groupDesignSelection, reflowDesignFrameChildren, reflowDesignFrameConstraints, removeDesignNodes, removeDesignPrototypeInteraction, renameDesignNode, setDesignPrototypeFlow, setDesignPrototypeInteraction, snapDesignMove, synchronizeDesignComponentDependents, type DesignSnapGuides } from '@features/design-workspace/data/designOperations';
 import { listSharedDesignTextStyles, type SharedDesignTextStyle } from '@features/design-workspace/data/designStyleLibrary';
 import {
   addDesignPage,
@@ -300,7 +300,9 @@ export function DesignCanvas() {
   const [prototypeOverlayId, setPrototypeOverlayId] = useState<string | null>(null);
   const prototypeOverlayCloseRef = useRef<HTMLButtonElement>(null);
   const prototypePreviousFocusRef = useRef<HTMLElement | null>(null);
-  const isPrototypePreview = false;
+  const [isPrototypePreview, setIsPrototypePreview] = useState(false);
+  const [prototypeStartNodeId, setPrototypeStartNodeId] = useState<string | null>(null);
+  const [prototypeDraft, setPrototypeDraft] = useState<{ targetNodeId: string; trigger: DesignPrototypeInteraction['trigger']; presentation: DesignPrototypeInteraction['presentation']; transition: DesignPrototypeInteraction['transition'] }>({ targetNodeId: '', trigger: 'click', presentation: 'navigate', transition: 'dissolve' });
   const [prototypeTransition, setPrototypeTransition] = useState<DesignPrototypeInteraction['transition']>('dissolve');
   const [isPrototypeDissolveVisible, setIsPrototypeDissolveVisible] = useState(true);
   const [responsivePreview, ] = useState<'base' | DesignResponsiveBreakpoint>('base');
@@ -479,6 +481,17 @@ export function DesignCanvas() {
   const selectedNode = loadState.kind === 'ready' && loadState.document.selectedNodeIds.length === 1
     ? loadState.document.nodes.find((node) => node.id === loadState.document.selectedNodeIds[0])
     : undefined;
+  const selectedPrototypeInteraction = selectedNode && loadState.kind === 'ready'
+    ? loadState.document.prototypeInteractions.find((interaction) => interaction.sourceNodeId === selectedNode.id)
+    : undefined;
+  const prototypeDraftSourceKey = `${selectedNode?.id ?? ''}|${selectedPrototypeInteraction?.id ?? ''}`;
+  useEffect(() => {
+    const sourceNodeId = prototypeDraftSourceKey.slice(0, prototypeDraftSourceKey.indexOf('|'));
+    const interaction = documentRef.current.prototypeInteractions.find((item) => item.sourceNodeId === sourceNodeId);
+    setPrototypeDraft(interaction
+      ? { targetNodeId: interaction.targetNodeId, trigger: interaction.trigger, presentation: interaction.presentation, transition: interaction.transition }
+      : { targetNodeId: '', trigger: 'click', presentation: 'navigate', transition: 'dissolve' });
+  }, [prototypeDraftSourceKey]);
   const selectedFillType = selectedNode && 'fillStyle' in selectedNode ? selectedNode.fillStyle?.type : undefined;
   const selectedFillSelectionKey = `${selectedNode?.id ?? ''}|${selectedFillType ?? ''}`;
   const selectedGradientStops = selectedNode && 'fill' in selectedNode && selectedNode.fillStyle?.type === 'gradient'
@@ -1327,6 +1340,66 @@ export function DesignCanvas() {
     focusCanvasNode(target);
   };
 
+  const startPrototypePreview = () => {
+    const current = documentRef.current;
+    const pageFrames = current.nodes.filter((node): node is DesignFrameNode => node.pageId === current.activePageId && node.type === 'frame');
+    const selectedFrame = pageFrames.find((node) => current.selectedNodeIds.includes(node.id));
+    const flow = current.prototypeFlows.find((item) => item.pageId === current.activePageId);
+    const startFrame = selectedFrame ?? pageFrames.find((node) => node.id === flow?.startNodeId) ?? pageFrames[0];
+    if (!startFrame) {
+      toast.info(t('designEditorPrototypeNeedsFrame'));
+      return;
+    }
+    try {
+      const hasFlow = current.prototypeFlows.some((item) => item.startNodeId === startFrame.id);
+      if (!hasFlow) {
+        const name = nextUniqueDesignName(t('designEditorPrototypeFlowName'), current.prototypeFlows);
+        void publish(setDesignPrototypeFlow(current, name, startFrame.id));
+      }
+      setPrototypeStartNodeId(startFrame.id);
+      setPrototypeOverlayId(null);
+      setIsPrototypeDissolveVisible(true);
+      setIsPrototypePreview(true);
+      focusCanvasNode(startFrame);
+    } catch {
+      toast.error(t('designEditorPrototypePreviewFailed'));
+    }
+  };
+
+  const stopPrototypePreview = () => {
+    const startFrame = prototypeStartNodeId ? documentRef.current.nodes.find((node) => node.id === prototypeStartNodeId) : undefined;
+    setIsPrototypePreview(false);
+    setPrototypeOverlayId(null);
+    setPrototypeStartNodeId(null);
+    if (startFrame) focusCanvasNode(startFrame);
+  };
+
+  const savePrototypeConnection = () => {
+    if (!selectedNode || !prototypeDraft.targetNodeId) return;
+    try {
+      void publish(setDesignPrototypeInteraction(
+        documentRef.current,
+        selectedNode.id,
+        prototypeDraft.targetNodeId,
+        prototypeDraft.transition,
+        prototypeDraft.trigger,
+        prototypeDraft.presentation,
+      )).then(() => toast.success(t('designEditorPrototypeConnectionSaved')), () => undefined);
+    } catch {
+      toast.error(t('designEditorPrototypeConnectionFailed'));
+    }
+  };
+
+  const removePrototypeConnection = () => {
+    if (!selectedNode) return;
+    try {
+      void publish(removeDesignPrototypeInteraction(documentRef.current, selectedNode.id));
+      setPrototypeDraft({ targetNodeId: '', trigger: 'click', presentation: 'navigate', transition: 'dissolve' });
+    } catch {
+      toast.error(t('designEditorPrototypeConnectionFailed'));
+    }
+  };
+
   const focusCanvasNode = (node: DesignNode) => {
     setCamera((current) => ({
       ...current,
@@ -1483,6 +1556,9 @@ export function DesignCanvas() {
     } else if (event.key === 'Escape' && prototypeOverlayId) {
       event.preventDefault();
       setPrototypeOverlayId(null);
+    } else if (event.key === 'Escape' && isPrototypePreview) {
+      event.preventDefault();
+      stopPrototypePreview();
     } else if (event.key === 'Escape') {
       const current = documentRef.current;
       void publish({ ...current, selectedNodeIds: [] }, false);
@@ -2541,6 +2617,17 @@ export function DesignCanvas() {
               </div>
               <div className="design-editor-floating-dock">
                 <div aria-label={t('designEditorTools')} className="design-editor-dock-tools" role="toolbar">
+                  <Button
+                    aria-label={t(isPrototypePreview ? 'designEditorPrototypeStop' : 'designEditorPrototypePreview')}
+                    aria-pressed={isPrototypePreview}
+                    disabled={isGenerating || isSwitchingDocument}
+                    onClick={isPrototypePreview ? stopPrototypePreview : startPrototypePreview}
+                    size="icon"
+                    title={t(isPrototypePreview ? 'designEditorPrototypeStop' : 'designEditorPrototypePreview')}
+                    variant={isPrototypePreview ? 'secondary' : 'ghost'}
+                  >
+                    {isPrototypePreview ? <Square aria-hidden="true" size={15} /> : <Play aria-hidden="true" size={15} />}
+                  </Button>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <Button aria-label={t(designNodeToolLabelKeys[selectedNodeTool])} className="w-20 min-w-0 shrink-0 justify-start gap-1 px-1.5" disabled={isGenerating} size="small" title={t(designNodeToolLabelKeys[selectedNodeTool])} variant="ghost">
@@ -2618,6 +2705,38 @@ export function DesignCanvas() {
                 <Input density="compact" label={t('designEditorHeight')} min={1} onChange={(event) => updateNodeGeometry(selectedNode.id, { height: Math.max(1, readFiniteNumber(event.currentTarget.value, selectedNode.height)) })} type="number" value={selectedNode.height} />
               </div>
             </div>
+            <section aria-label={t('designEditorPrototypeSettings')} className="design-editor-inspector-group">
+              <div className="design-editor-inspector-group-heading"><Play aria-hidden="true" size={15} /><span>{t('designEditorPrototypeSettings')}</span></div>
+              <Select
+                label={t('designEditorPrototypeTarget')}
+                onChange={(event) => setPrototypeDraft((draft) => ({ ...draft, targetNodeId: event.currentTarget.value }))}
+                options={pageNodes.filter((node): node is DesignFrameNode => node.type === 'frame' && node.id !== selectedNode.id).map((node) => ({ value: node.id, label: node.name }))}
+                placeholder={t('designEditorPrototypeChooseTarget')}
+                value={prototypeDraft.targetNodeId}
+              />
+              <Select
+                label={t('designEditorPrototypeTrigger')}
+                onChange={(event) => setPrototypeDraft((draft) => ({ ...draft, trigger: event.currentTarget.value === 'hover' ? 'hover' : 'click' }))}
+                options={[{ value: 'click', label: t('designEditorPrototypeClick') }, { value: 'hover', label: t('designEditorPrototypeHover') }]}
+                value={prototypeDraft.trigger}
+              />
+              <Select
+                label={t('designEditorPrototypePresentation')}
+                onChange={(event) => setPrototypeDraft((draft) => ({ ...draft, presentation: event.currentTarget.value === 'overlay' ? 'overlay' : 'navigate' }))}
+                options={[{ value: 'navigate', label: t('designEditorPrototypeNavigate') }, { value: 'overlay', label: t('designEditorPrototypeOverlay') }]}
+                value={prototypeDraft.presentation}
+              />
+              <Select
+                label={t('designEditorPrototypeTransition')}
+                onChange={(event) => setPrototypeDraft((draft) => ({ ...draft, transition: event.currentTarget.value === 'instant' || event.currentTarget.value === 'slide' ? event.currentTarget.value : 'dissolve' }))}
+                options={[{ value: 'instant', label: t('designEditorPrototypeInstant') }, { value: 'dissolve', label: t('designEditorPrototypeDissolve') }, { value: 'slide', label: t('designEditorPrototypeSlide') }]}
+                value={prototypeDraft.transition}
+              />
+              <div className="flex gap-2">
+                <Button className="min-w-0 flex-1" disabled={!prototypeDraft.targetNodeId || selectedNode.locked || isPrototypePreview} onClick={savePrototypeConnection} size="small" variant="secondary">{t('designEditorPrototypeConnect')}</Button>
+                {selectedPrototypeInteraction && <Button aria-label={t('designEditorPrototypeRemove')} disabled={isPrototypePreview} onClick={removePrototypeConnection} size="icon" title={t('designEditorPrototypeRemove')} variant="ghost"><Trash2 aria-hidden="true" size={14} /></Button>}
+              </div>
+            </section>
             {selectedNode.type === 'text' && <Textarea
               aria-label={t('designEditorText')}
               className="design-editor-text-content"
