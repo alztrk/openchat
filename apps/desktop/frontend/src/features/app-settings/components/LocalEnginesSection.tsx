@@ -58,6 +58,7 @@ export function LocalEnginesSection() {
   const [pendingRegistration, setPendingRegistration] = useState<PendingRegistration | null>(null);
   const [discovery, setDiscovery] = useState<DiscoveryResult | null>(null);
   const [removeTarget, setRemoveTarget] = useState<LocalModel | null>(null);
+  const [uninstallTarget, setUninstallTarget] = useState<LocalEngine | null>(null);
   const [externalCandidates, setExternalCandidates] = useState<ExternalCandidate[]>([]);
   const [notice, setNotice] = useState<Notice | null>(null);
   const [expandedEngineIds, setExpandedEngineIds] = useState<Set<string>>(() => new Set());
@@ -190,6 +191,14 @@ export function LocalEnginesSection() {
         noMmap: updatedSettings.noMmap,
         parallel: updatedSettings.parallel,
         customArguments: updatedSettings.customArguments,
+        vllmMaxModelLen: updatedSettings.vllmMaxModelLen,
+        vllmPort: updatedSettings.vllmPort,
+        vllmGpuMemoryUtilization: updatedSettings.vllmGpuMemoryUtilization,
+        vllmTensorParallelSize: updatedSettings.vllmTensorParallelSize,
+        vllmMaxNumSeqs: updatedSettings.vllmMaxNumSeqs,
+        vllmDtype: updatedSettings.vllmDtype,
+        vllmEnforceEager: updatedSettings.vllmEnforceEager,
+        vllmCustomArguments: updatedSettings.vllmCustomArguments,
       });
       setNotice({ key: 'localEngineSettingsSaved' });
       await loadCatalog();
@@ -426,6 +435,24 @@ export function LocalEnginesSection() {
     }
   };
 
+  const uninstallEngine = async () => {
+    const engine = uninstallTarget;
+    if (!engine || activeAction !== null) return;
+    setActiveAction('uninstall');
+    setErrorKey(null);
+    try {
+      const result = await localServiceClient.call('local.engines.uninstall', { engineId: engine.engineId });
+      if (result.removed !== true) throw new Error('The managed runtime was not removed.');
+      setUninstallTarget(null);
+      toast.success(t('localEngineUninstalled', { name: engine.displayName }));
+      await loadCatalog();
+    } catch {
+      setErrorKey('localModelActionError');
+    } finally {
+      setActiveAction(null);
+    }
+  };
+
   const cancelInstall = async () => {
     if (!activeOperation || isCancelling) return;
     setIsCancelling(true);
@@ -518,6 +545,7 @@ export function LocalEnginesSection() {
                   },
                 )
               }
+              onUninstall={() => setUninstallTarget(engine)}
               onRemove={(model) => setRemoveTarget(model)}
               onSaveSettings={saveSettings}
               onStart={(modelId) => void startModel(modelId)}
@@ -570,6 +598,35 @@ export function LocalEnginesSection() {
               ''
             }
           />
+        ) : null}
+      </Dialog>
+
+      <Dialog
+        onOpenChange={(openState) => {
+          if (!openState && activeAction !== 'uninstall') setUninstallTarget(null);
+        }}
+        open={uninstallTarget !== null}
+        title={t('localEngineUninstall')}
+      >
+        {uninstallTarget ? (
+          <div className="grid gap-4">
+            <p className="text-sm text-secondary-text">
+              {t('localEngineUninstallConfirmation', { name: uninstallTarget.displayName })}
+            </p>
+            <div className="flex justify-end gap-2">
+              <Button disabled={activeAction === 'uninstall'} onClick={() => setUninstallTarget(null)}>
+                {t('cancel')}
+              </Button>
+              <Button disabled={activeAction !== null} onClick={() => void uninstallEngine()} variant="destructive">
+                {activeAction === 'uninstall' ? (
+                  <LoaderCircle aria-hidden="true" className="animate-spin" size={16} />
+                ) : (
+                  <Trash2 aria-hidden="true" size={16} />
+                )}
+                {t('localEngineUninstall')}
+              </Button>
+            </div>
+          </div>
         ) : null}
       </Dialog>
 

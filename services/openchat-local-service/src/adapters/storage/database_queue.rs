@@ -281,8 +281,13 @@ impl DatabaseQueueHandle {
     }
 
     pub(crate) fn clear_readers(&self) {
+        #[cfg(windows)]
         if let DatabaseQueueBackend::Local(queue) = self.backend.as_ref() {
             queue.clear_readers();
+        }
+        #[cfg(not(windows))]
+        match self.backend.as_ref() {
+            DatabaseQueueBackend::Local(queue) => queue.clear_readers(),
         }
     }
 

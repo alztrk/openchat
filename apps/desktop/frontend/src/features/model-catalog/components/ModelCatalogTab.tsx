@@ -56,6 +56,7 @@ import { ModelReadmeMarkdown } from './ModelReadmeMarkdown';
 export function ModelCatalogTab() {
   const { i18n, t } = useTranslation();
   const [query, setQuery] = useState('');
+  const [format, setFormat] = useState<'gguf' | 'transformers'>('gguf');
   const [sort, setSort] = useState<ModelSort>('downloads');
   const [models, setModels] = useState<HubModel[]>([]);
   const [pageIndex, setPageIndex] = useState(0);
@@ -114,7 +115,7 @@ export function ModelCatalogTab() {
           'models.hub.search',
           {
             query: query.trim(),
-            format: 'gguf',
+            format,
             sort,
             cursor,
           },
@@ -155,7 +156,7 @@ export function ModelCatalogTab() {
         setState('error');
       }
     },
-    [query, sort],
+    [format, query, sort],
   );
 
   useEffect(() => {
@@ -184,11 +185,11 @@ export function ModelCatalogTab() {
     try {
       const response = await localServiceClient.call(
         'models.hub.files',
-        { repoId: model.repoId, format: 'gguf' },
+        { repoId: model.repoId, format },
         50_000,
       );
       if (generation !== detailsGeneration.current) return;
-      const nextDetails = parseHubDetails(response);
+      const nextDetails = parseHubDetails(response, format);
       setDetails(nextDetails);
       setSelectedGroupId(nextDetails.downloadGroups[0]?.id ?? null);
       setDetailsState('ready');
@@ -243,7 +244,7 @@ export function ModelCatalogTab() {
     await startDownload({
       repoId: details.repoId,
       revision: details.revision,
-      format: 'gguf',
+      format,
       groupId: selectedGroup.id,
       modelDirectory: modelDirectory ?? undefined,
     });
@@ -266,7 +267,7 @@ export function ModelCatalogTab() {
     await startDownload({
       repoId: details.repoId,
       revision: details.revision,
-      format: 'gguf',
+      format,
       groupId: selectedGroup.id,
       componentPath: file.path,
       modelDirectory: modelDirectory ?? undefined,
@@ -380,14 +381,26 @@ export function ModelCatalogTab() {
         <div className="library-model-controls shrink-0 border-b border-border bg-navigation px-5 py-4 sm:px-8">
           <div className="flex flex-wrap items-center gap-3">
             <Button
-              aria-pressed={true}
-              className="min-h-10 border-accent/50 bg-selected px-3 text-text hover:bg-selected"
+              aria-pressed={format === 'gguf'}
+              className={format === 'gguf' ? 'min-h-10 border-accent/50 bg-selected px-3 text-text hover:bg-selected' : 'min-h-10 px-3'}
+              onClick={() => setFormat('gguf')}
               size="small"
               type="button"
-              variant="secondary"
+              variant={format === 'gguf' ? 'secondary' : 'ghost'}
             >
               <LocalEngineIcon engineId="llama_cpp" size={17} tone="accent" />
               {t('modelFormatGguf')}
+            </Button>
+            <Button
+              aria-pressed={format === 'transformers'}
+              className={format === 'transformers' ? 'min-h-10 border-accent/50 bg-selected px-3 text-text hover:bg-selected' : 'min-h-10 px-3'}
+              onClick={() => setFormat('transformers')}
+              size="small"
+              type="button"
+              variant={format === 'transformers' ? 'secondary' : 'ghost'}
+            >
+              <LocalEngineIcon engineId="vllm" size={17} tone="accent" />
+              {t('modelFormatTransformers')}
             </Button>
             <div className="relative min-w-0 flex-model-sort">
               <Select
@@ -573,7 +586,7 @@ export function ModelCatalogTab() {
                   <div className="model-details-content-inner flex min-h-0 flex-1 flex-col gap-4">
                     <header className="model-details-header flex shrink-0 flex-wrap items-center gap-x-5 gap-y-3 border-b border-border pb-4">
                       <span className="flex size-10 shrink-0 items-center justify-center rounded-control border border-border bg-composer text-accent-icon">
-                        <LocalEngineIcon engineId="llama_cpp" size={20} />
+                        <LocalEngineIcon engineId={format === 'gguf' ? 'llama_cpp' : 'vllm'} size={20} />
                       </span>
                       <div className="model-details-title min-w-0 flex-1">
                         <h2 className="break-words text-lg font-semibold text-text">{selectedModel.repoId}</h2>

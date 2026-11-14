@@ -9,6 +9,7 @@ pub(crate) mod local_servers;
 pub(crate) mod models;
 mod runtime;
 mod settings;
+mod vllm;
 
 use std::time::Duration;
 
@@ -58,7 +59,7 @@ pub(crate) async fn list(storage: &AppStorage) -> Result<Value, ServiceError> {
         .and_then(settings::validate_saved_executable_path)
         .is_some();
     let registered_models = models::list(storage)?;
-    let engines = manifests()?
+    let mut engines = manifests()?
         .into_iter()
         .map(|manifest| {
             let catalog_status = manifest.catalog_status.as_str();
@@ -113,6 +114,22 @@ pub(crate) async fn list(storage: &AppStorage) -> Result<Value, ServiceError> {
             }))
         })
         .collect::<Result<Vec<_>, ServiceError>>()?;
+    let vllm_model_directory = models::default_model_directory(storage.root(), "vllm")?;
+    let vllm_model_directory = vllm_model_directory.to_str().ok_or_else(|| {
+        ServiceError::new(
+            "local_model_directory_unavailable",
+            "The default vLLM model directory could not be represented.",
+            false,
+        )
+    })?;
+    engines.push(
+        vllm::engine_json(
+            storage,
+            vllm_model_directory,
+            runtime_status_for_engine(&runtime, "vllm"),
+        )
+        .await?,
+    );
 
     Ok(json!({
         "engines": engines,
@@ -354,6 +371,50 @@ pub(crate) async fn can_install(manifest: &EngineManifest, variant: &EngineVaria
     }
     let driver_status = nvidia_driver_status().await;
     variant.accelerator != "cuda" || variant_hardware_status(variant, driver_status).is_none()
+}
+
+pub(crate) async fn install_vllm(
+    storage: &AppStorage,
+    variant_id: &str,
+    request_id: &Value,
+    events: &crate::protocol::EventSink,
+    cancellation: &mut tokio::sync::watch::Receiver<bool>,
+) -> Result<Value, ServiceError> {
+    vllm::install(storage, variant_id, request_id, events, cancellation).await
+}
+
+pub(crate) async fn uninstall_vllm(storage: &AppStorage) -> Result<Value, ServiceError> {
+    runtime::stop_engine(storage, "vllm").await?;
+    vllm::uninstall(storage).await
+}
+
+pub(crate) async fn uninstall_engine(
+    storage: &AppStorage,
+    engine_id: &str,
+) -> Result<Value, ServiceError> {
+    if engine_id == "vllm" {
+        let result = uninstall_vllm(storage).await?;
+        if result["removed"] == true {
+            settings::clear_engine_settings(storage.root(), "vllm")?;
+        }
+        return Ok(result);
+    }
+    if engine_id != "llama_cpp" {
+        return Err(unknown_engine_error());
+    }
+    runtime::stop_engine(storage, engine_id).await?;
+    let manifest = manifests()?
+        .into_iter()
+        .find(|manifest| manifest.engine_id == engine_id)
+        .ok_or_else(unknown_engine_error)?;
+    let mut removed = false;
+    for variant in &manifest.variants {
+        removed |= installer::uninstall_engine_variant(storage, &manifest, variant)?;
+    }
+    if removed {
+        settings::clear_engine_settings(storage.root(), engine_id)?;
+    }
+    Ok(json!({"removed": removed, "engineId": engine_id}))
 }
 
 fn can_install_on_host(

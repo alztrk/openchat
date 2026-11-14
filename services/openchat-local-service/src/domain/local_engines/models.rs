@@ -39,7 +39,7 @@ pub(crate) fn list(storage: &AppStorage) -> Result<Vec<RegisteredModel>, Service
     let mut statement = connection
         .prepare(
             "SELECT id, engine_id, display_name, model_path, path_kind, created_at_unix_ms
-             FROM local_models WHERE engine_id IN ('llama_cpp', 'onnx_genai')
+             FROM local_models WHERE engine_id IN ('llama_cpp', 'vllm')
              ORDER BY display_name COLLATE NOCASE, id",
         )
         .map_err(|_| database_error())?;
@@ -155,8 +155,8 @@ fn scan_model_directory(
                 continue;
             }
 
-            if engine_id == "onnx_genai"
-                && is_onnx_genai_model_directory(&path)
+            if engine_id == "vllm"
+                && is_transformers_model_directory(&path)
                 && !registered_paths.contains(&path)
             {
                 let display_name = path
@@ -223,8 +223,7 @@ pub(crate) fn find(
 pub(crate) fn ensure_storage_directories(root: &Path) -> Result<(), ServiceError> {
     fs::create_dir_all(root.join("models").join("llama"))
         .map_err(|_| model_storage_path_error())?;
-    fs::create_dir_all(root.join("models").join("onnx-genai"))
-        .map_err(|_| model_storage_path_error())?;
+    fs::create_dir_all(root.join("models").join("vllm")).map_err(|_| model_storage_path_error())?;
     Ok(())
 }
 
@@ -417,33 +416,33 @@ fn validate_model_path(
     engine_id: &str,
     model_path: &str,
 ) -> Result<(PathBuf, &'static str), ServiceError> {
-    let selected_path = selected_entry_path(Path::new(model_path))?;
-    let metadata = fs::symlink_metadata(&selected_path).map_err(|_| invalid_model_path_error())?;
-    if metadata.file_type().is_symlink() {
+    if engine_id == "vllm" {
+        let selected_path = selected_entry_path(Path::new(model_path))?;
+        let metadata =
+            fs::symlink_metadata(&selected_path).map_err(|_| invalid_model_path_error())?;
+        if metadata.file_type().is_symlink()
+            || !metadata.is_dir()
+            || !is_transformers_model_directory(&selected_path)
+        {
+            return Err(invalid_model_error());
+        }
+        return Ok((selected_path, "directory"));
+    }
+    if engine_id != "llama_cpp" {
         return Err(invalid_model_error());
     }
-    match engine_id {
-        "llama_cpp"
-            if metadata.is_file()
-                && selected_path
-                    .extension()
-                    .and_then(|extension| extension.to_str())
-                    .is_some_and(|extension| extension.eq_ignore_ascii_case("gguf"))
-                && !is_vision_projector(&selected_path) =>
-        {
-            Ok((selected_path, "file"))
-        }
-        "onnx_genai" if metadata.is_dir() && is_onnx_genai_model_directory(&selected_path) => {
-            Ok((selected_path, "directory"))
-        }
-        _ => Err(invalid_model_error()),
+    let selected_path = selected_entry_path(Path::new(model_path))?;
+    let metadata = fs::metadata(&selected_path).map_err(|_| invalid_model_path_error())?;
+    if !metadata.is_file()
+        || selected_path
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .is_none_or(|extension| !extension.eq_ignore_ascii_case("gguf"))
+        || is_vision_projector(&selected_path)
+    {
+        return Err(invalid_model_error());
     }
-}
-
-fn is_onnx_genai_model_directory(path: &Path) -> bool {
-    let config_path = path.join("genai_config.json");
-    fs::symlink_metadata(&config_path)
-        .is_ok_and(|metadata| !metadata.file_type().is_symlink() && metadata.is_file())
+    Ok((selected_path, "file"))
 }
 
 fn selected_entry_path(path: &Path) -> Result<PathBuf, ServiceError> {
@@ -542,9 +541,36 @@ struct ModelTransfer {
 fn model_folder_name(engine_id: &str) -> Option<&'static str> {
     match engine_id {
         "llama_cpp" => Some("llama"),
-        "onnx_genai" => Some("onnx-genai"),
+        "vllm" => Some("vllm"),
         _ => None,
     }
+}
+
+fn is_transformers_model_directory(path: &Path) -> bool {
+    let config = path.join("config.json");
+    let has_config = fs::symlink_metadata(config)
+        .is_ok_and(|metadata| !metadata.file_type().is_symlink() && metadata.is_file());
+    if !has_config {
+        return false;
+    }
+    fs::read_dir(path).is_ok_and(|entries| {
+        entries.flatten().any(|entry| {
+            let file_type = entry.file_type();
+            file_type.is_ok_and(|kind| {
+                kind.is_file()
+                    && entry
+                        .path()
+                        .extension()
+                        .and_then(|extension| extension.to_str())
+                        .is_some_and(|extension| {
+                            matches!(
+                                extension.to_ascii_lowercase().as_str(),
+                                "safetensors" | "bin"
+                            )
+                        })
+            })
+        })
+    })
 }
 
 fn unique_destination(
@@ -994,58 +1020,53 @@ mod tests {
     }
 
     #[test]
-    fn discovers_onnx_genai_model_directories_without_following_links() {
+    fn discovers_transformers_snapshots_for_vllm() {
         let temporary = TestDirectory::new();
         let model_directory = temporary.0.join("models");
-        let model = model_directory.join("phi-3.5-cpu");
-        fs::create_dir_all(&model).expect("model directory should be created");
-        fs::write(model.join("genai_config.json"), b"{}")
-            .expect("GenAI config fixture should be written");
-        fs::write(model.join("tokenizer.json"), b"{}")
-            .expect("tokenizer fixture should be written");
+        let snapshot = model_directory.join("publisher-model");
+        fs::create_dir_all(&snapshot).expect("snapshot directory should be created");
+        fs::write(snapshot.join("config.json"), b"{}").expect("config should be written");
+        fs::write(snapshot.join("model.safetensors"), b"weights")
+            .expect("weights should be written");
 
-        let (found, truncated) =
-            scan_model_directory("onnx_genai", &model_directory, &HashSet::new())
-                .expect("scan should succeed");
+        let (found, truncated) = scan_model_directory("vllm", &model_directory, &HashSet::new())
+            .expect("model scan should succeed");
 
         assert!(!truncated);
         assert_eq!(found.len(), 1);
-        assert_eq!(found[0].path, model);
+        assert_eq!(found[0].path, snapshot);
         assert_eq!(found[0].path_kind, "directory");
-        assert_eq!(found[0].display_name, "phi-3.5-cpu");
+        assert_eq!(found[0].display_name, "publisher-model");
     }
 
     #[test]
-    fn registers_onnx_genai_packages_as_directories() {
+    fn registers_transformers_snapshot_directory_for_vllm() {
         let temporary = TestDirectory::new();
         let storage = test_storage(temporary.0.join("app"));
-        let model_directory = temporary.0.join("phi-3.5-cpu");
-        fs::create_dir_all(&model_directory).expect("model directory should be created");
-        fs::write(model_directory.join("genai_config.json"), b"{}")
-            .expect("GenAI config fixture should be written");
+        let snapshot = temporary.0.join("snapshot");
+        fs::create_dir_all(&snapshot).expect("snapshot directory should be created");
+        fs::write(snapshot.join("config.json"), b"{}").expect("config should be written");
+        fs::write(snapshot.join("model.safetensors"), b"weights")
+            .expect("weights should be written");
 
         let model = register_with_storage_action(
             storage.database_queue_handle(),
             storage.root(),
-            "onnx_genai",
-            model_directory
-                .to_str()
-                .expect("fixture path should be UTF-8"),
+            "vllm",
+            snapshot.to_str().expect("fixture path should be UTF-8"),
             None,
             "keep",
         )
-        .expect("GenAI model directory should be registered");
+        .expect("Transformers snapshot should be registered");
 
-        assert_eq!(model.engine_id, "onnx_genai");
+        assert_eq!(model.engine_id, "vllm");
         assert_eq!(model.path_kind, "directory");
         assert_eq!(
             model.path,
-            model_directory
-                .canonicalize()
-                .expect("model directory should resolve")
+            snapshot.canonicalize().expect("snapshot should resolve")
         );
         assert_eq!(
-            to_json(&model, false).expect("metadata should serialize")["pathExists"],
+            to_json(&model, true).expect("model should serialize")["pathExists"],
             true
         );
     }

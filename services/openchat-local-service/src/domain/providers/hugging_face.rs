@@ -42,6 +42,7 @@ static MODEL_DOWNLOAD_LOCK: Mutex<()> = Mutex::const_new(());
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum ModelFormat {
     Gguf,
+    Transformers,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -74,6 +75,7 @@ impl ModelFormat {
     fn parse(value: &str) -> Result<Self, ServiceError> {
         match value {
             "gguf" => Ok(Self::Gguf),
+            "transformers" => Ok(Self::Transformers),
             _ => Err(invalid_request_error()),
         }
     }
@@ -81,12 +83,14 @@ impl ModelFormat {
     fn filter(self) -> &'static str {
         match self {
             Self::Gguf => "gguf",
+            Self::Transformers => "transformers",
         }
     }
 
     fn engine_id(self) -> &'static str {
         match self {
             Self::Gguf => "llama_cpp",
+            Self::Transformers => "vllm",
         }
     }
 }
@@ -108,6 +112,7 @@ struct DownloadGroup {
 
 #[derive(Debug)]
 struct ModelDetails {
+    format: ModelFormat,
     repo_id: String,
     revision: String,
     gated: bool,
@@ -137,6 +142,7 @@ struct DownloadProgressContext<'a> {
     request_id: &'a Value,
     details: &'a ModelDetails,
     file: &'a HubFile,
+    event_name: &'static str,
     total_bytes: u64,
     file_index: usize,
     file_count: usize,
@@ -172,7 +178,6 @@ pub(crate) async fn search(
 
     let client = client()?;
     let parameters = vec![
-        ("filter", format.filter()),
         ("limit", MODEL_SEARCH_LIMIT),
         ("sort", sort.hub_value()),
         ("direction", "-1"),
@@ -180,6 +185,7 @@ pub(crate) async fn search(
     let mut request = client
         .get(format!("{HUB_BASE}/api/models"))
         .query(&parameters)
+        .query(&[("filter", format.filter())])
         .query(&[("search", query)]);
     if let Some(cursor) = cursor {
         request = request.query(&[("cursor", cursor)]);
@@ -276,10 +282,13 @@ pub(crate) async fn download(
         .ok_or_else(unsupported_file_set_error)?;
     if model_group.files.is_empty()
         || model_group.total_size.is_none()
-        || model_group
-            .files
-            .iter()
-            .any(|file| file.size.is_none() || file.sha256.is_none())
+        || model_group.files.iter().any(|file| {
+            file.size.is_none()
+                || (format == ModelFormat::Gguf && file.sha256.is_none())
+                || (format == ModelFormat::Transformers
+                    && is_transformers_weight(&file.path)
+                    && file.sha256.is_none())
+        })
     {
         return Err(unsupported_file_set_error());
     }
@@ -290,7 +299,12 @@ pub(crate) async fn download(
             .iter()
             .find(|file| file.path == component_path && model_file_kind(&file.path) != "model")
             .ok_or_else(unsupported_file_set_error)?;
-        if file.size.is_none() || file.sha256.is_none() {
+        if file.size.is_none()
+            || (format == ModelFormat::Gguf && file.sha256.is_none())
+            || (format == ModelFormat::Transformers
+                && is_transformers_weight(&file.path)
+                && file.sha256.is_none())
+        {
             return Err(unsupported_file_set_error());
         }
         DownloadGroup {
@@ -355,6 +369,7 @@ pub(crate) async fn download(
                     .ok_or_else(unsupported_file_set_error)?;
                 destination.join(&primary_file.path)
             }
+            ModelFormat::Transformers => destination.clone(),
         };
         Some(register_downloaded_model(storage, format.engine_id(), registered_path).await?)
     } else {
@@ -645,6 +660,7 @@ async fn fetch_details(repo_id: &str, format: ModelFormat) -> Result<ModelDetail
     let groups = compatible_groups(format, &files);
 
     Ok(ModelDetails {
+        format,
         repo_id: repo_id.to_owned(),
         revision,
         gated,
@@ -699,7 +715,58 @@ fn is_sha256_digest(value: &str) -> bool {
 fn compatible_groups(format: ModelFormat, files: &[HubFile]) -> Vec<DownloadGroup> {
     match format {
         ModelFormat::Gguf => gguf_groups(files),
+        ModelFormat::Transformers => transformers_groups(files),
     }
+}
+
+fn transformers_groups(files: &[HubFile]) -> Vec<DownloadGroup> {
+    let files = files
+        .iter()
+        .filter(|file| is_transformers_file(&file.path))
+        .cloned()
+        .collect::<Vec<_>>();
+    if !files.iter().any(|file| is_transformers_weight(&file.path))
+        || !files.iter().any(|file| file.path == "config.json")
+    {
+        return Vec::new();
+    }
+    vec![DownloadGroup {
+        id: group_id("transformers-snapshot"),
+        display_name: "Transformers snapshot".to_owned(),
+        total_size: sum_sizes(&files),
+        files,
+    }]
+}
+
+fn is_transformers_file(path: &str) -> bool {
+    let name = file_name(path).to_ascii_lowercase();
+    is_transformers_weight(path)
+        || matches!(
+            name.as_str(),
+            "config.json"
+                | "generation_config.json"
+                | "tokenizer.json"
+                | "tokenizer_config.json"
+                | "special_tokens_map.json"
+                | "added_tokens.json"
+                | "vocab.json"
+                | "merges.txt"
+                | "tokenizer.model"
+                | "spiece.model"
+                | "sentencepiece.bpe.model"
+                | "model.safetensors.index.json"
+                | "pytorch_model.bin.index.json"
+                | "chat_template.jinja"
+                | "preprocessor_config.json"
+        )
+}
+
+fn is_transformers_weight(path: &str) -> bool {
+    let name = file_name(path).to_ascii_lowercase();
+    name == "model.safetensors"
+        || (name.starts_with("model-") && name.ends_with(".safetensors"))
+        || name == "pytorch_model.bin"
+        || (name.starts_with("pytorch_model-") && name.ends_with(".bin"))
 }
 
 fn gguf_groups(files: &[HubFile]) -> Vec<DownloadGroup> {
@@ -767,9 +834,15 @@ fn details_to_json(details: &ModelDetails, readme: &ModelReadme) -> Value {
         "readme": readme_text,
         "readmeStatus": readme_status,
         "readmeErrorCode": readme_error_code,
-        "files": details.files.iter().filter(|file| {
-            has_extension(&file.path, "gguf") || is_model_metadata(&file.path)
-        }).map(file_to_json).collect::<Vec<_>>(),
+        "files": details
+            .files
+            .iter()
+            .filter(|file| match details.format {
+                ModelFormat::Gguf => has_extension(&file.path, "gguf") || is_model_metadata(&file.path),
+                ModelFormat::Transformers => is_transformers_file(&file.path),
+            })
+            .map(file_to_json)
+            .collect::<Vec<_>>(),
         "downloadGroups": details.groups.iter().map(|group| json!({
             "id": group.id,
             "displayName": group.display_name,
@@ -814,6 +887,7 @@ async fn download_group_files(
             request_id,
             details,
             file,
+            event_name: DOWNLOAD_PROGRESS_EVENT,
             total_bytes,
             file_index: index + 1,
             file_count,
@@ -1101,7 +1175,7 @@ async fn send_progress(
         .events
         .send(&RpcResponse::event(
             progress.request_id.clone(),
-            DOWNLOAD_PROGRESS_EVENT,
+            progress.event_name,
             data,
         ))
         .await
@@ -1588,8 +1662,9 @@ mod tests {
     use crate::protocol::EventSink;
 
     use super::{
-        DownloadProgressContext, HubFile, ModelDetails, client, download_client,
-        download_file_from_url, hex_prefix, is_approved_hugging_face_redirect, parse_hub_file,
+        DOWNLOAD_PROGRESS_EVENT, DownloadProgressContext, HubFile, ModelDetails, ModelFormat,
+        client, compatible_groups, download_client, download_file_from_url, hex_prefix,
+        is_approved_hugging_face_redirect, parse_hub_file,
     };
 
     #[test]
@@ -1619,6 +1694,77 @@ mod tests {
         }))
         .expect_err("reject malformed sha256");
         assert_eq!(malformed.code, "hugging_face_response_invalid");
+    }
+
+    #[test]
+    fn transformers_group_contains_supported_weights_and_model_metadata_only() {
+        let files = vec![
+            HubFile {
+                path: "config.json".to_owned(),
+                size: Some(64),
+                sha256: None,
+            },
+            HubFile {
+                path: "model.safetensors.index.json".to_owned(),
+                size: Some(32),
+                sha256: None,
+            },
+            HubFile {
+                path: "model-00001-of-00002.safetensors".to_owned(),
+                size: Some(1024),
+                sha256: Some("a".repeat(64)),
+            },
+            HubFile {
+                path: "model-00002-of-00002.safetensors".to_owned(),
+                size: Some(2048),
+                sha256: Some("b".repeat(64)),
+            },
+            HubFile {
+                path: "modeling_custom.py".to_owned(),
+                size: Some(512),
+                sha256: None,
+            },
+            HubFile {
+                path: "training_args.bin".to_owned(),
+                size: Some(512),
+                sha256: None,
+            },
+        ];
+
+        let groups = compatible_groups(ModelFormat::Transformers, &files);
+
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].files.len(), 4);
+        assert!(
+            groups[0]
+                .files
+                .iter()
+                .any(|file| file.path == "config.json")
+        );
+        assert!(
+            groups[0]
+                .files
+                .iter()
+                .any(|file| file.path == "model.safetensors.index.json")
+        );
+        assert!(
+            !groups[0]
+                .files
+                .iter()
+                .any(|file| file.path.ends_with(".py") || file.path == "training_args.bin")
+        );
+        assert_eq!(groups[0].total_size, Some(3168));
+    }
+
+    #[test]
+    fn transformers_group_requires_weights_and_root_config() {
+        let files = vec![HubFile {
+            path: "weights/model.safetensors".to_owned(),
+            size: Some(1024),
+            sha256: Some("a".repeat(64)),
+        }];
+
+        assert!(compatible_groups(ModelFormat::Transformers, &files).is_empty());
     }
 
     #[tokio::test]
@@ -1678,6 +1824,7 @@ mod tests {
             request_id: &request_id,
             details: &details,
             file: &file,
+            event_name: DOWNLOAD_PROGRESS_EVENT,
             total_bytes: total_len as u64,
             file_index: 1,
             file_count: 1,
@@ -1745,6 +1892,7 @@ mod tests {
             request_id: &request_id,
             details: &details,
             file: &file,
+            event_name: DOWNLOAD_PROGRESS_EVENT,
             total_bytes: payload.len() as u64,
             file_index: 1,
             file_count: 1,
@@ -1845,6 +1993,7 @@ mod tests {
 
     fn sample_details(file: HubFile) -> ModelDetails {
         ModelDetails {
+            format: ModelFormat::Gguf,
             repo_id: "openchat/test-model".to_owned(),
             revision: "0123456789abcdef0123456789abcdef01234567".to_owned(),
             gated: false,

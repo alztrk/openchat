@@ -23,8 +23,15 @@ export type VariantStatus =
   | 'unsupported_platform'
   | 'hardware_unavailable'
   | 'driver_unsupported'
-  | 'driver_version_unavailable';
-export type InstallPhase = 'downloading' | 'verifying' | 'extracting' | 'publishing';
+  | 'driver_version_unavailable'
+  | 'python_unavailable'
+  | 'python_unsupported'
+  | 'wsl_unavailable'
+  | 'wsl_distribution_unavailable'
+  | 'wsl2_required'
+  | 'gpu_unavailable'
+  | 'gpu_unsupported';
+export type InstallPhase = 'downloading' | 'verifying' | 'extracting' | 'installing' | 'publishing';
 
 export interface LocalEngine {
   engineId: string;
@@ -105,6 +112,14 @@ export interface LocalEngineSettings {
   noMmap: boolean | null;
   parallel: number | null;
   customArguments: string | null;
+  vllmMaxModelLen: number | null;
+  vllmPort: number | null;
+  vllmGpuMemoryUtilization: number | null;
+  vllmTensorParallelSize: number | null;
+  vllmMaxNumSeqs: number | null;
+  vllmDtype: 'auto' | 'float16' | 'bfloat16' | null;
+  vllmEnforceEager: boolean | null;
+  vllmCustomArguments: string | null;
 }
 
 export const DEFAULT_LOCAL_ENGINE_SETTINGS: LocalEngineSettings = {
@@ -120,6 +135,14 @@ export const DEFAULT_LOCAL_ENGINE_SETTINGS: LocalEngineSettings = {
   noMmap: null,
   parallel: null,
   customArguments: null,
+  vllmMaxModelLen: null,
+  vllmPort: null,
+  vllmGpuMemoryUtilization: null,
+  vllmTensorParallelSize: null,
+  vllmMaxNumSeqs: null,
+  vllmDtype: null,
+  vllmEnforceEager: null,
+  vllmCustomArguments: null,
 };
 
 export interface EngineCatalog {
@@ -163,7 +186,7 @@ export interface Notice {
 }
 
 export type LoadState = 'loading' | 'ready' | 'error';
-export type BusyAction = 'install' | 'start' | 'scan' | 'register' | 'remove' | 'executable' | 'external' | 'settings';
+export type BusyAction = 'install' | 'uninstall' | 'start' | 'scan' | 'register' | 'remove' | 'executable' | 'external' | 'settings';
 export type EngineErrorKey =
   | 'localEnginesLoadFailed'
   | 'localEngineInstallFailed'
@@ -180,12 +203,20 @@ export type VariantStatusKey =
   | 'localEngineHardwareUnavailable'
   | 'localEngineDriverUnsupported'
   | 'localEngineDriverVersionUnavailable'
+  | 'localEnginePythonUnavailable'
+  | 'localEnginePythonUnsupported'
+  | 'localEngineWslUnavailable'
+  | 'localEngineWslDistributionUnavailable'
+  | 'localEngineWsl2Required'
+  | 'localEngineGpuUnavailable'
+  | 'localEngineGpuUnsupported'
   | 'localEngineNotInstalled'
   | 'localEngineInstalled';
 export type InstallPhaseKey =
   | 'localEngineStageDownloading'
   | 'localEngineStageVerifying'
   | 'localEngineStageExtracting'
+  | 'localEngineStageInstalling'
   | 'localEngineStagePublishing';
 export type RuntimeStatusKey =
   | 'localEngineRunning'
@@ -350,6 +381,20 @@ export function variantStatusKey(status: VariantStatus): VariantStatusKey {
       return 'localEngineDriverUnsupported';
     case 'driver_version_unavailable':
       return 'localEngineDriverVersionUnavailable';
+    case 'python_unavailable':
+      return 'localEnginePythonUnavailable';
+    case 'python_unsupported':
+      return 'localEnginePythonUnsupported';
+    case 'wsl_unavailable':
+      return 'localEngineWslUnavailable';
+    case 'wsl_distribution_unavailable':
+      return 'localEngineWslDistributionUnavailable';
+    case 'wsl2_required':
+      return 'localEngineWsl2Required';
+    case 'gpu_unavailable':
+      return 'localEngineGpuUnavailable';
+    case 'gpu_unsupported':
+      return 'localEngineGpuUnsupported';
   }
 }
 
@@ -415,6 +460,8 @@ export function installPhaseKey(phase: InstallPhase): InstallPhaseKey {
       return 'localEngineStageVerifying';
     case 'extracting':
       return 'localEngineStageExtracting';
+    case 'installing':
+      return 'localEngineStageInstalling';
     case 'publishing':
       return 'localEngineStagePublishing';
   }
@@ -590,6 +637,16 @@ export function parseLocalEngineSettings(value: unknown): LocalEngineSettings {
     noMmap: optionalBoolean(value.noMmap),
     parallel: positiveIntegerOrNull(value.parallel),
     customArguments: optionalString(value.customArguments),
+    vllmMaxModelLen: positiveIntegerOrNull(value.vllmMaxModelLen),
+    vllmPort: positiveIntegerOrNull(value.vllmPort),
+    vllmGpuMemoryUtilization: boundedNumberOrNull(value.vllmGpuMemoryUtilization, 0.1, 0.99),
+    vllmTensorParallelSize: positiveIntegerOrNull(value.vllmTensorParallelSize),
+    vllmMaxNumSeqs: positiveIntegerOrNull(value.vllmMaxNumSeqs),
+    vllmDtype: value.vllmDtype === 'auto' || value.vllmDtype === 'float16' || value.vllmDtype === 'bfloat16'
+      ? value.vllmDtype
+      : null,
+    vllmEnforceEager: optionalBoolean(value.vllmEnforceEager),
+    vllmCustomArguments: typeof value.vllmCustomArguments === 'string' ? value.vllmCustomArguments : null,
   };
 }
 
@@ -601,8 +658,12 @@ function nonNegativeNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0;
 }
 
+function boundedNumberOrNull(value: unknown, min: number, max: number): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && value >= min && value <= max ? value : null;
+}
+
 function isInstallPhase(value: unknown): value is InstallPhase {
-  return value === 'downloading' || value === 'verifying' || value === 'extracting' || value === 'publishing';
+  return value === 'downloading' || value === 'verifying' || value === 'extracting' || value === 'installing' || value === 'publishing';
 }
 
 function isEngineCatalogStatus(value: unknown): value is EngineCatalogStatus {
@@ -624,6 +685,13 @@ function isVariantStatus(value: unknown): value is VariantStatus {
     value === 'hardware_unavailable' ||
     value === 'driver_unsupported' ||
     value === 'driver_version_unavailable'
+    || value === 'python_unavailable'
+    || value === 'python_unsupported'
+    || value === 'wsl_unavailable'
+    || value === 'wsl_distribution_unavailable'
+    || value === 'wsl2_required'
+    || value === 'gpu_unavailable'
+    || value === 'gpu_unsupported'
   );
 }
 

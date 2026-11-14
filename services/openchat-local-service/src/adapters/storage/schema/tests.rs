@@ -869,8 +869,8 @@ fn migration_60_adds_bounded_sync_outbox_and_cursor_tables() {
 }
 
 #[test]
-fn migration_61_adds_onnx_genai_models_and_preserves_registered_gguf_models() {
-    let connection = memory_index_repair_fixture(60);
+fn migration_62_preserves_registered_models_and_adds_vllm() {
+    let connection = memory_index_repair_fixture(61);
     connection
         .execute(
             "INSERT INTO local_models (
@@ -882,17 +882,8 @@ fn migration_61_adds_onnx_genai_models_and_preserves_registered_gguf_models() {
 
     assert_eq!(
         initialize_schema(&connection, SCHEMA_VERSION).expect("upgrade local model catalog"),
-        61
+        62
     );
-    connection
-        .execute(
-            "INSERT INTO local_models (
-                id, engine_id, display_name, model_path, path_kind, created_at_unix_ms
-             ) VALUES ('onnx-model', 'onnx_genai', 'ONNX model', 'C:/models/phi', 'directory', 2)",
-            [],
-        )
-        .expect("insert ONNX GenAI model");
-
     let models = connection
         .prepare("SELECT id, engine_id, path_kind FROM local_models ORDER BY id")
         .expect("prepare model migration query")
@@ -909,19 +900,20 @@ fn migration_61_adds_onnx_genai_models_and_preserves_registered_gguf_models() {
 
     assert_eq!(
         models,
-        [
-            (
-                "llama-model".to_owned(),
-                "llama_cpp".to_owned(),
-                "file".to_owned()
-            ),
-            (
-                "onnx-model".to_owned(),
-                "onnx_genai".to_owned(),
-                "directory".to_owned()
-            ),
-        ]
+        [(
+            "llama-model".to_owned(),
+            "llama_cpp".to_owned(),
+            "file".to_owned()
+        )]
     );
+    connection
+        .execute(
+            "INSERT INTO local_models (
+                id, engine_id, display_name, model_path, path_kind, created_at_unix_ms
+             ) VALUES ('vllm-model', 'vllm', 'Transformers model', 'C:/models/model', 'directory', 2)",
+            [],
+        )
+        .expect("schema should accept Transformers snapshots");
 }
 
 fn memory_index_repair_fixture(version: i64) -> Connection {

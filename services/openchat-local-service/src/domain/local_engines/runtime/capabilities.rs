@@ -54,6 +54,7 @@ pub(super) async fn health_check_or_cancel(
 }
 
 pub(super) async fn runtime_capabilities_or_cancel(
+    engine_id: &str,
     port: u16,
     api_key: Option<&str>,
     cancellation: &mut watch::Receiver<bool>,
@@ -69,7 +70,12 @@ pub(super) async fn runtime_capabilities_or_cancel(
                 Err(runtime_capability_error())
             }
         }
-        capabilities = read_runtime_capabilities(port, api_key) => capabilities,
+        capabilities = async {
+            match engine_id {
+                "vllm" => read_vllm_runtime_capabilities(port, api_key).await,
+                _ => read_runtime_capabilities(port, api_key).await,
+            }
+        } => capabilities,
     }
 }
 
@@ -77,6 +83,23 @@ pub(super) async fn read_runtime_capabilities(
     port: u16,
     api_key: Option<&str>,
 ) -> Result<RuntimeCapabilities, ServiceError> {
+    let properties = read_capability_endpoint(port, "/props", api_key).await?;
+    parse_runtime_capabilities(&properties)
+}
+
+pub(super) async fn read_vllm_runtime_capabilities(
+    port: u16,
+    api_key: Option<&str>,
+) -> Result<RuntimeCapabilities, ServiceError> {
+    let models = read_capability_endpoint(port, "/v1/models", api_key).await?;
+    parse_vllm_runtime_capabilities(&models)
+}
+
+async fn read_capability_endpoint(
+    port: u16,
+    endpoint: &str,
+    api_key: Option<&str>,
+) -> Result<Value, ServiceError> {
     let client = PROPERTIES_CLIENT.get_or_init(|| {
         Client::builder()
             .no_proxy()
@@ -86,7 +109,7 @@ pub(super) async fn read_runtime_capabilities(
             .build()
     });
     let client = client.as_ref().map_err(|_| runtime_capability_error())?;
-    let mut request = client.get(format!("http://127.0.0.1:{port}/props"));
+    let mut request = client.get(format!("http://127.0.0.1:{port}{endpoint}"));
     if let Some(api_key) = api_key {
         request = request.bearer_auth(api_key);
     }
@@ -113,9 +136,22 @@ pub(super) async fn read_runtime_capabilities(
         }
         body.extend_from_slice(&chunk);
     }
-    let properties =
-        serde_json::from_slice::<Value>(&body).map_err(|_| runtime_capability_error())?;
-    parse_runtime_capabilities(&properties)
+    serde_json::from_slice::<Value>(&body).map_err(|_| runtime_capability_error())
+}
+
+pub(super) fn parse_vllm_runtime_capabilities(
+    models: &Value,
+) -> Result<RuntimeCapabilities, ServiceError> {
+    let context_window = models
+        .pointer("/data/0/max_model_len")
+        .and_then(Value::as_i64)
+        .filter(|context_window| *context_window > 0)
+        .ok_or_else(runtime_capability_error)?;
+    Ok(RuntimeCapabilities {
+        context_window: Some(context_window),
+        supports_images: false,
+        supports_tool_calls: None,
+    })
 }
 
 pub(super) fn parse_runtime_capabilities(

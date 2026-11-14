@@ -36,7 +36,7 @@ export interface ModelDownloadResult {
 export interface ModelDownloadRequest {
   repoId: string;
   revision: string;
-  format: 'gguf';
+  format: 'gguf' | 'transformers';
   groupId: string;
   componentPath?: string;
   modelDirectory?: string;

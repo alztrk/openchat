@@ -23,8 +23,9 @@ use super::{
     external_model_route_id, external_server_for_route, external_server_group_id,
     health_check_or_cancel, installed_engine_for, llama_server_arguments, managed_server_group_id,
     model_lifecycle, parse_external_capabilities, parse_external_model_ids,
-    parse_runtime_capabilities, read_runtime_capabilities, remove_external_server,
-    retain_detected_external_servers, runtime_status_json, start_model,
+    parse_runtime_capabilities, parse_vllm_runtime_capabilities, read_runtime_capabilities,
+    read_vllm_runtime_capabilities, remove_external_server, retain_detected_external_servers,
+    runtime_status_json, start_model,
 };
 
 struct TestDirectory(PathBuf);
@@ -716,6 +717,62 @@ fn parses_only_reported_runtime_capabilities() {
             supports_tool_calls: Some(true),
         }
     );
+}
+
+#[test]
+fn parses_vllm_model_card_context_window_without_inventing_other_capabilities() {
+    let capabilities = parse_vllm_runtime_capabilities(&serde_json::json!({
+        "data": [{"id": "model", "max_model_len": 32768}]
+    }))
+    .expect("vLLM model catalog should expose the context window");
+
+    assert_eq!(
+        capabilities,
+        RuntimeCapabilities {
+            context_window: Some(32768),
+            supports_images: false,
+            supports_tool_calls: None,
+        }
+    );
+}
+
+#[tokio::test]
+async fn reads_vllm_runtime_capabilities_from_authenticated_models_endpoint() {
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("the vLLM models endpoint should bind");
+    let port = listener
+        .local_addr()
+        .expect("the vLLM models endpoint should have an address")
+        .port();
+    let responder = tokio::spawn(async move {
+        let (mut stream, _) = listener
+            .accept()
+            .await
+            .expect("the vLLM models request should reach the test endpoint");
+        let request = read_request_headers(&mut stream).await;
+        let body = r#"{"data":[{"id":"model","max_model_len":8192}]}"#;
+        let response = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            body.len()
+        );
+        stream
+            .write_all(response.as_bytes())
+            .await
+            .expect("the vLLM models response should be written");
+        request
+    });
+
+    let capabilities = read_vllm_runtime_capabilities(port, Some("fixture-token"))
+        .await
+        .expect("vLLM capability request should succeed");
+    assert_eq!(capabilities.context_window, Some(8192));
+    let request = responder
+        .await
+        .expect("the vLLM models server should finish");
+    let request = String::from_utf8_lossy(&request).to_ascii_lowercase();
+    assert!(request.contains("get /v1/models http/1.1"));
+    assert!(request.contains("authorization: bearer fixture-token"));
 }
 
 #[test]

@@ -2,8 +2,8 @@
 
 use super::*;
 
-pub(super) async fn available_loopback_port() -> Result<u16, ServiceError> {
-    let listener = TcpListener::bind("127.0.0.1:0")
+pub(super) async fn available_loopback_port(preferred: Option<u16>) -> Result<u16, ServiceError> {
+    let listener = TcpListener::bind(SocketAddr::from(([127, 0, 0, 1], preferred.unwrap_or(0))))
         .await
         .map_err(|_| runtime_error())?;
     let address: SocketAddr = listener.local_addr().map_err(|_| runtime_error())?;
@@ -90,6 +90,127 @@ pub(super) fn llama_server_arguments(
     Ok(arguments)
 }
 
+pub(super) async fn vllm_server_launch(
+    storage: &AppStorage,
+    model: &models::RegisteredModel,
+    port: u16,
+) -> Result<RuntimeLaunch, ServiceError> {
+    let context = super::super::vllm::launch_context(storage)?;
+    let model_path = super::super::vllm::model_path_for_runtime(&context, &model.path).await?;
+    let api_key = Zeroizing::new(uuid::Uuid::new_v4().to_string());
+    let auth_file = super::super::vllm::write_auth_file(&context, api_key.as_str()).await?;
+    let runtime_python = super::super::vllm::runtime_child_path(
+        &context.root,
+        ".venv/bin/vllm",
+        context.distro.is_some(),
+    );
+    let remote_pid_file = context.distro.as_ref().map(|_| {
+        super::super::vllm::runtime_child_path(
+            &context.root,
+            &format!(".session-{}.pid", uuid::Uuid::new_v4()),
+            true,
+        )
+    });
+    let auth_path = auth_file.to_str().ok_or_else(runtime_error)?;
+    let root_path = context.root.to_str().ok_or_else(runtime_error)?;
+    let mut arguments = Vec::<OsString>::new();
+    let mut environment = Vec::new();
+
+    if let Some(distro) = context.distro.as_deref() {
+        let pid_file = remote_pid_file
+            .as_deref()
+            .and_then(Path::to_str)
+            .ok_or_else(runtime_error)?;
+        arguments.extend([
+            OsString::from("--distribution"),
+            OsString::from(distro),
+            OsString::from("--exec"),
+            OsString::from("env"),
+            OsString::from(format!("OPENCHAT_VLLM_AUTH_FILE={auth_path}")),
+            OsString::from(format!("PYTHONPATH={root_path}")),
+            OsString::from("VLLM_USE_FLASHINFER_SAMPLER=0"),
+            OsString::from("sh"),
+            OsString::from("-c"),
+            OsString::from("printf '%s' \"$$\" > \"$1\"; shift; exec \"$@\""),
+            OsString::from("openchat-vllm"),
+            OsString::from(pid_file),
+            runtime_python.into_os_string(),
+        ]);
+    } else {
+        environment.push((
+            OsString::from("OPENCHAT_VLLM_AUTH_FILE"),
+            OsString::from(auth_path),
+        ));
+        environment.push((OsString::from("PYTHONPATH"), OsString::from(root_path)));
+        environment.push((
+            OsString::from("VLLM_USE_FLASHINFER_SAMPLER"),
+            OsString::from("0"),
+        ));
+    }
+    arguments.extend([
+        OsString::from("serve"),
+        OsString::from(model_path),
+        OsString::from("--host"),
+        OsString::from("127.0.0.1"),
+        OsString::from("--port"),
+        OsString::from(port.to_string()),
+        OsString::from("--served-model-name"),
+        OsString::from(&model.id),
+        OsString::from("--middleware"),
+        OsString::from("openchat_vllm_auth.OpenChatAuthMiddleware"),
+    ]);
+
+    let settings = settings::read_settings(storage.root())?;
+    if let Some(value) = settings.vllm_max_model_len {
+        arguments.extend([
+            OsString::from("--max-model-len"),
+            OsString::from(value.to_string()),
+        ]);
+    }
+    if let Some(value) = settings.vllm_gpu_memory_utilization_milli {
+        arguments.extend([
+            OsString::from("--gpu-memory-utilization"),
+            OsString::from(format!("{:.3}", f64::from(value) / 1000.0)),
+        ]);
+    }
+    if let Some(value) = settings.vllm_tensor_parallel_size {
+        arguments.extend([
+            OsString::from("--tensor-parallel-size"),
+            OsString::from(value.to_string()),
+        ]);
+    }
+    if let Some(value) = settings.vllm_max_num_seqs {
+        arguments.extend([
+            OsString::from("--max-num-seqs"),
+            OsString::from(value.to_string()),
+        ]);
+    }
+    if let Some(value) = settings.vllm_dtype {
+        arguments.extend([OsString::from("--dtype"), OsString::from(value)]);
+    }
+    if settings.vllm_enforce_eager == Some(true) {
+        arguments.push(OsString::from("--enforce-eager"));
+    }
+    if let Some(custom_arguments) = settings.vllm_custom_arguments.as_deref() {
+        arguments.extend(custom_arguments.split_whitespace().map(OsString::from));
+    }
+
+    Ok(RuntimeLaunch {
+        arguments,
+        current_directory: if context.distro.is_some() {
+            storage.root().to_path_buf()
+        } else {
+            context.root
+        },
+        initial_capabilities: None,
+        provider_model_id: model.id.clone(),
+        api_key: Some(api_key),
+        environment,
+        auth_file: Some(auth_file),
+        remote_pid_file,
+    })
+}
+
 pub(super) fn configure_llama_server_api_key(command: &mut Command, api_key: &Zeroizing<String>) {
     command.env("LLAMA_API_KEY", api_key.as_str());
 }
@@ -97,20 +218,32 @@ pub(super) fn configure_llama_server_api_key(command: &mut Command, api_key: &Ze
 pub(super) fn model_path_matches_engine(
     model: &models::RegisteredModel,
 ) -> Result<bool, ServiceError> {
-    Ok(model.engine_id == "llama_cpp"
-        && model.path_kind == "file"
-        && model.path.is_file()
-        && model
-            .path
-            .extension()
-            .and_then(|extension| extension.to_str())
-            .is_some_and(|extension| extension.eq_ignore_ascii_case("gguf")))
+    Ok(match model.engine_id.as_str() {
+        "llama_cpp" => {
+            model.path_kind == "file"
+                && model.path.is_file()
+                && model
+                    .path
+                    .extension()
+                    .and_then(|extension| extension.to_str())
+                    .is_some_and(|extension| extension.eq_ignore_ascii_case("gguf"))
+        }
+        "vllm" => {
+            model.path_kind == "directory"
+                && model.path.is_dir()
+                && model.path.join("config.json").is_file()
+        }
+        _ => false,
+    })
 }
 
 pub(super) fn installed_engine_for(
     storage: &AppStorage,
     engine_id: &str,
 ) -> Result<Option<InstalledEngine>, ServiceError> {
+    if engine_id == "vllm" {
+        return super::super::vllm::installed_engine(storage);
+    }
     if engine_id == "llama_cpp"
         && let Some(configured_path) = settings::llama_server_executable_path(storage.root())?
     {
@@ -228,6 +361,11 @@ pub(super) async fn stop_server(
     let Some(server) = state.as_mut() else {
         return Ok(());
     };
+    if server.engine_id == "vllm"
+        && let Some(pid_file) = server.remote_pid_file.as_deref()
+    {
+        super::super::vllm::stop_wsl_process(storage, pid_file).await?;
+    }
     if server
         .child
         .try_wait()
@@ -242,6 +380,11 @@ pub(super) async fn stop_server(
             None,
         );
         return Err(runtime_error());
+    }
+    if server.engine_id == "vllm"
+        && let Some(auth_file) = server.auth_file.as_deref()
+    {
+        super::super::vllm::remove_auth_file(storage, auth_file).await?;
     }
     let Some(_server) = state.take() else {
         return Err(runtime_error());

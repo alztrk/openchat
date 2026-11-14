@@ -27,6 +27,8 @@ export interface HubDownloadGroup {
   canDownload: boolean;
 }
 
+export type HubModelFormat = 'gguf' | 'transformers';
+
 export interface HubDetails {
   repoId: string;
   revision: string;
@@ -73,7 +75,7 @@ export function parseHubModel(value: unknown): HubModel {
   };
 }
 
-export function parseHubDetails(value: JsonObject): HubDetails {
+export function parseHubDetails(value: JsonObject, format: HubModelFormat = 'gguf'): HubDetails {
   if (
     !isNonEmptyString(value.repoId) ||
     !isNonEmptyString(value.revision) ||
@@ -98,7 +100,7 @@ export function parseHubDetails(value: JsonObject): HubDetails {
     private: value.private === true,
     license: typeof value.license === 'string' ? value.license : null,
     files: value.files.map(parseHubFile),
-    downloadGroups: value.downloadGroups.map(parseHubDownloadGroup),
+    downloadGroups: value.downloadGroups.map((group) => parseHubDownloadGroup(group, format)),
     readmeStatus: value.readmeStatus,
     readmeMarkdown: typeof readme === 'string' ? readme : null,
     readmeErrorCode: typeof readmeErrorCode === 'string' ? readmeErrorCode : null,
@@ -245,7 +247,7 @@ function parseHubFile(value: unknown): HubFile {
   return { path: value.path, kind: value.kind, sizeBytes, sha256 };
 }
 
-function parseHubDownloadGroup(value: unknown): HubDownloadGroup {
+function parseHubDownloadGroup(value: unknown, format: HubModelFormat): HubDownloadGroup {
   if (
     !isObject(value) ||
     !isNonEmptyString(value.id) ||
@@ -264,8 +266,22 @@ function parseHubDownloadGroup(value: unknown): HubDownloadGroup {
     canDownload:
       files.length > 0 &&
       totalBytes !== null &&
-      files.every((file) => file.sizeBytes !== null && file.sha256 !== null),
+      files.every(
+        (file) =>
+          file.sizeBytes !== null &&
+          (file.sha256 !== null || (format === 'transformers' && !isTransformersWeightPath(file.path))),
+      ),
   };
+}
+
+function isTransformersWeightPath(path: string): boolean {
+  const name = path.split('/').pop()?.toLowerCase() ?? '';
+  return (
+    name === 'model.safetensors' ||
+    (name.startsWith('model-') && name.endsWith('.safetensors')) ||
+    name === 'pytorch_model.bin' ||
+    (name.startsWith('pytorch_model-') && name.endsWith('.bin'))
+  );
 }
 
 function parseOptionalSha256(value: unknown): string | null {

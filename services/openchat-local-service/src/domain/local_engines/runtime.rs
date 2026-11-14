@@ -94,6 +94,8 @@ struct RunningServer {
     child: Child,
     capabilities: Option<RuntimeCapabilities>,
     api_key: Option<Zeroizing<String>>,
+    auth_file: Option<PathBuf>,
+    remote_pid_file: Option<PathBuf>,
 }
 
 struct ModelLifecycle {
@@ -107,6 +109,9 @@ struct RuntimeLaunch {
     initial_capabilities: Option<RuntimeCapabilities>,
     provider_model_id: String,
     api_key: Option<Zeroizing<String>>,
+    environment: Vec<(std::ffi::OsString, std::ffi::OsString)>,
+    auth_file: Option<PathBuf>,
+    remote_pid_file: Option<PathBuf>,
 }
 
 pub(crate) async fn start_model(
@@ -147,7 +152,7 @@ pub(crate) async fn start_model(
             return Err(cancelled_error());
         }
 
-        if model.engine_id == "llama_cpp" {
+        if matches!(model.engine_id.as_str(), "llama_cpp" | "vllm") {
             let mut selected_server = running_llama_state().lock().await.remove(model_id);
             let result = start_model_in_slot(
                 storage,
@@ -210,7 +215,12 @@ async fn start_model_in_slot(
         stop_server(storage, state).await?;
     }
 
-    let port = available_loopback_port().await?;
+    let preferred_port = if model.engine_id == "vllm" {
+        settings::read_settings(storage.root())?.vllm_port
+    } else {
+        None
+    };
+    let port = available_loopback_port(preferred_port).await?;
     let started_at = Instant::now();
     let launch = match model.engine_id.as_str() {
         "llama_cpp" => RuntimeLaunch {
@@ -219,13 +229,20 @@ async fn start_model_in_slot(
             initial_capabilities: None,
             provider_model_id: model.id.clone(),
             api_key: Some(Zeroizing::new(uuid::Uuid::new_v4().to_string())),
+            environment: Vec::new(),
+            auth_file: None,
+            remote_pid_file: None,
         },
+        "vllm" => vllm_server_launch(storage, model, port).await?,
         _ => return Err(model_unavailable_error()),
     };
     let mut command = Command::new(&installed.entrypoint);
     if let Some(api_key) = launch.api_key.as_ref() {
-        configure_llama_server_api_key(&mut command, api_key);
+        if model.engine_id == "llama_cpp" {
+            configure_llama_server_api_key(&mut command, api_key);
+        }
     }
+    command.envs(launch.environment.iter().map(|(key, value)| (key, value)));
     let child = match command
         .args(&launch.arguments)
         .current_dir(&launch.current_directory)
@@ -237,6 +254,11 @@ async fn start_model_in_slot(
     {
         Ok(child) => child,
         Err(_) => {
+            if model.engine_id == "vllm"
+                && let Some(auth_file) = launch.auth_file.as_deref()
+            {
+                super::vllm::remove_auth_file(storage, auth_file).await?;
+            }
             log_runtime_event(
                 storage,
                 "runtime_start_failed",
@@ -254,6 +276,8 @@ async fn start_model_in_slot(
         child,
         capabilities: launch.initial_capabilities,
         api_key: launch.api_key,
+        auth_file: launch.auth_file,
+        remote_pid_file: launch.remote_pid_file,
     });
 
     loop {
@@ -269,7 +293,13 @@ async fn start_model_in_slot(
             (server.port, has_exited)
         };
         if has_exited {
-            *state = None;
+            let exited = state.take().ok_or_else(runtime_error)?;
+            if let Some(pid_file) = exited.remote_pid_file.as_deref() {
+                super::vllm::stop_wsl_process(storage, pid_file).await?;
+            }
+            if let Some(auth_file) = exited.auth_file.as_deref() {
+                super::vllm::remove_auth_file(storage, auth_file).await?;
+            }
             log_runtime_event(
                 storage,
                 "runtime_start_failed",
@@ -299,7 +329,10 @@ async fn start_model_in_slot(
             let initial_capabilities = state.as_ref().and_then(|server| server.capabilities);
             let capabilities_result = match initial_capabilities {
                 Some(capabilities) => Ok(capabilities),
-                None => runtime_capabilities_or_cancel(port, api_key, cancellation).await,
+                None => {
+                    runtime_capabilities_or_cancel(&model.engine_id, port, api_key, cancellation)
+                        .await
+                }
             };
             let capabilities = match capabilities_result {
                 Ok(capabilities) => capabilities,
@@ -411,8 +444,49 @@ pub(crate) async fn stop_model(
     status(storage).await
 }
 
+pub(crate) async fn stop_engine(
+    storage: &AppStorage,
+    engine_id: &str,
+) -> Result<Value, ServiceError> {
+    let mut lifecycles = model_lifecycles().lock().await;
+    let model_ids = running_llama_state()
+        .lock()
+        .await
+        .iter()
+        .filter(|(_, server)| server.engine_id == engine_id)
+        .map(|(model_id, _)| model_id.clone())
+        .collect::<Vec<_>>();
+    for model_id in &model_ids {
+        let lifecycle = model_lifecycle_locked(model_id, &mut lifecycles);
+        advance_stop_generation(&lifecycle.stop_generation);
+    }
+    let runtime_guard = runtime_operation_gate().write().await;
+    drop(lifecycles);
+
+    let mut first_error = None;
+    for model_id in model_ids {
+        let Some(server) = running_llama_state().lock().await.remove(&model_id) else {
+            continue;
+        };
+        let mut slot = Some(server);
+        if let Err(error) = stop_server(storage, &mut slot).await {
+            first_error.get_or_insert(error);
+        }
+        if let Some(server) = slot {
+            running_llama_state().lock().await.insert(model_id, server);
+        }
+    }
+    drop(runtime_guard);
+    if let Some(error) = first_error {
+        return Err(error);
+    }
+    status(storage).await
+}
+
 pub(crate) async fn status(storage: &AppStorage) -> Result<Value, ServiceError> {
     let mut servers = Vec::new();
+    let mut stale_auth_files = Vec::new();
+    let mut stale_pid_files = Vec::new();
     let managed_snapshots = {
         let mut managed = running_llama_state().lock().await;
         let model_ids = managed.keys().cloned().collect::<Vec<_>>();
@@ -426,7 +500,17 @@ pub(crate) async fn status(storage: &AppStorage) -> Result<Value, ServiceError> 
                 .map_err(|_| runtime_error())?
                 .is_some();
             if has_exited {
-                managed.remove(&model_id).ok_or_else(runtime_error)?;
+                let exited = managed.remove(&model_id).ok_or_else(runtime_error)?;
+                if exited.engine_id == "vllm"
+                    && let Some(auth_file) = exited.auth_file
+                {
+                    stale_auth_files.push(auth_file);
+                }
+                if exited.engine_id == "vllm"
+                    && let Some(pid_file) = exited.remote_pid_file
+                {
+                    stale_pid_files.push(pid_file);
+                }
                 log_runtime_event(
                     storage,
                     "runtime_exited",
@@ -437,20 +521,28 @@ pub(crate) async fn status(storage: &AppStorage) -> Result<Value, ServiceError> 
             }
             let server = managed.get(&model_id).ok_or_else(runtime_error)?;
             if let Some(process_id) = server.child.id() {
-                snapshots.push((model_id, process_id, server.port));
+                snapshots.push((model_id, process_id, server.port, server.api_key.clone()));
             }
         }
         snapshots
     };
+    for auth_file in stale_auth_files {
+        super::vllm::remove_auth_file(storage, &auth_file).await?;
+    }
+    for pid_file in stale_pid_files {
+        super::vllm::stop_wsl_process(storage, &pid_file).await?;
+    }
     let health = join_all(
         managed_snapshots
             .iter()
-            .map(|(_, _, port)| async move { health_check(*port, None).await }),
+            .map(|(_, _, port, api_key)| async move {
+                health_check(*port, api_key.as_ref().map(|key| key.as_str())).await
+            }),
     )
     .await;
     {
         let managed = running_llama_state().lock().await;
-        for ((model_id, process_id, port), healthy) in managed_snapshots.iter().zip(health) {
+        for ((model_id, process_id, port, _), healthy) in managed_snapshots.iter().zip(health) {
             let Some(server) = managed
                 .get(model_id)
                 .filter(|server| server.child.id() == Some(*process_id) && server.port == *port)

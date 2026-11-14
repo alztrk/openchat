@@ -19,6 +19,24 @@ const SETTINGS_FILE: &str = "settings/local-engines.json";
 const MAX_SETTINGS_BYTES: u64 = 32 * 1024;
 const MAX_CUSTOM_ARGUMENTS_LENGTH: usize = 2048;
 
+fn has_protected_vllm_argument(arguments: &str) -> bool {
+    const PROTECTED: &[&str] = &[
+        "--model",
+        "--host",
+        "--port",
+        "--api-key",
+        "--middleware",
+        "--served-model-name",
+        "--trust-remote-code",
+        "--hf-token",
+        "--token",
+    ];
+    arguments.split_whitespace().any(|argument| {
+        let name = argument.split_once('=').map_or(argument, |(name, _)| name);
+        name == "--" || PROTECTED.contains(&name)
+    })
+}
+
 fn default_version() -> u8 {
     1
 }
@@ -52,6 +70,22 @@ pub(crate) struct LocalEngineSettings {
     pub(crate) parallel: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) custom_arguments: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) vllm_max_model_len: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) vllm_port: Option<u16>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) vllm_gpu_memory_utilization_milli: Option<u16>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) vllm_tensor_parallel_size: Option<u16>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) vllm_max_num_seqs: Option<u16>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) vllm_dtype: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) vllm_enforce_eager: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) vllm_custom_arguments: Option<String>,
 }
 
 /// Reads the validated saved llama-server path, if one is configured.
@@ -84,6 +118,16 @@ pub(crate) fn settings_json(storage_root: &Path) -> Result<serde_json::Value, Se
         "noMmap": settings.no_mmap,
         "parallel": settings.parallel,
         "customArguments": settings.custom_arguments,
+        "vllmMaxModelLen": settings.vllm_max_model_len,
+        "vllmPort": settings.vllm_port,
+        "vllmGpuMemoryUtilization": settings
+            .vllm_gpu_memory_utilization_milli
+            .map(|value| f64::from(value) / 1000.0),
+        "vllmTensorParallelSize": settings.vllm_tensor_parallel_size,
+        "vllmMaxNumSeqs": settings.vllm_max_num_seqs,
+        "vllmDtype": settings.vllm_dtype,
+        "vllmEnforceEager": settings.vllm_enforce_eager,
+        "vllmCustomArguments": settings.vllm_custom_arguments,
     }))
 }
 
@@ -213,8 +257,133 @@ pub(crate) fn update_settings(
         };
     }
 
+    if let Some(val) = params.get("vllmMaxModelLen") {
+        settings.vllm_max_model_len = parse_bounded_u32(val, 128, 131_072, "vllmMaxModelLen")?;
+    }
+    if let Some(val) = params.get("vllmPort") {
+        settings.vllm_port = parse_bounded_u32(val, 1024, u16::MAX.into(), "vllmPort")?
+            .map(u16::try_from)
+            .transpose()
+            .map_err(|_| invalid_settings_error("vLLM port is out of range."))?;
+    }
+    if let Some(val) = params.get("vllmGpuMemoryUtilization") {
+        settings.vllm_gpu_memory_utilization_milli = match val {
+            serde_json::Value::Null => None,
+            serde_json::Value::Number(value) => {
+                let utilization = value
+                    .as_f64()
+                    .filter(|value| value.is_finite() && (0.1..=0.99).contains(value))
+                    .ok_or_else(|| {
+                        invalid_settings_error(
+                            "GPU memory utilization must be between 0.1 and 0.99.",
+                        )
+                    })?;
+                Some((utilization * 1000.0).round() as u16)
+            }
+            _ => {
+                return Err(invalid_settings_error(
+                    "GPU memory utilization must be a number or null.",
+                ));
+            }
+        };
+    }
+    if let Some(val) = params.get("vllmTensorParallelSize") {
+        settings.vllm_tensor_parallel_size =
+            parse_bounded_u32(val, 1, 16, "vllmTensorParallelSize")?.map(|value| value as u16);
+    }
+    if let Some(val) = params.get("vllmMaxNumSeqs") {
+        settings.vllm_max_num_seqs =
+            parse_bounded_u32(val, 1, 1024, "vllmMaxNumSeqs")?.map(|value| value as u16);
+    }
+    if let Some(val) = params.get("vllmDtype") {
+        settings.vllm_dtype = match val {
+            serde_json::Value::Null => None,
+            serde_json::Value::String(value)
+                if matches!(value.as_str(), "auto" | "float16" | "bfloat16") =>
+            {
+                Some(value.clone())
+            }
+            _ => {
+                return Err(invalid_settings_error(
+                    "vLLM dtype must be auto, float16, bfloat16, or null.",
+                ));
+            }
+        };
+    }
+    if let Some(val) = params.get("vllmEnforceEager") {
+        settings.vllm_enforce_eager = match val {
+            serde_json::Value::Null => None,
+            serde_json::Value::Bool(value) => Some(*value),
+            _ => {
+                return Err(invalid_settings_error(
+                    "vLLM enforce eager must be boolean or null.",
+                ));
+            }
+        };
+    }
+    if let Some(val) = params.get("vllmCustomArguments") {
+        settings.vllm_custom_arguments = match val {
+            serde_json::Value::Null => None,
+            serde_json::Value::String(value) if value.trim().is_empty() => None,
+            serde_json::Value::String(value) => {
+                let value = value.trim();
+                if value.len() > MAX_CUSTOM_ARGUMENTS_LENGTH
+                    || value.chars().any(|character| {
+                        matches!(character, '\n' | '\r' | ';' | '&' | '|' | '`' | '$')
+                    })
+                    || has_protected_vllm_argument(value)
+                {
+                    return Err(invalid_settings_error(
+                        "vLLM custom arguments contain unsupported or managed options.",
+                    ));
+                }
+                Some(value.to_owned())
+            }
+            _ => {
+                return Err(invalid_settings_error(
+                    "vLLM custom arguments must be a string or null.",
+                ));
+            }
+        };
+    }
+
     write_settings(storage_root, &settings)?;
     settings_json(storage_root)
+}
+
+pub(crate) fn clear_engine_settings(
+    storage_root: &Path,
+    engine_id: &str,
+) -> Result<(), ServiceError> {
+    let mut settings = read_settings(storage_root)?;
+    match engine_id {
+        "llama_cpp" => {
+            settings.llama_server_executable_path = None;
+            settings.gpu_layers = None;
+            settings.threads = None;
+            settings.threads_batch = None;
+            settings.context_size = None;
+            settings.batch_size = None;
+            settings.ubatch_size = None;
+            settings.flash_attention = None;
+            settings.mlock = None;
+            settings.no_mmap = None;
+            settings.parallel = None;
+            settings.custom_arguments = None;
+        }
+        "vllm" => {
+            settings.vllm_max_model_len = None;
+            settings.vllm_port = None;
+            settings.vllm_gpu_memory_utilization_milli = None;
+            settings.vllm_tensor_parallel_size = None;
+            settings.vllm_max_num_seqs = None;
+            settings.vllm_dtype = None;
+            settings.vllm_enforce_eager = None;
+            settings.vllm_custom_arguments = None;
+        }
+        _ => return Err(invalid_settings_error("Unknown local engine.")),
+    }
+    write_settings(storage_root, &settings)
 }
 
 fn parse_bounded_u32(
@@ -429,6 +598,7 @@ mod tests {
             "noMmap": false,
             "parallel": 2,
             "customArguments": "--numa --split-mode row",
+            "vllmCustomArguments": "--disable-log-requests --disable-uvicorn-access-log",
         });
 
         let updated =
@@ -444,6 +614,10 @@ mod tests {
         assert_eq!(updated["noMmap"], false);
         assert_eq!(updated["parallel"], 2);
         assert_eq!(updated["customArguments"], "--numa --split-mode row");
+        assert_eq!(
+            updated["vllmCustomArguments"],
+            "--disable-log-requests --disable-uvicorn-access-log"
+        );
 
         let loaded = read_settings(&temporary.0).expect("settings should load from disk");
         assert_eq!(loaded.gpu_layers, Some(33));
@@ -453,11 +627,17 @@ mod tests {
             loaded.custom_arguments.as_deref(),
             Some("--numa --split-mode row")
         );
+        assert_eq!(
+            loaded.vllm_custom_arguments.as_deref(),
+            Some("--disable-log-requests --disable-uvicorn-access-log")
+        );
 
         // Test clearing a setting with null
         let clear_params = json!({
             "gpuLayers": null,
             "customArguments": null,
+            "vllmPort": 8200,
+            "vllmMaxModelLen": 8192,
         });
         let cleared =
             update_settings(&temporary.0, &clear_params).expect("clearing should succeed");
@@ -466,6 +646,8 @@ mod tests {
         // Preserved remaining
         assert_eq!(cleared["threads"], 8);
         assert_eq!(cleared["flashAttention"], true);
+        assert_eq!(cleared["vllmPort"], 8200);
+        assert_eq!(cleared["vllmMaxModelLen"], 8192);
 
         let json_representation = settings_json(&temporary.0).expect("settings json should format");
         assert_eq!(json_representation["threads"], 8);
@@ -496,6 +678,50 @@ mod tests {
         )
         .expect_err("ampersand should be rejected");
         assert_eq!(error.code, "invalid_request_params");
+
+        for params in [
+            json!({"vllmPort": 80}),
+            json!({"vllmGpuMemoryUtilization": 1.0}),
+            json!({"vllmDtype": "trust-remote-code"}),
+            json!({"vllmTensorParallelSize": 0}),
+        ] {
+            let error = update_settings(&temporary.0, &params)
+                .expect_err("invalid vLLM settings should be rejected");
+            assert_eq!(error.code, "invalid_request_params");
+        }
+        for arguments in [
+            "--host 0.0.0.0",
+            "--port=9000",
+            "--api-key secret",
+            "--middleware module.Class",
+            "--served-model-name other",
+            "--trust-remote-code",
+            "--hf-token token",
+            "--flag; echo unsafe",
+        ] {
+            let error = update_settings(&temporary.0, &json!({"vllmCustomArguments": arguments}))
+                .expect_err("managed options and shell syntax must be rejected");
+            assert_eq!(error.code, "invalid_request_params");
+        }
+    }
+
+    #[test]
+    fn clearing_vllm_settings_preserves_llama_configuration() {
+        let temporary = TestDirectory::new();
+        update_settings(
+            &temporary.0,
+            &json!({"threads": 8, "vllmMaxModelLen": 8192, "vllmPort": 8100, "vllmCustomArguments": "--disable-log-requests"}),
+        )
+        .expect("both engine settings should be saved");
+
+        super::clear_engine_settings(&temporary.0, "vllm")
+            .expect("vLLM settings should clear on uninstall");
+
+        let settings = super::read_settings(&temporary.0).expect("settings should remain readable");
+        assert_eq!(settings.threads, Some(8));
+        assert_eq!(settings.vllm_max_model_len, None);
+        assert_eq!(settings.vllm_port, None);
+        assert_eq!(settings.vllm_custom_arguments, None);
     }
 
     #[test]

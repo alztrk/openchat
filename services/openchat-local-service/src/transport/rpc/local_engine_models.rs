@@ -151,6 +151,16 @@ pub(super) async fn dispatch(
         "local.engines.install" => {
             let engine_id = required_string(params, "engineId")?;
             let variant_id = required_string(params, "variantId")?;
+            if engine_id == "vllm" {
+                return local_engines::install_vllm(
+                    storage,
+                    variant_id,
+                    request_id,
+                    events,
+                    cancellation,
+                )
+                .await;
+            }
             let (manifest, variant) = local_engines::find_variant(engine_id, variant_id).await?;
             if !local_engines::can_install(&manifest, &variant).await {
                 return Err(ServiceError::new(
@@ -174,6 +184,9 @@ pub(super) async fn dispatch(
                 "variantId": installed.variant_id,
                 "releaseTag": installed.release_tag,
             }))
+        }
+        "local.engines.uninstall" => {
+            local_engines::uninstall_engine(storage, required_string(params, "engineId")?).await
         }
         _ => Err(ServiceError::new(
             "method_not_found",

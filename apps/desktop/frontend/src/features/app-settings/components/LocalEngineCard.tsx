@@ -20,6 +20,7 @@ import {
 } from '@features/app-settings/data/localEngineCatalog';
 import { EngineModelDirectorySetting } from './EngineModelDirectorySetting';
 import { LlamaRuntimeSetting } from './LlamaRuntimeSetting';
+import { VllmRuntimeSetting } from './VllmRuntimeSetting';
 import { InstallProgressInline } from './LocalEngineInstallProgress';
 import { LocalModelsSection } from './LocalModelsSection';
 
@@ -46,6 +47,7 @@ export function EngineCard({
   onDiscover,
   onDisconnectExternalServer,
   onInstall,
+  onUninstall,
   onRemove,
   onSaveSettings,
   onStart,
@@ -80,6 +82,7 @@ export function EngineCard({
   onDiscover(): void;
   onDisconnectExternalServer(server: ExternalServer): void;
   onInstall(variant: EngineVariant): void;
+  onUninstall(): void;
   onRemove(model: LocalModel): void;
   onSaveSettings(updated: LocalEngineSettings): Promise<void>;
   onStart(modelId: string): void;
@@ -161,6 +164,9 @@ export function EngineCard({
               showExternalCheck={hostOs === 'windows'}
             />
           ) : null}
+          {engine.engineId === 'vllm' ? (
+            <VllmRuntimeSetting active={settingsActive} onSave={onSaveSettings} settings={settings} />
+          ) : null}
           {(engine.catalogStatus === 'blocked' || engine.catalogStatus === 'deprecated') && engine.statusReason ? (
             <p className="text-sm text-secondary-text">
               {engine.statusReason === 'release_check_unavailable'
@@ -235,6 +241,16 @@ export function EngineCard({
                           >
                             {busy ? <LoaderCircle aria-hidden="true" className="animate-spin" size={16} /> : null}
                             {t(variant.installed ? 'localEngineUpdate' : 'localEngineInstall')}
+                          </Button>
+                        ) : null}
+                        {variant.installed ? (
+                          <Button
+                            disabled={busy || activeAction !== null}
+                            onClick={onUninstall}
+                            size="small"
+                            variant="destructive"
+                          >
+                            {t('localEngineUninstall')}
                           </Button>
                         ) : null}
                       </div>

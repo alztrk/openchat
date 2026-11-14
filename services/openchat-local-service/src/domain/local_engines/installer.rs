@@ -241,6 +241,33 @@ pub fn installed_engine(
     Ok(installed.pop())
 }
 
+/// Removes only a runtime whose full catalog marker and entrypoint still validate.
+pub fn uninstall_engine_variant(
+    storage: &AppStorage,
+    manifest: &EngineManifest,
+    variant: &EngineVariant,
+) -> Result<bool, ServiceError> {
+    let Some(installed) = installed_engine(storage, manifest, variant)? else {
+        return Ok(false);
+    };
+    let expected_root = storage
+        .root()
+        .join("runtimes")
+        .join(safe_component(&manifest.engine_id, "engineId")?)
+        .join(safe_component(&variant.variant_id, "variantId")?)
+        .join(safe_component(&installed.release_tag, "releaseTag")?);
+    if installed.root != expected_root
+        || fs::symlink_metadata(&installed.root)
+            .map_err(|_| storage_error())?
+            .file_type()
+            .is_symlink()
+    {
+        return Err(installation_invalid_error());
+    }
+    fs::remove_dir_all(&expected_root).map_err(|_| storage_error())?;
+    Ok(true)
+}
+
 fn read_installed_marker(path: &Path) -> Result<InstalledMarker, ServiceError> {
     let file = File::open(path).map_err(|_| storage_error())?;
     let read_limit = u64::try_from(MAX_INSTALL_MARKER_BYTES + 1).map_err(|_| storage_error())?;
