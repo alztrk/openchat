@@ -228,8 +228,8 @@ export function createFrame(
   return {
     ...generated,
     id: crypto.randomUUID(),
-    x: clampPosition(x),
-    y: clampPosition(y),
+    x: normalizePosition(x),
+    y: normalizePosition(y),
     prompt: parseText(prompt, 4_000),
     comments: [],
     revisions: [],
@@ -502,8 +502,8 @@ function parseFrame(value: unknown): DesignCanvasFrame {
     height,
     svg,
     tokens,
-    x: clampPosition(value.x),
-    y: clampPosition(value.y),
+    x: normalizePosition(value.x),
+    y: normalizePosition(value.y),
     prompt: parseText(value.prompt, 4_000),
     comments,
     revisions,
@@ -668,9 +668,11 @@ function parseTimestamp(value: unknown): number {
   return value;
 }
 
-function clampPosition(value: number): number {
-  if (!Number.isFinite(value)) throw new Error('The design frame position is invalid.');
-  return Math.max(-100_000, Math.min(100_000, Math.round(value)));
+function normalizePosition(value: number): number {
+  if (!Number.isFinite(value) || Math.abs(value) > Number.MAX_SAFE_INTEGER) {
+    throw new Error('The design frame position is invalid.');
+  }
+  return Math.round(value);
 }
 
 export function listDesignCanvasElements(svg: string): DesignCanvasElement[] {

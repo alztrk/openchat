@@ -3,6 +3,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 import ts from 'typescript';
+import { Window } from 'happy-dom';
+
+const browserWindow = new Window();
+globalThis.DOMParser = browserWindow.DOMParser;
+globalThis.XMLSerializer = browserWindow.XMLSerializer;
 
 const storageState = { values: new Map(), failure: null, readFailure: null };
 globalThis.__openChatDesignCanvasTestStorage = {
@@ -32,6 +37,7 @@ const compiled = ts.transpileModule(source, {
 }).outputText;
 const {
   designCanvasFrameForViewport,
+  createFrame,
   emptyDesignCanvas,
   readDesignCanvas,
   removeDesignCanvasForRecovery,
@@ -92,6 +98,28 @@ test('profile-local design canvas storage round-trips the empty state', async ()
 
   assert.equal(storageState.values.get('design.vector_canvas.v1'), JSON.stringify(canvas));
   assert.deepEqual(readDesignCanvas(), { kind: 'ready', canvas });
+});
+
+test('legacy canvas frames retain coordinates beyond the former position limit', async () => {
+  const tokens = {
+    background: '#FFFFFF', surface: '#FFFFFF', text: '#000000', primary: '#000000',
+    accent: '#000000', border: '#000000', fontFamily: 'Arial', typeScale: 16, spacingUnit: 4,
+  };
+  const frame = createFrame(
+    { title: 'Large canvas', width: 390, height: 844, svg: '<svg/>', tokens },
+    'Keep the frame position',
+    120_000,
+    -120_000,
+    1,
+  );
+
+  await saveDesignCanvas({ version: 1, frames: [frame], selectedFrameId: frame.id });
+
+  const result = readDesignCanvas();
+  assert.equal(result.kind, 'ready');
+  if (result.kind !== 'ready') return;
+  assert.equal(result.canvas.frames[0]?.x, 120_000);
+  assert.equal(result.canvas.frames[0]?.y, -120_000);
 });
 
 test('invalid JSON remains available for recovery export', () => {
