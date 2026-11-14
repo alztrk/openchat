@@ -18,10 +18,13 @@ import { toast } from '@shared/lib/toast';
 import { localServiceErrorDetails } from '@shared/lib/platform/local-service';
 import { useChatStore } from '@features/chat/state';
 import { favoriteSourceConnection } from '@features/chat/state';
-import { ModelPicker } from '@features/chat/components/ModelPicker';
-import { PendingAttachmentGallery } from '@features/chat/components/PendingAttachmentGallery';
-import { type PendingChatAttachment, ChatAttachmentInputError, readAttachmentFile } from '@features/chat/data/chatAttachments';
-import type { ChatModelFavorite } from '@features/chat/data';
+import { ModelPicker, PendingAttachmentGallery } from '@features/chat/components';
+import {
+  type ChatModelFavorite,
+  type PendingChatAttachment,
+  ChatAttachmentInputError,
+  readAttachmentFile,
+} from '@features/chat/data';
 import { CanvasZoomControls } from '@features/design-workspace/components/CanvasZoomControls';
 import { applyDesignOperations, startDesignGeneration, type DesignCanvasOperation, type DesignGenerationOperation, type DesignGenerationReference } from '@features/design-workspace/data/designGeneration';
 import { applyDesignTextStyle, arrangeDesignSelection, createDesignComponent, createDesignComponentInstance, createDesignComponentVariant, createDesignTextStyle, designNodesForResponsiveBreakpoint, expandDesignMoveSelection, groupDesignSelection, reflowDesignFrameChildren, reflowDesignFrameConstraints, removeDesignNodes, removeDesignPrototypeInteraction, renameDesignNode, setDesignPrototypeFlow, setDesignPrototypeInteraction, snapDesignMove, synchronizeDesignComponentDependents, type DesignSnapGuides } from '@features/design-workspace/data/designOperations';
