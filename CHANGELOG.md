@@ -13,6 +13,7 @@ Completed work is summarized from repository history and grouped by the relevant
 
 ### Added
 
+- Added a validated SPDX 2.3 source dependency SBOM to tagged desktop releases.
 - Added side-by-side comparisons for two or three selected models, independent saved conversations, response streams, follow-up messages, and comparison metrics.
 - Added an editable Design workspace with structured documents, reusable components and styles, prototype interactions and transitions, revision comparison, alignment guides, portable archives, and SVG, PNG, PDF, and HTML export.
 - Added Design text typography controls, reusable text and color styles, component variants and instances, plus canvas alignment and distribution actions.
