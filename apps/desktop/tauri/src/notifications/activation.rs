@@ -80,6 +80,8 @@ pub fn initialize(app: &AppHandle) -> Result<(), String> {
     drop(runtime);
     #[cfg(target_os = "linux")]
     super::linux_backend::initialize(app)?;
+    #[cfg(target_os = "macos")]
+    super::macos_backend::initialize(app)?;
     #[cfg(target_os = "windows")]
     {
         let started = std::thread::Builder::new()

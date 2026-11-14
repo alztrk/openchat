@@ -115,7 +115,11 @@ pub fn read_windows_notification_status() -> String {
     {
         super::linux_backend::read_status()
     }
-    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
+    #[cfg(target_os = "macos")]
+    {
+        super::macos_backend::read_status()
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
     {
         "notSupported".to_owned()
     }
@@ -135,7 +139,11 @@ pub fn open_windows_notification_settings() -> Result<(), String> {
     {
         super::linux_backend::open_settings()
     }
-    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
+    #[cfg(target_os = "macos")]
+    {
+        super::macos_backend::open_settings()
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
     {
         Err("Windows notification settings are not available on this platform.".to_owned())
     }
@@ -166,7 +174,11 @@ pub fn send_test_notification(
     {
         super::linux_backend::send_test(&app, &title, &body)
     }
-    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
+    #[cfg(target_os = "macos")]
+    {
+        super::macos_backend::send_test(&app, &title, &body)
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
     {
         let _ = (app, title, body);
         Ok(false)
@@ -212,7 +224,11 @@ pub fn send_assistant_response_notification(
     {
         super::linux_backend::send_assistant_response(&app, request)
     }
-    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
+    #[cfg(target_os = "macos")]
+    {
+        super::macos_backend::send_assistant_response(&app, request)
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
     {
         let _ = (app, request);
         Ok(false)
@@ -240,7 +256,11 @@ pub fn send_user_question_notification(
     {
         super::linux_backend::send_user_question(&app, request)
     }
-    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
+    #[cfg(target_os = "macos")]
+    {
+        super::macos_backend::send_user_question(&app, request)
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
     {
         let _ = (app, request);
         Ok(false)

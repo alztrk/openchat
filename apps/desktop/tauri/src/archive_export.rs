@@ -183,10 +183,12 @@ fn pending_export_directory(
         None => {
             #[cfg(target_os = "linux")]
             let app_data_root = linux_data_home()?.join("openchat");
-            #[cfg(not(target_os = "linux"))]
+            #[cfg(target_os = "macos")]
+            let app_data_root = macos_app_data_root()?;
+            #[cfg(windows)]
             let local_app_data =
                 env::var_os("LOCALAPPDATA").ok_or_else(ArchiveExportError::unavailable)?;
-            #[cfg(not(target_os = "linux"))]
+            #[cfg(windows)]
             let app_data_root = PathBuf::from(local_app_data).join("OpenChat");
             fs::canonicalize(app_data_root).map_err(|_| ArchiveExportError::unavailable())?
         }
@@ -213,6 +215,23 @@ fn linux_data_home() -> Result<PathBuf, ArchiveExportError> {
                 .join(".local/share"),
         ),
     }
+}
+
+#[cfg(target_os = "macos")]
+fn macos_app_data_root() -> Result<PathBuf, ArchiveExportError> {
+    let home = PathBuf::from(env::var_os("HOME").ok_or_else(ArchiveExportError::unavailable)?);
+    macos_app_data_root_from_home(&home)
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn macos_app_data_root_from_home(home: &Path) -> Result<PathBuf, ArchiveExportError> {
+    if !home.is_absolute() {
+        return Err(ArchiveExportError::unavailable());
+    }
+    Ok(home
+        .join("Library")
+        .join("Application Support")
+        .join("com.openchat.desktop"))
 }
 
 /// Requires an existing real directory rather than a symlink or reparse-backed directory.
@@ -446,14 +465,14 @@ impl Drop for PartialFileCleanup {
 mod tests {
     use std::{
         fs,
-        path::PathBuf,
+        path::{Path, PathBuf},
         time::{SystemTime, UNIX_EPOCH},
     };
 
     use super::{
-        copy_archive, is_export_id, is_safe_file_name, pending_export_directory,
-        validate_pending_export, ArchiveExportError, ArchiveKind, MARKER_CONTENT_PREFIX,
-        MAX_CONVERSATION_ARCHIVE_BYTES,
+        copy_archive, is_export_id, is_safe_file_name, macos_app_data_root_from_home,
+        pending_export_directory, validate_pending_export, ArchiveExportError, ArchiveKind,
+        MARKER_CONTENT_PREFIX, MAX_CONVERSATION_ARCHIVE_BYTES,
     };
 
     struct TestDirectory(PathBuf);
@@ -477,6 +496,24 @@ mod tests {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.0);
         }
+    }
+
+    #[test]
+    fn macos_app_data_root_uses_the_standard_application_support_location() {
+        let home = std::env::temp_dir().join("openchat-macos-home");
+        let resolved = macos_app_data_root_from_home(&home).expect("resolve macOS app data root");
+
+        assert_eq!(
+            resolved,
+            home.join("Library")
+                .join("Application Support")
+                .join("com.openchat.desktop")
+        );
+    }
+
+    #[test]
+    fn macos_app_data_root_rejects_a_relative_home_directory() {
+        assert!(macos_app_data_root_from_home(Path::new("relative-home")).is_err());
     }
 
     #[test]

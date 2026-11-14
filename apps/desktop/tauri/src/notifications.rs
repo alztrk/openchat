@@ -10,6 +10,9 @@ mod commands;
 
 #[cfg(target_os = "linux")]
 mod linux_backend;
+#[cfg(any(target_os = "macos", all(test, windows)))]
+#[cfg_attr(all(test, windows), allow(dead_code))]
+mod macos_backend;
 #[cfg(target_os = "windows")]
 mod windows_backend;
 
