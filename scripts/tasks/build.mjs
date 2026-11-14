@@ -58,6 +58,26 @@ function releaseIdentity(workspaceRoot, tauriDirectory, channel) {
   });
 }
 
+export function resolveWindowsSigningConfig(channel, platform, thumbprint) {
+  if (platform !== 'win32' || channel !== 'stable') return null;
+
+  const normalizedThumbprint = thumbprint?.replaceAll(/\s/gu, '').toUpperCase();
+  if (!normalizedThumbprint || !/^[A-F0-9]{40}$/u.test(normalizedThumbprint)) {
+    throw new Error('Stable Windows packages require an imported Authenticode signing certificate.');
+  }
+
+  return {
+    bundle: {
+      windows: {
+        certificateThumbprint: normalizedThumbprint,
+        digestAlgorithm: 'sha256',
+        timestampUrl: 'http://timestamp.digicert.com',
+        tsp: true,
+      },
+    },
+  };
+}
+
 export const task = {
   name: 'build',
   description: 'Builds a uniquely identified preview or stable package for the host OS.',
@@ -70,11 +90,20 @@ export const task = {
     const workspaceRoot = getWorkspaceRoot();
     const tauriDirectory = getTauriDirectory();
     const identity = releaseIdentity(workspaceRoot, tauriDirectory, channel);
+    const windowsSigningConfig = resolveWindowsSigningConfig(
+      identity.channel,
+      process.platform,
+      process.env.OPENCHAT_WINDOWS_SIGNING_THUMBPRINT,
+    );
+    const releaseConfig = {
+      version: identity.version,
+      ...(windowsSigningConfig ?? {}),
+    };
     const temporaryDirectory = mkdtempSync(path.join(os.tmpdir(), 'openchat-release-config-'));
     const configPath = path.join(temporaryDirectory, 'release-config.json');
 
     try {
-      writeFileSync(configPath, JSON.stringify({ version: identity.version }), { encoding: 'utf8', flag: 'wx' });
+      writeFileSync(configPath, JSON.stringify(releaseConfig), { encoding: 'utf8', flag: 'wx' });
       process.stdout.write(`Building ${identity.channel} ${identity.version} (${identity.buildId}).\n`);
       buildLocalService('release', true);
       const tauriArgs = [];

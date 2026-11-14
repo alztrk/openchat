@@ -1,12 +1,16 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { readFileSync } from 'node:fs';
 
 import {
   assertCleanReleaseTree,
   parseBuildChannel,
   resolveReleaseIdentity,
 } from '../../../../scripts/shared/release-identity.mjs';
-import { readApplicationBaseVersion } from '../../../../scripts/tasks/build.mjs';
+import {
+  readApplicationBaseVersion,
+  resolveWindowsSigningConfig,
+} from '../../../../scripts/tasks/build.mjs';
 import { getTauriDirectory, getWorkspaceRoot } from '../../../../scripts/shared/runner.mjs';
 
 test('release build requires exactly one explicit channel', () => {
@@ -70,4 +74,58 @@ test('release packages reject a dirty working tree', () => {
 
 test('application version is synchronized across Tauri, Rust, npm, and both lockfiles', () => {
   assert.equal(readApplicationBaseVersion(getWorkspaceRoot(), getTauriDirectory()), '0.1.11');
+});
+
+test('stable Windows packages require a valid imported Authenticode certificate', () => {
+  assert.throws(
+    () => resolveWindowsSigningConfig('stable', 'win32', undefined),
+    /require an imported Authenticode signing certificate/u,
+  );
+  assert.throws(
+    () => resolveWindowsSigningConfig('stable', 'win32', 'not-a-thumbprint'),
+    /require an imported Authenticode signing certificate/u,
+  );
+
+  assert.deepEqual(
+    resolveWindowsSigningConfig('stable', 'win32', 'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2'),
+    {
+      bundle: {
+        windows: {
+          certificateThumbprint: 'A1B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4E5F6A1B2',
+          digestAlgorithm: 'sha256',
+          timestampUrl: 'http://timestamp.digicert.com',
+          tsp: true,
+        },
+      },
+    },
+  );
+});
+
+test('preview and non-Windows packages do not require Authenticode credentials', () => {
+  assert.equal(resolveWindowsSigningConfig('preview', 'win32', undefined), null);
+  assert.equal(resolveWindowsSigningConfig('stable', 'linux', undefined), null);
+});
+
+test('stable Windows release CI imports, verifies, and removes its Authenticode certificate', () => {
+  const workflow = readFileSync(
+    new URL('../../../../.github/workflows/desktop-ci.yml', import.meta.url),
+    'utf8',
+  );
+  const windowsJob = workflow.split('\n  windows-installer:\n')[1]?.split(/\n {2}[a-z][a-z0-9-]*:\n/u)[0];
+  assert.ok(windowsJob);
+
+  const importStep = windowsJob.indexOf('Import Windows signing certificate');
+  const buildStep = windowsJob.indexOf('Build the Windows installer');
+  const verifyStep = windowsJob.indexOf('Verify signed Windows application and installer');
+  const cleanupStep = windowsJob.indexOf('Remove Windows signing certificate from runner');
+
+  assert.ok(importStep >= 0 && importStep < buildStep);
+  assert.ok(buildStep < verifyStep && verifyStep < cleanupStep);
+  assert.match(windowsJob, /if: startsWith\(github\.ref, 'refs\/tags\/v'\)[\s\S]*?WINDOWS_CERTIFICATE: \$\{\{ secrets\.WINDOWS_CERTIFICATE \}\}/u);
+  assert.match(windowsJob, /WINDOWS_CERTIFICATE_PASSWORD: \$\{\{ secrets\.WINDOWS_CERTIFICATE_PASSWORD \}\}/u);
+  assert.match(windowsJob, /OPENCHAT_WINDOWS_SIGNING_THUMBPRINT: \$\{\{ steps\.windows-signing-certificate\.outputs\.thumbprint \}\}/u);
+  assert.match(windowsJob, /signtool\.exe[\s\S]*?verify \/pa \/all \/v/u);
+  assert.match(windowsJob, /always\(\) && steps\.windows-signing-certificate\.outcome == 'success'/u);
+  assert.match(windowsJob, /openchat-desktop\.exe/u);
+  assert.match(windowsJob, /bundle\/nsis\/\*-setup\.exe/u);
 });
