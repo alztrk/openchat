@@ -26,9 +26,11 @@ use super::writer::ServiceWriter;
 const MAX_STARTUP_DIAGNOSTIC_LOG_BYTES: u64 = 1024 * 1024;
 
 fn local_service_environment() -> Vec<(OsString, OsString)> {
-    std::env::vars_os()
+    let mut environment = std::env::vars_os()
         .filter(|(name, _)| is_local_service_environment_name(name))
-        .collect()
+        .collect::<Vec<_>>();
+    environment.push((OsString::from("ORT_DISABLE_TELEMETRY"), OsString::from("1")));
+    environment
 }
 
 fn is_local_service_environment_name(name: &OsStr) -> bool {
@@ -103,9 +105,9 @@ fn is_local_service_environment_name(name: &OsStr) -> bool {
 
 #[cfg(test)]
 mod environment_tests {
-    use std::ffi::OsStr;
+    use std::ffi::{OsStr, OsString};
 
-    use super::is_local_service_environment_name;
+    use super::{is_local_service_environment_name, local_service_environment};
 
     #[test]
     fn sidecar_environment_keeps_runtime_settings_and_drops_unrelated_values() {
@@ -126,6 +128,20 @@ mod environment_tests {
         assert!(is_local_service_environment_name(OsStr::new(
             "DBUS_SESSION_BUS_ADDRESS"
         )));
+    }
+
+    #[test]
+    fn sidecar_telemetry_setting_is_fixed_and_not_inherited() {
+        assert!(!is_local_service_environment_name(OsStr::new(
+            "ORT_DISABLE_TELEMETRY"
+        )));
+        assert_eq!(
+            local_service_environment()
+                .into_iter()
+                .find(|(name, _)| name.eq_ignore_ascii_case("ORT_DISABLE_TELEMETRY"))
+                .map(|(_, value)| value),
+            Some(OsString::from("1"))
+        );
     }
 }
 
