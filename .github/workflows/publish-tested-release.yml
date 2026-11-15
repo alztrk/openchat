@@ -1,0 +1,129 @@
+name: Publish tested stable release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing stable tag with a draft release, for example v1.2.3
+        required: true
+        type: string
+      windows_nsis:
+        description: Clean-install and first-launch QA for the Windows NSIS installer
+        required: true
+        type: choice
+        options:
+          - not-tested
+          - passed
+      linux_packages:
+        description: Install and first-launch QA for the Linux packages
+        required: true
+        type: choice
+        options:
+          - not-tested
+          - passed
+      macos_x64:
+        description: Install and first-launch QA for the macOS Intel package
+        required: true
+        type: choice
+        options:
+          - not-tested
+          - passed
+      macos_arm64:
+        description: Install and first-launch QA for the macOS Apple Silicon package
+        required: true
+        type: choice
+        options:
+          - not-tested
+          - passed
+      qa_evidence:
+        description: HTTPS link to the QA notes or test evidence for this exact tag
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-tested-release-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Verify QA and publish draft
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+
+    steps:
+      - name: Check out release tooling
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+
+      - name: Require complete QA evidence for this release
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+          WINDOWS_NSIS_QA: ${{ inputs.windows_nsis }}
+          LINUX_PACKAGES_QA: ${{ inputs.linux_packages }}
+          MACOS_X64_QA: ${{ inputs.macos_x64 }}
+          MACOS_ARM64_QA: ${{ inputs.macos_arm64 }}
+          QA_EVIDENCE: ${{ inputs.qa_evidence }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "A stable vMAJOR.MINOR.PATCH tag is required." >&2
+            exit 1
+          fi
+
+          for result in "$WINDOWS_NSIS_QA" "$LINUX_PACKAGES_QA" "$MACOS_X64_QA" "$MACOS_ARM64_QA"; do
+            if [[ "$result" != "passed" ]]; then
+              echo "Every supported platform package must pass manual install and first-launch QA." >&2
+              exit 1
+            fi
+          done
+
+          if [[ ! "$QA_EVIDENCE" =~ ^https://[^[:space:]]+$ ]]; then
+            echo "Provide an HTTPS link to the QA evidence for this exact tag." >&2
+            exit 1
+          fi
+
+          release=$(gh release view "$RELEASE_TAG" --json isDraft,isPrerelease,tagName,assets)
+          jq -e --arg tag "$RELEASE_TAG" '
+            .tagName == $tag and
+            .isDraft == true and
+            .isPrerelease == false and
+            ([.assets[].name] as $names |
+              ($names | any(endswith(".exe"))) and
+              ($names | any(endswith(".deb"))) and
+              ($names | any(endswith(".AppImage"))) and
+              ([$names[] | select(endswith(".dmg"))] | length >= 2) and
+              ($names | any(. == "SHA256SUMS")) and
+              ($names | any(. == "OpenChat-SBOM.spdx.json"))
+            )
+          ' <<< "$release" >/dev/null
+
+      - name: Download and verify the exact draft assets
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p release-artifacts/qa-candidate
+          gh release download "$RELEASE_TAG" --dir release-artifacts/qa-candidate
+          node scripts/release-integrity.mjs verify release-artifacts/qa-candidate
+
+      - name: Publish the tested stable release
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+          GH_TOKEN: ${{ github.token }}
+        run: gh release edit "$RELEASE_TAG" --draft=false --verify-tag

@@ -18,15 +18,23 @@ test('macOS packages use native Intel and Apple Silicon runners and targets', ()
   assert.match(workflow, /aarch64-apple-darwin/u);
 });
 
-test('macOS DMGs are checksummed, required by release, and included in aggregate assets', () => {
-  assert.match(workflow, /name: OpenChat-macOS-\$\{\{ matrix\.arch \}\}/u);
-  assert.match(workflow, /node scripts\/release-integrity\.mjs create "release-artifacts\/macos-/u);
-  assert.match(workflow, /- macos-packages/u);
-  assert.match(workflow, /name: OpenChat-macOS-x86_64/u);
-  assert.match(workflow, /name: OpenChat-macOS-arm64/u);
-  assert.match(workflow, /release-integrity\.mjs verify release-artifacts\/macos-x86_64/u);
-  assert.match(workflow, /release-integrity\.mjs verify release-artifacts\/macos-arm64/u);
-  assert.match(workflow, /release-artifacts\/macos-x86_64 release-artifacts\/macos-arm64/u);
+test('macOS DMGs upload to the draft and both architectures are required before publication', () => {
+  const macosJob = workflow.split('\n  macos-packages:\n')[1]?.split(/\n {2}[a-z][a-z0-9-]*:\n/u)[0] ?? '';
+  const releaseJob = workflow.split('\n  release:\n')[1] ?? '';
+  const publishWorkflow = readFileSync(
+    path.join(workspaceRoot, '.github/workflows/publish-tested-release.yml'),
+    'utf8',
+  );
+
+  assert.match(macosJob, /name: Upload macOS package to the draft release/u);
+  assert.match(macosJob, /gh release upload .*release-artifacts\/macos-/u);
+  assert.doesNotMatch(macosJob, /actions\/upload-artifact/u);
+  assert.match(releaseJob, /- macos-packages/u);
+  assert.match(releaseJob, /Both macOS architecture packages are required/u);
+  assert.match(releaseJob, /release-integrity\.mjs aggregate/u);
+  assert.match(publishWorkflow, /macos_x64/u);
+  assert.match(publishWorkflow, /macos_arm64/u);
+  assert.match(publishWorkflow, /length >= 2/u);
 });
 
 test('Tauri macOS bundle targets a DMG with an app icon and ad-hoc signature', () => {

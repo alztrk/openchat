@@ -71,8 +71,13 @@ jobs:
 
   linux-packages:
     name: Linux Tauri packages
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs:
+      - release-draft
     runs-on: ubuntu-22.04
     timeout-minutes: 60
+    permissions:
+      contents: write
 
     steps:
       - name: Check out source
@@ -122,23 +127,22 @@ jobs:
         run: npm run openchat -- build ${{ startsWith(github.ref, 'refs/tags/v') && '--stable' || '--preview' }}
         working-directory: apps/desktop/frontend
 
-      - name: Prepare and checksum Linux packages
+      - name: Prepare Linux packages
         run: |
           mkdir -p release-artifacts/linux
           cp target/release/bundle/deb/*.deb release-artifacts/linux/
           cp target/release/bundle/appimage/*.AppImage release-artifacts/linux/
-          node scripts/release-integrity.mjs create release-artifacts/linux
 
-      - name: Upload Linux packages
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: OpenChat-Linux-packages
-          path: release-artifacts/linux
-          if-no-files-found: error
-          retention-days: 14
+      - name: Upload Linux packages to the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$GITHUB_REF_NAME" release-artifacts/linux/* --clobber
 
   macos-packages:
     name: macOS ${{ matrix.arch }} package
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs:
+      - release-draft
     strategy:
       fail-fast: false
       matrix:
@@ -151,6 +155,8 @@ jobs:
             target: aarch64-apple-darwin
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
+    permissions:
+      contents: write
 
     steps:
       - name: Check out source
@@ -183,19 +189,15 @@ jobs:
         run: npm run openchat -- build ${{ startsWith(github.ref, 'refs/tags/v') && '--stable' || '--preview' }}
         working-directory: apps/desktop/frontend
 
-      - name: Prepare and checksum macOS package
+      - name: Prepare macOS package
         run: |
           mkdir -p "release-artifacts/macos-${{ matrix.arch }}"
           cp target/release/bundle/dmg/*.dmg "release-artifacts/macos-${{ matrix.arch }}/"
-          node scripts/release-integrity.mjs create "release-artifacts/macos-${{ matrix.arch }}"
 
-      - name: Upload macOS package
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: OpenChat-macOS-${{ matrix.arch }}
-          path: release-artifacts/macos-${{ matrix.arch }}
-          if-no-files-found: error
-          retention-days: 14
+      - name: Upload macOS package to the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$GITHUB_REF_NAME" "release-artifacts/macos-${{ matrix.arch }}"/* --clobber
 
   windows-validate:
     name: Windows validation
@@ -262,8 +264,13 @@ jobs:
 
   windows-installer:
     name: Windows Tauri installer
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs:
+      - release-draft
     runs-on: windows-2022
     timeout-minutes: 60
+    permissions:
+      contents: write
 
     steps:
       - name: Check out source
@@ -341,11 +348,10 @@ jobs:
           }
         shell: pwsh
 
-      - name: Prepare and checksum Windows installer
+      - name: Prepare Windows installer
         run: |
           New-Item -ItemType Directory -Force release-artifacts/windows | Out-Null
           Copy-Item -Path target/release/bundle/nsis/*-setup.exe -Destination release-artifacts/windows/
-          node scripts/release-integrity.mjs create release-artifacts/windows
         shell: pwsh
 
       - name: Remove Windows signing certificate from runner
@@ -355,13 +361,19 @@ jobs:
         run: ./scripts/signing/remove-windows-certificate.ps1 -Thumbprint $env:OPENCHAT_WINDOWS_SIGNING_THUMBPRINT
         shell: pwsh
 
-      - name: Upload Windows installer
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: OpenChat-Windows-installer
-          path: release-artifacts/windows
-          if-no-files-found: error
-          retention-days: 14
+      - name: Upload Windows installer to the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $installerPaths = @(Get-ChildItem -Path release-artifacts/windows/*-setup.exe -File | ForEach-Object FullName)
+          if ($installerPaths.Count -eq 0) {
+            throw 'The NSIS installer artifact is missing.'
+          }
+          & gh release upload "$env:GITHUB_REF_NAME" @installerPaths --clobber
+          if ($LASTEXITCODE -ne 0) {
+            throw 'The NSIS installer could not be uploaded to the draft release.'
+          }
+        shell: pwsh
 
   sbom:
     name: Generate source SBOM
@@ -409,45 +421,58 @@ jobs:
           overwrite: true
           retention-days: 14
 
-  release:
-    name: Publish stable or preview channel
-    if: startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main'
+  release-draft:
+    name: Create unpublished stable draft
+    if: startsWith(github.ref, 'refs/tags/v')
     needs:
       - linux-validate
-      - linux-packages
       - windows-validate
+      - sbom
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+
+    steps:
+      - name: Create or reuse an unpublished stable draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if gh release view "$GITHUB_REF_NAME" --json isDraft --jq '.isDraft' >/dev/null 2>&1; then
+            is_draft=$(gh release view "$GITHUB_REF_NAME" --json isDraft --jq '.isDraft')
+            if [[ "$is_draft" != "true" ]]; then
+              echo "The tag already has a published release and cannot be overwritten by CI." >&2
+              exit 1
+            fi
+          else
+            gh release create "$GITHUB_REF_NAME" --draft --verify-tag --generate-notes
+          fi
+
+  release:
+    name: Complete unpublished stable draft
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs:
+      - linux-packages
       - windows-installer
       - macos-packages
       - sbom
+      - release-draft
     runs-on: ubuntu-22.04
     permissions:
       actions: read
       contents: write
 
     steps:
-      - name: Download Linux packages
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+      - name: Check out release tooling
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          name: OpenChat-Linux-packages
-          path: release-artifacts/linux
+          ref: ${{ github.ref }}
+          persist-credentials: false
 
-      - name: Download Windows installer
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          name: OpenChat-Windows-installer
-          path: release-artifacts/windows
-
-      - name: Download macOS x86_64 package
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: OpenChat-macOS-x86_64
-          path: release-artifacts/macos-x86_64
-
-      - name: Download macOS ARM64 package
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: OpenChat-macOS-arm64
-          path: release-artifacts/macos-arm64
+          node-version: 22
 
       - name: Download SBOM artifact
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
@@ -455,24 +480,27 @@ jobs:
           name: OpenChat-SBOM
           path: release-artifacts/sbom
 
-      - name: Verify package integrity and prepare release assets
-        run: |
-          node scripts/release-integrity.mjs verify release-artifacts/linux
-          node scripts/release-integrity.mjs verify release-artifacts/windows
-          node scripts/release-integrity.mjs verify release-artifacts/macos-x86_64
-          node scripts/release-integrity.mjs verify release-artifacts/macos-arm64
-          mkdir -p release-artifacts/publish
-          find release-artifacts/linux release-artifacts/windows release-artifacts/macos-x86_64 release-artifacts/macos-arm64 -maxdepth 1 -type f ! -name SHA256SUMS -exec cp {} release-artifacts/publish/ \;
-          cp release-artifacts/sbom/OpenChat-SBOM.spdx.json release-artifacts/publish/
-          node scripts/release-integrity.mjs aggregate release-artifacts/publish
-
-      - name: Publish stable or preview release
+      - name: Add SBOM and checksums to the draft release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if [ "$GITHUB_REF" = "refs/heads/main" ]; then
-            release_tag="preview-${GITHUB_SHA}"
-            gh release create "$release_tag" --prerelease --target "$GITHUB_SHA" --title "OpenChat Preview ${GITHUB_SHA:0:12}" --generate-notes release-artifacts/publish/*
-          else
-            gh release create "$GITHUB_REF_NAME" --verify-tag --generate-notes release-artifacts/publish/*
+          set -euo pipefail
+          mkdir -p release-artifacts/publish
+          gh release download "$GITHUB_REF_NAME" --dir release-artifacts/publish
+          rm -f -- \
+            release-artifacts/publish/SHA256SUMS \
+            release-artifacts/publish/OpenChat-SBOM.spdx.json
+          cp release-artifacts/sbom/OpenChat-SBOM.spdx.json release-artifacts/publish/
+          test -n "$(find release-artifacts/publish -maxdepth 1 -type f -name '*.exe' -print -quit)"
+          test -n "$(find release-artifacts/publish -maxdepth 1 -type f -name '*.deb' -print -quit)"
+          test -n "$(find release-artifacts/publish -maxdepth 1 -type f -name '*.AppImage' -print -quit)"
+          dmg_count=$(find release-artifacts/publish -maxdepth 1 -type f -name '*.dmg' | wc -l)
+          if [[ "$dmg_count" -lt 2 ]]; then
+            echo "Both macOS architecture packages are required." >&2
+            exit 1
           fi
+          node scripts/release-integrity.mjs aggregate release-artifacts/publish
+          gh release upload "$GITHUB_REF_NAME" \
+            release-artifacts/publish/OpenChat-SBOM.spdx.json \
+            release-artifacts/publish/SHA256SUMS \
+            --clobber
