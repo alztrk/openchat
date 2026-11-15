@@ -352,6 +352,7 @@ fn llama_server_arguments_pass_a_single_matching_vision_projector() {
         path_kind: "file".to_owned(),
         created_at_unix_ms: 0,
         context_length: None,
+        declared_context_window: None,
     };
 
     let arguments =
@@ -408,6 +409,7 @@ fn llama_server_arguments_omit_projector_for_text_only_models() {
         path_kind: "file".to_owned(),
         created_at_unix_ms: 0,
         context_length: None,
+        declared_context_window: None,
     };
 
     let arguments =
@@ -429,6 +431,7 @@ fn llama_server_arguments_include_configured_hardware_options() {
         path_kind: "file".to_owned(),
         created_at_unix_ms: 0,
         context_length: None,
+        declared_context_window: None,
     };
 
     crate::local_engines::settings::update_settings(
