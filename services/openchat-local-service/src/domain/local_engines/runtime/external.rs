@@ -158,7 +158,7 @@ pub(crate) async fn chat_model_catalog(
                 .cloned()
                 .unwrap_or_else(|| ("managed".to_owned(), None));
             let engine_context_length = settings.context_length_for_engine(&model.engine_id);
-            let declared_context_window = model_json["contextWindow"]
+            let declared_context_window = model_json["declaredContextWindow"]
                 .as_u64()
                 .and_then(|value| u32::try_from(value).ok());
             let effective_context_window = effective_context_window(

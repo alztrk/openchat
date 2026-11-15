@@ -117,6 +117,7 @@ export const useModelDownloadStore = create<ModelDownloadState>((set, get) => ({
       const response = await operation.result;
       if (generation !== operationGeneration) return;
       set({ status: 'completed', result: parseDownloadResult(response) });
+      window.dispatchEvent(new Event('openchat-local-models-changed'));
     } catch (error) {
       if (generation !== operationGeneration) return;
       const errorCode = error instanceof LocalServiceError ? error.code : 'modelDownloadFailed';

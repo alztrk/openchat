@@ -35,13 +35,14 @@ pub(crate) struct RegisteredModel {
     pub(crate) path_kind: String,
     pub(crate) created_at_unix_ms: i64,
     pub(crate) context_length: Option<u32>,
+    pub(crate) declared_context_window: Option<u32>,
 }
 
 pub(crate) fn list(storage: &AppStorage) -> Result<Vec<RegisteredModel>, ServiceError> {
     let connection = connect(storage)?;
     let mut statement = connection
         .prepare(
-            "SELECT id, engine_id, display_name, model_path, path_kind, created_at_unix_ms, context_length
+            "SELECT id, engine_id, display_name, model_path, path_kind, created_at_unix_ms, context_length, declared_context_window
              FROM local_models WHERE engine_id IN ('llama_cpp', 'vllm', 'exllama', 'sglang')
              ORDER BY display_name COLLATE NOCASE, id",
         )
@@ -56,6 +57,7 @@ pub(crate) fn list(storage: &AppStorage) -> Result<Vec<RegisteredModel>, Service
                 path_kind: row.get(4)?,
                 created_at_unix_ms: row.get(5)?,
                 context_length: row.get(6)?,
+                declared_context_window: row.get(7)?,
             })
         })
         .map_err(|_| database_error())?;
@@ -206,7 +208,7 @@ pub(crate) fn find(
     let connection = connect(storage)?;
     connection
         .query_row(
-            "SELECT id, engine_id, display_name, model_path, path_kind, created_at_unix_ms, context_length
+            "SELECT id, engine_id, display_name, model_path, path_kind, created_at_unix_ms, context_length, declared_context_window
              FROM local_models WHERE id = ?1",
             [model_id],
             |row| {
@@ -218,6 +220,7 @@ pub(crate) fn find(
                     path_kind: row.get(4)?,
                     created_at_unix_ms: row.get(5)?,
                     context_length: row.get(6)?,
+                    declared_context_window: row.get(7)?,
                 })
             },
         )
@@ -373,9 +376,9 @@ fn register_validated(
     .to_owned();
     let connection = database_queue.connect().map_err(|_| database_error())?;
 
-    if let Some(model) = connection
+    if let Some(mut model) = connection
         .query_row(
-            "SELECT id, engine_id, display_name, model_path, path_kind, created_at_unix_ms, context_length
+            "SELECT id, engine_id, display_name, model_path, path_kind, created_at_unix_ms, context_length, declared_context_window
              FROM local_models WHERE engine_id = ?1 AND model_path = ?2",
             params![engine_id, path_string],
             |row| {
@@ -387,15 +390,28 @@ fn register_validated(
                     path_kind: row.get(4)?,
                     created_at_unix_ms: row.get(5)?,
                     context_length: row.get(6)?,
+                    declared_context_window: row.get(7)?,
                 })
             },
         )
         .optional()
         .map_err(|_| database_error())?
     {
+        if let Some(declared_context_window) = read_declared_context_window(&model.path, path_kind)
+            && model.declared_context_window != Some(declared_context_window)
+        {
+            connection
+                .execute(
+                    "UPDATE local_models SET declared_context_window = ?1 WHERE id = ?2",
+                    params![declared_context_window, model.id],
+                )
+                .map_err(|_| database_error())?;
+            model.declared_context_window = Some(declared_context_window);
+        }
         return Ok(model);
     }
 
+    let declared_context_window = read_declared_context_window(&model_path, path_kind);
     let model = RegisteredModel {
         id: Uuid::new_v4().to_string(),
         engine_id: engine_id.to_owned(),
@@ -404,12 +420,14 @@ fn register_validated(
         path_kind: path_kind.to_owned(),
         created_at_unix_ms: current_time_millis()?,
         context_length: None,
+        declared_context_window,
     };
     connection
         .execute(
             "INSERT INTO local_models (
-                id, engine_id, display_name, model_path, path_kind, created_at_unix_ms, context_length
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                id, engine_id, display_name, model_path, path_kind, created_at_unix_ms, context_length,
+                declared_context_window
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             params![
                 model.id,
                 model.engine_id,
@@ -418,10 +436,25 @@ fn register_validated(
                 model.path_kind,
                 model.created_at_unix_ms,
                 model.context_length,
+                model.declared_context_window,
             ],
         )
         .map_err(|_| database_error())?;
     Ok(model)
+}
+
+fn read_declared_context_window(model_path: &Path, path_kind: &str) -> Option<u32> {
+    let context_window = if path_kind == "file" {
+        super::gguf::inspect(model_path)
+            .ok()
+            .flatten()?
+            .context_window?
+    } else {
+        i64::from(super::transformers::read_context_window(model_path)?)
+    };
+    u32::try_from(context_window)
+        .ok()
+        .filter(|value| (MIN_MODEL_CONTEXT_LENGTH..=MAX_MODEL_CONTEXT_LENGTH).contains(value))
 }
 
 fn validate_model_path(
@@ -507,7 +540,7 @@ pub(crate) fn set_context_length(
     }
     connection
         .query_row(
-            "SELECT id, engine_id, display_name, model_path, path_kind, created_at_unix_ms, context_length
+            "SELECT id, engine_id, display_name, model_path, path_kind, created_at_unix_ms, context_length, declared_context_window
              FROM local_models WHERE id = ?1",
             [model_id],
             |row| {
@@ -519,6 +552,7 @@ pub(crate) fn set_context_length(
                     path_kind: row.get(4)?,
                     created_at_unix_ms: row.get(5)?,
                     context_length: row.get(6)?,
+                    declared_context_window: row.get(7)?,
                 })
             },
         )
@@ -546,6 +580,11 @@ pub(crate) fn to_json(model: &RegisteredModel, available: bool) -> Result<Value,
                 .flatten()
                 .map(i64::from)
         })
+        .or_else(|| model.declared_context_window.map(i64::from))
+        .filter(|value| {
+            (i64::from(MIN_MODEL_CONTEXT_LENGTH)..=i64::from(MAX_MODEL_CONTEXT_LENGTH))
+                .contains(value)
+        })
         .map_or(Value::Null, |context_window| json!(context_window));
     let effective_context_window = model.context_length.map(i64::from).map_or_else(
         || context_window.clone(),
@@ -562,6 +601,7 @@ pub(crate) fn to_json(model: &RegisteredModel, available: bool) -> Result<Value,
         "displayName": model.display_name,
         "description": Value::Null,
         "contextWindow": context_window,
+        "declaredContextWindow": context_window,
         "effectiveContextWindow": effective_context_window,
         "estimatedMemoryBytes": estimated_memory_bytes,
         "reasoningLevels": [],
@@ -1171,9 +1211,17 @@ mod tests {
 
         assert_eq!(model.engine_id, "vllm");
         assert_eq!(model.path_kind, "directory");
+        assert_eq!(model.declared_context_window, Some(65_536));
         assert_eq!(
             model.path,
             snapshot.canonicalize().expect("snapshot should resolve")
+        );
+        assert_eq!(
+            super::find(&storage, &model.id)
+                .expect("read the registered model")
+                .expect("registered model should exist")
+                .declared_context_window,
+            Some(65_536)
         );
         assert_eq!(
             to_json(&model, true).expect("model should serialize")["pathExists"],
@@ -1181,6 +1229,10 @@ mod tests {
         );
         assert_eq!(
             to_json(&model, true).expect("model context should serialize")["contextWindow"],
+            65_536
+        );
+        assert_eq!(
+            to_json(&model, true).expect("declared model context should serialize")["declaredContextWindow"],
             65_536
         );
     }
@@ -1434,6 +1486,7 @@ mod tests {
             path_kind: "file".to_owned(),
             created_at_unix_ms: 0,
             context_length: None,
+            declared_context_window: None,
         };
 
         let metadata = to_json(&model, true).expect("model metadata should serialize");

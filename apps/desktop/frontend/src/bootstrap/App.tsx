@@ -423,6 +423,19 @@ export function App() {
   }, [serviceStatus]);
 
   useEffect(() => {
+    if (serviceStatus !== 'ready') return;
+
+    const refreshLocalModelCatalog = () => {
+      void useChatStore.getState().refreshLocalModels().catch((cause: unknown) => {
+        globalThis.reportError(new Error('The local model catalog could not be refreshed after a download.', { cause }));
+      });
+    };
+
+    window.addEventListener('openchat-local-models-changed', refreshLocalModelCatalog);
+    return () => window.removeEventListener('openchat-local-models-changed', refreshLocalModelCatalog);
+  }, [serviceStatus]);
+
+  useEffect(() => {
     if (!isTauri() || serviceStatus !== 'ready') return;
     let disposed = false;
 

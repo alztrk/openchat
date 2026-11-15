@@ -17,6 +17,8 @@ const MAX_ARRAY_ELEMENTS: u64 = 1_000_000;
 const MAX_KEY_BYTES: u64 = 64 * 1024;
 const MAX_ARCHITECTURE_BYTES: u64 = 256;
 const MAX_METADATA_BYTES: u64 = 64 * 1024 * 1024;
+const MIN_CONTEXT_WINDOW: i64 = 128;
+const MAX_CONTEXT_WINDOW: i64 = 2_000_000;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct ModelMetadata {
@@ -90,7 +92,8 @@ pub(crate) fn inspect(path: &Path) -> io::Result<Option<ModelMetadata>> {
             .iter()
             .find_map(|(candidate, value)| (candidate == &key).then_some(*value).flatten())
     };
-    let context_window = value_for("context_length").filter(|value| *value > 0);
+    let context_window = value_for("context_length")
+        .filter(|value| (MIN_CONTEXT_WINDOW..=MAX_CONTEXT_WINDOW).contains(value));
     let estimated_memory_bytes = estimate_memory_bytes(
         file_size,
         context_window,
@@ -472,5 +475,27 @@ mod tests {
                 .context_window,
             None
         );
+    }
+
+    #[test]
+    fn rejects_sentinel_and_implausible_context_metadata() {
+        for context_window in [0, 127, 2_000_001, 1_000_000_000] {
+            let mut metadata = Vec::new();
+            push_string_value(&mut metadata, "general.architecture", "llama");
+            push_uint32_value(
+                &mut metadata,
+                "llama.context_length",
+                u32::try_from(context_window).expect("fixture context should fit in u32"),
+            );
+            let file = TestFile::new(&gguf(2, &metadata));
+
+            assert_eq!(
+                inspect(&file.0)
+                    .expect("metadata should parse")
+                    .expect("model architecture should exist")
+                    .context_window,
+                None
+            );
+        }
     }
 }

@@ -1874,5 +1874,19 @@ pub(super) fn apply_agent_migrations(
         current_version = 64;
     }
 
+    if current_version < 65 && target_version >= 65 {
+        let transaction = connection.unchecked_transaction()?;
+        transaction.execute_batch(
+            "ALTER TABLE local_models ADD COLUMN declared_context_window INTEGER
+                CHECK (declared_context_window IS NULL OR declared_context_window BETWEEN 128 AND 2000000);",
+        )?;
+        transaction.execute(
+            "INSERT INTO openchat_backend_migrations (version, applied_at_unix_ms) VALUES (65, ?1)",
+            [unix_time_millis()?],
+        )?;
+        transaction.commit()?;
+        current_version = 65;
+    }
+
     Ok(current_version)
 }

@@ -77,6 +77,48 @@ fn migration_64_adds_a_bounded_per_model_context_override() {
 }
 
 #[test]
+fn migration_65_adds_a_bounded_declared_context_window() {
+    let connection = memory_index_repair_fixture(64);
+    connection
+        .execute(
+            "INSERT INTO local_models (
+                id, engine_id, display_name, model_path, path_kind, created_at_unix_ms, context_length
+             ) VALUES ('model-1', 'vllm', 'Model', 'C:/models/model', 'directory', 1, 32768)",
+            [],
+        )
+        .expect("register a model before the metadata migration");
+
+    assert_eq!(
+        initialize_schema(&connection, 65).expect("add declared model context metadata"),
+        65
+    );
+    assert_eq!(
+        connection
+            .query_row(
+                "SELECT context_length, declared_context_window FROM local_models WHERE id = 'model-1'",
+                [],
+                |row| Ok((row.get::<_, Option<i64>>(0)?, row.get::<_, Option<i64>>(1)?)),
+            )
+            .expect("read migrated model context values"),
+        (Some(32768), None)
+    );
+    connection
+        .execute(
+            "UPDATE local_models SET declared_context_window = 131072 WHERE id = 'model-1'",
+            [],
+        )
+        .expect("store valid declared context metadata");
+    assert!(
+        connection
+            .execute(
+                "UPDATE local_models SET declared_context_window = 2000001 WHERE id = 'model-1'",
+                [],
+            )
+            .is_err()
+    );
+}
+
+#[test]
 fn latest_schema_recreates_missing_conversation_context_state() {
     let connection = memory_index_repair_fixture(SCHEMA_VERSION);
     connection
