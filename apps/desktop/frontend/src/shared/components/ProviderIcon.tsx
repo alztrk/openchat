@@ -52,7 +52,7 @@ export interface ProviderIconProps {
 }
 
 export function ProviderIcon({ className, providerId, size = 24, tone = 'secondary' }: ProviderIconProps) {
-  if (providerId === 'llama_cpp') {
+  if (providerId === 'llama_cpp' || providerId === 'vllm' || providerId === 'sglang') {
     return <LocalEngineIcon className={className} engineId={providerId} size={size} tone={tone} />;
   }
   if (providerId === 'favorites') {
