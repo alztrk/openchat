@@ -1,4 +1,4 @@
-import { Microchip } from 'lucide-react';
+import { Microchip, Zap } from 'lucide-react';
 
 const llamaCppIconUrl = new URL('./assets/llama-cpp.svg', import.meta.url).href;
 const sglangIconUrl = new URL('./assets/sglang.svg', import.meta.url).href;
@@ -44,6 +44,16 @@ export function LocalEngineIcon({ className, engineId, size = 22, tone = 'second
         height={size}
         src={sglangIconUrl}
         width={size}
+      />
+    );
+  }
+
+  if (engineId === 'exllama') {
+    return (
+      <Zap
+        aria-hidden="true"
+        className={`shrink-0 ${tone === 'accent' ? 'text-accent-icon' : 'text-secondary-icon'}${className ? ` ${className}` : ''}`}
+        size={size}
       />
     );
   }

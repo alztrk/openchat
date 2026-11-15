@@ -3,6 +3,7 @@ import { type FormEvent, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Button, Dialog, Input } from '@shared/components';
+import { formatDisplayPath } from '@shared/lib/utils/pathDisplay';
 import { discardProjectFolderSelection, selectProjectFolder } from '@shared/lib/platform/tauri';
 
 /** Props for collecting a project name and native folder selection. */
@@ -165,7 +166,7 @@ export function CreateProjectDialog({ open: isOpen, onOpenChange, onCreate }: Cr
             disabled={isBusy || isSelectingFolder}
             onClick={() => void selectFolder()}
             ref={folderButtonRef}
-            title={folderPath ?? t('chooseProjectFolder')}
+            title={folderPath ? formatDisplayPath(folderPath) : t('chooseProjectFolder')}
             type="button"
             variant="secondary"
           >
@@ -186,8 +187,12 @@ export function CreateProjectDialog({ open: isOpen, onOpenChange, onCreate }: Cr
               <div className="grid min-w-0 flex-1 gap-0.5">
                 {folderPath ? (
                   <>
-                    <span className="truncate text-sm font-medium text-text">{getFolderBaseName(folderPath)}</span>
-                    <span className="truncate font-code text-xs text-secondary-text">{folderPath}</span>
+                    <span className="truncate text-sm font-medium text-text">
+                      {getFolderBaseName(formatDisplayPath(folderPath))}
+                    </span>
+                    <span className="truncate font-code text-xs text-secondary-text">
+                      {formatDisplayPath(folderPath)}
+                    </span>
                   </>
                 ) : (
                   <span className="truncate text-sm text-secondary-text group-hover:text-text">

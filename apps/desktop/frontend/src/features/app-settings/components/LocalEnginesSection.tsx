@@ -2,6 +2,7 @@ import { FolderOpen, Link, LoaderCircle, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button, Card, Dialog } from '@shared/components';
+import { formatDisplayPath } from '@shared/lib/utils/pathDisplay';
 import { toast } from '@shared/lib/toast';
 import { SettingsSectionSkeleton } from './SettingsSectionSkeleton';
 import type {
@@ -682,7 +683,9 @@ export function LocalEnginesSection() {
               {discovery.models.map((model) => (
                 <li className="border-b border-border py-2 last:border-b-0" key={`${model.engineId}:${model.path}`}>
                   <p className="break-words text-sm font-medium text-text">{model.displayName}</p>
-                  <p className="mt-1 break-all font-mono text-xs text-secondary-text">{model.path}</p>
+                  <p className="mt-1 break-all font-mono text-xs text-secondary-text">
+                    {formatDisplayPath(model.path)}
+                  </p>
                 </li>
               ))}
             </ul>
@@ -713,7 +716,7 @@ export function LocalEnginesSection() {
         {removeTarget ? (
           <div className="grid gap-4">
             <p className="text-sm text-secondary-text">{t('localModelRemoveConfirmation')}</p>
-            <p className="break-all font-mono text-xs text-text">{removeTarget.path}</p>
+            <p className="break-all font-mono text-xs text-text">{formatDisplayPath(removeTarget.path)}</p>
             <div className="flex justify-end gap-2">
               <Button disabled={activeAction === 'remove'} onClick={() => setRemoveTarget(null)}>
                 {t('cancel')}

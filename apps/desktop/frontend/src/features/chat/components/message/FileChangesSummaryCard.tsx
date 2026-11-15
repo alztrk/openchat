@@ -1,5 +1,6 @@
 import { FileDiff, FilePlus2, Info, NotebookPen, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { formatDisplayPath } from '@shared/lib/utils/pathDisplay';
 
 import { Button, TitleTooltip } from '@shared/components';
 import type { ChatFileChange } from '@features/chat/data/chatFileChanges';
@@ -67,33 +68,36 @@ export function FileChangesSummaryCard({
       </div>
       {activeChanges.length > 0 ? (
         <ul className="grid border-t border-border py-1">
-          {activeChanges.slice(0, 3).map((change) => (
-            <li className="flex min-w-0 items-center gap-2 px-3 py-2 text-xs" key={change.id}>
-              <FileKindIcon kind={change.kind} />
-              {onOpenFile ? (
-                <Button
-                  aria-label={t('workspaceFileContent', { name: change.path })}
-                  className="min-w-0 flex-1 justify-start truncate px-0 text-left text-xs text-text hover:text-accent"
-                  onClick={() => onOpenFile(change)}
-                  size="small"
-                  title={change.path}
-                  variant="ghost"
-                >
-                  {change.path}
-                </Button>
-              ) : (
-                <TitleTooltip title={change.path}><span className="min-w-0 flex-1 truncate text-text" >
-                  {change.path}
-                </span></TitleTooltip>
-              )}
-              {change.addedLines !== null ? (
-                <span className="shrink-0 font-semibold text-success">+{change.addedLines}</span>
-              ) : null}
-              {change.removedLines !== null ? (
-                <span className="shrink-0 font-semibold text-destructive">-{change.removedLines}</span>
-              ) : null}
-            </li>
-          ))}
+          {activeChanges.slice(0, 3).map((change) => {
+            const displayPath = formatDisplayPath(change.path);
+            return (
+              <li className="flex min-w-0 items-center gap-2 px-3 py-2 text-xs" key={change.id}>
+                <FileKindIcon kind={change.kind} />
+                {onOpenFile ? (
+                  <Button
+                    aria-label={t('workspaceFileContent', { name: displayPath })}
+                    className="min-w-0 flex-1 justify-start truncate px-0 text-left text-xs text-text hover:text-accent"
+                    onClick={() => onOpenFile(change)}
+                    size="small"
+                    title={displayPath}
+                    variant="ghost"
+                  >
+                    {displayPath}
+                  </Button>
+                ) : (
+                  <TitleTooltip title={displayPath}>
+                    <span className="min-w-0 flex-1 truncate text-text">{displayPath}</span>
+                  </TitleTooltip>
+                )}
+                {change.addedLines !== null ? (
+                  <span className="shrink-0 font-semibold text-success">+{change.addedLines}</span>
+                ) : null}
+                {change.removedLines !== null ? (
+                  <span className="shrink-0 font-semibold text-destructive">-{change.removedLines}</span>
+                ) : null}
+              </li>
+            );
+          })}
           {activeChanges.length > 3 ? (
             <li className="px-3 pb-2 text-xs text-secondary-text">
               {t('fileChangesMoreFiles', { count: activeChanges.length - 3 })}

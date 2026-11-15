@@ -17,6 +17,7 @@ import {
   writeStartupSurfacePreference,
 } from '@features/app-settings/data/appPreferences';
 import { localServiceClient } from '@shared/lib/platform/local-service';
+import { formatDisplayPath } from '@shared/lib/utils/pathDisplay';
 import { unifiedStorage, whenUnifiedStorageReady } from '@shared/lib/platform/storage/unifiedStorage';
 import { isTauri, open } from '@shared/lib/platform/tauri';
 
@@ -143,7 +144,7 @@ export function AppWindowSettingsSection() {
                   loading={choosingFolder}
                   loadingContent={t('defaultWorkspaceChooseFolder')}
                   onClick={() => void chooseDefaultWorkspace()}
-                  title={defaultWorkspacePath || undefined}
+                  title={defaultWorkspacePath ? formatDisplayPath(defaultWorkspacePath) : undefined}
                   variant="secondary"
                 >
                   <FolderOpen aria-hidden="true" className="shrink-0 text-secondary-text" size={16} />
@@ -154,7 +155,9 @@ export function AppWindowSettingsSection() {
                         : 'min-w-0 flex-1 truncate text-sm text-secondary-text'
                     }
                   >
-                    {defaultWorkspacePath || t('defaultWorkspacePlaceholder')}
+                    {defaultWorkspacePath
+                      ? formatDisplayPath(defaultWorkspacePath)
+                      : t('defaultWorkspacePlaceholder')}
                   </span>
                   <span className="shrink-0 text-xs font-medium text-accent">{t('defaultWorkspaceChooseFolder')}</span>
                 </Button>

@@ -260,7 +260,7 @@ export function ToolActivityAccordion({
         {isFileEditTool && toolFileName ? (
           editedFile && onOpenEditedFile ? (
             <Button
-              aria-label={`${t('fileChangesView')}: ${editedFile.path}`}
+              aria-label={`${t('fileChangesView')}: ${formatToolPath(editedFile.path)}`}
               className="h-6 min-h-0 min-w-0 flex-1 justify-start truncate bg-transparent px-0 text-xs text-secondary-text hover:bg-transparent hover:text-accent"
               onClick={(event) => {
                 event.preventDefault();
@@ -268,14 +268,14 @@ export function ToolActivityAccordion({
                 onOpenEditedFile(editedFile);
               }}
               size="small"
-              title={editedFile.path}
+              title={formatToolPath(editedFile.path)}
               type="button"
               variant="ghost"
             >
               {toolFileName}
             </Button>
           ) : (
-            <TitleTooltip title={requestedPath ?? undefined}><span className="min-w-0 flex-1 truncate text-xs text-secondary-text" >
+            <TitleTooltip title={requestedPath ? formatToolPath(requestedPath) : undefined}><span className="min-w-0 flex-1 truncate text-xs text-secondary-text" >
               {toolFileName}
             </span></TitleTooltip>
           )
@@ -283,7 +283,7 @@ export function ToolActivityAccordion({
         {isFileReadTool && toolFileName && requestedPath ? (
           onOpenFile && readFileContent !== null ? (
             <Button
-              aria-label={t('workspaceFileContent', { name: requestedPath })}
+              aria-label={t('workspaceFileContent', { name: formatToolPath(requestedPath) })}
               className="h-6 min-h-0 min-w-0 flex-1 justify-start truncate bg-transparent px-0 text-xs text-secondary-text hover:bg-transparent hover:text-accent"
               onClick={(event) => {
                 event.preventDefault();
@@ -291,14 +291,14 @@ export function ToolActivityAccordion({
                 onOpenFile(requestedPath, readFileContent);
               }}
               size="small"
-              title={requestedPath}
+              title={formatToolPath(requestedPath)}
               type="button"
               variant="ghost"
             >
               {toolFileName}
             </Button>
           ) : (
-            <TitleTooltip title={requestedPath}><span className="min-w-0 flex-1 truncate text-xs text-secondary-text" >
+            <TitleTooltip title={formatToolPath(requestedPath)}><span className="min-w-0 flex-1 truncate text-xs text-secondary-text" >
               {toolFileName}
             </span></TitleTooltip>
           )
@@ -406,8 +406,8 @@ export function ToolActivityAccordion({
             <ul aria-label={t('fileChangesRecoveryFiles')} className="grid gap-1 text-xs text-secondary-text">
               {activity.fileChanges.slice(0, 3).map((change) => (
                 <li className="truncate" key={change.id}>
-                  <TitleTooltip title={change.path}>
-                    <span className="contents">{change.path}</span>
+                  <TitleTooltip title={formatToolPath(change.path)}>
+                    <span className="contents">{formatToolPath(change.path)}</span>
                   </TitleTooltip>
                 </li>
               ))}
@@ -434,8 +434,8 @@ export function ToolActivityAccordion({
                   >
                     {activity.fileChanges.slice(3).map((change) => (
                       <li className="truncate" key={change.id}>
-                        <TitleTooltip title={change.path}>
-                          <span className="contents">{change.path}</span>
+                        <TitleTooltip title={formatToolPath(change.path)}>
+                          <span className="contents">{formatToolPath(change.path)}</span>
                         </TitleTooltip>
                       </li>
                     ))}

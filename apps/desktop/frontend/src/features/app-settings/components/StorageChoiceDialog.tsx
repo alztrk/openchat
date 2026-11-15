@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { Button } from '@shared/components';
+import { formatDisplayPath } from '@shared/lib/utils/pathDisplay';
 
 export function StorageChoiceDialog({
   active,
@@ -17,8 +18,10 @@ export function StorageChoiceDialog({
   const { t } = useTranslation();
   return (
     <div className="grid gap-4">
-      <p className="break-all font-mono text-xs text-secondary-text">{path}</p>
-      <p className="text-sm text-secondary-text">{t('localModelStorageChoiceTarget', { folder: targetDirectory })}</p>
+      <p className="break-all font-mono text-xs text-secondary-text">{formatDisplayPath(path)}</p>
+      <p className="text-sm text-secondary-text">
+        {t('localModelStorageChoiceTarget', { folder: formatDisplayPath(targetDirectory) })}
+      </p>
       <div className="grid gap-2">
         <Button disabled={active} onClick={() => onChoose('move')} variant="secondary">
           {t('localModelMoveToFolder')}

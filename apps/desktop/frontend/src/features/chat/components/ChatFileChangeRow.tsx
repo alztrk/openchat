@@ -48,6 +48,7 @@ import SiVuedotjs from '@icons-pack/react-simple-icons/icons/SiVuedotjs';
 import SiYaml from '@icons-pack/react-simple-icons/icons/SiYaml';
 import SiZig from '@icons-pack/react-simple-icons/icons/SiZig';
 import { useTranslation } from 'react-i18next';
+import { formatDisplayPath } from '@shared/lib/utils/pathDisplay';
 import { Button, TitleTooltip } from '@shared/components';
 import type { ChatFileChange } from '@features/chat/data/chatFileChanges';
 
@@ -171,6 +172,7 @@ export function FileChangeRow({
   onRevert,
 }: FileChangeRowProps) {
   const { t } = useTranslation();
+  const displayPath = formatDisplayPath(change.path);
   return (
     <li
       className={`mx-0 flex min-h-12 w-full items-center gap-1.5 border-y border-border px-2 ${isSelected ? 'bg-composer' : ''}`}
@@ -180,13 +182,13 @@ export function FileChangeRow({
         className="min-h-0 min-w-0 flex-1 justify-start gap-2 bg-transparent py-1 text-left hover:bg-transparent focus-visible:bg-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
         onClick={onSelect}
         size="small"
-        title={change.path}
+        title={displayPath}
         type="button"
         variant="ghost"
       >
         <FileTypeIcon path={change.path} />
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-xs font-medium text-text">{change.path}</span>
+          <span className="block truncate text-xs font-medium text-text">{displayPath}</span>
         </span>
         {change.addedLines !== null || change.removedLines !== null ? (
           <span className="flex shrink-0 gap-1 text-xs font-semibold">
@@ -198,7 +200,7 @@ export function FileChangeRow({
       {change.status === 'active' && !change.approved ? (
         <div className="flex shrink-0 items-center gap-1">
           <Button
-            aria-label={`${t('fileChangesApprove')}: ${change.path}`}
+            aria-label={`${t('fileChangesApprove')}: ${displayPath}`}
             className="h-7 px-2 text-xs text-success hover:text-success"
             disabled={isMutating || isAnyMutating}
             onClick={onApprove}
@@ -211,7 +213,7 @@ export function FileChangeRow({
           </Button>
           {change.canRevert ? (
             <Button
-              aria-label={`${t('fileChangesRevert')}: ${change.path}`}
+              aria-label={`${t('fileChangesRevert')}: ${displayPath}`}
               className="h-7 px-2 text-xs"
               disabled={isMutating || isAnyMutating}
               onClick={onRevert}

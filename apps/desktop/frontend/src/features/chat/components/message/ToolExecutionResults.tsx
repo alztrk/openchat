@@ -287,7 +287,7 @@ export function GitResult({
                 className="flex min-h-9 flex-wrap items-center gap-2 border-b border-border px-2.5 py-2 last:border-b-0"
                 key={file.path}
               >
-                <TitleTooltip title={file.path}><span className="min-w-0 flex-1 truncate font-code text-xs text-text" >
+                <TitleTooltip title={formatToolPath(file.path)}><span className="min-w-0 flex-1 truncate font-code text-xs text-text" >
                   {formatToolPath(file.path)}
                 </span></TitleTooltip>
                 <span className="text-xs text-secondary-text">{file.status}</span>

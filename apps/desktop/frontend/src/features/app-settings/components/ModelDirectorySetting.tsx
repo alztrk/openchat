@@ -5,6 +5,7 @@ import { Button, Card, Input, Skeleton } from '@shared/components';
 import { useModelDirectoryStore } from '@features/app-settings/stores';
 import { localServiceClient } from '@shared/lib/platform/local-service';
 import { open } from '@shared/lib/platform/tauri';
+import { formatDisplayPath, restoreDisplayPathPrefix } from '@shared/lib/utils/pathDisplay';
 
 type LoadState = 'loading' | 'ready' | 'error';
 
@@ -81,8 +82,8 @@ export function ModelDirectorySetting() {
           aria-label={t('localModelDirectoryTitle')}
           className="font-mono text-xs"
           disabled={loadState !== 'ready'}
-          onChange={(event) => setDirectory(event.target.value)}
-          value={directory}
+          onChange={(event) => setDirectory(restoreDisplayPathPrefix(event.target.value, directory))}
+          value={formatDisplayPath(directory)}
         />
       </div>
       <div className="flex flex-wrap gap-2">

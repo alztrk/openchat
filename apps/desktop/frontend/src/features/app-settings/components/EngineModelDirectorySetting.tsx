@@ -1,6 +1,7 @@
 import { FolderOpen, LoaderCircle, Search } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@shared/components';
+import { formatDisplayPath } from '@shared/lib/utils/pathDisplay';
 
 export function EngineModelDirectorySetting({
   available,
@@ -27,7 +28,7 @@ export function EngineModelDirectorySetting({
       <div className="min-w-0 sm:flex-1">
         <h4 className="text-sm font-semibold text-text">{t('localModelDirectoryTitle')}</h4>
         <p className={`mt-1 break-all font-mono text-xs ${available ? 'text-secondary-text' : 'text-warning'}`}>
-          {directory}
+          {formatDisplayPath(directory)}
         </p>
       </div>
       <div className="flex flex-wrap gap-1.5">

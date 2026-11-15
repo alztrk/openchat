@@ -7,6 +7,7 @@ import {
   type ServiceErrorCategory,
 } from '@shared/lib/platform/local-service';
 import { parseInertHtmlFragment } from '@shared/lib/utils/inertHtml';
+import { formatDisplayPath } from '@shared/lib/utils/pathDisplay';
 import { isSafeHttpUrl, type ToolActivity } from './messageData';
 
 export type ToolRecord = Record<string, unknown>;
@@ -99,14 +100,7 @@ export function getReadFileLineRange(activity: ToolActivity): { start: number; e
   return start !== null && end !== null && start > 0 && end >= start ? { start, end } : null;
 }
 
-export function formatToolPath(path: string): string {
-  const extendedUncPrefix = '\\\\?\\UNC\\';
-  if (path.toLowerCase().startsWith(extendedUncPrefix.toLowerCase())) {
-    return `\\\\${path.slice(extendedUncPrefix.length)}`;
-  }
-  const extendedPathPrefix = '\\\\?\\';
-  return path.startsWith(extendedPathPrefix) ? path.slice(extendedPathPrefix.length) : path;
-}
+export const formatToolPath = formatDisplayPath;
 
 /** Translates known tool errors and keeps unknown backend messages out of the UI. */
 export function translateToolError(output: ToolRecord | null, t: TFunction): string | null {

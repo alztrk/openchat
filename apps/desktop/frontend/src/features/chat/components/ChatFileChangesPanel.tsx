@@ -16,6 +16,7 @@ import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState } fr
 import { useTranslation } from 'react-i18next';
 
 import { Button, DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@shared/components';
+import { formatDisplayPath } from '@shared/lib/utils/pathDisplay';
 import {
   approveAllConversationFileChanges,
   approveConversationFileChange,
@@ -800,7 +801,10 @@ export function ChatFileChangesPanel({
                         }}
                       />
                       {selectedChangeId === change.id ? (
-                        <li aria-label={selectedDiff?.path ?? change.path} className="chat-file-change-inline-diff">
+                        <li
+                          aria-label={formatDisplayPath(selectedDiff?.path ?? change.path)}
+                          className="chat-file-change-inline-diff"
+                        >
                           <div className="chat-file-change-inline-diff-content">
                             <DiffContent
                               canRevertHunks={

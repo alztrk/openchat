@@ -60,7 +60,7 @@ export function FileListingResult({
         {location ? (
           <>
             <FolderOpen aria-hidden="true" className="shrink-0" size={15} />
-            <TitleTooltip title={location}><span className="min-w-0 flex-1 truncate" >
+            <TitleTooltip title={formatToolPath(location)}><span className="min-w-0 flex-1 truncate" >
               {formatToolPath(location)}
             </span></TitleTooltip>
           </>
@@ -152,7 +152,7 @@ export function SearchResult({
                     {formatToolPath(match.path)}
                   </Button>
                 ) : (
-                  <TitleTooltip title={match.path}><span className="min-w-0 flex-1 truncate" >
+                  <TitleTooltip title={formatToolPath(match.path)}><span className="min-w-0 flex-1 truncate" >
                     {formatToolPath(match.path)}
                   </span></TitleTooltip>
                 )}
@@ -269,10 +269,10 @@ export function FileInfoResult({ output, locale }: { output: ToolRecord; locale:
           {isDirectory ? <Folder aria-hidden="true" size={20} /> : <File aria-hidden="true" size={20} />}
         </span>
         <div className="min-w-0">
-          <TitleTooltip title={path}><p className="truncate text-sm font-semibold text-text" >
+          <TitleTooltip title={formatToolPath(path)}><p className="truncate text-sm font-semibold text-text" >
             {pathName(path)}
           </p></TitleTooltip>
-          <TitleTooltip title={path}><p className="mt-0.5 break-all text-xs text-secondary-text" >
+          <TitleTooltip title={formatToolPath(path)}><p className="mt-0.5 break-all text-xs text-secondary-text" >
             {formatToolPath(path)}
           </p></TitleTooltip>
         </div>

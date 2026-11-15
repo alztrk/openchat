@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Button, TitleTooltip } from '@shared/components';
+import { formatDisplayPath } from '@shared/lib/utils/pathDisplay';
 import type { ChatProject } from '@entities/project';
 import {
   addProjectWorkspaceRoot,
@@ -14,7 +15,6 @@ import { discardProjectFolderSelection, selectProjectFolder } from '@shared/lib/
 interface ProjectWorkspaceRootsPanelProps {
   project: ChatProject;
 }
-
 type ErrorKey = 'projectRootSelectionFailed' | 'projectRootAddFailed' | 'projectRootRemoveFailed';
 
 export function ProjectWorkspaceRootsPanel({ project }: ProjectWorkspaceRootsPanelProps) {
@@ -94,7 +94,7 @@ export function ProjectWorkspaceRootsPanel({ project }: ProjectWorkspaceRootsPan
       </div>
       <ul className="grid gap-2">
         {roots.map((rootPath, index) => {
-          const displayPath = displayProjectPath(rootPath);
+          const displayPath = formatDisplayPath(rootPath);
           return (
             <li
               className="flex min-w-0 items-center gap-2 rounded-control border border-border bg-surface px-3 py-2"
@@ -148,8 +148,4 @@ export function ProjectWorkspaceRootsPanel({ project }: ProjectWorkspaceRootsPan
       </Button>
     </section>
   );
-}
-
-function displayProjectPath(path: string): string {
-  return path.replace(/^\\\\\?\\UNC\\/i, '\\\\').replace(/^\\\\\?\\/, '');
 }

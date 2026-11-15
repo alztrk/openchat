@@ -9,7 +9,7 @@ export function PathHeading({ path }: { path: string }) {
   return (
     <p className="flex min-w-0 items-center gap-2 text-xs text-secondary-text">
       <File aria-hidden="true" className="shrink-0" size={14} />
-      <TitleTooltip title={path}><span className="truncate" >
+      <TitleTooltip title={formatToolPath(path)}><span className="truncate" >
         {formatToolPath(path)}
       </span></TitleTooltip>
     </p>
@@ -134,7 +134,7 @@ export function ToolResultNotice({
           {message}
         </span>
         {path ? (
-          <TitleTooltip title={path}><p className="mt-1 break-all font-code text-secondary-text" >
+          <TitleTooltip title={formatToolPath(path)}><p className="mt-1 break-all font-code text-secondary-text" >
             {formatToolPath(path)}
           </p></TitleTooltip>
         ) : null}
