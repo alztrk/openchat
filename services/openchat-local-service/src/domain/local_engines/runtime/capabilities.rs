@@ -72,7 +72,7 @@ pub(super) async fn runtime_capabilities_or_cancel(
         }
         capabilities = async {
             match engine_id {
-                "vllm" => read_vllm_runtime_capabilities(port, api_key).await,
+                "vllm" | "sglang" => read_model_list_runtime_capabilities(port, api_key).await,
                 _ => read_runtime_capabilities(port, api_key).await,
             }
         } => capabilities,
@@ -87,12 +87,12 @@ pub(super) async fn read_runtime_capabilities(
     parse_runtime_capabilities(&properties)
 }
 
-pub(super) async fn read_vllm_runtime_capabilities(
+pub(super) async fn read_model_list_runtime_capabilities(
     port: u16,
     api_key: Option<&str>,
 ) -> Result<RuntimeCapabilities, ServiceError> {
     let models = read_capability_endpoint(port, "/v1/models", api_key).await?;
-    parse_vllm_runtime_capabilities(&models)
+    parse_model_list_runtime_capabilities(&models)
 }
 
 async fn read_capability_endpoint(
@@ -139,7 +139,7 @@ async fn read_capability_endpoint(
     serde_json::from_slice::<Value>(&body).map_err(|_| runtime_capability_error())
 }
 
-pub(super) fn parse_vllm_runtime_capabilities(
+pub(super) fn parse_model_list_runtime_capabilities(
     models: &Value,
 ) -> Result<RuntimeCapabilities, ServiceError> {
     let context_window = models

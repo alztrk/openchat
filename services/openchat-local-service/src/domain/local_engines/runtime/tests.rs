@@ -23,10 +23,10 @@ use super::{
     excluding_managed_server_processes, external_model_json, external_model_route_id,
     external_server_for_route, external_server_group_id, health_check_or_cancel,
     installed_engine_for, llama_server_arguments, managed_server_group_id, model_lifecycle,
-    parse_external_capabilities, parse_external_model_ids, parse_runtime_capabilities,
-    parse_vllm_runtime_capabilities, read_runtime_capabilities, read_vllm_runtime_capabilities,
-    remove_external_server, retain_detected_external_servers, runtime_failure_code,
-    runtime_status_json, start_model,
+    parse_external_capabilities, parse_external_model_ids, parse_model_list_runtime_capabilities,
+    parse_runtime_capabilities, read_model_list_runtime_capabilities, read_runtime_capabilities,
+    remove_external_server, retain_detected_external_servers, runtime_capabilities_or_cancel,
+    runtime_failure_code, runtime_status_json, start_model,
 };
 
 struct TestDirectory(PathBuf);
@@ -780,11 +780,11 @@ fn parses_only_reported_runtime_capabilities() {
 }
 
 #[test]
-fn parses_vllm_model_card_context_window_without_inventing_other_capabilities() {
-    let capabilities = parse_vllm_runtime_capabilities(&serde_json::json!({
+fn parses_model_card_context_window_without_inventing_other_capabilities() {
+    let capabilities = parse_model_list_runtime_capabilities(&serde_json::json!({
         "data": [{"id": "model", "max_model_len": 32768}]
     }))
-    .expect("vLLM model catalog should expose the context window");
+    .expect("model catalog should expose the context window");
 
     assert_eq!(
         capabilities,
@@ -797,7 +797,7 @@ fn parses_vllm_model_card_context_window_without_inventing_other_capabilities() 
 }
 
 #[tokio::test]
-async fn reads_vllm_runtime_capabilities_from_authenticated_models_endpoint() {
+async fn reads_model_list_capabilities_from_authenticated_models_endpoint() {
     let listener = TcpListener::bind("127.0.0.1:0")
         .await
         .expect("the vLLM models endpoint should bind");
@@ -823,13 +823,53 @@ async fn reads_vllm_runtime_capabilities_from_authenticated_models_endpoint() {
         request
     });
 
-    let capabilities = read_vllm_runtime_capabilities(port, Some("fixture-token"))
+    let capabilities = read_model_list_runtime_capabilities(port, Some("fixture-token"))
         .await
-        .expect("vLLM capability request should succeed");
+        .expect("model-list capability request should succeed");
     assert_eq!(capabilities.context_window, Some(8192));
+    let request = responder.await.expect("the models server should finish");
+    let request = String::from_utf8_lossy(&request).to_ascii_lowercase();
+    assert!(request.contains("get /v1/models http/1.1"));
+    assert!(request.contains("authorization: bearer fixture-token"));
+}
+
+#[tokio::test]
+async fn discovers_sglang_context_through_its_model_list_endpoint() {
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("the SGLang models endpoint should bind");
+    let port = listener
+        .local_addr()
+        .expect("the SGLang models endpoint should have an address")
+        .port();
+    let responder = tokio::spawn(async move {
+        let (mut stream, _) = listener
+            .accept()
+            .await
+            .expect("the SGLang models request should reach the test endpoint");
+        let request = read_request_headers(&mut stream).await;
+        let body = r#"{"data":[{"id":"model","max_model_len":65536}]}"#;
+        let response = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            body.len()
+        );
+        stream
+            .write_all(response.as_bytes())
+            .await
+            .expect("the SGLang models response should be written");
+        request
+    });
+
+    let (_cancel, mut cancellation) = watch::channel(false);
+    let capabilities =
+        runtime_capabilities_or_cancel("sglang", port, Some("fixture-token"), &mut cancellation)
+            .await
+            .expect("SGLang capabilities should be read from its model card");
+    assert_eq!(capabilities.context_window, Some(65_536));
+
     let request = responder
         .await
-        .expect("the vLLM models server should finish");
+        .expect("the SGLang models server should finish");
     let request = String::from_utf8_lossy(&request).to_ascii_lowercase();
     assert!(request.contains("get /v1/models http/1.1"));
     assert!(request.contains("authorization: bearer fixture-token"));
