@@ -19,7 +19,10 @@ export function VllmRuntimeSetting({
 
   const updateNumber = (key: 'vllmMaxModelLen' | 'vllmPort' | 'vllmGpuMemoryUtilization' | 'vllmTensorParallelSize' | 'vllmMaxNumSeqs', value: string) => {
     const parsed = value.trim() === '' ? null : Number(value);
-    if (parsed === null || Number.isFinite(parsed)) setDraft((current) => ({ ...current, [key]: parsed }));
+    const integerSetting = key !== 'vllmGpuMemoryUtilization';
+    if (parsed === null || (Number.isFinite(parsed) && (!integerSetting || Number.isSafeInteger(parsed)))) {
+      setDraft((current) => ({ ...current, [key]: parsed }));
+    }
   };
   const dirty =
     draft.vllmMaxModelLen !== settings.vllmMaxModelLen ||
@@ -35,7 +38,7 @@ export function VllmRuntimeSetting({
     <Card className="grid gap-4 bg-surface" padding="compact">
       <h4 className="font-semibold text-text">{t('localEngineVllmSettings')}</h4>
       <div className="grid gap-3 sm:grid-cols-2">
-        <NumberSetting label={t('localEngineVllmMaxModelLen')} value={draft.vllmMaxModelLen} onChange={(value) => updateNumber('vllmMaxModelLen', value)} />
+        <NumberSetting description={t('localEngineContextSizeDescription')} label={t('localEngineVllmMaxModelLen')} max="2000000" min="128" value={draft.vllmMaxModelLen} onChange={(value) => updateNumber('vllmMaxModelLen', value)} />
         <NumberSetting label={t('localEngineVllmPort')} value={draft.vllmPort} onChange={(value) => updateNumber('vllmPort', value)} min="1024" max="65535" />
         <NumberSetting label={t('localEngineVllmGpuMemory')} value={draft.vllmGpuMemoryUtilization} onChange={(value) => updateNumber('vllmGpuMemoryUtilization', value)} step="0.01" min="0.1" max="0.99" />
         <NumberSetting label={t('localEngineVllmTensorParallel')} value={draft.vllmTensorParallelSize} onChange={(value) => updateNumber('vllmTensorParallelSize', value)} min="1" max="16" />
@@ -80,6 +83,7 @@ export function VllmRuntimeSetting({
 }
 
 function NumberSetting({
+  description,
   label,
   max,
   min,
@@ -87,6 +91,7 @@ function NumberSetting({
   step = '1',
   value,
 }: {
+  description?: string;
   label: string;
   max?: string;
   min?: string;
@@ -94,7 +99,5 @@ function NumberSetting({
   step?: string;
   value: number | null;
 }) {
-  return (
-    <Input label={label} max={max} min={min} onChange={(event) => onChange(event.target.value)} step={step} type="number" value={value ?? ''} />
-  );
+  return <Input description={description} label={label} max={max} min={min} onChange={(event) => onChange(event.target.value)} step={step} type="number" value={value ?? ''} />;
 }

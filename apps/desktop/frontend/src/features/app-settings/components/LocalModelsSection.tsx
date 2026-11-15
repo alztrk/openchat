@@ -1,7 +1,13 @@
 import { FolderOpen, LoaderCircle, Square, Trash2, X } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button, Card } from '@shared/components';
-import type { BusyAction, LocalModel } from '@features/app-settings/data/localEngineCatalog';
+import { Button, Card, Input } from '@shared/components';
+import {
+  LOCAL_MODEL_CONTEXT_LENGTH_MAX,
+  LOCAL_MODEL_CONTEXT_LENGTH_MIN,
+  type BusyAction,
+  type LocalModel,
+} from '@features/app-settings/data/localEngineCatalog';
 
 export function LocalModelsSection({
   addLabel,
@@ -11,6 +17,7 @@ export function LocalModelsSection({
   onAddModel,
   onCancelStart,
   onRemove,
+  onSaveContextLength,
   onStart,
   onStop,
   runningModelIds,
@@ -24,6 +31,7 @@ export function LocalModelsSection({
   onAddModel(): void;
   onCancelStart(): void;
   onRemove(model: LocalModel): void;
+  onSaveContextLength(modelId: string, contextLength: number | null): Promise<void>;
   onStart(modelId: string): void;
   onStop(modelId: string): void;
   runningModelIds: string[];
@@ -72,7 +80,11 @@ export function LocalModelsSection({
                     <p className="mt-1 break-all font-mono text-xs text-secondary-text">{model.path}</p>
                     <p className="mt-2 text-sm text-secondary-text">
                       {model.estimatedMemoryBytes === null
-                        ? t('localModelMemoryEstimateUnavailable')
+                        ? t(
+                            model.pathKind === 'directory'
+                              ? 'localModelMemoryEstimateUnavailableTransformers'
+                              : 'localModelMemoryEstimateUnavailable',
+                          )
                         : t('localModelMemoryEstimate', {
                             size: formatMemorySize(model.estimatedMemoryBytes, i18n.language),
                           })}
@@ -80,6 +92,11 @@ export function LocalModelsSection({
                     {model.estimatedMemoryBytes !== null ? (
                       <p className="mt-1 text-xs text-secondary-text">{t('localModelMemoryEstimateNote')}</p>
                     ) : null}
+                    <ModelContextLengthInput
+                      disabled={busy}
+                      model={model}
+                      onSave={(contextLength) => onSaveContextLength(model.id, contextLength)}
+                    />
                     {!model.pathExists ? (
                       <p className="mt-2 text-sm text-warning">{t('localModelPathMissing')}</p>
                     ) : null}
@@ -134,6 +151,67 @@ export function LocalModelsSection({
         </ul>
       ) : null}
     </section>
+  );
+}
+
+function ModelContextLengthInput({
+  disabled,
+  model,
+  onSave,
+}: {
+  disabled: boolean;
+  model: LocalModel;
+  onSave(contextLength: number | null): Promise<void>;
+}) {
+  const { t } = useTranslation();
+  const [draft, setDraft] = useState(model.contextLength?.toString() ?? '');
+  const [invalid, setInvalid] = useState(false);
+
+  useEffect(() => {
+    setDraft(model.contextLength?.toString() ?? '');
+  }, [model.contextLength]);
+
+  const save = async () => {
+    const current = model.contextLength?.toString() ?? '';
+    if (draft.trim() === current) return;
+    const contextLength = draft.trim() === '' ? null : Number(draft);
+    if (
+      contextLength !== null &&
+      (!Number.isSafeInteger(contextLength) ||
+        contextLength < LOCAL_MODEL_CONTEXT_LENGTH_MIN ||
+        contextLength > LOCAL_MODEL_CONTEXT_LENGTH_MAX)
+    ) {
+      setInvalid(true);
+      return;
+    }
+    setInvalid(false);
+    await onSave(contextLength);
+  };
+
+  return (
+    <Input
+      description={t('localModelContextLengthDescription')}
+      disabled={disabled}
+      error={invalid ? t('localModelContextLengthInvalid') : undefined}
+      label={t('localModelContextLength')}
+      max={LOCAL_MODEL_CONTEXT_LENGTH_MAX}
+      min={LOCAL_MODEL_CONTEXT_LENGTH_MIN}
+      onBlur={() => void save()}
+      onChange={(event) => {
+        setDraft(event.target.value);
+        setInvalid(false);
+      }}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          event.currentTarget.blur();
+        }
+      }}
+      placeholder={t('localEngineDefaultAuto')}
+      step={1}
+      type="number"
+      value={draft}
+    />
   );
 }
 

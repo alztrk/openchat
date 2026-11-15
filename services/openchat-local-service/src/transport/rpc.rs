@@ -669,8 +669,9 @@ pub(crate) async fn dispatch(context: RpcDispatchContext<'_>) -> Result<Value, S
                 && provider_id.as_deref().is_some_and(|provider_id| {
                     matches!(
                         provider_id,
-                        "chatgpt" | "chatgpt_api" | "opencode" | "copilot" | "llama_cpp"
-                    ) || provider_ids::is_compatible_provider_id(provider_id)
+                        "chatgpt" | "chatgpt_api" | "opencode" | "copilot"
+                    ) || crate::local_engines::is_managed_provider_id(provider_id)
+                        || provider_ids::is_compatible_provider_id(provider_id)
                 }) {
                 match project_root.as_deref() {
                     Some(project_root) => {
@@ -768,7 +769,8 @@ pub(crate) async fn dispatch(context: RpcDispatchContext<'_>) -> Result<Value, S
                     .await
                 }
                 Some(id)
-                    if matches!(id, "opencode" | "chatgpt_api" | "copilot" | "llama_cpp")
+                    if matches!(id, "opencode" | "chatgpt_api" | "copilot")
+                        || crate::local_engines::is_managed_provider_id(id)
                         || provider_ids::is_compatible_provider_id(id) =>
                 {
                     openai_compatible::send_message(

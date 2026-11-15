@@ -19,9 +19,11 @@ pub(super) use reqwest::Client;
 pub(super) use serde_json::{Value, json};
 pub(super) use sha2::{Digest, Sha256};
 pub(super) use tokio::{
+    io::AsyncReadExt,
     net::TcpListener,
     process::{Child, Command},
     sync::{Mutex, RwLock, watch},
+    task::JoinHandle,
     time::{Instant, sleep},
 };
 pub(super) use zeroize::Zeroizing;
@@ -39,6 +41,7 @@ const HEALTH_POLL_INTERVAL: Duration = Duration::from_millis(500);
 const MAX_RUNTIME_PROPERTIES_BYTES: usize = 4 * 1024 * 1024;
 const MAX_EXTERNAL_MODEL_CATALOG_BYTES: usize = 1024 * 1024;
 const MAX_EXTERNAL_MODEL_COUNT: usize = 128;
+const MAX_RUNTIME_DIAGNOSTIC_BYTES: usize = 16 * 1024;
 
 mod capabilities;
 mod external;
@@ -48,7 +51,7 @@ pub(crate) use capabilities::*;
 pub(crate) use external::*;
 use support::*;
 
-static RUNNING_LLAMA_SERVERS: OnceLock<Mutex<HashMap<String, RunningServer>>> = OnceLock::new();
+static MANAGED_SERVERS: OnceLock<Mutex<HashMap<String, RunningServer>>> = OnceLock::new();
 static RUNTIME_OPERATION_GATE: OnceLock<RwLock<()>> = OnceLock::new();
 static MODEL_LIFECYCLES: OnceLock<Mutex<HashMap<String, Weak<ModelLifecycle>>>> = OnceLock::new();
 static EXTERNAL_LLAMA_SERVERS: OnceLock<Mutex<HashMap<(u32, u16), ConnectedExternalLlamaServer>>> =
@@ -92,10 +95,13 @@ struct RunningServer {
     provider_model_id: String,
     port: u16,
     child: Child,
+    stdout_diagnostics: Option<JoinHandle<Option<&'static str>>>,
+    stderr_diagnostics: Option<JoinHandle<Option<&'static str>>>,
     capabilities: Option<RuntimeCapabilities>,
     api_key: Option<Zeroizing<String>>,
     auth_file: Option<PathBuf>,
     remote_pid_file: Option<PathBuf>,
+    remote_process_marker: Option<PathBuf>,
 }
 
 struct ModelLifecycle {
@@ -112,6 +118,7 @@ struct RuntimeLaunch {
     environment: Vec<(std::ffi::OsString, std::ffi::OsString)>,
     auth_file: Option<PathBuf>,
     remote_pid_file: Option<PathBuf>,
+    remote_process_marker: Option<PathBuf>,
 }
 
 pub(crate) async fn start_model(
@@ -152,8 +159,8 @@ pub(crate) async fn start_model(
             return Err(cancelled_error());
         }
 
-        if matches!(model.engine_id.as_str(), "llama_cpp" | "vllm") {
-            let mut selected_server = running_llama_state().lock().await.remove(model_id);
+        if super::is_managed_provider_id(&model.engine_id) {
+            let mut selected_server = managed_servers_state().lock().await.remove(model_id);
             let result = start_model_in_slot(
                 storage,
                 &model,
@@ -163,7 +170,7 @@ pub(crate) async fn start_model(
             )
             .await;
             if let Some(server) = selected_server {
-                running_llama_state()
+                managed_servers_state()
                     .lock()
                     .await
                     .insert(model_id.to_owned(), server);
@@ -215,10 +222,12 @@ async fn start_model_in_slot(
         stop_server(storage, state).await?;
     }
 
-    let preferred_port = if model.engine_id == "vllm" {
-        settings::read_settings(storage.root())?.vllm_port
-    } else {
-        None
+    let engine_settings = settings::read_settings(storage.root())?;
+    let preferred_port = match model.engine_id.as_str() {
+        "vllm" => engine_settings.vllm_port,
+        "exllama" => engine_settings.exllama_port,
+        "sglang" => engine_settings.sglang_port,
+        _ => None,
     };
     let port = available_loopback_port(preferred_port).await?;
     let started_at = Instant::now();
@@ -232,23 +241,34 @@ async fn start_model_in_slot(
             environment: Vec::new(),
             auth_file: None,
             remote_pid_file: None,
+            remote_process_marker: None,
         },
         "vllm" => vllm_server_launch(storage, model, port).await?,
+        "exllama" | "sglang" => python_engine_server_launch(storage, model, port).await?,
         _ => return Err(model_unavailable_error()),
     };
     let mut command = Command::new(&installed.entrypoint);
+    let capture_output = matches!(model.engine_id.as_str(), "exllama" | "sglang");
     if let Some(api_key) = launch.api_key.as_ref() {
         if model.engine_id == "llama_cpp" {
             configure_llama_server_api_key(&mut command, api_key);
         }
     }
     command.envs(launch.environment.iter().map(|(key, value)| (key, value)));
-    let child = match command
+    let mut child = match command
         .args(&launch.arguments)
         .current_dir(&launch.current_directory)
         .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
+        .stdout(if capture_output {
+            Stdio::piped()
+        } else {
+            Stdio::null()
+        })
+        .stderr(if capture_output {
+            Stdio::piped()
+        } else {
+            Stdio::null()
+        })
         .kill_on_drop(true)
         .spawn()
     {
@@ -259,6 +279,11 @@ async fn start_model_in_slot(
             {
                 super::vllm::remove_auth_file(storage, auth_file).await?;
             }
+            if matches!(model.engine_id.as_str(), "exllama" | "sglang")
+                && let Some(auth_file) = launch.auth_file.as_deref()
+            {
+                super::python_engines::remove_session(storage, &model.engine_id, auth_file).await?;
+            }
             log_runtime_event(
                 storage,
                 "runtime_start_failed",
@@ -268,16 +293,27 @@ async fn start_model_in_slot(
             return Err(runtime_error());
         }
     };
+    let stdout_diagnostics = child
+        .stdout
+        .take()
+        .map(|stdout| tokio::spawn(async move { runtime_stream_failure_hint(stdout).await }));
+    let stderr_diagnostics = child
+        .stderr
+        .take()
+        .map(|stderr| tokio::spawn(async move { runtime_stream_failure_hint(stderr).await }));
     *state = Some(RunningServer {
         engine_id: model.engine_id.clone(),
         model_id: model.id.clone(),
         provider_model_id: launch.provider_model_id,
         port,
         child,
+        stdout_diagnostics,
+        stderr_diagnostics,
         capabilities: launch.initial_capabilities,
         api_key: launch.api_key,
         auth_file: launch.auth_file,
         remote_pid_file: launch.remote_pid_file,
+        remote_process_marker: launch.remote_process_marker,
     });
 
     loop {
@@ -293,17 +329,22 @@ async fn start_model_in_slot(
             (server.port, has_exited)
         };
         if has_exited {
-            let exited = state.take().ok_or_else(runtime_error)?;
-            if let Some(pid_file) = exited.remote_pid_file.as_deref() {
-                super::vllm::stop_wsl_process(storage, pid_file).await?;
-            }
-            if let Some(auth_file) = exited.auth_file.as_deref() {
-                super::vllm::remove_auth_file(storage, auth_file).await?;
-            }
+            let mut exited = state.take().ok_or_else(runtime_error)?;
+            cleanup_exited_server(storage, &exited).await?;
+            let stderr_failure_code = match exited.stderr_diagnostics.take() {
+                Some(task) => task.await.ok().flatten(),
+                None => None,
+            };
+            let stdout_failure_code = match exited.stdout_diagnostics.take() {
+                Some(task) => task.await.ok().flatten(),
+                None => None,
+            };
+            let failure_code = runtime_failure_code(stderr_failure_code, stdout_failure_code)
+                .unwrap_or("local_engine_start_failed");
             log_runtime_event(
                 storage,
                 "runtime_start_failed",
-                Some("local_engine_start_failed"),
+                Some(failure_code),
                 Some(started_at.elapsed()),
             );
             return Err(runtime_start_failed_error());
@@ -383,6 +424,115 @@ async fn start_model_in_slot(
     }
 }
 
+async fn runtime_stream_failure_hint<R>(mut output_stream: R) -> Option<&'static str>
+where
+    R: tokio::io::AsyncRead + Unpin,
+{
+    let mut output = Vec::with_capacity(MAX_RUNTIME_DIAGNOSTIC_BYTES);
+    let mut buffer = [0_u8; 4096];
+    loop {
+        let read = output_stream.read(&mut buffer).await.ok()?;
+        if read == 0 {
+            break;
+        }
+        output.extend_from_slice(&buffer[..read]);
+        if output.len() > MAX_RUNTIME_DIAGNOSTIC_BYTES {
+            let excess = output.len() - MAX_RUNTIME_DIAGNOSTIC_BYTES;
+            output.drain(..excess);
+        }
+    }
+    classify_runtime_stderr(&String::from_utf8_lossy(&output))
+}
+
+fn classify_runtime_stderr(stderr: &str) -> Option<&'static str> {
+    let stderr = stderr.to_ascii_lowercase();
+    if stderr.trim().is_empty() {
+        return None;
+    }
+    if stderr.contains("out of memory") {
+        Some("gpu_memory_exhausted")
+    } else if (stderr.contains("nvcc")
+        && (stderr.contains("not found")
+            || stderr.contains("could not find")
+            || stderr.contains("does not exist")
+            || stderr.contains("doesn't exist")))
+        || (stderr.contains("cuda_home") && stderr.contains("doesn't exist"))
+    {
+        Some("cuda_compiler_unavailable")
+    } else if stderr.contains("no module named") || stderr.contains("modulenotfounderror") {
+        Some("runtime_dependency_missing")
+    } else if stderr.contains("unrecognized arguments") || stderr.contains("unknown option") {
+        Some("engine_arguments_rejected")
+    } else if stderr.contains("unsupported gpu architecture")
+        || stderr.contains("no kernel image is available")
+        || stderr.contains("invalid device function")
+    {
+        Some("gpu_architecture_unsupported")
+    } else if stderr.contains("cuda driver version is insufficient")
+        || stderr.contains("driver version is too old")
+    {
+        Some("cuda_driver_unsupported")
+    } else if stderr.contains("cuda driver initialization failed")
+        || stderr.contains("failed to initialize cuda driver")
+    {
+        Some("cuda_driver_unavailable")
+    } else if stderr.contains("no such file or directory") || stderr.contains("filenotfounderror") {
+        Some("model_files_unavailable")
+    } else if stderr.contains("valueerror") {
+        Some("python_value_error")
+    } else if stderr.contains("runtimeerror") {
+        Some("python_runtime_error")
+    } else if stderr.contains("typeerror") {
+        Some("python_type_error")
+    } else if stderr.contains("keyerror") {
+        Some("python_key_error")
+    } else if stderr.contains("assertionerror") {
+        Some("python_assertion_error")
+    } else if stderr.contains("traceback (most recent call last):") {
+        Some("python_traceback_unclassified")
+    } else {
+        Some("runtime_output_unclassified")
+    }
+}
+
+fn runtime_failure_code(
+    stderr: Option<&'static str>,
+    stdout: Option<&'static str>,
+) -> Option<&'static str> {
+    [stderr, stdout]
+        .into_iter()
+        .flatten()
+        .find(|code| *code != "runtime_output_unclassified")
+        .or(stderr)
+        .or(stdout)
+}
+
+async fn cleanup_exited_server(
+    storage: &AppStorage,
+    server: &RunningServer,
+) -> Result<(), ServiceError> {
+    if server.engine_id == "vllm" {
+        if let Some(pid_file) = server.remote_pid_file.as_deref() {
+            super::vllm::stop_wsl_process(storage, pid_file).await?;
+        }
+        if let Some(auth_file) = server.auth_file.as_deref() {
+            super::vllm::remove_auth_file(storage, auth_file).await?;
+        }
+    } else if matches!(server.engine_id.as_str(), "exllama" | "sglang") {
+        if let (Some(pid_file), Some(marker)) = (
+            server.remote_pid_file.as_deref(),
+            server.remote_process_marker.as_deref(),
+        ) {
+            super::python_engines::stop_wsl_process(storage, &server.engine_id, pid_file, marker)
+                .await?;
+        }
+        if let Some(auth_file) = server.auth_file.as_deref() {
+            super::python_engines::remove_session(storage, &server.engine_id, auth_file).await?;
+        }
+    }
+    Ok(())
+}
+
 pub(crate) async fn stop(storage: &AppStorage) -> Result<Value, ServiceError> {
     let lifecycles = model_lifecycles().lock().await;
     for lifecycle in lifecycles.values().filter_map(Weak::upgrade) {
@@ -392,14 +542,14 @@ pub(crate) async fn stop(storage: &AppStorage) -> Result<Value, ServiceError> {
     drop(lifecycles);
 
     let mut first_error = None;
-    let model_ids = running_llama_state()
+    let model_ids = managed_servers_state()
         .lock()
         .await
         .keys()
         .cloned()
         .collect::<Vec<_>>();
     for model_id in model_ids {
-        let Some(server) = running_llama_state().lock().await.remove(&model_id) else {
+        let Some(server) = managed_servers_state().lock().await.remove(&model_id) else {
             continue;
         };
         let mut slot = Some(server);
@@ -407,7 +557,10 @@ pub(crate) async fn stop(storage: &AppStorage) -> Result<Value, ServiceError> {
             first_error.get_or_insert(error);
         }
         if let Some(server) = slot {
-            running_llama_state().lock().await.insert(model_id, server);
+            managed_servers_state()
+                .lock()
+                .await
+                .insert(model_id, server);
         }
     }
     drop(runtime_guard);
@@ -428,12 +581,12 @@ pub(crate) async fn stop_model(
     drop(lifecycles);
     let _model_guard = lifecycle.operation.lock().await;
 
-    let managed_server = running_llama_state().lock().await.remove(model_id);
+    let managed_server = managed_servers_state().lock().await.remove(model_id);
     if let Some(server) = managed_server {
         let mut slot = Some(server);
         let result = stop_server(storage, &mut slot).await;
         if let Some(server) = slot {
-            running_llama_state()
+            managed_servers_state()
                 .lock()
                 .await
                 .insert(model_id.to_owned(), server);
@@ -449,7 +602,7 @@ pub(crate) async fn stop_engine(
     engine_id: &str,
 ) -> Result<Value, ServiceError> {
     let mut lifecycles = model_lifecycles().lock().await;
-    let model_ids = running_llama_state()
+    let model_ids = managed_servers_state()
         .lock()
         .await
         .iter()
@@ -465,7 +618,7 @@ pub(crate) async fn stop_engine(
 
     let mut first_error = None;
     for model_id in model_ids {
-        let Some(server) = running_llama_state().lock().await.remove(&model_id) else {
+        let Some(server) = managed_servers_state().lock().await.remove(&model_id) else {
             continue;
         };
         let mut slot = Some(server);
@@ -473,7 +626,10 @@ pub(crate) async fn stop_engine(
             first_error.get_or_insert(error);
         }
         if let Some(server) = slot {
-            running_llama_state().lock().await.insert(model_id, server);
+            managed_servers_state()
+                .lock()
+                .await
+                .insert(model_id, server);
         }
     }
     drop(runtime_guard);
@@ -485,10 +641,9 @@ pub(crate) async fn stop_engine(
 
 pub(crate) async fn status(storage: &AppStorage) -> Result<Value, ServiceError> {
     let mut servers = Vec::new();
-    let mut stale_auth_files = Vec::new();
-    let mut stale_pid_files = Vec::new();
+    let mut stale_servers = Vec::new();
     let managed_snapshots = {
-        let mut managed = running_llama_state().lock().await;
+        let mut managed = managed_servers_state().lock().await;
         let model_ids = managed.keys().cloned().collect::<Vec<_>>();
         let mut snapshots = Vec::new();
         for model_id in model_ids {
@@ -501,16 +656,7 @@ pub(crate) async fn status(storage: &AppStorage) -> Result<Value, ServiceError> 
                 .is_some();
             if has_exited {
                 let exited = managed.remove(&model_id).ok_or_else(runtime_error)?;
-                if exited.engine_id == "vllm"
-                    && let Some(auth_file) = exited.auth_file
-                {
-                    stale_auth_files.push(auth_file);
-                }
-                if exited.engine_id == "vllm"
-                    && let Some(pid_file) = exited.remote_pid_file
-                {
-                    stale_pid_files.push(pid_file);
-                }
+                stale_servers.push(exited);
                 log_runtime_event(
                     storage,
                     "runtime_exited",
@@ -526,11 +672,8 @@ pub(crate) async fn status(storage: &AppStorage) -> Result<Value, ServiceError> 
         }
         snapshots
     };
-    for auth_file in stale_auth_files {
-        super::vllm::remove_auth_file(storage, &auth_file).await?;
-    }
-    for pid_file in stale_pid_files {
-        super::vllm::stop_wsl_process(storage, &pid_file).await?;
+    for server in stale_servers {
+        cleanup_exited_server(storage, &server).await?;
     }
     let health = join_all(
         managed_snapshots
@@ -541,7 +684,7 @@ pub(crate) async fn status(storage: &AppStorage) -> Result<Value, ServiceError> 
     )
     .await;
     {
-        let managed = running_llama_state().lock().await;
+        let managed = managed_servers_state().lock().await;
         for ((model_id, process_id, port, _), healthy) in managed_snapshots.iter().zip(health) {
             let Some(server) = managed
                 .get(model_id)

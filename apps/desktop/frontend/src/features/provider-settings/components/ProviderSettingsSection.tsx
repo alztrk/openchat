@@ -672,6 +672,12 @@ export function TitleGenerationSettings({
         return t('providerNamePublicAi');
       case 'llama_cpp':
         return 'llama.cpp';
+      case 'vllm':
+        return 'vLLM';
+      case 'exllama':
+        return 'ExLlama';
+      case 'sglang':
+        return 'SGLang';
       default:
         if (providerId.startsWith('custom_')) return t('customProvidersHeading');
         return providerId;

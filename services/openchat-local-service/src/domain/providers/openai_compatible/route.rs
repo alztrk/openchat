@@ -247,7 +247,7 @@ async fn resolve_chat_route_for_model(
                 reasoning_levels: Vec::new(),
             }
         }
-        Some("llama_cpp") => {
+        Some(provider_id) if crate::local_engines::is_managed_provider_id(provider_id) => {
             if requested_api_key_connection_id.is_some()
                 || stored_api_key_connection_id.is_some()
                 || api_key.is_some()

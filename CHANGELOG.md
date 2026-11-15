@@ -14,6 +14,8 @@ Completed work is summarized from repository history and grouped by the relevant
 ### Added
 
 - Added an opt-in vLLM local engine for native Linux and Windows through an existing WSL 2 distribution, with pinned Transformers snapshots, configurable launch settings, authenticated local inference, and model-preserving uninstall.
+- Added managed ExLlama and SGLang local engines, with Linux support, native Windows ExLlama, WSL 2 SGLang, configurable runtime settings, update support, and Transformers model downloads from Library. The SGLang runtime includes its pinned CUDA compiler for JIT kernel builds.
+- Added per-model context length overrides for local inference engines, and made installed local models available in chat so sending a message starts a stopped runtime and the selected model.
 - Add native macOS DMG packaging for Intel and Apple Silicon, and include checksummed installers in desktop releases.
 - Added separate preview releases and stable tagged releases, with package SHA-256 verification and published checksums.
 - Added a validated SPDX 2.3 source dependency SBOM to tagged desktop releases.

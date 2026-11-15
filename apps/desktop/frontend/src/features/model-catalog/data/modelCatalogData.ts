@@ -45,6 +45,8 @@ export interface HubDetails {
 export type ReadmeStatus = 'available' | 'missing' | 'access_denied' | 'too_large' | 'unavailable';
 export type ModelSort = 'downloads' | 'likes' | 'recently_updated';
 export type LoadState = 'idle' | 'loading' | 'ready' | 'error';
+export const modelCatalogEngineIds = ['llama_cpp', 'vllm', 'exllama', 'sglang'] as const;
+export type ModelCatalogEngineId = (typeof modelCatalogEngineIds)[number];
 export type SearchErrorCode =
   | 'localModelDirectoryUnavailable'
   | 'modelSearchFailed'
@@ -55,6 +57,10 @@ export type SearchErrorCode =
   | 'modelDownloadAccessNeeded';
 
 export const componentKinds = new Set(['model', 'vision', 'mtp', 'auxiliary']);
+
+export function isModelCatalogEngineId(value: string): value is ModelCatalogEngineId {
+  return modelCatalogEngineIds.some((engineId) => engineId === value);
+}
 
 const readmeStatuses: readonly ReadmeStatus[] = ['available', 'missing', 'access_denied', 'too_large', 'unavailable'];
 

@@ -86,6 +86,20 @@ pub(crate) struct LocalEngineSettings {
     pub(crate) vllm_enforce_eager: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) vllm_custom_arguments: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) exllama_max_seq_len: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) exllama_port: Option<u16>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) exllama_cache_mode: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) sglang_context_length: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) sglang_port: Option<u16>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) sglang_mem_fraction_static_milli: Option<u16>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) sglang_max_running_requests: Option<u16>,
 }
 
 /// Reads the validated saved llama-server path, if one is configured.
@@ -128,6 +142,15 @@ pub(crate) fn settings_json(storage_root: &Path) -> Result<serde_json::Value, Se
         "vllmDtype": settings.vllm_dtype,
         "vllmEnforceEager": settings.vllm_enforce_eager,
         "vllmCustomArguments": settings.vllm_custom_arguments,
+        "exllamaMaxSeqLen": settings.exllama_max_seq_len,
+        "exllamaPort": settings.exllama_port,
+        "exllamaCacheMode": settings.exllama_cache_mode,
+        "sglangContextLength": settings.sglang_context_length,
+        "sglangPort": settings.sglang_port,
+        "sglangMemFractionStatic": settings
+            .sglang_mem_fraction_static_milli
+            .map(|value| f64::from(value) / 1000.0),
+        "sglangMaxRunningRequests": settings.sglang_max_running_requests,
     }))
 }
 
@@ -258,7 +281,7 @@ pub(crate) fn update_settings(
     }
 
     if let Some(val) = params.get("vllmMaxModelLen") {
-        settings.vllm_max_model_len = parse_bounded_u32(val, 128, 131_072, "vllmMaxModelLen")?;
+        settings.vllm_max_model_len = parse_bounded_u32(val, 128, 2_000_000, "vllmMaxModelLen")?;
     }
     if let Some(val) = params.get("vllmPort") {
         settings.vllm_port = parse_bounded_u32(val, 1024, u16::MAX.into(), "vllmPort")?
@@ -347,6 +370,66 @@ pub(crate) fn update_settings(
         };
     }
 
+    if let Some(val) = params.get("exllamaMaxSeqLen") {
+        settings.exllama_max_seq_len = parse_bounded_u32(val, 128, 2_000_000, "exllamaMaxSeqLen")?;
+    }
+    if let Some(val) = params.get("exllamaPort") {
+        settings.exllama_port = parse_bounded_u32(val, 1024, u16::MAX.into(), "exllamaPort")?
+            .map(u16::try_from)
+            .transpose()
+            .map_err(|_| invalid_settings_error("ExLlama port is out of range."))?;
+    }
+    if let Some(val) = params.get("exllamaCacheMode") {
+        settings.exllama_cache_mode = match val {
+            serde_json::Value::Null => None,
+            serde_json::Value::String(value)
+                if matches!(value.as_str(), "FP16" | "Q8" | "Q6" | "Q4") =>
+            {
+                Some(value.clone())
+            }
+            _ => {
+                return Err(invalid_settings_error(
+                    "ExLlama cache mode must be FP16, Q8, Q6, Q4, or null.",
+                ));
+            }
+        };
+    }
+    if let Some(val) = params.get("sglangContextLength") {
+        settings.sglang_context_length =
+            parse_bounded_u32(val, 128, 2_000_000, "sglangContextLength")?;
+    }
+    if let Some(val) = params.get("sglangPort") {
+        settings.sglang_port = parse_bounded_u32(val, 1024, u16::MAX.into(), "sglangPort")?
+            .map(u16::try_from)
+            .transpose()
+            .map_err(|_| invalid_settings_error("SGLang port is out of range."))?;
+    }
+    if let Some(val) = params.get("sglangMemFractionStatic") {
+        settings.sglang_mem_fraction_static_milli = match val {
+            serde_json::Value::Null => None,
+            serde_json::Value::Number(value) => {
+                let fraction = value
+                    .as_f64()
+                    .filter(|value| value.is_finite() && (0.1..=0.99).contains(value))
+                    .ok_or_else(|| {
+                        invalid_settings_error(
+                            "SGLang memory fraction must be between 0.1 and 0.99.",
+                        )
+                    })?;
+                Some((fraction * 1000.0).round() as u16)
+            }
+            _ => {
+                return Err(invalid_settings_error(
+                    "SGLang memory fraction must be a number or null.",
+                ));
+            }
+        };
+    }
+    if let Some(val) = params.get("sglangMaxRunningRequests") {
+        settings.sglang_max_running_requests =
+            parse_bounded_u32(val, 1, 1024, "sglangMaxRunningRequests")?.map(|value| value as u16);
+    }
+
     write_settings(storage_root, &settings)?;
     settings_json(storage_root)
 }
@@ -380,6 +463,17 @@ pub(crate) fn clear_engine_settings(
             settings.vllm_dtype = None;
             settings.vllm_enforce_eager = None;
             settings.vllm_custom_arguments = None;
+        }
+        "exllama" => {
+            settings.exllama_max_seq_len = None;
+            settings.exllama_port = None;
+            settings.exllama_cache_mode = None;
+        }
+        "sglang" => {
+            settings.sglang_context_length = None;
+            settings.sglang_port = None;
+            settings.sglang_mem_fraction_static_milli = None;
+            settings.sglang_max_running_requests = None;
         }
         _ => return Err(invalid_settings_error("Unknown local engine.")),
     }
@@ -701,6 +795,75 @@ mod tests {
         ] {
             let error = update_settings(&temporary.0, &json!({"vllmCustomArguments": arguments}))
                 .expect_err("managed options and shell syntax must be rejected");
+            assert_eq!(error.code, "invalid_request_params");
+        }
+    }
+
+    #[test]
+    fn persists_and_clears_exllama_and_sglang_runtime_settings() {
+        let temporary = TestDirectory::new();
+        let updated = update_settings(
+            &temporary.0,
+            &json!({
+                "threads": 8,
+                "exllamaMaxSeqLen": 8192,
+                "exllamaPort": 5001,
+                "exllamaCacheMode": "Q6",
+                "sglangContextLength": 4096,
+                "sglangPort": 3001,
+                "sglangMemFractionStatic": 0.75,
+                "sglangMaxRunningRequests": 2
+            }),
+        )
+        .expect("engine settings should update");
+
+        assert_eq!(updated["exllamaMaxSeqLen"], 8192);
+        assert_eq!(updated["exllamaPort"], 5001);
+        assert_eq!(updated["exllamaCacheMode"], "Q6");
+        assert_eq!(updated["sglangContextLength"], 4096);
+        assert_eq!(updated["sglangPort"], 3001);
+        assert_eq!(updated["sglangMemFractionStatic"], 0.75);
+        assert_eq!(updated["sglangMaxRunningRequests"], 2);
+
+        let loaded = read_settings(&temporary.0).expect("settings should persist");
+        assert_eq!(loaded.exllama_max_seq_len, Some(8192));
+        assert_eq!(loaded.exllama_port, Some(5001));
+        assert_eq!(loaded.exllama_cache_mode.as_deref(), Some("Q6"));
+        assert_eq!(loaded.sglang_context_length, Some(4096));
+        assert_eq!(loaded.sglang_port, Some(3001));
+        assert_eq!(loaded.sglang_mem_fraction_static_milli, Some(750));
+        assert_eq!(loaded.sglang_max_running_requests, Some(2));
+
+        super::clear_engine_settings(&temporary.0, "exllama")
+            .expect("ExLlama settings should clear on uninstall");
+        super::clear_engine_settings(&temporary.0, "sglang")
+            .expect("SGLang settings should clear on uninstall");
+
+        let cleared = read_settings(&temporary.0).expect("remaining settings should persist");
+        assert_eq!(cleared.threads, Some(8));
+        assert_eq!(cleared.exllama_max_seq_len, None);
+        assert_eq!(cleared.exllama_port, None);
+        assert_eq!(cleared.exllama_cache_mode, None);
+        assert_eq!(cleared.sglang_context_length, None);
+        assert_eq!(cleared.sglang_port, None);
+        assert_eq!(cleared.sglang_mem_fraction_static_milli, None);
+        assert_eq!(cleared.sglang_max_running_requests, None);
+    }
+
+    #[test]
+    fn rejects_invalid_exllama_and_sglang_runtime_settings() {
+        let temporary = TestDirectory::new();
+        for params in [
+            json!({"exllamaMaxSeqLen": 64}),
+            json!({"exllamaPort": 80}),
+            json!({"exllamaCacheMode": "Q3"}),
+            json!({"sglangContextLength": 64}),
+            json!({"sglangPort": 80}),
+            json!({"sglangMemFractionStatic": 1.0}),
+            json!({"sglangMaxRunningRequests": 0}),
+        ] {
+            let error = update_settings(&temporary.0, &params)
+                .expect_err("out-of-range Python engine settings should be rejected");
             assert_eq!(error.code, "invalid_request_params");
         }
     }

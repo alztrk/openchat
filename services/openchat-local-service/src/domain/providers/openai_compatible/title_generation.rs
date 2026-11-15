@@ -169,7 +169,7 @@ async fn resolve_target(
                 is_free: metadata.is_free,
             })
         }
-        "llama_cpp" => {
+        provider_id if crate::local_engines::is_managed_provider_id(provider_id) => {
             let (_sender, mut cancellation) = watch::channel(false);
             let endpoint =
                 crate::local_engines::chat_url(storage, &target.model_id, &mut cancellation)

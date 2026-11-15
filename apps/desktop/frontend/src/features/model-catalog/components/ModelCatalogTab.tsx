@@ -26,6 +26,7 @@ import type {
   HubFile,
   HubModel,
   LoadState,
+  ModelCatalogEngineId,
   ModelSort,
   SearchErrorCode,
 } from '@features/model-catalog/data/modelCatalogData';
@@ -37,6 +38,7 @@ import {
   formatCompact,
   HubResponseError,
   isActive,
+  isModelCatalogEngineId,
   isModelSort,
   modelDisplayName,
   parseHubDetails,
@@ -56,7 +58,8 @@ import { ModelReadmeMarkdown } from './ModelReadmeMarkdown';
 export function ModelCatalogTab() {
   const { i18n, t } = useTranslation();
   const [query, setQuery] = useState('');
-  const [format, setFormat] = useState<'gguf' | 'transformers'>('gguf');
+  const [engineId, setEngineId] = useState<ModelCatalogEngineId>('llama_cpp');
+  const format = engineId === 'llama_cpp' ? 'gguf' : 'transformers';
   const [sort, setSort] = useState<ModelSort>('downloads');
   const [models, setModels] = useState<HubModel[]>([]);
   const [pageIndex, setPageIndex] = useState(0);
@@ -244,6 +247,7 @@ export function ModelCatalogTab() {
     await startDownload({
       repoId: details.repoId,
       revision: details.revision,
+      engineId,
       format,
       groupId: selectedGroup.id,
       modelDirectory: modelDirectory ?? undefined,
@@ -267,6 +271,7 @@ export function ModelCatalogTab() {
     await startDownload({
       repoId: details.repoId,
       revision: details.revision,
+      engineId,
       format,
       groupId: selectedGroup.id,
       componentPath: file.path,
@@ -379,29 +384,26 @@ export function ModelCatalogTab() {
         ) : null}
 
         <div className="library-model-controls shrink-0 border-b border-border bg-navigation px-5 py-4 sm:px-8">
-          <div className="flex flex-wrap items-center gap-3">
-            <Button
-              aria-pressed={format === 'gguf'}
-              className={format === 'gguf' ? 'min-h-10 border-accent/50 bg-selected px-3 text-text hover:bg-selected' : 'min-h-10 px-3'}
-              onClick={() => setFormat('gguf')}
-              size="small"
-              type="button"
-              variant={format === 'gguf' ? 'secondary' : 'ghost'}
-            >
-              <LocalEngineIcon engineId="llama_cpp" size={17} tone="accent" />
-              {t('modelFormatGguf')}
-            </Button>
-            <Button
-              aria-pressed={format === 'transformers'}
-              className={format === 'transformers' ? 'min-h-10 border-accent/50 bg-selected px-3 text-text hover:bg-selected' : 'min-h-10 px-3'}
-              onClick={() => setFormat('transformers')}
-              size="small"
-              type="button"
-              variant={format === 'transformers' ? 'secondary' : 'ghost'}
-            >
-              <LocalEngineIcon engineId="vllm" size={17} tone="accent" />
-              {t('modelFormatTransformers')}
-            </Button>
+        <div className="flex flex-wrap items-center gap-3">
+            <Select
+              aria-label={t('modelDownloadEngine')}
+              className="min-w-48"
+              label={t('modelDownloadEngine')}
+              onChange={(event) => {
+                const value = event.target.value;
+                if (isModelCatalogEngineId(value)) setEngineId(value);
+              }}
+              options={[
+                { value: 'llama_cpp', label: t('modelEngineLlamaCpp'), icon: <LocalEngineIcon engineId="llama_cpp" size={17} /> },
+                { value: 'vllm', label: t('modelEngineVllm'), icon: <LocalEngineIcon engineId="vllm" size={17} /> },
+                { value: 'exllama', label: t('modelEngineExllama'), icon: <LocalEngineIcon engineId="exllama" size={17} /> },
+                { value: 'sglang', label: t('modelEngineSglang'), icon: <LocalEngineIcon engineId="sglang" size={17} /> },
+              ]}
+              value={engineId}
+            />
+            <span className="text-xs text-secondary-text">
+              {t(format === 'gguf' ? 'modelFormatGgufHint' : 'modelFormatTransformersHint')}
+            </span>
             <div className="relative min-w-0 flex-model-sort">
               <Select
                 aria-label={t(sortLabelKey(sort))}
@@ -586,7 +588,7 @@ export function ModelCatalogTab() {
                   <div className="model-details-content-inner flex min-h-0 flex-1 flex-col gap-4">
                     <header className="model-details-header flex shrink-0 flex-wrap items-center gap-x-5 gap-y-3 border-b border-border pb-4">
                       <span className="flex size-10 shrink-0 items-center justify-center rounded-control border border-border bg-composer text-accent-icon">
-                        <LocalEngineIcon engineId={format === 'gguf' ? 'llama_cpp' : 'vllm'} size={20} />
+                        <LocalEngineIcon engineId={engineId} size={20} />
                       </span>
                       <div className="model-details-title min-w-0 flex-1">
                         <h2 className="break-words text-lg font-semibold text-text">{selectedModel.repoId}</h2>

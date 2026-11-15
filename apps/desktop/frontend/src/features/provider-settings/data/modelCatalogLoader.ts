@@ -3,6 +3,7 @@ import { isObject, numberOrNull } from '@shared/lib/utils/json';
 import { requiresChatGptWorkspaceSelection } from './chatGptWorkspaceSelection';
 import type { ChatModel, ChatModelProvider } from './chatModels';
 import { parseProviderCatalog } from './modelCatalogParser';
+import { isLocalEngineProviderId } from './localEngineProviderIds';
 import {
   type CompatibleProviderId,
   type CustomProviderSummary,
@@ -143,34 +144,32 @@ export async function loadChatGptModels(client: LocalServiceClient, forceRefresh
 }
 
 export async function loadLocalModels(client: LocalServiceClient): Promise<ChatModel[]> {
-  const response = await client.call('local.engines.chat_models.list', {
-    engineId: 'llama_cpp',
+  const response = await client.call('local.engines.chat_models.list');
+  if (!Array.isArray(response.models)) throw new Error('The local model catalog is invalid.');
+  return response.models.filter(isObject).filter((model) => model.isAvailable === true).flatMap((model): ChatModel[] => {
+    if (
+      typeof model.id !== 'string' ||
+      typeof model.displayName !== 'string' ||
+      typeof model.engineId !== 'string' ||
+      !isLocalEngineProviderId(model.engineId)
+    ) {
+      return [];
+    }
+    const route: ChatRoute = { providerId: model.engineId, modelId: model.id };
+    return [{
+      ...route,
+      key: `${route.providerId}:${route.modelId}`,
+      displayName: model.displayName,
+      description: typeof model.description === 'string' ? model.description : null,
+      supportsReasoning: model.supportsReasoning === true,
+      supportsImages: model.supportsImages === true,
+      supportsTools: typeof model.supportsTools === 'boolean' ? model.supportsTools : null,
+      supportsFastMode: false,
+      reasoningLevels: [],
+      contextWindow: numberOrNull(model.contextLength) ?? numberOrNull(model.contextWindow),
+      catalogStale: false,
+    }];
   });
-  if (!Array.isArray(response.models)) {
-    throw new Error('The local model catalog is invalid.');
-  }
-  return response.models
-    .filter(isObject)
-    .filter((model) => model.isAvailable === true)
-    .flatMap((model): ChatModel[] => {
-      if (typeof model.id !== 'string' || typeof model.displayName !== 'string') return [];
-      const route: ChatRoute = { providerId: 'llama_cpp', modelId: model.id };
-      return [
-        {
-          ...route,
-          key: `${route.providerId}:${route.modelId}`,
-          displayName: model.displayName,
-          description: typeof model.description === 'string' ? model.description : null,
-          supportsReasoning: model.supportsReasoning === true,
-          supportsImages: model.supportsImages === true,
-          supportsTools: typeof model.supportsTools === 'boolean' ? model.supportsTools : null,
-          supportsFastMode: false,
-          reasoningLevels: [],
-          contextWindow: numberOrNull(model.contextWindow),
-          catalogStale: false,
-        },
-      ];
-    });
 }
 
 export async function loadApiKeyModels(

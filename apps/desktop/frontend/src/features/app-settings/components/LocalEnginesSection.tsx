@@ -25,6 +25,7 @@ import {
   parseDiscovery,
   parseExternalCandidate,
   parseInstallProgress,
+  parseLocalModel,
 } from '@features/app-settings/data/localEngineCatalog';
 import { useModelDirectoryStore } from '@features/app-settings/stores';
 import {
@@ -64,9 +65,9 @@ export function LocalEnginesSection() {
   const [expandedEngineIds, setExpandedEngineIds] = useState<Set<string>>(() => new Set());
   const autoScanStarted = useRef(false);
 
-  const loadCatalog = useCallback(async () => {
+  const loadCatalog = useCallback(async (preserveError = false) => {
     setLoadState('loading');
-    setErrorKey(null);
+    if (!preserveError) setErrorKey(null);
     try {
       const response = await localServiceClient.call('local.engines.list');
       const nextCatalog = parseCatalog(response);
@@ -100,12 +101,12 @@ export function LocalEnginesSection() {
       if (action === 'install' && result.installed !== true) {
         throw new Error('The local engine service did not confirm installation.');
       }
-      await loadCatalog();
+      await loadCatalog(true);
     } catch (error) {
       if (!(error instanceof LocalServiceError) || error.code !== 'operation_cancelled') {
         setErrorKey(action === 'install' ? 'localEngineInstallFailed' : 'localModelActionError');
       }
-      await loadCatalog();
+      await loadCatalog(true);
     } finally {
       setActiveOperation(null);
       setActiveAction(null);
@@ -199,11 +200,44 @@ export function LocalEnginesSection() {
         vllmDtype: updatedSettings.vllmDtype,
         vllmEnforceEager: updatedSettings.vllmEnforceEager,
         vllmCustomArguments: updatedSettings.vllmCustomArguments,
+        exllamaMaxSeqLen: updatedSettings.exllamaMaxSeqLen,
+        exllamaPort: updatedSettings.exllamaPort,
+        exllamaCacheMode: updatedSettings.exllamaCacheMode,
+        sglangContextLength: updatedSettings.sglangContextLength,
+        sglangPort: updatedSettings.sglangPort,
+        sglangMemFractionStatic: updatedSettings.sglangMemFractionStatic,
+        sglangMaxRunningRequests: updatedSettings.sglangMaxRunningRequests,
       });
       setNotice({ key: 'localEngineSettingsSaved' });
       await loadCatalog();
     } catch (error) {
       setErrorKey(modelActionErrorKey(error));
+    } finally {
+      setActiveAction(null);
+    }
+  };
+
+  const saveModelContextLength = async (modelId: string, contextLength: number | null) => {
+    if (activeAction !== null) return;
+    setActiveAction('settings');
+    try {
+      const response = await localServiceClient.call('local.models.context.set', {
+        modelId,
+        contextLength,
+      });
+      const updatedModel = parseLocalModel(response);
+      if (updatedModel.id !== modelId) throw new Error('The updated model identity did not match.');
+      setCatalog((current) =>
+        current
+          ? {
+              ...current,
+              models: current.models.map((model) => (model.id === modelId ? updatedModel : model)),
+            }
+          : current,
+      );
+      toast.success(t('localModelContextLengthSaved'));
+    } catch (error) {
+      toast.error(t(modelActionErrorKey(error)));
     } finally {
       setActiveAction(null);
     }
@@ -548,6 +582,7 @@ export function LocalEnginesSection() {
               onUninstall={() => setUninstallTarget(engine)}
               onRemove={(model) => setRemoveTarget(model)}
               onSaveSettings={saveSettings}
+              onSaveContextLength={saveModelContextLength}
               onStart={(modelId) => void startModel(modelId)}
               onStop={(modelId) => void stopModel(modelId)}
               onToggle={() =>

@@ -36,6 +36,7 @@ export interface ModelDownloadResult {
 export interface ModelDownloadRequest {
   repoId: string;
   revision: string;
+  engineId: 'llama_cpp' | 'vllm' | 'exllama' | 'sglang';
   format: 'gguf' | 'transformers';
   groupId: string;
   componentPath?: string;
@@ -88,6 +89,7 @@ export const useModelDownloadStore = create<ModelDownloadState>((set, get) => ({
         {
           repoId: request.repoId,
           revision: request.revision,
+          engineId: request.engineId,
           format: request.format,
           groupId: request.groupId,
           componentPath: request.componentPath ?? null,

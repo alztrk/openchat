@@ -86,12 +86,17 @@ impl ModelFormat {
             Self::Transformers => "transformers",
         }
     }
+}
 
-    fn engine_id(self) -> &'static str {
-        match self {
-            Self::Gguf => "llama_cpp",
-            Self::Transformers => "vllm",
-        }
+fn validate_engine_format(engine_id: &str, format: ModelFormat) -> Result<(), ServiceError> {
+    let compatible = match format {
+        ModelFormat::Gguf => engine_id == "llama_cpp",
+        ModelFormat::Transformers => matches!(engine_id, "vllm" | "exllama" | "sglang"),
+    };
+    if compatible {
+        Ok(())
+    } else {
+        Err(invalid_request_error())
     }
 }
 
@@ -126,6 +131,7 @@ struct ModelDetails {
 pub(crate) struct ModelDownloadRequest<'a> {
     pub(crate) repo_id: &'a str,
     pub(crate) revision: &'a str,
+    pub(crate) engine_id: &'a str,
     pub(crate) format: &'a str,
     pub(crate) group_id: &'a str,
     pub(crate) component_path: Option<&'a str>,
@@ -245,6 +251,82 @@ pub(crate) async fn files(repo_id: &str, format: &str) -> Result<Value, ServiceE
     Ok(details_to_json(&details, &readme))
 }
 
+/// Downloads one trusted, revision-pinned Hugging Face asset using the same redirect,
+/// resume, size, checksum, and cancellation checks as model-hub downloads.
+pub(crate) async fn download_pinned_asset(
+    repo_id: &str,
+    revision: &str,
+    file_path: &str,
+    expected_size: u64,
+    expected_sha256: &str,
+    target_path: &Path,
+    event_name: &'static str,
+    completed_bytes: u64,
+    total_bytes: u64,
+    file_index: usize,
+    file_count: usize,
+    request_id: &Value,
+    events: &EventSink,
+    cancellation: &mut watch::Receiver<bool>,
+) -> Result<(), ServiceError> {
+    if !valid_repo_id(repo_id)
+        || !is_commit_sha(revision)
+        || !valid_hub_path(file_path)
+        || !is_sha256_digest(expected_sha256)
+        || expected_size == 0
+        || event_name.is_empty()
+        || total_bytes < expected_size
+        || completed_bytes.saturating_add(expected_size) > total_bytes
+        || file_index == 0
+        || file_count == 0
+        || file_index > file_count
+    {
+        return Err(invalid_request_error());
+    }
+
+    let file = HubFile {
+        path: file_path.to_owned(),
+        size: Some(expected_size),
+        sha256: Some(expected_sha256.to_ascii_lowercase()),
+    };
+    let details = ModelDetails {
+        format: ModelFormat::Gguf,
+        repo_id: repo_id.to_owned(),
+        revision: revision.to_owned(),
+        gated: false,
+        private: false,
+        license: None,
+        files: vec![file.clone()],
+        groups: Vec::new(),
+    };
+    let parent = target_path.parent().ok_or_else(model_storage_error)?;
+    fs::create_dir_all(parent)
+        .await
+        .map_err(|_| model_storage_error())?;
+
+    let progress = DownloadProgressContext {
+        events,
+        request_id,
+        details: &details,
+        file: &file,
+        event_name,
+        total_bytes,
+        file_index,
+        file_count,
+    };
+    download_file_from_url(
+        &download_client()?,
+        download_url(repo_id, revision, file_path)?,
+        &partial_path(target_path),
+        target_path,
+        completed_bytes,
+        progress,
+        cancellation,
+    )
+    .await?;
+    Ok(())
+}
+
 pub(crate) async fn download(
     storage: &AppStorage,
     request: ModelDownloadRequest<'_>,
@@ -252,6 +334,7 @@ pub(crate) async fn download(
     let ModelDownloadRequest {
         repo_id,
         revision,
+        engine_id,
         format,
         group_id,
         component_path,
@@ -264,6 +347,7 @@ pub(crate) async fn download(
         return Err(invalid_request_error());
     }
     let format = ModelFormat::parse(format)?;
+    validate_engine_format(engine_id, format)?;
     let details = fetch_details(repo_id, format).await?;
     if details.revision != revision {
         return Err(revision_changed_error());
@@ -319,11 +403,8 @@ pub(crate) async fn download(
 
     check_cancelled(cancellation)?;
     let storage_root = storage.root();
-    let engine_root = local_engines::models::resolve_model_directory(
-        storage_root,
-        format.engine_id(),
-        model_directory,
-    )?;
+    let engine_root =
+        local_engines::models::resolve_model_directory(storage_root, engine_id, model_directory)?;
     let repo_slug = repo_slug(&details.repo_id)?;
     let revision_short = &details.revision[..12];
     let bundle_digest = Sha256::digest(format!(
@@ -371,13 +452,13 @@ pub(crate) async fn download(
             }
             ModelFormat::Transformers => destination.clone(),
         };
-        Some(register_downloaded_model(storage, format.engine_id(), registered_path).await?)
+        Some(register_downloaded_model(storage, engine_id, registered_path).await?)
     } else {
         None
     };
 
     Ok(json!({
-        "engineId": format.engine_id(),
+        "engineId": engine_id,
         "model": model,
         "repoId": details.repo_id,
         "revision": details.revision,
@@ -1081,7 +1162,7 @@ async fn hash_file_prefix(
     Ok(hasher)
 }
 
-async fn verify_file_sha256(
+pub(crate) async fn verify_file_sha256(
     path: &Path,
     expected_bytes: u64,
     expected_sha256: Option<&str>,
@@ -1190,7 +1271,7 @@ async fn send_progress(
 
 async fn register_downloaded_model(
     storage: &AppStorage,
-    engine_id: &'static str,
+    engine_id: &str,
     path: PathBuf,
 ) -> Result<Value, ServiceError> {
     let storage_root = storage.root().to_path_buf();
@@ -1664,7 +1745,7 @@ mod tests {
     use super::{
         DOWNLOAD_PROGRESS_EVENT, DownloadProgressContext, HubFile, ModelDetails, ModelFormat,
         client, compatible_groups, download_client, download_file_from_url, hex_prefix,
-        is_approved_hugging_face_redirect, parse_hub_file,
+        is_approved_hugging_face_redirect, parse_hub_file, validate_engine_format,
     };
 
     #[test]
@@ -1694,6 +1775,33 @@ mod tests {
         }))
         .expect_err("reject malformed sha256");
         assert_eq!(malformed.code, "hugging_face_response_invalid");
+    }
+
+    #[test]
+    fn model_formats_are_restricted_to_compatible_local_engines() {
+        assert!(validate_engine_format("llama_cpp", ModelFormat::Gguf).is_ok());
+        assert!(validate_engine_format("vllm", ModelFormat::Transformers).is_ok());
+        assert!(validate_engine_format("exllama", ModelFormat::Transformers).is_ok());
+        assert!(validate_engine_format("sglang", ModelFormat::Transformers).is_ok());
+
+        assert_eq!(
+            validate_engine_format("sglang", ModelFormat::Gguf)
+                .expect_err("SGLang must reject GGUF downloads")
+                .code,
+            "hugging_face_request_invalid"
+        );
+        assert_eq!(
+            validate_engine_format("llama_cpp", ModelFormat::Transformers)
+                .expect_err("llama.cpp must reject Transformers downloads")
+                .code,
+            "hugging_face_request_invalid"
+        );
+        assert_eq!(
+            validate_engine_format("unknown", ModelFormat::Transformers)
+                .expect_err("unknown engines must be rejected")
+                .code,
+            "hugging_face_request_invalid"
+        );
     }
 
     #[test]

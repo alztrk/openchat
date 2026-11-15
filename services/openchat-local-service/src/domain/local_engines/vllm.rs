@@ -24,35 +24,10 @@ const OPERATION_TIMEOUT: Duration = Duration::from_secs(7200);
 const PROGRESS_EVENT: &str = "local.engines.install.progress";
 const MARKER_NAME: &str = ".openchat-vllm.json";
 const AUTH_MODULE_NAME: &str = "openchat_vllm_auth.py";
-
-const AUTH_MODULE: &str = r#"import hmac
-import os
-from starlette.responses import JSONResponse
-
-class OpenChatAuthMiddleware:
-    def __init__(self, app):
-        self.app = app
-
-    async def __call__(self, scope, receive, send):
-        if scope["type"] != "http":
-            await self.app(scope, receive, send)
-            return
-        token_path = os.environ.get("OPENCHAT_VLLM_AUTH_FILE")
-        try:
-            with open(token_path, "r", encoding="utf-8") as token_file:
-                expected = token_file.read().strip()
-        except (OSError, TypeError):
-            expected = ""
-        headers = dict(scope.get("headers", []))
-        authorization = headers.get(b"authorization", b"").decode("latin-1")
-        supplied = authorization.removeprefix("Bearer ")
-        if not expected or not hmac.compare_digest(supplied, expected):
-            response = JSONResponse({"error": {"message": "Unauthorized", "type": "authentication_error"}}, status_code=401)
-            await response(scope, receive, send)
-            return
-        await self.app(scope, receive, send)
-"#;
-const REBASE_VENV_SCRIPTS: &str = "import pathlib,sys; root=pathlib.Path(sys.argv[1]); bindir=root/'.venv'/'bin'; files=[p for p in bindir.iterdir() if p.is_file() and not p.is_symlink()]; marker=b'/.vllm-staging-'; old=None\nfor p in files:\n data=p.read_bytes(); line=data.splitlines()[0] if data else b''\n if line.startswith(b'#!') and marker in line and b'/.venv/' in line:\n  end=line.find(b'/.venv/',2); old=line[2:end] if end>2 else None; break\nif old:\n new=str(root).encode()\n for p in files:\n  data=p.read_bytes(); updated=data.replace(old,new)\n  if updated!=data: p.write_bytes(updated)";
+const AUTH_MODULE: &str = include_str!("python_scripts/openchat_vllm_auth.py");
+const VERIFY_INSTALL_SCRIPT: &str = include_str!("python_scripts/verify_vllm_install.py");
+const REBASE_VENV_SCRIPTS: &str = include_str!("python_scripts/rebase_vllm_venv_scripts.py");
+const STOP_MANAGED_PROCESS_SCRIPT: &str = include_str!("python_scripts/stop_managed_process.py");
 
 #[derive(Clone)]
 struct RuntimePaths {
@@ -72,6 +47,14 @@ struct HostMarker {
     release_tag: String,
     distro: String,
     root: String,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct RuntimeMarker {
+    engine_id: String,
+    release_tag: String,
+    variant_id: String,
 }
 
 pub(crate) fn runtime_child_path(root: &Path, child: &str, wsl: bool) -> PathBuf {
@@ -220,7 +203,13 @@ pub(crate) async fn install(
         .to_str()
         .ok_or_else(storage_error)?
         .to_owned();
-    let root_string = staging_paths
+    let staging_parent_string = staging_paths
+        .root
+        .parent()
+        .and_then(Path::to_str)
+        .ok_or_else(storage_error)?
+        .to_owned();
+    let staging_root_string = staging_paths
         .root
         .to_str()
         .ok_or_else(storage_error)?
@@ -253,58 +242,81 @@ pub(crate) async fn install(
             .await
             .map_err(|_| install_error())?;
         if paths.wsl {
-            run_wsl_in(paths.distro.as_deref(),
-                &[
-                    "python3", "-c",
-                    "import pathlib,sys; p=pathlib.Path(sys.argv[1]); p.mkdir(parents=True, exist_ok=False)",
-                    &root_string,
-                ], cancellation,
-            ).await?;
-            run_wsl_in(paths.distro.as_deref(),
-                &[
-                    "python3", "-c",
-                    "import pathlib,sys; pathlib.Path(sys.argv[1]).mkdir()",
-                    &temporary_directory_string,
-                ], cancellation,
-            ).await?;
+            run_wsl_in(
+                paths.distro.as_deref(),
+                &["mkdir", "-p", "--", &staging_parent_string],
+                cancellation,
+            )
+            .await?;
+            run_wsl_in(
+                paths.distro.as_deref(),
+                &["mkdir", "--", &staging_root_string],
+                cancellation,
+            )
+            .await?;
+            run_wsl_in(
+                paths.distro.as_deref(),
+                &["mkdir", "--", &temporary_directory_string],
+                cancellation,
+            )
+            .await?;
             events
-                .send(&progress("installing", "Preparing isolated Python environment"))
+                .send(&progress(
+                    "installing",
+                    "Preparing isolated Python environment",
+                ))
                 .await
                 .map_err(|_| install_error())?;
             events
-                .send(&progress("installing", "Installing vLLM and CUDA dependencies"))
+                .send(&progress(
+                    "installing",
+                    "Installing vLLM and CUDA dependencies",
+                ))
                 .await
                 .map_err(|_| install_error())?;
-            run_wsl_in(paths.distro.as_deref(),
+            run_wsl_in(
+                paths.distro.as_deref(),
+                &["python3", "-m", "venv", &target_string],
+                cancellation,
+            )
+            .await?;
+            run_wsl_in(
+                paths.distro.as_deref(),
                 &[
-                    "python3", "-m", "venv", &target_string,
-                ], cancellation,
-            ).await?;
-            run_wsl_in(paths.distro.as_deref(),
-                &[
-                    "env", &format!("TMPDIR={temporary_directory_string}"),
-                    &runtime_child_path(&target, "bin/python", paths.wsl).to_string_lossy(), "-m", "pip", "install",
-                    "--disable-pip-version-check", "--no-cache-dir", "--only-binary=:all:",
+                    "env",
+                    &format!("TMPDIR={temporary_directory_string}"),
+                    &runtime_child_path(&target, "bin/python", paths.wsl).to_string_lossy(),
+                    "-m",
+                    "pip",
+                    "install",
+                    "--disable-pip-version-check",
+                    "--no-cache-dir",
+                    "--only-binary=:all:",
                     WHEEL_URL,
-                    "--extra-index-url", "https://download.pytorch.org/whl/cu130",
-                ], cancellation,
-            ).await?;
+                    "--extra-index-url",
+                    "https://download.pytorch.org/whl/cu130",
+                ],
+                cancellation,
+            )
+            .await?;
         } else {
             let parent = staging_paths.root.parent().ok_or_else(storage_error)?;
             fs::create_dir_all(parent).map_err(|_| storage_error())?;
             fs::create_dir(&staging_paths.root).map_err(|_| installation_invalid_error())?;
             fs::create_dir(&temporary_directory).map_err(|_| storage_error())?;
-            run_native(
-                "python3",
-                &["-m", "venv", &target_string],
-                cancellation,
-            ).await?;
+            run_native("python3", &["-m", "venv", &target_string], cancellation).await?;
             events
-                .send(&progress("installing", "Preparing isolated Python environment"))
+                .send(&progress(
+                    "installing",
+                    "Preparing isolated Python environment",
+                ))
                 .await
                 .map_err(|_| install_error())?;
             events
-                .send(&progress("installing", "Installing vLLM and CUDA dependencies"))
+                .send(&progress(
+                    "installing",
+                    "Installing vLLM and CUDA dependencies",
+                ))
                 .await
                 .map_err(|_| install_error())?;
             run_native(
@@ -323,20 +335,11 @@ pub(crate) async fn install(
                     "https://download.pytorch.org/whl/cu130",
                 ],
                 cancellation,
-            ).await?;
-        }
-        if paths.wsl {
-            run_wsl_in(
-                paths.distro.as_deref(),
-                &[
-                    "python3",
-                    "-c",
-                    "import pathlib,shutil,sys; shutil.rmtree(pathlib.Path(sys.argv[1]))",
-                    &temporary_directory_string,
-                ],
-                cancellation,
             )
             .await?;
+        }
+        if paths.wsl {
+            remove_wsl_directory(&staging_paths, &temporary_directory, cancellation).await?;
         } else {
             fs::remove_dir_all(&temporary_directory).map_err(|_| storage_error())?;
         }
@@ -346,31 +349,16 @@ pub(crate) async fn install(
             .await
             .map_err(|_| install_error())?;
         let python = runtime_child_path(&target, "bin/python", paths.wsl);
-        let version_output = if paths.wsl {
-            capture_wsl_in(
-                paths.distro.as_deref(),
-                &[
-                    &python.to_string_lossy(),
-                    "-c",
-                    "import importlib.metadata,sys; sys.exit(0 if importlib.metadata.version('vllm') == sys.argv[1] else 1)",
-                    PACKAGE_VERSION,
-                ],
-                cancellation,
-            )
-            .await?
-        } else {
-            capture_native(
-                &python.to_string_lossy(),
-                &[
-                    "-c",
-                    "import importlib.metadata,sys; sys.exit(0 if importlib.metadata.version('vllm') == sys.argv[1] else 1)",
-                    PACKAGE_VERSION,
-                ],
-                cancellation,
-            )
-            .await?
-        };
-        drop(version_output);
+        let python = python.to_str().ok_or_else(storage_error)?;
+        run_python_script(
+            staging_paths.distro.as_deref(),
+            staging_paths.wsl,
+            python,
+            VERIFY_INSTALL_SCRIPT,
+            &[PACKAGE_VERSION],
+            cancellation,
+        )
+        .await?;
         events
             .send(&progress("publishing", "vLLM runtime"))
             .await
@@ -380,7 +368,8 @@ pub(crate) async fn install(
         rebase_venv_scripts(&paths, cancellation).await?;
         write_marker(&paths, cancellation).await?;
         Ok(())
-    }.await;
+    }
+    .await;
 
     if let Err(error) = result {
         if published {
@@ -551,12 +540,7 @@ pub(crate) async fn remove_auth_file(
         let path = path.to_str().ok_or_else(storage_error)?;
         run_wsl_in(
             Some(distro),
-            &[
-                "python3",
-                "-c",
-                "import pathlib,sys; pathlib.Path(sys.argv[1]).unlink(missing_ok=True)",
-                path,
-            ],
+            &["rm", "-f", "--", path],
             &mut watch::channel(false).1,
         )
         .await
@@ -570,19 +554,21 @@ pub(crate) async fn stop_wsl_process(
     pid_file: &Path,
 ) -> Result<(), ServiceError> {
     let context = launch_context(storage)?;
-    let Some(distro) = context.distro.as_deref() else {
+    if context.distro.is_none() {
         return Ok(());
-    };
+    }
     let executable = runtime_child_path(&context.root, ".venv/bin/vllm", true);
     if !pid_file.starts_with(&context.root) {
         return Err(installation_invalid_error());
     }
     let pid_file = pid_file.to_str().ok_or_else(storage_error)?;
     let executable = executable.to_str().ok_or_else(storage_error)?;
-    let script = "import os,pathlib,signal,sys,time; p=pathlib.Path(sys.argv[1]); exe=os.fsencode(sys.argv[2]); raw=p.read_text().strip() if p.exists() else ''; pid=int(raw) if raw.isdecimal() else 0; proc=pathlib.Path('/proc')/str(pid)/'cmdline'; args=proc.read_bytes().split(b'\\0') if pid and proc.exists() else []; owned=bool(exe in args); os.kill(pid,signal.SIGTERM) if owned else None; deadline=time.monotonic()+5;\nwhile owned and time.monotonic()<deadline and proc.exists():\n time.sleep(0.1); args=proc.read_bytes().split(b'\\0') if proc.exists() else []; owned=exe in args\nif owned and proc.exists(): os.kill(pid,signal.SIGKILL)\np.unlink(missing_ok=True)";
-    run_wsl_in(
-        Some(distro),
-        &["python3", "-c", script, pid_file, executable],
+    run_python_script(
+        context.distro.as_deref(),
+        true,
+        "python3",
+        STOP_MANAGED_PROCESS_SCRIPT,
+        &[pid_file, executable, "5"],
         &mut watch::channel(false).1,
     )
     .await
@@ -804,9 +790,7 @@ fn cached_release(paths: &RuntimePaths) -> Option<String> {
         (marker.engine_id == "vllm" && marker.release_tag == RELEASE_TAG)
             .then_some(marker.release_tag)
     } else {
-        let marker: Value = serde_json::from_slice(&bytes).ok()?;
-        (marker["engineId"] == "vllm" && marker["releaseTag"] == RELEASE_TAG)
-            .then(|| RELEASE_TAG.to_owned())
+        parse_runtime_marker(&bytes).map(|marker| marker.release_tag)
     }
 }
 
@@ -941,34 +925,28 @@ async fn is_installed(paths: &RuntimePaths) -> bool {
 
 async fn installed_release(paths: &RuntimePaths) -> Option<String> {
     if paths.wsl {
-        if let Some(release) = cached_release(paths) {
-            return Some(release);
-        }
-    }
-    if paths.wsl {
+        let marker_path = paths.marker.to_str()?;
         let output = capture_wsl_in(
             paths.distro.as_deref(),
-            &[
-                "python3",
-                "-c",
-                "import json,sys; print(json.load(open(sys.argv[1])).get('releaseTag',''))",
-                paths.marker.to_str()?,
-            ],
+            &["head", "-c", "4097", marker_path],
             &mut watch::channel(false).1,
         )
         .await
         .ok()?;
-        let tag = String::from_utf8(output).ok()?.trim().to_owned();
-        return (tag == RELEASE_TAG).then_some(tag);
+        return parse_runtime_marker(&output).map(|marker| marker.release_tag);
     }
-    let metadata = fs::symlink_metadata(&paths.marker).ok()?;
-    if metadata.file_type().is_symlink() || !metadata.is_file() {
+    cached_release(paths)
+}
+
+fn parse_runtime_marker(bytes: &[u8]) -> Option<RuntimeMarker> {
+    if bytes.len() > 4096 {
         return None;
     }
-    let bytes = fs::read(&paths.marker).ok()?;
-    let value: Value = serde_json::from_slice(&bytes).ok()?;
-    (value["engineId"] == "vllm" && value["releaseTag"] == RELEASE_TAG)
-        .then(|| RELEASE_TAG.to_owned())
+    let marker: RuntimeMarker = serde_json::from_slice(bytes).ok()?;
+    (marker.engine_id == "vllm"
+        && marker.release_tag == RELEASE_TAG
+        && marker.variant_id == VARIANT_ID)
+        .then_some(marker)
 }
 
 async fn write_runtime_files(
@@ -1034,13 +1012,9 @@ async fn write_wsl_file(
     cancellation: &mut watch::Receiver<bool>,
 ) -> Result<(), ServiceError> {
     let path = path.to_str().ok_or_else(storage_error)?;
-    let script = "import pathlib,sys; p=pathlib.Path(sys.argv[1]); p.parent.mkdir(parents=True,exist_ok=True); p.write_bytes(sys.stdin.buffer.read()); p.chmod(0o600)";
-    let mut command = Command::new("wsl.exe");
-    if let Some(distro) = paths.distro.as_deref() {
-        command.args(["--distribution", distro]);
-    }
+    let mut command = wsl_command(paths.distro.as_deref());
     let mut child = command
-        .args(["--exec", "python3", "-c", script, path])
+        .args(["--exec", "install", "-D", "-m", "600", "/dev/stdin", path])
         .stdin(Stdio::piped())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -1061,16 +1035,15 @@ async fn rebase_venv_scripts(
     cancellation: &mut watch::Receiver<bool>,
 ) -> Result<(), ServiceError> {
     let root = paths.root.to_str().ok_or_else(storage_error)?;
-    if paths.wsl {
-        run_wsl_in(
-            paths.distro.as_deref(),
-            &["python3", "-c", REBASE_VENV_SCRIPTS, root],
-            cancellation,
-        )
-        .await
-    } else {
-        run_native("python3", &["-c", REBASE_VENV_SCRIPTS, root], cancellation).await
-    }
+    run_python_script(
+        paths.distro.as_deref(),
+        paths.wsl,
+        "python3",
+        REBASE_VENV_SCRIPTS,
+        &[root],
+        cancellation,
+    )
+    .await
 }
 
 async fn remove_managed_runtime(paths: &RuntimePaths) -> Result<(), ServiceError> {
@@ -1078,14 +1051,7 @@ async fn remove_managed_runtime(paths: &RuntimePaths) -> Result<(), ServiceError
         if installed_release(paths).await.is_none() {
             return Err(installation_invalid_error());
         }
-        let path = paths.root.to_str().ok_or_else(storage_error)?;
-        let script = "import pathlib,shutil,sys; p=pathlib.Path(sys.argv[1]); marker=p/'.openchat-vllm.json'; data=__import__('json').loads(marker.read_text()); assert data.get('engineId')=='vllm' and data.get('releaseTag')==sys.argv[2]; shutil.rmtree(p)";
-        run_wsl_in(
-            paths.distro.as_deref(),
-            &["python3", "-c", script, path, RELEASE_TAG],
-            &mut watch::channel(false).1,
-        )
-        .await?;
+        remove_wsl_directory(paths, &paths.root, &mut watch::channel(false).1).await?;
         if let Some(marker) = paths.host_marker.as_ref() {
             fs::remove_file(marker).map_err(|_| storage_error())?;
         }
@@ -1108,16 +1074,36 @@ async fn publish_staging(
         let destination = destination.root.to_str().ok_or_else(storage_error)?;
         run_wsl_in(
             staging.distro.as_deref(),
-            &[
-                "python3",
-                "-c",
-                "import pathlib,sys; source=pathlib.Path(sys.argv[1]); target=pathlib.Path(sys.argv[2]); target.exists() and sys.exit(7); source.rename(target)",
-                source,
-                destination,
-            ],
+            &["mv", "-T", "-n", "--", source, destination],
             cancellation,
         )
-        .await
+        .await?;
+        let source_is_gone = capture_wsl_in(
+            staging.distro.as_deref(),
+            &["test", "!", "-e", source],
+            cancellation,
+        )
+        .await;
+        let source_is_gone = match source_is_gone {
+            Ok(_) => true,
+            Err(error) if error.code == "operation_cancelled" => return Err(error),
+            Err(_) => false,
+        };
+        let source_is_not_symlink = capture_wsl_in(
+            staging.distro.as_deref(),
+            &["test", "!", "-L", source],
+            cancellation,
+        )
+        .await;
+        let source_is_not_symlink = match source_is_not_symlink {
+            Ok(_) => true,
+            Err(error) if error.code == "operation_cancelled" => return Err(error),
+            Err(_) => false,
+        };
+        if !source_is_gone || !source_is_not_symlink {
+            return Err(installation_invalid_error());
+        }
+        Ok(())
     } else {
         match fs::symlink_metadata(&destination.root) {
             Ok(_) => return Err(installation_invalid_error()),
@@ -1130,18 +1116,7 @@ async fn publish_staging(
 
 async fn remove_staging(paths: &RuntimePaths) -> Result<(), ServiceError> {
     if paths.wsl {
-        let path = paths.root.to_str().ok_or_else(storage_error)?;
-        run_wsl_in(
-            paths.distro.as_deref(),
-            &[
-                "python3",
-                "-c",
-                "import pathlib,shutil,sys; p=pathlib.Path(sys.argv[1]); p.is_symlink() and sys.exit(8); p.exists() and shutil.rmtree(p)",
-                path,
-            ],
-            &mut watch::channel(false).1,
-        )
-        .await
+        remove_wsl_directory(paths, &paths.root, &mut watch::channel(false).1).await
     } else {
         match fs::symlink_metadata(&paths.root) {
             Ok(metadata) if metadata.file_type().is_symlink() => Err(installation_invalid_error()),
@@ -1154,18 +1129,7 @@ async fn remove_staging(paths: &RuntimePaths) -> Result<(), ServiceError> {
 
 async fn remove_unpublished_runtime(paths: &RuntimePaths) -> Result<(), ServiceError> {
     if paths.wsl {
-        let path = paths.root.to_str().ok_or_else(storage_error)?;
-        run_wsl_in(
-            paths.distro.as_deref(),
-            &[
-                "python3",
-                "-c",
-                "import pathlib,shutil,sys; p=pathlib.Path(sys.argv[1]); p.is_symlink() and sys.exit(8); p.exists() and shutil.rmtree(p)",
-                path,
-            ],
-            &mut watch::channel(false).1,
-        )
-        .await
+        remove_wsl_directory(paths, &paths.root, &mut watch::channel(false).1).await
     } else {
         match fs::symlink_metadata(&paths.root) {
             Ok(metadata) if metadata.file_type().is_symlink() => Err(installation_invalid_error()),
@@ -1235,6 +1199,84 @@ async fn run_wsl_in(
     wait_child(&mut child, cancellation).await
 }
 
+async fn run_python_script(
+    distro: Option<&str>,
+    is_wsl: bool,
+    python: &str,
+    script_source: &str,
+    script_arguments: &[&str],
+    cancellation: &mut watch::Receiver<bool>,
+) -> Result<(), ServiceError> {
+    let mut arguments = Vec::with_capacity(script_arguments.len() + 2);
+    arguments.push(python.to_owned());
+    arguments.push("-".to_owned());
+    arguments.extend(
+        script_arguments
+            .iter()
+            .map(|argument| (*argument).to_owned()),
+    );
+
+    let mut command = if is_wsl {
+        let mut command = wsl_command(distro);
+        command.arg("--exec").args(&arguments);
+        command
+    } else {
+        let mut command = Command::new(&arguments[0]);
+        command.args(&arguments[1..]);
+        command
+    };
+    let mut child = command
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .kill_on_drop(true)
+        .spawn()
+        .map_err(|_| {
+            if is_wsl {
+                compatibility_error("wsl_unavailable")
+            } else {
+                install_error()
+            }
+        })?;
+    let mut stdin = child.stdin.take().ok_or_else(storage_error)?;
+    stdin
+        .write_all(script_source.as_bytes())
+        .await
+        .map_err(|_| install_error())?;
+    drop(stdin);
+    wait_child(&mut child, cancellation).await
+}
+
+async fn remove_wsl_directory(
+    paths: &RuntimePaths,
+    directory: &Path,
+    cancellation: &mut watch::Receiver<bool>,
+) -> Result<(), ServiceError> {
+    if !paths.wsl || !directory.starts_with(&paths.root) {
+        return Err(installation_invalid_error());
+    }
+    let directory = directory.to_str().ok_or_else(storage_error)?;
+    if let Err(error) = capture_wsl_in(
+        paths.distro.as_deref(),
+        &["test", "!", "-L", directory],
+        cancellation,
+    )
+    .await
+    {
+        if error.code == "operation_cancelled" {
+            return Err(error);
+        }
+        check_cancelled(cancellation)?;
+        return Err(installation_invalid_error());
+    }
+    run_wsl_in(
+        paths.distro.as_deref(),
+        &["rm", "-rf", "--", directory],
+        cancellation,
+    )
+    .await
+}
+
 async fn capture_wsl_in(
     distro: Option<&str>,
     args: &[&str],
@@ -1260,6 +1302,14 @@ async fn capture_wsl_in(
             if output.status.success() { Ok(output.stdout) } else { Err(compatibility_error("wsl_unavailable")) }
         }
     }
+}
+
+fn wsl_command(distro: Option<&str>) -> Command {
+    let mut command = Command::new("wsl.exe");
+    if let Some(distro) = distro {
+        command.args(["--distribution", distro]);
+    }
+    command
 }
 
 async fn wait_child(
@@ -1339,8 +1389,8 @@ fn compatibility_error(reason: &str) -> ServiceError {
 #[cfg(test)]
 mod tests {
     use super::{
-        catalog_variant_status, decode_windows_process_output, glibc_supported,
-        parse_wsl_default_distro, runtime_child_path,
+        RELEASE_TAG, VARIANT_ID, catalog_variant_status, decode_windows_process_output,
+        glibc_supported, parse_runtime_marker, parse_wsl_default_distro, runtime_child_path,
     };
     use std::path::Path;
 
@@ -1399,5 +1449,28 @@ mod tests {
             Some("/home/agnes/.local/share/openchat/runtimes/vllm/0.33.0/.venv/bin/vllm")
         );
         assert!(!executable.to_string_lossy().contains('\\'));
+    }
+
+    #[test]
+    fn runtime_marker_requires_the_pinned_engine_release_and_variant() {
+        let marker = serde_json::json!({
+            "engineId": "vllm",
+            "releaseTag": RELEASE_TAG,
+            "variantId": VARIANT_ID,
+        });
+        let bytes = serde_json::to_vec(&marker).expect("runtime marker should serialize");
+        assert!(parse_runtime_marker(&bytes).is_some());
+
+        let mut wrong_variant = marker.clone();
+        wrong_variant["variantId"] = serde_json::json!("other");
+        let wrong_variant =
+            serde_json::to_vec(&wrong_variant).expect("test marker should serialize");
+        assert!(parse_runtime_marker(&wrong_variant).is_none());
+
+        let mut wrong_engine = marker;
+        wrong_engine["engineId"] = serde_json::json!("other");
+        let wrong_engine = serde_json::to_vec(&wrong_engine).expect("test marker should serialize");
+        assert!(parse_runtime_marker(&wrong_engine).is_none());
+        assert!(parse_runtime_marker(&vec![b' '; 4097]).is_none());
     }
 }

@@ -1831,5 +1831,48 @@ pub(super) fn apply_agent_migrations(
         current_version = 62;
     }
 
+    if current_version < 63 && target_version >= 63 {
+        let transaction = connection.unchecked_transaction()?;
+        transaction.execute_batch(
+            "CREATE TABLE local_models_v63 (
+                id TEXT PRIMARY KEY NOT NULL,
+                engine_id TEXT NOT NULL CHECK (
+                    engine_id IN ('llama_cpp', 'onnx_genai', 'vllm', 'exllama', 'sglang')
+                ),
+                display_name TEXT NOT NULL,
+                model_path TEXT NOT NULL,
+                path_kind TEXT NOT NULL CHECK (path_kind IN ('file', 'directory')),
+                created_at_unix_ms INTEGER NOT NULL,
+                UNIQUE (engine_id, model_path)
+            );
+            INSERT INTO local_models_v63 (
+                id, engine_id, display_name, model_path, path_kind, created_at_unix_ms
+            ) SELECT id, engine_id, display_name, model_path, path_kind, created_at_unix_ms
+              FROM local_models;
+            DROP TABLE local_models;
+            ALTER TABLE local_models_v63 RENAME TO local_models;",
+        )?;
+        transaction.execute(
+            "INSERT INTO openchat_backend_migrations (version, applied_at_unix_ms) VALUES (63, ?1)",
+            [unix_time_millis()?],
+        )?;
+        transaction.commit()?;
+        current_version = 63;
+    }
+
+    if current_version < 64 && target_version >= 64 {
+        let transaction = connection.unchecked_transaction()?;
+        transaction.execute_batch(
+            "ALTER TABLE local_models ADD COLUMN context_length INTEGER
+                CHECK (context_length IS NULL OR context_length BETWEEN 128 AND 2000000);",
+        )?;
+        transaction.execute(
+            "INSERT INTO openchat_backend_migrations (version, applied_at_unix_ms) VALUES (64, ?1)",
+            [unix_time_millis()?],
+        )?;
+        transaction.commit()?;
+        current_version = 64;
+    }
+
     Ok(current_version)
 }

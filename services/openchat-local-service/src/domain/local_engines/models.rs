@@ -23,6 +23,8 @@ use crate::{
 const MAX_MODEL_SCAN_DEPTH: usize = 5;
 const MAX_MODEL_SCAN_ENTRIES: usize = 20_000;
 const MAX_DISCOVERED_MODELS: usize = 100;
+const MIN_MODEL_CONTEXT_LENGTH: u32 = 128;
+const MAX_MODEL_CONTEXT_LENGTH: u32 = 2_000_000;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct RegisteredModel {
@@ -32,14 +34,15 @@ pub(crate) struct RegisteredModel {
     pub(crate) path: PathBuf,
     pub(crate) path_kind: String,
     pub(crate) created_at_unix_ms: i64,
+    pub(crate) context_length: Option<u32>,
 }
 
 pub(crate) fn list(storage: &AppStorage) -> Result<Vec<RegisteredModel>, ServiceError> {
     let connection = connect(storage)?;
     let mut statement = connection
         .prepare(
-            "SELECT id, engine_id, display_name, model_path, path_kind, created_at_unix_ms
-             FROM local_models WHERE engine_id IN ('llama_cpp', 'vllm')
+            "SELECT id, engine_id, display_name, model_path, path_kind, created_at_unix_ms, context_length
+             FROM local_models WHERE engine_id IN ('llama_cpp', 'vllm', 'exllama', 'sglang')
              ORDER BY display_name COLLATE NOCASE, id",
         )
         .map_err(|_| database_error())?;
@@ -52,6 +55,7 @@ pub(crate) fn list(storage: &AppStorage) -> Result<Vec<RegisteredModel>, Service
                 path: PathBuf::from(row.get::<_, String>(3)?),
                 path_kind: row.get(4)?,
                 created_at_unix_ms: row.get(5)?,
+                context_length: row.get(6)?,
             })
         })
         .map_err(|_| database_error())?;
@@ -155,7 +159,7 @@ fn scan_model_directory(
                 continue;
             }
 
-            if engine_id == "vllm"
+            if matches!(engine_id, "vllm" | "exllama" | "sglang")
                 && is_transformers_model_directory(&path)
                 && !registered_paths.contains(&path)
             {
@@ -202,7 +206,7 @@ pub(crate) fn find(
     let connection = connect(storage)?;
     connection
         .query_row(
-            "SELECT id, engine_id, display_name, model_path, path_kind, created_at_unix_ms
+            "SELECT id, engine_id, display_name, model_path, path_kind, created_at_unix_ms, context_length
              FROM local_models WHERE id = ?1",
             [model_id],
             |row| {
@@ -213,6 +217,7 @@ pub(crate) fn find(
                     path: PathBuf::from(row.get::<_, String>(3)?),
                     path_kind: row.get(4)?,
                     created_at_unix_ms: row.get(5)?,
+                    context_length: row.get(6)?,
                 })
             },
         )
@@ -224,6 +229,10 @@ pub(crate) fn ensure_storage_directories(root: &Path) -> Result<(), ServiceError
     fs::create_dir_all(root.join("models").join("llama"))
         .map_err(|_| model_storage_path_error())?;
     fs::create_dir_all(root.join("models").join("vllm")).map_err(|_| model_storage_path_error())?;
+    fs::create_dir_all(root.join("models").join("exllama"))
+        .map_err(|_| model_storage_path_error())?;
+    fs::create_dir_all(root.join("models").join("sglang"))
+        .map_err(|_| model_storage_path_error())?;
     Ok(())
 }
 
@@ -366,7 +375,7 @@ fn register_validated(
 
     if let Some(model) = connection
         .query_row(
-            "SELECT id, engine_id, display_name, model_path, path_kind, created_at_unix_ms
+            "SELECT id, engine_id, display_name, model_path, path_kind, created_at_unix_ms, context_length
              FROM local_models WHERE engine_id = ?1 AND model_path = ?2",
             params![engine_id, path_string],
             |row| {
@@ -377,6 +386,7 @@ fn register_validated(
                     path: PathBuf::from(row.get::<_, String>(3)?),
                     path_kind: row.get(4)?,
                     created_at_unix_ms: row.get(5)?,
+                    context_length: row.get(6)?,
                 })
             },
         )
@@ -393,12 +403,13 @@ fn register_validated(
         path: model_path,
         path_kind: path_kind.to_owned(),
         created_at_unix_ms: current_time_millis()?,
+        context_length: None,
     };
     connection
         .execute(
             "INSERT INTO local_models (
-                id, engine_id, display_name, model_path, path_kind, created_at_unix_ms
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                id, engine_id, display_name, model_path, path_kind, created_at_unix_ms, context_length
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             params![
                 model.id,
                 model.engine_id,
@@ -406,6 +417,7 @@ fn register_validated(
                 model.path.to_str().ok_or_else(invalid_model_path_error)?,
                 model.path_kind,
                 model.created_at_unix_ms,
+                model.context_length,
             ],
         )
         .map_err(|_| database_error())?;
@@ -416,7 +428,7 @@ fn validate_model_path(
     engine_id: &str,
     model_path: &str,
 ) -> Result<(PathBuf, &'static str), ServiceError> {
-    if engine_id == "vllm" {
+    if matches!(engine_id, "vllm" | "exllama" | "sglang") {
         let selected_path = selected_entry_path(Path::new(model_path))?;
         let metadata =
             fs::symlink_metadata(&selected_path).map_err(|_| invalid_model_path_error())?;
@@ -472,6 +484,47 @@ pub(crate) fn remove(storage: &AppStorage, model_id: &str) -> Result<bool, Servi
         .map_err(|_| database_error())
 }
 
+pub(crate) fn set_context_length(
+    storage: &AppStorage,
+    model_id: &str,
+    context_length: Option<u32>,
+) -> Result<RegisteredModel, ServiceError> {
+    if context_length.is_some_and(|value| {
+        !(MIN_MODEL_CONTEXT_LENGTH..=MAX_MODEL_CONTEXT_LENGTH).contains(&value)
+    }) {
+        return Err(invalid_context_length_error());
+    }
+
+    let connection = connect(storage)?;
+    let changed = connection
+        .execute(
+            "UPDATE local_models SET context_length = ?1 WHERE id = ?2",
+            params![context_length, model_id],
+        )
+        .map_err(|_| database_error())?;
+    if changed == 0 {
+        return Err(model_not_found_error());
+    }
+    connection
+        .query_row(
+            "SELECT id, engine_id, display_name, model_path, path_kind, created_at_unix_ms, context_length
+             FROM local_models WHERE id = ?1",
+            [model_id],
+            |row| {
+                Ok(RegisteredModel {
+                    id: row.get(0)?,
+                    engine_id: row.get(1)?,
+                    display_name: row.get(2)?,
+                    path: PathBuf::from(row.get::<_, String>(3)?),
+                    path_kind: row.get(4)?,
+                    created_at_unix_ms: row.get(5)?,
+                    context_length: row.get(6)?,
+                })
+            },
+        )
+        .map_err(|_| database_error())
+}
+
 pub(crate) fn to_json(model: &RegisteredModel, available: bool) -> Result<Value, ServiceError> {
     let path_exists = fs::metadata(&model.path).is_ok_and(|metadata| {
         if model.path_kind == "file" {
@@ -507,6 +560,7 @@ pub(crate) fn to_json(model: &RegisteredModel, available: bool) -> Result<Value,
         "defaultReasoningLevel": Value::Null,
         "path": model.path,
         "pathKind": model.path_kind,
+        "contextLength": model.context_length,
         "pathExists": path_exists,
         "isAvailable": path_exists && available,
         "reason": if !path_exists {
@@ -542,6 +596,8 @@ fn model_folder_name(engine_id: &str) -> Option<&'static str> {
     match engine_id {
         "llama_cpp" => Some("llama"),
         "vllm" => Some("vllm"),
+        "exllama" => Some("exllama"),
+        "sglang" => Some("sglang"),
         _ => None,
     }
 }
@@ -914,6 +970,22 @@ fn model_discovery_error() -> ServiceError {
     )
 }
 
+fn invalid_context_length_error() -> ServiceError {
+    ServiceError::new(
+        "local_model_context_length_invalid",
+        "The model context length must be between 128 and 2,000,000 tokens.",
+        false,
+    )
+}
+
+fn model_not_found_error() -> ServiceError {
+    ServiceError::new(
+        "local_model_not_found",
+        "The selected local model could not be found.",
+        false,
+    )
+}
+
 fn transfer_error() -> ServiceError {
     ServiceError::new(
         "local_model_transfer_failed",
@@ -1040,6 +1112,29 @@ mod tests {
     }
 
     #[test]
+    fn discovers_transformers_snapshots_for_exllama_and_sglang() {
+        let temporary = TestDirectory::new();
+        let model_directory = temporary.0.join("models");
+        let snapshot = model_directory.join("publisher-model");
+        fs::create_dir_all(&snapshot).expect("snapshot directory should be created");
+        fs::write(snapshot.join("config.json"), b"{}").expect("config should be written");
+        fs::write(snapshot.join("model.safetensors"), b"weights")
+            .expect("weights should be written");
+
+        for engine_id in ["exllama", "sglang"] {
+            let (found, truncated) =
+                scan_model_directory(engine_id, &model_directory, &HashSet::new())
+                    .expect("model scan should succeed");
+
+            assert!(!truncated);
+            assert_eq!(found.len(), 1);
+            assert_eq!(found[0].path, snapshot);
+            assert_eq!(found[0].path_kind, "directory");
+            assert_eq!(found[0].display_name, "publisher-model");
+        }
+    }
+
+    #[test]
     fn registers_transformers_snapshot_directory_for_vllm() {
         let temporary = TestDirectory::new();
         let storage = test_storage(temporary.0.join("app"));
@@ -1069,6 +1164,39 @@ mod tests {
             to_json(&model, true).expect("model should serialize")["pathExists"],
             true
         );
+    }
+
+    #[test]
+    fn registers_transformers_snapshot_directories_for_exllama_and_sglang() {
+        let temporary = TestDirectory::new();
+        let storage = test_storage(temporary.0.join("app"));
+        for engine_id in ["exllama", "sglang"] {
+            let snapshot = temporary.0.join(engine_id);
+            fs::create_dir_all(&snapshot).expect("snapshot directory should be created");
+            fs::write(snapshot.join("config.json"), b"{}").expect("config should be written");
+            fs::write(snapshot.join("model.safetensors"), b"weights")
+                .expect("weights should be written");
+            let model = register_with_storage_action(
+                storage.database_queue_handle(),
+                storage.root(),
+                engine_id,
+                snapshot.to_str().expect("fixture path should be UTF-8"),
+                None,
+                "keep",
+            )
+            .expect("Transformers snapshot should be registered");
+
+            assert_eq!(model.engine_id, engine_id);
+            assert_eq!(model.path_kind, "directory");
+            assert_eq!(
+                model.path,
+                snapshot.canonicalize().expect("snapshot should resolve")
+            );
+            assert_eq!(
+                to_json(&model, true).expect("model should serialize")["pathExists"],
+                true
+            );
+        }
     }
 
     #[test]
@@ -1286,6 +1414,7 @@ mod tests {
             path: model_path,
             path_kind: "file".to_owned(),
             created_at_unix_ms: 0,
+            context_length: None,
         };
 
         let metadata = to_json(&model, true).expect("model metadata should serialize");

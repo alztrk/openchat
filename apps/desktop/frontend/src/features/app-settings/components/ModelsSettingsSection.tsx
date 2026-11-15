@@ -99,6 +99,9 @@ const providerTranslationKeys: Record<string, TranslationKey> = {
   ovhcloud: 'providerNameOvhcloud',
   publicai: 'providerNamePublicAi',
   llama_cpp: 'localEngines',
+  vllm: 'localEngines',
+  exllama: 'localEngines',
+  sglang: 'localEngines',
 };
 
 export function ModelsSettingsSection() {

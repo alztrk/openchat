@@ -35,6 +35,48 @@ fn migration_33_adds_durable_chatgpt_credential_cleanup_queue() {
 }
 
 #[test]
+fn migration_64_adds_a_bounded_per_model_context_override() {
+    let connection = memory_index_repair_fixture(63);
+    connection
+        .execute(
+            "INSERT INTO local_models (
+                id, engine_id, display_name, model_path, path_kind, created_at_unix_ms
+             ) VALUES ('model-1', 'vllm', 'Model', 'C:/models/model', 'directory', 1)",
+            [],
+        )
+        .expect("register a model before the context migration");
+
+    assert_eq!(
+        initialize_schema(&connection, 64).expect("add per-model context settings"),
+        64
+    );
+    assert_eq!(
+        connection
+            .query_row(
+                "SELECT context_length FROM local_models WHERE id = 'model-1'",
+                [],
+                |row| row.get::<_, Option<i64>>(0),
+            )
+            .expect("read migrated context override"),
+        None
+    );
+    connection
+        .execute(
+            "UPDATE local_models SET context_length = 16384 WHERE id = 'model-1'",
+            [],
+        )
+        .expect("store model context override");
+    assert!(
+        connection
+            .execute(
+                "UPDATE local_models SET context_length = 127 WHERE id = 'model-1'",
+                [],
+            )
+            .is_err()
+    );
+}
+
+#[test]
 fn latest_schema_recreates_missing_conversation_context_state() {
     let connection = memory_index_repair_fixture(SCHEMA_VERSION);
     connection
@@ -881,7 +923,7 @@ fn migration_62_preserves_registered_models_and_adds_vllm() {
         .expect("insert existing GGUF model");
 
     assert_eq!(
-        initialize_schema(&connection, SCHEMA_VERSION).expect("upgrade local model catalog"),
+        initialize_schema(&connection, 62).expect("upgrade local model catalog"),
         62
     );
     let models = connection
@@ -914,6 +956,52 @@ fn migration_62_preserves_registered_models_and_adds_vllm() {
             [],
         )
         .expect("schema should accept Transformers snapshots");
+}
+
+#[test]
+fn migration_63_preserves_models_and_adds_exllama_and_sglang() {
+    let connection = memory_index_repair_fixture(62);
+    connection
+        .execute(
+            "INSERT INTO local_models (
+                id, engine_id, display_name, model_path, path_kind, created_at_unix_ms
+             ) VALUES ('vllm-model', 'vllm', 'Transformers model', 'C:/models/vllm', 'directory', 2)",
+            [],
+        )
+        .expect("insert existing vLLM model");
+
+    assert_eq!(
+        initialize_schema(&connection, 63).expect("upgrade local model catalog"),
+        63
+    );
+
+    let engines = ["exllama", "sglang"];
+    for engine in engines {
+        connection
+            .execute(
+                "INSERT INTO local_models (
+                    id, engine_id, display_name, model_path, path_kind, created_at_unix_ms
+                 ) VALUES (?1, ?1, ?1, ?2, 'directory', 3)",
+                rusqlite::params![engine, format!("C:/models/{engine}")],
+            )
+            .expect("schema should accept a new local engine model");
+    }
+    assert!(
+        connection
+            .execute(
+                "INSERT INTO local_models (
+                    id, engine_id, display_name, model_path, path_kind, created_at_unix_ms
+                 ) VALUES ('unknown-model', 'unknown', 'Unknown', 'C:/models/unknown', 'directory', 4)",
+                [],
+            )
+            .is_err()
+    );
+    let count = connection
+        .query_row("SELECT COUNT(*) FROM local_models", [], |row| {
+            row.get::<_, i64>(0)
+        })
+        .expect("read preserved and new model count");
+    assert_eq!(count, 3);
 }
 
 fn memory_index_repair_fixture(version: i64) -> Connection {

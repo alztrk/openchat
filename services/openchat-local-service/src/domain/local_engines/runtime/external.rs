@@ -36,7 +36,7 @@ pub(super) fn excluding_managed_server_processes(
 pub(super) async fn managed_server_process_ids() -> HashSet<u32> {
     let mut process_ids = HashSet::new();
     process_ids.extend(
-        running_llama_state()
+        managed_servers_state()
             .lock()
             .await
             .values()
@@ -114,9 +114,9 @@ pub(crate) async fn disconnect_external_server(process_id: u32, port: u16) -> Va
 
 pub(crate) async fn chat_model_catalog(
     storage: &AppStorage,
-    engine_id: &str,
+    engine_id: Option<&str>,
 ) -> Result<Value, ServiceError> {
-    if engine_id != "llama_cpp" {
+    if engine_id.is_some_and(|id| !super::super::is_managed_provider_id(id)) {
         return Err(ServiceError::new(
             "local_engine_unknown",
             "The selected local inference engine is not available.",
@@ -130,7 +130,9 @@ pub(crate) async fn chat_model_catalog(
         .and_then(Value::as_array)
         .into_iter()
         .flatten()
-        .filter(|server| server["engineId"] == "llama_cpp" && server["status"] == "running")
+        .filter(|server| {
+            engine_id.is_none_or(|id| server["engineId"] == id) && server["status"] == "running"
+        })
         .filter_map(|server| {
             let model_id = server["modelId"].as_str()?.to_owned();
             let process_id = u32::try_from(server["processId"].as_u64()?).ok()?;
@@ -140,7 +142,7 @@ pub(crate) async fn chat_model_catalog(
         .collect::<HashMap<_, _>>();
     let mut catalog_models = models::list(storage)?
         .into_iter()
-        .filter(|model| model.engine_id == engine_id)
+        .filter(|model| engine_id.is_none_or(|id| model.engine_id == id))
         .map(|model| {
             let available = is_model_available(storage, &model)?;
             let mut model_json = models::to_json(&model, available)?;
@@ -152,7 +154,9 @@ pub(crate) async fn chat_model_catalog(
             Ok(model_json)
         })
         .collect::<Result<Vec<_>, ServiceError>>()?;
-    catalog_models.extend(external_chat_models().await?);
+    if engine_id.is_none_or(|id| id == "llama_cpp") {
+        catalog_models.extend(external_chat_models().await?);
+    }
     Ok(json!({"freshness": "current", "models": catalog_models}))
 }
 
@@ -170,7 +174,7 @@ pub(crate) async fn chat_url(
         .and_then(Value::as_u64)
         .and_then(|value| u16::try_from(value).ok())
         .ok_or_else(runtime_error)?;
-    let state = running_llama_state().lock().await;
+    let state = managed_servers_state().lock().await;
     let server = state
         .get(model_id)
         .filter(|server| server.port == port)

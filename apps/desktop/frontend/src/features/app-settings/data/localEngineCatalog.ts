@@ -1,5 +1,8 @@
 import { type JsonObject, LocalServiceError, type ServiceEvent } from '@shared/lib/platform/local-service';
 
+export const LOCAL_MODEL_CONTEXT_LENGTH_MIN = 128;
+export const LOCAL_MODEL_CONTEXT_LENGTH_MAX = 2_000_000;
+
 export interface EngineVariant {
   variantId: string;
   os: string;
@@ -53,6 +56,7 @@ export interface LocalModel {
   displayName: string;
   path: string;
   pathKind: 'file' | 'directory';
+  contextLength: number | null;
   pathExists: boolean;
   isAvailable: boolean;
   estimatedMemoryBytes: number | null;
@@ -120,6 +124,13 @@ export interface LocalEngineSettings {
   vllmDtype: 'auto' | 'float16' | 'bfloat16' | null;
   vllmEnforceEager: boolean | null;
   vllmCustomArguments: string | null;
+  exllamaMaxSeqLen: number | null;
+  exllamaPort: number | null;
+  exllamaCacheMode: 'FP16' | 'Q8' | 'Q6' | 'Q4' | null;
+  sglangContextLength: number | null;
+  sglangPort: number | null;
+  sglangMemFractionStatic: number | null;
+  sglangMaxRunningRequests: number | null;
 }
 
 export const DEFAULT_LOCAL_ENGINE_SETTINGS: LocalEngineSettings = {
@@ -143,6 +154,13 @@ export const DEFAULT_LOCAL_ENGINE_SETTINGS: LocalEngineSettings = {
   vllmDtype: null,
   vllmEnforceEager: null,
   vllmCustomArguments: null,
+  exllamaMaxSeqLen: null,
+  exllamaPort: null,
+  exllamaCacheMode: null,
+  sglangContextLength: null,
+  sglangPort: null,
+  sglangMemFractionStatic: null,
+  sglangMaxRunningRequests: null,
 };
 
 export interface EngineCatalog {
@@ -242,7 +260,7 @@ export function parseCatalog(value: JsonObject): EngineCatalog {
   });
   return {
     engines: value.engines.map(parseEngine),
-    models: value.models.map(parseModel),
+    models: value.models.map(parseLocalModel),
     runningModelIds,
     externalServers: value.externalLlamaServers.map(parseExternalServer),
     executablePath: optionalString(value.llamaServerExecutablePath),
@@ -555,7 +573,7 @@ function parseVariant(value: unknown): EngineVariant {
   };
 }
 
-function parseModel(value: unknown): LocalModel {
+export function parseLocalModel(value: unknown): LocalModel {
   if (
     !isObject(value) ||
     typeof value.id !== 'string' ||
@@ -568,6 +586,13 @@ function parseModel(value: unknown): LocalModel {
   )
     throw new Error('The local model entry is invalid.');
   const estimatedMemoryBytes = value.estimatedMemoryBytes ?? null;
+  const contextLength = positiveIntegerOrNull(value.contextLength);
+  if (
+    contextLength !== null &&
+    (contextLength < LOCAL_MODEL_CONTEXT_LENGTH_MIN || contextLength > LOCAL_MODEL_CONTEXT_LENGTH_MAX)
+  ) {
+    throw new Error('The local model context length is invalid.');
+  }
   if (
     estimatedMemoryBytes !== null &&
     (typeof estimatedMemoryBytes !== 'number' ||
@@ -582,6 +607,7 @@ function parseModel(value: unknown): LocalModel {
     displayName: value.displayName,
     path: value.path,
     pathKind: value.pathKind,
+    contextLength,
     pathExists: value.pathExists,
     isAvailable: value.isAvailable,
     estimatedMemoryBytes,
@@ -647,6 +673,15 @@ export function parseLocalEngineSettings(value: unknown): LocalEngineSettings {
       : null,
     vllmEnforceEager: optionalBoolean(value.vllmEnforceEager),
     vllmCustomArguments: typeof value.vllmCustomArguments === 'string' ? value.vllmCustomArguments : null,
+    exllamaMaxSeqLen: positiveIntegerOrNull(value.exllamaMaxSeqLen),
+    exllamaPort: positiveIntegerOrNull(value.exllamaPort),
+    exllamaCacheMode: value.exllamaCacheMode === 'FP16' || value.exllamaCacheMode === 'Q8' || value.exllamaCacheMode === 'Q6' || value.exllamaCacheMode === 'Q4'
+      ? value.exllamaCacheMode
+      : null,
+    sglangContextLength: positiveIntegerOrNull(value.sglangContextLength),
+    sglangPort: positiveIntegerOrNull(value.sglangPort),
+    sglangMemFractionStatic: boundedNumberOrNull(value.sglangMemFractionStatic, 0.1, 0.99),
+    sglangMaxRunningRequests: positiveIntegerOrNull(value.sglangMaxRunningRequests),
   };
 }
 

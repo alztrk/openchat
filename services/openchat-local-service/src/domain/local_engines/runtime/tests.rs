@@ -18,13 +18,14 @@ use crate::storage::AppStorage;
 
 use super::{
     ConnectedExternalLlamaServer, ExternalLlamaModel, ExternalLlamaServerCandidate,
-    MAX_RUNTIME_PROPERTIES_BYTES, RuntimeCapabilities, bridge_cancellation_sources,
-    configure_llama_server_api_key, excluding_managed_server_processes, external_model_json,
-    external_model_route_id, external_server_for_route, external_server_group_id,
-    health_check_or_cancel, installed_engine_for, llama_server_arguments, managed_server_group_id,
-    model_lifecycle, parse_external_capabilities, parse_external_model_ids,
-    parse_runtime_capabilities, parse_vllm_runtime_capabilities, read_runtime_capabilities,
-    read_vllm_runtime_capabilities, remove_external_server, retain_detected_external_servers,
+    MAX_RUNTIME_PROPERTIES_BYTES, RuntimeCapabilities, append_context_length,
+    bridge_cancellation_sources, classify_runtime_stderr, configure_llama_server_api_key,
+    excluding_managed_server_processes, external_model_json, external_model_route_id,
+    external_server_for_route, external_server_group_id, health_check_or_cancel,
+    installed_engine_for, llama_server_arguments, managed_server_group_id, model_lifecycle,
+    parse_external_capabilities, parse_external_model_ids, parse_runtime_capabilities,
+    parse_vllm_runtime_capabilities, read_runtime_capabilities, read_vllm_runtime_capabilities,
+    remove_external_server, retain_detected_external_servers, runtime_failure_code,
     runtime_status_json, start_model,
 };
 
@@ -69,6 +70,47 @@ fn configured_llama_server_binary_is_used_without_a_managed_install() {
     assert_eq!(
         installed.entrypoint,
         executable.canonicalize().expect("path should canonicalize")
+    );
+}
+
+#[test]
+fn classifies_python_runtime_failures_without_returning_process_output() {
+    let output = "RuntimeError: Could not find nvcc; model=/private/model; token=private-value";
+    assert_eq!(
+        classify_runtime_stderr(output),
+        Some("cuda_compiler_unavailable")
+    );
+    assert_eq!(
+        classify_runtime_stderr("torch.cuda.OutOfMemoryError: CUDA out of memory"),
+        Some("gpu_memory_exhausted")
+    );
+    assert_eq!(
+        classify_runtime_stderr("ModuleNotFoundError: No module named 'sglang'"),
+        Some("runtime_dependency_missing")
+    );
+    assert_eq!(
+        classify_runtime_stderr("RuntimeError: no kernel image is available for execution"),
+        Some("gpu_architecture_unsupported")
+    );
+    assert_eq!(
+        classify_runtime_stderr("CUDA driver version is insufficient for CUDA runtime"),
+        Some("cuda_driver_unsupported")
+    );
+    assert_eq!(
+        classify_runtime_stderr("Traceback (most recent call last): ValueError: invalid config"),
+        Some("python_value_error")
+    );
+    assert_eq!(
+        classify_runtime_stderr("startup failed"),
+        Some("runtime_output_unclassified")
+    );
+    assert_eq!(classify_runtime_stderr(""), None);
+    assert_eq!(
+        runtime_failure_code(
+            Some("runtime_output_unclassified"),
+            Some("python_runtime_error")
+        ),
+        Some("python_runtime_error")
     );
 }
 
@@ -281,6 +323,21 @@ fn runtime_status_lists_multiple_managed_servers() {
 }
 
 #[test]
+fn model_context_override_is_used_before_the_engine_default() {
+    let mut arguments = Vec::new();
+    let model_context_length = Some(16384);
+    let engine_default = Some(8192);
+    append_context_length(
+        &mut arguments,
+        "--max-model-len",
+        model_context_length.or(engine_default),
+    );
+    append_context_length(&mut arguments, "--context-length", None);
+
+    assert_eq!(arguments, ["--max-model-len", "16384"]);
+}
+
+#[test]
 fn llama_server_arguments_pass_a_single_matching_vision_projector() {
     let temporary = TestDirectory::new();
     let model_path = temporary.0.join("vision-model.gguf");
@@ -294,6 +351,7 @@ fn llama_server_arguments_pass_a_single_matching_vision_projector() {
         path: model_path,
         path_kind: "file".to_owned(),
         created_at_unix_ms: 0,
+        context_length: None,
     };
 
     let arguments =
@@ -349,6 +407,7 @@ fn llama_server_arguments_omit_projector_for_text_only_models() {
         path: model_path,
         path_kind: "file".to_owned(),
         created_at_unix_ms: 0,
+        context_length: None,
     };
 
     let arguments =
@@ -369,6 +428,7 @@ fn llama_server_arguments_include_configured_hardware_options() {
         path: model_path,
         path_kind: "file".to_owned(),
         created_at_unix_ms: 0,
+        context_length: None,
     };
 
     crate::local_engines::settings::update_settings(

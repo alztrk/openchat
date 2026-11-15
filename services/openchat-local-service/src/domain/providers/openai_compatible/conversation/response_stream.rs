@@ -1816,7 +1816,7 @@ fn connection_error(route: &super::super::route::ChatRoute, details: String) -> 
 }
 
 fn is_local_runtime(provider_id: Option<&str>) -> bool {
-    matches!(provider_id, Some("llama_cpp"))
+    provider_id.is_some_and(crate::local_engines::is_managed_provider_id)
 }
 
 fn local_inference_error() -> ServiceError {

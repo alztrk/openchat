@@ -732,7 +732,7 @@ pub(crate) async fn resolve_child_run_route(
                 },
             }
         }
-        "llama_cpp" => {
+        provider_id if crate::local_engines::is_managed_provider_id(provider_id) => {
             if protocol != ChildRequestProtocol::ChatCompletions {
                 return Err(invalid_child_route());
             }

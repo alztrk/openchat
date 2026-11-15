@@ -61,7 +61,7 @@ pub(super) async fn dispatch(
             .await
         }
         "local.engines.chat_models.list" => {
-            local_engines::chat_model_catalog(storage, required_string(params, "engineId")?).await
+            local_engines::chat_model_catalog(storage, optional_string(params, "engineId")?).await
         }
         "local.models.list" => local_engines::model_catalog(storage),
         "local.models.discover" => {
@@ -107,6 +107,7 @@ pub(super) async fn dispatch(
         "models.hub.download" => {
             let repo_id = required_string(params, "repoId")?;
             let revision = required_string(params, "revision")?;
+            let engine_id = required_string(params, "engineId")?;
             let format = required_string(params, "format")?;
             let group_id = required_string(params, "groupId")?;
             let component_path = optional_string(params, "componentPath")?;
@@ -116,6 +117,7 @@ pub(super) async fn dispatch(
                 hugging_face::ModelDownloadRequest {
                     repo_id,
                     revision,
+                    engine_id,
                     format,
                     group_id,
                     component_path,
@@ -137,6 +139,11 @@ pub(super) async fn dispatch(
             )
             .await
         }
+        "local.models.context.set" => {
+            let model_id = required_string(params, "modelId")?;
+            let context_length = nullable_context_length(params)?;
+            local_engines::set_model_context_length(storage, model_id, context_length)
+        }
         "local.models.remove" => {
             local_engines::remove_model(storage, required_string(params, "modelId")?).await
         }
@@ -154,6 +161,17 @@ pub(super) async fn dispatch(
             if engine_id == "vllm" {
                 return local_engines::install_vllm(
                     storage,
+                    variant_id,
+                    request_id,
+                    events,
+                    cancellation,
+                )
+                .await;
+            }
+            if matches!(engine_id, "exllama" | "sglang") {
+                return local_engines::install_python_engine(
+                    storage,
+                    engine_id,
                     variant_id,
                     request_id,
                     events,
@@ -234,6 +252,18 @@ fn invalid_local_engine_request() -> ServiceError {
     )
 }
 
+fn nullable_context_length(params: &Value) -> Result<Option<u32>, ServiceError> {
+    match params.get("contextLength") {
+        Some(Value::Null) => Ok(None),
+        Some(Value::Number(value)) => value
+            .as_u64()
+            .and_then(|value| u32::try_from(value).ok())
+            .map(Some)
+            .ok_or_else(invalid_local_engine_request),
+        _ => Err(invalid_local_engine_request()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::{fs, path::PathBuf};
@@ -288,6 +318,73 @@ mod tests {
         .await
         .expect_err("unknown local model methods are rejected");
         assert_eq!(unknown_method.code, "method_not_found");
+    }
+
+    #[tokio::test]
+    async fn local_model_context_can_be_set_and_cleared() {
+        let directory = TestDirectory::new();
+        let storage = AppStorage::open_at(directory.0.join("data")).expect("open test storage");
+        storage
+            .prepare_chat_schema_migration(crate::CHAT_SCHEMA_VERSION)
+            .expect("prepare current chat schema");
+        storage
+            .initialize_backend_schema()
+            .expect("initialize current backend schema");
+        let model_path = directory.0.join("model.gguf");
+        fs::write(&model_path, b"model").expect("write model fixture");
+        let (_sender, mut cancellation) = watch::channel(false);
+        let events = EventSink::new();
+        let registered = dispatch(
+            "local.models.register",
+            &json!({
+                "engineId": "llama_cpp",
+                "modelPath": model_path,
+                "storageAction": "keep"
+            }),
+            &json!("request-register"),
+            &storage,
+            &events,
+            &mut cancellation,
+        )
+        .await
+        .expect("register local model");
+        let model_id = registered["id"].as_str().expect("model id should exist");
+
+        let updated = dispatch(
+            "local.models.context.set",
+            &json!({"modelId": model_id, "contextLength": 16384}),
+            &json!("request-context-set"),
+            &storage,
+            &events,
+            &mut cancellation,
+        )
+        .await
+        .expect("set model context length");
+        assert_eq!(updated["contextLength"], 16384);
+
+        let cleared = dispatch(
+            "local.models.context.set",
+            &json!({"modelId": model_id, "contextLength": null}),
+            &json!("request-context-clear"),
+            &storage,
+            &events,
+            &mut cancellation,
+        )
+        .await
+        .expect("clear model context length");
+        assert!(cleared["contextLength"].is_null());
+
+        let invalid = dispatch(
+            "local.models.context.set",
+            &json!({"modelId": model_id, "contextLength": 64}),
+            &json!("request-context-invalid"),
+            &storage,
+            &events,
+            &mut cancellation,
+        )
+        .await
+        .expect_err("reject unsupported context length");
+        assert_eq!(invalid.code, "local_model_context_length_invalid");
     }
 
     #[tokio::test]

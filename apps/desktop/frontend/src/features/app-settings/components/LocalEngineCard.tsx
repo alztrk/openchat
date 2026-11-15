@@ -21,6 +21,8 @@ import {
 import { EngineModelDirectorySetting } from './EngineModelDirectorySetting';
 import { LlamaRuntimeSetting } from './LlamaRuntimeSetting';
 import { VllmRuntimeSetting } from './VllmRuntimeSetting';
+import { ExllamaRuntimeSetting } from './ExllamaRuntimeSetting';
+import { SglangRuntimeSetting } from './SglangRuntimeSetting';
 import { InstallProgressInline } from './LocalEngineInstallProgress';
 import { LocalModelsSection } from './LocalModelsSection';
 
@@ -50,6 +52,7 @@ export function EngineCard({
   onUninstall,
   onRemove,
   onSaveSettings,
+  onSaveContextLength,
   onStart,
   onStop,
   onToggle,
@@ -85,6 +88,7 @@ export function EngineCard({
   onUninstall(): void;
   onRemove(model: LocalModel): void;
   onSaveSettings(updated: LocalEngineSettings): Promise<void>;
+  onSaveContextLength(modelId: string, contextLength: number | null): Promise<void>;
   onStart(modelId: string): void;
   onStop(modelId: string): void;
   onToggle(): void;
@@ -166,6 +170,12 @@ export function EngineCard({
           ) : null}
           {engine.engineId === 'vllm' ? (
             <VllmRuntimeSetting active={settingsActive} onSave={onSaveSettings} settings={settings} />
+          ) : null}
+          {engine.engineId === 'exllama' ? (
+            <ExllamaRuntimeSetting active={settingsActive} onSave={onSaveSettings} settings={settings} />
+          ) : null}
+          {engine.engineId === 'sglang' ? (
+            <SglangRuntimeSetting active={settingsActive} onSave={onSaveSettings} settings={settings} />
           ) : null}
           {(engine.catalogStatus === 'blocked' || engine.catalogStatus === 'deprecated') && engine.statusReason ? (
             <p className="text-sm text-secondary-text">
@@ -288,6 +298,7 @@ export function EngineCard({
             onAddModel={onAddModel}
             onCancelStart={onCancelStart}
             onRemove={onRemove}
+            onSaveContextLength={onSaveContextLength}
             onStart={onStart}
             onStop={onStop}
             runningModelIds={runningModelIds}

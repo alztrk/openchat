@@ -187,8 +187,9 @@ pub(super) async fn dispatch(
             let provider_id = required_string(params, "providerId")?;
             if !matches!(
                 provider_id,
-                "chatgpt" | "chatgpt_api" | "opencode" | "copilot" | "llama_cpp"
-            ) && !crate::provider_ids::is_compatible_provider_id(provider_id)
+                "chatgpt" | "chatgpt_api" | "opencode" | "copilot"
+            ) && !crate::local_engines::is_managed_provider_id(provider_id)
+                && !crate::provider_ids::is_compatible_provider_id(provider_id)
                 && !crate::provider_ids::is_custom_provider_id(provider_id)
             {
                 return Err(invalid_context_usage_params());

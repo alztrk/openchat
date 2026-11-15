@@ -10,6 +10,19 @@ pub(super) async fn available_loopback_port(preferred: Option<u16>) -> Result<u1
     Ok(address.port())
 }
 
+pub(super) fn append_context_length(
+    arguments: &mut Vec<OsString>,
+    option: &str,
+    context_length: Option<u32>,
+) {
+    if let Some(context_length) = context_length {
+        arguments.extend([
+            OsString::from(option),
+            OsString::from(context_length.to_string()),
+        ]);
+    }
+}
+
 pub(super) fn llama_server_arguments(
     storage_root: &Path,
     model: &models::RegisteredModel,
@@ -43,10 +56,11 @@ pub(super) fn llama_server_arguments(
         arguments.push(OsString::from(threads_batch.to_string()));
     }
 
-    if let Some(context_size) = settings.context_size {
-        arguments.push(OsString::from("-c"));
-        arguments.push(OsString::from(context_size.to_string()));
-    }
+    append_context_length(
+        &mut arguments,
+        "-c",
+        model.context_length.or(settings.context_size),
+    );
 
     if let Some(batch_size) = settings.batch_size {
         arguments.push(OsString::from("-b"));
@@ -161,12 +175,11 @@ pub(super) async fn vllm_server_launch(
     ]);
 
     let settings = settings::read_settings(storage.root())?;
-    if let Some(value) = settings.vllm_max_model_len {
-        arguments.extend([
-            OsString::from("--max-model-len"),
-            OsString::from(value.to_string()),
-        ]);
-    }
+    append_context_length(
+        &mut arguments,
+        "--max-model-len",
+        model.context_length.or(settings.vllm_max_model_len),
+    );
     if let Some(value) = settings.vllm_gpu_memory_utilization_milli {
         arguments.extend([
             OsString::from("--gpu-memory-utilization"),
@@ -208,6 +221,119 @@ pub(super) async fn vllm_server_launch(
         environment,
         auth_file: Some(auth_file),
         remote_pid_file,
+        remote_process_marker: None,
+    })
+}
+
+pub(super) async fn python_engine_server_launch(
+    storage: &AppStorage,
+    model: &models::RegisteredModel,
+    port: u16,
+) -> Result<RuntimeLaunch, ServiceError> {
+    let engine = super::super::python_engines::Engine::parse(&model.engine_id)?;
+    let paths = super::super::python_engines::launch_context(storage, &model.engine_id).await?;
+    let settings = settings::read_settings(storage.root())?;
+    let model_name = model
+        .path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(model_unavailable_error)?;
+    let model_path =
+        super::super::python_engines::model_path_for_runtime(&paths, &model.path).await?;
+    let session =
+        super::super::python_engines::create_session(&paths, engine, model, port, &settings)
+            .await?;
+    let python = super::super::python_engines::python_path(&paths);
+    let mut arguments = Vec::<OsString>::new();
+    let mut environment = Vec::new();
+    let provider_model_id;
+
+    match engine {
+        super::super::python_engines::Engine::Exllama => {
+            arguments.push(session.runner.as_os_str().to_owned());
+            provider_model_id = model_name.to_owned();
+        }
+        super::super::python_engines::Engine::Sglang => {
+            arguments.extend([
+                session.runner.as_os_str().to_owned(),
+                OsString::from("--model-path"),
+                OsString::from(model_path),
+                OsString::from("--served-model-name"),
+                OsString::from(&model.id),
+                OsString::from("--host"),
+                OsString::from("127.0.0.1"),
+                OsString::from("--port"),
+                OsString::from(port.to_string()),
+            ]);
+            append_context_length(
+                &mut arguments,
+                "--context-length",
+                model.context_length.or(settings.sglang_context_length),
+            );
+            if let Some(memory_fraction) = settings.sglang_mem_fraction_static_milli {
+                arguments.extend([
+                    OsString::from("--mem-fraction-static"),
+                    OsString::from(format!("{:.3}", f64::from(memory_fraction) / 1000.0)),
+                ]);
+            }
+            if let Some(max_requests) = settings.sglang_max_running_requests {
+                arguments.extend([
+                    OsString::from("--max-running-requests"),
+                    OsString::from(max_requests.to_string()),
+                ]);
+            }
+            provider_model_id = model.id.clone();
+            if !paths.wsl {
+                environment.push((
+                    OsString::from("OPENCHAT_SGLANG_TOKEN_FILE"),
+                    session.auth_file.as_os_str().to_owned(),
+                ));
+            }
+        }
+    }
+
+    if paths.wsl {
+        let distro = paths.distro.as_deref().ok_or_else(runtime_error)?;
+        let pid_file = session
+            .remote_pid_file
+            .as_deref()
+            .and_then(Path::to_str)
+            .ok_or_else(runtime_error)?;
+        let token_file = session.auth_file.to_str().ok_or_else(runtime_error)?;
+        let python = python.to_str().ok_or_else(runtime_error)?;
+        let runner = session.runner.to_str().ok_or_else(runtime_error)?;
+        let mut wsl_arguments = vec![
+            OsString::from("--distribution"),
+            OsString::from(distro),
+            OsString::from("--exec"),
+            OsString::from("env"),
+            OsString::from(format!("OPENCHAT_SGLANG_TOKEN_FILE={token_file}")),
+            OsString::from("sh"),
+            OsString::from("-c"),
+            OsString::from("printf '%s' \"$$\" > \"$1\"; shift; exec \"$@\""),
+            OsString::from("openchat-python-engine"),
+            OsString::from(pid_file),
+            OsString::from(python),
+            OsString::from(runner),
+        ];
+        wsl_arguments.extend(arguments.iter().skip(1).cloned());
+        arguments = wsl_arguments;
+    }
+
+    Ok(RuntimeLaunch {
+        arguments,
+        current_directory: if paths.wsl {
+            storage.root().to_path_buf()
+        } else {
+            session.directory
+        },
+        initial_capabilities: None,
+        provider_model_id,
+        api_key: Some(session.api_key),
+        environment,
+        auth_file: Some(session.auth_file),
+        remote_pid_file: session.remote_pid_file,
+        remote_process_marker: paths.wsl.then_some(session.runner),
     })
 }
 
@@ -233,6 +359,11 @@ pub(super) fn model_path_matches_engine(
                 && model.path.is_dir()
                 && model.path.join("config.json").is_file()
         }
+        "exllama" | "sglang" => {
+            model.path_kind == "directory"
+                && model.path.is_dir()
+                && model.path.join("config.json").is_file()
+        }
         _ => false,
     })
 }
@@ -243,6 +374,9 @@ pub(super) fn installed_engine_for(
 ) -> Result<Option<InstalledEngine>, ServiceError> {
     if engine_id == "vllm" {
         return super::super::vllm::installed_engine(storage);
+    }
+    if matches!(engine_id, "exllama" | "sglang") {
+        return super::super::python_engines::installed_engine(storage, engine_id);
     }
     if engine_id == "llama_cpp"
         && let Some(configured_path) = settings::llama_server_executable_path(storage.root())?
@@ -279,8 +413,8 @@ pub(super) fn installed_engine_for(
     Ok(None)
 }
 
-pub(super) fn running_llama_state() -> &'static Mutex<HashMap<String, RunningServer>> {
-    RUNNING_LLAMA_SERVERS.get_or_init(|| Mutex::new(HashMap::new()))
+pub(super) fn managed_servers_state() -> &'static Mutex<HashMap<String, RunningServer>> {
+    MANAGED_SERVERS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
 pub(super) fn runtime_operation_gate() -> &'static RwLock<()> {
@@ -361,10 +495,20 @@ pub(super) async fn stop_server(
     let Some(server) = state.as_mut() else {
         return Ok(());
     };
-    if server.engine_id == "vllm"
+    if matches!(server.engine_id.as_str(), "vllm" | "exllama" | "sglang")
         && let Some(pid_file) = server.remote_pid_file.as_deref()
     {
-        super::super::vllm::stop_wsl_process(storage, pid_file).await?;
+        if server.engine_id == "vllm" {
+            super::super::vllm::stop_wsl_process(storage, pid_file).await?;
+        } else if let Some(marker) = server.remote_process_marker.as_deref() {
+            super::super::python_engines::stop_wsl_process(
+                storage,
+                &server.engine_id,
+                pid_file,
+                marker,
+            )
+            .await?;
+        }
     }
     if server
         .child
@@ -381,10 +525,21 @@ pub(super) async fn stop_server(
         );
         return Err(runtime_error());
     }
-    if server.engine_id == "vllm"
+    if let Some(task) = server.stderr_diagnostics.take() {
+        let _ = task.await;
+    }
+    if let Some(task) = server.stdout_diagnostics.take() {
+        let _ = task.await;
+    }
+    if matches!(server.engine_id.as_str(), "vllm" | "exllama" | "sglang")
         && let Some(auth_file) = server.auth_file.as_deref()
     {
-        super::super::vllm::remove_auth_file(storage, auth_file).await?;
+        if server.engine_id == "vllm" {
+            super::super::vllm::remove_auth_file(storage, auth_file).await?;
+        } else {
+            super::super::python_engines::remove_session(storage, &server.engine_id, auth_file)
+                .await?;
+        }
     }
     let Some(_server) = state.take() else {
         return Err(runtime_error());

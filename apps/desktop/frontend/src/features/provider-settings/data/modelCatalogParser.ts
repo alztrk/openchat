@@ -3,6 +3,7 @@ import { isObject, numberOrNull } from '@shared/lib/utils/json';
 import type { ChatModel } from './chatModels';
 import type { CustomProviderSummary } from './providerCredentials';
 import type { ChatRoute } from './routes';
+import { isLocalEngineProviderId } from './localEngineProviderIds';
 
 export function parseProviderCatalog(
   response: JsonObject,
@@ -35,7 +36,9 @@ export function parseProviderCatalog(
       route.providerId === 'chatgpt_api'
         ? connectionId
         : (route.customProvider?.id ??
-          (['chatgpt', 'copilot', 'opencode', 'llama_cpp'].includes(route.providerId) ? undefined : route.providerId));
+          (['chatgpt', 'copilot', 'opencode'].includes(route.providerId) || isLocalEngineProviderId(route.providerId)
+            ? undefined
+            : route.providerId));
     const chatRoute: ChatRoute = {
       providerId: route.providerId,
       modelId: item.id,

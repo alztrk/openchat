@@ -7,6 +7,7 @@ mod gguf;
 pub(crate) mod installer;
 pub(crate) mod local_servers;
 pub(crate) mod models;
+mod python_engines;
 mod runtime;
 mod settings;
 mod vllm;
@@ -31,6 +32,10 @@ const CATALOGS: &[(&str, &[u8])] = &[(
     "llama_cpp",
     include_bytes!("../../../resources/local-engines/llama_cpp.json"),
 )];
+
+pub(crate) fn is_managed_provider_id(provider_id: &str) -> bool {
+    matches!(provider_id, "llama_cpp" | "vllm" | "exllama" | "sglang")
+}
 
 pub(crate) fn manifests() -> Result<Vec<EngineManifest>, ServiceError> {
     CATALOGS
@@ -130,6 +135,26 @@ pub(crate) async fn list(storage: &AppStorage) -> Result<Value, ServiceError> {
         )
         .await?,
     );
+    for engine_id in ["exllama", "sglang"] {
+        let model_directory = models::default_model_directory(storage.root(), engine_id)?;
+        let model_directory = model_directory.to_str().ok_or_else(|| {
+            ServiceError::new(
+                "local_model_directory_unavailable",
+                "The default model directory could not be represented.",
+                false,
+            )
+        })?;
+        engines.push(
+            python_engines::engine_json(
+                storage,
+                engine_id,
+                model_directory,
+                runtime_status_for_engine(&runtime, engine_id),
+                cuda_available,
+            )
+            .await?,
+        );
+    }
 
     Ok(json!({
         "engines": engines,
@@ -216,6 +241,16 @@ pub(crate) fn model_catalog(storage: &AppStorage) -> Result<Value, ServiceError>
     }))
 }
 
+pub(crate) fn set_model_context_length(
+    storage: &AppStorage,
+    model_id: &str,
+    context_length: Option<u32>,
+) -> Result<Value, ServiceError> {
+    let model = models::set_context_length(storage, model_id, context_length)?;
+    let available = runtime::is_model_available(storage, &model)?;
+    models::to_json(&model, available)
+}
+
 pub(crate) fn set_llama_server_executable_path(
     storage: &AppStorage,
     path: Option<&str>,
@@ -268,7 +303,7 @@ pub(crate) async fn fetch_local_server_models(
 
 pub(crate) async fn chat_model_catalog(
     storage: &AppStorage,
-    engine_id: &str,
+    engine_id: Option<&str>,
 ) -> Result<Value, ServiceError> {
     runtime::chat_model_catalog(storage, engine_id).await
 }
@@ -388,6 +423,25 @@ pub(crate) async fn uninstall_vllm(storage: &AppStorage) -> Result<Value, Servic
     vllm::uninstall(storage).await
 }
 
+pub(crate) async fn install_python_engine(
+    storage: &AppStorage,
+    engine_id: &str,
+    variant_id: &str,
+    request_id: &Value,
+    events: &crate::protocol::EventSink,
+    cancellation: &mut tokio::sync::watch::Receiver<bool>,
+) -> Result<Value, ServiceError> {
+    python_engines::install(
+        storage,
+        engine_id,
+        variant_id,
+        request_id,
+        events,
+        cancellation,
+    )
+    .await
+}
+
 pub(crate) async fn uninstall_engine(
     storage: &AppStorage,
     engine_id: &str,
@@ -396,6 +450,14 @@ pub(crate) async fn uninstall_engine(
         let result = uninstall_vllm(storage).await?;
         if result["removed"] == true {
             settings::clear_engine_settings(storage.root(), "vllm")?;
+        }
+        return Ok(result);
+    }
+    if matches!(engine_id, "exllama" | "sglang") {
+        runtime::stop_engine(storage, engine_id).await?;
+        let result = python_engines::uninstall(storage, engine_id).await?;
+        if result["removed"] == true {
+            settings::clear_engine_settings(storage.root(), engine_id)?;
         }
         return Ok(result);
     }
@@ -684,6 +746,15 @@ mod tests {
         CATALOGS, NvidiaDriverStatus, catalog::DriverVersion, catalog::parse_manifest,
         parse_nvidia_driver_output, recommended_variant_id, variant_hardware_status,
     };
+
+    #[test]
+    fn managed_provider_ids_cover_all_local_engines() {
+        for engine_id in ["llama_cpp", "vllm", "exllama", "sglang"] {
+            assert!(super::is_managed_provider_id(engine_id));
+        }
+        assert!(!super::is_managed_provider_id("onnx_genai"));
+        assert!(!super::is_managed_provider_id("openai"));
+    }
 
     #[test]
     fn every_embedded_engine_catalog_is_valid() {
