@@ -63,7 +63,7 @@ pub(crate) async fn create_session(
     );
     if paths.wsl {
         let session_parent = session.parent().ok_or_else(storage_error)?;
-        let mut cleanup_cancellation = watch::channel(false).1;
+        let (_cleanup_sender, mut cleanup_cancellation) = watch::channel(false);
         create_wsl_directory(paths, session_parent, true, &mut cleanup_cancellation).await?;
         create_wsl_directory(paths, &session, false, &mut cleanup_cancellation).await?;
     } else {
@@ -111,7 +111,7 @@ pub(crate) async fn create_session(
                 serde_json::to_string(&model_directory).map_err(|_| storage_error())?;
             let escaped_model_name =
                 serde_json::to_string(model_name).map_err(|_| storage_error())?;
-            let cache_mode = settings.exllama_cache_mode.as_deref().unwrap_or("fp16");
+            let cache_mode = settings.exllama_cache_mode.as_deref().unwrap_or("FP16");
             let max_seq_len =
                 exllama_max_seq_len(model.context_length, settings.exllama_max_seq_len);
             let config_path = runtime_child_path(&session, "config.yml", paths.wsl);
@@ -184,6 +184,7 @@ pub(crate) async fn stop_wsl_process(
         return Err(installation_invalid_error());
     }
     let runner_string = runner.to_str().ok_or_else(storage_error)?;
+    let (_cancellation_sender, mut cancellation) = watch::channel(false);
     run_python_script(
         &paths,
         "python3",
@@ -193,7 +194,7 @@ pub(crate) async fn stop_wsl_process(
             runner_string.to_owned(),
             "10".to_owned(),
         ],
-        &mut watch::channel(false).1,
+        &mut cancellation,
     )
     .await
 }

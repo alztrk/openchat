@@ -475,12 +475,9 @@ pub(crate) async fn model_path_for_runtime(
 ) -> Result<String, ServiceError> {
     let path = path.to_str().ok_or_else(model_unavailable_error)?;
     if let Some(distro) = context.distro.as_deref() {
-        let output = capture_wsl_in(
-            Some(distro),
-            &["wslpath", "-a", path],
-            &mut watch::channel(false).1,
-        )
-        .await?;
+        let (_cancellation_sender, mut cancellation) = watch::channel(false);
+        let output =
+            capture_wsl_in(Some(distro), &["wslpath", "-a", path], &mut cancellation).await?;
         return String::from_utf8(output)
             .map(|value| value.trim().to_owned())
             .map_err(|_| model_unavailable_error());
@@ -507,13 +504,8 @@ pub(crate) async fn write_auth_file(
             host_marker: None,
             distro: Some(distro.to_owned()),
         };
-        write_wsl_file(
-            &paths,
-            &path,
-            token.as_bytes(),
-            &mut watch::channel(false).1,
-        )
-        .await?;
+        let (_cancellation_sender, mut cancellation) = watch::channel(false);
+        write_wsl_file(&paths, &path, token.as_bytes(), &mut cancellation).await?;
     } else {
         #[cfg(target_os = "linux")]
         {
@@ -538,12 +530,8 @@ pub(crate) async fn remove_auth_file(
     }
     if let Some(distro) = context.distro.as_deref() {
         let path = path.to_str().ok_or_else(storage_error)?;
-        run_wsl_in(
-            Some(distro),
-            &["rm", "-f", "--", path],
-            &mut watch::channel(false).1,
-        )
-        .await
+        let (_cancellation_sender, mut cancellation) = watch::channel(false);
+        run_wsl_in(Some(distro), &["rm", "-f", "--", path], &mut cancellation).await
     } else {
         fs::remove_file(path).map_err(|_| storage_error())
     }
@@ -563,13 +551,14 @@ pub(crate) async fn stop_wsl_process(
     }
     let pid_file = pid_file.to_str().ok_or_else(storage_error)?;
     let executable = executable.to_str().ok_or_else(storage_error)?;
+    let (_cancellation_sender, mut cancellation) = watch::channel(false);
     run_python_script(
         context.distro.as_deref(),
         true,
         "python3",
         STOP_MANAGED_PROCESS_SCRIPT,
         &[pid_file, executable, "5"],
-        &mut watch::channel(false).1,
+        &mut cancellation,
     )
     .await
 }
@@ -651,12 +640,8 @@ async fn runtime_paths(storage: &AppStorage) -> Result<RuntimePaths, ServiceErro
         if version != "2" {
             return Err(compatibility_error("wsl2_required"));
         }
-        let home = capture_wsl_in(
-            Some(&distro),
-            &["printenv", "HOME"],
-            &mut watch::channel(false).1,
-        )
-        .await?;
+        let (_cancellation_sender, mut cancellation) = watch::channel(false);
+        let home = capture_wsl_in(Some(&distro), &["printenv", "HOME"], &mut cancellation).await?;
         let home = String::from_utf8(home).map_err(|_| compatibility_error("wsl_unavailable"))?;
         let home = home.trim();
         if !home.starts_with('/') || home.contains('\\') || home.split('/').any(|part| part == "..")
@@ -703,11 +688,12 @@ async fn compatibility_status(paths: &RuntimePaths) -> Option<&'static str> {
     if !paths.wsl && !cfg!(target_os = "linux") {
         return Some("unsupported_platform");
     }
+    let (_cancellation_sender, mut cancellation) = watch::channel(false);
     if paths.wsl {
         let python = match capture_wsl_in(
             paths.distro.as_deref(),
             &["python3", "--version"],
-            &mut watch::channel(false).1,
+            &mut cancellation,
         )
         .await
         {
@@ -721,7 +707,7 @@ async fn compatibility_status(paths: &RuntimePaths) -> Option<&'static str> {
         let glibc = match capture_wsl_in(
             paths.distro.as_deref(),
             &["getconf", "GNU_LIBC_VERSION"],
-            &mut watch::channel(false).1,
+            &mut cancellation,
         )
         .await
         {
@@ -733,21 +719,14 @@ async fn compatibility_status(paths: &RuntimePaths) -> Option<&'static str> {
         }
         return compatibility_gpu_status(paths.distro.as_deref(), true).await;
     }
-    let python = match capture_native("python3", &["--version"], &mut watch::channel(false).1).await
-    {
+    let python = match capture_native("python3", &["--version"], &mut cancellation).await {
         Ok(python) => python,
         Err(_) => return Some("python_unavailable"),
     };
     if !python_supported(&String::from_utf8_lossy(&python)) {
         return Some("python_unsupported");
     }
-    let glibc = match capture_native(
-        "getconf",
-        &["GNU_LIBC_VERSION"],
-        &mut watch::channel(false).1,
-    )
-    .await
-    {
+    let glibc = match capture_native("getconf", &["GNU_LIBC_VERSION"], &mut cancellation).await {
         Ok(glibc) => glibc,
         Err(_) => return Some("unsupported_platform"),
     };
@@ -758,6 +737,7 @@ async fn compatibility_status(paths: &RuntimePaths) -> Option<&'static str> {
 }
 
 async fn compatibility_gpu_status(distro: Option<&str>, wsl: bool) -> Option<&'static str> {
+    let (_cancellation_sender, mut cancellation) = watch::channel(false);
     let args = [
         "--query-gpu=driver_version,compute_cap",
         "--format=csv,noheader,nounits",
@@ -766,11 +746,11 @@ async fn compatibility_gpu_status(distro: Option<&str>, wsl: bool) -> Option<&'s
         capture_wsl_in(
             distro,
             &["/usr/lib/wsl/lib/nvidia-smi", args[0], args[1]],
-            &mut watch::channel(false).1,
+            &mut cancellation,
         )
         .await
     } else {
-        capture_native("nvidia-smi", &args, &mut watch::channel(false).1).await
+        capture_native("nvidia-smi", &args, &mut cancellation).await
     };
     output.map_or_else(
         |_| Some("gpu_unavailable"),
@@ -926,10 +906,11 @@ async fn is_installed(paths: &RuntimePaths) -> bool {
 async fn installed_release(paths: &RuntimePaths) -> Option<String> {
     if paths.wsl {
         let marker_path = paths.marker.to_str()?;
+        let (_cancellation_sender, mut cancellation) = watch::channel(false);
         let output = capture_wsl_in(
             paths.distro.as_deref(),
             &["head", "-c", "4097", marker_path],
-            &mut watch::channel(false).1,
+            &mut cancellation,
         )
         .await
         .ok()?;
@@ -1014,7 +995,14 @@ async fn write_wsl_file(
     let path = path.to_str().ok_or_else(storage_error)?;
     let mut command = wsl_command(paths.distro.as_deref());
     let mut child = command
-        .args(["--exec", "install", "-D", "-m", "600", "/dev/stdin", path])
+        .args([
+            "--exec",
+            "sh",
+            "-c",
+            "umask 077 && mkdir -p -- \"$(dirname -- \"$1\")\" && cat > \"$1\"",
+            "openchat-vllm-write",
+            path,
+        ])
         .stdin(Stdio::piped())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -1051,7 +1039,8 @@ async fn remove_managed_runtime(paths: &RuntimePaths) -> Result<(), ServiceError
         if installed_release(paths).await.is_none() {
             return Err(installation_invalid_error());
         }
-        remove_wsl_directory(paths, &paths.root, &mut watch::channel(false).1).await?;
+        let (_cancellation_sender, mut cancellation) = watch::channel(false);
+        remove_wsl_directory(paths, &paths.root, &mut cancellation).await?;
         if let Some(marker) = paths.host_marker.as_ref() {
             fs::remove_file(marker).map_err(|_| storage_error())?;
         }
@@ -1116,7 +1105,8 @@ async fn publish_staging(
 
 async fn remove_staging(paths: &RuntimePaths) -> Result<(), ServiceError> {
     if paths.wsl {
-        remove_wsl_directory(paths, &paths.root, &mut watch::channel(false).1).await
+        let (_cancellation_sender, mut cancellation) = watch::channel(false);
+        remove_wsl_directory(paths, &paths.root, &mut cancellation).await
     } else {
         match fs::symlink_metadata(&paths.root) {
             Ok(metadata) if metadata.file_type().is_symlink() => Err(installation_invalid_error()),
@@ -1129,7 +1119,8 @@ async fn remove_staging(paths: &RuntimePaths) -> Result<(), ServiceError> {
 
 async fn remove_unpublished_runtime(paths: &RuntimePaths) -> Result<(), ServiceError> {
     if paths.wsl {
-        remove_wsl_directory(paths, &paths.root, &mut watch::channel(false).1).await
+        let (_cancellation_sender, mut cancellation) = watch::channel(false);
+        remove_wsl_directory(paths, &paths.root, &mut cancellation).await
     } else {
         match fs::symlink_metadata(&paths.root) {
             Ok(metadata) if metadata.file_type().is_symlink() => Err(installation_invalid_error()),

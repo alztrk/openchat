@@ -324,6 +324,18 @@ async fn uninstall_removes_only_the_managed_runtime_and_preserves_downloaded_mod
     )
     .expect("runtime marker should be written");
 
+    let git_pack_directory = paths.root.join("tabbyAPI/.git/objects/pack");
+    fs::create_dir_all(&git_pack_directory).expect("the pinned source pack directory should exist");
+    for extension in ["idx", "pack", "rev"] {
+        let pack_file = git_pack_directory.join(format!("pack-fixture.{extension}"));
+        fs::write(&pack_file, b"git pack fixture").expect("the source pack should be written");
+        let mut permissions = fs::metadata(&pack_file)
+            .expect("the source pack should be readable")
+            .permissions();
+        permissions.set_readonly(true);
+        fs::set_permissions(&pack_file, permissions).expect("the source pack should be read-only");
+    }
+
     let model_directory = storage.root().join("models/exllama");
     fs::create_dir_all(&model_directory).expect("model directory should exist");
     let model_file = model_directory.join("model.safetensors");

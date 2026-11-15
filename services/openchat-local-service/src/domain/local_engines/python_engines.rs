@@ -671,8 +671,41 @@ async fn remove_managed_runtime(paths: &RuntimePaths, engine: Engine) -> Result<
         remove_wsl_directory(paths, &paths.root).await
     } else {
         cached_release(paths, engine).ok_or_else(installation_invalid_error)?;
-        fs::remove_dir_all(&paths.root).map_err(|_| storage_error())
+        remove_runtime_directory(&paths.root)
     }
+}
+
+fn remove_runtime_directory(path: &Path) -> Result<(), ServiceError> {
+    #[cfg(windows)]
+    clear_readonly_files(path)?;
+    fs::remove_dir_all(path).map_err(|_| storage_error())
+}
+
+#[cfg(windows)]
+fn clear_readonly_files(directory: &Path) -> Result<(), ServiceError> {
+    use std::os::windows::fs::MetadataExt;
+
+    const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
+
+    let metadata = fs::symlink_metadata(directory).map_err(|_| storage_error())?;
+    if metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 || !metadata.is_dir() {
+        return Ok(());
+    }
+    for entry in fs::read_dir(directory).map_err(|_| storage_error())? {
+        let path = entry.map_err(|_| storage_error())?.path();
+        let metadata = fs::symlink_metadata(&path).map_err(|_| storage_error())?;
+        if metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+            continue;
+        }
+        if metadata.is_dir() {
+            clear_readonly_files(&path)?;
+        } else if metadata.permissions().readonly() {
+            let mut permissions = metadata.permissions();
+            permissions.set_readonly(false);
+            fs::set_permissions(&path, permissions).map_err(|_| storage_error())?;
+        }
+    }
+    Ok(())
 }
 
 async fn is_installed(paths: &RuntimePaths, engine: Engine) -> bool {
@@ -782,7 +815,8 @@ async fn write_private_file(
     contents: &[u8],
 ) -> Result<(), ServiceError> {
     if paths.wsl {
-        write_wsl_file(paths, path, contents, &mut watch::channel(false).1).await
+        let (_cancellation_sender, mut cancellation) = watch::channel(false);
+        write_wsl_file(paths, path, contents, &mut cancellation).await
     } else {
         fs::write(path, contents).map_err(|_| storage_error())?;
         #[cfg(unix)]
@@ -843,7 +877,14 @@ async fn write_wsl_file(
     let path = path_str(path)?;
     let mut command = wsl_command(paths.distro.as_deref());
     let mut child = command
-        .args(["--exec", "install", "-D", "-m", "600", "/dev/stdin", &path])
+        .args([
+            "--exec",
+            "sh",
+            "-c",
+            "umask 077 && mkdir -p -- \"$(dirname -- \"$1\")\" && cat > \"$1\"",
+            "openchat-python-engine-write",
+            &path,
+        ])
         .stdin(Stdio::piped())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -865,7 +906,7 @@ async fn remove_partial_runtime(paths: &RuntimePaths) -> Result<(), ServiceError
     } else {
         match fs::symlink_metadata(&paths.root) {
             Ok(metadata) if metadata.file_type().is_symlink() => Err(installation_invalid_error()),
-            Ok(_) => fs::remove_dir_all(&paths.root).map_err(|_| storage_error()),
+            Ok(_) => remove_runtime_directory(&paths.root),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
             Err(_) => Err(storage_error()),
         }
@@ -883,12 +924,13 @@ async fn remove_wsl_directory(paths: &RuntimePaths, path: &Path) -> Result<(), S
     {
         return Err(installation_invalid_error());
     }
+    let (_cancellation_sender, mut cancellation) = watch::channel(false);
     run(
         paths,
         "rm",
         &["-rf".to_owned(), "--".to_owned(), path.to_owned()],
         None,
-        &mut watch::channel(false).1,
+        &mut cancellation,
     )
     .await
 }
