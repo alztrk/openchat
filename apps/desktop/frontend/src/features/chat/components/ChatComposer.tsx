@@ -1,15 +1,9 @@
-import { ArrowUp, Brain, Paperclip, Play, Square, Workflow, X } from 'lucide-react';
+import { ArrowUp, Brain, Paperclip, Play, Square, X } from 'lucide-react';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button, Select, Textarea, toast } from '@shared/components';
+import { Button, Select, Textarea } from '@shared/components';
 import type { ChatMessage } from '@features/chat/data';
-import {
-  expandWorkflowTemplate,
-  type WorkflowTemplate,
-} from '@features/chat/data/workflowTemplates';
 import { useWorkflowAfterResponsePrompt } from '@features/chat/hooks/useWorkflowAfterResponsePrompt';
-import type { ChatModel } from '@entities/model';
-import { isAssistantAgentSnapshot } from '@shared/lib/preferences/assistantProfiles';
 import { getSidebarDraggingConversationId } from '@shared/lib/preferences/sidebarPreferences';
 import { useChatStreaming } from '@features/chat/hooks/useChatStreaming';
 import { useChatStore } from '@features/chat/state';
@@ -34,7 +28,6 @@ import { ModelPicker } from './ModelPicker';
 import { PendingAttachmentGallery } from './PendingAttachmentGallery';
 import { UserQuestionPanel } from './UserQuestionPanel';
 import { VoiceInputControl } from './voice';
-import { WorkflowTemplatesDialog } from './WorkflowTemplatesDialog';
 import { useComposerState } from './useComposerState';
 import { toggleComparisonModelSelection } from '@features/chat/data/modelComparison';
 
@@ -168,8 +161,6 @@ export function ChatComposer({
   const selectConversationModel = useChatStore((state) => state.selectConversationModel);
   const selectModel = useChatStore((state) => state.selectModel);
   const setPendingProjectId = useChatStore((state) => state.setPendingProjectId);
-  const startNewChat = useChatStore((state) => state.startNewChat);
-  const startNewChatWithAgent = useChatStore((state) => state.startNewChatWithAgent);
   const selectReasoningEffort = useChatStore((state) => state.selectReasoningEffort);
   const chatErrorCode = useChatStore((state) => state.errorCode);
   const chatErrorMessage = useChatStore((state) => state.errorMessage);
@@ -236,7 +227,6 @@ export function ChatComposer({
   const [isComposerDraggingOver, setIsComposerDraggingOver] = useState(false);
   const [isVoiceInputActive, setIsVoiceInputActive] = useState(false);
   const [isModelComparisonOpen, setIsModelComparisonOpen] = useState(false);
-  const [isWorkflowTemplatesOpen, setIsWorkflowTemplatesOpen] = useState(false);
   const [comparisonModelKeys, setComparisonModelKeys] = useState<string[]>(() =>
     selectedModel?.key ? [selectedModel.key] : [],
   );
@@ -270,51 +260,6 @@ export function ChatComposer({
     !isSending &&
     !isUpdatingConversationModel &&
     composerMode === 'normal';
-
-  const startWorkflowConversation = (
-    workflowPrompt: string,
-    template: WorkflowTemplate,
-    parameterValues: Record<string, string>,
-  ) => {
-    const afterResponsePrompt = template.afterResponsePrompt
-      ? expandWorkflowTemplate(template.afterResponsePrompt, parameterValues).trim()
-      : '';
-    let agentSnapshot = null;
-    if (template.systemPrompt !== undefined || template.tools !== undefined || afterResponsePrompt.length > 0) {
-      const candidate = {
-        id: crypto.randomUUID(),
-        name: template.name,
-        instructions: template.systemPrompt ?? '',
-        responseStyle: 'balanced' as const,
-        toolAllowlist: template.tools ?? null,
-        ...(afterResponsePrompt.length > 0 ? { workflowHooks: { afterResponsePrompt } } : {}),
-      };
-      if (!isAssistantAgentSnapshot(candidate)) {
-        toast.error(t('workflowTemplateAgentInvalid'));
-        return;
-      }
-      agentSnapshot = candidate;
-    }
-
-    let templateModel: ChatModel | undefined;
-    if (template.providerId && template.modelId) {
-      const matches = selectableModels.filter(
-        (model) => model.providerId === template.providerId && model.modelId === template.modelId,
-      );
-      if (matches.length === 1) templateModel = matches[0];
-      else toast.warning(t('workflowTemplateModelUnavailable'));
-    }
-
-    if (agentSnapshot) {
-      startNewChatWithAgent(agentSnapshot);
-      if (contextProjectId) setPendingProjectId(contextProjectId);
-    } else {
-      startNewChat(contextProjectId);
-    }
-    if (templateModel) selectModel(templateModel.key);
-    setMessageDraft(workflowPrompt);
-    setCommandFeedbackKey(null);
-  };
 
   const workflowAfterResponsePrompt = activeConversation?.agent?.workflowHooks?.afterResponsePrompt ?? null;
 
@@ -600,18 +545,6 @@ export function ChatComposer({
               >
                 <Paperclip aria-hidden="true" size={18} />
               </Button>
-              {!isTemporaryChat ? (
-                <Button
-                  aria-label={t('workflowTemplatesTitle')}
-                  disabled={isTargetPlaceholder || isSending || isUpdatingConversationModel}
-                  onClick={() => setIsWorkflowTemplatesOpen(true)}
-                  size="icon"
-                  title={t('workflowTemplatesTitle')}
-                  variant="ghost"
-                >
-                  <Workflow aria-hidden="true" size={17} />
-                </Button>
-              ) : null}
               <ModelPicker
                 canSelectProvider
                 showFastModeControl={!isTemporaryChat}
@@ -759,11 +692,6 @@ export function ChatComposer({
           </div>
           </div>
         </form>
-        <WorkflowTemplatesDialog
-          onOpenChange={setIsWorkflowTemplatesOpen}
-          onStartConversation={startWorkflowConversation}
-          open={isWorkflowTemplatesOpen}
-        />
         {isModelComparisonOpen ? (
           <Suspense fallback={null}>
             <ModelComparison

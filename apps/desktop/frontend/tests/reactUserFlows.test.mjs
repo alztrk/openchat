@@ -424,8 +424,8 @@ const { AppWindowSettingsSection } = await vite.ssrLoadModule(
   '/src/features/app-settings/components/AppWindowSettingsSection.tsx',
 );
 const { ConversationSidebar } = await vite.ssrLoadModule('/src/features/chat/components/ConversationSidebar.tsx');
-const { WorkflowTemplatesDialog } = await vite.ssrLoadModule(
-  '/src/features/chat/components/WorkflowTemplatesDialog.tsx',
+const { WorkflowsPage } = await vite.ssrLoadModule(
+  '/src/features/chat/components/WorkflowsPage.tsx',
 );
 const { ToolActivityGroup } = await vite.ssrLoadModule(
   '/src/features/chat/components/message/ToolActivityGroup.tsx',
@@ -1254,6 +1254,8 @@ test('the primary navigation landmark and surface action render in every support
 
     fireEvent.click(screen.getByRole('button', { name: translations.modelLibrary }));
     assert.deepEqual(navigatedSurfaces, ['models']);
+    fireEvent.click(screen.getByRole('button', { name: translations.workflowTemplatesTitle }));
+    assert.deepEqual(navigatedSurfaces, ['models', 'workflows']);
     cleanup();
   }
 });
@@ -1264,15 +1266,11 @@ test('workflow templates can be created, edited, and launched as a new conversat
   assert.ok(translations);
   assert.ok(i18n);
   const startedConversations = [];
-  const onOpenChange = (open) => assert.equal(open, false);
-
   render(
     localized(
       'en',
-      React.createElement(WorkflowTemplatesDialog, {
-        onOpenChange,
+      React.createElement(WorkflowsPage, {
         onStartConversation: (...args) => startedConversations.push(args),
-        open: true,
       }),
     ),
   );
@@ -1317,7 +1315,8 @@ test('workflow templates can be created, edited, and launched as a new conversat
   );
   assert.equal(startedConversations[0][1].name, 'Project brief');
   assert.deepEqual(startedConversations[0][2], { project: 'OpenChat' });
-  assert.ok(screen.getByRole('dialog', { name: translations.workflowTemplatesTitle }));
+  assert.ok(screen.getByRole('heading', { name: translations.workflowTemplatesTitle }));
+  assert.equal(screen.queryByRole('dialog'), null);
 });
 
 test('tool activity group stays hidden without tools and exposes live progress and disclosure state', () => {
@@ -1507,10 +1506,8 @@ test('workflow templates can be imported and edited with the saved change persis
   render(
     localized(
       'en',
-      React.createElement(WorkflowTemplatesDialog, {
-        onOpenChange: () => undefined,
+      React.createElement(WorkflowsPage, {
         onStartConversation: () => undefined,
-        open: true,
       }),
     ),
   );

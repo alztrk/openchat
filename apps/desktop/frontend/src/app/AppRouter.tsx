@@ -17,6 +17,7 @@ const LibraryPage = lazy(() => import('@features/model-catalog/components/Librar
 const DesignPage = lazy(() => import('@features/design-workspace/components/DesignPage').then((m) => ({ default: m.DesignPage })));
 const DesignCanvas = lazy(() => import('@features/design-workspace/components/DesignCanvas').then((m) => ({ default: m.DesignCanvas })));
 const SecurityScanPage = lazy(() => import('@features/security-scans/components/SecurityScanPage').then((m) => ({ default: m.SecurityScanPage })));
+const WorkflowsPage = lazy(() => import('@features/chat/components/WorkflowsPage').then((m) => ({ default: m.WorkflowsPage })));
 const SettingsPage = lazy(() => import('@features/app-settings/components/SettingsPage').then((m) => ({ default: m.SettingsPage })));
 // eslint-disable-next-line @typescript-eslint/no-unused-vars -- reserved import, wired by consumer in App.tsx
 void ConversationSidebar;
@@ -85,7 +86,10 @@ export function AppRouter({
       {activeSurface === 'security' && (
         <Suspense fallback={null}><SecurityScanPage /></Suspense>
       )}
-      {activeSurface !== 'chats' && activeSurface !== 'models' && activeSurface !== 'design' && activeSurface !== 'images' && activeSurface !== 'security' && (
+      {activeSurface === 'workflows' && (
+        <Suspense fallback={null}><WorkflowsPage onStartConversation={(prompt) => onUsePrompt(prompt)} /></Suspense>
+      )}
+      {activeSurface !== 'chats' && activeSurface !== 'models' && activeSurface !== 'design' && activeSurface !== 'images' && activeSurface !== 'security' && activeSurface !== 'workflows' && (
         <Suspense fallback={null}>
           <SettingsPage appearance={appearance} onAppearanceChange={() => { /* noop */ }} onOpenConversation={() => { /* noop */ }} onThemeChange={() => { /* noop */ }} theme={theme} />
         </Suspense>

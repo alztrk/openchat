@@ -1,7 +1,7 @@
 import { unifiedStorage } from '@shared/lib/platform/storage/unifiedStorage';
 import { invoke, isTauri } from '@shared/lib/platform/tauri';
 
-export type AppSurface = 'chats' | 'design' | 'images' | 'models' | 'security' | 'settings';
+export type AppSurface = 'chats' | 'design' | 'images' | 'models' | 'security' | 'settings' | 'workflows';
 export type StartupSurfacePreference = 'last' | AppSurface;
 export type CloseWindowBehavior = 'exit' | 'minimize';
 
@@ -75,5 +75,5 @@ export async function writeLaunchOnStartup(enabled: boolean): Promise<void> {
 }
 
 export function isAppSurface(value: string | null): value is AppSurface {
-  return value === 'chats' || value === 'design' || value === 'images' || value === 'models' || value === 'security' || value === 'settings';
+  return value === 'chats' || value === 'design' || value === 'images' || value === 'models' || value === 'security' || value === 'settings' || value === 'workflows';
 }

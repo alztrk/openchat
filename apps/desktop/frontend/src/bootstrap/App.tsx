@@ -55,7 +55,8 @@ import {
   writeLastSurface,
 } from '@features/app-settings/data/appPreferences';
 import { useAssistantExecutionPreferencesStore } from '@shared/lib/preferences/assistantExecutionPreferences';
-import type { AssistantAgentSnapshot } from '@shared/lib/preferences/assistantProfiles';
+import { isAssistantAgentSnapshot, type AssistantAgentSnapshot } from '@shared/lib/preferences/assistantProfiles';
+import { expandWorkflowTemplate, type WorkflowTemplate } from '@features/chat/data/workflowTemplates';
 import { useChatDisplayPreferencesStore } from '@shared/lib/preferences/chatDisplayPreferences';
 import { useComposerPreferencesStore } from '@shared/lib/preferences/composerPreferences';
 import { useKeyboardShortcutsStore } from '@shared/lib/preferences/keyboardShortcutsStore';
@@ -64,6 +65,7 @@ import { localServiceClient } from '@shared/lib/platform/local-service';
 import { unifiedStorage } from '@shared/lib/platform/storage/unifiedStorage';
 import { getCurrentWindow, getVersion, invoke, isTauri, listen } from '@shared/lib/platform/tauri';
 import { BrandMark } from '@shared/components/BrandMark';
+import { toast } from '@shared/components';
 import { ToastContainer } from '@shared/components/ToastContainer';
 import { TitleTooltip } from '@shared/components/Tooltip';
 import { ConversationActionsHeader } from '@widgets/conversation-header/ConversationActionsHeader';
@@ -101,6 +103,9 @@ const SecurityScanPage = lazy(() =>
   import('@features/security-scans/components/SecurityScanPage').then((module) => ({
     default: module.SecurityScanPage,
   })),
+);
+const WorkflowsPage = lazy(() =>
+  import('@features/chat/components/WorkflowsPage').then((module) => ({ default: module.WorkflowsPage })),
 );
 const SettingsPage = lazy(() =>
   import('@features/app-settings/components/SettingsPage').then((module) => ({ default: module.SettingsPage })),
@@ -894,7 +899,58 @@ export function App() {
     models: t('modelLibrary'),
     security: t('securityScansTitle'),
     settings: t('settings'),
+    workflows: t('workflowTemplatesTitle'),
   }[activeSurface];
+
+  const startWorkflowConversation = (
+    prompt: string,
+    template: WorkflowTemplate,
+    parameterValues: Record<string, string>,
+  ) => {
+    const afterResponsePrompt = template.afterResponsePrompt
+      ? expandWorkflowTemplate(template.afterResponsePrompt, parameterValues).trim()
+      : '';
+    let agentSnapshot: AssistantAgentSnapshot | null = null;
+    if (template.systemPrompt !== undefined || template.tools !== undefined || afterResponsePrompt.length > 0) {
+      const candidate = {
+        id: crypto.randomUUID(),
+        name: template.name,
+        instructions: template.systemPrompt ?? '',
+        responseStyle: 'balanced' as const,
+        toolAllowlist: template.tools ?? null,
+        ...(afterResponsePrompt.length > 0 ? { workflowHooks: { afterResponsePrompt } } : {}),
+      };
+      if (!isAssistantAgentSnapshot(candidate)) {
+        toast.error(t('workflowTemplateAgentInvalid'));
+        return;
+      }
+      agentSnapshot = candidate;
+    }
+
+    const chatStore = useChatStore.getState();
+    const activeConversation = chatStore.conversations.find(
+      (conversation) => conversation.id === chatStore.activeConversationId,
+    );
+    const contextProjectId = activeConversation?.projectId ?? chatStore.pendingProjectId;
+    let templateModel: (typeof chatStore.models)[number] | null = null;
+    if (template.providerId && template.modelId) {
+      const matches = chatStore.models.filter(
+        (model) => model.providerId === template.providerId && model.modelId === template.modelId,
+      );
+      if (matches.length === 1) templateModel = matches[0] ?? null;
+      else toast.warning(t('workflowTemplateModelUnavailable'));
+    }
+
+    requestTemporaryChatExit(() => {
+      setPendingComposerDraft(prompt);
+      navigateSurface('chats');
+      if (agentSnapshot) {
+        chatStore.startNewChatWithAgent(agentSnapshot);
+        if (contextProjectId) useChatStore.getState().setPendingProjectId(contextProjectId);
+      } else chatStore.startNewChat(contextProjectId);
+      if (templateModel) useChatStore.getState().selectModel(templateModel.key);
+    });
+  };
 
   const changeThemePreference = (nextTheme: ThemePreference) => {
     setThemeSaveFailed(false);
@@ -1343,6 +1399,10 @@ export function App() {
                 <DesignPage onOpenSettings={() => navigate('settings')} />
               </Suspense>
             </div>
+          ) : activeSurface === 'workflows' ? (
+            <Suspense fallback={<p aria-live="polite" className="px-6 py-8 text-sm text-secondary-text" role="status">{t('workflowTemplatesTitle')}</p>}>
+              <WorkflowsPage onStartConversation={startWorkflowConversation} />
+            </Suspense>
           ) : activeSurface === 'security' ? (
             <Suspense
               fallback={

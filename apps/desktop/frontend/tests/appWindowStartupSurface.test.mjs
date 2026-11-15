@@ -12,9 +12,10 @@ test('startup settings accept every application surface through the shared domai
   assert.match(preferencesSource, /export function isAppSurface\(value: string \| null\): value is AppSurface/u);
   assert.match(
     preferencesSource,
-    /value === 'chats'.*value === 'design'.*value === 'models'.*value === 'security'.*value === 'settings'/u,
+    /value === 'chats'.*value === 'design'.*value === 'models'.*value === 'security'.*value === 'settings'.*value === 'workflows'/u,
   );
   assert.match(settingsSource, /\{ value: 'security', label: t\('securityScansTitle'\) \}/u);
+  assert.match(settingsSource, /\{ value: 'workflows', label: t\('workflowTemplatesTitle'\) \}/u);
 });
 
 test('startup surface selection persists before updating its visible value', () => {

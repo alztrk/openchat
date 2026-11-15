@@ -1,11 +1,11 @@
-import { Image, Library, MessageCircle, Moon, PanelsTopLeft, Settings, ShieldCheck, Sun } from 'lucide-react';
+import { Image, Library, MessageCircle, Moon, PanelsTopLeft, Settings, ShieldCheck, Sun, Workflow } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Button } from '@shared/components/Button';
 import { Tooltip } from '@shared/components/Tooltip';
 
-export type AppSurface = 'chats' | 'design' | 'images' | 'models' | 'security' | 'settings';
+export type AppSurface = 'chats' | 'design' | 'images' | 'models' | 'security' | 'settings' | 'workflows';
 
 export interface NavigationRailProps {
   activeSurface: AppSurface;
@@ -40,6 +40,12 @@ export function NavigationRail({ activeSurface, isDark, onNavigate, onToggleThem
           icon={<PanelsTopLeft aria-hidden="true" size={20} />}
           label={t('design')}
           onClick={() => onNavigate('design')}
+        />
+        <RailButton
+          active={activeSurface === 'workflows'}
+          icon={<Workflow aria-hidden="true" size={20} />}
+          label={t('workflowTemplatesTitle')}
+          onClick={() => onNavigate('workflows')}
         />
         <RailButton
           active={activeSurface === 'images'}

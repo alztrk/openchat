@@ -199,6 +199,7 @@ export function AppWindowSettingsSection() {
                   { value: 'models', label: t('modelLibrary') },
                   { value: 'design', label: t('design') },
                   { value: 'security', label: t('securityScansTitle') },
+                  { value: 'workflows', label: t('workflowTemplatesTitle') },
                   { value: 'settings', label: t('settings') },
                 ]}
                 value={startupSurface}

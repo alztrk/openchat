@@ -1,7 +1,7 @@
 import { ArrowLeft, Download, FileUp, Pencil, Plus, Trash2, Workflow } from 'lucide-react';
 import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button, Dialog, Input, Textarea, toast } from '@shared/components';
+import { Button, Input, Textarea, toast } from '@shared/components';
 import {
   buildWorkflowStartingPrompt,
   exportWorkflowTemplatesJson,
@@ -17,15 +17,13 @@ import {
 
 const maximumImportBytes = 4 * 1024 * 1024;
 
-export interface WorkflowTemplatesDialogProps {
-  open: boolean;
-  onOpenChange(open: boolean): void;
+export interface WorkflowsPageProps {
   onStartConversation(prompt: string, template: WorkflowTemplate, values: Record<string, string>): void;
 }
 
 type WorkflowView = 'list' | 'edit' | 'launch';
 
-export function WorkflowTemplatesDialog({ open, onOpenChange, onStartConversation }: WorkflowTemplatesDialogProps) {
+export function WorkflowsPage({ onStartConversation }: WorkflowsPageProps) {
   const { t } = useTranslation();
   const importInputRef = useRef<HTMLInputElement>(null);
   const [templates, setTemplates] = useState<WorkflowTemplate[]>([]);
@@ -61,7 +59,6 @@ export function WorkflowTemplatesDialog({ open, onOpenChange, onStartConversatio
     isWorkflowTemplateNameAvailable(templates, name, editingId);
 
   useEffect(() => {
-    if (!open) return;
     setView('list');
     setSelectedId(null);
     setEditingId(null);
@@ -77,7 +74,7 @@ export function WorkflowTemplatesDialog({ open, onOpenChange, onStartConversatio
           : new WorkflowTemplateReadError('unavailable'),
       );
     }
-  }, [open]);
+  }, []);
 
   const beginCreate = () => {
     setEditingId(null);
@@ -223,7 +220,6 @@ export function WorkflowTemplatesDialog({ open, onOpenChange, onStartConversatio
       selectedTemplate,
       parameterValues,
     );
-    onOpenChange(false);
   };
 
   const rawRecovery = loadError?.kind === 'corrupt' ? loadError.rawValue : null;
@@ -244,12 +240,19 @@ export function WorkflowTemplatesDialog({ open, onOpenChange, onStartConversatio
   };
 
   return (
-    <Dialog
-      onOpenChange={onOpenChange}
-      open={open}
-      size="wide"
-      title={t('workflowTemplatesTitle')}
+    <section
+      aria-labelledby="workflows-page-title"
+      className="mx-auto grid min-h-0 w-full max-w-5xl flex-1 content-start gap-6 overflow-y-auto bg-surface px-6 py-8"
     >
+      <header className="border-b border-border pb-5">
+        <div className="flex items-center gap-3">
+          <Workflow aria-hidden="true" className="text-accent" size={22} />
+          <h1 className="text-xl font-semibold" id="workflows-page-title">
+            {t('workflowTemplatesTitle')}
+          </h1>
+        </div>
+        <p className="mt-2 text-sm text-secondary-text">{t('workflowTemplateLibraryDescription')}</p>
+      </header>
       <input
         accept="application/json,.json"
         aria-label={t('workflowTemplateImport')}
@@ -376,7 +379,7 @@ export function WorkflowTemplatesDialog({ open, onOpenChange, onStartConversatio
       ) : (
         <div className="grid gap-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="text-sm text-secondary-text">{t('workflowTemplateLibraryDescription')}</p>
+            <span className="sr-only">{t('workflowTemplateLibraryDescription')}</span>
             <div className="flex flex-wrap gap-2">
               <Button disabled={isBusy} onClick={() => importInputRef.current?.click()} size="small" variant="secondary">
                 <FileUp aria-hidden="true" size={16} />
@@ -429,6 +432,6 @@ export function WorkflowTemplatesDialog({ open, onOpenChange, onStartConversatio
           )}
         </div>
       )}
-    </Dialog>
+    </section>
   );
 }
