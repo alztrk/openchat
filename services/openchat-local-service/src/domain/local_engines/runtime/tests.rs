@@ -876,17 +876,36 @@ async fn discovers_sglang_context_through_its_model_list_endpoint() {
 }
 
 #[test]
-fn refuses_missing_or_invalid_effective_context() {
+fn missing_sentinel_and_implausible_runtime_context_stays_unknown() {
     for properties in [
         serde_json::json!({"modalities": {"vision": true}}),
         serde_json::json!({"default_generation_settings": {"n_ctx": 0}}),
         serde_json::json!({"default_generation_settings": {"n_ctx": "32768"}}),
+        serde_json::json!({"default_generation_settings": {"n_ctx": 1_000_000_000}}),
+        serde_json::json!({"default_generation_settings": {"n_ctx": 2_000_001}}),
     ] {
         assert_eq!(
             parse_runtime_capabilities(&properties)
-                .expect_err("invalid context metadata should fail")
-                .code,
-            "local_engine_capability_unavailable"
+                .expect("unsupported context metadata should not prevent runtime use")
+                .context_window,
+            None
+        );
+    }
+}
+
+#[test]
+fn missing_sentinel_and_implausible_model_list_context_stays_unknown() {
+    for models in [
+        serde_json::json!({"data": []}),
+        serde_json::json!({"data": [{"max_model_len": 0}]}),
+        serde_json::json!({"data": [{"max_model_len": 1_000_000_000}]}),
+        serde_json::json!({"data": [{"max_model_len": 2_000_001}]}),
+    ] {
+        assert_eq!(
+            parse_model_list_runtime_capabilities(&models)
+                .expect("unsupported model-list context should stay unknown")
+                .context_window,
+            None
         );
     }
 }

@@ -378,14 +378,27 @@ async fn start_model_in_slot(
             let capabilities = match capabilities_result {
                 Ok(capabilities) => capabilities,
                 Err(error) => {
-                    stop_server(storage, state).await?;
-                    let event = if error.code == "operation_cancelled" {
-                        "runtime_capability_check_cancelled"
-                    } else {
-                        "runtime_capability_check_failed"
-                    };
-                    log_runtime_event(storage, event, Some(error.code), Some(started_at.elapsed()));
-                    return Err(error);
+                    if error.code == "operation_cancelled" {
+                        stop_server(storage, state).await?;
+                        log_runtime_event(
+                            storage,
+                            "runtime_capability_check_cancelled",
+                            Some(error.code),
+                            Some(started_at.elapsed()),
+                        );
+                        return Err(error);
+                    }
+                    log_runtime_event(
+                        storage,
+                        "runtime_capability_check_unavailable",
+                        Some(error.code),
+                        Some(started_at.elapsed()),
+                    );
+                    RuntimeCapabilities {
+                        context_window: None,
+                        supports_images: false,
+                        supports_tool_calls: None,
+                    }
                 }
             };
             let Some(server) = state.as_mut() else {

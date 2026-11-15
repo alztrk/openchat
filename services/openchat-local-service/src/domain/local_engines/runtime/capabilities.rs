@@ -1,5 +1,8 @@
 //! Runtime health checks and capability probing.
 
+const MIN_CONTEXT_WINDOW: i64 = 128;
+const MAX_CONTEXT_WINDOW: i64 = 2_000_000;
+
 use super::*;
 
 pub(crate) fn is_model_available(
@@ -145,10 +148,11 @@ pub(super) fn parse_model_list_runtime_capabilities(
     let context_window = models
         .pointer("/data/0/max_model_len")
         .and_then(Value::as_i64)
-        .filter(|context_window| *context_window > 0)
-        .ok_or_else(runtime_capability_error)?;
+        .filter(|context_window| {
+            (MIN_CONTEXT_WINDOW..=MAX_CONTEXT_WINDOW).contains(context_window)
+        });
     Ok(RuntimeCapabilities {
-        context_window: Some(context_window),
+        context_window,
         supports_images: false,
         supports_tool_calls: None,
     })
@@ -160,8 +164,9 @@ pub(super) fn parse_runtime_capabilities(
     let context_window = properties
         .pointer("/default_generation_settings/n_ctx")
         .and_then(Value::as_i64)
-        .filter(|context_window| *context_window > 0)
-        .ok_or_else(runtime_capability_error)?;
+        .filter(|context_window| {
+            (MIN_CONTEXT_WINDOW..=MAX_CONTEXT_WINDOW).contains(context_window)
+        });
     let supports_images = properties
         .pointer("/modalities/vision")
         .and_then(Value::as_bool)
@@ -181,7 +186,7 @@ pub(super) fn parse_runtime_capabilities(
     };
 
     Ok(RuntimeCapabilities {
-        context_window: Some(context_window),
+        context_window,
         supports_images,
         supports_tool_calls,
     })
