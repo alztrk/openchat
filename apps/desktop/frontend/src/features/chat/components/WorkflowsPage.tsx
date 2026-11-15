@@ -240,18 +240,37 @@ export function WorkflowsPage({ onStartConversation }: WorkflowsPageProps) {
   };
 
   return (
-    <section
-      aria-labelledby="workflows-page-title"
-      className="mx-auto grid min-h-0 w-full max-w-5xl flex-1 content-start gap-6 overflow-y-auto bg-surface px-6 py-8"
-    >
-      <header className="border-b border-border pb-5">
-        <div className="flex items-center gap-3">
-          <Workflow aria-hidden="true" className="text-accent" size={22} />
-          <h1 className="text-xl font-semibold" id="workflows-page-title">
+    <section aria-labelledby="workflows-page-title" className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background">
+      <header className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border bg-navigation px-5 py-3 sm:px-8">
+        <div className="min-w-0">
+          <h1
+            className="text-xl font-semibold leading-7 text-text"
+            id="workflows-page-title"
+          >
             {t('workflowTemplatesTitle')}
           </h1>
+          <p className="mt-0.5 text-sm text-secondary-text">{t('workflowTemplateLibraryDescription')}</p>
         </div>
-        <p className="mt-2 text-sm text-secondary-text">{t('workflowTemplateLibraryDescription')}</p>
+        {view === 'list' && !loadError ? (
+          <div className="flex shrink-0 items-center gap-2">
+            <Button disabled={isBusy} onClick={() => importInputRef.current?.click()} size="small" variant="secondary">
+              <FileUp aria-hidden="true" size={16} />
+              {t('workflowTemplateImport')}
+            </Button>
+            {templates.length > 0 ? (
+              <>
+                <Button disabled={isBusy} onClick={exportTemplates} size="small" variant="secondary">
+                  <Download aria-hidden="true" size={16} />
+                  {t('workflowTemplateExport')}
+                </Button>
+                <Button disabled={isBusy || templates.length >= 50} onClick={beginCreate} size="small" variant="primary">
+                  <Plus aria-hidden="true" size={16} />
+                  {t('workflowTemplateCreate')}
+                </Button>
+              </>
+            ) : null}
+          </div>
+        ) : null}
       </header>
       <input
         accept="application/json,.json"
@@ -267,169 +286,166 @@ export function WorkflowsPage({ onStartConversation }: WorkflowsPageProps) {
       />
 
       {loadError ? (
-        <div className="grid gap-3" role="alert">
+        <div className="grid flex-1 content-center justify-items-start gap-3 px-5 py-6 md:px-8" role="alert">
           <p className="text-sm text-secondary-text">{t('workflowTemplateStorageUnavailable')}</p>
           {rawRecovery !== null ? (
-            <Button className="w-fit" onClick={exportRawData} variant="secondary">
+            <Button onClick={exportRawData} size="small" variant="secondary">
               <Download aria-hidden="true" size={16} />
               {t('workflowTemplateExportRecovery')}
             </Button>
           ) : null}
         </div>
       ) : view === 'edit' ? (
-        <form
-          className="grid gap-4"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void saveTemplate();
-          }}
-        >
-          <Button className="w-fit" onClick={() => setView('list')} variant="ghost">
-            <ArrowLeft aria-hidden="true" size={16} />
-            {t('workflowTemplateBack')}
-          </Button>
-          <Input
-            autoFocus
-            label={t('workflowTemplateName')}
-            maxLength={64}
-            onChange={(event) => setName(event.currentTarget.value)}
-            required
-            value={name}
-          />
-          <Input
-            label={t('workflowTemplateDescription')}
-            maxLength={256}
-            onChange={(event) => setDescription(event.currentTarget.value)}
-            value={description}
-          />
-          <Textarea
-            label={t('workflowTemplatePrompt')}
-            description={t('workflowTemplateParametersHint')}
-            maxLength={32 * 1024}
-            onChange={(event) => setPrompt(event.currentTarget.value)}
-            required
-            value={prompt}
-          />
-          <Textarea
-            description={t('workflowTemplateBeforeStartHint')}
-            label={t('workflowTemplateBeforeStartPrompt')}
-            maxLength={32 * 1024}
-            onChange={(event) => setBeforeStartPrompt(event.currentTarget.value)}
-            value={beforeStartPrompt}
-          />
-          <Textarea
-            description={t('workflowTemplateAfterResponseHint')}
-            label={t('workflowTemplateAfterResponsePrompt')}
-            maxLength={32 * 1024}
-            onChange={(event) => setAfterResponsePrompt(event.currentTarget.value)}
-            value={afterResponsePrompt}
-          />
-          {!isWorkflowTemplateNameAvailable(templates, name, editingId) ? (
-            <p className="text-sm text-destructive" role="alert">{t('workflowTemplateDuplicateName')}</p>
-          ) : promptTooLong ? (
-            <p className="text-sm text-destructive" role="alert">{t('workflowTemplatePromptLimit')}</p>
-          ) : hookPromptTooLong ? (
-            <p className="text-sm text-destructive" role="alert">{t('workflowTemplateHookPromptLimit')}</p>
-          ) : tooManyParameters ? (
-            <p className="text-sm text-destructive" role="alert">{t('workflowTemplateParametersLimit', { count: 16 })}</p>
-          ) : null}
-          <div className="flex justify-end gap-2">
-            <Button onClick={() => setView('list')} variant="secondary">{t('cancel')}</Button>
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 md:px-8">
+          <form
+            className="grid max-w-3xl gap-5"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void saveTemplate();
+            }}
+          >
+            <Button className="w-fit" onClick={() => setView('list')} size="small" variant="ghost">
+              <ArrowLeft aria-hidden="true" size={16} />
+              {t('workflowTemplateBack')}
+            </Button>
+            <Input
+              autoFocus
+              label={t('workflowTemplateName')}
+              maxLength={64}
+              onChange={(event) => setName(event.currentTarget.value)}
+              required
+              value={name}
+            />
+            <Input
+              label={t('workflowTemplateDescription')}
+              maxLength={256}
+              onChange={(event) => setDescription(event.currentTarget.value)}
+              value={description}
+            />
+            <Textarea
+              label={t('workflowTemplatePrompt')}
+              description={t('workflowTemplateParametersHint')}
+              maxLength={32 * 1024}
+              onChange={(event) => setPrompt(event.currentTarget.value)}
+              required
+              value={prompt}
+            />
+            <Textarea
+              description={t('workflowTemplateBeforeStartHint')}
+              label={t('workflowTemplateBeforeStartPrompt')}
+              maxLength={32 * 1024}
+              onChange={(event) => setBeforeStartPrompt(event.currentTarget.value)}
+              value={beforeStartPrompt}
+            />
+            <Textarea
+              description={t('workflowTemplateAfterResponseHint')}
+              label={t('workflowTemplateAfterResponsePrompt')}
+              maxLength={32 * 1024}
+              onChange={(event) => setAfterResponsePrompt(event.currentTarget.value)}
+              value={afterResponsePrompt}
+            />
+            {!isWorkflowTemplateNameAvailable(templates, name, editingId) ? (
+              <p className="text-sm text-destructive" role="alert">{t('workflowTemplateDuplicateName')}</p>
+            ) : promptTooLong ? (
+              <p className="text-sm text-destructive" role="alert">{t('workflowTemplatePromptLimit')}</p>
+            ) : hookPromptTooLong ? (
+              <p className="text-sm text-destructive" role="alert">{t('workflowTemplateHookPromptLimit')}</p>
+            ) : tooManyParameters ? (
+              <p className="text-sm text-destructive" role="alert">{t('workflowTemplateParametersLimit', { count: 16 })}</p>
+            ) : null}
+            <div className="flex justify-end gap-2 border-t border-border pt-4">
+              <Button onClick={() => setView('list')} variant="secondary">{t('cancel')}</Button>
               <Button
                 disabled={!canSave || isBusy || (templates.length >= 50 && editingId === null)}
                 loading={isBusy}
                 type="submit"
                 variant="primary"
               >
-              {t('save')}
-            </Button>
-          </div>
-        </form>
+                {t('save')}
+              </Button>
+            </div>
+          </form>
+        </div>
       ) : view === 'launch' && selectedTemplate ? (
-        <form className="grid gap-4" onSubmit={launchTemplate}>
-          <Button className="w-fit" onClick={() => setView('list')} variant="ghost">
-            <ArrowLeft aria-hidden="true" size={16} />
-            {t('workflowTemplateBack')}
-          </Button>
-          <div>
-            <h3 className="font-semibold">{selectedTemplate.name}</h3>
-            {selectedTemplate.description ? <p className="mt-1 text-sm text-secondary-text">{selectedTemplate.description}</p> : null}
-          </div>
-          {selectedTemplate.parameters.map((parameter: WorkflowParameter) => (
-            <Input
-              key={parameter.name}
-              label={parameter.label ?? parameter.name}
-              onChange={(event) => {
-                const value = event.currentTarget.value;
-                setParameterValues((current) => ({ ...current, [parameter.name]: value }));
-              }}
-              required={parameter.required !== false}
-              value={parameterValues[parameter.name] ?? ''}
-            />
-          ))}
-          <p className="text-xs text-secondary-text">{t('workflowTemplateNewConversationHint')}</p>
-          <div className="flex justify-end gap-2">
-            <Button onClick={() => setView('list')} variant="secondary">{t('cancel')}</Button>
-            <Button type="submit" variant="primary">
-              <Workflow aria-hidden="true" size={16} />
-              {t('workflowTemplateStart')}
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 md:px-8">
+          <form className="grid max-w-3xl gap-5" onSubmit={launchTemplate}>
+            <Button className="w-fit" onClick={() => setView('list')} size="small" variant="ghost">
+              <ArrowLeft aria-hidden="true" size={16} />
+              {t('workflowTemplateBack')}
             </Button>
-          </div>
-        </form>
+            <div>
+              <h2 className="text-base font-semibold text-text">{selectedTemplate.name}</h2>
+              {selectedTemplate.description ? <p className="mt-1 text-sm text-secondary-text">{selectedTemplate.description}</p> : null}
+            </div>
+            {selectedTemplate.parameters.map((parameter: WorkflowParameter) => (
+              <Input
+                key={parameter.name}
+                label={parameter.label ?? parameter.name}
+                onChange={(event) => {
+                  const value = event.currentTarget.value;
+                  setParameterValues((current) => ({ ...current, [parameter.name]: value }));
+                }}
+                required={parameter.required !== false}
+                value={parameterValues[parameter.name] ?? ''}
+              />
+            ))}
+            <p className="text-sm text-secondary-text">{t('workflowTemplateNewConversationHint')}</p>
+            <div className="flex justify-end gap-2 border-t border-border pt-4">
+              <Button onClick={() => setView('list')} variant="secondary">{t('cancel')}</Button>
+              <Button type="submit" variant="primary">
+                <Workflow aria-hidden="true" size={16} />
+                {t('workflowTemplateStart')}
+              </Button>
+            </div>
+          </form>
+        </div>
+      ) : templates.length === 0 ? (
+        <div className="grid min-h-0 flex-1 content-center justify-items-center gap-3 px-5 py-10 text-center">
+          <Workflow aria-hidden="true" className="text-secondary-icon" size={24} />
+          <p className="max-w-md text-sm text-secondary-text">{t('workflowTemplateEmpty')}</p>
+          <Button disabled={isBusy} onClick={beginCreate} size="small" variant="primary">
+            <Plus aria-hidden="true" size={16} />
+            {t('workflowTemplateCreate')}
+          </Button>
+        </div>
       ) : (
-        <div className="grid gap-4">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <span className="sr-only">{t('workflowTemplateLibraryDescription')}</span>
-            <div className="flex flex-wrap gap-2">
-              <Button disabled={isBusy} onClick={() => importInputRef.current?.click()} size="small" variant="secondary">
-                <FileUp aria-hidden="true" size={16} />
-                {t('workflowTemplateImport')}
-              </Button>
-              <Button disabled={isBusy || templates.length === 0} onClick={exportTemplates} size="small" variant="secondary">
-                <Download aria-hidden="true" size={16} />
-                {t('workflowTemplateExport')}
-              </Button>
-              <Button disabled={isBusy || templates.length >= 50} onClick={beginCreate} size="small" variant="primary">
-                <Plus aria-hidden="true" size={16} />
-                {t('workflowTemplateCreate')}
-              </Button>
-            </div>
-          </div>
-          {templates.length === 0 ? (
-            <div className="rounded-card border border-dashed border-border px-4 py-8 text-center text-sm text-secondary-text">
-              {t('workflowTemplateEmpty')}
-            </div>
-          ) : (
-            <ul className="grid gap-2">
-              {templates.map((template) => (
-                <li className="flex flex-wrap items-center justify-between gap-3 rounded-card border border-border bg-raised p-3" key={template.id}>
-                  <button className="min-w-0 flex-1 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus" onClick={() => beginLaunch(template)} type="button">
-                    <span className="block truncate font-medium">{template.name}</span>
-                    <span className="mt-1 block line-clamp-2 text-sm text-secondary-text">
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 md:px-8">
+          <ul className="divide-y divide-border">
+            {templates.map((template) => (
+              <li className="flex min-w-0 items-center gap-2 py-3" key={template.id}>
+                <button
+                  className="group flex min-h-11 min-w-0 flex-1 items-center gap-3 rounded-control px-2 text-left transition-colors hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+                  onClick={() => beginLaunch(template)}
+                  type="button"
+                >
+                  <Workflow aria-hidden="true" className="shrink-0 text-secondary-icon" size={17} />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-medium text-text">{template.name}</span>
+                    <span className="mt-0.5 block truncate text-xs text-secondary-text">
                       {template.description || template.startingPrompt}
                     </span>
-                  </button>
-                  <div className="flex shrink-0 gap-1">
-                    {pendingDeleteId === template.id ? (
-                      <>
-                        <Button disabled={isBusy} onClick={() => setPendingDeleteId(null)} size="small" variant="secondary">{t('cancel')}</Button>
-                        <Button disabled={isBusy} onClick={() => void deleteTemplate(template)} size="small" variant="destructive">{t('workflowTemplateConfirmDelete')}</Button>
-                      </>
-                    ) : (
-                      <>
-                        <Button aria-label={t('workflowTemplateEdit', { name: template.name })} onClick={() => beginEdit(template)} size="icon" variant="ghost">
-                          <Pencil aria-hidden="true" size={16} />
-                        </Button>
-                        <Button aria-label={t('workflowTemplateDelete', { name: template.name })} onClick={() => void deleteTemplate(template)} size="icon" variant="ghost">
-                          <Trash2 aria-hidden="true" size={16} />
-                        </Button>
-                      </>
-                    )}
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
+                  </span>
+                </button>
+                <div className="flex shrink-0 items-center gap-1">
+                  {pendingDeleteId === template.id ? (
+                    <>
+                      <Button disabled={isBusy} onClick={() => setPendingDeleteId(null)} size="small" variant="secondary">{t('cancel')}</Button>
+                      <Button disabled={isBusy} onClick={() => void deleteTemplate(template)} size="small" variant="destructive">{t('workflowTemplateConfirmDelete')}</Button>
+                    </>
+                  ) : (
+                    <>
+                      <Button aria-label={t('workflowTemplateEdit', { name: template.name })} onClick={() => beginEdit(template)} size="icon" variant="ghost">
+                        <Pencil aria-hidden="true" size={16} />
+                      </Button>
+                      <Button aria-label={t('workflowTemplateDelete', { name: template.name })} onClick={() => void deleteTemplate(template)} size="icon" variant="ghost">
+                        <Trash2 aria-hidden="true" size={16} />
+                      </Button>
+                    </>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
     </section>
