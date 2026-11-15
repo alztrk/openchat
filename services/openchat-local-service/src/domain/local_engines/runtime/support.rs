@@ -576,6 +576,7 @@ pub(super) fn server_status_json(server: &RunningServer, status: &str) -> Value 
         "processId": server.child.id(),
         "port": server.port,
         "status": status,
+        "contextWindow": server.capabilities.and_then(|capabilities| capabilities.context_window),
     })
 }
 

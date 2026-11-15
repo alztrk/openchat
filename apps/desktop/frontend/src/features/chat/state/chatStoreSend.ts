@@ -19,6 +19,7 @@ import { readProjectSkillIds } from '@entities/project/projectPreferences';
 import { modelRouteKey } from '@entities/model/modelPreferences';
 import { loadRouteParameters } from '@entities/model/modelRouteParameters';
 import { recordOAuthRateLimit } from '@features/provider-settings/data';
+import { isLocalEngineProviderId } from '@entities/model';
 import {
   type ProviderRequestOutcome,
   writeProviderRequestOutcomeRecord,
@@ -32,6 +33,7 @@ import { readSharedInstructions } from '@shared/lib/preferences/sharedInstructio
 import { type LocalServiceClient, LocalServiceError } from '@shared/lib/platform/local-service';
 import { getAudioContext, playAssistantResponseAudio } from '@shared/lib/preferences/audioFeedback';
 import type { ChatState } from './chatStore';
+import { shouldRefreshLocalModelsAfterChatStart } from './chatStoreLocalModels';
 import { getOpenCodeRetryAtUnixMs, serviceErrorCategoryMessageKey } from './chatStoreErrorDetails';
 import { isAppWindowVisibleAndFocused } from '@shared/lib/platform/windowFocus';
 import { chatStorageRetryDelay } from '../data/chatStorageRetry';
@@ -460,6 +462,11 @@ export function createSendMessageAction(
         },
         (event) => {
           handleToolPermissionEvent(event, targetConversationId, set, get);
+          if (shouldRefreshLocalModelsAfterChatStart(event.name, selectedModel.providerId, isLocalEngineProviderId)) {
+            void get().refreshLocalModels().catch((cause: unknown) => {
+              globalThis.reportError(new Error('The local model context limit could not be refreshed.', { cause }));
+            });
+          }
           if (event.name === 'chat.compaction.started') {
             if (event.data.conversationId === targetConversationId) {
               get().setProviderCompaction(targetConversationId, true);

@@ -3,7 +3,7 @@ import { isObject, numberOrNull } from '@shared/lib/utils/json';
 import { requiresChatGptWorkspaceSelection } from './chatGptWorkspaceSelection';
 import type { ChatModel, ChatModelProvider } from './chatModels';
 import { parseProviderCatalog } from './modelCatalogParser';
-import { isLocalEngineProviderId } from './localEngineProviderIds';
+import { isLocalEngineProviderId } from '@entities/model';
 import {
   type CompatibleProviderId,
   type CustomProviderSummary,
@@ -166,7 +166,10 @@ export async function loadLocalModels(client: LocalServiceClient): Promise<ChatM
       supportsTools: typeof model.supportsTools === 'boolean' ? model.supportsTools : null,
       supportsFastMode: false,
       reasoningLevels: [],
-      contextWindow: numberOrNull(model.contextLength) ?? numberOrNull(model.contextWindow),
+      contextWindow:
+        numberOrNull(model.effectiveContextWindow) ??
+        numberOrNull(model.contextLength) ??
+        numberOrNull(model.contextWindow),
       catalogStale: false,
     }];
   });

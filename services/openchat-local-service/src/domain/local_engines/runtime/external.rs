@@ -124,7 +124,7 @@ pub(crate) async fn chat_model_catalog(
         ));
     }
 
-    let managed_model_groups = status(storage)
+    let running_servers = status(storage)
         .await?
         .get("servers")
         .and_then(Value::as_array)
@@ -137,20 +137,39 @@ pub(crate) async fn chat_model_catalog(
             let model_id = server["modelId"].as_str()?.to_owned();
             let process_id = u32::try_from(server["processId"].as_u64()?).ok()?;
             let port = u16::try_from(server["port"].as_u64()?).ok()?;
-            Some((model_id, managed_server_group_id(process_id, port)))
+            let context_window = server["contextWindow"]
+                .as_u64()
+                .and_then(|value| u32::try_from(value).ok());
+            Some((
+                model_id,
+                (managed_server_group_id(process_id, port), context_window),
+            ))
         })
         .collect::<HashMap<_, _>>();
+    let settings = settings::read_settings(storage.root())?;
     let mut catalog_models = models::list(storage)?
         .into_iter()
         .filter(|model| engine_id.is_none_or(|id| model.engine_id == id))
         .map(|model| {
             let available = is_model_available(storage, &model)?;
             let mut model_json = models::to_json(&model, available)?;
-            let group_id = managed_model_groups
+            let (group_id, runtime_context_length) = running_servers
                 .get(&model.id)
                 .cloned()
-                .unwrap_or_else(|| "managed".to_owned());
+                .unwrap_or_else(|| ("managed".to_owned(), None));
+            let engine_context_length = settings.context_length_for_engine(&model.engine_id);
+            let declared_context_window = model_json["contextWindow"]
+                .as_u64()
+                .and_then(|value| u32::try_from(value).ok());
+            let effective_context_window = effective_context_window(
+                runtime_context_length,
+                model.context_length,
+                engine_context_length,
+                declared_context_window,
+            );
             model_json["groupId"] = Value::String(group_id);
+            model_json["effectiveContextWindow"] = effective_context_window
+                .map_or(Value::Null, |context_window| json!(context_window));
             Ok(model_json)
         })
         .collect::<Result<Vec<_>, ServiceError>>()?;
@@ -158,6 +177,18 @@ pub(crate) async fn chat_model_catalog(
         catalog_models.extend(external_chat_models().await?);
     }
     Ok(json!({"freshness": "current", "models": catalog_models}))
+}
+
+fn effective_context_window(
+    runtime_context_window: Option<u32>,
+    model_context_length: Option<u32>,
+    engine_context_length: Option<u32>,
+    declared_context_window: Option<u32>,
+) -> Option<u32> {
+    runtime_context_window
+        .or(model_context_length)
+        .or(engine_context_length)
+        .or(declared_context_window)
 }
 
 pub(crate) async fn chat_url(
@@ -304,6 +335,40 @@ pub(super) fn external_model_route_id(
         .map(|byte| format!("{byte:02x}"))
         .collect::<String>();
     format!("external-llama-{digest}")
+}
+
+#[cfg(test)]
+mod context_window_tests {
+    use super::effective_context_window;
+
+    #[test]
+    fn effective_context_prefers_running_runtime_over_saved_settings_and_metadata() {
+        assert_eq!(
+            effective_context_window(Some(16_384), Some(8_192), Some(32_768), Some(65_536)),
+            Some(16_384)
+        );
+    }
+
+    #[test]
+    fn effective_context_uses_model_override_before_engine_default() {
+        assert_eq!(
+            effective_context_window(None, Some(8_192), Some(32_768), Some(65_536)),
+            Some(8_192)
+        );
+    }
+
+    #[test]
+    fn effective_context_uses_engine_default_before_model_metadata() {
+        assert_eq!(
+            effective_context_window(None, None, Some(32_768), Some(65_536)),
+            Some(32_768)
+        );
+    }
+
+    #[test]
+    fn unknown_context_stays_unknown_without_trusted_metadata() {
+        assert_eq!(effective_context_window(None, None, None, None), None);
+    }
 }
 
 pub(super) async fn external_health_check(port: u16) -> Result<bool, ServiceError> {

@@ -39,7 +39,7 @@ import { LocalServiceError, localServiceClient, type ServiceOperation } from '@s
 import { createBranchesActions } from './chatStoreBranches';
 import { createConversationsActions } from './chatStoreConversations';
 import { createGoalsActions } from './chatStoreGoals';
-import { createRefreshModelsAction } from './chatStoreModels';
+import { createRefreshLocalModelsAction, createRefreshModelsAction } from './chatStoreModels';
 import { createSendMessageAction } from './chatStoreSend';
 import type { TemporaryChatSession } from './chatStoreTemporary';
 import { createTemporaryChatActions } from './chatStoreTemporary';
@@ -205,6 +205,7 @@ export interface ChatState {
   loadMoreProjects(): Promise<void>;
   clearConversationHistory(): Promise<boolean>;
   refreshModels(forceRefresh?: boolean): Promise<void>;
+  refreshLocalModels(): Promise<void>;
   refreshModelFavorites(): Promise<void>;
   setDefaultModel(model: ChatModel): boolean;
   clearDefaultModel(): boolean;
@@ -407,6 +408,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   ...createConversationsActions(set, get),
   refreshModels: createRefreshModelsAction(set, get, localServiceClient),
+  refreshLocalModels: createRefreshLocalModelsAction(set, localServiceClient),
 
   selectModel(key) {
     const current = get();

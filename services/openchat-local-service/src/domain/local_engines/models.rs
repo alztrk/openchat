@@ -540,7 +540,17 @@ pub(crate) fn to_json(model: &RegisteredModel, available: bool) -> Result<Value,
     };
     let context_window = gguf_metadata
         .and_then(|metadata| metadata.context_window)
+        .or_else(|| {
+            (path_exists && model.path_kind == "directory")
+                .then(|| super::transformers::read_context_window(&model.path))
+                .flatten()
+                .map(i64::from)
+        })
         .map_or(Value::Null, |context_window| json!(context_window));
+    let effective_context_window = model.context_length.map(i64::from).map_or_else(
+        || context_window.clone(),
+        |context_window| json!(context_window),
+    );
     let estimated_memory_bytes = gguf_metadata
         .and_then(|metadata| metadata.estimated_memory_bytes)
         .map_or(Value::Null, |bytes| json!(bytes));
@@ -552,6 +562,7 @@ pub(crate) fn to_json(model: &RegisteredModel, available: bool) -> Result<Value,
         "displayName": model.display_name,
         "description": Value::Null,
         "contextWindow": context_window,
+        "effectiveContextWindow": effective_context_window,
         "estimatedMemoryBytes": estimated_memory_bytes,
         "reasoningLevels": [],
         "supportsReasoning": false,
@@ -1140,7 +1151,11 @@ mod tests {
         let storage = test_storage(temporary.0.join("app"));
         let snapshot = temporary.0.join("snapshot");
         fs::create_dir_all(&snapshot).expect("snapshot directory should be created");
-        fs::write(snapshot.join("config.json"), b"{}").expect("config should be written");
+        fs::write(
+            snapshot.join("config.json"),
+            br#"{"text_config":{"max_position_embeddings":65536}}"#,
+        )
+        .expect("config should be written");
         fs::write(snapshot.join("model.safetensors"), b"weights")
             .expect("weights should be written");
 
@@ -1163,6 +1178,10 @@ mod tests {
         assert_eq!(
             to_json(&model, true).expect("model should serialize")["pathExists"],
             true
+        );
+        assert_eq!(
+            to_json(&model, true).expect("model context should serialize")["contextWindow"],
+            65_536
         );
     }
 

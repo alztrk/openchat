@@ -1,6 +1,7 @@
 import type { StoreApi } from 'zustand/vanilla';
 import { readProjectDefaultModelPreference } from '@entities/project/projectPreferences';
 import type { ChatModelProvider } from '@entities/model';
+import { isLocalEngineProviderId } from '@entities/model';
 import { loadApiKeyModels, loadChatGptModels, loadLocalModels } from '@features/provider-settings/data';
 import {
   type DefaultModelPreference,
@@ -11,12 +12,25 @@ import {
 import { refreshOAuthRateLimits } from '@features/provider-settings/data';
 import type { LocalServiceClient } from '@shared/lib/platform/local-service';
 import type { ChatState } from './chatStore';
+import { mergeRefreshedLocalModels } from './chatStoreLocalModels';
 import { isSameRoute } from './chatStoreUtils';
 import { loadModelCatalogsProgressively, type ModelCatalogProgress } from './modelCatalogProgress';
 import { createModelCatalogRefreshGuard } from './modelCatalogRefreshGuard';
 
 type ChatStoreSetState = StoreApi<ChatState>['setState'];
 type ChatStoreGetState = StoreApi<ChatState>['getState'];
+
+export function createRefreshLocalModelsAction(
+  set: ChatStoreSetState,
+  localServiceClient: LocalServiceClient,
+): ChatState['refreshLocalModels'] {
+  return async () => {
+    const localModels = await loadLocalModels(localServiceClient);
+    set((current) => ({
+      models: mergeRefreshedLocalModels(current.models, localModels, isLocalEngineProviderId),
+    }));
+  };
+}
 
 export function createRefreshModelsAction(
   set: ChatStoreSetState,

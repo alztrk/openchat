@@ -10,6 +10,7 @@ pub(crate) mod models;
 mod python_engines;
 mod runtime;
 mod settings;
+mod transformers;
 mod vllm;
 
 use std::time::Duration;

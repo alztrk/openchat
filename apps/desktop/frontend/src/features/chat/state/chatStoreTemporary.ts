@@ -10,9 +10,11 @@ import {
 } from '@features/chat/data';
 import type { ChatModel } from '@entities/model';
 import { loadRouteParameters } from '@entities/model/modelRouteParameters';
+import { isLocalEngineProviderId } from '@entities/model';
 import { type LocalServiceClient, LocalServiceError } from '@shared/lib/platform/local-service';
 import { applyStreamEvent, numberOrNull, titleFromMessage, upsertMessage } from './chatStoreUtils';
 import type { ChatState } from './chatStore';
+import { shouldRefreshLocalModelsAfterChatStart } from './chatStoreLocalModels';
 import { getOpenCodeRetryAtUnixMs } from './chatStoreErrorDetails';
 import { createStreamMessagePublisher } from './streamMessagePublisher';
 
@@ -281,6 +283,11 @@ export function createTemporarySendMessageAction(
         if (event.name === 'chat.compaction.started') {
           if (event.data.conversationId === session.id) get().setProviderCompaction(session.id, true);
           return;
+        }
+        if (shouldRefreshLocalModelsAfterChatStart(event.name, selectedModel.providerId, isLocalEngineProviderId)) {
+          void get().refreshLocalModels().catch((cause: unknown) => {
+            globalThis.reportError(new Error('The local model context limit could not be refreshed.', { cause }));
+          });
         }
         const message = applyStreamEvent(event, assistantMessage, {
           conversationId: session.id,

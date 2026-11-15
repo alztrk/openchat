@@ -3,7 +3,7 @@ import { isObject, numberOrNull } from '@shared/lib/utils/json';
 import type { ChatModel } from './chatModels';
 import type { CustomProviderSummary } from './providerCredentials';
 import type { ChatRoute } from './routes';
-import { isLocalEngineProviderId } from './localEngineProviderIds';
+import { isLocalEngineProviderId } from '@entities/model';
 
 export function parseProviderCatalog(
   response: JsonObject,

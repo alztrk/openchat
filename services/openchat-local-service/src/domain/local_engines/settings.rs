@@ -102,6 +102,18 @@ pub(crate) struct LocalEngineSettings {
     pub(crate) sglang_max_running_requests: Option<u16>,
 }
 
+impl LocalEngineSettings {
+    pub(crate) fn context_length_for_engine(&self, engine_id: &str) -> Option<u32> {
+        match engine_id {
+            "llama_cpp" => self.context_size,
+            "vllm" => self.vllm_max_model_len,
+            "exllama" => self.exllama_max_seq_len,
+            "sglang" => self.sglang_context_length,
+            _ => None,
+        }
+    }
+}
+
 /// Reads the validated saved llama-server path, if one is configured.
 pub(crate) fn llama_server_executable_path(
     storage_root: &Path,
@@ -623,8 +635,9 @@ mod tests {
     use uuid::Uuid;
 
     use super::{
-        llama_server_executable_path, read_settings, set_llama_server_executable_path,
-        settings_json, update_settings, validate_saved_executable_path,
+        LocalEngineSettings, llama_server_executable_path, read_settings,
+        set_llama_server_executable_path, settings_json, update_settings,
+        validate_saved_executable_path,
     };
 
     struct TestDirectory(PathBuf);
@@ -797,6 +810,23 @@ mod tests {
                 .expect_err("managed options and shell syntax must be rejected");
             assert_eq!(error.code, "invalid_request_params");
         }
+    }
+
+    #[test]
+    fn resolves_the_engine_specific_context_fallback() {
+        let settings = LocalEngineSettings {
+            context_size: Some(4_096),
+            vllm_max_model_len: Some(8_192),
+            exllama_max_seq_len: Some(16_384),
+            sglang_context_length: Some(32_768),
+            ..Default::default()
+        };
+
+        assert_eq!(settings.context_length_for_engine("llama_cpp"), Some(4_096));
+        assert_eq!(settings.context_length_for_engine("vllm"), Some(8_192));
+        assert_eq!(settings.context_length_for_engine("exllama"), Some(16_384));
+        assert_eq!(settings.context_length_for_engine("sglang"), Some(32_768));
+        assert_eq!(settings.context_length_for_engine("unknown"), None);
     }
 
     #[test]
