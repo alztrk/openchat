@@ -120,11 +120,15 @@ export const devTestProfile = {
 
     let profileRoot = explicitProfileRoot;
     const { runTemporaryProfileSession } = await import('../shared/session.mjs');
+    const { startProfileCleanupGuard } = await import('../shared/profile-cleanup-guard.mjs');
 
     const { interruptedSignal } = await runTemporaryProfileSession({
       getRetainedProfilePath: () => profileRoot,
       run: async (interruptController) => {
         profileRoot ??= reserveTemporaryTestProfileRoot();
+        if (cleanupProfileOnExit && process.platform === 'win32') {
+          await startProfileCleanupGuard(profileRoot);
+        }
         await buildLocalServiceInterruptibly('debug', false, ['desktop-profile-test-support'], interruptController);
         interruptController.throwIfInterrupted();
         await ensureFrontendDependenciesInterruptibly(interruptController);
