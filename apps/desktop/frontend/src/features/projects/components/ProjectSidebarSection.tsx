@@ -105,7 +105,7 @@ export function ProjectSidebarSection({
   };
 
   const handleProjectDrop = (event: DragEvent<HTMLLIElement>, projectId: string) => {
-    if (isBusy) return;
+    if (isBusy || !event.dataTransfer.types.includes('application/x-openchat-conversation')) return;
     const conversationId = event.dataTransfer.getData('application/x-openchat-conversation');
     if (!conversationId) return;
     event.preventDefault();

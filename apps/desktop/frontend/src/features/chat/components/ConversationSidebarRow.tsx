@@ -436,6 +436,7 @@ export const ConversationSidebarRow = memo(function ConversationSidebarRow({
 
   const handleDropRow = (event: DragEvent<HTMLLIElement>) => {
     if (!onReorderConversation || disabled || archived) return;
+    if (!event.dataTransfer.types.includes('application/x-openchat-conversation')) return;
     const draggedId = event.dataTransfer.getData('application/x-openchat-conversation');
     if (!draggedId || draggedId === conversation.id) {
       setIsReorderDropTarget(false);
