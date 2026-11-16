@@ -816,6 +816,263 @@ test('a failed sidebar service move leaves the custom folder membership unchange
   assert.deepEqual(sidebarHarness.customFoldersReadResult.folders, [folder]);
 });
 
+test('custom folder create, rename, and delete failures retain persisted state and can be retried', async () => {
+  const translations = translationsByLocale.get('en');
+  assert.ok(translations);
+  const initialFolder = {
+    id: 'folder-one',
+    name: 'Existing folder',
+    conversationIds: [],
+    createdAt: 1,
+  };
+  sidebarHarness.customFoldersReadResult = { kind: 'ready', folders: [initialFolder] };
+  sidebarHarness.preferenceValue = JSON.stringify([initialFolder]);
+  let failWrites = true;
+  sidebarHarness.writeCustomFolders = async (folders) => {
+    sidebarHarness.writeCustomFoldersCalls.push(folders);
+    if (failWrites) throw new Error('injected custom-folder preference write failure');
+    sidebarHarness.preferenceValue = JSON.stringify(folders);
+    sidebarHarness.customFoldersReadResult = { kind: 'ready', folders };
+  };
+  sidebarHarness.chatState = {
+    activeConversationId: null,
+    compactingConversationId: null,
+    conversations: [],
+    errorMessage: null,
+    initialize: async () => undefined,
+    projects: [],
+    projectsStatus: 'ready',
+    refreshProjects: async () => undefined,
+    selectConversation: async () => undefined,
+    sendingConversationId: null,
+    sendingConversationIds: [],
+    serviceStatus: 'ready',
+    startNewChat: async () => undefined,
+    startNewChatWithAgent: async () => undefined,
+    startTemporaryChat: async () => undefined,
+    temporaryChat: null,
+  };
+  const feedbackKeys = [];
+  sidebarHarness.actions = {
+    archiveConversation: async () => undefined,
+    createProject: async () => null,
+    deleteConversation: async () => false,
+    duplicateConversation: async () => null,
+    exportConversation: async () => undefined,
+    feedback: null,
+    isBusy: false,
+    moveConversation: async () => true,
+    saveTitle: async () => undefined,
+    showFeedback: (key) => feedbackKeys.push(key),
+    togglePinned: async () => false,
+  };
+
+  const previousReportError = Object.getOwnPropertyDescriptor(globalThis, 'reportError');
+  Object.defineProperty(globalThis, 'reportError', {
+    configurable: true,
+    value: () => undefined,
+    writable: true,
+  });
+  try {
+  let view = render(
+    localized(
+      'en',
+      React.createElement(ConversationSidebar, {
+        onRequestTemporaryExit: () => undefined,
+      }),
+    ),
+  );
+  fireEvent.click(screen.getByRole('button', { name: translations.createCustomFolder }));
+  const createInput = screen.getByRole('textbox', { name: translations.customFolderNamePlaceholder });
+  fireEvent.change(createInput, { target: { value: 'New folder' } });
+  fireEvent.submit(createInput.closest('form'));
+  await waitFor(() => assert.ok(feedbackKeys.includes('customFolderSaveFailed')));
+  assert.equal(screen.getByRole('textbox', { name: translations.customFolderNamePlaceholder }).value, 'New folder');
+  assert.equal(screen.getByText(initialFolder.name).textContent, initialFolder.name);
+  assert.equal(sidebarHarness.preferenceValue, JSON.stringify([initialFolder]));
+
+  failWrites = false;
+  fireEvent.submit(screen.getByRole('textbox', { name: translations.customFolderNamePlaceholder }).closest('form'));
+  await screen.findByText('New folder');
+  const savedFolders = sidebarHarness.customFoldersReadResult.folders;
+  assert.equal(savedFolders.length, 2);
+  assert.equal(JSON.parse(sidebarHarness.preferenceValue).length, 2);
+
+  view.unmount();
+  view = render(
+    localized(
+      'en',
+      React.createElement(ConversationSidebar, {
+        onRequestTemporaryExit: () => undefined,
+      }),
+    ),
+  );
+  await screen.findByText('New folder');
+
+  failWrites = true;
+  const folderRow = screen.getByText(initialFolder.name).closest('li');
+  assert.ok(folderRow);
+  fireEvent.click(folderRow.querySelector(`button[aria-label="${translations.renameCustomFolder}"]`));
+  const renameInput = screen.getByRole('textbox', { name: translations.customFolderNamePlaceholder });
+  fireEvent.change(renameInput, { target: { value: 'Renamed folder' } });
+  fireEvent.submit(renameInput.closest('form'));
+  await waitFor(() => assert.equal(renameInput.value, 'Renamed folder'));
+  assert.equal(sidebarHarness.preferenceValue, JSON.stringify(savedFolders));
+  fireEvent.keyDown(renameInput, { key: 'Escape' });
+  assert.equal(screen.getByText(initialFolder.name).textContent, initialFolder.name);
+
+  const deleteRow = screen.getByText(initialFolder.name).closest('li');
+  assert.ok(deleteRow);
+  fireEvent.click(deleteRow.querySelector(`button[aria-label="${translations.deleteCustomFolder}"]`));
+  await waitFor(() => assert.ok(feedbackKeys.filter((key) => key === 'customFolderSaveFailed').length >= 3));
+  assert.equal(screen.getByText(initialFolder.name).textContent, initialFolder.name);
+  assert.equal(sidebarHarness.preferenceValue, JSON.stringify(savedFolders));
+  view.unmount();
+  } finally {
+    if (previousReportError) Object.defineProperty(globalThis, 'reportError', previousReportError);
+    else Reflect.deleteProperty(globalThis, 'reportError');
+  }
+});
+
+test('a failed folder save restores project location and reports a failed compensation', async () => {
+  const folder = {
+    id: 'folder-one',
+    name: 'Saved for later',
+    conversationIds: [],
+    createdAt: 1,
+  };
+  const conversation = {
+    id: 'conversation-project-1',
+    title: 'Existing project conversation',
+    projectId: 'project-1',
+    isArchived: false,
+    isPinned: false,
+    createdAt: 1,
+    updatedAt: 1,
+  };
+  sidebarHarness.customFoldersReadResult = { kind: 'ready', folders: [folder] };
+  sidebarHarness.preferenceValue = JSON.stringify([folder]);
+  let failWrites = true;
+  sidebarHarness.writeCustomFolders = async (folders) => {
+    if (failWrites) throw new Error('injected custom-folder preference write failure');
+    sidebarHarness.preferenceValue = JSON.stringify(folders);
+    sidebarHarness.customFoldersReadResult = { kind: 'ready', folders };
+  };
+  sidebarHarness.chatState = {
+    activeConversationId: null,
+    compactingConversationId: null,
+    conversations: [conversation],
+    errorMessage: null,
+    initialize: async () => undefined,
+    projects: [{ id: 'project-1', name: 'Existing project' }],
+    projectsStatus: 'ready',
+    refreshProjects: async () => undefined,
+    selectConversation: async () => undefined,
+    sendingConversationId: null,
+    sendingConversationIds: [],
+    serviceStatus: 'ready',
+    startNewChat: async () => undefined,
+    startNewChatWithAgent: async () => undefined,
+    startTemporaryChat: async () => undefined,
+    temporaryChat: null,
+  };
+  const moveResults = [true, false];
+  const feedbackKeys = [];
+  sidebarHarness.moveCalls = [];
+  sidebarHarness.actions = {
+    archiveConversation: async () => undefined,
+    createProject: async () => null,
+    deleteConversation: async () => false,
+    duplicateConversation: async () => null,
+    exportConversation: async () => undefined,
+    feedback: null,
+    isBusy: false,
+    moveConversation: async (movedConversation, projectId) => {
+      sidebarHarness.moveCalls.push({ conversationId: movedConversation.id, projectId });
+      const succeeded = moveResults.shift() ?? false;
+      if (succeeded) {
+        sidebarHarness.chatState.conversations = sidebarHarness.chatState.conversations.map((item) =>
+          item.id === movedConversation.id ? { ...item, projectId } : item,
+        );
+      }
+      return succeeded;
+    },
+    saveTitle: async () => undefined,
+    showFeedback: (key) => feedbackKeys.push(key),
+    togglePinned: async () => false,
+  };
+
+  const previousReportError = Object.getOwnPropertyDescriptor(globalThis, 'reportError');
+  Object.defineProperty(globalThis, 'reportError', {
+    configurable: true,
+    value: () => undefined,
+    writable: true,
+  });
+  try {
+    let view = render(
+      localized(
+        'en',
+        React.createElement(ConversationSidebar, {
+          onRequestTemporaryExit: () => undefined,
+        }),
+      ),
+    );
+    const folderRow = screen.getByText(folder.name).closest('li');
+    assert.ok(folderRow);
+    fireEvent.drop(folderRow, {
+      dataTransfer: {
+        dropEffect: 'none',
+        getData: (type) => (type === 'application/x-openchat-conversation' ? conversation.id : ''),
+        types: ['application/x-openchat-conversation'],
+      },
+    });
+
+    await waitFor(() => assert.deepEqual(sidebarHarness.moveCalls, [
+      { conversationId: conversation.id, projectId: null },
+      { conversationId: conversation.id, projectId: 'project-1' },
+    ]));
+    assert.ok(feedbackKeys.includes('customFolderMoveRollbackFailed'));
+    assert.deepEqual(sidebarHarness.customFoldersReadResult.folders, [folder]);
+    assert.equal(sidebarHarness.preferenceValue, JSON.stringify([folder]));
+
+    failWrites = false;
+    moveResults.push(true);
+    const retryFolderRow = screen.getByText(folder.name).closest('li');
+    assert.ok(retryFolderRow);
+    fireEvent.drop(retryFolderRow, {
+      dataTransfer: {
+        dropEffect: 'none',
+        getData: (type) => (type === 'application/x-openchat-conversation' ? conversation.id : ''),
+        types: ['application/x-openchat-conversation'],
+      },
+    });
+    await waitFor(() =>
+      assert.deepEqual(sidebarHarness.customFoldersReadResult.folders[0].conversationIds, [conversation.id]),
+    );
+    assert.deepEqual(sidebarHarness.moveCalls, [
+      { conversationId: conversation.id, projectId: null },
+      { conversationId: conversation.id, projectId: 'project-1' },
+      { conversationId: conversation.id, projectId: null },
+    ]);
+    assert.deepEqual(JSON.parse(sidebarHarness.preferenceValue)[0].conversationIds, [conversation.id]);
+
+    view.unmount();
+    view = render(
+      localized(
+        'en',
+        React.createElement(ConversationSidebar, {
+          onRequestTemporaryExit: () => undefined,
+        }),
+      ),
+    );
+    await screen.findByText(conversation.title);
+    view.unmount();
+  } finally {
+    if (previousReportError) Object.defineProperty(globalThis, 'reportError', previousReportError);
+    else Reflect.deleteProperty(globalThis, 'reportError');
+  }
+});
+
 test('custom folder preference decoding preserves invalid data and blocks writes', async () => {
   const validFolder = {
     id: 'folder-one',

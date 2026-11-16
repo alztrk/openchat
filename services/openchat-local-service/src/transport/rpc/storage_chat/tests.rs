@@ -2171,3 +2171,118 @@ impl Drop for TestDirectory {
         fs::remove_dir_all(&self.0).expect("remove isolated test directory");
     }
 }
+
+#[tokio::test]
+async fn failed_multi_conversation_project_move_rolls_back_and_retry_survives_reopen() {
+    let directory = TestDirectory::new();
+    let storage = initialized_chat_storage(&directory);
+    let first_workspace = directory.0.join("project-one");
+    let second_workspace = directory.0.join("project-two");
+    fs::create_dir(&first_workspace).expect("create first project workspace");
+    fs::create_dir(&second_workspace).expect("create second project workspace");
+
+    for (id, name, folder_path) in [
+        ("project-one", "Project one", &first_workspace),
+        ("project-two", "Project two", &second_workspace),
+    ] {
+        let folder_path = fs::canonicalize(folder_path)
+            .expect("canonicalize project workspace")
+            .to_str()
+            .expect("workspace path is valid UTF-8")
+            .to_owned();
+        dispatch(
+            "storage.chat.projects.create",
+            &json!({"input": {"id": id, "name": name, "folderPath": folder_path}}),
+            &storage,
+        )
+        .await
+        .expect("create project");
+    }
+
+    for id in ["conversation-one", "conversation-two"] {
+        dispatch(
+            "storage.chat.conversations.create",
+            &json!({
+                "input": {
+                    "id": id,
+                    "title": id,
+                    "providerId": "test-provider",
+                    "modelId": "test-model",
+                    "projectId": "project-one"
+                }
+            }),
+            &storage,
+        )
+        .await
+        .expect("create project conversation");
+    }
+
+    storage
+        .connect()
+        .expect("connect before installing move failure")
+        .execute_batch(
+            "CREATE TRIGGER reject_second_conversation_move
+             BEFORE UPDATE OF project_id ON conversations
+             WHEN NEW.id = 'conversation-two'
+             BEGIN
+                 SELECT RAISE(FAIL, 'injected conversation move failure');
+             END;",
+        )
+        .expect("install isolated SQLite move failure");
+
+    let error = dispatch(
+        "storage.chat.conversations.project.set",
+        &json!({
+            "input": {
+                "conversationIds": ["conversation-one", "conversation-two"],
+                "projectId": "project-two"
+            }
+        }),
+        &storage,
+    )
+    .await
+    .expect_err("injected move failure must roll back the transaction");
+    assert_eq!(error.code, "storage_chat_unavailable");
+
+    for id in ["conversation-one", "conversation-two"] {
+        let stored = dispatch(
+            "storage.chat.conversations.get",
+            &json!({"conversationId": id}),
+            &storage,
+        )
+        .await
+        .expect("read conversation after failed move");
+        assert_eq!(stored["conversation"]["projectId"], "project-one");
+    }
+
+    storage
+        .connect()
+        .expect("connect before removing move failure")
+        .execute_batch("DROP TRIGGER reject_second_conversation_move;")
+        .expect("remove isolated SQLite move failure");
+    dispatch(
+        "storage.chat.conversations.project.set",
+        &json!({
+            "input": {
+                "conversationIds": ["conversation-one", "conversation-two"],
+                "projectId": "project-two"
+            }
+        }),
+        &storage,
+    )
+    .await
+    .expect("retry project move");
+    drop(storage);
+
+    let reopened = initialized_chat_storage(&directory);
+    for id in ["conversation-one", "conversation-two"] {
+        let stored = dispatch(
+            "storage.chat.conversations.get",
+            &json!({"conversationId": id}),
+            &reopened,
+        )
+        .await
+        .expect("read moved conversation after reopening storage");
+        assert_eq!(stored["conversation"]["projectId"], "project-two");
+    }
+}

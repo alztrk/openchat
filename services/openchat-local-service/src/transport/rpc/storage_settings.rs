@@ -621,3 +621,124 @@ fn cache_unavailable_with_detail(detail: &'static str) -> ServiceError {
     )
     .with_details(detail)
 }
+
+#[cfg(test)]
+mod tests {
+    use std::{fs, path::PathBuf};
+
+    use serde_json::json;
+    use uuid::Uuid;
+
+    use crate::{protocol::EventSink, storage::AppStorage};
+
+    use super::{SETTINGS_ERROR_CODE, dispatch};
+
+    struct TestDirectory(PathBuf);
+
+    impl TestDirectory {
+        fn new() -> Self {
+            let path = std::env::temp_dir().join(format!(
+                "openchat-storage-settings-rpc-test-{}",
+                Uuid::new_v4()
+            ));
+            fs::create_dir(&path).expect("create isolated test directory");
+            Self(path)
+        }
+    }
+
+    impl Drop for TestDirectory {
+        fn drop(&mut self) {
+            fs::remove_dir_all(&self.0).expect("remove isolated test directory");
+        }
+    }
+
+    #[tokio::test]
+    async fn failed_preference_write_preserves_value_and_retry_survives_reopen() {
+        let directory = TestDirectory::new();
+        let storage_path = directory.0.join("data");
+        let storage = AppStorage::open_at(storage_path.clone()).expect("open test storage");
+        storage
+            .prepare_chat_schema_migration(crate::CHAT_SCHEMA_VERSION)
+            .expect("prepare current chat schema");
+        storage
+            .initialize_backend_schema()
+            .expect("initialize backend schema");
+        let events = EventSink::new();
+        let key = "chat.custom_sidebar_folders";
+        let original = json!([{"id":"folder-one","name":"Before failure"}]).to_string();
+        let replacement = json!([{"id":"folder-one","name":"After retry"}]).to_string();
+
+        dispatch(
+            "storage.settings.set",
+            &json!({"key": key, "valueJson": original}),
+            &storage,
+            &events,
+        )
+        .await
+        .expect("persist the original preference");
+        storage
+            .connect()
+            .expect("connect before installing write failure")
+            .execute_batch(
+                "CREATE TRIGGER reject_custom_folder_preference
+                 BEFORE INSERT ON app_settings
+                 WHEN NEW.key = 'chat.custom_sidebar_folders'
+                 BEGIN
+                     SELECT RAISE(FAIL, 'injected preference write failure');
+                 END;",
+            )
+            .expect("install isolated SQLite write failure");
+
+        let error = dispatch(
+            "storage.settings.set",
+            &json!({"key": key, "valueJson": replacement}),
+            &storage,
+            &events,
+        )
+        .await
+        .expect_err("injected SQLite trigger must reject the write");
+        assert_eq!(error.code, SETTINGS_ERROR_CODE);
+
+        let stored_after_failure = dispatch(
+            "storage.settings.get",
+            &json!({"key": key}),
+            &storage,
+            &events,
+        )
+        .await
+        .expect("read the setting after the failed write");
+        assert_eq!(stored_after_failure["valueJson"], original);
+
+        storage
+            .connect()
+            .expect("connect before removing write failure")
+            .execute_batch("DROP TRIGGER reject_custom_folder_preference;")
+            .expect("remove isolated SQLite write failure");
+        dispatch(
+            "storage.settings.set",
+            &json!({"key": key, "valueJson": replacement}),
+            &storage,
+            &events,
+        )
+        .await
+        .expect("retry the preference write");
+        drop(storage);
+
+        let reopened = AppStorage::open_at(storage_path).expect("reopen test storage");
+        reopened
+            .prepare_chat_schema_migration(crate::CHAT_SCHEMA_VERSION)
+            .expect("prepare reopened chat schema");
+        reopened
+            .initialize_backend_schema()
+            .expect("reinitialize backend schema");
+        let stored_after_reopen = dispatch(
+            "storage.settings.get",
+            &json!({"key": key}),
+            &reopened,
+            &events,
+        )
+        .await
+        .expect("read the retried preference after reopening storage");
+        assert_eq!(stored_after_reopen["valueJson"], replacement);
+    }
+}
