@@ -998,7 +998,10 @@ test('a failed folder save restores project location and reports a failed compen
       return succeeded;
     },
     saveTitle: async () => undefined,
-    showFeedback: (key) => feedbackKeys.push(key),
+    showFeedback: (key) => {
+      feedbackKeys.push(key);
+      sidebarHarness.actions.feedback = { key, success: false };
+    },
     togglePinned: async () => false,
   };
 
@@ -1032,11 +1035,27 @@ test('a failed folder save restores project location and reports a failed compen
       { conversationId: conversation.id, projectId: 'project-1' },
     ]));
     assert.ok(feedbackKeys.includes('customFolderMoveRollbackFailed'));
+    assert.equal(sidebarHarness.chatState.conversations[0]?.projectId, null);
+    view.rerender(
+      localized(
+        'en',
+        React.createElement(ConversationSidebar, {
+          onRequestTemporaryExit: () => undefined,
+        }),
+      ),
+    );
+    const chatsSection = screen.getByRole('region', { name: 'Chats' });
+    const conversationRow = screen.getByText(conversation.title).closest('li');
+    assert.ok(conversationRow);
+    assert.ok(chatsSection.contains(conversationRow));
+    assert.equal(
+      screen.getByRole('alert').textContent,
+      translationsByLocale.get('en')?.customFolderMoveRollbackFailed,
+    );
     assert.deepEqual(sidebarHarness.customFoldersReadResult.folders, [folder]);
     assert.equal(sidebarHarness.preferenceValue, JSON.stringify([folder]));
 
     failWrites = false;
-    moveResults.push(true);
     const retryFolderRow = screen.getByText(folder.name).closest('li');
     assert.ok(retryFolderRow);
     fireEvent.drop(retryFolderRow, {
@@ -1052,9 +1071,14 @@ test('a failed folder save restores project location and reports a failed compen
     assert.deepEqual(sidebarHarness.moveCalls, [
       { conversationId: conversation.id, projectId: null },
       { conversationId: conversation.id, projectId: 'project-1' },
-      { conversationId: conversation.id, projectId: null },
     ]);
     assert.deepEqual(JSON.parse(sidebarHarness.preferenceValue)[0].conversationIds, [conversation.id]);
+    const savedFolderRow = screen.getByText(folder.name).closest('li');
+    const savedConversationRow = screen.getByText(conversation.title).closest('li');
+    assert.ok(savedFolderRow);
+    assert.ok(savedConversationRow);
+    assert.ok(savedFolderRow.contains(savedConversationRow));
+    assert.equal(sidebarHarness.chatState.conversations[0]?.projectId, null);
 
     view.unmount();
     view = render(
