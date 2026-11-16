@@ -8,6 +8,7 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useReducer,
   useRef,
   useState,
 } from 'react';
@@ -72,6 +73,7 @@ import { ConversationActionsHeader } from '@widgets/conversation-header/Conversa
 import { NavigationRail, type AppSurface } from '@widgets/navigation-rail/NavigationRail';
 import { TitleBar } from '@widgets/title-bar/TitleBar';
 import { AppModals } from './AppModals';
+import { createSurfaceHistoryState, surfaceHistoryReducer } from '../app/surfaceHistory';
 import { useAppDragDrop } from './useAppDragDrop';
 import { useAppKeyboardShortcuts } from './useAppKeyboardShortcuts';
 
@@ -110,11 +112,6 @@ const WorkflowsPage = lazy(() =>
 const SettingsPage = lazy(() =>
   import('@features/app-settings/components/SettingsPage').then((module) => ({ default: module.SettingsPage })),
 );
-
-interface SurfaceHistory {
-  surfaces: AppSurface[];
-  index: number;
-}
 
 type NotificationFeedbackKey =
   | 'assistantResponseNotificationReplyEmpty'
@@ -163,10 +160,11 @@ function readThemePreference(): ThemePreference {
 
 export function App() {
   const { t } = useTranslation();
-  const [surfaceHistory, setSurfaceHistory] = useState<SurfaceHistory>({
-    surfaces: [readInitialSurface()],
-    index: 0,
-  });
+  const [surfaceHistory, dispatchSurfaceHistory] = useReducer(
+    surfaceHistoryReducer,
+    readInitialSurface(),
+    createSurfaceHistoryState,
+  );
   const [libraryTabRequest, setLibraryTabRequest] = useState<{
     tab: 'models' | 'agents';
     requestId: number;
@@ -195,7 +193,6 @@ export function App() {
   const rightPanelShellRef = useRef<HTMLDivElement>(null);
   const surfaceHeadingRef = useRef<HTMLElement>(null);
   const previousActiveSurfaceRef = useRef(activeSurface);
-  const didNavigateBeforeStorageReadyRef = useRef(false);
   const lastInteractionMethod = useRef<'keyboard' | 'pointer'>('pointer');
   const goalBudgetPauseAttemptKey = useRef<string | null>(null);
   const initializeChat = useChatStore((state) => state.initialize);
@@ -328,9 +325,7 @@ export function App() {
     let disposed = false;
     const initializePreferences = () => {
       if (disposed) return;
-      if (!didNavigateBeforeStorageReadyRef.current) {
-        setSurfaceHistory({ surfaces: [readInitialSurface()], index: 0 });
-      }
+      dispatchSurfaceHistory({ type: 'storage-ready', surface: readInitialSurface() });
       setTheme(readThemePreference());
       setAppearance(readAppearancePreferences());
       setWorkspaceRatio(readWorkspacePanelRatio());
@@ -561,21 +556,16 @@ export function App() {
   }, [theme]);
 
   const navigateSurface = useCallback((surface: AppSurface) => {
-    didNavigateBeforeStorageReadyRef.current = true;
     try {
       writeLastSurface(surface);
     } catch (cause: unknown) {
       globalThis.reportError(new Error('The last active workspace could not be saved.', { cause }));
     }
-    setSurfaceHistory((current) => {
-      if (current.surfaces[current.index] === surface) return current;
-      const surfaces = [...current.surfaces.slice(0, current.index + 1), surface];
-      if (surfaces.length > 50) surfaces.shift();
-      return { surfaces, index: surfaces.length - 1 };
-    });
+    dispatchSurfaceHistory({ type: 'navigate', surface });
   }, []);
 
   const requestTemporaryChatExit = useCallback((action: () => void | Promise<void>) => {
+    dispatchSurfaceHistory({ type: 'navigation-intent' });
     const current = useChatStore.getState();
     if (!current.temporaryChat) {
       void Promise.resolve(action()).catch(() => {
@@ -688,11 +678,7 @@ export function App() {
 
   const moveInHistory = (offset: number) => {
     requestTemporaryChatExit(() => {
-      didNavigateBeforeStorageReadyRef.current = true;
-      setSurfaceHistory((current) => {
-        const nextIndex = current.index + offset;
-        return current.surfaces[nextIndex] ? { ...current, index: nextIndex } : current;
-      });
+      dispatchSurfaceHistory({ type: 'move-in-history', offset });
     });
   };
 
