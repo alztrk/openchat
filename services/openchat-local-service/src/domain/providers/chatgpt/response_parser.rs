@@ -5,7 +5,7 @@
 
 use super::{invalid_response_error, now_unix_millis};
 use crate::{
-    chatgpt_store::{ChatGptModel, NewUsageSnapshot, ResetCredit, UsageBucket},
+    chatgpt_store::{ChatGptModel, NewUsageSnapshot, ResetCredit, UsageBucket, UsageCredits},
     protocol::ServiceError,
     provider_schema::{ToolCall, ToolDefinition},
     tools,
@@ -147,9 +147,30 @@ pub(super) fn parse_usage(
         freshness: "current".to_owned(),
         ordinary_usage_allowed,
         reset_credit_count: usage_credit_count.or(credit_count),
+        credits: parse_usage_credits(value.get("credits")),
         reset_credit_details_state: reset_credit_details_state.to_owned(),
         buckets,
         reset_credits,
+    })
+}
+
+fn parse_usage_credits(value: Option<&Value>) -> Option<UsageCredits> {
+    let credits = value?.as_object()?;
+    let has_credits = credits.get("has_credits")?.as_bool()?;
+    let unlimited = credits.get("unlimited")?.as_bool()?;
+    let balance = credits.get("balance").and_then(|value| {
+        value.as_f64().or_else(|| {
+            value
+                .as_str()
+                .and_then(|balance| balance.trim().parse::<f64>().ok())
+        })
+    });
+    Some(UsageCredits {
+        has_credits,
+        unlimited,
+        balance: balance
+            .filter(|balance| balance.is_finite() && *balance >= 0.0)
+            .map(|balance| if balance == 0.0 { 0.0 } else { balance }),
     })
 }
 
@@ -484,7 +505,119 @@ pub(super) fn responses_tool(tool: &ToolDefinition) -> Value {
 mod tests {
     use serde_json::json;
 
-    use super::{attach_provider_citations, parse_models, parse_responses_tool_calls};
+    use super::{attach_provider_citations, parse_models, parse_responses_tool_calls, parse_usage};
+
+    #[test]
+    fn parses_optional_usage_credits_without_changing_rate_limits_or_reset_credits() {
+        for (credits, expected) in [
+            (
+                json!({"has_credits": true, "unlimited": false, "balance": 12.5}),
+                Some(12.5),
+            ),
+            (
+                json!({"has_credits": true, "unlimited": false, "balance": " 12.50 "}),
+                Some(12.5),
+            ),
+            (
+                json!({"has_credits": true, "unlimited": false, "balance": "0"}),
+                Some(0.0),
+            ),
+            (
+                json!({"has_credits": false, "unlimited": false, "balance": 0}),
+                Some(0.0),
+            ),
+            (
+                json!({"has_credits": false, "unlimited": true, "balance": null}),
+                None,
+            ),
+        ] {
+            let snapshot = parse_usage(
+                &json!({
+                    "credits": credits,
+                    "rate_limit": {"allowed": true, "primary_window": {"used_percent": 25}},
+                    "rate_limit_reset_credits": {"available_count": 2}
+                }),
+                "connection",
+                "workspace",
+                Vec::new(),
+                Some(1),
+                "omitted",
+            )
+            .expect("optional credits should not fail usage parsing");
+            let parsed = snapshot.credits.expect("valid usage credits");
+            assert_eq!(
+                parsed.has_credits,
+                credits["has_credits"].as_bool().expect("has_credits flag")
+            );
+            assert_eq!(
+                parsed.unlimited,
+                credits["unlimited"].as_bool().expect("unlimited flag")
+            );
+            assert_eq!(parsed.balance, expected);
+            assert_eq!(snapshot.ordinary_usage_allowed, Some(true));
+            assert_eq!(snapshot.buckets[0].used_percent, Some(25.0));
+            assert_eq!(snapshot.reset_credit_count, Some(2));
+        }
+    }
+
+    #[test]
+    fn normalizes_negative_zero_usage_credit_balances() {
+        for balance in [json!(-0.0), json!("-0.0"), json!(" -0 ")] {
+            let credits = super::parse_usage_credits(Some(&json!({
+                "has_credits": true, "unlimited": false, "balance": balance
+            })))
+            .expect("valid credit flags");
+            let balance = credits.balance.expect("zero balance");
+            assert_eq!(balance, 0.0);
+            assert!(balance.is_sign_positive());
+            assert_eq!(
+                serde_json::to_value(credits).expect("serialize credits")["balance"],
+                json!(0.0)
+            );
+        }
+    }
+
+    #[test]
+    fn ignores_absent_and_malformed_usage_credits() {
+        for value in [
+            json!({}),
+            json!({"credits": null}),
+            json!({"credits": []}),
+            json!({"credits": {}}),
+            json!({"credits": {"has_credits": "true", "unlimited": false}}),
+            json!({"credits": {"has_credits": true, "unlimited": 1}}),
+        ] {
+            let snapshot = parse_usage(
+                &value,
+                "connection",
+                "workspace",
+                Vec::new(),
+                None,
+                "omitted",
+            )
+            .expect("unsupported credits must not reject usage");
+            assert!(snapshot.credits.is_none());
+        }
+        for balance in [
+            json!("$2.50"),
+            json!("NaN"),
+            json!("inf"),
+            json!("-1"),
+            json!(-1),
+            json!({}),
+        ] {
+            let snapshot = parse_usage(
+                &json!({"credits": {"has_credits": true, "unlimited": false, "balance": balance}}),
+                "connection",
+                "workspace",
+                Vec::new(),
+                None,
+                "omitted",
+            )
+            .expect("invalid balances must not reject usage");
+            assert_eq!(snapshot.credits.expect("credit flags").balance, None);
+        }
+    }
 
     #[test]
     fn attaches_valid_provider_citations_to_the_annotated_text() {

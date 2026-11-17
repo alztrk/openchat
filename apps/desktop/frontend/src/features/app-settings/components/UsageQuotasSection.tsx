@@ -13,6 +13,11 @@ import {
   subscribeToUsageAlertPreferences,
 } from '@shared/lib/usage/usageAlertPreferences';
 import { LocalServiceError, localServiceClient } from '@shared/lib/platform/local-service';
+import {
+  type UsageCredits,
+  parseUsageCredits,
+  usageCreditsDisplay,
+} from '../data/usageCredits';
 import { CopilotUsageCard } from './CopilotUsageCard';
 import { SettingsSectionSkeleton } from './SettingsSectionSkeleton';
 import { parseStatistics, type StatisticsSnapshot, statisticsQuery } from './statisticsData';
@@ -54,6 +59,7 @@ interface UsageSnapshot {
   fetchedAtUnixMs: number;
   ordinaryUsageAllowed: boolean | null;
   resetCreditCount: number | null;
+  credits: UsageCredits | null;
   buckets: UsageBucket[];
   resetCredits: ResetCredit[];
 }
@@ -600,6 +606,9 @@ function WorkspaceUsage({
               t={t}
             />
           ))}
+          {snapshot.credits !== null ? (
+            <UsageCreditsView credits={snapshot.credits} locale={locale} t={t} />
+          ) : null}
           {snapshot.resetCreditCount !== 0 &&
           (snapshot.resetCredits.length > 0 || snapshot.resetCreditCount !== null) ? (
             <ResetCreditsView
@@ -620,6 +629,32 @@ function WorkspaceUsage({
         </div>
       )}
     </section>
+  );
+}
+
+function UsageCreditsView({
+  credits,
+  locale,
+  t,
+}: {
+  credits: UsageCredits;
+  locale: string;
+  t: WorkspaceUsageProps['t'];
+}) {
+  const display = usageCreditsDisplay(credits);
+  const numberFormat = new Intl.NumberFormat(locale, { maximumFractionDigits: 2 });
+  if (display.kind === 'hidden') return null;
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+      <span className="font-medium">{t('usageCredits')}</span>
+      <span className="text-secondary-text">
+        {display.kind === 'unlimited'
+          ? t('usageUnlimitedCredits')
+          : display.kind === 'unavailable'
+            ? t('unavailableValue')
+            : t('usageCreditBalance', { balance: numberFormat.format(display.balance) })}
+      </span>
+    </div>
   );
 }
 
@@ -832,6 +867,7 @@ function parseUsageSnapshot(value: Record<string, unknown>): UsageSnapshot {
     fetchedAtUnixMs: value.fetchedAtUnixMs,
     ordinaryUsageAllowed: ordinaryUsageAllowed ?? null,
     resetCreditCount: resetCreditCount ?? null,
+    credits: parseUsageCredits(value.credits),
     buckets: value.buckets.map(parseUsageBucket),
     resetCredits: value.resetCredits.map(parseResetCredit),
   };

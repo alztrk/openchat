@@ -12,6 +12,7 @@ use reqwest::{Client, RequestBuilder, header::ACCEPT, redirect::Policy};
 use rusqlite::OptionalExtension;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
+use time::{Date, OffsetDateTime, format_description::well_known::Rfc3339};
 use tokio::sync::watch;
 use url::Url;
 
@@ -32,6 +33,7 @@ const CACHE_AGE_MS: i64 = 6 * 60 * 60 * 1000;
 const MAX_MODELS: usize = 1000;
 const MAX_USER_RESPONSE_BYTES: usize = 128 * 1024;
 const MAX_MODEL_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
+const MAX_RESET_UNIX_MS: i64 = 8_640_000_000_000_000;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum ModelEndpoint {
@@ -463,6 +465,7 @@ async fn fetch_user_with_client(
 }
 
 fn parse_usage_snapshot(user: &Value) -> Value {
+    let reset_at_unix_ms = safe_quota_reset(user);
     let quotas = user
         .get("quota_snapshots")
         .and_then(Value::as_object)
@@ -485,6 +488,7 @@ fn parse_usage_snapshot(user: &Value) -> Value {
                         } else {
                             kind.to_owned()
                         },
+                        reset_at_unix_ms,
                     )
                 })
                 .collect::<Vec<_>>()
@@ -498,7 +502,12 @@ fn parse_usage_snapshot(user: &Value) -> Value {
     })
 }
 
-fn parse_quota_snapshot(value: &Value, kind: &str, id: String) -> Option<Value> {
+fn parse_quota_snapshot(
+    value: &Value,
+    kind: &str,
+    id: String,
+    reset_at_unix_ms: Option<i64>,
+) -> Option<Value> {
     if kind == "other" {
         return Some(json!({
             "id": id,
@@ -531,7 +540,7 @@ fn parse_quota_snapshot(value: &Value, kind: &str, id: String) -> Option<Value> 
         "entitlement": entitlement,
         "remaining": safe_quota_number(remaining, false),
         "percentRemaining": safe_percent(object.get("percent_remaining")),
-        "resetAtUnixMs": safe_reset_time(object.get("quota_reset_at")),
+        "resetAtUnixMs": safe_quota_reset(value).or(reset_at_unix_ms),
         "unlimited": unlimited,
         "hasQuota": object.get("has_quota").and_then(Value::as_bool),
         "tokenBasedBilling": object.get("token_based_billing").and_then(Value::as_bool),
@@ -561,6 +570,14 @@ fn safe_percent(value: Option<&Value>) -> Option<f64> {
     safe_quota_number(value, false).filter(|percent| *percent <= 100.0)
 }
 
+/// Resolves a reset time, treating a zero `quota_reset_at` as the "no reset" sentinel.
+fn safe_quota_reset(value: &Value) -> Option<i64> {
+    safe_reset_time(value.get("quota_reset_at"))
+        .filter(|milliseconds| *milliseconds > 0)
+        .or_else(|| safe_reset_date(value.get("quota_reset_date_utc")))
+        .or_else(|| safe_reset_date(value.get("quota_reset_date")))
+}
+
 fn safe_reset_time(value: Option<&Value>) -> Option<i64> {
     let seconds = value?.as_i64().or_else(|| {
         value
@@ -572,7 +589,27 @@ fn safe_reset_time(value: Option<&Value>) -> Option<i64> {
     }
     seconds
         .checked_mul(1000)
-        .filter(|milliseconds| *milliseconds <= 8_640_000_000_000_000)
+        .filter(|milliseconds| *milliseconds <= MAX_RESET_UNIX_MS)
+}
+
+fn safe_reset_date(value: Option<&Value>) -> Option<i64> {
+    static DATE_FORMAT: OnceLock<
+        Option<Vec<time::format_description::BorrowedFormatItem<'static>>>,
+    > = OnceLock::new();
+    let value = value?.as_str()?.trim();
+    let timestamp = OffsetDateTime::parse(value, &Rfc3339).ok().or_else(|| {
+        let format = DATE_FORMAT
+            .get_or_init(|| {
+                time::format_description::parse_borrowed::<2>("[year]-[month]-[day]").ok()
+            })
+            .as_ref()?;
+        Date::parse(value, format)
+            .ok()
+            .map(|date| date.midnight().assume_utc())
+    })?;
+    i64::try_from(timestamp.unix_timestamp_nanos() / 1_000_000)
+        .ok()
+        .filter(|milliseconds| (0..=MAX_RESET_UNIX_MS).contains(milliseconds))
 }
 
 async fn read_json_response(
@@ -1217,7 +1254,7 @@ mod tests {
         assert_eq!(premium["entitlement"], -1.0);
         assert_eq!(premium["remaining"], 0.0);
         assert_eq!(premium["percentRemaining"], 0.0);
-        assert_eq!(premium["resetAtUnixMs"], 0);
+        assert_eq!(premium["resetAtUnixMs"], Value::Null);
         assert_eq!(premium["unlimited"], true);
 
         let chat = quotas
@@ -1234,6 +1271,139 @@ mod tests {
             .expect("completions quota");
         assert_eq!(completions["remaining"], 5.0);
         assert_eq!(completions["resetAtUnixMs"], Value::Null);
+    }
+
+    #[test]
+    fn usage_snapshot_uses_server_reset_dates_in_priority_order() {
+        for (fields, expected) in [
+            (
+                json!({"quota_reset_at": 1_900_000_000_i64, "quota_reset_date_utc": "2026-12-01T00:00:00.000Z", "quota_reset_date": "2027-01-01"}),
+                json!(1_900_000_000_000_i64),
+            ),
+            (
+                json!({"quota_reset_date_utc": "2026-12-01T00:00:00.123Z", "quota_reset_date": "2027-01-01"}),
+                json!(1_796_083_200_123_i64),
+            ),
+            (
+                json!({"quota_reset_date": "2026-12-01"}),
+                json!(1_796_083_200_000_i64),
+            ),
+            (json!({}), Value::Null),
+            (
+                json!({"quota_reset_at": -1, "quota_reset_date_utc": "invalid", "quota_reset_date": "2026-12-01"}),
+                json!(1_796_083_200_000_i64),
+            ),
+            (
+                json!({"quota_reset_date_utc": "2026-12-01T03:00:00+03:00"}),
+                json!(1_796_083_200_000_i64),
+            ),
+            (json!({"quota_reset_date": "2026-02-30"}), Value::Null),
+        ] {
+            let mut user = fields;
+            user["quota_snapshots"] =
+                json!({"chat": {}, "completions": {}, "premium_interactions": {}});
+            let snapshot = parse_usage_snapshot(&user);
+            for quota in snapshot["quotas"].as_array().expect("quota list") {
+                assert_eq!(quota["resetAtUnixMs"], expected, "reset fields: {user}");
+            }
+        }
+    }
+
+    #[test]
+    fn usage_snapshot_prefers_bucket_dates_over_zero_bucket_reset() {
+        let snapshot = parse_usage_snapshot(&json!({
+            "quota_reset_date_utc": "2027-01-01T00:00:00.000Z",
+            "quota_snapshots": {
+                "chat": {"quota_reset_at": 0, "quota_reset_date_utc": "2026-12-01T00:00:00.000Z"},
+                "completions": {"quota_reset_at": 0, "quota_reset_date": "2026-12-01"},
+                "premium_interactions": {"quota_reset_at": 0}
+            }
+        }));
+        let quotas = snapshot["quotas"].as_array().expect("quota list");
+        assert_eq!(quotas[0]["resetAtUnixMs"], 1_796_083_200_000_i64);
+        assert_eq!(quotas[1]["resetAtUnixMs"], 1_796_083_200_000_i64);
+        assert_eq!(quotas[2]["resetAtUnixMs"], 1_798_761_600_000_i64);
+    }
+
+    #[test]
+    fn usage_snapshot_ignores_account_zero_reset_before_trying_dates() {
+        for (dates, expected) in [
+            (json!({}), Value::Null),
+            (
+                json!({"quota_reset_date_utc": " 2026-12-01T00:00:00.123Z ", "quota_reset_date": "2027-01-01"}),
+                json!(1_796_083_200_123_i64),
+            ),
+            (
+                json!({"quota_reset_date_utc": "invalid", "quota_reset_date": " 2026-12-01 "}),
+                json!(1_796_083_200_000_i64),
+            ),
+        ] {
+            let mut user = dates;
+            user["quota_reset_at"] = json!(0);
+            user["quota_snapshots"] =
+                json!({"chat": {}, "completions": {}, "premium_interactions": {}});
+            let snapshot = parse_usage_snapshot(&user);
+            for quota in snapshot["quotas"].as_array().expect("quota list") {
+                assert_eq!(quota["resetAtUnixMs"], expected, "reset fields: {user}");
+            }
+        }
+    }
+
+    #[test]
+    fn usage_snapshot_prefers_bucket_reset_fields_before_account_reset() {
+        for (fields, expected) in [
+            (
+                json!({"quota_reset_at": 1_900_000_000_i64, "quota_reset_date_utc": "2026-12-01T00:00:00Z", "quota_reset_date": "2027-01-01"}),
+                1_900_000_000_000_i64,
+            ),
+            (
+                json!({"quota_reset_at": -1, "quota_reset_date_utc": " 2026-12-01T00:00:00.123Z ", "quota_reset_date": "2027-01-01"}),
+                1_796_083_200_123_i64,
+            ),
+            (
+                json!({"quota_reset_date_utc": "invalid", "quota_reset_date": " 2026-12-01 "}),
+                1_796_083_200_000_i64,
+            ),
+            (
+                json!({"quota_reset_date": "2026-02-30"}),
+                2_000_000_000_000_i64,
+            ),
+            (json!({}), 2_000_000_000_000_i64),
+        ] {
+            for kind in ["chat", "completions", "premium_interactions"] {
+                let mut user = json!({"quota_reset_at": 2_000_000_000_i64, "quota_snapshots": {}});
+                user["quota_snapshots"][kind] = fields.clone();
+                let snapshot = parse_usage_snapshot(&user);
+                assert_eq!(
+                    snapshot["quotas"][0]["resetAtUnixMs"], expected,
+                    "reset fields: {user}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn safe_reset_dates_and_times_share_the_same_timestamp_bounds() {
+        use super::{MAX_RESET_UNIX_MS, safe_reset_date, safe_reset_time};
+
+        assert_eq!(
+            safe_reset_time(Some(&json!(MAX_RESET_UNIX_MS / 1000))),
+            Some(MAX_RESET_UNIX_MS)
+        );
+        assert_eq!(
+            safe_reset_time(Some(&json!(MAX_RESET_UNIX_MS / 1000 + 1))),
+            None
+        );
+        for value in [
+            json!(null),
+            json!(42),
+            json!(""),
+            json!("1969-12-31"),
+            json!("2026-02-30"),
+        ] {
+            assert_eq!(safe_reset_date(Some(&value)), None);
+        }
+        assert_eq!(safe_reset_date(Some(&json!(" 1970-01-01 "))), Some(0));
     }
 
     #[test]
