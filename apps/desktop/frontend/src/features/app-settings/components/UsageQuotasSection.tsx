@@ -14,6 +14,7 @@ import {
 } from '@shared/lib/usage/usageAlertPreferences';
 import { LocalServiceError, localServiceClient } from '@shared/lib/platform/local-service';
 import { CopilotUsageCard } from './CopilotUsageCard';
+import { ProviderBalanceCards } from './ProviderBalanceCards';
 import { SettingsSectionSkeleton } from './SettingsSectionSkeleton';
 import { parseStatistics, type StatisticsSnapshot, statisticsQuery } from './statisticsData';
 
@@ -91,7 +92,7 @@ export function UsageQuotasSection({ onNavigateToConnections }: UsageQuotasSecti
   const [outcomes, setOutcomes] = useState<Record<string, ResetOutcomeKey>>({});
   const [pendingCredit, setPendingCredit] = useState<PendingCredit | null>(null);
   const [redeemingCreditId, setRedeemingCreditId] = useState<string | null>(null);
-  const [copilotRefreshSequence, setCopilotRefreshSequence] = useState(0);
+  const [quotaRefreshSequence, setQuotaRefreshSequence] = useState(0);
   const [alertPreferences, setAlertPreferences] = useState<UsageAlertPreferences>(defaultUsageAlertPreferences);
   const [alertPreferencesLoaded, setAlertPreferencesLoaded] = useState(false);
   const [alertPreferencesLoadFailed, setAlertPreferencesLoadFailed] = useState(false);
@@ -391,7 +392,7 @@ export function UsageQuotasSection({ onNavigateToConnections }: UsageQuotasSecti
             disabled={isRefreshingAll || loadState === 'loading'}
             onClick={() => {
               void loadAll(true);
-              setCopilotRefreshSequence((current) => current + 1);
+              setQuotaRefreshSequence((current) => current + 1);
             }}
             variant="secondary"
           >
@@ -505,7 +506,24 @@ export function UsageQuotasSection({ onNavigateToConnections }: UsageQuotasSecti
           <CopilotUsageCard
             onNavigateToConnections={onNavigateToConnections}
             quotaWarningAtPercent={alertPreferences.quotaWarningAtPercent}
-            refreshSequence={copilotRefreshSequence}
+            refreshSequence={quotaRefreshSequence}
+          />
+          <ProviderBalanceCards
+            refreshSequence={quotaRefreshSequence}
+            renderWindow={(window, label) => (
+              <UsageBucketView
+                bucket={{
+                  limitId: window.label,
+                  usedPercent: window.usedPercent,
+                  windowSeconds: window.windowSeconds,
+                  resetAtUnixMs: window.resetAtUnixMs,
+                }}
+                labelOverride={label}
+                locale={locale}
+                warningAtPercent={alertPreferences.quotaWarningAtPercent}
+                t={t}
+              />
+            )}
           />
         </div>
       </div>
@@ -625,16 +643,18 @@ function WorkspaceUsage({
 
 function UsageBucketView({
   bucket,
+  labelOverride,
   locale,
   warningAtPercent,
   t,
 }: {
   bucket: UsageBucket;
+  labelOverride?: string;
   locale: string;
   warningAtPercent: number;
   t: WorkspaceUsageProps['t'];
 }) {
-  const label = bucketLabel(bucket, t);
+  const label = labelOverride ?? bucketLabel(bucket, t);
   const percent = bucket.usedPercent;
   const displayedPercent = percent === null ? null : Math.round(percent);
   const meterValue = percent === null ? null : Math.min(100, Math.max(0, percent));

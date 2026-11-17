@@ -181,6 +181,7 @@ pub(crate) async fn dispatch(context: RpcDispatchContext<'_>) -> Result<Value, S
     }
     if method.starts_with("chatgpt.")
         || method.starts_with("copilot.")
+        || method == "providers.quota_balances.list"
         || method == "opencode.models.list"
         || method == "compatible.models.list"
     {

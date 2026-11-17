@@ -942,7 +942,7 @@ function isRetryAfterMs(value: unknown): value is number {
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 && value <= 86_400_000;
 }
 
-function isServiceErrorCategory(value: unknown): value is ServiceErrorCategory {
+export function isServiceErrorCategory(value: unknown): value is ServiceErrorCategory {
   return (
     value === 'validation' ||
     value === 'authentication' ||

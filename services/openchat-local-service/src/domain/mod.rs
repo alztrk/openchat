@@ -62,6 +62,8 @@ pub(crate) mod project_memory;
 pub(crate) mod project_rules;
 #[path = "projects/project_skills.rs"]
 pub(crate) mod project_skills;
+#[path = "providers/provider_balances.rs"]
+pub(crate) mod provider_balances;
 #[path = "providers/credentials.rs"]
 pub(crate) mod provider_credentials;
 #[path = "providers/provider_schema/mod.rs"]

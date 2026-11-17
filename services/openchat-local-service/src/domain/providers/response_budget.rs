@@ -10,6 +10,9 @@ use crate::protocol::ServiceError;
 /// Maximum raw provider response bytes accepted for an automatic conversation title.
 pub(crate) const MAX_TITLE_RESPONSE_BYTES: usize = 64 * 1024;
 
+/// Maximum raw response bytes accepted for one provider quota or balance request.
+pub(crate) const MAX_PROVIDER_BALANCE_RESPONSE_BYTES: usize = 256 * 1024;
+
 /// Maximum raw response bytes accepted for one provider model catalog request.
 pub(crate) const MAX_MODEL_CATALOG_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
 
