@@ -81,6 +81,8 @@ impl ChatRoute {
 /// Shared authentication and context inputs for provider route resolution.
 #[derive(Clone, Copy)]
 pub(super) struct ChatRouteOptions<'a> {
+    /// Model route selected for this request, when comparing models.
+    pub(super) requested_model_route: Option<crate::chat_operation::ChatModelRoute<'a>>,
     /// API key selected for the provider request.
     pub(super) api_key: Option<&'a str>,
     /// Connection id selected for this request, when the provider requires one.
@@ -115,7 +117,7 @@ pub(super) async fn resolve_chat_route(
     options: ChatRouteOptions<'_>,
     cancellation: &mut tokio::sync::watch::Receiver<bool>,
 ) -> Result<ChatRoute, ServiceError> {
-    let (provider_id, model_id, project_id) = {
+    let (saved_provider_id, saved_model_id, project_id) = {
         let connection = storage.connect().map_err(|error| {
             log_send_storage_failure(
                 storage,
@@ -147,6 +149,15 @@ pub(super) async fn resolve_chat_route(
             })?
             .ok_or_else(route_error)?
     };
+    let (provider_id, model_id) =
+        options
+            .requested_model_route
+            .map_or((saved_provider_id, saved_model_id), |route| {
+                (
+                    Some(route.provider_id.to_owned()),
+                    Some(route.model_id.to_owned()),
+                )
+            });
     resolve_chat_route_for_model(
         storage,
         provider_id,
@@ -206,6 +217,7 @@ async fn resolve_chat_route_for_model(
     cancellation: &mut tokio::sync::watch::Receiver<bool>,
 ) -> Result<ChatRoute, ServiceError> {
     let ChatRouteOptions {
+        requested_model_route: _,
         api_key,
         requested_api_key_connection_id,
         stored_api_key_connection_id,

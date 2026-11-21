@@ -37,6 +37,12 @@ pub(super) async fn dispatch(
     if !crate::temporary_conversation::is_valid_temporary_conversation_id(&conversation_id) {
         return Err(invalid_request_params());
     }
+    let design_mode = super::optional_bool(params, "designMode")?.unwrap_or(false);
+    let allow_design_frame_inspection =
+        super::optional_bool(params, "allowDesignFrameInspection")?.unwrap_or(false);
+    if allow_design_frame_inspection && !design_mode {
+        return Err(invalid_request_params());
+    }
     let provider_id = bounded_route_id(params, "providerId")?.to_owned();
     let model_id = bounded_route_id(params, "modelId")?.to_owned();
     let api_key_connection_id = optional_string(params, "apiKeyConnectionId")?.map(str::to_owned);
@@ -58,6 +64,8 @@ pub(super) async fn dispatch(
                 connection_id,
                 workspace_id,
                 model_id: &model_id,
+                design_mode,
+                allow_design_frame_inspection,
                 messages,
                 has_attachments,
                 cancellation,
@@ -95,6 +103,8 @@ pub(super) async fn dispatch(
             conversation_id: &conversation_id,
             provider_id: &provider_id,
             model_id: &model_id,
+            design_mode,
+            allow_design_frame_inspection,
             api_key: api_key.as_deref().map(|secret| secret.as_str()),
             api_key_connection_id,
             custom_provider,

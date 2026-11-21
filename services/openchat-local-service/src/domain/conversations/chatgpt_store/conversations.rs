@@ -290,6 +290,35 @@ pub fn conversation_messages_from_boundary(
     Ok(Some(all_messages[start_index..].to_vec()))
 }
 
+pub fn comparison_sibling_assistant_message_ids(
+    storage: &AppStorage,
+    conversation_id: &str,
+    prompt_message_id: &str,
+) -> rusqlite::Result<Option<Vec<String>>> {
+    let database = storage.connect()?;
+    let is_user_message = database
+        .query_row(
+            "SELECT 1 FROM messages WHERE conversation_id = ?1 AND id = ?2 AND role = 'user'",
+            params![conversation_id, prompt_message_id],
+            |_| Ok(()),
+        )
+        .optional()?
+        .is_some();
+    if !is_user_message {
+        return Ok(None);
+    }
+    let mut statement = database.prepare(
+        "SELECT id FROM messages
+         WHERE conversation_id = ?1 AND parent_message_id = ?2 AND role = 'assistant'",
+    )?;
+    let assistant_ids = statement
+        .query_map(params![conversation_id, prompt_message_id], |row| {
+            row.get(0)
+        })?
+        .collect::<rusqlite::Result<Vec<String>>>()?;
+    Ok(Some(assistant_ids))
+}
+
 type StoredMessageRow = (String, String, String, String, Option<i64>, String);
 
 fn stored_message_row_from_sql(row: &StorageRow) -> rusqlite::Result<StoredMessageRow> {

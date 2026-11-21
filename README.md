@@ -92,8 +92,15 @@ This check runs Biome, frontend unit tests, locale and import checks, the TypeSc
 To build a standalone package for the current operating system:
 ```bash
 cd apps/desktop/frontend
-npm run openchat -- build
+npm run openchat -- build --preview
 ```
+
+Preview packages include the Git commit count and short SHA in their prerelease version. Stable
+packages include them as SemVer build metadata, preserving release precedence while identifying the
+exact commit. Stable packages can only be built from a clean checkout at its matching
+`vMAJOR.MINOR.PATCH` Git tag. Increase
+the matching Tauri, desktop Cargo, Cargo lockfile, frontend manifest, and npm lockfile versions
+before tagging a new stable release.
 
 On Windows, the installer uses Tauri’s default WebView2 download-bootstrapper mode. If the runtime is missing or older than 111.0.1661.0, installation attempts to download or update it and requires an internet connection. See [Tauri’s WebView2 installation options](https://v2.tauri.app/distribute/windows-installer/#webview2-installation-options). On Linux, the build creates Debian and AppImage packages; the Debian package declares Bubblewrap as a dependency.
 

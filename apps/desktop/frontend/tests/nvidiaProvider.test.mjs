@@ -25,7 +25,8 @@ test('NVIDIA uses its hosted OpenAI-compatible endpoint and has provider labels'
 
   const settingsPath = path.resolve('src/features/provider-settings/components/ProviderSettingsSection.tsx');
   const settingsContent = fs.readFileSync(settingsPath, 'utf8');
-  assert.match(settingsContent, /case 'nvidia':\s*return t\('providerNameNvidia'\)/);
+  assert.match(settingsContent, /ModelPickerField/);
+  assert.doesNotMatch(settingsContent, /const providerLabel =/);
 });
 
 test('all locales define the NVIDIA provider name', () => {

@@ -313,6 +313,8 @@ export function createConversationsActions(set: StoreSet, get: StoreGet) {
         sendingConversationIds: [],
         activeOperation: null,
         activeOperationsByConversation: {},
+        comparisonOperationsByConversation: {},
+        modelComparisonConversationIds: [],
         isSending: false,
         isUpdatingConversationModel: false,
         selectedReasoningEffort: null,

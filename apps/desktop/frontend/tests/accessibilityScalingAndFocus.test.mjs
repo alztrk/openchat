@@ -32,7 +32,7 @@ test('TODO-076 (#156): keyboard focus, high contrast, forced-colors, and reduced
   assert.match(tokensCss, /@media \(prefers-contrast: more\), \(forced-colors: active\)/);
   assert.match(
     indexCss,
-    /@media \(prefers-contrast: more\), \(forced-colors: active\)\s*\{\s*:focus-visible,\s*label:has\(> input:focus-visible\) \.openchat-segment-label\s*\{\s*outline:\s*2px solid rgb\(var\(--focus-ring\)\)\s*!important;/u,
+    /@media \(prefers-contrast: more\), \(forced-colors: active\)\s*\{\s*:focus-visible,\s*label:has\(> input:focus-visible\) \.openchat-segment-label,\s*\.composer-surface:has\(\.composer-message-input:focus-visible\)\s*\{\s*outline:\s*2px solid rgb\(var\(--focus-ring\)\)\s*!important;/u,
   );
 
   // Reduced motion disables animations and sidebar transitions

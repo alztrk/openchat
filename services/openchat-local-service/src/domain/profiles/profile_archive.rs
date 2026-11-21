@@ -5,7 +5,7 @@
 //! an incomplete profile.
 
 use std::{
-    collections::{BTreeMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     fs::{self, File, OpenOptions},
     io::{self, BufReader, Read, Write},
     path::{Component, Path, PathBuf},
@@ -14,7 +14,7 @@ use std::{
 
 use std::{
     iter,
-    sync::{Mutex, OnceLock},
+    sync::{Arc, Mutex, OnceLock, Weak},
 };
 
 use age::{Decryptor, scrypt::Identity};
@@ -74,7 +74,22 @@ const RESTORE_APPLYING_FILE: &str = "restore.applying.json";
 const RESTORE_AWAITING_FILE: &str = "restore.awaiting.json";
 const RESTORE_COMMITTED_FILE: &str = "restore.committed.json";
 const RECOVERY_DIRECTORY: &str = "profile-restores";
-static RESTORE_OPERATION_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+static RESTORE_OPERATION_LOCKS: OnceLock<Mutex<HashMap<PathBuf, Weak<Mutex<()>>>>> =
+    OnceLock::new();
+
+fn restore_operation_lock(restore_root: &Path) -> Arc<Mutex<()>> {
+    let locks = RESTORE_OPERATION_LOCKS.get_or_init(|| Mutex::new(HashMap::new()));
+    let mut locks = locks.lock().unwrap_or_else(|error| error.into_inner());
+    locks.retain(|_, lock| lock.strong_count() > 0);
+
+    if let Some(lock) = locks.get(restore_root).and_then(Weak::upgrade) {
+        return lock;
+    }
+
+    let lock = Arc::new(Mutex::new(()));
+    locks.insert(restore_root.to_path_buf(), Arc::downgrade(&lock));
+    lock
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -648,10 +663,10 @@ fn prepare_restore_inner(
 ) -> Result<Value, ArchiveFailure> {
     let restore_root = restore_base.join("cache").join(RESTORE_ROOT);
     fs::create_dir_all(&restore_root).map_err(|_| ArchiveFailure::Storage)?;
-    let _lock = RESTORE_OPERATION_LOCK
-        .get_or_init(|| Mutex::new(()))
-        .try_lock()
-        .map_err(|_| ArchiveFailure::Busy)?;
+    let canonical_restore_root =
+        fs::canonicalize(&restore_root).map_err(|_| ArchiveFailure::Storage)?;
+    let lock = restore_operation_lock(&canonical_restore_root);
+    let _lock = lock.try_lock().map_err(|_| ArchiveFailure::Busy)?;
     if restore_pending_path(&restore_root).exists()
         || restore_journal_paths(&restore_root)
             .iter()

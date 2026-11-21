@@ -56,6 +56,17 @@ The CLI is modularized into:
 
 ---
 
+## 2.5 Issue-Driven Work Tracking
+
+* GitHub Issues in `alztrk/openchat` are the source of truth for planned and active work.
+* Do not create or maintain `TODO.md` or another Markdown checklist as a task backlog. Do not recreate the retired checklist.
+* Before implementation, find the matching open issue. When authorized work has no matching issue, create one with the repository form at `.github/ISSUE_TEMPLATE/engineering-task.yml` and use the issue as the task record.
+* Write issue titles and all issue content in English. Use `[Task] <concise outcome>` for new issue titles; preserve existing migration IDs on migrated issues.
+* Complete every issue form section. `Location` must identify the affected screen/workflow and known source paths. Verify paths in the repository; if they are not known yet, say so instead of guessing.
+* Define observable acceptance criteria and the appropriate validation environment. Do not claim runtime, platform, or packaged behavior from a different kind of check.
+* Apply exactly one `type:*` label and one `area:*` label. Add one `priority:*` label only when priority has been agreed. Reserve `source:migrated-backlog` for work migrated from the retired checklist.
+* When work is complete, update and close its issue. Record notable completed user-facing changes in `CHANGELOG.md`; do not restore a task checklist.
+
 ## 3. Mandatory Target Directory and Cargo Rules
 
 ### Strict Single Target Directory Policy: `target/debug`

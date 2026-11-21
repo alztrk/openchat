@@ -8,26 +8,39 @@ use std::{
 use rusqlite::{Connection, params};
 use serde_json::json;
 use sha2::{Digest, Sha256};
-use std::sync::Mutex;
 use uuid::Uuid;
 use zeroize::Zeroizing;
 
 use super::{
     ARCHIVE_FORMAT, ArchiveFailure, DATABASE_PATH, FileRecord, MAX_DATABASE_BYTES,
     MAX_RESTORE_STATE_BYTES, ProfileManifest, count_rows, export, export_inner, file_record,
-    prepare_restore, read_backend_schema_version, read_json, unix_time_millis, write_archive,
+    prepare_restore, read_backend_schema_version, read_json, restore_operation_lock,
+    unix_time_millis, write_archive,
 };
 use crate::storage::AppStorage;
 
 const CHAT_SCHEMA_VERSION: i64 = 11;
 const PASSPHRASE: &str = "profile-archive-test-passphrase";
-static RESTORE_TEST_LOCK: Mutex<()> = Mutex::new(());
+
+#[test]
+fn restore_locks_are_scoped_to_the_same_profile_root() {
+    let first = TestDirectory::new("restore-lock-first");
+    let second = TestDirectory::new("restore-lock-second");
+    let first_root = first.0.join("restore");
+    let second_root = second.0.join("restore");
+    fs::create_dir_all(&first_root).expect("create first restore root");
+    fs::create_dir_all(&second_root).expect("create second restore root");
+
+    let first_lock = restore_operation_lock(&first_root);
+    let same_profile_lock = restore_operation_lock(&first_root);
+    let second_lock = restore_operation_lock(&second_root);
+
+    assert!(std::sync::Arc::ptr_eq(&first_lock, &same_profile_lock));
+    assert!(!std::sync::Arc::ptr_eq(&first_lock, &second_lock));
+}
 
 #[test]
 fn encrypted_profile_backup_restores_database_and_attachments_safely() {
-    let _guard = RESTORE_TEST_LOCK
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let source_directory = TestDirectory::new("source");
     let source_key = [0x11; 32];
     let source = seed_profile(&source_directory.0, "source-chat", true, &source_key);
@@ -145,9 +158,6 @@ fn encrypted_profile_backup_restores_database_and_attachments_safely() {
 
 #[test]
 fn unconfirmed_profile_restore_rolls_back_on_the_next_startup() {
-    let _guard = RESTORE_TEST_LOCK
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let source_directory = TestDirectory::new("rollback-source");
     let source_key = [0x13; 32];
     let source = seed_profile(&source_directory.0, "source-chat", false, &source_key);
@@ -200,9 +210,6 @@ fn unconfirmed_profile_restore_rolls_back_on_the_next_startup() {
 
 #[test]
 fn version_one_archive_is_converted_to_the_destination_key_before_staging() {
-    let _guard = RESTORE_TEST_LOCK
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let source_directory = TestDirectory::new("legacy-archive-source");
     let source_key = [0x31; 32];
     let source = seed_profile(

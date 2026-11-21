@@ -1,9 +1,9 @@
 import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button, Select, Switch } from '@shared/components';
-import { providerNameForModel } from '@entities/model/composerUtils';
 import { useChatStore } from '@features/chat/state';
 import { modelRouteKey } from '@entities/model/modelPreferences';
+import { ModelPickerField } from '@features/chat/components';
 import { useAssistantExecutionPreferencesStore } from '@shared/lib/preferences/assistantExecutionPreferences';
 import { useAssistantProfilesStore } from '@shared/lib/preferences/assistantProfilesStore';
 import { SettingsPreferenceRow } from './SettingsPreferenceRow';
@@ -56,19 +56,9 @@ export function AssistantExecutionSettingsSection() {
     profileOptions.unshift({ value: preferences.defaultProfileId, label: t('assistantProfileDefaultUnavailable') });
   }
 
-  const modelOptions = models.map((model) => ({
-    value: modelRouteKey(model),
-    label: `${providerNameForModel(model, (key) => t(key))}: ${model.displayName}`,
-  }));
-  if (
-    preferences.preferredDelegationModelRouteKey !== null &&
-    !modelOptions.some((option) => option.value === preferences.preferredDelegationModelRouteKey)
-  ) {
-    modelOptions.unshift({
-      value: preferences.preferredDelegationModelRouteKey,
-      label: t('delegationModelUnavailable'),
-    });
-  }
+  const selectedDelegationModel = models.find(
+    (model) => modelRouteKey(model) === preferences.preferredDelegationModelRouteKey,
+  ) ?? null;
 
   return (
     <section aria-labelledby="settings-page-heading" className="settings-section grid content-start gap-6">
@@ -109,14 +99,19 @@ export function AssistantExecutionSettingsSection() {
           label={t('preferredDelegationModel')}
         >
           {(descriptionId) => (
-            <Select
-              aria-describedby={descriptionId}
+            <ModelPickerField
               disabled={preferenceLoadState !== 'ready' || preferenceSaveState === 'saving'}
-              label={t('preferredDelegationModel')}
-              onChange={(event) => void setPreference('preferredDelegationModelRouteKey', event.target.value || null)}
-              options={[{ value: '', label: t('noPreferredDelegationModel') }, ...modelOptions]}
-              value={preferences.preferredDelegationModelRouteKey ?? ''}
-              visuallyHiddenLabel
+              emptySelectionLabel={
+                preferences.preferredDelegationModelRouteKey !== null && selectedDelegationModel === null
+                  ? t('delegationModelUnavailable')
+                  : t('noPreferredDelegationModel')
+              }
+              emptyOptionLabel={t('noPreferredDelegationModel')}
+              onSelect={(model) => void setPreference('preferredDelegationModelRouteKey', modelRouteKey(model))}
+              onSelectEmpty={() => void setPreference('preferredDelegationModelRouteKey', null)}
+              selectedModel={selectedDelegationModel}
+              triggerAriaDescribedBy={descriptionId}
+              triggerAriaLabel={t('preferredDelegationModel')}
             />
           )}
         </SettingsPreferenceRow>

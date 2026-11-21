@@ -21,7 +21,7 @@ const catalogDataSource = readSource('src/features/model-catalog/data/modelCatal
 const compiledCatalogData = ts.transpileModule(catalogDataSource, {
   compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
 }).outputText;
-const { downloadErrorMessageKey, parseHubDetails } = await import(
+const { downloadErrorMessageKey, isModelCatalogEngineId, modelCatalogEngineIds, parseHubDetails } = await import(
   `data:text/javascript;base64,${Buffer.from(compiledCatalogData).toString('base64')}`
 );
 
@@ -37,6 +37,31 @@ test('model download progress has a progress-specific accessible name and locali
   assert.match(statusSource, /progress && progress\.totalBytes > 0[\s\S]*?: undefined/u);
   assert.match(statusSource, /value=\{fraction \?\? undefined\}/u);
   assert.doesNotMatch(statusSource, /aria-label=\{t\('modelDownloadOptionsLabel'\)\}/u);
+});
+
+test('the model catalog exposes compatible engines and preserves the Transformers selection', () => {
+  assert.deepEqual(modelCatalogEngineIds, ['llama_cpp', 'vllm', 'exllama', 'sglang']);
+  for (const engineId of modelCatalogEngineIds) {
+    assert.equal(isModelCatalogEngineId(engineId), true);
+  }
+  assert.equal(isModelCatalogEngineId('unknown'), false);
+
+  const selectorStart = componentSource.indexOf("aria-label={t('modelDownloadEngine')}");
+  const optionsStart = componentSource.indexOf('options={[', selectorStart);
+  const selectedValue = componentSource.indexOf('value={engineId}', optionsStart);
+  assert.ok(selectorStart >= 0 && optionsStart > selectorStart && selectedValue > optionsStart);
+  const optionsSource = componentSource.slice(optionsStart, selectedValue);
+  for (const [engineId, labelKey] of [
+    ['llama_cpp', 'modelEngineLlamaCpp'],
+    ['vllm', 'modelEngineVllm'],
+    ['exllama', 'modelEngineExllama'],
+    ['sglang', 'modelEngineSglang'],
+  ]) {
+    assert.ok(optionsSource.includes(`value: '${engineId}'`), `${engineId} is missing from the engine selector`);
+    assert.ok(optionsSource.includes(`t('${labelKey}')`), `${engineId} is missing its localized label`);
+    assert.ok(optionsSource.includes(`engineId="${engineId}"`), `${engineId} is missing its engine icon`);
+  }
+  assert.match(componentSource, /const format = engineId === 'llama_cpp' \? 'gguf' : 'transformers'/u);
 });
 
 test('all supported locales describe both model download progress and its byte range', () => {

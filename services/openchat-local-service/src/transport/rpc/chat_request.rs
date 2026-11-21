@@ -25,6 +25,10 @@ const MAX_AVAILABLE_SUBAGENT_MODELS: usize = 4096;
 pub(super) struct ChatSendParameters<'a> {
     /// Durable conversation whose saved provider route will handle the request.
     pub(super) conversation_id: &'a str,
+    /// Renderer-selected model route used for an in-chat model comparison.
+    pub(super) requested_model_route: Option<RequestedModelRoute<'a>>,
+    /// User message shared by the parallel model responses, when this is a secondary request.
+    pub(super) comparison_prompt_message_id: Option<&'a str>,
     /// Existing paused run to resume, if the request is a continuation.
     pub(super) resume_run_id: Option<&'a str>,
     /// Renderer-selected saved API-key connection, when provided.
@@ -53,6 +57,15 @@ pub(super) struct ChatSendParameters<'a> {
     pub(super) available_subagent_models: Vec<SubagentModelOption>,
 }
 
+#[derive(Clone, Copy)]
+pub(super) struct RequestedModelRoute<'a> {
+    pub(super) provider_id: &'a str,
+    pub(super) model_id: &'a str,
+    pub(super) connection_id: Option<&'a str>,
+    pub(super) workspace_id: Option<&'a str>,
+    pub(super) api_key_connection_id: Option<&'a str>,
+}
+
 /// Validates chat input before credential reads or persistent execution work.
 ///
 /// # Errors
@@ -70,7 +83,24 @@ pub(super) fn parse_send_request<'a>(
     }
 
     let resume_run_id = optional_string(params, "resumeRunId")?;
+    let requested_model_route = parse_model_route(params.get("modelRoute"))?;
+    let comparison_prompt_message_id = optional_string(params, "comparisonPromptMessageId")?;
+    if comparison_prompt_message_id.is_some_and(|id| {
+        id.is_empty()
+            || id.len() > 128
+            || !id.chars().all(|character| {
+                character.is_ascii_alphanumeric() || character == '-' || character == '_'
+            })
+    }) {
+        return Err(invalid_request_params());
+    }
     let api_key_connection_id = optional_string(params, "apiKeyConnectionId")?;
+    if requested_model_route
+        .as_ref()
+        .is_some_and(|route| route.api_key_connection_id != api_key_connection_id)
+    {
+        return Err(invalid_request_params());
+    }
     let requested_reasoning_effort = optional_string(params, "reasoningEffort")?;
     let requested_fast_mode = optional_bool(params, "fastMode")?.unwrap_or(false);
     let context_limit_override = match params.get("contextLimit") {
@@ -109,6 +139,14 @@ pub(super) fn parse_send_request<'a>(
         tools::parse_profile_tool_allowlist(params.get("profileToolAllowlist"))?;
     let available_subagent_models = parse_subagent_models(params.get("availableSubagentModels"))?;
     let excluded_assistant_message_id = optional_string(params, "excludedAssistantMessageId")?;
+    if requested_model_route.is_some()
+        && (resume_run_id.is_some() || excluded_assistant_message_id.is_some())
+    {
+        return Err(invalid_request_params());
+    }
+    if comparison_prompt_message_id.is_some() && requested_model_route.is_none() {
+        return Err(invalid_request_params());
+    }
     if goal_requested && (resume_run_id.is_some() || excluded_assistant_message_id.is_some()) {
         return Err(invalid_chat_goal_request("goal start parameters"));
     }
@@ -116,6 +154,8 @@ pub(super) fn parse_send_request<'a>(
 
     Ok(ChatSendParameters {
         conversation_id,
+        requested_model_route,
+        comparison_prompt_message_id,
         resume_run_id,
         api_key_connection_id,
         requested_reasoning_effort,
@@ -130,6 +170,49 @@ pub(super) fn parse_send_request<'a>(
         title_generation,
         available_subagent_models,
     })
+}
+
+fn parse_model_route(
+    value: Option<&Value>,
+) -> Result<Option<RequestedModelRoute<'_>>, ServiceError> {
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    let route = value.as_object().ok_or_else(invalid_request_params)?;
+    let read = |key: &str, required: bool, max_len: usize| -> Result<Option<&str>, ServiceError> {
+        let value = route.get(key);
+        let Some(value) = value else {
+            return if required {
+                Err(invalid_request_params())
+            } else {
+                Ok(None)
+            };
+        };
+        let Some(value) = value.as_str() else {
+            return if !required && value.is_null() {
+                Ok(None)
+            } else {
+                Err(invalid_request_params())
+            };
+        };
+        if value.is_empty() || value.len() > max_len || value.chars().any(char::is_control) {
+            return Err(invalid_request_params());
+        }
+        Ok(Some(value))
+    };
+    let route = RequestedModelRoute {
+        provider_id: read("providerId", true, 128)?.ok_or_else(invalid_request_params)?,
+        model_id: read("modelId", true, 1024)?.ok_or_else(invalid_request_params)?,
+        connection_id: read("connectionId", false, 1024)?,
+        workspace_id: read("workspaceId", false, 1024)?,
+        api_key_connection_id: read("apiKeyConnectionId", false, 1024)?,
+    };
+    if route.provider_id == "chatgpt"
+        && (route.connection_id.is_none() || route.workspace_id.is_none())
+    {
+        return Err(invalid_request_params());
+    }
+    Ok(Some(route))
 }
 
 fn parse_subagent_models(value: Option<&Value>) -> Result<Vec<SubagentModelOption>, ServiceError> {

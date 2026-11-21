@@ -1,9 +1,9 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Card, Select, Switch } from '@shared/components';
-import { providerNameForModel } from '@entities/model/composerUtils';
+import { Card, Switch } from '@shared/components';
 import { useComposerPreferencesStore } from '@shared/lib/preferences/composerPreferences';
 import { useChatStore } from '@features/chat/state';
+import { ModelPickerField } from '@features/chat/components';
 import { SettingsPreferenceRow } from './SettingsPreferenceRow';
 import { TitleGenerationSettingsSection } from './TitleGenerationSettingsSection';
 
@@ -17,16 +17,7 @@ export function AssistantWritingSettingsSection() {
   const setGhostTextModelKey = useComposerPreferencesStore((state) => state.setGhostTextModelKey);
   const [saveFailed, setSaveFailed] = useState(false);
 
-  const modelOptions = useMemo(() => {
-    const options = [{ value: 'auto', label: t('composerGhostTextModelAuto') }];
-    for (const model of models) {
-      options.push({
-        value: model.key,
-        label: `${providerNameForModel(model, (key) => t(key))}: ${model.displayName}`,
-      });
-    }
-    return options;
-  }, [models, t]);
+  const selectedGhostTextModel = models.find((model) => model.key === ghostTextModelKey) ?? null;
 
   const changeEnabled = async (enabled: boolean) => {
     try {
@@ -64,13 +55,16 @@ export function AssistantWritingSettingsSection() {
           </SettingsPreferenceRow>
           {ghostTextEnabled ? (
             <SettingsPreferenceRow description={t('composerGhostTextModelDescription')} label={t('composerGhostTextModel')}>
-              <Select
-                label={t('composerGhostTextModel')}
+              <ModelPickerField
                 disabled={loadState !== 'ready'}
-                onChange={(event) => changeModel(event.target.value)}
-                options={modelOptions}
-                value={ghostTextModelKey}
-                visuallyHiddenLabel
+                emptySelectionLabel={
+                  ghostTextModelKey === 'auto' ? t('composerGhostTextModelAuto') : t('modelPickerSelectModel')
+                }
+                emptyOptionLabel={t('composerGhostTextModelAuto')}
+                onSelect={(model) => changeModel(model.key)}
+                onSelectEmpty={() => changeModel('auto')}
+                selectedModel={selectedGhostTextModel}
+                triggerAriaLabel={t('composerGhostTextModel')}
               />
             </SettingsPreferenceRow>
           ) : null}

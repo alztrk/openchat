@@ -16,9 +16,9 @@ use tokio::sync::watch as tokio_watch;
 use zeroize::Zeroizing;
 
 use crate::{
-    chat_operation::ChatSendContext,
+    chat_operation::{ChatModelRoute, ChatSendContext},
     chatgpt::ChatGptService,
-    goals, instructions, openai_compatible,
+    chatgpt_store, goals, instructions, openai_compatible,
     permissions::ToolPermissionBroker,
     protocol::{EventSink, Request, Response, ServiceError},
     provider_credentials, provider_ids,
@@ -371,6 +371,8 @@ pub(crate) async fn dispatch(context: RpcDispatchContext<'_>) -> Result<Value, S
             let chat_request = chat_request::parse_send_request(storage, &mut request.params)?;
             let chat_request::ChatSendParameters {
                 conversation_id,
+                requested_model_route,
+                comparison_prompt_message_id,
                 resume_run_id,
                 api_key_connection_id,
                 requested_reasoning_effort,
@@ -385,11 +387,39 @@ pub(crate) async fn dispatch(context: RpcDispatchContext<'_>) -> Result<Value, S
                 title_generation,
                 available_subagent_models,
             } = chat_request;
-            let route = chat_execution::load_saved_route(storage, conversation_id)?;
+            let has_requested_model_route = requested_model_route.is_some();
+            let mut route = chat_execution::load_saved_route(storage, conversation_id)?;
+            if let Some(prompt_message_id) = comparison_prompt_message_id {
+                if chatgpt_store::comparison_sibling_assistant_message_ids(
+                    storage,
+                    conversation_id,
+                    prompt_message_id,
+                )
+                .map_err(|_| {
+                    ServiceError::new(
+                        "storage_unavailable",
+                        "The comparison conversation could not be validated.",
+                        true,
+                    )
+                })?
+                .is_none()
+                {
+                    return Err(invalid_request_params());
+                }
+            }
+            if let Some(requested_route) = requested_model_route {
+                route.provider_id = Some(requested_route.provider_id.to_owned());
+                route.model_id = Some(requested_route.model_id.to_owned());
+                route.connection_id = requested_route.connection_id.map(str::to_owned);
+                route.workspace_id = requested_route.workspace_id.map(str::to_owned);
+                route.stored_api_key_connection_id =
+                    requested_route.api_key_connection_id.map(str::to_owned);
+            }
             let security_scan_scope =
                 security_scans::scope_for_conversation(storage, conversation_id)?;
             if let Some(scope) = security_scan_scope.as_ref() {
                 if route.project_id.as_deref() != Some(scope.project_id.as_str())
+                    || has_requested_model_route
                     || (resume_run_id.is_none() && excluded_assistant_message_id.is_some())
                 {
                     return Err(invalid_request_params());
@@ -709,7 +739,14 @@ pub(crate) async fn dispatch(context: RpcDispatchContext<'_>) -> Result<Value, S
                 run_id: run_id.clone(),
                 goal: goal_execution,
                 conversation_id,
+                requested_model_route: requested_model_route.map(|route| ChatModelRoute {
+                    provider_id: route.provider_id,
+                    model_id: route.model_id,
+                    connection_id: route.connection_id,
+                    workspace_id: route.workspace_id,
+                }),
                 excluded_assistant_message_id,
+                comparison_prompt_message_id,
                 custom_instructions: custom_instructions.as_deref(),
                 project_instructions: project_instructions.as_deref(),
                 project_memory_context: project_memory_context.as_deref(),

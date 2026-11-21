@@ -131,12 +131,16 @@ export function createBranchesActions(set: StoreSet, get: StoreGet) {
       const state = get();
       const targetConversationId = conversationId === undefined ? state.activeConversationId : conversationId;
       if (conversationId !== undefined && targetConversationId === null) return;
+      const comparisonOperations = targetConversationId
+        ? state.comparisonOperationsByConversation[targetConversationId] ?? []
+        : [];
       const operation = targetConversationId
         ? state.activeOperationsByConversation[targetConversationId] ??
           (state.sendingConversationIds.length <= 1 ? state.activeOperation : undefined)
         : state.activeOperation;
-      if (!operation) return;
-      await operation.cancel();
+      const operations = comparisonOperations.length > 0 ? comparisonOperations : operation ? [operation] : [];
+      if (operations.length === 0) return;
+      await Promise.all(operations.map((activeOperation) => activeOperation.cancel()));
     },
 
     dismissError(): void {

@@ -27,6 +27,7 @@ use crate::{
 const IMAGE_DIRECTORY: &str = "image-library";
 const ATTACHMENT_CONTENT_PREFIX: &str = "\u{1e}openchat-attachments-v1:";
 const MAX_IMAGE_BYTES: usize = 32 * 1024 * 1024;
+pub(crate) const MAX_IMPORTED_IMAGE_BYTES: usize = 16 * 1024 * 1024;
 const MAX_BATCH_BYTES: usize = 48 * 1024 * 1024;
 const MAX_OFFSET: u64 = 1_000_000;
 const MAX_SEARCH_CHARS: usize = 512;
@@ -520,6 +521,90 @@ pub(crate) fn save_generation(
         return Err(error);
     }
     Ok(items)
+}
+
+/// Imports a validated image file into the protected Design image library.
+pub(crate) fn import_design_image(
+    storage: &AppStorage,
+    mime_type: &str,
+    bytes: &[u8],
+) -> Result<ImageLibraryItem, ServiceError> {
+    let output_format = format_name(mime_type).ok_or_else(invalid_image_data)?;
+    if bytes.is_empty()
+        || bytes.len() > MAX_IMPORTED_IMAGE_BYTES
+        || signature_mime(bytes) != Some(mime_type)
+    {
+        return Err(invalid_image_data());
+    }
+
+    let id = Uuid::new_v4().simple().to_string();
+    let path = image_directory(storage, true)?.join(format!("{id}.data"));
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&path)
+        .map_err(|error| image_storage_failure(storage, "import_create", Some(error.kind())))?;
+    if let Err(error) = file.write_all(bytes).and_then(|()| file.sync_all()) {
+        cleanup_files(std::slice::from_ref(&path));
+        return Err(image_storage_failure(
+            storage,
+            "import_write",
+            Some(error.kind()),
+        ));
+    }
+
+    let created_at = match current_time_millis() {
+        Ok(value) => value,
+        Err(error) => {
+            cleanup_files(std::slice::from_ref(&path));
+            return Err(error);
+        }
+    };
+    let item = ImageLibraryItem {
+        id: id.clone(),
+        generation_id: id,
+        provider_route: "unknown".to_owned(),
+        prompt: "Imported design asset".to_owned(),
+        model: "local-import".to_owned(),
+        size: None,
+        quality: None,
+        background: None,
+        moderation: None,
+        output_format: output_format.to_owned(),
+        output_compression: None,
+        mime_type: mime_type.to_owned(),
+        size_bytes: bytes.len(),
+        created_at,
+        is_favorite: false,
+        tags: Vec::new(),
+    };
+    let result = (|| -> Result<(), ServiceError> {
+        let connection = storage.connect().map_err(storage_error)?;
+        connection
+            .execute(
+                "INSERT INTO generated_images (
+                    id, prompt, model_id, size, quality, background, moderation, output_format,
+                    output_compression, mime_type, size_bytes, created_at_unix_ms, generation_id
+                 ) VALUES (?1, ?2, ?3, NULL, NULL, NULL, NULL, ?4, NULL, ?5, ?6, ?7, ?8)",
+                params![
+                    item.id,
+                    item.prompt,
+                    item.model,
+                    item.output_format,
+                    item.mime_type,
+                    i64::try_from(item.size_bytes).map_err(|_| invalid_image_data())?,
+                    item.created_at,
+                    item.generation_id,
+                ],
+            )
+            .map_err(storage_error)?;
+        Ok(())
+    })();
+    if let Err(error) = result {
+        cleanup_files(std::slice::from_ref(&path));
+        return Err(error);
+    }
+    Ok(item)
 }
 
 /// Returns a bounded, newest-first page of Design images.
@@ -1472,7 +1557,7 @@ mod tests {
 
     use crate::storage::AppStorage;
 
-    use super::{image_directory, image_storage_failure};
+    use super::{image_directory, image_storage_failure, import_design_image, read_chunk};
 
     struct TestDirectory(PathBuf);
 
@@ -1523,5 +1608,59 @@ mod tests {
 
         assert!(image_directory.starts_with(storage_root));
         assert!(image_directory.is_dir());
+    }
+
+    #[test]
+    fn imported_design_images_are_persisted_and_read_back_from_profile_storage() {
+        let directory = TestDirectory::new();
+        let storage = AppStorage::open_at(directory.0.clone()).expect("open isolated storage");
+        let connection = storage.connect().expect("connect isolated storage");
+        connection
+            .execute_batch(
+                "CREATE TABLE conversations (id TEXT PRIMARY KEY NOT NULL, title TEXT);
+                 ALTER TABLE conversations ADD COLUMN project_id TEXT;
+                 ALTER TABLE conversations ADD COLUMN model_id TEXT;
+                 ALTER TABLE conversations ADD COLUMN connection_id TEXT;
+                 ALTER TABLE conversations ADD COLUMN workspace_id TEXT;
+                 CREATE TABLE projects (id TEXT PRIMARY KEY, folder_path TEXT);
+                 CREATE TABLE messages (
+                    rowid INTEGER PRIMARY KEY,
+                    id TEXT NOT NULL,
+                    conversation_id TEXT NOT NULL,
+                    role TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    created_at INTEGER,
+                    output_tokens INTEGER,
+                    tool_activities TEXT NOT NULL DEFAULT '[]',
+                    UNIQUE (conversation_id, id)
+                 );",
+            )
+            .expect("create desktop conversation schema");
+        drop(connection);
+        storage
+            .initialize_backend_schema()
+            .expect("initialize current image library schema");
+        let bytes = b"\xff\xd8\xffimported-jpeg\xff\xd9";
+
+        let image =
+            import_design_image(&storage, "image/jpeg", bytes).expect("import supported image");
+        let (mime_type, total_bytes, stored_bytes) =
+            read_chunk(&storage, &image.id, 0, bytes.len() as u64).expect("read imported image");
+
+        assert_eq!(image.mime_type, "image/jpeg");
+        assert_eq!(image.size_bytes, bytes.len());
+        assert_eq!(mime_type, "image/jpeg");
+        assert_eq!(total_bytes, bytes.len() as u64);
+        assert_eq!(stored_bytes, bytes);
+    }
+
+    #[test]
+    fn imported_design_images_reject_mime_mismatches_and_unsupported_bytes() {
+        let directory = TestDirectory::new();
+        let storage = AppStorage::open_at(directory.0.clone()).expect("open isolated storage");
+
+        assert!(import_design_image(&storage, "image/png", b"\xff\xd8\xffdata").is_err());
+        assert!(import_design_image(&storage, "image/gif", b"GIF89a").is_err());
     }
 }

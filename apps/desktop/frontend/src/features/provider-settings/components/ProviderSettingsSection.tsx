@@ -16,7 +16,7 @@ import type { ReactNode } from 'react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button, Card, Dialog, Select } from '@shared/components';
+import { Button, Card, Dialog } from '@shared/components';
 import { toast } from '@shared/lib/toast';
 import type { ChatModel } from '@features/provider-settings/data/chatModels';
 import {
@@ -45,6 +45,7 @@ import { invoke } from '@shared/lib/platform/tauri';
 import { ApiKeyProvidersSection } from './ApiKeyProvidersSection';
 import { CopilotOAuthCard } from './CopilotOAuthCard';
 import { ProviderIcon } from '@shared/components';
+import { ModelPickerField } from '@features/chat/components';
 
 type ConnectionRequest = 'idle' | 'loading' | 'signingIn' | 'error';
 type ConnectionErrorCode =
@@ -565,147 +566,12 @@ export function TitleGenerationSettings({
   saving,
 }: TitleGenerationSettingsProps) {
   const { t } = useTranslation();
-  const providerLabel = (providerId: string): string => {
-    switch (providerId) {
-      case 'chatgpt':
-      case 'chatgpt_api':
-        return t('chatGptProvider');
-      case 'opencode':
-        return t('openCodeProvider');
-      case 'copilot':
-        return t('providerNameCopilot');
-      case 'gemini':
-        return t('geminiProvider');
-      case 'groq':
-        return t('groqProvider');
-      case 'cerebras':
-        return t('cerebrasProvider');
-      case 'openrouter':
-        return t('openRouterProvider');
-      case 'mistral':
-        return t('mistralProvider');
-      case 'deepseek':
-        return t('deepSeekProvider');
-      case 'xai':
-        return t('xAiProvider');
-      case 'perplexity':
-        return t('perplexityProvider');
-      case 'together':
-        return t('togetherProvider');
-      case 'sambanova':
-        return t('sambaNovaProvider');
-      case 'anthropic':
-        return t('anthropicProvider');
-      case 'fireworks':
-        return t('fireworksProvider');
-      case 'deepinfra':
-        return t('deepInfraProvider');
-      case 'dashscope':
-        return t('dashScopeProvider');
-      case 'cohere':
-        return t('cohereProvider');
-      case 'nvidia':
-        return t('providerNameNvidia');
-      case 'kilo':
-        return t('providerNameKilo');
-      case 'moonshot':
-        return t('providerNameMoonshot');
-      case 'zai':
-        return t('providerNameZai');
-      case 'minimax':
-        return t('providerNameMinimax');
-      case 'ai21':
-        return t('providerNameAi21');
-      case 'upstage':
-        return t('providerNameUpstage');
-      case 'hyperbolic':
-        return t('providerNameHyperbolic');
-      case 'novita':
-        return t('providerNameNovita');
-      case 'siliconflow':
-        return t('providerNameSiliconFlow');
-      case 'featherless':
-        return t('providerNameFeatherless');
-      case 'nebius':
-        return t('providerNameNebius');
-      case 'scaleway':
-        return t('providerNameScaleway');
-      case 'stepfun':
-        return t('providerNameStepFun');
-      case 'yi':
-        return t('providerNameYi');
-      case 'baichuan':
-        return t('providerNameBaichuan');
-      case 'volcengine':
-        return t('providerNameVolcengine');
-      case 'hunyuan':
-        return t('providerNameHunyuan');
-      case 'qianfan':
-        return t('providerNameQianfan');
-      case 'inflection':
-        return t('providerNameInflection');
-      case 'inception':
-        return t('providerNameInception');
-      case 'mimo':
-        return t('providerNameMimo');
-      case 'friendli':
-        return t('providerNameFriendli');
-      case 'chutes':
-        return t('providerNameChutes');
-      case 'requesty':
-        return t('providerNameRequesty');
-      case 'venice':
-        return t('providerNameVenice');
-      case 'baseten':
-        return t('providerNameBaseten');
-      case 'lambda':
-        return t('providerNameLambda');
-      case 'lepton':
-        return t('providerNameLepton');
-      case 'kluster':
-        return t('providerNameKluster');
-      case 'nscale':
-        return t('providerNameNscale');
-      case 'ovhcloud':
-        return t('providerNameOvhcloud');
-      case 'publicai':
-        return t('providerNamePublicAi');
-      case 'llama_cpp':
-        return 'llama.cpp';
-      case 'vllm':
-        return 'vLLM';
-      case 'exllama':
-        return 'ExLlama';
-      case 'sglang':
-        return 'SGLang';
-      default:
-        if (providerId.startsWith('custom_')) return t('customProvidersHeading');
-        return providerId;
-    }
-  };
   const selectedPreference = preference.model;
   const selectedModel =
     selectedPreference === null
       ? null
       : (models.find((model) => modelRouteKey(model) === formatModelRouteKey(selectedPreference)) ?? null);
   const lightweightModel = findLightweightModel(models);
-  const modelOptions: Array<{ value: string; label: string; disabled?: boolean }> = models.map((model) => ({
-    value: modelRouteKey(model),
-    label: `${model.sourceLabel ?? providerLabel(model.providerId)} · ${model.displayName}`,
-  }));
-  if (preference.model !== null && selectedModel === null) {
-    modelOptions.push({
-      value: formatModelRouteKey(preference.model),
-      label: preference.model.displayName,
-      disabled: true,
-    });
-  }
-  const selectedModelValue = selectedModel
-    ? modelRouteKey(selectedModel)
-    : preference.model
-      ? formatModelRouteKey(preference.model)
-      : '';
-
   const selectMode = (mode: TitleGenerationMode) => {
     if (saving) return;
     if (mode === 'conversation') {
@@ -778,23 +644,13 @@ export function TitleGenerationSettings({
           {preference.mode === 'selectedModel' ? (
             <div className="mt-2 rounded-card border border-border bg-raised p-3 lg:col-span-3">
               <div className="flex min-w-0 items-end gap-2">
-                {selectedModel ? (
-                  <ProviderIcon
-                    className="mb-2 shrink-0"
-                    providerId={selectedModel.providerId === 'chatgpt_api' ? 'chatgpt' : selectedModel.providerId}
-                    size={16}
-                  />
-                ) : null}
                 <div className="min-w-0 flex-1">
-                  <Select
+                  <ModelPickerField
                     disabled={saving || models.length === 0}
-                    label={t('titleSelectModelHint')}
-                    onChange={(event) => {
-                      const model = models.find((item) => modelRouteKey(item) === event.target.value);
-                      if (model) onChange({ mode: 'selectedModel', model: titlePreferenceForModel(model) });
-                    }}
-                    options={modelOptions}
-                    value={selectedModelValue}
+                    emptySelectionLabel={selectedPreference?.displayName ?? t('titleSelectModelHint')}
+                    onSelect={(model) => onChange({ mode: 'selectedModel', model: titlePreferenceForModel(model) })}
+                    selectedModel={selectedModel}
+                    triggerAriaLabel={t('titleSelectModelHint')}
                   />
                 </div>
               </div>

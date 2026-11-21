@@ -146,7 +146,7 @@ async fn completed_project_tool_terminates_descendants_before_waiting_for_pipe_e
     let program = PathBuf::from(system_root).join("System32").join("cmd.exe");
     let directory = TestDirectory::new();
     let (_cancellation_sender, mut cancellation) = watch::channel(false);
-    let input = "start \"\" /b cmd.exe /c \"echo started > child-started.txt & for /l %i in (1,1,100000000) do @rem\"\r\nfor /l %i in (1,1,100) do @if not exist child-started.txt timeout /t 1 /nobreak\r\nexit";
+    let input = "start \"\" /b cmd.exe /c \"echo started > child-started.txt & for /l %i in (1,1,100000000) do @rem\"\r\nfor /l %i in (1,1,1000000000) do @if exist child-started.txt exit\r\nexit";
 
     let execution = tokio::time::timeout(
         Duration::from_secs(5),

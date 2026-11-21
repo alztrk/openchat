@@ -1,9 +1,11 @@
 import { LoaderCircle } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { ChatFileChange } from '@features/chat/data/chatFileChanges';
 import { startsNewDay } from '@features/chat/data/messageGrouping';
+import { comparisonResponseModelLabel, hasDistinctModelComparisonResponses } from '@features/chat/data/modelComparison';
 import { type ChatMessage, getActiveBranchMessages, getMessageSiblings } from '@features/chat/data';
+import type { ChatModel } from '@entities/model';
 import { useInChatSearchHighlight } from '@features/chat/hooks/useInChatSearchHighlight';
 import { useVirtualMessageList } from '@features/chat/hooks/useVirtualMessageList';
 import { useChatStore } from '@features/chat/state';
@@ -51,6 +53,7 @@ export function MessageList({
   isLoadingMessagesOverride,
 }: MessageListProps) {
   const { i18n, t } = useTranslation();
+  const [selectedComparisonTabs, setSelectedComparisonTabs] = useState<Record<string, string>>({});
   const locale = i18n.resolvedLanguage ?? i18n.language;
   const storeMessages = useChatStore((state) => state.messages);
   const storeIsLoadingMessages = useChatStore((state) => state.isLoadingMessages);
@@ -65,6 +68,8 @@ export function MessageList({
   const storeActiveConversationId = useChatStore((state) => state.activeConversationId);
   const temporaryChatId = useChatStore((state) => state.temporaryChat?.id ?? null);
   const providerCompactionConversationIds = useChatStore((state) => state.providerCompactionConversationIds);
+  const modelComparisonConversationIds = useChatStore((state) => state.modelComparisonConversationIds);
+  const models = useChatStore((state) => state.models);
   const isOverridden = messagesOverride !== undefined;
   const searchTargetMessageId = isOverridden ? null : storeSearchTargetMessageId;
   const searchHighlightMessageId = isOverridden ? null : storeSearchHighlightMessageId;
@@ -104,8 +109,10 @@ export function MessageList({
   );
 
   const visibleMessages = useMemo(() => displayRows.map((row) => row.message), [displayRows]);
+  const latestRow = displayRows.at(-1);
   const hasStreamingAssistant =
-    visibleMessages.at(-1)?.role === 'assistant' && visibleMessages.at(-1)?.status === 'streaming';
+    latestRow?.message.role === 'assistant' &&
+    latestRow.siblings.some((sibling) => sibling.role === 'assistant' && sibling.status === 'streaming');
   const latestMessage = visibleMessages.at(-1);
   const latestToolActivities = useMemo(
     () => (latestMessage?.role === 'assistant' ? parseToolActivities(latestMessage.toolActivities) : []),
@@ -116,12 +123,18 @@ export function MessageList({
   );
   const isCompactingConversation =
     activeConversationId !== null && providerCompactionConversationIds.includes(activeConversationId);
+  const isModelComparisonActive =
+    activeConversationId !== null && modelComparisonConversationIds.includes(activeConversationId);
   const compactionInsertionIndex = hasStreamingAssistant
     ? Math.max(visibleMessages.length - 1, 0)
     : visibleMessages.length;
   const compactionStatus = isCompactingConversation ? <CompactionStatusDivider label={t('chatCompacting')} /> : null;
   const shouldShowAssistantLoading =
-    showAssistantLoading && !hasStreamingAssistant && !isWaitingForUserAnswer && !isCompactingConversation;
+    showAssistantLoading &&
+    !hasStreamingAssistant &&
+    !isModelComparisonActive &&
+    !isWaitingForUserAnswer &&
+    !isCompactingConversation;
   const virtualList = useVirtualMessageList(visibleMessages, activeConversationId);
   const autoFollowResponses = useChatDisplayPreferencesStore((state) => state.preferences.autoFollowResponses);
 
@@ -300,6 +313,8 @@ export function MessageList({
             message.status !== 'streaming' &&
             index === visibleMessages.length - 1 &&
             visibleMessages[index - 1]?.role === 'user';
+          const comparisonResponses = row?.siblings ?? [message];
+          const showsModelComparison = hasDistinctModelComparisonResponses(comparisonResponses);
           return (
             <div className="min-w-0" key={message.id}>
               {isCompactingConversation && index === compactionInsertionIndex ? compactionStatus : null}
@@ -313,24 +328,50 @@ export function MessageList({
                     {formatDate(message.createdAt, locale, t('today'))}
                   </p>
                 ) : null}
-                <MessageItem
-                  assistantModelFallback={assistantModelFallback}
-                  assistantProviderFallback={assistantProviderFallback}
-                  isSearchMatch={
-                    message.id === (inChatTargetMessageId ?? searchHighlightMessageId ?? searchTargetMessageId)
-                  }
-                  message={message}
-                  latestFileChanges={latestFileChanges}
-                  onOpenConnections={onOpenConnections}
-                  onCheckpointRestored={onCheckpointRestored}
-                  onOpenFileChanges={onOpenFileChanges}
-                  onOpenWorkspaceFile={onOpenWorkspaceFile}
-                  onEditMessage={onEditMessage}
-                  onRetryMessage={canRetry ? onRetryMessage : undefined}
-                  onSelectResponseVersion={selectResponseVersion}
-                  responseVersionCount={row?.responseVersionCount}
-                  responseVersionIndex={row?.responseVersionIndex}
-                />
+                {showsModelComparison ? (
+                  <ModelComparisonTabs
+                    activeMessageId={message.id}
+                    assistantModelFallback={assistantModelFallback}
+                    assistantProviderFallback={assistantProviderFallback}
+                    fileChanges={latestFileChanges}
+                    inChatTargetMessageId={inChatTargetMessageId}
+                    messages={comparisonResponses}
+                    models={models}
+                    onEditMessage={onEditMessage}
+                    onOpenConnections={onOpenConnections}
+                    onOpenFileChanges={onOpenFileChanges}
+                    onOpenWorkspaceFile={onOpenWorkspaceFile}
+                    searchHighlightMessageId={searchHighlightMessageId}
+                    searchTargetMessageId={searchTargetMessageId}
+                    selectedMessageId={selectedComparisonTabs[message.parentMessageId ?? message.id]}
+                    onSelectMessage={(id) => {
+                      setSelectedComparisonTabs((current) => ({
+                        ...current,
+                        [message.parentMessageId ?? message.id]: id,
+                      }));
+                      void switchMessageBranch(id);
+                    }}
+                  />
+                ) : (
+                  <MessageItem
+                    assistantModelFallback={assistantModelFallback}
+                    assistantProviderFallback={assistantProviderFallback}
+                    isSearchMatch={
+                      message.id === (inChatTargetMessageId ?? searchHighlightMessageId ?? searchTargetMessageId)
+                    }
+                    message={message}
+                    latestFileChanges={latestFileChanges}
+                    onOpenConnections={onOpenConnections}
+                    onCheckpointRestored={onCheckpointRestored}
+                    onOpenFileChanges={onOpenFileChanges}
+                    onOpenWorkspaceFile={onOpenWorkspaceFile}
+                    onEditMessage={onEditMessage}
+                    onRetryMessage={canRetry ? onRetryMessage : undefined}
+                    onSelectResponseVersion={selectResponseVersion}
+                    responseVersionCount={row?.responseVersionCount}
+                    responseVersionIndex={row?.responseVersionIndex}
+                  />
+                )}
               </article>
             </div>
           );
@@ -343,6 +384,108 @@ export function MessageList({
             <AssistantLoadingSkeleton modelLabel={assistantModelFallback} providerId={assistantProviderFallback} />
           </div>
         ) : null}
+      </div>
+    </div>
+  );
+}
+
+interface ModelComparisonTabsProps {
+  activeMessageId: string;
+  assistantModelFallback: string | null;
+  assistantProviderFallback: string | null;
+  fileChanges?: ChatFileChange[];
+  inChatTargetMessageId: string | null;
+  messages: ChatMessage[];
+  models: readonly Pick<ChatModel, 'providerId' | 'modelId' | 'displayName'>[];
+  onSelectMessage: (messageId: string) => void;
+  onEditMessage?: (message: ChatMessage) => void;
+  onOpenConnections?: () => void;
+  onOpenFileChanges?: () => void;
+  onOpenWorkspaceFile?: (file: WorkspaceFileSelection) => void;
+  searchHighlightMessageId: string | null;
+  searchTargetMessageId: string | null;
+  selectedMessageId?: string;
+}
+
+function ModelComparisonTabs({
+  activeMessageId,
+  assistantModelFallback,
+  assistantProviderFallback,
+  fileChanges,
+  inChatTargetMessageId,
+  messages,
+  models,
+  onSelectMessage,
+  onEditMessage,
+  onOpenConnections,
+  onOpenFileChanges,
+  onOpenWorkspaceFile,
+  searchHighlightMessageId,
+  searchTargetMessageId,
+  selectedMessageId,
+}: ModelComparisonTabsProps) {
+  const { t } = useTranslation();
+  const selectedMessage = messages.find((item) => item.id === selectedMessageId) ??
+    messages.find((item) => item.id === activeMessageId) ?? messages[0];
+  if (!selectedMessage) return null;
+  const selectedMessageModelLabel = comparisonResponseModelLabel(selectedMessage, models, assistantModelFallback);
+  const tabId = (messageId: string) => `comparison-tab-${messageId}`;
+
+  return (
+    <div className="min-w-0">
+      <div aria-label={t('comparisonResponses')} className="mb-3 flex min-w-0 gap-1 border-b border-border" role="tablist">
+        {messages.map((response) => {
+          const selected = response.id === selectedMessage.id;
+          const providerId = response.providerId ?? assistantProviderFallback ?? 'unknown';
+          const modelLabel = comparisonResponseModelLabel(response, models, assistantModelFallback);
+          return (
+            <button
+              aria-controls={`${tabId(response.id)}-panel`}
+              aria-selected={selected}
+              className={`inline-flex min-w-0 max-w-64 items-center gap-2 border-b-2 px-3 py-2 text-sm ${selected ? 'border-accent text-primary-text' : 'border-transparent text-secondary-text hover:text-primary-text'}`}
+              id={tabId(response.id)}
+              key={response.id}
+              onClick={() => onSelectMessage(response.id)}
+              onKeyDown={(event) => {
+                if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+                event.preventDefault();
+                const currentIndex = messages.findIndex((item) => item.id === response.id);
+                const offset = event.key === 'ArrowRight' ? 1 : -1;
+                const next = messages[(currentIndex + offset + messages.length) % messages.length];
+                if (!next) return;
+                onSelectMessage(next.id);
+                document.getElementById(tabId(next.id))?.focus();
+              }}
+              role="tab"
+              tabIndex={selected ? 0 : -1}
+              type="button"
+            >
+              <ProviderIcon className="shrink-0 text-secondary-icon" providerId={providerId} size={16} />
+              <span className="truncate">{modelLabel ?? t('messageModelUnavailable')}</span>
+            </button>
+          );
+        })}
+      </div>
+      <div
+        aria-labelledby={tabId(selectedMessage.id)}
+        className="min-w-0"
+        id={`${tabId(selectedMessage.id)}-panel`}
+        role="tabpanel"
+        tabIndex={-1}
+      >
+        <MessageItem
+          assistantModelFallback={selectedMessageModelLabel}
+          assistantProviderFallback={assistantProviderFallback}
+          isSearchMatch={
+            selectedMessage.id === (inChatTargetMessageId ?? searchHighlightMessageId ?? searchTargetMessageId)
+          }
+          message={selectedMessage}
+          latestFileChanges={fileChanges}
+          onOpenConnections={onOpenConnections}
+          onOpenFileChanges={onOpenFileChanges}
+          onOpenWorkspaceFile={onOpenWorkspaceFile}
+          onEditMessage={onEditMessage}
+        />
       </div>
     </div>
   );

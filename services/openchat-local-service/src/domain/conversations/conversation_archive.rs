@@ -48,6 +48,8 @@ const MAX_MANIFEST_BYTES: u64 = 32 * 1024 * 1024;
 const MAX_CONVERSATIONS_JSON_BYTES: u64 = 256 * 1024 * 1024;
 const MAX_ATTACHMENT_BYTES: u64 = 4 * 1024 * 1024 * 1024;
 const MAX_AGE_SCRYPT_LOG_N: u8 = 18;
+#[cfg(any(test, feature = "desktop-profile-test-support"))]
+const TEST_AGE_SCRYPT_LOG_N: u8 = 10;
 
 static ACTIVE_RESTORE_STAGES: OnceLock<Mutex<HashSet<PathBuf>>> = OnceLock::new();
 
@@ -803,7 +805,7 @@ fn write_archive(
 ) -> Result<(), ArchiveFailure> {
     check_cancelled(cancellation)?;
     let secret = SecretString::from(passphrase.to_owned());
-    let encrypted = Encryptor::with_user_passphrase(secret)
+    let encrypted = passphrase_encryptor(secret)?
         .wrap_output(output)
         .map_err(|_| ArchiveFailure::Storage)?;
     let mut archive = Builder::new(encrypted);
@@ -897,6 +899,19 @@ fn write_archive(
     let encrypted = archive.into_inner().map_err(|_| ArchiveFailure::Storage)?;
     let output = encrypted.finish().map_err(|_| ArchiveFailure::Storage)?;
     output.sync_all().map_err(|_| ArchiveFailure::Storage)
+}
+
+#[cfg(any(test, feature = "desktop-profile-test-support"))]
+fn passphrase_encryptor(secret: SecretString) -> Result<Encryptor, ArchiveFailure> {
+    let mut recipient = age::scrypt::Recipient::new(secret);
+    recipient.set_work_factor(TEST_AGE_SCRYPT_LOG_N);
+    Encryptor::with_recipients(iter::once(&recipient as &dyn age::Recipient))
+        .map_err(|_| ArchiveFailure::Storage)
+}
+
+#[cfg(not(any(test, feature = "desktop-profile-test-support")))]
+fn passphrase_encryptor(secret: SecretString) -> Result<Encryptor, ArchiveFailure> {
+    Ok(Encryptor::with_user_passphrase(secret))
 }
 
 fn append_bytes<W: Write>(

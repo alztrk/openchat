@@ -46,6 +46,7 @@ use crate::{
 
 const MAX_TRANSIENT_RESPONSE_RETRIES: usize = 2;
 const MAX_STREAM_CONTINUATIONS: usize = 2;
+const MAX_INVALID_TOOL_CALL_CORRECTIONS: usize = 2;
 const TRANSIENT_RESPONSE_RETRY_DELAYS: [Duration; MAX_TRANSIENT_RESPONSE_RETRIES] =
     [Duration::from_millis(500), Duration::from_secs(1)];
 
@@ -255,6 +256,7 @@ impl ChatGptService {
             request_id,
             conversation_id,
             excluded_assistant_message_id,
+            comparison_prompt_message_id: _,
             custom_instructions,
             project_instructions,
             project_memory_context,
@@ -390,6 +392,7 @@ impl ChatGptService {
         let mut response_budget = ProviderResponseBudget::default();
         let mut initial_provider_request = true;
         let mut stream_continuations = 0;
+        let mut invalid_tool_call_corrections = 0;
         let mut provider_request_attempts: usize = 0;
         let mut stream_started_diagnostic =
             ChatGptStreamDiagnostic::new("stream_started", &stream_id);
@@ -1164,6 +1167,37 @@ impl ChatGptService {
             let tool_calls = match parse_responses_tool_calls(&response_output_items) {
                 Ok(tool_calls) => tool_calls,
                 Err(error) => {
+                    if invalid_tool_call_corrections < MAX_INVALID_TOOL_CALL_CORRECTIONS
+                        && let Some(recovery_input) =
+                            invalid_tool_call_recovery_input(&response_output_items, &error)
+                    {
+                        let Some(input) = payload.get_mut("input").and_then(Value::as_array_mut)
+                        else {
+                            self.persist_terminal_message(AssistantMessageWrite {
+                                conversation_id,
+                                message_id: &message_id,
+                                content: &content,
+                                status: "failed",
+                                created_at_unix_ms: created_at,
+                                output_tokens,
+                                elapsed: Some(started.elapsed()),
+                            })
+                            .await?;
+                            return Err(invalid_response_error());
+                        };
+                        input.extend(recovery_input);
+                        invalid_tool_call_corrections += 1;
+                        self.record_chatgpt_event(
+                            "tool_call_correction_scheduled",
+                            "responses",
+                            None,
+                            Some("invalid_tool_call_arguments"),
+                            Some(started.elapsed().as_millis()),
+                            Some(response_output_items.len()),
+                        );
+                        operation = "tool_follow_up";
+                        continue 'model_turn;
+                    }
                     self.persist_terminal_message(AssistantMessageWrite {
                         conversation_id,
                         message_id: &message_id,
@@ -1844,6 +1878,8 @@ impl ChatGptService {
             external_workspace_id,
             model_id,
             payload,
+            design_mode,
+            allow_design_frame_inspection,
             cancellation,
             events,
         } = context;
@@ -1993,15 +2029,19 @@ impl ChatGptService {
                 true,
             ));
         }
-        if response_output_items
-            .iter()
-            .any(|item| item.get("type").and_then(Value::as_str) == Some("function_call"))
-        {
-            return Err(ServiceError::new(
-                "temporary_tools_unavailable",
-                "The provider returned a tool call, which temporary conversations cannot run.",
-                false,
-            ));
+        let tool_calls = parse_responses_tool_calls(&response_output_items)?;
+        if !tool_calls.is_empty() {
+            if !design_mode {
+                return Err(ServiceError::new(
+                    "temporary_tools_unavailable",
+                    "The provider returned a tool call, which temporary conversations cannot run.",
+                    false,
+                ));
+            }
+            content = crate::design_tools::calls_to_operations(
+                &tool_calls,
+                allow_design_frame_inspection,
+            )?;
         }
 
         Ok(json!({
@@ -2020,6 +2060,85 @@ const RESPONSES_IN_LOOP_COMPACT_THRESHOLD_BYTES: usize = 1024;
 const RESPONSES_IN_LOOP_EXCERPT_BYTES: usize = 768;
 const RESPONSES_IN_LOOP_NOTE_PREFIX: &str =
     "[Earlier tool rounds in this run were compacted to stay within the model context window.";
+
+fn invalid_tool_call_recovery_input(
+    output_items: &[Value],
+    error: &ServiceError,
+) -> Option<Vec<Value>> {
+    let diagnostic_code = error.diagnostic_code.as_deref()?;
+    if !matches!(
+        diagnostic_code,
+        "tool_call_name_missing"
+            | "tool_call_arguments_missing"
+            | "tool_call_arguments_too_large"
+            | "tool_call_arguments_invalid_json"
+    ) {
+        return None;
+    }
+
+    let function_calls = output_items
+        .iter()
+        .filter(|item| item.get("type").and_then(Value::as_str) == Some("function_call"))
+        .collect::<Vec<_>>();
+    if function_calls.is_empty() {
+        return None;
+    }
+
+    let mut call_ids = Vec::with_capacity(function_calls.len());
+    for call in &function_calls {
+        let call_id = call
+            .get("call_id")
+            .and_then(Value::as_str)
+            .filter(|value| !value.is_empty() && value.len() <= 256)?;
+        if call_ids.contains(&call_id) {
+            return None;
+        }
+        call_ids.push(call_id);
+    }
+
+    let mut recovery_input = Vec::with_capacity(output_items.len() + call_ids.len());
+    for item in output_items {
+        if item.get("type").and_then(Value::as_str) == Some("function_call") {
+            let call_id = item.get("call_id").and_then(Value::as_str)?;
+            let name = item
+                .get("name")
+                .and_then(Value::as_str)
+                .filter(|value| !value.is_empty() && value.len() <= 128)
+                .unwrap_or("invalid_tool_call");
+            recovery_input.push(json!({
+                "type": "function_call",
+                "call_id": call_id,
+                "name": name,
+                "arguments": "{}"
+            }));
+        } else {
+            recovery_input.push(item.clone());
+        }
+    }
+
+    let reason = match diagnostic_code {
+        "tool_call_name_missing" => "the tool name is missing",
+        "tool_call_arguments_missing" => "the arguments are missing",
+        "tool_call_arguments_too_large" => "the arguments exceed the allowed size limit",
+        "tool_call_arguments_invalid_json" => "the arguments are not valid JSON",
+        _ => return None,
+    };
+    for call_id in call_ids {
+        recovery_input.push(json!({
+            "type": "function_call_output",
+            "call_id": call_id,
+            "output": {
+                "error": {
+                    "code": "invalid_tool_call",
+                    "message": format!(
+                        "This tool call was rejected because {reason}. No tool calls from this response were executed. Retry with a valid tool name and JSON arguments within the allowed size limit."
+                    )
+                }
+            }
+        }));
+    }
+    Some(recovery_input)
+}
 
 fn compact_in_loop_responses_payload(
     payload: &mut Value,

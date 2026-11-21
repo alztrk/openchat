@@ -457,6 +457,10 @@ html[data-motion-input='keyboard'] .openchat-dialog {
   --openchat-popover-origin: bottom right;
 }
 
+.openchat-popover-enter--top-right {
+  --openchat-popover-origin: top right;
+}
+
 .openchat-popover-enter:has(:focus-visible),
 :has(> [aria-expanded='true']:focus-visible) > .openchat-popover-enter {
   animation: none;

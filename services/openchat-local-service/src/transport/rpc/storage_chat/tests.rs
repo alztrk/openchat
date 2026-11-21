@@ -12,11 +12,13 @@ use super::attachments::{
     AttachmentDirectoryPublishError, StagedAttachments, publish_staged_attachment_directory,
 };
 use super::{
-    MAX_AGENT_METADATA_BYTES, MAX_CONVERSATION_PAGE, MAX_MESSAGE_SEARCH_RESPONSE_BYTES,
-    MAX_PROJECT_PAGE, MAX_STRUCTURED_METADATA_JSON_NESTING, dispatch, optional_json_array,
-    parse_stored_agent_json, sanitize_stored_metadata, sanitize_tool_activity_metadata,
-    serialize_json_without_sensitive_values,
+    MAX_AGENT_METADATA_BYTES, MAX_CONVERSATION_PAGE, MAX_MESSAGE_PAGE_RESPONSE_BYTES,
+    MAX_MESSAGE_SEARCH_RESPONSE_BYTES, MAX_PROJECT_PAGE, MAX_STRUCTURED_METADATA_JSON_NESTING,
+    dispatch, optional_json_array, parse_stored_agent_json, sanitize_stored_metadata,
+    sanitize_tool_activity_metadata, serialize_json_without_sensitive_values,
 };
+
+const TEST_MESSAGE_RESPONSE_BYTES: usize = 32 * 1024;
 
 #[test]
 fn rejects_embedded_metadata_json_over_the_node_limit() {
@@ -854,7 +856,7 @@ async fn message_history_pages_bound_large_stored_payloads_by_encoded_size() {
     let directory = TestDirectory::new();
     let storage = initialized_chat_storage(&directory);
     let conversation_id = create_attachment_test_conversation(&storage).await;
-    let content = "x".repeat(crate::conversation_limits::MAXIMUM_CHAT_MESSAGE_CONTENT_BYTES);
+    let content = "x".repeat(5_000);
     {
         let connection = storage.connect().expect("connect test storage");
         for index in 0..4 {
@@ -880,9 +882,12 @@ async fn message_history_pages_bound_large_stored_payloads_by_encoded_size() {
         if let Some(cursor) = before_message_id.as_deref() {
             input["beforeMessageId"] = json!(cursor);
         }
-        let page = dispatch("storage.chat.messages.list", &input, &storage)
-            .await
-            .expect("read bounded large-message page");
+        let page = super::conversations::list_messages_with_response_budget(
+            &input,
+            &storage,
+            TEST_MESSAGE_RESPONSE_BYTES,
+        )
+        .expect("read bounded large-message page");
         let messages = page["messages"].as_array().expect("message page array");
         assert_eq!(messages.len(), 1);
         message_ids.push(messages[0]["id"].as_str().expect("message ID").to_owned());
@@ -911,7 +916,7 @@ async fn message_search_bounds_large_stored_payloads_by_encoded_size() {
     let directory = TestDirectory::new();
     let storage = initialized_chat_storage(&directory);
     let conversation_id = create_attachment_test_conversation(&storage).await;
-    let content = format!("{}needle", "\u{0001}".repeat(2_000_000));
+    let content = format!("{}needle", "\u{0001}".repeat(5_000));
     {
         let connection = storage.connect().expect("connect test storage");
         for index in 0..2 {
@@ -930,12 +935,11 @@ async fn message_search_bounds_large_stored_payloads_by_encoded_size() {
         }
     }
 
-    let result = dispatch(
-        "storage.chat.messages.search",
+    let result = super::conversations::search_messages_with_response_budget(
         &json!({"input": {"query": "needle", "limit": 50}}),
         &storage,
+        TEST_MESSAGE_RESPONSE_BYTES,
     )
-    .await
     .expect("search bounded large-message results");
     let messages = result["messages"].as_array().expect("search result array");
     assert_eq!(messages.len(), 1);
@@ -944,8 +948,14 @@ async fn message_search_bounds_large_stored_payloads_by_encoded_size() {
     assert_eq!(result["limitedByResponseSize"], true);
 
     let encoded = serde_json::to_vec(&result).expect("encode bounded search response");
-    assert!(encoded.len() <= MAX_MESSAGE_SEARCH_RESPONSE_BYTES + 1_024);
+    assert!(encoded.len() <= TEST_MESSAGE_RESPONSE_BYTES + 1_024);
     assert!(encoded.len() < crate::protocol::MAX_RESPONSE_FRAME_BYTES);
+}
+
+#[test]
+fn message_response_budgets_remain_at_twelve_mibibytes() {
+    assert_eq!(MAX_MESSAGE_PAGE_RESPONSE_BYTES, 12 * 1024 * 1024);
+    assert_eq!(MAX_MESSAGE_SEARCH_RESPONSE_BYTES, 12 * 1024 * 1024);
 }
 
 #[tokio::test]

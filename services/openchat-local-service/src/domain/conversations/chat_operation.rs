@@ -59,8 +59,12 @@ pub struct ChatSendContext<'a> {
     pub goal: Option<GoalExecution>,
     /// Conversation whose history and messages are being processed.
     pub conversation_id: &'a str,
+    /// Renderer-selected model route for a parallel comparison response.
+    pub requested_model_route: Option<ChatModelRoute<'a>>,
     /// Assistant message excluded when regenerating or editing a branch.
     pub excluded_assistant_message_id: Option<&'a str>,
+    /// User message whose sibling assistant responses are excluded from a parallel model request.
+    pub comparison_prompt_message_id: Option<&'a str>,
     /// User-level instructions resolved for this request.
     pub custom_instructions: Option<&'a str>,
     /// Instructions loaded from the active project.
@@ -111,6 +115,14 @@ pub struct ChatSendContext<'a> {
     pub context_limit_override: Option<i64>,
     /// Title-generation route selected for this conversation.
     pub title_generation: TitleGenerationRequest,
+}
+
+#[derive(Clone, Copy)]
+pub struct ChatModelRoute<'a> {
+    pub provider_id: &'a str,
+    pub model_id: &'a str,
+    pub connection_id: Option<&'a str>,
+    pub workspace_id: Option<&'a str>,
 }
 
 /// A renderer-listed model route offered to the primary agent for delegation.

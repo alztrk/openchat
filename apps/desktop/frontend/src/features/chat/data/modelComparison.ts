@@ -1,4 +1,26 @@
+import type { ChatMessage } from '@entities/conversation';
+import type { ChatModel } from '@entities/model';
+
 export const maximumComparisonModels = 3;
+
+export function comparisonResponseModelLabel(
+  message: Pick<ChatMessage, 'providerId' | 'modelId'>,
+  models: readonly Pick<ChatModel, 'providerId' | 'modelId' | 'displayName'>[],
+  fallback: string | null = null,
+): string | null {
+  const model = models.find(
+    (candidate) => candidate.providerId === message.providerId && candidate.modelId === message.modelId,
+  );
+  return model?.displayName.trim() || message.modelId?.trim() || fallback?.trim() || null;
+}
+
+export function hasDistinctModelComparisonResponses(
+  messages: readonly Pick<ChatMessage, 'role' | 'providerId' | 'modelId'>[],
+): boolean {
+  if (messages.length < 2 || messages.some((message) => message.role !== 'assistant')) return false;
+  const modelRoutes = new Set(messages.map((message) => `${message.providerId ?? ''}\u0000${message.modelId ?? ''}`));
+  return modelRoutes.size > 1;
+}
 
 export type ComparisonHistoryLoadState = 'loading' | 'ready' | 'failed';
 
@@ -20,8 +42,9 @@ export function toggleComparisonModelSelection(selectedKeys: readonly string[], 
   return [...selectedKeys, modelKey];
 }
 
-export function isComparisonSelectionKeyboardShortcut(shiftKey: boolean, key: string): boolean {
-  return shiftKey && (key === 'Enter' || key === ' ' || key === 'Spacebar');
+export function selectComparisonModelFromPicker(selectedKeys: readonly string[], modelKey: string): string[] {
+  const nextKeys = toggleComparisonModelSelection(selectedKeys, modelKey);
+  return nextKeys.length === 0 ? [...selectedKeys] : nextKeys;
 }
 
 export function hasValidComparisonModelSelection(selectedKeys: readonly string[]): boolean {

@@ -54,7 +54,8 @@ const vite = await createServer({
             normalizedSource.endsWith('/src/shared/lib/platform/storage/unifiedStorage')) &&
           (normalizedImporter.endsWith('/src/features/chat/components/ConversationSidebar.tsx') ||
             normalizedImporter.endsWith('/src/features/app-settings/components/AppWindowSettingsSection.tsx') ||
-            normalizedImporter.endsWith('/src/features/chat/data/workflowTemplates.ts'))
+            normalizedImporter.endsWith('/src/features/chat/data/workflowTemplates.ts') ||
+            normalizedImporter.endsWith('/src/features/chat/data/workflowAutomations.ts'))
         ) {
           return '\0openchat-test-ui-unified-storage';
         }
@@ -242,18 +243,32 @@ const vite = await createServer({
                 if (key === 'library.workflow-templates.v1') {
                   return process.__openchatWorkflowTemplatesHarness.value;
                 }
+                if (key === 'automation.workflows.v1' || key === 'automation.workflow-runs.v1') {
+                  return process.__openchatWorkflowAutomationHarness.values.get(key) ?? null;
+                }
                 return null;
               },
-              setPersistedItem(key, value) {
+                setPersistedItem(key, value) {
+                  if (process.__openchatWorkflowAutomationHarness.failWrites) {
+                    return Promise.reject(new Error('Workflow persistence failed.'));
+                  }
                 if (key === 'library.workflow-templates.v1') {
                   process.__openchatWorkflowTemplatesHarness.value = value;
                   process.__openchatWorkflowTemplatesHarness.writes.push(value);
+                }
+                if (key === 'automation.workflows.v1' || key === 'automation.workflow-runs.v1') {
+                  const harness = process.__openchatWorkflowAutomationHarness;
+                  harness.values.set(key, value);
+                  harness.writes.push({ key, value });
                 }
                 return Promise.resolve();
               },
               removePersistedItem(key) {
                 if (key === 'library.workflow-templates.v1') {
                   process.__openchatWorkflowTemplatesHarness.value = null;
+                }
+                if (key === 'automation.workflows.v1' || key === 'automation.workflow-runs.v1') {
+                  process.__openchatWorkflowAutomationHarness.values.delete(key);
                 }
                 return Promise.resolve();
               },
@@ -427,6 +442,9 @@ const { ConversationSidebar } = await vite.ssrLoadModule('/src/features/chat/com
 const { WorkflowsPage } = await vite.ssrLoadModule(
   '/src/features/chat/components/WorkflowsPage.tsx',
 );
+const { markInterruptedWorkflowRuns, runWorkflowAutomation } = await vite.ssrLoadModule(
+  '/src/features/chat/data/workflowAutomationRuntime.ts',
+);
 const { ToolActivityGroup } = await vite.ssrLoadModule(
   '/src/features/chat/components/message/ToolActivityGroup.tsx',
 );
@@ -451,6 +469,7 @@ const originalMcpHarness = Object.getOwnPropertyDescriptor(process, '__openchatM
 const originalRecentSearchHarness = Object.getOwnPropertyDescriptor(process, '__openchatRecentSearchHarness');
 const originalTitlebarSearchHarness = Object.getOwnPropertyDescriptor(process, '__openchatTitlebarSearchHarness');
 const originalWorkflowTemplatesHarness = Object.getOwnPropertyDescriptor(process, '__openchatWorkflowTemplatesHarness');
+const originalWorkflowAutomationHarness = Object.getOwnPropertyDescriptor(process, '__openchatWorkflowAutomationHarness');
 const originalWorkflowConversationStorageHarness = Object.getOwnPropertyDescriptor(
   process,
   '__openchatWorkflowConversationStorageHarness',
@@ -484,6 +503,7 @@ const recentSearchHarness = {
 };
 const titlebarSearchHarness = { historyDialogModuleLoads: 0 };
 const workflowTemplatesHarness = { value: null, writes: [] };
+const workflowAutomationHarness = { values: new Map(), writes: [], failWrites: false };
 const workflowConversationStorageHarness = { response: null, calls: [] };
 
 Object.defineProperty(process, '__openchatAppPreferencesHarness', {
@@ -514,6 +534,11 @@ Object.defineProperty(process, '__openchatTitlebarSearchHarness', {
 Object.defineProperty(process, '__openchatWorkflowTemplatesHarness', {
   configurable: true,
   value: workflowTemplatesHarness,
+  writable: true,
+});
+Object.defineProperty(process, '__openchatWorkflowAutomationHarness', {
+  configurable: true,
+  value: workflowAutomationHarness,
   writable: true,
 });
 Object.defineProperty(process, '__openchatWorkflowConversationStorageHarness', {
@@ -579,6 +604,9 @@ afterEach(() => {
   titlebarSearchHarness.historyDialogModuleLoads = 0;
   workflowTemplatesHarness.value = null;
   workflowTemplatesHarness.writes = [];
+  workflowAutomationHarness.values.clear();
+  workflowAutomationHarness.writes = [];
+  workflowAutomationHarness.failWrites = false;
   workflowConversationStorageHarness.response = null;
   workflowConversationStorageHarness.calls = [];
 });
@@ -626,6 +654,11 @@ after(async () => {
     Object.defineProperty(process, '__openchatWorkflowTemplatesHarness', originalWorkflowTemplatesHarness);
   } else {
     Reflect.deleteProperty(process, '__openchatWorkflowTemplatesHarness');
+  }
+  if (originalWorkflowAutomationHarness) {
+    Object.defineProperty(process, '__openchatWorkflowAutomationHarness', originalWorkflowAutomationHarness);
+  } else {
+    Reflect.deleteProperty(process, '__openchatWorkflowAutomationHarness');
   }
   if (originalWorkflowConversationStorageHarness) {
     Object.defineProperty(
@@ -1541,63 +1574,180 @@ test('the primary navigation landmark and surface action render in every support
   }
 });
 
-test('workflow templates can be created, edited, and launched as a new conversation', async () => {
+test('recurring workflows save ordered steps, input values, schedule settings, and can run now', async () => {
   const translations = translationsByLocale.get('en');
-  const i18n = i18nByLocale.get('en');
   assert.ok(translations);
-  assert.ok(i18n);
-  const startedConversations = [];
+  const runCalls = [];
+  const model = { key: 'llama_cpp:model-1', providerId: 'llama_cpp', modelId: 'model-1', displayName: 'Test model' };
   render(
     localized(
       'en',
       React.createElement(WorkflowsPage, {
-        onStartConversation: (...args) => startedConversations.push(args),
+        models: [model],
+        projects: [],
+        onRunWorkflow: async (...args) => { runCalls.push(args); return null; },
+        onRetryWorkflow: async () => null,
       }),
     ),
   );
 
-  fireEvent.click(screen.getByRole('button', { name: translations.workflowTemplateCreate }));
+  fireEvent.click(screen.getByRole('button', { name: translations.workflowAutomationCreate }));
+  const modelSelector = screen.getByRole('button', { name: /Test model/ });
+  fireEvent.click(modelSelector);
+  assert.equal(modelSelector.getAttribute('aria-expanded'), 'true');
+  await waitFor(() => {
+    const picker = screen.getByRole('dialog', { name: translations.connectedProvidersModels });
+    assert.equal(picker.style.visibility, 'visible');
+  });
+  fireEvent.click(modelSelector);
+  fireEvent.click(modelSelector);
   fireEvent.change(screen.getByRole('textbox', { name: translations.workflowTemplateName }), {
-    target: { value: 'Project brief' },
+    target: { value: 'Weekly project brief' },
   });
   fireEvent.change(screen.getByRole('textbox', { name: translations.workflowTemplateDescription }), {
-    target: { value: 'Create a concise brief.' },
+    target: { value: 'Review and summarize project updates.' },
   });
-  fireEvent.change(screen.getByRole('textbox', { name: translations.workflowTemplatePrompt }), {
-    target: { value: 'Create a brief for {{project}}.' },
+  fireEvent.change(screen.getByRole('textbox', { name: translations.workflowAutomationStepTitle }), {
+    target: { value: 'Gather updates' },
   });
-  fireEvent.change(screen.getByRole('textbox', { name: translations.workflowTemplateBeforeStartPrompt }), {
-    target: { value: 'Use the current project context for {{project}}.' },
+  fireEvent.change(screen.getByRole('textbox', { name: translations.workflowAutomationInstruction }), {
+    target: { value: 'Gather the latest updates for {{project}}.' },
   });
-  fireEvent.change(screen.getByRole('textbox', { name: translations.workflowTemplateAfterResponsePrompt }), {
-    target: { value: 'Suggest next steps for {{project}}.' },
+  fireEvent.click(screen.getByRole('button', { name: translations.workflowAutomationAddStep }));
+  fireEvent.change(screen.getAllByRole('textbox', { name: translations.workflowAutomationStepTitle })[1], {
+    target: { value: 'Summarize' },
+  });
+  fireEvent.change(screen.getAllByRole('textbox', { name: translations.workflowAutomationInstruction })[1], {
+    target: { value: 'Write a concise summary using the gathered information.' },
+  });
+  fireEvent.change(screen.getByRole('textbox', { name: 'project' }), {
+    target: { value: 'OpenChat' },
   });
   await act(async () => {
     fireEvent.click(screen.getByRole('button', { name: translations.save }));
     await Promise.resolve();
   });
-  assert.equal(workflowTemplatesHarness.writes.length, 1);
-  const [savedTemplates] = workflowTemplatesHarness.writes.map((value) => JSON.parse(value));
-  assert.equal(savedTemplates[0].name, 'Project brief');
-  assert.equal(savedTemplates[0].parameters[0].name, 'project');
-  assert.equal(savedTemplates[0].beforeStartPrompt, 'Use the current project context for {{project}}.');
-  assert.equal(savedTemplates[0].afterResponsePrompt, 'Suggest next steps for {{project}}.');
+  const savedWorkflows = JSON.parse(workflowAutomationHarness.values.get('automation.workflows.v1'));
+  assert.equal(savedWorkflows[0].name, 'Weekly project brief');
+  assert.deepEqual(savedWorkflows[0].steps.map((step) => step.name), ['Gather updates', 'Summarize']);
+  assert.deepEqual(savedWorkflows[0].inputDefaults, { project: 'OpenChat' });
+  assert.equal(savedWorkflows[0].providerId, 'llama_cpp');
 
-  fireEvent.click(screen.getByRole('button', { name: /Project brief/ }));
-  fireEvent.change(screen.getByRole('textbox', { name: 'project' }), {
-    target: { value: 'OpenChat' },
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: translations.workflowAutomationRunNow }));
+    await Promise.resolve();
   });
-  fireEvent.submit(screen.getByRole('button', { name: translations.workflowTemplateStart }).closest('form'));
-
-  assert.equal(startedConversations.length, 1);
-  assert.equal(
-    startedConversations[0][0],
-    'Use the current project context for OpenChat.\n\nCreate a brief for OpenChat.',
-  );
-  assert.equal(startedConversations[0][1].name, 'Project brief');
-  assert.deepEqual(startedConversations[0][2], { project: 'OpenChat' });
-  assert.ok(screen.getByRole('heading', { name: translations.workflowTemplatesTitle }));
+  assert.deepEqual(runCalls, [[savedWorkflows[0].id, null]]);
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: translations.workflowAutomationPause }));
+    await Promise.resolve();
+  });
+  assert.equal(JSON.parse(workflowAutomationHarness.values.get('automation.workflows.v1'))[0].enabled, false);
+  assert.ok(screen.getAllByRole('heading', { name: translations.workflowTemplatesTitle }).length > 0);
   assert.equal(screen.queryByRole('dialog'), null);
+});
+
+test('workflow runtime prevents duplicate execution and records the completed run', async () => {
+  const workflow = {
+    id: 'b0000000-0000-4000-8000-000000000001',
+    name: 'Weekly report',
+    enabled: true,
+    schedule: { cadence: 'weekly', weekday: 1, hour: 9, minute: 0 },
+    steps: [{ id: 'b0000000-0000-4000-8000-000000000002', name: 'Summarize', prompt: 'Summarize the latest updates.' }],
+    inputDefaults: {},
+    providerId: 'provider',
+    modelId: 'model-1',
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    nextRunAt: Date.now(),
+  };
+  workflowAutomationHarness.values.set('automation.workflows.v1', JSON.stringify([workflow]));
+  let enterExecutor = () => { throw new Error('Executor was not ready.'); };
+  let releaseExecutor = () => { throw new Error('Executor was not ready.'); };
+  const executorEntered = new Promise((resolve) => { enterExecutor = resolve; });
+  const executorGate = new Promise((resolve) => { releaseExecutor = resolve; });
+  const firstRun = runWorkflowAutomation(workflow.id, null, async () => {
+    enterExecutor();
+    await executorGate;
+    return { conversationId: 'conversation-1', completedSteps: 1 };
+  });
+
+  await executorEntered;
+  assert.equal(await runWorkflowAutomation(workflow.id, null, async () => ({
+    conversationId: 'duplicate-conversation',
+    completedSteps: 1,
+  })), null);
+  releaseExecutor();
+
+  const completed = await firstRun;
+  assert.equal(completed?.status, 'completed');
+  assert.equal(completed?.conversationId, 'conversation-1');
+  assert.equal(JSON.parse(workflowAutomationHarness.values.get('automation.workflow-runs.v1'))[0].completedSteps, 1);
+});
+
+test('workflow runtime records failures and recovers interrupted runs', async () => {
+  const workflow = {
+    id: 'c0000000-0000-4000-8000-000000000001',
+    name: 'Weekly report',
+    enabled: true,
+    schedule: { cadence: 'weekly', weekday: 1, hour: 9, minute: 0 },
+    steps: [{ id: 'c0000000-0000-4000-8000-000000000002', name: 'Summarize', prompt: 'Summarize the latest updates.' }],
+    inputDefaults: {},
+    providerId: 'provider',
+    modelId: 'model-1',
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    nextRunAt: Date.now(),
+  };
+  workflowAutomationHarness.values.set('automation.workflows.v1', JSON.stringify([workflow]));
+
+  const failed = await runWorkflowAutomation(workflow.id, null, async () => {
+    throw new Error('Provider request failed.');
+  });
+  assert.equal(failed?.status, 'failed');
+  assert.equal(failed?.error, 'A workflow step did not complete.');
+
+  const interruptedRun = {
+    id: 'c0000000-0000-4000-8000-000000000003',
+    workflowId: workflow.id,
+    workflowName: workflow.name,
+    status: 'running',
+    scheduledAt: null,
+    startedAt: Date.now(),
+    completedSteps: 0,
+    totalSteps: 1,
+  };
+  workflowAutomationHarness.values.set('automation.workflow-runs.v1', JSON.stringify([interruptedRun]));
+  assert.equal(await markInterruptedWorkflowRuns(), 1);
+  assert.equal(JSON.parse(workflowAutomationHarness.values.get('automation.workflow-runs.v1'))[0].status, 'interrupted');
+});
+
+test('workflow runtime does not start when run-history persistence fails', async () => {
+  const workflow = {
+    id: 'd0000000-0000-4000-8000-000000000001',
+    name: 'Weekly report',
+    enabled: true,
+    schedule: { cadence: 'weekly', weekday: 1, hour: 9, minute: 0 },
+    steps: [{ id: 'd0000000-0000-4000-8000-000000000002', name: 'Summarize', prompt: 'Summarize the latest updates.' }],
+    inputDefaults: {},
+    providerId: 'provider',
+    modelId: 'model-1',
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    nextRunAt: Date.now(),
+  };
+  workflowAutomationHarness.values.set('automation.workflows.v1', JSON.stringify([workflow]));
+  workflowAutomationHarness.failWrites = true;
+  let executorStarted = false;
+
+  await assert.rejects(
+    runWorkflowAutomation(workflow.id, null, async () => {
+      executorStarted = true;
+      return { conversationId: 'conversation-1', completedSteps: 1 };
+    }),
+    /storage is unavailable or invalid/i,
+  );
+  assert.equal(executorStarted, false);
 });
 
 test('tool activity group stays hidden without tools and exposes live progress and disclosure state', () => {
@@ -1772,7 +1922,7 @@ test('workflow after-response prompt updates only an empty composer after a succ
   }
 });
 
-test('workflow templates can be imported and edited with the saved change persisted', async () => {
+test('previous prompt template data remains exportable after workflows move to recurring automation', async () => {
   const translations = translationsByLocale.get('en');
   assert.ok(translations);
   const importedTemplate = {
@@ -1783,42 +1933,19 @@ test('workflow templates can be imported and edited with the saved change persis
     createdAt: 1700000000000,
     updatedAt: 1700000000000,
   };
+  workflowTemplatesHarness.value = JSON.stringify([importedTemplate]);
 
   render(
     localized(
       'en',
       React.createElement(WorkflowsPage, {
-        onStartConversation: () => undefined,
+        models: [],
+        projects: [],
+        onRunWorkflow: async () => null,
+        onRetryWorkflow: async () => null,
       }),
     ),
   );
-
-  const importFile = new browserWindow.File(
-    [JSON.stringify({ version: 1, templates: [importedTemplate] })],
-    'workflows.json',
-    { type: 'application/json' },
-  );
-  await act(async () => {
-    fireEvent.change(document.querySelector('input[type="file"]'), {
-      target: { files: [importFile] },
-    });
-    await new Promise((resolve) => setTimeout(resolve, 0));
-  });
-
-  assert.equal(workflowTemplatesHarness.writes.length, 1);
-  assert.equal(JSON.parse(workflowTemplatesHarness.writes[0])[0].name, 'Release notes');
-
-  fireEvent.click(screen.getByRole('button', { name: /Edit/ }));
-  fireEvent.change(screen.getByRole('textbox', { name: translations.workflowTemplateName }), {
-    target: { value: 'Release summary' },
-  });
-  await act(async () => {
-    fireEvent.click(screen.getByRole('button', { name: translations.save }));
-    await Promise.resolve();
-  });
-  assert.equal(workflowTemplatesHarness.writes.length, 2);
-  assert.equal(JSON.parse(workflowTemplatesHarness.writes[1])[0].name, 'Release summary');
-  assert.equal(screen.getByRole('button', { name: /Release summary/ }).textContent.includes('Summarize the release.'), true);
 
   const originalCreateObjectURL = URL.createObjectURL;
   const originalRevokeObjectURL = URL.revokeObjectURL;
@@ -1834,10 +1961,10 @@ test('workflow templates can be imported and edited with the saved change persis
     downloadedFileName = this.download;
   };
   try {
-    fireEvent.click(screen.getByRole('button', { name: translations.workflowTemplateExport }));
+    fireEvent.click(screen.getByRole('button', { name: translations.workflowAutomationLegacyExport }));
     assert.ok(exportedBlob instanceof Blob);
-    assert.equal(downloadedFileName, 'openchat-workflows.json');
-    assert.equal(JSON.parse(await exportedBlob.text()).templates[0].name, 'Release summary');
+    assert.equal(downloadedFileName, 'openchat-workflow-templates.json');
+    assert.equal(JSON.parse(await exportedBlob.text()).templates[0].name, 'Release notes');
   } finally {
     URL.createObjectURL = originalCreateObjectURL;
     URL.revokeObjectURL = originalRevokeObjectURL;

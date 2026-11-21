@@ -1,5 +1,5 @@
 import { ArrowUp, Brain, Paperclip, Play, Square, X } from 'lucide-react';
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button, Select, Textarea } from '@shared/components';
 import type { ChatMessage } from '@features/chat/data';
@@ -29,11 +29,7 @@ import { PendingAttachmentGallery } from './PendingAttachmentGallery';
 import { UserQuestionPanel } from './UserQuestionPanel';
 import { VoiceInputControl } from './voice';
 import { useComposerState } from './useComposerState';
-import { toggleComparisonModelSelection } from '@features/chat/data/modelComparison';
-
-const ModelComparison = lazy(() =>
-  import('./ModelComparison').then((module) => ({ default: module.ModelComparison })),
-);
+import { selectComparisonModelFromPicker } from '@features/chat/data/modelComparison';
 
 export interface ChatComposerProps {
   onOpenSettings(): void;
@@ -64,6 +60,8 @@ export function ChatComposer({
 }: ChatComposerProps) {
   const { t } = useTranslation();
   const formRef = useRef<HTMLFormElement>(null);
+  const [isSendingModelComparison, setIsSendingModelComparison] = useState(false);
+  const stopModelComparisonRef = useRef(false);
   const sendMessageBinding = useKeyboardShortcutsStore((state) => state.bindings.sendMessage);
   const sendShortcutLabel = sendMessageBinding ? formatKeyboardShortcut(sendMessageBinding) : '';
 
@@ -133,7 +131,6 @@ export function ChatComposer({
   const projects = useChatStore((state) => state.projects);
   const projectsStatus = useChatStore((state) => state.projectsStatus);
   const pendingProjectId = useChatStore((state) => state.pendingProjectId);
-  const pendingAgentSnapshot = useChatStore((state) => state.pendingAgentSnapshot);
   const hiddenModelKeys = useChatStore((state) => state.hiddenModelKeys);
   const storeActiveConversationId = useChatStore((state) => state.activeConversationId);
   const temporaryChatId = useChatStore((state) => state.temporaryChat?.id ?? null);
@@ -159,6 +156,7 @@ export function ChatComposer({
   const toggleFavoriteModel = useChatStore((state) => state.toggleFavoriteModel);
   const removeModelFavorite = useChatStore((state) => state.removeModelFavorite);
   const selectConversationModel = useChatStore((state) => state.selectConversationModel);
+  const sendChatMessage = useChatStore((state) => state.sendMessage);
   const selectModel = useChatStore((state) => state.selectModel);
   const setPendingProjectId = useChatStore((state) => state.setPendingProjectId);
   const selectReasoningEffort = useChatStore((state) => state.selectReasoningEffort);
@@ -190,6 +188,7 @@ export function ChatComposer({
     isTargetPlaceholder ||
     pickerModels.length === 0 ||
     isSending ||
+    isSendingModelComparison ||
     isReadingAttachments ||
     isUpdatingConversationModel;
   const placeholderHint = useMemo(
@@ -226,29 +225,28 @@ export function ChatComposer({
 
   const [isComposerDraggingOver, setIsComposerDraggingOver] = useState(false);
   const [isVoiceInputActive, setIsVoiceInputActive] = useState(false);
-  const [isModelComparisonOpen, setIsModelComparisonOpen] = useState(false);
   const [comparisonModelKeys, setComparisonModelKeys] = useState<string[]>(() =>
     selectedModel?.key ? [selectedModel.key] : [],
   );
+  const previousSelectedModelKeyRef = useRef(selectedModel?.key ?? null);
   const composerDragDepthRef = useRef(0);
   const handleVoiceInputExclusiveModeChange = useCallback((active: boolean) => {
     setIsVoiceInputActive(active);
   }, []);
 
   useEffect(() => {
+    if (isSendingModelComparison) return;
     const availableModelKeys = new Set(selectableModels.map((model) => model.key));
+    const selectedModelKey = selectedModel?.key ?? null;
+    const selectedModelChanged = previousSelectedModelKeyRef.current !== selectedModelKey;
+    previousSelectedModelKeyRef.current = selectedModelKey;
     setComparisonModelKeys((current) => {
       const next = current.filter((key) => availableModelKeys.has(key));
-      if (
-        selectedModel?.key &&
-        availableModelKeys.has(selectedModel.key) &&
-        (next.length === 0 || next[0] !== selectedModel.key)
-      ) {
-        return [selectedModel.key];
-      }
+      if (selectedModelChanged && selectedModelKey && availableModelKeys.has(selectedModelKey)) return [selectedModelKey];
+      if (next.length === 0 && selectedModelKey && availableModelKeys.has(selectedModelKey)) return [selectedModelKey];
       return next.length === current.length ? current : next;
     });
-  }, [selectableModels, selectedModel?.key]);
+  }, [isSendingModelComparison, selectableModels, selectedModel?.key]);
 
   const canSelectComparisonModels =
     !isTemporaryChat && targetConversationId === undefined && selectableModels.length >= 2;
@@ -258,8 +256,107 @@ export function ChatComposer({
     pendingAttachments.length === 0 &&
     !isReadingAttachments &&
     !isSending &&
+    !isSendingModelComparison &&
     !isUpdatingConversationModel &&
     composerMode === 'normal';
+  const shouldStartComparison =
+    comparisonModelKeys.length >= 2 &&
+    !isSending &&
+    !isSendingModelComparison &&
+    composerMode === 'normal' &&
+    !messageDraft.trimStart().startsWith('/');
+
+  const toggleComparedModel = (model: (typeof selectableModels)[number]) => {
+    if (!canSelectComparisonModels) return;
+    const nextKeys = selectComparisonModelFromPicker(comparisonModelKeys, model.key);
+    if (nextKeys.length === 0) return;
+    setComparisonModelKeys(nextKeys);
+    const nextSingleModelKey = nextKeys.length === 1 ? nextKeys[0] : undefined;
+    if (!nextSingleModelKey || nextSingleModelKey === selectedModel?.key) return;
+    void selectConversationModel(nextSingleModelKey, targetConversationId).then((updated) => {
+      if (updated) return;
+      setComparisonModelKeys((current) =>
+        current.length === 1 && current[0] === nextSingleModelKey && selectedModel?.key
+          ? [selectedModel.key]
+          : current,
+      );
+    });
+  };
+
+  const handleComposerSubmit = (event: FormEvent<HTMLFormElement>) => {
+    if (!shouldStartComparison) {
+      send(event);
+      return;
+    }
+    event.preventDefault();
+    if (!canStartComparison) return;
+    setModelPickerOpen(false);
+    const prompt = messageDraft.trim();
+    const modelKeys = [...comparisonModelKeys];
+    const primaryModelKey = modelKeys[0];
+    if (!primaryModelKey) return;
+    setIsSendingModelComparison(true);
+    stopModelComparisonRef.current = false;
+    void (async () => {
+      let comparisonConversationId = targetConversationId ?? useChatStore.getState().activeConversationId;
+      const secondarySends: Promise<boolean>[] = [];
+      try {
+        const primaryModel = selectableModels.find((model) => model.key === primaryModelKey);
+        if (!primaryModel) return;
+        await sendChatMessage(prompt, [], undefined, undefined, {
+          ...(comparisonConversationId ? { conversationId: comparisonConversationId } : {}),
+          modelKey: primaryModel.key,
+          comparisonModelKey: primaryModel.key,
+          isComparisonCancelled: () => stopModelComparisonRef.current,
+          ...comparisonSendOptions(primaryModel),
+          onUserMessageCommitted: (committedConversationId, userMessageId) => {
+            comparisonConversationId = committedConversationId;
+            useChatStore.getState().setModelComparisonActive(committedConversationId, true);
+            setMessageDraft('');
+            if (!userMessageId) return;
+            for (const modelKey of modelKeys.slice(1)) {
+              if (stopModelComparisonRef.current) break;
+              const model = selectableModels.find((candidate) => candidate.key === modelKey);
+              if (!model) continue;
+              secondarySends.push(
+                sendChatMessage('', [], undefined, undefined, {
+                  conversationId: committedConversationId,
+                  modelKey: model.key,
+                  comparisonModelKey: model.key,
+                  comparisonParentMessageId: userMessageId,
+                  isComparisonCancelled: () => stopModelComparisonRef.current,
+                  userMessageAlreadySaved: true,
+                  ...comparisonSendOptions(model),
+                }),
+              );
+            }
+          },
+        });
+        await Promise.all(secondarySends);
+      } catch (cause) {
+        globalThis.reportError(new Error('The model comparison could not finish in the current conversation.', { cause }));
+      } finally {
+        if (comparisonConversationId) {
+          useChatStore.getState().setModelComparisonActive(comparisonConversationId, false);
+          useChatStore.getState().setProviderCompaction(comparisonConversationId, false);
+        }
+        setComparisonModelKeys([primaryModelKey]);
+        setIsSendingModelComparison(false);
+      }
+    })();
+  };
+
+  const comparisonSendOptions = (model: (typeof selectableModels)[number]) => {
+    const configuredEffort = useChatStore.getState().modelReasoningEfforts[modelRouteKey(model)];
+    const reasoningEffort =
+      model.supportsReasoning && configuredEffort && model.reasoningLevels.includes(configuredEffort)
+        ? configuredEffort
+        : null;
+    return {
+      ...(reasoningEffort ? { reasoningEffort } : {}),
+      ...(model.providerId === 'chatgpt' && fastModeEnabled ? { fastMode: true } : {}),
+    };
+  };
 
   const workflowAfterResponsePrompt = activeConversation?.agent?.workflowHooks?.afterResponsePrompt ?? null;
 
@@ -274,7 +371,7 @@ export function ChatComposer({
       latestAssistantResponse !== null &&
       pendingQuestionSendBlock?.conversationId === latestAssistantResponse.conversationId &&
       pendingQuestionSendBlock.blocked,
-    disabled: targetConversationId !== undefined || isTemporaryChat,
+    disabled: targetConversationId !== undefined || isTemporaryChat || isSendingModelComparison,
     setDraft: setMessageDraft,
   });
 
@@ -342,6 +439,7 @@ export function ChatComposer({
         isTargetPlaceholder ||
         pickerModels.length === 0 ||
         isSending ||
+        isSendingModelComparison ||
         isReadingAttachments ||
         isUpdatingConversationModel
       ) {
@@ -371,7 +469,7 @@ export function ChatComposer({
       event.preventDefault();
       void addAttachments(images);
     },
-    [addAttachments, isReadingAttachments, isSending, isTargetPlaceholder, isUpdatingConversationModel, pickerModels],
+    [addAttachments, isReadingAttachments, isSending, isSendingModelComparison, isTargetPlaceholder, isUpdatingConversationModel, pickerModels],
   );
 
   return (
@@ -399,7 +497,7 @@ export function ChatComposer({
           contextToolPermissionMode={contextToolPermissionMode}
           contextWindow={contextWindow}
           fileChanges={fileChanges}
-          isSending={isSending}
+          isSending={isSending || isSendingModelComparison}
           isTemporaryChat={isTemporaryChat}
           messageDraft={messageDraft}
           messages={messages}
@@ -426,7 +524,7 @@ export function ChatComposer({
           onDragLeave={handleComposerDragLeave}
           onDragOver={handleComposerDragOver}
           onDrop={handleComposerDrop}
-          onSubmit={send}
+          onSubmit={handleComposerSubmit}
           ref={formRef}
         >
           <div hidden={isVoiceInputActive}>
@@ -509,7 +607,7 @@ export function ChatComposer({
               aria-expanded={slashModelMenuOpen || slashCommands.length > 0}
               aria-label={placeholderHint}
               className="composer-message-input w-full bg-transparent text-composer-input text-text placeholder:text-secondary-text outline-none focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0 disabled:opacity-50"
-              disabled={isTargetPlaceholder || pickerModels.length === 0 || isUpdatingConversationModel}
+              disabled={isTargetPlaceholder || pickerModels.length === 0 || isUpdatingConversationModel || isSendingModelComparison}
               id="chat-message"
               appearance="bare"
               fieldLayout="none"
@@ -560,21 +658,13 @@ export function ChatComposer({
                 modelFavorites={modelFavorites}
                 modelProviders={modelProviders}
                 models={pickerModels}
-                disabled={isSending || isUpdatingConversationModel}
+                disabled={isSending || isSendingModelComparison || isUpdatingConversationModel}
                 comparisonSelectionKeys={comparisonModelKeys}
-                canStartComparison={canStartComparison}
                 onToggleComparisonModel={
                   canSelectComparisonModels
-                    ? (model) => {
-                        setComparisonModelKeys((current) => toggleComparisonModelSelection(current, model.key));
-                      }
+                    ? toggleComparedModel
                     : undefined
                 }
-                onStartComparison={() => {
-                  setModelPickerOpen(false);
-                  setCommandFeedbackKey(null);
-                  setIsModelComparisonOpen(true);
-                }}
                 onOpenChange={(open) => {
                   setModelPickerOpen(open);
                 }}
@@ -595,7 +685,7 @@ export function ChatComposer({
                 }}
                 onSelectFavorite={selectFavoriteModel}
                 onSelectProvider={() => {
-                  if (activeConversationId === null) selectModel(null);
+                  if (activeConversationId === null && !canSelectComparisonModels) selectModel(null);
                   setCommandFeedbackKey(null);
                   setModelQuery('');
                 }}
@@ -611,7 +701,7 @@ export function ChatComposer({
                   <Select
                     aria-label={t('reasoning')}
                     className="openchat-dropdown-trigger--subtle min-w-0 max-w-full py-2 pl-2.5 pr-2 text-sm"
-                    disabled={isTargetPlaceholder || isSending || isUpdatingConversationModel}
+                    disabled={isTargetPlaceholder || isSending || isSendingModelComparison || isUpdatingConversationModel}
                     label={t('reasoning')}
                     leadingIcon={<Brain aria-hidden="true" size={16} />}
                     onChange={(event) => void selectReasoningEffort(event.currentTarget.value || null, targetConversationId)}
@@ -637,7 +727,7 @@ export function ChatComposer({
             <div className="flex items-center gap-2">
               <VoiceInputControl
                 className="shrink-0"
-                disabled={isTargetPlaceholder || isSending || isReadingAttachments || isUpdatingConversationModel}
+                disabled={isTargetPlaceholder || isSending || isSendingModelComparison || isReadingAttachments || isUpdatingConversationModel}
                 language={voiceLanguage}
                 onAppendTranscript={handleVoiceTranscript}
                 onExclusiveModeChange={handleVoiceInputExclusiveModeChange}
@@ -647,7 +737,10 @@ export function ChatComposer({
                 <Button
                   aria-label={t('stop')}
                   className="size-10"
-                  onClick={() => void stopResponse(activeConversationId ?? temporaryChatId)}
+                  onClick={() => {
+                    if (isSendingModelComparison) stopModelComparisonRef.current = true;
+                    void stopResponse(activeConversationId ?? temporaryChatId);
+                  }}
                   size="icon"
                   variant="secondary"
                 >
@@ -674,11 +767,12 @@ export function ChatComposer({
                     isTargetPlaceholder ||
                     pickerModels.length === 0 ||
                     !selectedModel?.key ||
-                    messageDraft.trim().length === 0 ||
+                    isSendingModelComparison ||
+                    (shouldStartComparison ? !canStartComparison : messageDraft.trim().length === 0) ||
                     isReadingAttachments ||
                     isUpdatingConversationModel ||
                     isSendBlocked ||
-                    selectedModelRateLimited
+                    (!shouldStartComparison && selectedModelRateLimited)
                   }
                   size="icon"
                   title={isSending ? t('composerSteerResponse') : sendTooltip}
@@ -692,25 +786,6 @@ export function ChatComposer({
           </div>
           </div>
         </form>
-        {isModelComparisonOpen ? (
-          <Suspense fallback={null}>
-            <ModelComparison
-              agent={activeConversation?.agent ?? pendingAgentSnapshot}
-              initialModelKeys={comparisonModelKeys}
-              models={selectableModels}
-              onClose={() => setIsModelComparisonOpen(false)}
-              onOpenSettings={onOpenSettings}
-              onRequestTemporaryExit={onRequestTemporaryExit}
-              onStarted={() => {
-                setMessageDraft('');
-                setCommandFeedbackKey(null);
-                setComparisonModelKeys([]);
-              }}
-              projectId={contextProjectId}
-              prompt={messageDraft}
-            />
-          </Suspense>
-        ) : null}
       </div>
     </div>
   );

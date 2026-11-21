@@ -10,9 +10,11 @@ const compiled = ts.transpileModule(source, {
 }).outputText;
 const {
   getComparisonHistoryLoadState,
+  comparisonResponseModelLabel,
+  hasDistinctModelComparisonResponses,
   canContinueComparisonConversation,
   hasValidComparisonModelSelection,
-  isComparisonSelectionKeyboardShortcut,
+  selectComparisonModelFromPicker,
   toggleComparisonModelSelection,
 } = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`);
 
@@ -24,6 +26,38 @@ test('model comparison selection accepts two or three distinct models', () => {
   assert.equal(hasValidComparisonModelSelection(['model-a', 'model-a']), false);
 });
 
+test('only assistant siblings from distinct model routes are rendered as a comparison group', () => {
+  assert.equal(
+    hasDistinctModelComparisonResponses([
+      { role: 'assistant', providerId: 'openai', modelId: 'model-a' },
+      { role: 'assistant', providerId: 'anthropic', modelId: 'model-b' },
+    ]),
+    true,
+  );
+  assert.equal(
+    hasDistinctModelComparisonResponses([
+      { role: 'assistant', providerId: 'openai', modelId: 'model-a' },
+      { role: 'assistant', providerId: 'openai', modelId: 'model-a' },
+    ]),
+    false,
+  );
+  assert.equal(
+    hasDistinctModelComparisonResponses([
+      { role: 'user', providerId: null, modelId: null },
+      { role: 'assistant', providerId: 'openai', modelId: 'model-a' },
+    ]),
+    false,
+  );
+});
+
+test('comparison response labels use the visible catalog name for an internal model id', () => {
+  const response = { providerId: 'sglang', modelId: 'model-uuid' };
+  const models = [{ providerId: 'sglang', modelId: 'model-uuid', displayName: 'Qwen 3' }];
+  assert.equal(comparisonResponseModelLabel(response, models), 'Qwen 3');
+  assert.equal(comparisonResponseModelLabel(response, []), 'model-uuid');
+  assert.equal(comparisonResponseModelLabel({ providerId: null, modelId: null }, [], 'Selected model'), 'Selected model');
+});
+
 test('model comparison selection toggles entries and caps selection at three', () => {
   assert.deepEqual(toggleComparisonModelSelection(['model-a'], 'model-b'), ['model-a', 'model-b']);
   assert.deepEqual(toggleComparisonModelSelection(['model-a', 'model-b'], 'model-a'), ['model-b']);
@@ -33,12 +67,11 @@ test('model comparison selection toggles entries and caps selection at three', (
   );
 });
 
-test('model comparison model selection has a keyboard equivalent to Shift-click', () => {
-  assert.equal(isComparisonSelectionKeyboardShortcut(true, 'Enter'), true);
-  assert.equal(isComparisonSelectionKeyboardShortcut(true, ' '), true);
-  assert.equal(isComparisonSelectionKeyboardShortcut(true, 'Spacebar'), true);
-  assert.equal(isComparisonSelectionKeyboardShortcut(false, 'Enter'), false);
-  assert.equal(isComparisonSelectionKeyboardShortcut(true, 'Escape'), false);
+test('model picker adds another model on the first click and removes a selection on later clicks', () => {
+  assert.deepEqual(selectComparisonModelFromPicker(['model-a'], 'model-b'), ['model-a', 'model-b']);
+  assert.deepEqual(selectComparisonModelFromPicker(['model-a', 'model-b'], 'model-c'), ['model-a', 'model-b', 'model-c']);
+  assert.deepEqual(selectComparisonModelFromPicker(['model-a', 'model-b'], 'model-a'), ['model-b']);
+  assert.deepEqual(selectComparisonModelFromPicker(['model-a'], 'model-a'), ['model-a']);
 });
 
 test('model comparison waits for every history and fails closed when a load fails', () => {

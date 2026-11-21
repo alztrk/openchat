@@ -11,9 +11,9 @@ import {
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ProviderIcon } from '@shared/components';
-import { Button, Card, DatePicker, SegmentedControl, Select, TitleTooltip } from '@shared/components';
+import { Button, Card, DatePicker, Select, TitleTooltip } from '@shared/components';
 import { LocalServiceError, localServiceClient } from '@shared/lib/platform/local-service';
-import { BreakdownCard, MetricCard, TrendChart } from './StatisticsCharts';
+import { BreakdownCard, MetricCard, PriceTrendChart, TrendChart } from './StatisticsCharts';
 import { SettingsSectionSkeleton } from './SettingsSectionSkeleton';
 import type { LoadState, StatisticsQuotaSnapshot, StatisticsRequest, StatisticsSnapshot } from './statisticsData';
 import {
@@ -44,7 +44,6 @@ export function StatisticsSettingsSection({ onOpenConversation }: StatisticsSett
   const [toDate, setToDate] = useState(today);
   const [providerId, setProviderId] = useState('');
   const [modelId, setModelId] = useState('');
-  const [trendPeriod, setTrendPeriod] = useState<'daily' | 'monthly'>('daily');
   const [snapshot, setSnapshot] = useState<StatisticsSnapshot | null>(null);
   const [loadState, setLoadState] = useState<LoadState>('loading');
   const [isExporting, setIsExporting] = useState(false);
@@ -174,21 +173,7 @@ export function StatisticsSettingsSection({ onOpenConversation }: StatisticsSett
   const activeFilterCount = Number(providerId !== '') + Number(modelId !== '');
   const parsedFromDate = parseDateInput(fromDate);
   const parsedToDate = parseDateInput(toDate);
-  const parsedToday = parseDateInput(today);
   const dateRangeInvalid = !parsedFromDate || !parsedToDate || fromDate > toDate || toDate > today;
-  const shiftStatisticsRange = (direction: -1 | 1) => {
-    if (!parsedFromDate || !parsedToDate) return;
-    const rangeDays = Math.round((parsedToDate.getTime() - parsedFromDate.getTime()) / 86_400_000) + 1;
-    const shiftedTo = new Date(parsedToDate);
-    shiftedTo.setDate(shiftedTo.getDate() + direction * rangeDays);
-    if (direction > 0 && parsedToday && shiftedTo > parsedToday) {
-      shiftedTo.setTime(parsedToday.getTime());
-    }
-    const shiftedFrom = new Date(shiftedTo);
-    shiftedFrom.setDate(shiftedFrom.getDate() - rangeDays + 1);
-    setFromDate(dateInputValue(shiftedFrom));
-    setToDate(dateInputValue(shiftedTo));
-  };
   const aggregationWindow =
     dateRangeInvalid || !parsedFromDate || !parsedToDate
       ? null
@@ -381,34 +366,20 @@ export function StatisticsSettingsSection({ onOpenConversation }: StatisticsSett
             </div>
           </section>
 
-          <Card className="app-window-settings-card statistics-trend-card grid gap-3 rounded-card border border-border bg-raised p-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <h3 className="font-semibold">{t('statisticsUsageTrend')}</h3>
-              <div className="flex flex-wrap items-center gap-2">
-                <SegmentedControl
-                  label={t('statisticsUsageTrend')}
-                  onValueChange={(value) => setTrendPeriod(value === 'monthly' ? 'monthly' : 'daily')}
-                  options={[
-                    { value: 'daily', label: t('statisticsDaily') },
-                    { value: 'monthly', label: t('statisticsMonthly') },
-                  ]}
-                  value={trendPeriod}
-                />
-              </div>
-            </div>
-            {parsedFromDate && parsedToDate ? (
-              <TrendChart
-                fromDate={parsedFromDate}
-                language={i18n.language}
-                monthly={trendPeriod === 'monthly'}
-                onShiftRange={shiftStatisticsRange}
-                points={trendPeriod === 'monthly' ? snapshot.monthlyTrend : snapshot.dailyTrend}
-                toDate={parsedToDate}
-                canShiftForward={parsedToday !== null && parsedToDate < parsedToday}
-                t={t}
-              />
-            ) : null}
+          <div className="grid gap-4 xl:grid-cols-2">
+          <Card className="app-window-settings-card statistics-trend-card grid content-start gap-3 rounded-card border border-border bg-raised p-4">
+            <h3 className="font-semibold">{t('statisticsUsageTrend')}</h3>
+            <TrendChart language={i18n.language} points={snapshot.dailyTrend} t={t} />
           </Card>
+          <Card className="app-window-settings-card statistics-trend-card grid content-start gap-3 rounded-card border border-border bg-raised p-4">
+            <h3 className="font-semibold">{t('statisticsPriceTrend')}</h3>
+            <PriceTrendChart
+              language={i18n.language}
+              points={snapshot.dailyTrend}
+              t={t}
+            />
+          </Card>
+          </div>
 
           {showLocalMeasurements ? (
             <Card className="app-window-settings-card grid gap-3 rounded-card border border-border bg-raised p-4">

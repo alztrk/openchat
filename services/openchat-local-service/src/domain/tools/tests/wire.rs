@@ -267,7 +267,26 @@ async fn opencode_read_and_bash_aliases_execute_allowed_read_file_and_execute_co
         .await
         .expect("bash alias executes execute_command");
     assert!(bash_result.output.get("error").is_none());
-    let bash_output = serde_json::to_string(&bash_result.output).expect("serialize bash output");
+    let bash_output = if let Some(terminal_id) = bash_result.output["terminal_id"].as_str() {
+        let completed = super::super::terminal::TerminalSessionManager::global()
+            .read_output_of(terminal_id, "conversation", Some(10_000))
+            .await
+            .expect("read bash alias output until the command exits");
+        if completed["is_running"] == true {
+            super::super::terminal::TerminalSessionManager::global()
+                .kill_session(terminal_id, "conversation")
+                .await
+                .expect("terminate a bash alias that exceeded the test wait");
+        }
+        assert_eq!(completed["is_running"], false, "bash command did not exit");
+        assert_eq!(
+            completed["exit_code"], 0,
+            "bash command failed: {completed}"
+        );
+        serde_json::to_string(&completed).expect("serialize completed bash output")
+    } else {
+        serde_json::to_string(&bash_result.output).expect("serialize bash output")
+    };
     assert!(bash_output.contains("opencode_bash_ok"));
 }
 

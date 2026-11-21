@@ -1,9 +1,10 @@
 import type { TFunction } from 'i18next';
-import { Bot, Check, ChevronDown, LoaderCircle, LogIn, LogOut, RefreshCw, Search, Star, Text } from 'lucide-react';
-import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { Bot, ChevronDown, LoaderCircle, LogIn, LogOut, RefreshCw, Search, Star, Text } from 'lucide-react';
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { createPortal } from 'react-dom';
 
-import { Button, Input, Tooltip, TitleTooltip } from '@shared/components';
+import { Badge, Button, Input, Tooltip, TitleTooltip } from '@shared/components';
 import type { ChatModelFavorite } from '@features/chat/data';
 import { favoriteSourceConnection } from '@features/chat/state';
 import { ProviderIcon } from '@shared/components';
@@ -28,7 +29,8 @@ import {
 import { localServiceClient } from '@shared/lib/platform/local-service';
 import { useTransitionPresence } from '@shared/lib/hooks/useTransitionPresence';
 import { FastModeControl } from './FastModeControl';
-import { isComparisonSelectionKeyboardShortcut, maximumComparisonModels } from '@features/chat/data/modelComparison';
+import { maximumComparisonModels } from '@features/chat/data/modelComparison';
+import { calculateModelPickerPosition, type ModelPickerPosition } from './modelPickerPosition';
 
 export interface ModelPickerProps {
   models: readonly ChatModel[];
@@ -47,7 +49,11 @@ export interface ModelPickerProps {
   chatGptWorkspaceSelectionRequired: boolean;
   disabled: boolean;
   comparisonSelectionKeys?: readonly string[];
-  canStartComparison?: boolean;
+  triggerAriaDescribedBy?: string;
+  triggerAriaLabel?: string;
+  emptySelectionLabel?: string;
+  emptyOptionLabel?: string;
+  onSelectEmpty?(): void;
   isOpen: boolean;
   query: string;
   onOpenChange(open: boolean): void;
@@ -59,7 +65,6 @@ export interface ModelPickerProps {
   onToggleFavorite(model: ChatModel): void;
   onRemoveFavorite(favorite: ChatModelFavorite): void;
   onToggleComparisonModel?(model: ChatModel): void;
-  onStartComparison?(): void;
 }
 
 export function ModelPicker({
@@ -75,7 +80,11 @@ export function ModelPicker({
   chatGptWorkspaceSelectionRequired,
   hiddenModelKeys,
   comparisonSelectionKeys = [],
-  canStartComparison = false,
+  triggerAriaDescribedBy,
+  triggerAriaLabel,
+  emptySelectionLabel,
+  emptyOptionLabel,
+  onSelectEmpty,
   knownModels,
   modelFavorites,
   modelProviders,
@@ -89,7 +98,6 @@ export function ModelPicker({
   onSelectProvider,
   onToggleFavorite,
   onToggleComparisonModel,
-  onStartComparison,
   query,
   selectedModel,
 }: ModelPickerProps) {
@@ -97,14 +105,16 @@ export function ModelPicker({
   const comparisonInstructionsId = `model-picker-comparison-instructions-${useId()}`;
   const rateLimits = useOAuthRateLimits();
   const [selectedProviderId, setSelectedProviderId] = useState(() =>
-    providerFamily(selectedModel?.providerId ?? 'opencode'),
+    providerFamily(selectedModel?.providerId ?? modelProviders[0]?.providerId ?? models[0]?.providerId ?? 'opencode'),
   );
   const [showFavorites, setShowFavorites] = useState(false);
   const [selectingFavoriteKey, setSelectingFavoriteKey] = useState<string | null>(null);
   const [pricingByModelKey, setPricingByModelKey] = useState<Record<string, PricingLoadState>>({});
   const isPresent = useTransitionPresence(isOpen);
   const rootRef = useRef<HTMLDivElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const [popoverPosition, setPopoverPosition] = useState<ModelPickerPosition | null>(null);
   const pricingRequested = useRef(new Set<string>());
   const isMounted = useRef(true);
   useEffect(() => {
@@ -117,14 +127,69 @@ export function ModelPicker({
     if (!isOpen) return;
     void refreshOAuthRateLimits(models);
   }, [isOpen, models]);
-  useEffect(() => {
-    if (!isOpen) return;
-    const closeOnOutsidePointer = (event: PointerEvent) => {
-      if (event.target instanceof Node && !rootRef.current?.contains(event.target)) onOpenChange(false);
+  useLayoutEffect(() => {
+    if (!isOpen) {
+      setPopoverPosition(null);
+      return;
+    }
+    if (!isPresent) return;
+
+    const updatePosition = () => {
+      const trigger = rootRef.current?.querySelector<HTMLButtonElement>(':scope > button');
+      const popover = popoverRef.current;
+      if (!trigger || !popover) return;
+      const bounds = trigger.getBoundingClientRect();
+      const nextPosition = calculateModelPickerPosition(
+        bounds,
+        { width: popover.offsetWidth, height: popover.offsetHeight },
+        { width: document.documentElement.clientWidth, height: document.documentElement.clientHeight },
+      );
+      setPopoverPosition((current) =>
+        current !== null &&
+        current.top === nextPosition.top &&
+        current.left === nextPosition.left &&
+        current.width === nextPosition.width &&
+        current.maxHeight === nextPosition.maxHeight &&
+        current.placement === nextPosition.placement &&
+        current.alignment === nextPosition.alignment
+          ? current
+          : nextPosition,
+      );
     };
+
+    const closeOnOutsidePointer = (event: PointerEvent) => {
+      if (!(event.target instanceof Node)) return;
+      if (rootRef.current?.contains(event.target) || popoverRef.current?.contains(event.target)) return;
+      onOpenChange(false);
+    };
+
+    const closeOnEscape = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      onOpenChange(false);
+      rootRef.current?.querySelector<HTMLButtonElement>(':scope > button')?.focus();
+    };
+
+    updatePosition();
+    const positionFrame = window.requestAnimationFrame(updatePosition);
+    const resizeObserver = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(updatePosition);
+    const trigger = rootRef.current?.querySelector<HTMLButtonElement>(':scope > button');
+    if (trigger) resizeObserver?.observe(trigger);
+    if (rootRef.current) resizeObserver?.observe(rootRef.current);
+    if (popoverRef.current) resizeObserver?.observe(popoverRef.current);
+    window.addEventListener('resize', updatePosition);
+    window.addEventListener('scroll', updatePosition, true);
     document.addEventListener('pointerdown', closeOnOutsidePointer);
-    return () => document.removeEventListener('pointerdown', closeOnOutsidePointer);
-  }, [isOpen, onOpenChange]);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      window.cancelAnimationFrame(positionFrame);
+      resizeObserver?.disconnect();
+      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', updatePosition, true);
+      document.removeEventListener('pointerdown', closeOnOutsidePointer);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [isOpen, isPresent, onOpenChange]);
   useEffect(() => {
     if (!isOpen) return;
     const frame = window.requestAnimationFrame(() => searchInputRef.current?.focus());
@@ -134,6 +199,12 @@ export function ModelPicker({
   useEffect(() => {
     if (selectedModelProviderId) setSelectedProviderId(providerFamily(selectedModelProviderId));
   }, [selectedModelProviderId]);
+  useEffect(() => {
+    if (selectedModelProviderId || chatGptWorkspaceSelectionRequired) return;
+    if (models.some((model) => providerFamily(model.providerId) === selectedProviderId)) return;
+    const firstAvailableProviderId = models[0]?.providerId ?? modelProviders.find((provider) => provider.available)?.providerId;
+    if (firstAvailableProviderId) setSelectedProviderId(providerFamily(firstAvailableProviderId));
+  }, [chatGptWorkspaceSelectionRequired, modelProviders, models, selectedModelProviderId, selectedProviderId]);
   useEffect(() => {
     if (chatGptWorkspaceSelectionRequired && selectedModel === null) {
       setSelectedProviderId('chatgpt');
@@ -258,15 +329,17 @@ export function ModelPicker({
   };
   const selectedLabel = selectedModel
     ? selectedModel.displayName
-    : models.length > 0
+      : emptySelectionLabel ?? (models.length > 0
       ? t('modelPickerSelectModel')
       : chatGptWorkspaceSelectionRequired && selectedProviderId === 'chatgpt'
         ? t('chatGptWorkspaceSelectionRequired')
-        : emptyModelsLabel;
+        : emptyModelsLabel);
   return (
     <div className="relative min-w-0 max-w-full" ref={rootRef}>
       <Button
         aria-expanded={isOpen}
+        aria-describedby={triggerAriaDescribedBy}
+        aria-label={triggerAriaLabel}
         aria-haspopup="dialog"
         className="openchat-dropdown-trigger openchat-dropdown-trigger--subtle max-w-full justify-start"
         disabled={disabled}
@@ -282,14 +355,28 @@ export function ModelPicker({
         <span className="max-w-48 truncate text-sm">{selectedLabel}</span>
         <ChevronDown aria-hidden="true" className="shrink-0" size={15} />
       </Button>
-      {isPresent ? (
-        <div
+      {onToggleComparisonModel && comparisonSelectionKeys.length > 1 ? (
+        <Badge className="pointer-events-none absolute -right-1 -top-2 z-10" size="small" variant="neutral">
+          {comparisonSelectionKeys.length}
+        </Badge>
+      ) : null}
+      {isPresent && typeof document !== 'undefined'
+        ? createPortal(
+          <div
           aria-hidden={!isOpen}
           aria-label={t('connectedProvidersModels')}
-          className="openchat-dropdown-surface openchat-popover-enter openchat-popover-enter--bottom model-picker-popover absolute bottom-full left-0 z-20 mb-2 flex overflow-hidden"
+          className={`openchat-dropdown-surface openchat-popover-enter ${popoverPosition?.placement === 'above' ? (popoverPosition.alignment === 'right' ? 'openchat-popover-enter--bottom-right' : 'openchat-popover-enter--bottom') : (popoverPosition?.alignment === 'right' ? 'openchat-popover-enter--top-right' : '')} model-picker-popover fixed z-50 flex overflow-hidden`}
           data-state={isOpen ? 'open' : 'closed'}
           inert={!isOpen}
+          ref={popoverRef}
           role="dialog"
+          style={{
+            top: popoverPosition?.top ?? 0,
+            left: popoverPosition?.left ?? 0,
+            width: popoverPosition?.width,
+            maxHeight: popoverPosition?.maxHeight,
+            visibility: popoverPosition === null ? 'hidden' : 'visible',
+          }}
         >
           <nav
             aria-label={t('connectedProvidersModels')}
@@ -369,6 +456,22 @@ export function ModelPicker({
               ) : null}
             </div>
             <div className="openchat-scroll-area mt-2 min-h-0 flex-1 overflow-y-auto">
+              {emptyOptionLabel && onSelectEmpty ? (
+                <Button
+                  aria-pressed={selectedModel === null}
+                  className="min-h-10 w-full justify-start gap-2 px-2 text-left text-sm text-text"
+                  onClick={() => {
+                    onSelectEmpty();
+                    onOpenChange(false);
+                  }}
+                  size="small"
+                  type="button"
+                  variant="ghost"
+                >
+                  <Bot aria-hidden="true" className="shrink-0 text-secondary-icon" size={16} />
+                  <span className="truncate">{emptyOptionLabel}</span>
+                </Button>
+              ) : null}
               {showFavorites ? (
                 visibleFavorites.length > 0 ? (
                   <div className="grid gap-1">
@@ -387,7 +490,7 @@ export function ModelPicker({
                       return model ? (
                         <ModelOption
                           isFavorite
-                          isSelected={favoriteIsSelected}
+                          isSelected={canCompareFavorite ? comparisonSelectionKeys.includes(model.key) : favoriteIsSelected}
                           comparisonSelected={comparisonSelectionKeys.includes(model.key)}
                           comparisonSelectable={canCompareFavorite}
                           comparisonInstructionsId={comparisonInstructionsId}
@@ -468,7 +571,7 @@ export function ModelPicker({
                       return (
                         <ModelOption
                           isFavorite={isFavorite}
-                          isSelected={model.key === selectedModel?.key}
+                          isSelected={onToggleComparisonModel ? comparisonSelectionKeys.includes(model.key) : model.key === selectedModel?.key}
                           comparisonSelected={comparisonSelectionKeys.includes(model.key)}
                           comparisonSelectable={onToggleComparisonModel !== undefined}
                           comparisonInstructionsId={comparisonInstructionsId}
@@ -505,36 +608,25 @@ export function ModelPicker({
               )}
             </div>
             {onToggleComparisonModel ? (
-              <div className="mt-2 border-t border-border pt-3">
-                <p
-                  aria-live="polite"
-                  className="sr-only"
-                  id={comparisonInstructionsId}
-                  role="status"
-                >
-                  {t('comparisonSelectedCount', {
-                    count: comparisonSelectionKeys.length,
-                    maximum: maximumComparisonModels,
-                  })}
-                  {' · '}
-                  {t('comparisonShiftSelectHint')}
-                </p>
-                <div className="flex flex-wrap items-center justify-end gap-2">
-                  <Button
-                    disabled={!canStartComparison}
-                    onClick={onStartComparison}
-                    size="small"
-                    type="button"
-                    variant="primary"
-                  >
-                    {t('comparisonStartSelected', { count: comparisonSelectionKeys.length })}
-                  </Button>
-                </div>
-              </div>
+              <p
+                aria-live="polite"
+                className="sr-only"
+                id={comparisonInstructionsId}
+                role="status"
+              >
+                {t('comparisonSelectedCount', {
+                  count: comparisonSelectionKeys.length,
+                  maximum: maximumComparisonModels,
+                })}
+                {' · '}
+                {t('comparisonShiftSelectHint')}
+              </p>
             ) : null}
           </section>
-        </div>
-      ) : null}
+          </div>,
+          document.body,
+        )
+        : null}
     </div>
   );
 }
@@ -585,21 +677,14 @@ function ModelOption({
           <Button
             aria-describedby={comparisonSelectable ? comparisonInstructionsId : undefined}
             aria-pressed={isSelected}
-            className="min-h-14 min-w-0 w-full justify-start gap-2.5 rounded-control px-2 text-left text-sm text-text disabled:cursor-not-allowed disabled:opacity-50"
+            className={`min-h-14 min-w-0 w-full justify-start gap-2.5 rounded-control px-2 text-left text-sm text-text disabled:cursor-not-allowed disabled:opacity-50 ${comparisonSelected ? 'bg-selected' : ''}`}
             disabled={disabledReason !== null}
-            onClick={(event) => {
-              if (event.shiftKey && onToggleComparison) {
-                event.preventDefault();
+            onClick={() => {
+              if (onToggleComparison) {
                 onToggleComparison();
                 return;
               }
               onSelect();
-            }}
-            onKeyDown={(event) => {
-              if (!onToggleComparison || !isComparisonSelectionKeyboardShortcut(event.shiftKey, event.key)) return;
-              event.preventDefault();
-              event.stopPropagation();
-              onToggleComparison();
             }}
             size="small"
             type="button"
@@ -654,7 +739,6 @@ function ModelOption({
               </span></TitleTooltip>
             </span>
             {comparisonSelected ? <span className="sr-only">{t('comparisonModelSelected')}</span> : null}
-            {comparisonSelected ? <Check aria-hidden="true" className="shrink-0 text-accent" size={16} /> : null}
           </Button>
         </span>
       </Tooltip>

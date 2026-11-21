@@ -532,6 +532,14 @@ pub(super) fn clear_conversation_history(storage: &AppStorage) -> Result<Value, 
 }
 
 pub(super) fn list_messages(params: &Value, storage: &AppStorage) -> Result<Value, ServiceError> {
+    list_messages_with_response_budget(params, storage, MAX_MESSAGE_PAGE_RESPONSE_BYTES)
+}
+
+pub(super) fn list_messages_with_response_budget(
+    params: &Value,
+    storage: &AppStorage,
+    response_byte_budget: usize,
+) -> Result<Value, ServiceError> {
     let input = input_object(params)?;
     let conversation_id = required_safe_id(input, "conversationId")?;
     let limit = input
@@ -564,7 +572,7 @@ pub(super) fn list_messages(params: &Value, storage: &AppStorage) -> Result<Valu
     let candidate_limit = i64::try_from(limit + 1).map_err(|_| invalid_request_params())?;
     let limit = i64::try_from(limit).map_err(|_| invalid_request_params())?;
     let page_byte_budget =
-        i64::try_from(MAX_MESSAGE_PAGE_RESPONSE_BYTES).map_err(|_| invalid_request_params())?;
+        i64::try_from(response_byte_budget).map_err(|_| invalid_request_params())?;
     let rows = {
         let mut statement = connection
             .prepare(
@@ -1005,6 +1013,14 @@ fn log_message_save_failure(storage: &AppStorage, stage: &'static str, error: &S
 }
 
 pub(super) fn search_messages(params: &Value, storage: &AppStorage) -> Result<Value, ServiceError> {
+    search_messages_with_response_budget(params, storage, MAX_MESSAGE_SEARCH_RESPONSE_BYTES)
+}
+
+pub(super) fn search_messages_with_response_budget(
+    params: &Value,
+    storage: &AppStorage,
+    response_byte_budget: usize,
+) -> Result<Value, ServiceError> {
     let input = input_object(params)?;
     let query =
         optional_bounded_string(input, "query", MAX_SEARCH_QUERY_BYTES, false)?.unwrap_or_default();
@@ -1041,7 +1057,7 @@ pub(super) fn search_messages(params: &Value, storage: &AppStorage) -> Result<Va
     let candidate_limit = i64::try_from(limit + 1).map_err(|_| invalid_request_params())?;
     let limit = i64::try_from(limit).map_err(|_| invalid_request_params())?;
     let response_byte_budget =
-        i64::try_from(MAX_MESSAGE_SEARCH_RESPONSE_BYTES).map_err(|_| invalid_request_params())?;
+        i64::try_from(response_byte_budget).map_err(|_| invalid_request_params())?;
     let sql = "WITH candidates AS MATERIALIZED (
              SELECT id, conversation_id, created_at,
                     6 * length(CAST(content AS BLOB)) + 1024 AS estimated_row_bytes

@@ -30,7 +30,7 @@ import {
   setPersonalMemoryExcludedForConversation,
 } from '@shared/lib/preferences/personalMemory';
 import { readSharedInstructions } from '@shared/lib/preferences/sharedInstructions';
-import { type LocalServiceClient, LocalServiceError } from '@shared/lib/platform/local-service';
+import { type LocalServiceClient, type ServiceOperation, LocalServiceError } from '@shared/lib/platform/local-service';
 import { getAudioContext, playAssistantResponseAudio } from '@shared/lib/preferences/audioFeedback';
 import type { ChatState } from './chatStore';
 import { shouldRefreshLocalModelsAfterChatStart } from './chatStoreLocalModels';
@@ -107,7 +107,9 @@ export function createSendMessageAction(
     if (
       (!content && attachments.length === 0 && !resumeRunId && !isRetry && !userMessageAlreadySaved) ||
       state.isUpdatingConversationModel ||
-      (targetConvId !== null && state.sendingConversationIds.includes(targetConvId)) ||
+      (targetConvId !== null &&
+        state.sendingConversationIds.includes(targetConvId) &&
+        options?.comparisonModelKey === undefined) ||
       pendingQuestionBlocksSend ||
       conversationOperationBlocksSend
     )
@@ -155,7 +157,9 @@ export function createSendMessageAction(
         return false;
       }
     }
-    const selectedModel = options?.conversationId
+    const selectedModel = options?.modelKey
+      ? state.models.find((model) => model.key === options.modelKey)
+      : options?.conversationId
       ? state.models.find((model) => targetConversation && isSameRoute(model, targetConversation))
       : state.models.find((model) => model.key === state.selectedModelKey);
     if (!selectedModel) {
@@ -174,7 +178,8 @@ export function createSendMessageAction(
     set((current) => ({
       isSending: true,
       sendingConversationId: conversationId ?? current.sendingConversationId,
-      sendingConversationIds: conversationId && !current.sendingConversationIds.includes(conversationId)
+      sendingConversationIds: conversationId &&
+        (options?.comparisonModelKey !== undefined || !current.sendingConversationIds.includes(conversationId))
         ? [...current.sendingConversationIds, conversationId]
         : current.sendingConversationIds,
       interruptedRun:
@@ -230,6 +235,7 @@ export function createSendMessageAction(
       }
     });
     let requestOutcome: ProviderRequestOutcome | null = null;
+    let activeOperation: ServiceOperation | null = null;
     let checkpointFailureLogged = false;
     let unpersistedTextBytes = 0;
     let persistenceQueue = Promise.resolve();
@@ -339,7 +345,7 @@ export function createSendMessageAction(
       }
 
       let activeUserMessageId: string | null = null;
-      let assistantParentMessageId: string | null = null;
+      let assistantParentMessageId: string | null = options?.comparisonParentMessageId ?? null;
       if (isRetry && options?.excludedAssistantMessageId) {
         assistantParentMessageId =
           state.messages.find((m) => m.id === options.excludedAssistantMessageId)?.parentMessageId ?? null;
@@ -395,7 +401,7 @@ export function createSendMessageAction(
             ),
           }));
         }
-        options?.onUserMessageCommitted?.(targetConversationId);
+        options?.onUserMessageCommitted?.(targetConversationId, userMessageId);
       }
 
       const sharedInstructions = readSharedInstructions();
@@ -416,6 +422,7 @@ export function createSendMessageAction(
         .join('\n\n');
       const contextLimit = state.modelContextLimits[modelRouteKey(selectedModel)];
       const titleGeneration = await loadTitleGenerationRequest(state.models);
+      if (options?.isComparisonCancelled?.()) return false;
       sendStage = 'requestExecution';
       window.dispatchEvent(
         new CustomEvent('openchat-chat-request-started', { detail: { conversationId: targetConversationId } }),
@@ -424,8 +431,24 @@ export function createSendMessageAction(
         'chat.send',
         {
           conversationId: targetConversationId,
+          ...(options?.modelKey
+            ? {
+                modelRoute: {
+                  providerId: selectedModel.providerId,
+                  modelId: selectedModel.modelId,
+                  ...(selectedModel.connectionId ? { connectionId: selectedModel.connectionId } : {}),
+                  ...(selectedModel.workspaceId ? { workspaceId: selectedModel.workspaceId } : {}),
+                  ...(typeof routeParameters.apiKeyConnectionId === 'string'
+                    ? { apiKeyConnectionId: routeParameters.apiKeyConnectionId }
+                    : {}),
+                },
+              }
+            : {}),
           ...(resumeRunId ? { resumeRunId } : {}),
           ...(isRetry ? { excludedAssistantMessageId: options?.excludedAssistantMessageId } : {}),
+          ...(options?.comparisonParentMessageId
+            ? { comparisonPromptMessageId: options.comparisonParentMessageId }
+            : {}),
           ...(goalObjective ? { goal: true, goalObjective } : {}),
           ...(options?.reasoningEffort ? { reasoningEffort: options.reasoningEffort } : {}),
           ...(options?.fastMode === true ? { fastMode: true } : {}),
@@ -532,7 +555,20 @@ export function createSendMessageAction(
       set((current) => ({
         activeOperation: operation,
         activeOperationsByConversation: { ...current.activeOperationsByConversation, [targetConversationId]: operation },
+        ...(options?.comparisonModelKey === undefined
+          ? {}
+          : {
+              comparisonOperationsByConversation: {
+                ...current.comparisonOperationsByConversation,
+                [targetConversationId]: [
+                  ...(current.comparisonOperationsByConversation[targetConversationId] ?? []),
+                  operation,
+                ],
+              },
+            }),
       }));
+      activeOperation = operation;
+      if (options?.isComparisonCancelled?.()) await operation.cancel();
       const result = await operation.result;
       streamUi.flush();
       await persistenceQueue;
@@ -738,7 +774,12 @@ export function createSendMessageAction(
       }
       return resumeRunId === undefined && !userMessageAlreadySaved && !isRetry && userMessageSaved;
     } finally {
-      if (conversationId !== null) get().setProviderCompaction(conversationId, false);
+      if (
+        conversationId !== null &&
+        (options?.comparisonModelKey === undefined || !get().modelComparisonConversationIds.includes(conversationId))
+      ) {
+        get().setProviderCompaction(conversationId, false);
+      }
       window.dispatchEvent(new CustomEvent('openchat-chat-request-finished', { detail: { conversationId } }));
       streamUi.dispose();
       if (requestOutcome !== null) {
@@ -756,18 +797,36 @@ export function createSendMessageAction(
         }
       }
       set((current) => {
-        const activeOperationsByConversation = Object.fromEntries(
-          Object.entries(current.activeOperationsByConversation).filter(([id]) => id !== conversationId),
-        );
-        const sendingConversationIds = current.sendingConversationIds.filter((id) => id !== conversationId);
-        const pendingToolPermissionRequests = current.pendingToolPermissionRequests.filter(
-          (request) => request.conversationId !== conversationId,
-        );
+        const comparisonOperations = conversationId
+          ? (current.comparisonOperationsByConversation[conversationId] ?? []).filter(
+              (operation) => operation !== activeOperation,
+            )
+          : [];
+        const comparisonOperationsByConversation = { ...current.comparisonOperationsByConversation };
+        if (conversationId && comparisonOperations.length > 0) {
+          comparisonOperationsByConversation[conversationId] = comparisonOperations;
+        } else if (conversationId) {
+          delete comparisonOperationsByConversation[conversationId];
+        }
+        const activeOperationsByConversation = { ...current.activeOperationsByConversation };
+        if (conversationId && activeOperationsByConversation[conversationId] === activeOperation) {
+          const latestComparisonOperation = comparisonOperations.at(-1);
+          if (latestComparisonOperation) activeOperationsByConversation[conversationId] = latestComparisonOperation;
+          else delete activeOperationsByConversation[conversationId];
+        }
+        const sendingConversationIds = [...current.sendingConversationIds];
+        const sendingIndex = conversationId ? sendingConversationIds.indexOf(conversationId) : -1;
+        if (sendingIndex >= 0) sendingConversationIds.splice(sendingIndex, 1);
+        const pendingToolPermissionRequests =
+          options?.comparisonModelKey !== undefined && comparisonOperations.length > 0
+            ? current.pendingToolPermissionRequests
+            : current.pendingToolPermissionRequests.filter((request) => request.conversationId !== conversationId);
         return {
           isSending: sendingConversationIds.length > 0,
           sendingConversationIds,
           sendingConversationId: sendingConversationIds[0] ?? null,
           activeOperationsByConversation,
+          comparisonOperationsByConversation,
           activeOperation: Object.values(activeOperationsByConversation)[0] ?? null,
           pendingToolPermissionRequests,
           pendingToolPermissionRequest: pendingToolPermissionRequests[0] ?? null,

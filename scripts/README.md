@@ -26,8 +26,11 @@ runs `npm ci` from that root.
 
 `dev` builds the debug local-service sidecar and starts Tauri. The development
 task launches the Tauri CLI directly through Node, and Tauri launches Vite's JS
-entry point directly. On Windows, run interruptible interactive tasks directly
-through Node when you need Ctrl+C cleanup to stay under the CLI's control:
+entry point directly. On Linux, Windows-style absolute `OPENSSL_DIR` values
+inherited from the host are ignored so Cargo can use the Linux OpenSSL setup;
+native Linux paths remain in effect. On Windows, run interruptible interactive
+tasks directly through Node when you need Ctrl+C cleanup to stay under the CLI's
+control:
 
 ```powershell
 node ../../../scripts/run.mjs dev-test-profile --cleanup-profile
@@ -46,8 +49,10 @@ Tauri, Rust host, and frontend manifest/lockfile versions. Stable packaging also
 minor for compatible features, and patch for fixes. `check` runs Biome, frontend unit tests,
 locale and FSD import checks, the TypeScript/Vite asset build, Rust formatting,
 locked workspace checking, and locked Rust tests. It reports all task failures
-after attempting every check. `clean` previews generated build and bundle output
-directories by default. Pass `--apply` to remove the listed directories.
+after attempting every check. Rust tests use eight workers because Windows sandbox
+tests start native processes and the host's default test concurrency was unstable.
+`clean` previews generated build and bundle output directories by default. Pass
+`--apply` to remove the listed directories.
 
 `build` targets the current operating system because Tauri packaging uses native
 toolchains and system libraries. A version tag matching `v*` starts a stable release; pushes to

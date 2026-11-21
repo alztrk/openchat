@@ -299,21 +299,26 @@ pub(super) fn parse_responses_tool_calls(
                 .get("call_id")
                 .and_then(Value::as_str)
                 .filter(|value| !value.is_empty())
-                .ok_or_else(invalid_response_error)?;
+                .ok_or_else(|| invalid_tool_call_error("tool_call_id_missing"))?;
             let name = item
                 .get("name")
                 .and_then(Value::as_str)
                 .filter(|value| !value.is_empty())
-                .ok_or_else(invalid_response_error)?;
+                .ok_or_else(|| invalid_tool_call_error("tool_call_name_missing"))?;
             let arguments = item
                 .get("arguments")
                 .and_then(Value::as_str)
-                .ok_or_else(invalid_response_error)?;
-            if arguments.len() > tools::MAX_TOOL_ARGUMENT_BYTES {
-                return Err(invalid_response_error());
+                .ok_or_else(|| invalid_tool_call_error("tool_call_arguments_missing"))?;
+            let maximum_argument_bytes = if crate::design_tools::is_design_tool_name(name) {
+                crate::design_tools::MAX_DESIGN_TOOL_ARGUMENT_BYTES
+            } else {
+                tools::MAX_TOOL_ARGUMENT_BYTES
+            };
+            if arguments.len() > maximum_argument_bytes {
+                return Err(invalid_tool_call_error("tool_call_arguments_too_large"));
             }
-            let arguments =
-                serde_json::from_str(arguments).map_err(|_| invalid_response_error())?;
+            let arguments = serde_json::from_str(arguments)
+                .map_err(|_| invalid_tool_call_error("tool_call_arguments_invalid_json"))?;
             Ok(ToolCall {
                 id: id.to_owned(),
                 name: name.to_owned(),
@@ -321,6 +326,10 @@ pub(super) fn parse_responses_tool_calls(
             })
         })
         .collect()
+}
+
+fn invalid_tool_call_error(diagnostic_code: &'static str) -> ServiceError {
+    invalid_response_error().with_diagnostic_code(diagnostic_code)
 }
 
 pub(super) fn response_output_text(output_items: &[Value]) -> String {
@@ -599,6 +608,55 @@ mod tests {
                 .expect_err("invalid tool arguments must be rejected")
                 .code,
             "invalid_provider_response"
+        );
+    }
+
+    #[test]
+    fn allows_bounded_design_calls_above_the_general_tool_argument_limit() {
+        let padding = "x".repeat(crate::tools::MAX_TOOL_ARGUMENT_BYTES + 1);
+        let arguments = serde_json::to_string(&json!({ "nodes": [], "note": padding }))
+            .expect("design arguments serialize");
+        let items = [json!({
+            "type": "function_call",
+            "call_id": "call_1",
+            "name": "design_create_nodes",
+            "arguments": arguments
+        })];
+
+        assert!(parse_responses_tool_calls(&items).is_ok());
+    }
+
+    #[test]
+    fn keeps_design_call_arguments_bounded_and_general_tools_at_their_existing_limit() {
+        let oversized_design_arguments =
+            " ".repeat(crate::design_tools::MAX_DESIGN_TOOL_ARGUMENT_BYTES + 1);
+        let design_items = [json!({
+            "type": "function_call",
+            "call_id": "call_1",
+            "name": "design_create_nodes",
+            "arguments": oversized_design_arguments
+        })];
+        assert_eq!(
+            parse_responses_tool_calls(&design_items)
+                .expect_err("oversized Design calls must be rejected")
+                .diagnostic_code
+                .as_deref(),
+            Some("tool_call_arguments_too_large")
+        );
+
+        let oversized_general_arguments = " ".repeat(crate::tools::MAX_TOOL_ARGUMENT_BYTES + 1);
+        let general_items = [json!({
+            "type": "function_call",
+            "call_id": "call_2",
+            "name": "list_files",
+            "arguments": oversized_general_arguments
+        })];
+        assert_eq!(
+            parse_responses_tool_calls(&general_items)
+                .expect_err("general tools keep the existing limit")
+                .diagnostic_code
+                .as_deref(),
+            Some("tool_call_arguments_too_large")
         );
     }
 }

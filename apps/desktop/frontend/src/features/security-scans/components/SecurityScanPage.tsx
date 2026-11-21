@@ -48,7 +48,7 @@ function readSecurityScanSidebarWidth(): number {
 }
 
 import { Button, Checkbox, Dialog, Select, TitleTooltip } from '@shared/components';
-import { MessageList } from '@features/chat/components';
+import { MessageList, ModelPickerField } from '@features/chat/components';
 import type { ChatProject } from '@entities/project';
 import { useChatStore } from '@features/chat/state';
 import { formatFailureCodeMessage } from '@features/chat/state';
@@ -204,10 +204,6 @@ export function SecurityScanPage() {
   };
 
   const capableModels = useMemo(() => models.filter((model) => model.supportsTools !== false), [models]);
-  const providers = useMemo(
-    () => [...new Map(capableModels.map((model) => [model.providerId, model.providerId])).values()].sort(),
-    [capableModels],
-  );
 
   return (
     <SecurityScanClockProvider active={scans.some((scan) => scan.finishedAtUnixMs === null)}>
@@ -378,7 +374,6 @@ export function SecurityScanPage() {
               }}
               onError={(message) => setError(message)}
               projects={projects}
-              providers={providers}
             />
           ) : selectedScan ? (
             <ScanDetail
@@ -549,7 +544,6 @@ interface NewScanFormProps {
   onCreate(project: ChatProject, model: ChatModel, selectedRoots: string[], publicWebResearch: boolean): Promise<void>;
   onError(message: string): void;
   projects: ChatProject[];
-  providers: string[];
 }
 
 function NewScanForm({
@@ -559,23 +553,17 @@ function NewScanForm({
   onCreate,
   onError,
   projects,
-  providers,
 }: NewScanFormProps) {
   const { t } = useTranslation();
   const rootInputId = useId();
   const publicWebResearchInputId = useId();
   const [projectId, setProjectId] = useState(projects[0]?.id ?? '');
-  const [providerId, setProviderId] = useState(providers[0] ?? '');
   const [modelKey, setModelKey] = useState('');
   const [selectedRoots, setSelectedRoots] = useState<string[]>([]);
   const [publicWebResearch, setPublicWebResearch] = useState(false);
   const project = projects.find((candidate) => candidate.id === projectId) ?? null;
   const roots = useMemo(() => projectRoots(project), [project]);
-  const providerModels = useMemo(
-    () => capableModels.filter((model) => model.providerId === providerId),
-    [capableModels, providerId],
-  );
-  const model = providerModels.find((candidate) => candidate.key === modelKey) ?? providerModels[0] ?? null;
+  const model = capableModels.find((candidate) => candidate.key === modelKey) ?? capableModels[0] ?? null;
 
   useEffect(() => {
     if (!projects.some((candidate) => candidate.id === projectId)) {
@@ -583,16 +571,13 @@ function NewScanForm({
     }
   }, [projectId, projects]);
   useEffect(() => {
-    if (!providers.includes(providerId)) setProviderId(providers[0] ?? '');
-  }, [providerId, providers]);
-  useEffect(() => {
     setSelectedRoots(roots);
   }, [roots]);
   useEffect(() => {
-    if (!providerModels.some((candidate) => candidate.key === modelKey)) {
-      setModelKey(providerModels[0]?.key ?? '');
+    if (!capableModels.some((candidate) => candidate.key === modelKey)) {
+      setModelKey(capableModels[0]?.key ?? '');
     }
-  }, [modelKey, providerModels]);
+  }, [modelKey, capableModels]);
 
   const toggleRoot = (root: string, checked: boolean) => {
     setSelectedRoots((current) =>
@@ -678,21 +663,14 @@ function NewScanForm({
                 {t('securityScanNoModels')}
               </div>
             ) : (
-              <div className="grid gap-4 sm:grid-cols-2">
-                <Select
-                  label={t('securityScanProvider')}
-                  onChange={(event) => {
-                    setProviderId(event.target.value);
-                    setModelKey('');
-                  }}
-                  options={providers.map((id) => ({ value: id, label: id }))}
-                  value={providerId}
-                />
-                <Select
-                  label={t('securityScanModel')}
-                  onChange={(event) => setModelKey(event.target.value)}
-                  options={providerModels.map((item) => ({ value: item.key, label: item.displayName }))}
-                  value={model?.key ?? ''}
+              <div className="grid gap-2 text-sm font-medium text-text">
+                <span>{t('securityScanModel')}</span>
+                <ModelPickerField
+                  disabled={capableModels.length === 0}
+                  models={capableModels}
+                  onSelect={(selected) => setModelKey(selected.key)}
+                  selectedModel={model}
+                  triggerAriaLabel={t('securityScanModel')}
                 />
               </div>
             )}

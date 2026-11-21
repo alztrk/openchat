@@ -26,6 +26,7 @@ pub(super) struct ProviderRequestOptions<'a> {
     pub(super) security_scan_public_web_research: bool,
     pub(super) workspace_roots: &'a [std::path::PathBuf],
     pub(super) excluded_assistant_message_id: Option<&'a str>,
+    pub(super) comparison_sibling_assistant_message_ids: &'a [String],
     pub(super) custom_instructions: Option<&'a str>,
     pub(super) project_instructions: Option<&'a str>,
     pub(super) project_memory_context: Option<&'a str>,
@@ -56,6 +57,7 @@ pub(super) fn build_provider_request(
         security_scan_public_web_research,
         workspace_roots,
         excluded_assistant_message_id,
+        comparison_sibling_assistant_message_ids,
         custom_instructions,
         project_instructions,
         project_memory_context,
@@ -122,7 +124,12 @@ pub(super) fn build_provider_request(
     }
     let included_messages = stored_messages
         .iter()
-        .filter(|message| Some(message.id.as_str()) != excluded_assistant_message_id)
+        .filter(|message| {
+            Some(message.id.as_str()) != excluded_assistant_message_id
+                && !comparison_sibling_assistant_message_ids
+                    .iter()
+                    .any(|id| id == &message.id)
+        })
         .collect::<Vec<_>>();
     let last_message_id = included_messages.last().map(|message| message.id.clone());
     let messages = included_messages

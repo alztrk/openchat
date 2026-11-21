@@ -57,7 +57,11 @@ export interface ChatSendOptions {
   excludedAssistantMessageId?: string;
   userMessageAlreadySaved?: boolean;
   conversationId?: string | null;
-  onUserMessageCommitted?: (conversationId: string) => void;
+  modelKey?: string;
+  comparisonModelKey?: string;
+  comparisonParentMessageId?: string;
+  isComparisonCancelled?: () => boolean;
+  onUserMessageCommitted?: (conversationId: string, userMessageId?: string) => void;
 }
 
 export interface ChatToolPermissionRequest {
@@ -192,6 +196,8 @@ export interface ChatState {
   sendingConversationIds: string[];
   activeOperation: ServiceOperation | null;
   activeOperationsByConversation: Record<string, ServiceOperation>;
+  comparisonOperationsByConversation: Record<string, ServiceOperation[]>;
+  modelComparisonConversationIds: string[];
   modelError: boolean;
   errorCode: ChatErrorCode | null;
   errorMessage: string | null;
@@ -231,6 +237,7 @@ export interface ChatState {
   setPendingAttachmentCount(count: number): void;
   selectModel(key: string | null): void;
   selectConversationModel(key: string, conversationId?: string): Promise<boolean>;
+  setModelComparisonActive(conversationId: string, active: boolean): void;
   selectReasoningEffort(effort: string | null, targetConversationId?: string | null): Promise<void>;
   selectConversation(id: string, targetMessageId?: string | null, targetQuery?: string | null): Promise<void>;
   markConversationRead(conversationId: string, expectedMessageId: string): Promise<void>;
@@ -333,6 +340,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
   sendingConversationIds: [],
   activeOperation: null,
   activeOperationsByConversation: {},
+  comparisonOperationsByConversation: {},
+  modelComparisonConversationIds: [],
   modelError: false,
   errorCode: null,
   errorMessage: null,
@@ -409,6 +418,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
   ...createConversationsActions(set, get),
   refreshModels: createRefreshModelsAction(set, get, localServiceClient),
   refreshLocalModels: createRefreshLocalModelsAction(set, localServiceClient),
+
+  setModelComparisonActive(conversationId, active) {
+    set((current) => ({
+      modelComparisonConversationIds: active
+        ? current.modelComparisonConversationIds.includes(conversationId)
+          ? current.modelComparisonConversationIds
+          : [...current.modelComparisonConversationIds, conversationId]
+        : current.modelComparisonConversationIds.filter((id) => id !== conversationId),
+    }));
+  },
 
   selectModel(key) {
     const current = get();

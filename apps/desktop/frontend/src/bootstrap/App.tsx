@@ -56,8 +56,16 @@ import {
   writeLastSurface,
 } from '@features/app-settings/data/appPreferences';
 import { useAssistantExecutionPreferencesStore } from '@shared/lib/preferences/assistantExecutionPreferences';
-import { isAssistantAgentSnapshot, type AssistantAgentSnapshot } from '@shared/lib/preferences/assistantProfiles';
-import { expandWorkflowTemplate, type WorkflowTemplate } from '@features/chat/data/workflowTemplates';
+import type { AssistantAgentSnapshot } from '@shared/lib/preferences/assistantProfiles';
+import { expandWorkflowTemplate } from '@features/chat/data/workflowTemplateCore';
+import {
+  markInterruptedWorkflowRuns,
+  retryWorkflowRun,
+  runDueWorkflowAutomations,
+  runWorkflowAutomation,
+  type WorkflowExecutor,
+} from '@features/chat/data/workflowAutomationRuntime';
+import type { WorkflowRun } from '@features/chat/data/workflowAutomationCore';
 import { useChatDisplayPreferencesStore } from '@shared/lib/preferences/chatDisplayPreferences';
 import { useComposerPreferencesStore } from '@shared/lib/preferences/composerPreferences';
 import { useKeyboardShortcutsStore } from '@shared/lib/preferences/keyboardShortcutsStore';
@@ -66,7 +74,6 @@ import { localServiceClient } from '@shared/lib/platform/local-service';
 import { unifiedStorage } from '@shared/lib/platform/storage/unifiedStorage';
 import { getCurrentWindow, getVersion, invoke, isTauri, listen } from '@shared/lib/platform/tauri';
 import { BrandMark } from '@shared/components/BrandMark';
-import { toast } from '@shared/components';
 import { ToastContainer } from '@shared/components/ToastContainer';
 import { TitleTooltip } from '@shared/components/Tooltip';
 import { ConversationActionsHeader } from '@widgets/conversation-header/ConversationActionsHeader';
@@ -203,6 +210,8 @@ export function App() {
   );
   const serviceStatus = useChatStore((state) => state.serviceStatus);
   const conversations = useChatStore((state) => state.conversations);
+  const workflowModels = useChatStore((state) => state.models);
+  const workflowProjects = useChatStore((state) => state.projects);
   const activeConversationId = useChatStore((state) => state.activeConversationId);
   const activeGoal = useChatStore((state) => state.activeGoal);
   const isChangingGoal = useChatStore((state) => state.isChangingGoal);
@@ -888,55 +897,82 @@ export function App() {
     workflows: t('workflowTemplatesTitle'),
   }[activeSurface];
 
-  const startWorkflowConversation = (
-    prompt: string,
-    template: WorkflowTemplate,
-    parameterValues: Record<string, string>,
-  ) => {
-    const afterResponsePrompt = template.afterResponsePrompt
-      ? expandWorkflowTemplate(template.afterResponsePrompt, parameterValues).trim()
-      : '';
-    let agentSnapshot: AssistantAgentSnapshot | null = null;
-    if (template.systemPrompt !== undefined || template.tools !== undefined || afterResponsePrompt.length > 0) {
-      const candidate = {
-        id: crypto.randomUUID(),
-        name: template.name,
-        instructions: template.systemPrompt ?? '',
-        responseStyle: 'balanced' as const,
-        toolAllowlist: template.tools ?? null,
-        ...(afterResponsePrompt.length > 0 ? { workflowHooks: { afterResponsePrompt } } : {}),
-      };
-      if (!isAssistantAgentSnapshot(candidate)) {
-        toast.error(t('workflowTemplateAgentInvalid'));
-        return;
-      }
-      agentSnapshot = candidate;
-    }
-
+  const workflowExecutor = useCallback<WorkflowExecutor>(async (workflow, onStepCompleted) => {
     const chatStore = useChatStore.getState();
-    const activeConversation = chatStore.conversations.find(
-      (conversation) => conversation.id === chatStore.activeConversationId,
+    if (chatStore.temporaryChat) throw new Error('A temporary chat is active.');
+    const model = chatStore.models.find(
+      (item) => item.providerId === workflow.providerId && item.modelId === workflow.modelId,
     );
-    const contextProjectId = activeConversation?.projectId ?? chatStore.pendingProjectId;
-    let templateModel: (typeof chatStore.models)[number] | null = null;
-    if (template.providerId && template.modelId) {
-      const matches = chatStore.models.filter(
-        (model) => model.providerId === template.providerId && model.modelId === template.modelId,
-      );
-      if (matches.length === 1) templateModel = matches[0] ?? null;
-      else toast.warning(t('workflowTemplateModelUnavailable'));
+    if (!model) throw new Error('The workflow model is not available.');
+    if (workflow.projectId && !chatStore.projects.some((project) => project.id === workflow.projectId)) {
+      throw new Error('The workflow project is not available.');
     }
 
-    requestTemporaryChatExit(() => {
-      setPendingComposerDraft(prompt);
-      navigateSurface('chats');
-      if (agentSnapshot) {
-        chatStore.startNewChatWithAgent(agentSnapshot);
-        if (contextProjectId) useChatStore.getState().setPendingProjectId(contextProjectId);
-      } else chatStore.startNewChat(contextProjectId);
-      if (templateModel) useChatStore.getState().selectModel(templateModel.key);
-    });
-  };
+    navigateSurface('chats');
+    chatStore.startNewChat(workflow.projectId ?? null);
+    useChatStore.getState().selectModel(model.key);
+    let conversationId: string | null = null;
+    let completedSteps = 0;
+
+    for (const step of workflow.steps) {
+      const prompt = expandWorkflowTemplate(step.prompt, workflow.inputDefaults);
+      const sent = await useChatStore.getState().sendMessage(prompt, [], undefined, undefined, {
+        mode: 'goal',
+        ...(conversationId ? { conversationId } : {}),
+        onUserMessageCommitted: (committedConversationId) => {
+          conversationId = committedConversationId;
+        },
+      });
+      if (!sent) throw new Error('The workflow step was not sent.');
+      conversationId ??= useChatStore.getState().activeConversationId;
+      if (!conversationId) throw new Error('The workflow conversation was not created.');
+      const current = useChatStore.getState();
+      if (
+        current.activeGoal?.conversationId === conversationId &&
+        current.activeGoal.status !== 'completed'
+      ) {
+        throw new Error('The workflow needs user input before it can continue.');
+      }
+      if (current.pendingToolPermissionRequests.some((request) => request.conversationId === conversationId)) {
+        throw new Error('The workflow is waiting for tool approval.');
+      }
+      completedSteps += 1;
+      await onStepCompleted(completedSteps, conversationId);
+    }
+
+    if (!conversationId) throw new Error('The workflow conversation was not created.');
+    return { conversationId, completedSteps };
+  }, [navigateSurface]);
+
+  const runWorkflow = (workflowId: string, scheduledAt: number | null): Promise<WorkflowRun | null> =>
+    runWorkflowAutomation(workflowId, scheduledAt, workflowExecutor);
+
+  const retryWorkflow = (runId: string): Promise<WorkflowRun | null> => retryWorkflowRun(runId, workflowExecutor);
+
+  useEffect(() => {
+    if (!isTauri() || serviceStatus !== 'ready') return;
+    let disposed = false;
+    const checkSchedules = () => {
+      if (disposed || document.visibilityState === 'hidden') return;
+      void runDueWorkflowAutomations(workflowExecutor).catch((cause: unknown) => {
+        globalThis.reportError(new Error('Due workflow automations could not be started.', { cause }));
+      });
+    };
+    void markInterruptedWorkflowRuns()
+      .then(() => checkSchedules())
+      .catch((cause: unknown) => {
+        globalThis.reportError(new Error('Interrupted workflow runs could not be recovered.', { cause }));
+      });
+    const interval = window.setInterval(checkSchedules, 30_000);
+    window.addEventListener('focus', checkSchedules);
+    document.addEventListener('visibilitychange', checkSchedules);
+    return () => {
+      disposed = true;
+      window.clearInterval(interval);
+      window.removeEventListener('focus', checkSchedules);
+      document.removeEventListener('visibilitychange', checkSchedules);
+    };
+  }, [serviceStatus, workflowExecutor]);
 
   const changeThemePreference = (nextTheme: ThemePreference) => {
     setThemeSaveFailed(false);
@@ -1387,7 +1423,12 @@ export function App() {
             </div>
           ) : activeSurface === 'workflows' ? (
             <Suspense fallback={<p aria-live="polite" className="px-6 py-8 text-sm text-secondary-text" role="status">{t('workflowTemplatesTitle')}</p>}>
-              <WorkflowsPage onStartConversation={startWorkflowConversation} />
+              <WorkflowsPage
+                models={workflowModels}
+                onRetryWorkflow={retryWorkflow}
+                onRunWorkflow={runWorkflow}
+                projects={workflowProjects}
+              />
             </Suspense>
           ) : activeSurface === 'security' ? (
             <Suspense

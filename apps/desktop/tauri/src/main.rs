@@ -220,7 +220,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .ok_or_else(|| std::io::Error::other("Main window configuration is unavailable"))?;
             let mut main_window_builder =
                 tauri::WebviewWindowBuilder::from_config(app.handle(), main_window_config)?
-                    .visible(false);
+                    .visible(false)
+                    .on_permission_request(main_webview_permission_request);
             #[cfg(feature = "startup-benchmark")]
             {
                 main_window_builder = main_window_builder.initialization_script(
@@ -717,7 +718,8 @@ fn recreate_main_webview(
         .ok_or_else(|| "Main window configuration is unavailable".to_owned())?;
     let mut builder = tauri::WebviewWindowBuilder::from_config(app_handle, window_config)
         .map_err(|error| error.to_string())?
-        .visible(false);
+        .visible(false)
+        .on_permission_request(main_webview_permission_request);
     if let Some(profile_root) = profile_root.as_ref() {
         let webview_data_directory = ensure_profile_child_directory(profile_root, "webview")
             .map_err(|error| error.to_string())?;
@@ -741,6 +743,62 @@ fn recreate_main_webview(
         None => window_state::restore_window_state(&window),
     };
     restore_result.map_err(|error| error.to_string())
+}
+
+fn main_webview_permission_request(
+    webview: tauri::Webview,
+    kind: tauri::webview::PermissionKind,
+) -> tauri::webview::PermissionResponse {
+    if kind == tauri::webview::PermissionKind::Microphone
+        && webview.label() == "main"
+        && webview.url().is_ok_and(is_openchat_app_url)
+    {
+        tauri::webview::PermissionResponse::Allow
+    } else {
+        tauri::webview::PermissionResponse::Default
+    }
+}
+
+fn is_openchat_app_url(url: tauri::Url) -> bool {
+    match (url.scheme(), url.host_str(), url.port()) {
+        ("tauri", Some("localhost"), None) => true,
+        ("http" | "https", Some("tauri.localhost"), None) => true,
+        ("http", Some("127.0.0.1"), Some(5173)) => cfg!(debug_assertions),
+        _ => false,
+    }
+}
+
+#[cfg(test)]
+mod webview_permission_tests {
+    use super::is_openchat_app_url;
+
+    #[test]
+    fn allows_microphone_only_for_known_local_app_origins() {
+        let urls = ["tauri://localhost/", "http://tauri.localhost/"];
+
+        for value in urls {
+            let url = tauri::Url::parse(value).expect("test URL is valid");
+            assert!(is_openchat_app_url(url));
+        }
+
+        if cfg!(debug_assertions) {
+            let dev_url =
+                tauri::Url::parse("http://127.0.0.1:5173/").expect("development URL is valid");
+            assert!(is_openchat_app_url(dev_url));
+        }
+    }
+
+    #[test]
+    fn rejects_external_and_unexpected_local_origins() {
+        for value in [
+            "https://example.com/",
+            "http://tauri.localhost.attacker.example/",
+            "http://127.0.0.1:5174/",
+        ] {
+            let url = tauri::Url::parse(value).expect("test URL is valid");
+            assert!(!is_openchat_app_url(url));
+        }
+    }
 }
 
 #[cfg(windows)]

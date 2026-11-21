@@ -6,7 +6,11 @@ Completed work is summarized from repository history and grouped by the relevant
 
 ### Changed
 
+- Show bundled engine-specific marks for llama.cpp, SGLang, and vLLM in provider and local engine surfaces.
 - Moved local speech model installation into Voice settings and added microphone selection plus supported output routing for notification sounds. Voice capture now releases microphone resources on stop, app hide, and recorder timeout; it supports pause, audio review before local transcription, automatic speech-language detection, and draft insertion only after user confirmation.
+- Refresh missing or stale models.dev pricing when loading Usage Statistics so matching ChatGPT OAuth models can show estimated request costs.
+- Moved local speech model installation and its progress controls from the chat composer to a dedicated Voice settings section.
+- Added microphone selection and supported output routing for notification sounds in Audio settings; voice capture now releases the microphone on stop, app hide, and recorder timeout, keeps the composer hidden during capture, supports pause and audio review before local Whisper transcription, automatically detects the spoken language, appends text only after user confirmation, and disables the microphone until the local speech model is available.
 - Try official provider website favicons on Connections credential cards, retaining bundled icons when remote favicons are unavailable.
 - Removed the recent unsuccessful generations section from the Design image library.
 - Grouped tool activity above assistant responses with expandable per-tool details and elapsed response time.
@@ -19,19 +23,22 @@ Completed work is summarized from repository history and grouped by the relevant
 - Add native macOS DMG packaging for Intel and Apple Silicon, and include checksummed installers in desktop releases.
 - Added separate preview releases and stable tagged releases, with package SHA-256 verification and published checksums.
 - Added a validated SPDX 2.3 source dependency SBOM to tagged desktop releases.
-- Added side-by-side comparisons for two or three selected models, independent saved conversations, response streams, follow-up messages, and comparison metrics.
-- Added an editable Design workspace with structured documents, reusable components and styles, prototype interactions and transitions, revision comparison, alignment guides, portable archives, and SVG, PNG, PDF, and HTML export.
+- Preserve PDF attachments as encrypted original documents and send them as native inputs on vision-capable OpenAI Responses routes, with local text extraction for other providers.
+- Added in-chat model comparisons: selected models start together from one saved prompt, with responses available in tabs in the same conversation.
+- Added a dedicated Design workspace for editable, reusable interface designs with structured vector paths, components, variants, click and hover prototype triggers, selectable transitions, editable motion keyframes, canvas comments, cross-document text styles, revision comparison, object snapping with alignment guides, portable document archives, and SVG, PNG, PDF, and HTML handoff; Image Studio remains a separate sidebar page.
 - Added prototype preview controls for destination frames, triggers, presentations, and transitions.
-- Added Design text typography controls, reusable text and color styles, component variants and instances, plus canvas alignment and distribution actions.
+- Added text typography controls and reusable text and color styles, component variant and instance controls, and canvas alignment and distribution actions in Design.
+- Added user-triggered local text-to-speech playback for completed assistant responses.
 - Added reusable parameterized workflow templates with prompt variable expansion, durable persistence, validation, and JSON import/export.
 - Added optional before-start and after-response prompts to reusable workflows; successful responses place the follow-up in the empty composer for review without sending it.
 - Added grouping for selected Design layers, keeping their positions while wrapping them in a frame.
 - Added Amazon Bedrock Converse and ConverseStream protocol support, AWS SigV4 authentication, regional runtime configuration, and EventStream binary decoding.
-- Added user-triggered local text-to-speech playback for completed assistant responses.
 - Added Microsoft AI Foundry and Azure OpenAI model routing, deployment identifier configuration, API versioning, and credential headers.
 
 ### Fixed
 
+- Correctly read SGLang runtime markers on WSL so managed runtimes can be uninstalled and reinstalled while keeping downloaded models.
+- Abort model comparisons and remove empty comparison chats when a pane cannot load its saved history.
 - Limit WebView2 browser-process recovery to one recreation per app session, even if the replacement renderer reports ready before crashing again, then show a localized native error.
 
 ## 2026-11-11

@@ -30,23 +30,37 @@ export function loadLocalEnv() {
   }
 }
 
-export function ensureOpenSSLEnvironment() {
-  if (process.env.OPENSSL_DIR) return;
-  if (process.platform === 'win32') {
-    const candidates = [
-      path.join(getWorkspaceRoot(), 'vendor', 'openssl-windows-x64'),
-      path.join(process.env.ProgramFiles ?? 'C:\\Program Files', 'OpenSSL-Win64'),
-    ];
-    for (const candidate of candidates) {
-      if (
-        existsSync(path.join(candidate, 'include', 'openssl', 'ssl.h')) &&
-        (existsSync(path.join(candidate, 'lib', 'libcrypto.lib')) ||
-          existsSync(path.join(candidate, 'lib', 'VC', 'static', 'libcrypto64MT.lib')))
-      ) {
-        process.env.OPENSSL_DIR = candidate;
-        process.env.OPENSSL_NO_VENDOR = '1';
-        break;
-      }
+export function ensureOpenSSLEnvironment({
+  environment = process.env,
+  platform = process.platform,
+  fileExists = existsSync,
+  workspaceRoot = getWorkspaceRoot(),
+} = {}) {
+  if (platform !== 'win32') {
+    if (
+      environment.OPENSSL_DIR &&
+      path.win32.isAbsolute(environment.OPENSSL_DIR) &&
+      !path.posix.isAbsolute(environment.OPENSSL_DIR)
+    ) {
+      delete environment.OPENSSL_DIR;
+    }
+    return;
+  }
+
+  if (environment.OPENSSL_DIR) return;
+  const candidates = [
+    path.join(workspaceRoot, 'vendor', 'openssl-windows-x64'),
+    path.join(environment.ProgramFiles ?? 'C:\\Program Files', 'OpenSSL-Win64'),
+  ];
+  for (const candidate of candidates) {
+    if (
+      fileExists(path.join(candidate, 'include', 'openssl', 'ssl.h')) &&
+      (fileExists(path.join(candidate, 'lib', 'libcrypto.lib')) ||
+        fileExists(path.join(candidate, 'lib', 'VC', 'static', 'libcrypto64MT.lib')))
+    ) {
+      environment.OPENSSL_DIR = candidate;
+      environment.OPENSSL_NO_VENDOR = '1';
+      break;
     }
   }
 }

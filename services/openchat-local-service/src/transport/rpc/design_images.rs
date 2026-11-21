@@ -133,6 +133,20 @@ pub(super) fn dispatch(
                 "dataBase64": STANDARD.encode(bytes),
             }))
         }
+        "design.images.import" => {
+            let mime_type = required_string(params, "mimeType")?;
+            let encoded = required_string(params, "dataBase64")?;
+            let maximum_encoded_bytes = image_library::MAX_IMPORTED_IMAGE_BYTES.div_ceil(3) * 4;
+            if encoded.len() > maximum_encoded_bytes {
+                return Err(invalid_request());
+            }
+            let bytes = STANDARD.decode(encoded).map_err(|_| invalid_request())?;
+            if bytes.len() > image_library::MAX_IMPORTED_IMAGE_BYTES {
+                return Err(invalid_request());
+            }
+            let image = image_library::import_design_image(storage, mime_type, &bytes)?;
+            Ok(json!({"image": image}))
+        }
         _ => Err(ServiceError::new(
             "method_not_found",
             "The requested Design image library method is not available.",

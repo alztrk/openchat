@@ -1,10 +1,11 @@
 //! Owns short-lived archive files that are waiting for a native save dialog.
 
 use std::{
+    collections::HashMap,
     fs::{self, OpenOptions},
     io::Write,
     path::{Path, PathBuf},
-    sync::{Mutex, TryLockError},
+    sync::{Arc, Mutex, OnceLock, TryLockError, Weak},
     time::{Duration, SystemTime},
 };
 
@@ -17,7 +18,21 @@ const ARCHIVE_EXPORT_DIRECTORY: &str = "archive-exports";
 const MARKER_CONTENT_PREFIX: &str = "openchat-archive-export-v1\n";
 const PENDING_EXPORT_TTL: Duration = Duration::from_secs(6 * 60 * 60);
 
-static EXPORT_LOCK: Mutex<()> = Mutex::new(());
+static EXPORT_LOCKS: OnceLock<Mutex<HashMap<PathBuf, Weak<Mutex<()>>>>> = OnceLock::new();
+
+fn export_lock(storage_root: &Path) -> Arc<Mutex<()>> {
+    let locks = EXPORT_LOCKS.get_or_init(|| Mutex::new(HashMap::new()));
+    let mut locks = locks.lock().unwrap_or_else(|error| error.into_inner());
+    locks.retain(|_, lock| lock.strong_count() > 0);
+
+    if let Some(lock) = locks.get(storage_root).and_then(Weak::upgrade) {
+        return lock;
+    }
+
+    let lock = Arc::new(Mutex::new(()));
+    locks.insert(storage_root.to_path_buf(), Arc::downgrade(&lock));
+    lock
+}
 
 /// A temporary encrypted archive reserved until the Tauri host presents a save dialog.
 pub(crate) struct PendingArchiveExport {
@@ -38,12 +53,13 @@ impl PendingArchiveExport {
             return Err(storage_failed());
         }
 
-        let _guard = match EXPORT_LOCK.try_lock() {
+        let root = fs::canonicalize(storage_root).map_err(|_| storage_failed())?;
+        let lock = export_lock(&root);
+        let _guard = match lock.try_lock() {
             Ok(guard) => guard,
             Err(TryLockError::WouldBlock) => return Err(export_busy()),
             Err(TryLockError::Poisoned(error)) => error.into_inner(),
         };
-        let root = fs::canonicalize(storage_root).map_err(|_| storage_failed())?;
         let cache_directory = storage_root.join("cache");
         ensure_directory(&cache_directory)?;
         let export_directory = cache_directory.join(ARCHIVE_EXPORT_DIRECTORY);
@@ -222,7 +238,9 @@ fn storage_failed() -> ServiceError {
 mod tests {
     use std::{fs, path::PathBuf};
 
-    use super::{PENDING_EXPORT_TTL, PendingArchiveExport, is_export_id, is_supported_extension};
+    use super::{
+        PENDING_EXPORT_TTL, PendingArchiveExport, export_lock, is_export_id, is_supported_extension,
+    };
     use uuid::Uuid;
 
     struct TestDirectory(PathBuf);
@@ -250,6 +268,21 @@ mod tests {
         assert!(is_supported_extension("openchatbackup"));
         assert!(is_supported_extension("openchatprofilebackup"));
         assert!(!is_supported_extension("json"));
+    }
+
+    #[test]
+    fn export_locks_are_shared_only_by_the_same_profile_root() {
+        let first = TestDirectory::new();
+        let second = TestDirectory::new();
+        let first_root = fs::canonicalize(&first.0).expect("canonicalize first profile root");
+        let second_root = fs::canonicalize(&second.0).expect("canonicalize second profile root");
+
+        let first_lock = export_lock(&first_root);
+        let same_profile_lock = export_lock(&first_root);
+        let second_lock = export_lock(&second_root);
+
+        assert!(std::sync::Arc::ptr_eq(&first_lock, &same_profile_lock));
+        assert!(!std::sync::Arc::ptr_eq(&first_lock, &second_lock));
     }
 
     #[test]

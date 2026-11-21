@@ -7,6 +7,8 @@ import {
 import type { ThemePreference } from '@features/app-settings/components/GeneralSettingsSection';
 import { readInitialSurface, writeLastSurface } from '@features/app-settings/data/appPreferences';
 import { invoke } from '@shared/lib/platform/tauri';
+import { useChatStore } from '@app/runtime/chatStore';
+import type { WorkflowRun } from '@features/chat/data/workflowAutomationCore';
 // eslint-disable-next-line @typescript-eslint/no-unused-vars -- reserved for future surface routing needs
 void invoke;
 
@@ -61,8 +63,19 @@ export function AppRouter({
   appearance = { appScale: '', appDensity: '', appFont: '', conversationTextSize: 'normal', conversationWidth: 'medium' } as unknown as AppearancePreferences,
   onOpenSettings = () => { /* noop */ },
   onUsePrompt = () => { /* noop */ },
-}: { theme?: ThemePreference; appearance?: AppearancePreferences; onOpenSettings?: () => void; onUsePrompt?: (draft: string) => void }) {
+  onRunWorkflow = async () => null,
+  onRetryWorkflow = async () => null,
+}: {
+  theme?: ThemePreference;
+  appearance?: AppearancePreferences;
+  onOpenSettings?: () => void;
+  onUsePrompt?: (draft: string) => void;
+  onRunWorkflow?: (workflowId: string, scheduledAt: number | null) => Promise<WorkflowRun | null>;
+  onRetryWorkflow?: (runId: string) => Promise<WorkflowRun | null>;
+}) {
   const { activeSurface, surfaceHeadingRef } = useAppRouter();
+  const models = useChatStore((state) => state.models);
+  const projects = useChatStore((state) => state.projects);
   return (
     <main aria-label={activeSurface} className="app-main-surface relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden" key={activeSurface} ref={surfaceHeadingRef} tabIndex={-1}>
       {activeSurface === 'chats' && (
@@ -87,7 +100,9 @@ export function AppRouter({
         <Suspense fallback={null}><SecurityScanPage /></Suspense>
       )}
       {activeSurface === 'workflows' && (
-        <Suspense fallback={null}><WorkflowsPage onStartConversation={(prompt) => onUsePrompt(prompt)} /></Suspense>
+        <Suspense fallback={null}>
+          <WorkflowsPage models={models} onRetryWorkflow={onRetryWorkflow} onRunWorkflow={onRunWorkflow} projects={projects} />
+        </Suspense>
       )}
       {activeSurface !== 'chats' && activeSurface !== 'models' && activeSurface !== 'design' && activeSurface !== 'images' && activeSurface !== 'security' && activeSurface !== 'workflows' && (
         <Suspense fallback={null}>

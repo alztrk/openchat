@@ -11,13 +11,13 @@ import {
 import { runInterruptibleCommand } from '../shared/session.mjs';
 import { reserveTemporaryTestProfileRoot, temporaryTestProfilePath } from '../shared/profile.mjs';
 import { removeTemporaryTestProfile } from '../shared/profile-clean.mjs';
-import { getFrontendDirectory, getTauriDirectory, getWorkspaceRoot } from '../shared/runner.mjs';
+import { getTauriDirectory, getWorkspaceRoot } from '../shared/runner.mjs';
 import { ensureNoArguments } from '../help.mjs';
 
 // `tauri dev` compiles the host before launching the app; the runtime timer is recorded inside the app.
 const STARTUP_BENCHMARK_TIMEOUT_MS = 180_000;
 
-const tauriCliPath = path.join(getFrontendDirectory(), 'node_modules', '@tauri-apps', 'cli', 'tauri.js');
+const tauriCliPath = path.join(getWorkspaceRoot(), 'node_modules', '@tauri-apps', 'cli', 'tauri.js');
 const tauriShutdownGraceMs = process.platform === 'win32' ? 10_000 : undefined;
 
 function tauriDevConfigArgs() {
