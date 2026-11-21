@@ -100,7 +100,7 @@ fn wsl_runtime_release_probe_reads_the_serialized_marker_field() {
     let marker = RuntimeMarker {
         engine_id: Engine::Sglang.id().to_owned(),
         release_tag: SGLANG_RELEASE.to_owned(),
-        variant_id: Engine::Sglang.variant(true),
+        variant_id: Engine::Sglang.variant(cfg!(windows)),
     };
     let marker_json = serde_json::to_vec(&marker).expect("runtime marker should serialize");
     let parsed = parse_runtime_marker(&marker_json, Engine::Sglang)
