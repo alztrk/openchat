@@ -827,6 +827,7 @@ fn show_native_webview_failure(title: &str, message: &str) {
 #[cfg(windows)]
 fn webview2_runtime_version() -> String {
     let mut version = PWSTR::null();
+    // SAFETY: Passing a null browser executable folder queries the system WebView2 Runtime and writes the CoTaskMem-allocated string pointer into `version`.
     let result =
         unsafe { GetAvailableCoreWebView2BrowserVersionString(PCWSTR::null(), &mut version) };
     let version = CoTaskMemPWSTR::from(version);
