@@ -8,8 +8,8 @@ use std::sync::LazyLock;
 
 use tiktoken::{encoding_for_model, get_encoding};
 
-static UNIVERSAL_BPE: LazyLock<&'static tiktoken::CoreBpe> =
-    LazyLock::new(|| get_encoding("o200k_base").expect("o200k_base must be available"));
+static UNIVERSAL_BPE: LazyLock<Option<&'static tiktoken::CoreBpe>> =
+    LazyLock::new(|| get_encoding("o200k_base"));
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum TokenEstimateSource {
@@ -251,7 +251,11 @@ fn heuristic_text_tokens(text: &str) -> i64 {
         return i64::try_from(text.len()).unwrap_or(i64::MAX);
     }
 
-    i64::try_from(UNIVERSAL_BPE.count(text)).unwrap_or(i64::MAX)
+    if let Some(bpe) = *UNIVERSAL_BPE {
+        i64::try_from(bpe.count(text)).unwrap_or(i64::MAX)
+    } else {
+        i64::try_from(text.len()).unwrap_or(i64::MAX)
+    }
 }
 
 #[cfg(test)]

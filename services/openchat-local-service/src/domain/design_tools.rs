@@ -194,7 +194,8 @@ fn tool(name: &str, description: &str, parameters: Value) -> ToolDefinition {
 }
 
 fn node_schema() -> Value {
-    let mut properties = json!({
+    let mut properties = serde_json::Map::new();
+    if let Value::Object(base_properties) = json!({
         "id": { "type": "string", "minLength": 1, "maxLength": 128 },
         "type": { "type": "string", "enum": ["frame", "rectangle", "ellipse", "path", "text", "image", "imported-svg"] },
         "name": { "type": "string", "minLength": 1, "maxLength": 256 }, "pageId": { "type": "string" },
@@ -214,18 +215,19 @@ fn node_schema() -> Value {
         "lineHeight": { "type": "number", "exclusiveMinimum": 0 }, "letterSpacing": { "type": "number" },
         "textAlign": { "type": "string", "enum": ["left", "center", "right"] },
         "colorVariableId": { "type": "string" }, "textStyleId": { "type": "string" }
-    })
-    .as_object()
-    .cloned()
-    .expect("node properties are an object");
-    properties.extend(json!({
+    }) {
+        properties.extend(base_properties);
+    }
+    if let Value::Object(additional_properties) = json!({
         "effects": effects_schema(), "constraints": constraints_schema(),
         "responsiveOverrides": responsive_overrides_schema(),
         "svg": { "type": "string", "maxLength": 32768 }, "tokens": canvas_tokens_schema(),
         "assetId": { "type": "string" }, "mimeType": { "type": "string", "enum": ["image/png", "image/jpeg", "image/webp"] },
         "sizeBytes": { "type": "integer", "minimum": 1 }, "fit": { "type": "string", "enum": ["cover", "contain"] },
         "altText": { "type": "string", "maxLength": 2000 }, "componentRef": component_reference_schema()
-    }).as_object().cloned().expect("additional node properties are an object"));
+    }) {
+        properties.extend(additional_properties);
+    }
     json!({
         "type": "object",
         "description": "One editable Design canvas node. Coordinates are in canvas units. Children use their parent frame's coordinate space. Supply fields required by the selected type.",

@@ -4,6 +4,7 @@
 use std::{
     collections::VecDeque,
     marker::PhantomData,
+    mem::ManuallyDrop,
     ops::{Deref, DerefMut},
     path::{Path, PathBuf},
     rc::Rc,
@@ -63,7 +64,7 @@ pub struct QueuedConnection<'a> {
 /// active write transactions in SQLite WAL mode.
 pub struct PooledReaderConnection<'a> {
     queue: &'a DatabaseQueue,
-    connection: Option<Connection>,
+    connection: ManuallyDrop<Connection>,
     _not_send: PhantomData<Rc<()>>,
 }
 
@@ -321,7 +322,7 @@ impl<'a> PooledReaderConnection<'a> {
     fn new(queue: &'a DatabaseQueue, connection: Connection) -> Self {
         Self {
             queue,
-            connection: Some(connection),
+            connection: ManuallyDrop::new(connection),
             _not_send: PhantomData,
         }
     }
@@ -331,25 +332,21 @@ impl Deref for PooledReaderConnection<'_> {
     type Target = Connection;
 
     fn deref(&self) -> &Self::Target {
-        self.connection
-            .as_ref()
-            .expect("reader connection exists until dropped")
+        &self.connection
     }
 }
 
 impl DerefMut for PooledReaderConnection<'_> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        self.connection
-            .as_mut()
-            .expect("reader connection exists until dropped")
+        &mut self.connection
     }
 }
 
 impl Drop for PooledReaderConnection<'_> {
     fn drop(&mut self) {
-        if let Some(connection) = self.connection.take() {
-            self.queue.return_reader(connection);
-        }
+        // SAFETY: `self.connection` is initialized on construction and taken exactly once during `Drop`.
+        let connection = unsafe { ManuallyDrop::take(&mut self.connection) };
+        self.queue.return_reader(connection);
     }
 }
 
