@@ -29,9 +29,11 @@ mod sessions;
 mod tests;
 
 pub(super) use catalog::engine_json;
+#[cfg(windows)]
+use catalog::paths_from_host_marker;
 #[cfg(test)]
 use catalog::python_minor_version;
-use catalog::{paths_from_host_marker, python_compatibility_in, sglang_python};
+use catalog::{python_compatibility_in, sglang_python};
 pub(super) use sessions::{
     create_session, launch_context, model_path_for_runtime, remove_session, stop_wsl_process,
 };

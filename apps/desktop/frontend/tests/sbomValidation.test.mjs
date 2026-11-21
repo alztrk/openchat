@@ -43,7 +43,7 @@ test('SPDX file validation reports a missing file and validates readable JSON', 
 
 test('the tagged release workflow gates publishing on a pinned, validated SBOM artifact', () => {
   const workflowPath = fileURLToPath(new URL('../../../../.github/workflows/desktop-ci.yml', import.meta.url));
-  const workflow = readFileSync(workflowPath, 'utf8');
+  const workflow = readFileSync(workflowPath, 'utf8').replaceAll('\r\n', '\n');
   const sbomJob = workflow.split('\n  sbom:\n')[1]?.split(/\n {2}[a-z][a-z0-9-]*:\n/u)[0] ?? '';
   const releaseJob = workflow.split('\n  release:\n')[1] ?? '';
 

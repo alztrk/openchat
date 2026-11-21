@@ -2,11 +2,14 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
-const workflow = readFileSync(new URL('../../../../.github/workflows/desktop-ci.yml', import.meta.url), 'utf8');
+const workflow = readFileSync(
+  new URL('../../../../.github/workflows/desktop-ci.yml', import.meta.url),
+  'utf8',
+).replaceAll('\r\n', '\n');
 const publishWorkflow = readFileSync(
   new URL('../../../../.github/workflows/publish-tested-release.yml', import.meta.url),
   'utf8',
-);
+).replaceAll('\r\n', '\n');
 const releasePolicy = readFileSync(new URL('../../../../.github/RELEASE_POLICY.md', import.meta.url), 'utf8');
 
 test('main and pull request package builds are not published or retained as release artifacts', () => {

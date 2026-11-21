@@ -301,8 +301,12 @@ impl AppContainerSandbox {
             runtime_directory: None,
             persistent_profile,
             map_appcontainer_localappdata: true,
-            manages_window_access: false,
+            manages_window_access: !persistent_profile,
         };
+        if let Err(error) = grant_user_objects_access(sid) {
+            sandbox.cleanup();
+            return Err(error);
+        }
         let profile_metadata = match fs::symlink_metadata(&profile_root) {
             Ok(metadata) => metadata,
             Err(error) => {

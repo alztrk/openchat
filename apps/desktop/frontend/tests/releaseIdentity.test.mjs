@@ -110,7 +110,7 @@ test('stable Windows release CI imports, verifies, and removes its Authenticode 
   const workflow = readFileSync(
     new URL('../../../../.github/workflows/desktop-ci.yml', import.meta.url),
     'utf8',
-  );
+  ).replaceAll('\r\n', '\n');
   const windowsJob = workflow.split('\n  windows-installer:\n')[1]?.split(/\n {2}[a-z][a-z0-9-]*:\n/u)[0];
   assert.ok(windowsJob);
 

@@ -5,7 +5,7 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 const workspaceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..');
-const workflow = readFileSync(path.join(workspaceRoot, '.github/workflows/desktop-ci.yml'), 'utf8');
+const workflow = readFileSync(path.join(workspaceRoot, '.github/workflows/desktop-ci.yml'), 'utf8').replaceAll('\r\n', '\n');
 const macosConfig = JSON.parse(
   readFileSync(path.join(workspaceRoot, 'apps/desktop/tauri/tauri.macos.conf.json'), 'utf8'),
 );
