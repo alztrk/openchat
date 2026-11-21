@@ -263,6 +263,15 @@ pub struct AssistantMessageWrite<'a> {
     pub elapsed: Option<Duration>,
 }
 
+/// Optional prepaid credit information returned by ChatGPT usage responses.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UsageCredits {
+    pub has_credits: bool,
+    pub unlimited: bool,
+    pub balance: Option<f64>,
+}
+
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UsageSnapshot {
@@ -270,6 +279,7 @@ pub struct UsageSnapshot {
     pub freshness: String,
     pub ordinary_usage_allowed: Option<bool>,
     pub reset_credit_count: Option<i64>,
+    pub credits: Option<UsageCredits>,
     pub reset_credit_details_state: String,
     pub buckets: Vec<UsageBucket>,
     pub reset_credits: Vec<ResetCredit>,
@@ -304,6 +314,7 @@ pub struct NewUsageSnapshot {
     pub freshness: String,
     pub ordinary_usage_allowed: Option<bool>,
     pub reset_credit_count: Option<i64>,
+    pub credits: Option<UsageCredits>,
     pub reset_credit_details_state: String,
     pub buckets: Vec<UsageBucket>,
     pub reset_credits: Vec<ResetCredit>,

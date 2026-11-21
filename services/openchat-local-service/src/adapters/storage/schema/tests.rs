@@ -1046,6 +1046,86 @@ fn migration_63_preserves_models_and_adds_exllama_and_sglang() {
     assert_eq!(count, 3);
 }
 
+#[test]
+fn migration_66_adds_nullable_chatgpt_usage_credits_without_changing_old_snapshots() {
+    let connection = memory_index_repair_fixture(65);
+    connection
+        .execute_batch(
+            "INSERT INTO chatgpt_connections (
+                id, credential_reference, auth_status, created_at_unix_ms, updated_at_unix_ms
+             ) VALUES ('account', 'fixture-reference', 'active', 1, 1);
+             INSERT INTO chatgpt_workspaces (
+                id, connection_id, external_workspace_id, fetched_at_unix_ms
+             ) VALUES ('workspace', 'account', 'external-workspace', 1);
+             INSERT INTO chatgpt_usage_snapshots (
+                id, connection_id, workspace_id, fetched_at_unix_ms, freshness,
+                ordinary_usage_allowed, reset_credit_count, reset_credit_details_state
+             ) VALUES ('snapshot', 'account', 'workspace', 1, 'current', 1, 2, 'omitted');",
+        )
+        .expect("insert pre-migration ChatGPT usage");
+
+    assert_eq!(
+        initialize_schema(&connection, 66).expect("add usage credits"),
+        66
+    );
+    let snapshot = connection
+        .query_row(
+            "SELECT ordinary_usage_allowed, reset_credit_count, has_credits,
+                unlimited_credits, credit_balance
+             FROM chatgpt_usage_snapshots WHERE id = 'snapshot'",
+            [],
+            |row| {
+                Ok((
+                    row.get::<_, bool>(0)?,
+                    row.get::<_, i64>(1)?,
+                    row.get::<_, Option<bool>>(2)?,
+                    row.get::<_, Option<bool>>(3)?,
+                    row.get::<_, Option<f64>>(4)?,
+                ))
+            },
+        )
+        .expect("read historical snapshot");
+    assert_eq!(snapshot, (true, 2, None, None, None));
+    connection
+        .execute(
+            "UPDATE chatgpt_usage_snapshots
+             SET has_credits = 1, unlimited_credits = 0, credit_balance = 12.5
+             WHERE id = 'snapshot'",
+            [],
+        )
+        .expect("store credit balance");
+    for assignment in [
+        "has_credits = 2",
+        "unlimited_credits = -1",
+        "credit_balance = -1",
+    ] {
+        assert!(
+            connection
+                .execute(
+                    &format!(
+                        "UPDATE chatgpt_usage_snapshots SET {assignment} WHERE id = 'snapshot'"
+                    ),
+                    [],
+                )
+                .is_err()
+        );
+    }
+    assert_eq!(
+        initialize_schema(&connection, 66).expect("repeat initialization"),
+        66
+    );
+    assert_eq!(
+        connection
+            .query_row(
+                "SELECT credit_balance FROM chatgpt_usage_snapshots WHERE id = 'snapshot'",
+                [],
+                |row| row.get::<_, f64>(0),
+            )
+            .expect("preserve stored credits"),
+        12.5
+    );
+}
+
 fn memory_index_repair_fixture(version: i64) -> Connection {
     let connection = Connection::open_in_memory().expect("open in-memory database");
     connection

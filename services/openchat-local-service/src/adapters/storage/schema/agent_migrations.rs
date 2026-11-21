@@ -1888,5 +1888,25 @@ pub(super) fn apply_agent_migrations(
         current_version = 65;
     }
 
+    if current_version < 66 && target_version >= 66 {
+        let transaction = connection.unchecked_transaction()?;
+        if schema_table_exists(&transaction, "chatgpt_usage_snapshots")? {
+            transaction.execute_batch(
+                "ALTER TABLE chatgpt_usage_snapshots
+                    ADD COLUMN has_credits INTEGER CHECK (has_credits IS NULL OR has_credits IN (0, 1));
+                 ALTER TABLE chatgpt_usage_snapshots
+                    ADD COLUMN unlimited_credits INTEGER CHECK (unlimited_credits IS NULL OR unlimited_credits IN (0, 1));
+                 ALTER TABLE chatgpt_usage_snapshots
+                    ADD COLUMN credit_balance REAL CHECK (credit_balance IS NULL OR credit_balance >= 0);",
+            )?;
+        }
+        transaction.execute(
+            "INSERT INTO openchat_backend_migrations (version, applied_at_unix_ms) VALUES (66, ?1)",
+            [unix_time_millis()?],
+        )?;
+        transaction.commit()?;
+        current_version = 66;
+    }
+
     Ok(current_version)
 }

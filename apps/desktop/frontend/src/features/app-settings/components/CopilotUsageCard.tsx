@@ -13,6 +13,7 @@ import {
 } from '@features/provider-settings/data';
 import { subscribeToOAuthPlanUpdates } from '@features/provider-settings/data';
 import { LocalServiceError } from '@shared/lib/platform/local-service';
+import { copilotQuotaResetAt, isCopilotQuotaVisible } from '../data/copilotUsage';
 
 interface CopilotUsageCardProps {
   onNavigateToConnections(): void;
@@ -103,7 +104,7 @@ export function CopilotUsageCard({
 
   const locale = i18n.resolvedLanguage ?? i18n.language;
   const accountName = connection?.name?.trim() || connection?.login || t('providerNameCopilot');
-  const premiumQuotas = snapshot?.quotas.filter((quota) => quota.kind === 'premiumInteractions') ?? [];
+  const visibleQuotas = snapshot?.quotas.filter(isCopilotQuotaVisible) ?? [];
 
   return (
     <Card className="grid gap-2" padding="compact">
@@ -153,11 +154,11 @@ export function CopilotUsageCard({
         </div>
       ) : snapshot !== null ? (
         <div className="grid gap-3">
-          {premiumQuotas.length === 0 ? (
+          {visibleQuotas.length === 0 ? (
             <p className="text-sm text-secondary-text">{t('copilotQuotaUnavailable')}</p>
           ) : (
             <div className="grid gap-4">
-              {premiumQuotas.map((quota) => (
+              {visibleQuotas.map((quota) => (
                 <CopilotQuotaView
                   key={quota.id}
                   locale={locale}
@@ -195,7 +196,16 @@ function CopilotQuotaView({
   warningAtPercent: number;
 }) {
   const { t } = useTranslation();
-  const label = t('copilotQuotaPremiumInteractions');
+  const label = t(
+    quota.kind === 'chat'
+      ? 'copilotQuotaChat'
+      : quota.kind === 'completions'
+        ? 'copilotQuotaCompletions'
+        : quota.kind === 'premiumInteractions'
+          ? 'copilotQuotaPremiumInteractions'
+          : 'copilotQuotaOther',
+  );
+  const resetAtUnixMs = copilotQuotaResetAt(quota);
   const remainingPercent = quota.unlimited === true ? null : quota.percentRemaining;
   const usedPercent = remainingPercent === null ? null : 100 - remainingPercent;
   const meterValue = usedPercent === null ? null : Math.min(100, Math.max(0, usedPercent));
@@ -240,9 +250,9 @@ function CopilotQuotaView({
           </div>
         </>
       ) : null}
-      {quota.kind === 'premiumInteractions' ? (
+      {resetAtUnixMs !== null ? (
         <span className="text-xs text-secondary-text">
-          {t('copilotQuotaResetsAt', { time: formatTimestamp(nextMonthlyResetAt(), locale) })}
+          {t('copilotQuotaResetsAt', { time: formatTimestamp(resetAtUnixMs, locale) })}
         </span>
       ) : null}
       {usedPercent !== null && usedPercent >= warningAtPercent ? (
@@ -255,10 +265,6 @@ function CopilotQuotaView({
       ) : null}
     </section>
   );
-}
-
-function nextMonthlyResetAt(now = new Date()): number {
-  return new Date(now.getFullYear(), now.getMonth() + 1, 1).getTime();
 }
 
 function formatTimestamp(value: number, locale: string): string {
