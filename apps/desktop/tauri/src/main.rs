@@ -222,6 +222,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 tauri::WebviewWindowBuilder::from_config(app.handle(), main_window_config)?
                     .visible(false)
                     .on_permission_request(main_webview_permission_request);
+            #[cfg(windows)]
+            {
+                // Avoid Chromium Skia Graphite / Dawn D3D12 GPU process crashes on WebView2 157+
+                // while keeping full Direct3D 11 hardware acceleration enabled.
+                main_window_builder = main_window_builder
+                    .additional_browser_args("--disable-features=SkiaGraphite --use-angle=d3d11");
+            }
             #[cfg(feature = "startup-benchmark")]
             {
                 main_window_builder = main_window_builder.initialization_script(
@@ -719,6 +726,7 @@ fn recreate_main_webview(
     let mut builder = tauri::WebviewWindowBuilder::from_config(app_handle, window_config)
         .map_err(|error| error.to_string())?
         .visible(false)
+        .additional_browser_args("--disable-features=SkiaGraphite --use-angle=d3d11")
         .on_permission_request(main_webview_permission_request);
     if let Some(profile_root) = profile_root.as_ref() {
         let webview_data_directory = ensure_profile_child_directory(profile_root, "webview")
