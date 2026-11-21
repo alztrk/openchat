@@ -13,6 +13,7 @@ use crate::{
     },
     image_library, openai_api, openai_compatible,
     protocol::ServiceError,
+    provider_balances,
     provider_credentials::ProviderCredentials,
     service::OperationGate,
     storage::AppStorage,
@@ -117,6 +118,7 @@ pub(super) async fn dispatch(
                 .consume_reset_credit(connection_id, workspace_id, credit_id, cancellation)
                 .await
         }
+        "providers.quota_balances.list" => provider_balances::list(storage, cancellation).await,
         "opencode.models.list" => {
             let _untrusted_api_key = take_optional_api_key(params, "apiKey")?;
             let credentials = ProviderCredentials::load(storage)?;
@@ -446,6 +448,32 @@ mod tests {
         .await
         .expect_err("unknown provider methods are rejected");
         assert_eq!(error.code, "method_not_found");
+    }
+
+    #[tokio::test]
+    async fn quota_balances_dispatch_stops_when_the_request_is_already_cancelled() {
+        let directory = TestDirectory::new();
+        let storage =
+            Arc::new(AppStorage::open_at(directory.0.join("data")).expect("open test storage"));
+        initialize_test_schema(&storage);
+        let service = Arc::new(
+            ChatGptService::new(Arc::clone(&storage)).expect("initialize provider service"),
+        );
+        let (_sender, mut cancellation) = watch::channel(true);
+
+        let mut params = json!({});
+        let error = dispatch(
+            "providers.quota_balances.list",
+            &mut params,
+            &storage,
+            &service,
+            &mut cancellation,
+            &OperationGate::default(),
+        )
+        .await
+        .expect_err("a cancelled request does not read saved keys");
+
+        assert_eq!(error.code, "request_cancelled");
     }
 
     fn initialize_test_schema(storage: &AppStorage) {

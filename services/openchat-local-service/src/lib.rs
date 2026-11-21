@@ -20,9 +20,9 @@ pub(crate) use domain::{
     design_tools, document_parser, file_changes, git_inspection, git_worktrees, goals, history,
     hot_cache, hugging_face, image_library, instructions, local_engines, oauth, openai_api,
     openai_compatible, pending_archive_export, permissions, profile_archive, project_instructions,
-    project_memory, project_skills, provider_credentials, provider_schema, response_budget,
-    security_scan, temporary_conversation, todos, tools, usage_statistics, user_question_broker,
-    voice_input, workspace_settings,
+    project_memory, project_skills, provider_balances, provider_credentials, provider_schema,
+    response_budget, security_scan, temporary_conversation, todos, tools, usage_statistics,
+    user_question_broker, voice_input, workspace_settings,
 };
 
 #[path = "adapters/filesystem.rs"]
