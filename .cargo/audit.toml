@@ -12,6 +12,14 @@ ignore = [
     "RUSTSEC-2026-0369",
     # RUSTSEC-2026-0429: zip 8.6.0 large declared size symlink abort (transitive from candle-core 0.11.0).
     "RUSTSEC-2026-0429",
+    # RUSTSEC-2026-0545: zip 8.6.0 AES authentication code check on early/empty entries (transitive from candle-core 0.11.0).
+    "RUSTSEC-2026-0545",
+    # RUSTSEC-2026-0546: zip 8.6.0 ZipArchive::extract symlink targets outside destination (transitive from candle-core 0.11.0).
+    "RUSTSEC-2026-0546",
+    # RUSTSEC-2026-0547: zip 8.6.0 legacy Shrink/Reduce/Implode preallocation (transitive from candle-core 0.11.0).
+    "RUSTSEC-2026-0547",
+    # RUSTSEC-2026-0548: zip 8.6.0 ZipStreamReader local-header name mismatch (transitive from candle-core 0.11.0).
+    "RUSTSEC-2026-0548",
     # RUSTSEC-2026-0387: crypto-bigint 0.5.5 timing variability (transitive from elliptic-curve 0.13.8).
     # Upstream elliptic-curve patch pending.
     "RUSTSEC-2026-0387",
